@@ -166,29 +166,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         overall_attempt_limit = int(
             correction_cfg.get("prepare_recirculation_max_correction_attempts", per_pid_attempt_limit)
         )
-        corr = CorrectionState(
+        corr = CorrectionState.build_default(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
-            attempt=0,
             max_attempts=min(overall_attempt_limit, per_pid_attempt_limit),
-            ec_attempt=0,
             ec_max_attempts=ec_max_attempts,
-            ph_attempt=0,
             ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=return_stage_success,
             return_stage_fail=return_stage_fail,
-            outcome_success=None,
-            needs_ec=False,
-            ec_node_uid=None,
-            ec_channel=None,
-            ec_duration_ms=None,
-            needs_ph_up=False,
-            needs_ph_down=False,
-            ph_node_uid=None,
-            ph_channel=None,
-            ph_duration_ms=None,
-            wait_until=None,
-            limit_policy_logged=False,
         )
         return replace(corr, **self._probe_snapshot_correction_fields(task=task))

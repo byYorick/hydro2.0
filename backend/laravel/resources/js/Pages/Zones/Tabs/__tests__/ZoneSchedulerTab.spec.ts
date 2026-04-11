@@ -13,8 +13,10 @@ vi.mock('@/composables/useToast', () => ({
 
 async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
   const raw = await rawPromise
-  // Mock-шим: снимает только один уровень `data`, чтобы composable получал
-  // envelope вида `{ status, data: {...} }` — ровно то, что ему нужно для `response?.data`.
+  // Эмулирует поведение `extractData` из `services/api/_client.ts`: backend
+  // возвращает `{status, data: {...}}`, типизированный API-клиент через
+  // `apiGet → extractData` снимает status-envelope и отдаёт inner-payload.
+  // Поэтому в composable должен прийти уже развёрнутый объект.
   if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
     return (raw as { data: unknown }).data
   }

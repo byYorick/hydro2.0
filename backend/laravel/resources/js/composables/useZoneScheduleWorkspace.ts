@@ -54,6 +54,25 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
   let pollTimer: ReturnType<typeof setTimeout> | null = null
 
+  /**
+   * `apiGet` уже снимает status-envelope `{status, data: ...}` через `extractData`,
+   * поэтому в норме сюда приходит уже inner-payload. Но если бэкенд (или тест-mock)
+   * вдруг вернул wrapped-форму — корректно вытащим вложенный `.data`.
+   */
+  function unwrapEnvelope<T>(response: T | { data?: T } | null | undefined): T | null {
+    if (response === null || response === undefined) return null
+    if (
+      typeof response === 'object'
+      && response !== null
+      && 'data' in (response as Record<string, unknown>)
+      && (response as { data?: T }).data !== undefined
+      && (response as { data?: T }).data !== null
+    ) {
+      return (response as { data: T }).data
+    }
+    return response as T
+  }
+
   const lanes = computed<PlanLane[]>(() => workspace.value?.plan?.lanes ?? [])
   const windows = computed<PlanWindow[]>(() => workspace.value?.plan?.windows ?? [])
   const recentRuns = computed<ExecutionRun[]>(() => workspace.value?.execution?.recent_runs ?? [])
@@ -176,8 +195,11 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     error.value = null
 
     try {
-      const response = await api.zones.scheduleWorkspace<ScheduleWorkspaceResponse>(props.zoneId, { horizon: horizon.value })
-      workspace.value = response?.data ?? null
+      const response = await api.zones.scheduleWorkspace<ScheduleWorkspace | ScheduleWorkspaceResponse>(
+        props.zoneId,
+        { horizon: horizon.value },
+      )
+      workspace.value = unwrapEnvelope<ScheduleWorkspace>(response)
       updatedAt.value = new Date().toISOString()
 
       const nextSelectedExecutionId = selectedExecution.value?.execution_id?.trim()
@@ -206,10 +228,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
     try {
       const response = await api.zones.getState<AutomationState | { data?: AutomationState }>(props.zoneId)
-      const payload = isRecord(response) && isRecord((response as { data?: AutomationState }).data)
-        ? (response as { data: AutomationState }).data
-        : response as AutomationState
-      automationState.value = payload
+      automationState.value = unwrapEnvelope<AutomationState>(response)
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch automation state', { fetchError, zoneId: props.zoneId })
       if (!options?.silent && !error.value) {
@@ -229,8 +248,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     }
 
     try {
-      const response = await api.zones.getExecution<ExecutionResponse>(props.zoneId, normalizedExecutionId)
-      selectedExecution.value = response?.data ?? null
+      const response = await api.zones.getExecution<ExecutionRun | ExecutionResponse>(props.zoneId, normalizedExecutionId)
+      selectedExecution.value = unwrapEnvelope<ExecutionRun>(response)
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch execution detail', { fetchError, zoneId: props.zoneId, executionId: normalizedExecutionId })
       if (!options?.silent) {
@@ -258,8 +277,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     diagnosticsError.value = null
 
     try {
-      const response = await api.zones.schedulerDiagnostics<SchedulerDiagnosticsResponse>(props.zoneId)
-      diagnostics.value = response?.data ?? null
+      const response = await api.zones.schedulerDiagnostics<SchedulerDiagnostics | SchedulerDiagnosticsResponse>(props.zoneId)
+      diagnostics.value = unwrapEnvelope<SchedulerDiagnostics>(response)
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch scheduler diagnostics', { fetchError, zoneId: props.zoneId })
       diagnostics.value = null

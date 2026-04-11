@@ -36,6 +36,23 @@ export interface ZoneTelemetry {
   updated_at: string | null
 }
 
+export interface ZoneSystemState {
+  /** Код workflow phase: idle | waiting | preparing | irrigating | irrig_recirc | ... */
+  phase: string
+  /** Человеко-читаемая метка, например "Полив" / "Ожидание" / "Подготовка" */
+  label: string | null
+  /** true если данные свежее stale-окна (нет свежего heartbeat) */
+  stale?: boolean
+}
+
+export interface ZoneTankLevels {
+  clean_percent: number | null
+  solution_percent: number | null
+  /** Индивидуальный «offline» для каждого бака (нода с сенсором оффлайн) */
+  clean_offline?: boolean
+  solution_offline?: boolean
+}
+
 export interface ZoneSummary {
   id: number
   name: string
@@ -58,6 +75,10 @@ export interface ZoneSummary {
   recipe: { id: number; name: string } | null
   plant: { id: number; name: string } | null
   cycle: GrowCycle | null
+  /** Состояние автоматики (workflow phase). Отсутствие = stale/offline. */
+  system_state?: ZoneSystemState | null
+  /** Уровни двух баков (clean/solution) в процентах. */
+  tank_levels?: ZoneTankLevels | null
 }
 
 export interface Summary {

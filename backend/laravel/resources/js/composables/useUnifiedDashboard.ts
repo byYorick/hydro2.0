@@ -37,18 +37,24 @@ export interface UnifiedZone extends ZoneSummary {
   crop: string | null
 }
 
+export interface ZoneSparklineSeries {
+  ph: number[] | null
+  ec: number[] | null
+  temperature: number[] | null
+}
+
 type ToastLike = Parameters<typeof useCycleCenterActions>[0]['showToast']
 
 export function useUnifiedDashboard(options: {
   zones: Ref<UnifiedZone[]>
   showToast: ToastLike
 }): ReturnType<typeof useCycleCenterView> & ReturnType<typeof useCycleCenterActions> & {
-  sparklines: Ref<Record<number, number[]>>
+  sparklines: Ref<Record<number, ZoneSparklineSeries>>
   sparklineColor: (zone: UnifiedZone) => string
   reloadUnified: () => Promise<void>
 } {
   const { fetchHistory } = useTelemetry()
-  const sparklines = ref<Record<number, number[]>>({})
+  const sparklines = ref<Record<number, ZoneSparklineSeries>>({})
 
   const zonesAsSummary = computed(() => options.zones.value as ZoneSummary[])
 
@@ -71,12 +77,19 @@ export function useUnifiedDashboard(options: {
         try {
           const now = new Date()
           const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-          const history = await fetchHistory(zone.id, 'PH', {
-            from: from.toISOString(),
-            to: now.toISOString(),
-          })
-          if (history.length > 0) {
-            sparklines.value = { ...sparklines.value, [zone.id]: history.map(p => p.value) }
+          const range = { from: from.toISOString(), to: now.toISOString() }
+          const [phHist, ecHist, tempHist] = await Promise.all([
+            fetchHistory(zone.id, 'PH', range).catch(() => []),
+            fetchHistory(zone.id, 'EC', range).catch(() => []),
+            fetchHistory(zone.id, 'TEMPERATURE', range).catch(() => []),
+          ])
+          sparklines.value = {
+            ...sparklines.value,
+            [zone.id]: {
+              ph: phHist.length > 0 ? phHist.map((p) => p.value) : null,
+              ec: ecHist.length > 0 ? ecHist.map((p) => p.value) : null,
+              temperature: tempHist.length > 0 ? tempHist.map((p) => p.value) : null,
+            },
           }
         } catch {
           /* non-critical */

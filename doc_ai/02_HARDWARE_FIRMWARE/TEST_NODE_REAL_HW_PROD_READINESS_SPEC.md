@@ -415,7 +415,7 @@ Transient-overlap правило для `pump_main`:
 
 `clean_fill`:
 
-- `level_clean_min=1` через 10s от старта stage
+- `level_clean_min=1` через 5s от старта stage
 - `level_clean_max=1` через 30s (latch)
 
 `solution_fill`:

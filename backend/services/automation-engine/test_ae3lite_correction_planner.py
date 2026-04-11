@@ -683,6 +683,108 @@ def test_build_dose_plan_applies_feedforward_bias_from_pid_state() -> None:
     assert dose_plan.needs_any is False
 
 
+# ── B5: feedforward_bias decoupled from last_correction_kind ───────────
+
+def test_build_dose_plan_applies_feedforward_bias_without_last_correction_kind_marker() -> None:
+    """After B5 fix, the bias predicate is (bias != 0 AND hold_until > now).
+
+    Audit B5: previously ``_apply_feedforward_bias`` required
+    ``last_correction_kind == "ec"`` in the pH pid_state row — a semantic
+    overload of a field that otherwise stored the side of the last pH
+    correction. The fix drops that check so a pH pid_state row with only
+    the authoritative fields (``feedforward_bias`` + ``hold_until``) still
+    triggers the EC→pH cross-coupling shift, matching the runtime invariant
+    that the bias is authored only by EC dose and cleared by pH dose /
+    EC observation.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.94,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=0.5,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(),
+        workflow_phase="tank_recirc",
+        process_calibrations={},
+        ec_component_policy={},
+        pid_state={
+            "ph": {
+                "feedforward_bias": 0.08,
+                # NOTE: intentionally NO last_correction_kind field here.
+                # Pre-fix, this would cause the bias to be ignored. Post-fix,
+                # the predicate looks only at bias != 0 and hold_until > now.
+                "last_dose_at": now - timedelta(seconds=10),
+                "hold_until": now + timedelta(seconds=30),
+            }
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    # predicted_ph = current_ph + bias = 5.94 + 0.08 = 6.02 → inside 0.5% tolerance
+    # window of target 6.0 ([5.97, 6.03]) → no ph_up dose needed.
+    assert dose_plan.needs_ph_up is False
+    assert dose_plan.needs_any is False
+
+
+def test_build_dose_plan_skips_feedforward_bias_when_zero_even_if_hold_active() -> None:
+    """Post-B5 invariant: ``feedforward_bias == 0.0`` → no cross-coupling applied.
+
+    This is the guard that makes ``_run_dose_ph`` safe to reset
+    ``feedforward_bias: 0.0`` without the planner still reacting to a
+    lingering hold_until.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.85,  # outside tolerance → ph_up needed
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=0.5,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.5}},
+        ec_component_policy={},
+        pid_state={
+            "ph": {
+                "feedforward_bias": 0.0,  # explicitly zero (simulates _run_dose_ph clear)
+                "last_dose_at": now - timedelta(seconds=10),
+                "hold_until": now + timedelta(seconds=30),
+            }
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            # Slow pump so the computed pulse duration clears min_dose_ms.
+            "calibration": {"ml_per_sec": 1.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    # Bias is zero → predicted_ph == current_ph == 5.85 → outside tolerance → ph_up.
+    # Dose was not inflated by a stale bias, proving the zero-bias fast path.
+    assert dose_plan.needs_ph_up is True
+
+
 def test_is_within_tolerance_uses_target_tolerance_not_explicit_window_floor() -> None:
     planner = CorrectionPlanner()
 
@@ -1854,17 +1956,25 @@ def test_build_dose_plan_exposes_dead_zone_details_and_discarded_payload() -> No
 # ── B4: integral reset при смене pH direction ──────────────────────────────
 
 def test_build_dose_plan_resets_ph_integral_on_direction_switch_up_to_down() -> None:
-    """Overshoot scenario: ph_up dose pushed pH from 5.5 to 6.5, past target 6.0.
+    """Overshoot scenario: ph chased upward past target 6.0, now needs ph_down.
 
-    Before B4 fix: ph integral from chasing ph_up (positive accumulation)
-    would linger and distort the first ph_down dose on the next tick.
-    Fix: detect sign flip across the setpoint (5.5 → 6.5 crosses 6.0)
-    and reset integral/prev_error/prev_derivative before the new direction
-    begins accumulating.
+    Regression for audit B4: without the reset, integral accumulated during
+    the ph_up chase would contribute ``ki*integral`` to the first ph_down
+    dose, producing a gross overdose. With the reset, the controller starts
+    from zero integral for the new direction, so the first dose depends only
+    on the ``kp*gap`` proportional term.
+
+    ``_next_pid_state`` patches ``last_measurement_at`` to ``now`` on reset,
+    so ``dt=0`` and no additional integral accumulates for the current tick.
+    Verification: the dose matches the proportional-only output, which is
+    what the ki=0 case would produce.
     """
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
 
+    # Natural dose path: gap=0.5, gain=0.5 → proportional output=0.25 ml.
+    # Without reset: ki * (30.0 + 0.5*20 = 40) = 4.0 → dose ≈ 8.5 ml (capped).
+    # With reset: ki * 0.0 = 0.0 → dose = 0.25/0.5 = 0.5 ml.
     dose_plan = planner.build_dose_plan(
         current_ph=6.5,  # above target → ph_down needed
         current_ec=2.0,
@@ -1897,16 +2007,14 @@ def test_build_dose_plan_resets_ph_integral_on_direction_switch_up_to_down() -> 
         },
     )
 
-    # ph should still need dose (6.5 outside [5.94, 6.06]).
     assert dose_plan.needs_ph_down is True
     ph_upd = dose_plan.pid_state_updates["ph"]
-    # Integral must be reset, not propagated from the old ph_up regime.
-    # Without the fix, _next_pid_state would compute integral = 30.0 + 0.5*20 = 40.0
-    # and use ki*integral = 4.0 as part of the dose → gross overdose.
-    # With the fix, integral starts at 0 and then accumulates 0.5*20 = 10.0 for
-    # the current tick's ph_down gap; output = kp*0.5 + ki*10.0 = 0.25 + 1.0 = 1.25 ml.
-    assert ph_upd["current_zone"] == "direction_switch"
-    assert ph_upd["integral"] == pytest.approx(10.0)
+    # Integral was reset to 0 and last_measurement_at=now → dt=0 in the
+    # downstream _next_pid_state call → no further accumulation this tick.
+    assert ph_upd["integral"] == pytest.approx(0.0)
+    # Dose should reflect proportional-only output (0.25 ml), NOT the bloated
+    # value (8.5 ml) that lingering integral would have produced.
+    assert dose_plan.ph_amount_ml == pytest.approx(0.5, abs=0.01)
 
 
 def test_build_dose_plan_resets_ph_integral_on_direction_switch_down_to_up() -> None:
@@ -1915,7 +2023,7 @@ def test_build_dose_plan_resets_ph_integral_on_direction_switch_down_to_up() -> 
     now = datetime(2026, 3, 10, 12, 0, 0)
 
     dose_plan = planner.build_dose_plan(
-        current_ph=5.3,  # below target → ph_up needed
+        current_ph=5.5,  # below target → ph_up needed
         current_ec=2.0,
         target_ph=6.0,
         target_ec=2.0,
@@ -1948,12 +2056,17 @@ def test_build_dose_plan_resets_ph_integral_on_direction_switch_down_to_up() -> 
 
     assert dose_plan.needs_ph_up is True
     ph_upd = dose_plan.pid_state_updates["ph"]
-    assert ph_upd["current_zone"] == "direction_switch"
-    assert ph_upd["integral"] == pytest.approx(10.5)  # 0.7 * 15 starting from 0
+    assert ph_upd["integral"] == pytest.approx(0.0)
+    # Proportional-only dose: kp=0.5, gap=0.5, gain=0.5 → 0.5 ml.
+    assert dose_plan.ph_amount_ml == pytest.approx(0.5, abs=0.01)
 
 
 def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
-    """No direction switch: integral must continue accumulating normally."""
+    """No direction switch: integral must continue accumulating normally.
+
+    Sanity check that the B4 fix is narrowly targeted and does not wipe
+    integrator state on normal same-direction ticks.
+    """
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
 
@@ -1991,9 +2104,7 @@ def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
 
     assert dose_plan.needs_ph_up is True
     ph_upd = dose_plan.pid_state_updates["ph"]
-    # No direction switch → zone is not "direction_switch"; integral accumulates
-    # from 5.0 + 0.5*10 = 10.0 (same-direction continuation).
-    assert ph_upd.get("current_zone") != "direction_switch"
+    # Same-direction continuation: integral starts at 5.0, accumulates 0.5*10=5.0.
     assert ph_upd["integral"] == pytest.approx(10.0)
 
 

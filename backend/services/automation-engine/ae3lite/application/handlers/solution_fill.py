@@ -203,7 +203,16 @@ class SolutionFillCheckHandler(BaseStageHandler):
                     scope_parts=("stage:solution_fill_check",),
                 )
             except Exception:
-                _logger.warning("Не удалось отправить alert solution_fill_timeout zone_id=%s", task.zone_id)
+                # Audit F9: include full exception context so downstream debugging
+                # of failed alert delivery isn't blocked by a message without
+                # zone/task identification.
+                _logger.warning(
+                    "Не удалось отправить alert biz_solution_fill_timeout "
+                    "zone_id=%s task_id=%s",
+                    task.zone_id,
+                    getattr(task, "id", None),
+                    exc_info=True,
+                )
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
         if await self._targets_reached(task=task, plan=plan, now=now):
@@ -303,29 +312,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
         ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
-        corr = CorrectionState(
+        corr = CorrectionState.build_default(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
-            attempt=0,
             max_attempts=max(ec_max_attempts, ph_max_attempts),
-            ec_attempt=0,
             ec_max_attempts=ec_max_attempts,
-            ph_attempt=0,
             ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=return_stage_success,
             return_stage_fail=return_stage_fail,
-            outcome_success=None,
-            needs_ec=False,
-            ec_node_uid=None,
-            ec_channel=None,
-            ec_duration_ms=None,
-            needs_ph_up=False,
-            needs_ph_down=False,
-            ph_node_uid=None,
-            ph_channel=None,
-            ph_duration_ms=None,
-            wait_until=None,
-            limit_policy_logged=False,
         )
         return replace(corr, **self._probe_snapshot_correction_fields(task=task))

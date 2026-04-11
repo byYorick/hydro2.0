@@ -199,18 +199,8 @@
             v-for="zone in pagedZones"
             :key="zone.id"
             :zone="zone as UnifiedZone"
-            :can-manage-cycle="canManageCycle"
-            :can-issue-commands="canIssueZoneCommands"
-            :sparkline-data="sparklines[zone.id] ?? null"
-            :sparkline-color="sparklineColor(zone as UnifiedZone)"
-            :is-action-loading="isActionLoading"
+            :sparkline-series-data="sparklines[zone.id] ?? null"
             :dense="denseView"
-            @pause="pauseCycle"
-            @resume="resumeCycle"
-            @irrigate="openActionModal($event, 'START_IRRIGATION')"
-            @flush="openActionModal($event, 'FORCE_IRRIGATION')"
-            @harvest="openHarvestModal"
-            @abort="openAbortModal"
           />
         </div>
 
@@ -220,62 +210,6 @@
           v-model:per-page="perPage"
           :total="filteredZones.length"
         />
-
-        <ZoneActionModal
-          v-if="actionModal.zone"
-          :show="actionModal.open"
-          :zone-id="actionModal.zone.id"
-          :action-type="actionModal.actionType"
-          :default-params="dashboardZoneActionDefaultParams"
-          :irrigation-correction-summary="actionModal.zone.irrigation_correction_summary ?? null"
-          @close="closeActionModal"
-          @submit="submitAction"
-        />
-
-        <ConfirmModal
-          :open="harvestModal.open"
-          title="Зафиксировать сбор"
-          message=" "
-          confirm-text="Подтвердить"
-          :loading="isActionLoading(harvestModal.zone?.id || 0, 'harvest')"
-          @close="closeHarvestModal"
-          @confirm="confirmHarvest"
-        >
-          <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-            <div>Зафиксировать сбор урожая и завершить цикл?</div>
-            <div>
-              <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-              <input
-                v-model="harvestModal.batchLabel"
-                class="input-field mt-1 w-full"
-                placeholder="Например: Batch-042"
-              />
-            </div>
-          </div>
-        </ConfirmModal>
-
-        <ConfirmModal
-          :open="abortModal.open"
-          title="Аварийная остановка"
-          message=" "
-          confirm-text="Остановить"
-          confirm-variant="danger"
-          :loading="isActionLoading(abortModal.zone?.id || 0, 'abort')"
-          @close="closeAbortModal"
-          @confirm="confirmAbort"
-        >
-          <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-            <div>Остановить цикл? Это действие нельзя отменить.</div>
-            <div>
-              <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-              <textarea
-                v-model="abortModal.notes"
-                class="input-field mt-1 w-full h-20 resize-none"
-                placeholder="Короткое описание причины"
-              ></textarea>
-            </div>
-          </div>
-        </ConfirmModal>
       </div>
     </template>
 
@@ -364,14 +298,11 @@
 
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
-import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Pagination from '@/Components/Pagination.vue'
-import ZoneActionModal from '@/Components/ZoneActionModal.vue'
-import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import { formatTime } from '@/utils/formatTime'
 import { useToast } from '@/composables/useToast'
@@ -397,7 +328,6 @@ const page = usePage()
 const role = computed(() => (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer')
 const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.value))
 const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
-const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
 const { showToast } = useToast()
 const { theme } = useTheme()
@@ -424,33 +354,8 @@ const {
   pagedZones,
   toggleDense,
   sparklines,
-  sparklineColor,
-  harvestModal,
-  abortModal,
-  actionModal,
-  isActionLoading,
-  pauseCycle,
-  resumeCycle,
-  openHarvestModal,
-  closeHarvestModal,
-  confirmHarvest,
-  openAbortModal,
-  closeAbortModal,
-  confirmAbort,
-  openActionModal,
-  closeActionModal,
-  submitAction,
 } = useUnifiedDashboard({
   zones: zonesRef,
   showToast,
-})
-
-const dashboardZoneActionDefaultParams = computed(() => {
-  const z = actionModal.zone
-  if (!z || (actionModal.actionType !== 'START_IRRIGATION' && actionModal.actionType !== 'FORCE_IRRIGATION')) {
-    return {}
-  }
-  const sec = pickIrrigationDurationFromTargets(z.current_phase_targets ?? null)
-  return sec != null ? { duration_sec: sec } : {}
 })
 </script>

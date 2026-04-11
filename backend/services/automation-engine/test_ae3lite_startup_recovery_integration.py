@@ -290,6 +290,11 @@ async def test_startup_recovery_fails_task_without_confirmed_external_command(
     prefix = f"ae3-recovery-unconfirmed-{task_status}-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
+    # Pre-sweep: other integration tests in the same pytest session may leave
+    # orphan active-status tasks (seeded from migrations, tests that crashed
+    # before cleanup, etc.). Run recovery once before the test-specific setup
+    # so the post-setup assertion sees only this test's task in the scan.
+    await recovery_use_case.run(now=now)
     baseline_scanned = await _count_active_recovery_tasks()
 
     try:
@@ -322,6 +327,8 @@ async def test_startup_recovery_releases_only_expired_leases() -> None:
     prefix = f"ae3-recovery-leases-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, _task_repo, _command_repo, lease_repo = _build_use_case()
+    # Pre-sweep orphans from prior tests in the session.
+    await recovery_use_case.run(now=now)
     baseline_scanned = await _count_active_recovery_tasks()
 
     try:
@@ -375,6 +382,8 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         workflow_repository=workflow_repo,
         topology_registry=TopologyRegistry(),
     )
+    # Pre-sweep orphans from prior tests in the session.
+    await recovery_use_case.run(now=now)
     baseline_scanned = await _count_active_recovery_tasks()
     baseline_waiting = await _count_waiting_command_tasks()
 

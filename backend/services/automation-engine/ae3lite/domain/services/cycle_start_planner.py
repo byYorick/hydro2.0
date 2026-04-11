@@ -431,14 +431,27 @@ class CycleStartPlanner:
         seen_pairs.add(pair)
 
         calibration = actuator.get("calibration")
-        if isinstance(calibration, Mapping):
-            return
-
         kind = "EC" if actuator_key.startswith("ec") else "PH"
-        raise PlannerConfigurationError(
-            f"Для насоса дозирования {kind} требуется calibration (channel={channel}, node={node_uid})",
-            code=ErrorCodes.ZONE_DOSING_CALIBRATION_MISSING_CRITICAL,
-        )
+        if not isinstance(calibration, Mapping):
+            raise PlannerConfigurationError(
+                f"Для насоса дозирования {kind} требуется calibration (channel={channel}, node={node_uid})",
+                code=ErrorCodes.ZONE_DOSING_CALIBRATION_MISSING_CRITICAL,
+            )
+
+        # Audit F6: the old check only asserted calibration was *some* Mapping,
+        # so an empty dict or one missing ``ml_per_sec`` passed preflight and
+        # blew up later in ``_dose_ml_to_ms`` with a non-actionable error
+        # during the first dose attempt. Fail-close at cycle_start with an
+        # explicit list of missing keys so operators know exactly which field
+        # to fix in pump_calibrations.
+        required_keys = ("ml_per_sec",)
+        missing = [key for key in required_keys if calibration.get(key) in (None, "", 0)]
+        if missing:
+            raise PlannerConfigurationError(
+                f"Для насоса дозирования {kind} calibration не содержит обязательные поля "
+                f"{missing} (channel={channel}, node={node_uid})",
+                code=ErrorCodes.ZONE_DOSING_CALIBRATION_MISSING_CRITICAL,
+            )
 
     def _resolve_correction_actuators(
         self,

@@ -7,7 +7,9 @@ use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class UnifiedDashboardService
 {
@@ -64,7 +66,15 @@ class UnifiedDashboardService
         $alertsByZone = $this->getAlertsByZone($zoneIds);
         $latestAlerts = $this->getLatestAlerts($user, $accessibleZoneIds);
         $summary = $this->buildSummary($zones);
-        $zonesData = $this->formatZones($zones, $telemetryByZone, $alertsByZone);
+        $workflowByZone = $this->getWorkflowStateByZone($zoneIds);
+        $tankLevelsByZone = $this->getTankLevelsByZone($zoneIds);
+        $zonesData = $this->formatZones(
+            $zones,
+            $telemetryByZone,
+            $alertsByZone,
+            $workflowByZone,
+            $tankLevelsByZone,
+        );
         $greenhouses = $this->getGreenhouses($zones);
 
         return [
@@ -177,11 +187,18 @@ class UnifiedDashboardService
     /**
      * @param  array<int, array>  $telemetryByZone
      * @param  array<int, array>  $alertsByZone
+     * @param  array<int, array{phase: string, label: string|null, stale: bool}>  $workflowByZone
+     * @param  array<int, array{clean_percent: float|null, solution_percent: float|null, clean_offline: bool, solution_offline: bool}>  $tankLevelsByZone
      * @return array<int, array<string, mixed>>
      */
-    private function formatZones(Collection $zones, array $telemetryByZone, array $alertsByZone): array
-    {
-        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone) {
+    private function formatZones(
+        Collection $zones,
+        array $telemetryByZone,
+        array $alertsByZone,
+        array $workflowByZone = [],
+        array $tankLevelsByZone = [],
+    ): array {
+        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone, $workflowByZone, $tankLevelsByZone) {
             $cycle = $zone->activeGrowCycle;
             $cycleDto = $cycle ? ($this->growCyclePresenter->buildCycleDto($cycle)['cycle'] ?? null) : null;
 
@@ -226,8 +243,188 @@ class UnifiedDashboardService
                 ] : null,
                 'cycle' => $cycleDto,
                 'crop' => $crop,
+                'system_state' => $workflowByZone[$zone->id] ?? null,
+                'tank_levels' => $tankLevelsByZone[$zone->id] ?? null,
             ];
         })->values()->toArray();
+    }
+
+    /**
+     * Батчем достаём текущий workflow_phase для набора зон из
+     * `zone_workflow_state`. Считаем данные stale, если `updated_at`
+     * старше 2 минут (workflow runtime должен писать чаще).
+     *
+     * @param  array<int, int>  $zoneIds
+     * @return array<int, array{phase: string, label: string|null, stale: bool}>
+     */
+    private function getWorkflowStateByZone(array $zoneIds): array
+    {
+        if (empty($zoneIds)) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('zone_workflow_state')
+                ->whereIn('zone_id', $zoneIds)
+                ->select(['zone_id', 'workflow_phase', 'updated_at'])
+                ->get();
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $staleThreshold = Carbon::now()->subMinutes(2);
+        $result = [];
+
+        foreach ($rows as $row) {
+            $phase = (string) ($row->workflow_phase ?? 'idle');
+            $updatedAt = $row->updated_at ? Carbon::parse($row->updated_at) : null;
+            $isStale = $updatedAt === null || $updatedAt->lt($staleThreshold);
+
+            $result[(int) $row->zone_id] = [
+                'phase' => $phase,
+                'label' => $this->workflowPhaseLabel($phase),
+                'stale' => $isStale,
+            ];
+        }
+
+        return $result;
+    }
+
+    private function workflowPhaseLabel(string $phase): ?string
+    {
+        $map = [
+            'idle' => 'Ожидание',
+            'waiting' => 'Ожидание',
+            'ready' => 'Готов',
+            'preparing' => 'Подготовка',
+            'startup' => 'Подготовка',
+            'clean_fill' => 'Набор чистой воды',
+            'solution_fill' => 'Приготовление раствора',
+            'prepare_recirculation' => 'Рециркуляция перед поливом',
+            'irrig_recirc' => 'Рециркуляция раствора',
+            'recirculation' => 'Рециркуляция раствора',
+            'irrigating' => 'Полив',
+            'irrigation' => 'Полив',
+            'irrigation_recovery' => 'Восстановление полива',
+            'correction' => 'Коррекция',
+            'harvesting' => 'Сбор',
+            'diagnostics' => 'Диагностика',
+            'error' => 'Ошибка',
+            'failed' => 'Ошибка',
+            'degraded' => 'Деградация',
+        ];
+
+        return $map[$phase] ?? ucfirst(str_replace('_', ' ', $phase));
+    }
+
+    /**
+     * Батчем читаем уровни баков (clean/solution) из `telemetry_last`
+     * по metric_type = WATER_LEVEL + `sensors.scope='tank'`.
+     * Возвращает проценты, если известна capacity, иначе null.
+     *
+     * @param  array<int, int>  $zoneIds
+     * @return array<int, array{clean_percent: float|null, solution_percent: float|null, clean_offline: bool, solution_offline: bool}>
+     */
+    private function getTankLevelsByZone(array $zoneIds): array
+    {
+        if (empty($zoneIds)) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('telemetry_last')
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->where('sensors.metric_type', 'WATER_LEVEL')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.channel',
+                    'telemetry_last.last_value as value',
+                    'telemetry_last.updated_at',
+                ])
+                ->get();
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $staleThreshold = Carbon::now()->subMinutes(5);
+        $buckets = [];
+
+        foreach ($rows as $row) {
+            $zoneId = (int) $row->zone_id;
+            $channel = strtolower((string) ($row->channel ?? ''));
+            $value = is_numeric($row->value) ? (float) $row->value : null;
+            $updatedAt = $row->updated_at ? Carbon::parse($row->updated_at) : null;
+            $isStale = $updatedAt === null || $updatedAt->lt($staleThreshold);
+
+            $buckets[$zoneId] ??= [
+                'clean' => [],
+                'solution' => [],
+            ];
+
+            // Группировка по назначению: clean_* → clean tank, solution_* → solution tank.
+            $target = null;
+            if (str_contains($channel, 'clean')) {
+                $target = 'clean';
+            } elseif (str_contains($channel, 'solution') || str_contains($channel, 'nutrient')) {
+                $target = 'solution';
+            }
+            if ($target === null) {
+                continue;
+            }
+
+            $buckets[$zoneId][$target][] = [
+                'value' => $value,
+                'stale' => $isStale,
+            ];
+        }
+
+        $result = [];
+        foreach ($buckets as $zoneId => $tanks) {
+            $result[$zoneId] = [
+                'clean_percent' => $this->aggregateTankPercent($tanks['clean']),
+                'solution_percent' => $this->aggregateTankPercent($tanks['solution']),
+                'clean_offline' => $this->isTankOffline($tanks['clean']),
+                'solution_offline' => $this->isTankOffline($tanks['solution']),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, array{value: float|null, stale: bool}>  $entries
+     */
+    private function aggregateTankPercent(array $entries): ?float
+    {
+        $values = array_filter(
+            array_map(fn ($entry) => $entry['value'], $entries),
+            fn ($v) => $v !== null
+        );
+        if ($values === []) {
+            return null;
+        }
+        // WATER_LEVEL уже в % в telemetry_last — берём среднее, если несколько сенсоров.
+        $avg = array_sum($values) / count($values);
+
+        return round(max(0.0, min(100.0, $avg)), 1);
+    }
+
+    /**
+     * @param  array<int, array{value: float|null, stale: bool}>  $entries
+     */
+    private function isTankOffline(array $entries): bool
+    {
+        if ($entries === []) {
+            return true;
+        }
+        foreach ($entries as $entry) {
+            if (! $entry['stale'] && $entry['value'] !== null) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -45,6 +45,30 @@ from common.db import create_zone_event
 logger = logging.getLogger(__name__)
 
 
+# ── Stage deadline slack constants (extracted per audit F1) ──────────
+#
+# These were previously hardcoded inline 4 times across _compute_deadline
+# (irrigation_check, solution_fill_check, prepare_recirculation_check) and
+# changing them required editing several sites in lockstep. Centralised
+# here so deadline semantics can be reasoned about as one table.
+
+#: Default slack added to base stage deadline when inline correction is
+#: enabled but no explicit ``*_correction_slack_sec`` value is supplied.
+#: 15 minutes (900s) leaves room for an observation window retry and a
+#: follow-up probe before the stage is force-terminated.
+_DEFAULT_CORRECTION_SLACK_SEC: int = 900
+
+#: Upper bound for any operator-configured correction slack. Two hours
+#: is comfortably more than any correction cycle should take yet stops
+#: config mistakes from silently extending a stage indefinitely.
+_MAX_CORRECTION_SLACK_SEC: int = 7200
+
+#: Absolute cap on total stage duration (base timeout + slack). One
+#: calendar day is an invariant: tasks running longer are almost
+#: certainly stuck and should be bounced by the scheduler instead.
+_MAX_STAGE_TOTAL_SEC: int = 86400
+
+
 class WorkflowRouter:
     """Оркестратор topology-driven workflow: dispatch → handler → apply outcome → requeue.
 
@@ -452,19 +476,16 @@ class WorkflowRouter:
             if requested_duration_sec is None:
                 return None
             slack_raw = irrigation_runtime.get("correction_slack_sec")
+            correction_enabled = bool(irrigation_runtime.get("correction_during_irrigation", True))
             if slack_raw is None:
-                slack = (
-                    900
-                    if bool(irrigation_runtime.get("correction_during_irrigation", True))
-                    else 0
-                )
+                slack = _DEFAULT_CORRECTION_SLACK_SEC if correction_enabled else 0
             else:
                 try:
-                    slack = max(0, min(7200, int(slack_raw)))
+                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
                 except (TypeError, ValueError):
-                    slack = 900 if bool(irrigation_runtime.get("correction_during_irrigation", True)) else 0
+                    slack = _DEFAULT_CORRECTION_SLACK_SEC if correction_enabled else 0
             total_sec = int(requested_duration_sec) + slack
-            total_sec = min(max(1, total_sec), 86400)
+            total_sec = min(max(1, total_sec), _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "solution_fill_check":
             base_raw = runtime.get("solution_fill_timeout_sec")
@@ -476,13 +497,13 @@ class WorkflowRouter:
                 return None
             slack_raw = runtime.get("solution_fill_correction_slack_sec")
             if slack_raw is None:
-                slack = 900
+                slack = _DEFAULT_CORRECTION_SLACK_SEC
             else:
                 try:
-                    slack = max(0, min(7200, int(slack_raw)))
+                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
                 except (TypeError, ValueError):
-                    slack = 900
-            total_sec = min(base_sec + slack, 86400)
+                    slack = _DEFAULT_CORRECTION_SLACK_SEC
+            total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "prepare_recirculation_check":
             # Базовое окно берётся из retry-конфига; inline EC/pH-коррекциям нужно
@@ -496,13 +517,13 @@ class WorkflowRouter:
                 return None
             slack_raw = runtime.get("prepare_recirculation_correction_slack_sec")
             if slack_raw is None:
-                slack = 900
+                slack = _DEFAULT_CORRECTION_SLACK_SEC
             else:
                 try:
-                    slack = max(0, min(7200, int(slack_raw)))
+                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
                 except (TypeError, ValueError):
-                    slack = 900
-            total_sec = min(base_sec + slack, 86400)
+                    slack = _DEFAULT_CORRECTION_SLACK_SEC
+            total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "irrigation_recovery_check":
             recovery_runtime = runtime.get("irrigation_recovery")

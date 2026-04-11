@@ -53,7 +53,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
 #define TASK_STACK_MQTT_REANNOUNCE 6144
 #define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 5632
-#define CLEAN_FILL_MIN_DELAY_SEC 10
+#define CLEAN_FILL_MIN_DELAY_SEC 5
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
 #define SOLUTION_FILL_DELAY_SEC 180
@@ -1488,8 +1488,9 @@ static void publish_current_virtual_sensor_snapshot(bool include_levels, bool in
 }
 
 static bool is_clean_fill_active(void) {
-    return s_virtual_state.tank_fill_on
-        || (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_fill_on);
+    // clean_fill is valve-driven; requiring pump_main here breaks the fail-safe contract
+    // and diverges from the stage/interlock logic used elsewhere in test_node.
+    return s_virtual_state.tank_fill_on || s_virtual_state.valve_clean_fill_on;
 }
 
 static bool is_solution_fill_active(void) {

@@ -72,7 +72,7 @@ def test_staged_clean_fill_min_switch_after_delay():
     sim = TestNodeSimulator(mqtt)
 
     sim.state.clean_fill_stage_active = True
-    sim.state.clean_fill_started_at = sim.get_timestamp_seconds() - 10
+    sim.state.clean_fill_started_at = sim.get_timestamp_seconds() - 5
 
     assert sim.resolve_clean_min_switch_value() == 1.0
 

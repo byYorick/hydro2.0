@@ -13,6 +13,15 @@ from ae3lite.domain.errors import TaskExecutionError
 _logger = logging.getLogger(__name__)
 
 
+#: Fallback retry budget when neither the phase correction bundle nor its
+#: top-level config carry ``prepare_recirculation_max_attempts``. Set to 3
+#: because the two-tank prepare-recirc window is the last gate before
+#: starting the irrigation cycle — three attempts is the minimum budget
+#: that still allows one correction attempt + one retry + one safety
+#: rollover without escalating to timeout. Audit F14.
+_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS: int = 3
+
+
 class PrepareRecircWindowHandler(BaseStageHandler):
     """Управляет rollover-логикой timeout-окна prepare-recirculation."""
 
@@ -49,6 +58,16 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         except TaskExecutionError as exc:
             if not limit_reached or exc.code not in {"command_timeout", "ae3_command_poll_deadline_exceeded"}:
                 raise
+            # Audit F4: swallow the stop-command failure ONLY when the retry
+            # budget is already exhausted. The fail outcome below reports the
+            # primary cause (attempt_limit_reached); the stop-timeout is a
+            # secondary symptom of the same stuck window. Explicitly reset
+            # current_task to `task` to guarantee no partial mutation reaches
+            # the ``task_override`` we pass to the fail outcome below — this
+            # is technically a no-op (the assignment on the line above never
+            # completed if _run_commands raised), but making it explicit
+            # blocks future refactors from introducing phantom state.
+            current_task = task
             _logger.warning(
                 "prepare_recirc_window: stop-команды завершились ошибкой после достижения лимита повторов; "
                 "сохраняется основная ошибка исчерпания лимита zone_id=%s retry=%s/%s code=%s",
@@ -94,10 +113,15 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         )
 
     def _prepare_recirculation_max_attempts(self, *, plan: Any, task: Any) -> int:
-        """Читает лимит из phase correction bundle (``retry.*`` или top-level)."""
+        """Читает лимит из phase correction bundle (``retry.*`` или top-level).
+
+        Falls back to ``_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS`` if neither
+        the retry sub-bundle nor a top-level key supplies a value — documented
+        default rather than a bare magic number (audit F14).
+        """
         correction_cfg = self._correction_config(plan=plan, task=task)
         if not isinstance(correction_cfg, Mapping):
-            return 3
+            return _DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS
         retry = correction_cfg.get("retry")
         if isinstance(retry, Mapping):
             raw = retry.get("prepare_recirculation_max_attempts")
@@ -106,7 +130,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         raw = correction_cfg.get("prepare_recirculation_max_attempts")
         if raw is not None:
             return max(1, int(raw))
-        return 3
+        return _DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS
 
     async def _emit_retry_limit_alert(
         self,

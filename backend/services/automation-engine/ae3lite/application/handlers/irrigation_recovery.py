@@ -55,33 +55,17 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
 
         _logger.info("irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        corr = CorrectionState(
+        ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
+        ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
+        corr = CorrectionState.build_default(
             corr_step="corr_check",
-            attempt=0,
-            max_attempts=max(
-                int(correction_cfg.get("max_ec_correction_attempts", 5)),
-                int(correction_cfg.get("max_ph_correction_attempts", 5)),
-            ),
-            ec_attempt=0,
-            ec_max_attempts=int(correction_cfg.get("max_ec_correction_attempts", 5)),
-            ph_attempt=0,
-            ph_max_attempts=int(correction_cfg.get("max_ph_correction_attempts", 5)),
+            max_attempts=max(ec_max_attempts, ph_max_attempts),
+            ec_max_attempts=ec_max_attempts,
+            ph_max_attempts=ph_max_attempts,
             activated_here=False,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=stage_def.on_corr_success or "irrigation_recovery_stop_to_ready",
             return_stage_fail=stage_def.on_corr_fail or "irrigation_recovery_stop_failed",
-            outcome_success=None,
-            needs_ec=False,
-            ec_node_uid=None,
-            ec_channel=None,
-            ec_duration_ms=None,
-            needs_ph_up=False,
-            needs_ph_down=False,
-            ph_node_uid=None,
-            ph_channel=None,
-            ph_duration_ms=None,
-            wait_until=None,
-            limit_policy_logged=False,
         )
         corr = replace(corr, **self._probe_snapshot_correction_fields(task=task))
         return StageOutcome(kind="enter_correction", correction=corr)

@@ -171,7 +171,14 @@ class CleanFillCheckHandler(BaseStageHandler):
                     scope_parts=("stage:clean_fill_check",),
                 )
             except Exception:
-                    _logger.warning("Не удалось отправить alert clean_fill_timeout zone_id=%s", task.zone_id)
+                # Audit F9: include full exception context for debuggability.
+                _logger.warning(
+                    "Не удалось отправить alert biz_clean_fill_timeout "
+                    "zone_id=%s task_id=%s",
+                    task.zone_id,
+                    getattr(task, "id", None),
+                    exc_info=True,
+                )
             return StageOutcome(kind="transition", next_stage="clean_fill_timeout_stop")
 
         # Заполнение ещё идёт: повторный poll

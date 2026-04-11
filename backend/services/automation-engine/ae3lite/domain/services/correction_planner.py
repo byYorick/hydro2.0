@@ -188,6 +188,12 @@ class CorrectionPlanner:
         # If ``_reset_pid_state_if_inside_bounds`` already scheduled a ph
         # reset (inside tolerance window), its keys are kept — both resets
         # converge on the same zeroed state.
+        #
+        # Crucially we ALSO patch the local ``pid_state`` view so the
+        # downstream ``_next_pid_state`` call consumed by ``_compute_amount_ml``
+        # starts from the zeroed integral; otherwise the reset would only
+        # land in the persisted update dict but the current tick's dose
+        # computation would still see the stale integrator value.
         if "ph" not in pid_updates:
             ph_switch_updates = _reset_pid_state_if_ph_direction_switched(
                 predicted_ph=predicted_ph,
@@ -197,6 +203,13 @@ class CorrectionPlanner:
             )
             if ph_switch_updates:
                 pid_updates.update(ph_switch_updates)
+                pid_state = {
+                    **pid_state,
+                    "ph": {
+                        **(pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else {}),
+                        **ph_switch_updates["ph"],
+                    },
+                }
 
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
@@ -807,14 +820,26 @@ def _apply_feedforward_bias(
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> float:
+    """Shift current pH prediction by the EC→pH cross-coupling bias, if active.
+
+    Audit B5 simplification: previously the predicate also required
+    ``last_correction_kind == "ec"`` in the pH pid_state row — a semantic
+    overload of a field that otherwise stored the last pH correction side
+    ("ph_up"/"ph_down"). That check is now redundant: the bias is authored
+    *only* by ``_run_dose_ec`` (which sets ``feedforward_bias + hold_until``)
+    and cleared by the EC observe step and by ``_run_dose_ph`` (explicit
+    zero-out). So the single source of truth for "bias active?" is
+    ``feedforward_bias != 0 AND hold_until > now``.
+    """
     hold_until = pid_entry.get("hold_until")
     if not isinstance(hold_until, datetime):
         return current_value
     if _to_utc_naive(hold_until) <= _to_utc_naive(now):
         return current_value
-    if str(pid_entry.get("last_correction_kind") or "").strip().lower() != "ec":
+    bias = float(pid_entry.get("feedforward_bias") or 0.0)
+    if bias == 0.0:
         return current_value
-    return current_value + float(pid_entry.get("feedforward_bias") or 0.0)
+    return current_value + bias
 
 
 def _compute_amount_ml(
