@@ -2741,3 +2741,57 @@ async def test_corr_wait_ec_no_reaction_increments_attempt_counter():
     assert c.corr_step == "corr_check"
     assert c.attempt == 2     # накоплен (1 + 1)
     assert c.ec_attempt == 1  # не изменился (не сброшен)
+
+
+# ── B7: PlannerConfigurationError translation ───────────────────────
+
+async def test_corr_check_translates_planner_config_error(monkeypatch) -> None:
+    """build_dose_plan raising PlannerConfigurationError → typed TaskExecutionError.
+
+    Regression for audit B7: previously the error bubbled up unmapped and
+    execute_task translated it into an anonymous Ae3LiteError with whatever
+    code the planner happened to carry. The handler now catches it, logs a
+    CORRECTION_PLANNER_CONFIG_INVALID zone event, and raises
+    TaskExecutionError("corr_planner_config_invalid", ...).
+    """
+    from ae3lite.domain.errors import PlannerConfigurationError
+    from ae3lite.domain.services.correction_planner import CorrectionPlanner
+
+    class _FailingPlanner(CorrectionPlanner):
+        def build_dose_plan(self, **kwargs):  # type: ignore[override]
+            raise PlannerConfigurationError(
+                "Для ec component calcium в режиме multi_sequential требуется process gain"
+            )
+
+    events: list[tuple[int, str, dict]] = []
+
+    async def _capture_event(zone_id, event_type, payload):
+        events.append((zone_id, event_type, dict(payload)))
+
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        _capture_event,
+    )
+
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5)
+    task = _make_task(corr=corr)
+    # PH=8.0, EC=0.5 — far from targets (6.0 / 2.0, tolerance 15/25%).
+    # Ensures the handler reaches build_dose_plan instead of early success.
+    monitor = _MockRuntimeMonitor(ph=8.0, ec=0.5)
+    handler = _make_handler(monitor=monitor, planner=_FailingPlanner())
+
+    with pytest.raises(TaskExecutionError) as excinfo:
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert excinfo.value.code == "corr_planner_config_invalid"
+    assert "process gain" in str(excinfo.value)
+
+    # And a CORRECTION_PLANNER_CONFIG_INVALID zone event must be logged for ops.
+    planner_invalid_events = [
+        event for event in events if event[1] == "CORRECTION_PLANNER_CONFIG_INVALID"
+    ]
+    assert len(planner_invalid_events) == 1
+    payload = planner_invalid_events[0][2]
+    assert "process gain" in payload["reason"]
+    assert payload["current_ph"] == 8.0
+    assert payload["current_ec"] == 0.5

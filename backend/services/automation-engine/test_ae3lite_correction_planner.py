@@ -106,10 +106,13 @@ def test_build_dose_plan_selects_npk_component_for_solution_fill_policy() -> Non
 
 
 def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None:
+    """min_effective_ml bumps the computed dose when the bump stays within gap/gain cap."""
     planner = CorrectionPlanner()
 
+    # gap=0.8, gain=0.5 → natural dose = 0.4 ml; bump to min_effective_ml=0.5 ml
+    # is safe because 0.5 ≤ gap/gain = 1.6.
     dose_plan = planner.build_dose_plan(
-        current_ph=6.4,
+        current_ph=6.8,
         current_ec=2.0,
         target_ph=6.0,
         target_ec=2.0,
@@ -117,7 +120,55 @@ def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None
         ec_tolerance_pct=5.0,
         correction_config=_correction_config(
             ph_overrides={
-                "kp": 1.0,
+                "kp": 0.25,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+            }
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_down_gain_per_ml": 0.5}},
+        ec_component_policy={},
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 0.5},
+        },
+    )
+
+    assert dose_plan.needs_ph_down is True
+    assert dose_plan.ph_channel == "ph_down_pump"
+    assert dose_plan.ph_amount_ml == 0.5
+    assert dose_plan.ph_duration_ms == 62
+
+
+def test_build_dose_plan_discards_ph_dose_when_min_effective_exceeds_gap_cap() -> None:
+    """min_effective_ml bump must not overshoot the gap/gain target cap.
+
+    Regression: when calibration.min_effective_ml is larger than the modelled
+    dose needed to reach the target (gap/gain), a single pulse would overshoot
+    the window and cause acid/base ping-pong around the setpoint. Planner now
+    discards the dose with reason ``ph_down_min_effective_exceeds_cap`` so the
+    correction loop does not command an unsafe pulse.
+    """
+    planner = CorrectionPlanner()
+
+    # gap=0.05, gain=0.5 → natural dose = 0.025 ml; gap cap = 0.1 ml.
+    # min_effective_ml=1.5 ml would overshoot pH by 0.75 units → discard.
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.05,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=0.1,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={
+                "kp": 0.5,
                 "ki": 0.0,
                 "kd": 0.0,
                 "deadband": 0.0,
@@ -137,10 +188,67 @@ def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None
         },
     )
 
-    assert dose_plan.needs_ph_down is True
-    assert dose_plan.ph_channel == "ph_down_pump"
-    assert dose_plan.ph_amount_ml == 1.5
-    assert dose_plan.ph_duration_ms == 187
+    assert dose_plan.needs_ph_down is False
+    assert dose_plan.needs_any is False
+    assert dose_plan.ph_amount_ml == 0.0
+    assert dose_plan.ph_duration_ms == 0
+    assert dose_plan.dose_discarded_reason == "ph_down_min_effective_exceeds_cap"
+    details = dict(dose_plan.dose_discarded_details)
+    assert details["kind"] == "ph_down"
+    assert details["min_effective_ml"] == pytest.approx(1.5)
+    assert details["gap_cap_ml"] == pytest.approx(0.1)
+    # Capped value is what the dose was clamped down to after re-applying gap/gain cap.
+    assert details["capped_ml"] == pytest.approx(0.1)
+
+
+def test_build_dose_plan_discards_ec_dose_when_min_effective_exceeds_gap_cap() -> None:
+    """Symmetric guard for single-dose EC path (non-multi_sequential).
+
+    Mirrors the multi_sequential branch which already discards components whose
+    min_effective_ml exceeds the per-component gap cap. Before the fix, single
+    EC dose silently overshot the target.
+    """
+    planner = CorrectionPlanner()
+
+    # gap=0.05, gain=0.5 → gap cap = 0.1 ml; min_effective_ml=2.0 → discard.
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.95,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.1,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 0.5,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+            }
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ec_gain_per_ml": 0.5}},
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 10.0, "min_effective_ml": 2.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is False
+    assert dose_plan.needs_any is False
+    assert dose_plan.ec_amount_ml == 0.0
+    assert dose_plan.ec_duration_ms == 0
+    assert dose_plan.dose_discarded_reason == "ec_min_effective_exceeds_cap"
+    details = dict(dose_plan.dose_discarded_details)
+    assert details["kind"] == "ec"
+    assert details["min_effective_ml"] == pytest.approx(2.0)
+    assert details["gap_cap_ml"] == pytest.approx(0.1)
 
 
 def test_build_dose_plan_keeps_tank_recirc_ec_gain_floor_at_authoritative_calibration() -> None:
@@ -629,7 +737,7 @@ def test_build_dose_plan_uses_explicit_target_window_for_ph_direction() -> None:
         ph_down_actuator={
             "node_uid": "ph-node",
             "channel": "ph_down_pump",
-            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 1.0},
+            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 0.3},
         },
     )
 
@@ -662,7 +770,7 @@ def test_build_dose_plan_respects_explicit_window_even_inside_deadband() -> None
         ph_up_actuator={
             "node_uid": "ph-node",
             "channel": "ph_up_pump",
-            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 1.0},
+            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 0.3},
         },
         ph_down_actuator=None,
     )
@@ -1399,6 +1507,131 @@ def test_build_dose_plan_does_not_set_last_dose_at_when_dose_is_zero() -> None:
         )
 
 
+def test_build_dose_plan_strips_phantom_last_dose_at_when_duration_below_min_ec() -> None:
+    """EC: natural dose > 0, but _dose_ml_to_ms rejects the pulse → last_dose_at stripped.
+
+    Regression for the B8 phantom-dose bug: _compute_amount_ml stamps
+    last_dose_at=now whenever ``dose_ml > 0``, but ``_dose_ml_to_ms`` may still
+    discard the pulse because the computed duration drops below the pump's
+    ``min_dose_ms`` floor. Leaving the phantom last_dose_at would silently
+    trigger ``min_interval_sec`` cooldown on a dose that was never commanded,
+    starving correction until the cooldown elapsed.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    # gap=0.1, kp=0.5, gain=0.5 → dose_ml=0.1 (positive → last_dose_at stamped)
+    # ml_per_sec=100 → duration = 0.1 / 100 * 1000 = 1 ms < min_dose_ms=50
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.9,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.1,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 0.5, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 120},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ec_gain_per_ml": 0.5}},
+        pid_state={},
+        now=now,
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 100.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is False
+    assert plan.ec_duration_ms == 0
+    assert plan.dose_discarded_reason == "below_min_dose_ms"
+    # Integral/prev_error updates must still be persisted (PID state evolves).
+    assert "ec" in plan.pid_state_updates
+    assert "integral" in plan.pid_state_updates["ec"]
+    # But last_dose_at MUST NOT leak through — it would trigger phantom cooldown.
+    assert "last_dose_at" not in plan.pid_state_updates["ec"], (
+        "phantom last_dose_at must be stripped when _dose_ml_to_ms rejects the pulse"
+    )
+
+
+def test_build_dose_plan_strips_phantom_last_dose_at_when_duration_below_min_ph() -> None:
+    """pH symmetric regression: duration below min_dose_ms → last_dose_at stripped."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    # gap=0.1, kp=0.5, gain=0.5 → dose_ml=0.1; ml_per_sec=100 → 1 ms < 50 ms
+    plan = planner.build_dose_plan(
+        current_ph=6.1,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=0.1,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 90},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_down_gain_per_ml": 0.5}},
+        pid_state={},
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 100.0},
+        },
+    )
+
+    assert plan.needs_ph_down is False
+    assert plan.ph_duration_ms == 0
+    assert plan.dose_discarded_reason == "below_min_dose_ms"
+    assert "ph" in plan.pid_state_updates
+    assert "integral" in plan.pid_state_updates["ph"]
+    assert "last_dose_at" not in plan.pid_state_updates["ph"], (
+        "phantom last_dose_at must be stripped for pH when duration rejected"
+    )
+
+
+def test_build_dose_plan_keeps_last_dose_at_when_duration_valid() -> None:
+    """Positive control: when dose survives _dose_ml_to_ms, last_dose_at must remain."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.9,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.1,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 0.5, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 120},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ec_gain_per_ml": 0.5}},
+        pid_state={},
+        now=now,
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 1.0},  # slow pump → 100 ms duration, above 50 ms floor
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is True
+    assert plan.ec_duration_ms > 0
+    assert plan.pid_state_updates["ec"].get("last_dose_at") == now
+
+
 # ── Фаза 1: Регрессионный тест integral spike при reset ───────────────────────
 
 def test_reset_pid_state_includes_last_measurement_at() -> None:
@@ -1616,6 +1849,186 @@ def test_build_dose_plan_exposes_dead_zone_details_and_discarded_payload() -> No
     assert dose_plan.dose_discarded_details["computed_duration_ms"] == 10
     assert dose_plan.dead_zone_details["ec_gap"] == pytest.approx(0.02)
     assert dose_plan.dead_zone_details["ec_deadband"] == pytest.approx(0.0)
+
+
+# ── B4: integral reset при смене pH direction ──────────────────────────────
+
+def test_build_dose_plan_resets_ph_integral_on_direction_switch_up_to_down() -> None:
+    """Overshoot scenario: ph_up dose pushed pH from 5.5 to 6.5, past target 6.0.
+
+    Before B4 fix: ph integral from chasing ph_up (positive accumulation)
+    would linger and distort the first ph_down dose on the next tick.
+    Fix: detect sign flip across the setpoint (5.5 → 6.5 crosses 6.0)
+    and reset integral/prev_error/prev_derivative before the new direction
+    begins accumulating.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.5,  # above target → ph_down needed
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=1.0,  # tolerance = ±0.06 → 6.5 outside
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.1, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_down_gain_per_ml": 0.5}},
+        pid_state={
+            "ph": {
+                "integral": 30.0,  # massive positive accumulation from chasing ph_up
+                "prev_error": 0.5,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=20),
+                "last_measured_value": 5.5,  # previous measurement was BELOW target
+            },
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+    )
+
+    # ph should still need dose (6.5 outside [5.94, 6.06]).
+    assert dose_plan.needs_ph_down is True
+    ph_upd = dose_plan.pid_state_updates["ph"]
+    # Integral must be reset, not propagated from the old ph_up regime.
+    # Without the fix, _next_pid_state would compute integral = 30.0 + 0.5*20 = 40.0
+    # and use ki*integral = 4.0 as part of the dose → gross overdose.
+    # With the fix, integral starts at 0 and then accumulates 0.5*20 = 10.0 for
+    # the current tick's ph_down gap; output = kp*0.5 + ki*10.0 = 0.25 + 1.0 = 1.25 ml.
+    assert ph_upd["current_zone"] == "direction_switch"
+    assert ph_upd["integral"] == pytest.approx(10.0)
+
+
+def test_build_dose_plan_resets_ph_integral_on_direction_switch_down_to_up() -> None:
+    """Symmetric test: pH overshot DOWN (acid overdose) and now needs ph_up."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.3,  # below target → ph_up needed
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.1, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.5}},
+        pid_state={
+            "ph": {
+                "integral": 25.0,
+                "prev_error": 0.5,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=15),
+                "last_measured_value": 6.6,  # previous was ABOVE target
+            },
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ph_up is True
+    ph_upd = dose_plan.pid_state_updates["ph"]
+    assert ph_upd["current_zone"] == "direction_switch"
+    assert ph_upd["integral"] == pytest.approx(10.5)  # 0.7 * 15 starting from 0
+
+
+def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
+    """No direction switch: integral must continue accumulating normally."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.5,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.1, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.5}},
+        pid_state={
+            "ph": {
+                "integral": 5.0,
+                "prev_error": 0.4,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=10),
+                "last_measured_value": 5.6,  # same side (below target) as current
+            },
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ph_up is True
+    ph_upd = dose_plan.pid_state_updates["ph"]
+    # No direction switch → zone is not "direction_switch"; integral accumulates
+    # from 5.0 + 0.5*10 = 10.0 (same-direction continuation).
+    assert ph_upd.get("current_zone") != "direction_switch"
+    assert ph_upd["integral"] == pytest.approx(10.0)
+
+
+def test_build_dose_plan_no_direction_reset_when_no_prior_measurement() -> None:
+    """First tick: last_measured_value=None → no direction-switch reset triggered."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.5,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 0.5, "ki": 0.1, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.5}},
+        pid_state={},  # no ph entry
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ph_up is True
+    ph_upd = dose_plan.pid_state_updates.get("ph", {})
+    assert ph_upd.get("current_zone") != "direction_switch"
 
 
 # ── Фаза 4: Тест вынесенной phase_utils ──────────────────────────────────────

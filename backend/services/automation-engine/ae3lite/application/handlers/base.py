@@ -6,7 +6,6 @@ import asyncio
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from statistics import median
 from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
 
@@ -14,6 +13,10 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
+from ae3lite.domain.services.telemetry_window_summary import (
+    decision_window_since_ts as _telemetry_decision_window_since_ts,
+    summarize_window as _telemetry_summarize_window,
+)
 from ae3lite.infrastructure.metrics import EMERGENCY_STOP_RECONCILE, FAIL_SAFE_TRANSITION
 from common.db import create_zone_event
 from common.service_logs import send_service_log
@@ -898,10 +901,7 @@ class BaseStageHandler:
         }
 
     def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
-        # Include one telemetry period of slack so a late but still-fresh sample
-        # does not collapse a 3-sample window into 2 samples on real hardware.
-        lookback_sec = int(config["decision_window_sec"]) + int(config.get("telemetry_period_sec", 0) or 0)
-        return now - timedelta(seconds=max(1, lookback_sec))
+        return _telemetry_decision_window_since_ts(now=now, config=config)
 
     def _prepare_tolerance_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
         tolerance_by_phase = runtime.get("prepare_tolerance_by_phase")
@@ -1096,26 +1096,11 @@ class BaseStageHandler:
         window_min_samples: int,
         stability_max_slope: float,
     ) -> dict[str, Any]:
-        sample_list = list(samples) if isinstance(samples, (list, tuple)) else []
-        if len(sample_list) < window_min_samples:
-            return {"ready": False, "reason": "insufficient_samples"}
-        values = [float(item["value"]) for item in sample_list if item.get("value") is not None]
-        if len(values) < window_min_samples:
-            return {"ready": False, "reason": "insufficient_values"}
-        first_ts = sample_list[0].get("ts")
-        last_ts = sample_list[-1].get("ts")
-        slope = 0.0
-        if isinstance(first_ts, datetime) and isinstance(last_ts, datetime) and last_ts > first_ts:
-            dt = max(1.0, (last_ts - first_ts).total_seconds())
-            slope = (float(sample_list[-1]["value"]) - float(sample_list[0]["value"])) / dt
-        if abs(slope) > stability_max_slope:
-            return {"ready": False, "reason": "unstable", "slope": slope}
-        return {
-            "ready": True,
-            "value": float(median(values)),
-            "sample_count": len(values),
-            "slope": slope,
-        }
+        return _telemetry_summarize_window(
+            samples=samples,
+            window_min_samples=window_min_samples,
+            stability_max_slope=stability_max_slope,
+        )
 
     def _runtime_phase_key(self, *, task: Any) -> str:
         workflow = getattr(task, "workflow", None)

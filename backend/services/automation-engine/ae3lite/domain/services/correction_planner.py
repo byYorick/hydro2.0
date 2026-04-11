@@ -178,6 +178,26 @@ class CorrectionPlanner:
             now=now,
         )
 
+        # Audit B4 fix: a single pH controller serves both ph_up and ph_down
+        # directions via ``max(0, target-current)`` / ``max(0, current-target)``
+        # gaps. Without an explicit reset on direction switch, integral
+        # accumulated while chasing ph_up would linger and distort the first
+        # ph_down dose after an overshoot (and vice versa). We detect the
+        # direction switch by comparing the last measured pH against the
+        # current one across the target setpoint and reset the integrator.
+        # If ``_reset_pid_state_if_inside_bounds`` already scheduled a ph
+        # reset (inside tolerance window), its keys are kept — both resets
+        # converge on the same zeroed state.
+        if "ph" not in pid_updates:
+            ph_switch_updates = _reset_pid_state_if_ph_direction_switched(
+                predicted_ph=predicted_ph,
+                target_ph=target_ph,
+                pid_state=pid_state,
+                now=now,
+            )
+            if ph_switch_updates:
+                pid_updates.update(ph_switch_updates)
+
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
         solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), _DEFAULT_SOLUTION_VOLUME_L)
@@ -439,7 +459,12 @@ class CorrectionPlanner:
                         raise PlannerConfigurationError(
                             f"Для насоса дозирования EC требуется calibration (channel={ec_channel}, node={ec_node_uid})"
                         )
-                    ec_amount_ml, ec_pid_update = _compute_amount_ml(
+                    (
+                        ec_amount_ml,
+                        ec_pid_update,
+                        ec_planner_discard_reason,
+                        ec_planner_discard_details,
+                    ) = _compute_amount_ml(
                         kind="ec",
                         gap=ec_gap,
                         lower_bound=ec_lo,
@@ -457,10 +482,26 @@ class CorrectionPlanner:
                         if ec_pid_zone:
                             ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
                         pid_updates["ec"] = ec_pid_update
-                    ec_duration_ms, ec_discarded_reason, ec_discarded_details = _dose_ml_to_ms(
+                    ec_duration_ms, ec_duration_reason, ec_duration_details = _dose_ml_to_ms(
                         ec_amount_ml, calibration, correction_config,
                     )
+                    # Planner-level discard (min_effective exceeds gap cap) takes precedence
+                    # over duration-level discard so the reason reflects the root cause.
+                    if ec_planner_discard_reason:
+                        ec_discarded_reason = ec_planner_discard_reason
+                        ec_discarded_details = ec_planner_discard_details
+                    else:
+                        ec_discarded_reason = ec_duration_reason
+                        ec_discarded_details = ec_duration_details
                     ec_needs = ec_duration_ms > 0
+                    # Phantom-dose guard: _compute_amount_ml stamps last_dose_at=now
+                    # as soon as dose_ml > 0, but _dose_ml_to_ms may still reject the
+                    # pulse (e.g. computed duration below pump min_dose_ms). Leaving
+                    # the phantom last_dose_at would trigger min_interval_sec cooldown
+                    # on a dose that was never actually commanded and silently starve
+                    # correction until the cooldown elapses.
+                    if not ec_needs:
+                        _strip_last_dose_at(pid_updates, "ec")
             else:
                 ec_needs = False
 
@@ -488,7 +529,12 @@ class CorrectionPlanner:
                         f"Для насоса дозирования PH требуется calibration (channel={ph_channel}, node={ph_node_uid})"
                     )
                 ph_gap = ph_up_gap if ph_needs_up else ph_down_gap
-                ph_amount_ml, ph_pid_update = _compute_amount_ml(
+                (
+                    ph_amount_ml,
+                    ph_pid_update,
+                    ph_planner_discard_reason,
+                    ph_planner_discard_details,
+                ) = _compute_amount_ml(
                     kind="ph_up" if ph_needs_up else "ph_down",
                     gap=ph_gap,
                     lower_bound=ph_lo if ph_needs_up else ph_hi,
@@ -506,11 +552,22 @@ class CorrectionPlanner:
                     if ph_pid_zone:
                         ph_pid_update = {**ph_pid_update, "current_zone": ph_pid_zone}
                     pid_updates["ph"] = ph_pid_update
-                ph_duration_ms, ph_discarded_reason, ph_discarded_details = _dose_ml_to_ms(
+                ph_duration_ms, ph_duration_reason, ph_duration_details = _dose_ml_to_ms(
                     ph_amount_ml, calibration, correction_config,
                 )
+                if ph_planner_discard_reason:
+                    ph_discarded_reason = ph_planner_discard_reason
+                    ph_discarded_details = ph_planner_discard_details
+                else:
+                    ph_discarded_reason = ph_duration_reason
+                    ph_discarded_details = ph_duration_details
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
                 ph_needs_down = ph_needs_down and ph_duration_ms > 0
+                # Phantom-dose guard: same rationale as for EC — if the dose was
+                # rejected by _dose_ml_to_ms (below min_dose_ms) drop last_dose_at
+                # so min_interval_sec cooldown is not triggered on a phantom pulse.
+                if not (ph_needs_up or ph_needs_down):
+                    _strip_last_dose_at(pid_updates, "ph")
             else:
                 ph_needs_up = False
                 ph_needs_down = False
@@ -774,7 +831,7 @@ def _compute_amount_ml(
     solution_volume_l: float,
     pid_entry: Mapping[str, Any],
     now: datetime,
-) -> tuple[float, Mapping[str, Any]]:
+) -> tuple[float, Mapping[str, Any], str, Mapping[str, Any]]:
     gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
     pid_update = _next_pid_state(
         kind=kind,
@@ -803,9 +860,27 @@ def _compute_amount_ml(
         # acid/base ping-pong during recirculation.
         dose_ml = min(dose_ml, gap / gain)
 
+    gap_cap_ml = (gap / gain) if (gain is not None and gain > 0 and gap > 0) else None
     min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
+    discard_reason = ""
+    discard_details: Mapping[str, Any] = {}
     if dose_ml > 0 and min_effective_ml > 0:
         dose_ml = max(dose_ml, min_effective_ml)
+        # Symmetric safety: re-apply gap/gain cap so the min_effective_ml bump
+        # cannot push a single pulse past the target window. Mirrors the
+        # multi_sequential branch; without it, single-dose could overshoot and
+        # cause ping-pong around the setpoint.
+        if gap_cap_ml is not None:
+            dose_ml = min(dose_ml, gap_cap_ml)
+        if dose_ml > 0 and dose_ml < min_effective_ml:
+            discard_reason = f"{kind}_min_effective_exceeds_cap"
+            discard_details = {
+                "kind": kind,
+                "min_effective_ml": round(min_effective_ml, 6),
+                "gap_cap_ml": round(gap_cap_ml, 6) if gap_cap_ml is not None else None,
+                "capped_ml": round(float(dose_ml), 6),
+            }
+            dose_ml = 0.0
 
     controller_max = _positive_float(controller_cfg.get("max_dose_ml"), 0.0)
     if kind == "ec":
@@ -817,7 +892,7 @@ def _compute_amount_ml(
     dose_ml = round(max(0.0, dose_ml), 4)
     if dose_ml > 0:
         pid_update = {**pid_update, "last_dose_at": now}
-    return dose_ml, pid_update
+    return dose_ml, pid_update, discard_reason, discard_details
 
 
 def _process_gain(
@@ -946,6 +1021,57 @@ def _reset_pid_state_if_inside_bounds(
     return updates
 
 
+def _reset_pid_state_if_ph_direction_switched(
+    *,
+    predicted_ph: float,
+    target_ph: float,
+    pid_state: Mapping[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    """Reset pH integral when the PID crosses its target into the opposite direction.
+
+    Audit fix (B4): a single ``pid_state["ph"]`` row serves both ph_up and
+    ph_down directions via non-negative gaps. The integrator accumulates
+    ``gap * dt`` regardless of which direction owns the gap, so residual
+    integral from chasing ph_up would linger after an overshoot and cause
+    the first ph_down dose to be skewed (and symmetrically for down→up).
+
+    Detection: we compare the previous ``last_measured_value`` against the
+    current predicted pH, both expressed as signed offset from the target
+    (``value - target``). A sign flip means the controller crossed the
+    setpoint and is now in the opposite-direction regime — reset.
+
+    Returns an empty dict when the row is absent, the last measurement is
+    unknown, one side is exactly at the setpoint, or the direction did not
+    change. Caller merges the result into ``pid_updates`` *after*
+    ``_reset_pid_state_if_inside_bounds`` so the inside-bounds branch keeps
+    priority (it leads to the same zeroed state).
+    """
+    ph_entry = pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else None
+    if not ph_entry:
+        return {}
+    last_measured = ph_entry.get("last_measured_value")
+    if last_measured is None:
+        return {}
+    try:
+        prev_signed = float(last_measured) - float(target_ph)
+        curr_signed = float(predicted_ph) - float(target_ph)
+    except (TypeError, ValueError):
+        return {}
+    # Sign flip strictly required: same-sign or at-setpoint → no switch.
+    if prev_signed * curr_signed >= 0:
+        return {}
+    return {
+        "ph": {
+            "integral": 0.0,
+            "prev_error": 0.0,
+            "prev_derivative": 0.0,
+            "last_measurement_at": now,
+            "current_zone": "direction_switch",
+        }
+    }
+
+
 def _dose_ml_to_ms(
     dose_ml: float,
     calibration: Mapping[str, Any],
@@ -1007,6 +1133,19 @@ def _dose_ml_to_ms(
             },
         )
     return (duration_ms, "", {})
+
+
+def _strip_last_dose_at(pid_updates: dict[str, Any], key: str) -> None:
+    """Drop last_dose_at from a pending pid_state update for the given PID kind.
+
+    Used to undo the speculative stamp applied inside ``_compute_amount_ml`` when
+    the dose is later rejected (e.g. by ``_dose_ml_to_ms`` below min_dose_ms).
+    Writing a phantom last_dose_at would misfire ``min_interval_sec`` cooldown.
+    """
+    entry = pid_updates.get(key)
+    if not isinstance(entry, Mapping) or "last_dose_at" not in entry:
+        return
+    pid_updates[key] = {k: v for k, v in entry.items() if k != "last_dose_at"}
 
 
 def _to_utc_naive(value: datetime) -> datetime:

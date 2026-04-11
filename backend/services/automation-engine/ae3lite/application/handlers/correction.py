@@ -21,7 +21,6 @@ import logging
 import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from statistics import median
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -31,10 +30,20 @@ from ae3lite.application.level_monitor import (
     solution_tank_has_solution,
 )
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.application.services.correction_event_logger import CorrectionEventLogger
+from ae3lite.application.services.decision_window_reader import (
+    DecisionWindowReader,
+    DecisionWindowResult,
+)
+from ae3lite.application.services.sensor_mode_controller import SensorModeController
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import PlannerConfigurationError, TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePlan
+from ae3lite.domain.services.correction_transition_policy import (
+    CorrectionTransitionPolicy,
+)
+from ae3lite.domain.services.observation_analyzer import ObservationAnalyzer
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
 from common.db import create_zone_event
@@ -53,6 +62,11 @@ class CorrectionHandler(BaseStageHandler):
         command_gateway: Any,
         planner: Optional[CorrectionPlanner] = None,
         pid_state_repository: Any = None,
+        observation_analyzer: Optional[ObservationAnalyzer] = None,
+        decision_window_reader: Optional[DecisionWindowReader] = None,
+        transition_policy: Optional[CorrectionTransitionPolicy] = None,
+        event_logger: Optional[CorrectionEventLogger] = None,
+        sensor_mode_controller: Optional[SensorModeController] = None,
     ) -> None:
         super().__init__(
             runtime_monitor=runtime_monitor,
@@ -60,6 +74,26 @@ class CorrectionHandler(BaseStageHandler):
         )
         self._planner = planner or CorrectionPlanner()
         self._pid_state_repository = pid_state_repository
+        self._observation_analyzer = observation_analyzer or ObservationAnalyzer()
+        self._decision_window_reader = (
+            decision_window_reader or DecisionWindowReader(runtime_monitor=runtime_monitor)
+        )
+        self._transition_policy = transition_policy or CorrectionTransitionPolicy()
+        # Wrap create_zone_event in a lambda that resolves the symbol lazily
+        # from this module's globals. Existing handler tests monkeypatch
+        # ``ae3lite.application.handlers.correction.create_zone_event`` to
+        # capture event payloads; a direct capture of the module-level symbol
+        # at __init__ time would hide those patches from the logger.
+        self._event_logger = event_logger or CorrectionEventLogger(
+            create_event_fn=lambda zone_id, event_type, payload: create_zone_event(
+                zone_id, event_type, payload,
+            ),
+            probe_snapshot_context_fn=self._probe_snapshot_context,
+        )
+        self._sensor_mode_controller = sensor_mode_controller or SensorModeController(
+            command_gateway=command_gateway,
+            event_logger=self._event_logger,
+        )
 
     async def run(
         self,
@@ -280,14 +314,14 @@ class CorrectionHandler(BaseStageHandler):
             pid_entry=pid_state.get("ec") if isinstance(pid_state.get("ec"), Mapping) else None,
         )
         try:
-            ph = await self._read_decision_metric(
+            ph = await self._decision_window_reader.read(
                 zone_id=task.zone_id,
                 sensor_type="PH",
                 telemetry_max_age_sec=max_age,
                 config=ph_cfg,
                 now=now,
             )
-            ec = await self._read_decision_metric(
+            ec = await self._decision_window_reader.read(
                 zone_id=task.zone_id,
                 sensor_type="EC",
                 telemetry_max_age_sec=max_age,
@@ -326,7 +360,7 @@ class CorrectionHandler(BaseStageHandler):
                 now=now,
                 due_delay_sec=retry_delay_sec,
             )
-        if not ph["ready"] or not ec["ready"]:
+        if not ph.ready or not ec.ready:
             reactivation_outcome = await self._maybe_reactivate_sensor_mode_after_empty_window(
                 task=task,
                 plan=plan,
@@ -337,8 +371,8 @@ class CorrectionHandler(BaseStageHandler):
             )
             if reactivation_outcome is not None:
                 return reactivation_outcome
-            msg = self._format_decision_window_error(ph=ph, ec=ec)
-            retry_delay_sec = self._decision_window_retry_delay_sec(
+            msg = self._decision_window_reader.format_error(ph=ph, ec=ec)
+            retry_delay_sec = self._decision_window_reader.retry_delay_sec(
                 correction_cfg=correction_cfg,
                 ph=ph,
                 ec=ec,
@@ -352,20 +386,20 @@ class CorrectionHandler(BaseStageHandler):
                     "sensor_scope": "decision_window",
                     "reason": msg,
                     "retry_after_sec": retry_delay_sec,
-                    "ph_reason": ph.get("reason"),
-                    "ph_sample_count": ph.get("sample_count"),
-                    "ph_slope": ph.get("slope"),
-                    "ph_window_min_samples": ph.get("window_min_samples"),
-                    "ph_telemetry_period_sec": ph.get("telemetry_period_sec"),
-                    "ph_latest_sample_ts": self._serialize_metric_ts(ph.get("latest_sample_ts")),
-                    "ph_since_ts": self._serialize_metric_ts(ph.get("since_ts")),
-                    "ec_reason": ec.get("reason"),
-                    "ec_sample_count": ec.get("sample_count"),
-                    "ec_slope": ec.get("slope"),
-                    "ec_window_min_samples": ec.get("window_min_samples"),
-                    "ec_telemetry_period_sec": ec.get("telemetry_period_sec"),
-                    "ec_latest_sample_ts": self._serialize_metric_ts(ec.get("latest_sample_ts")),
-                    "ec_since_ts": self._serialize_metric_ts(ec.get("since_ts")),
+                    "ph_reason": ph.reason,
+                    "ph_sample_count": ph.sample_count,
+                    "ph_slope": ph.slope,
+                    "ph_window_min_samples": ph.window_min_samples,
+                    "ph_telemetry_period_sec": ph.telemetry_period_sec,
+                    "ph_latest_sample_ts": self._serialize_metric_ts(ph.latest_sample_ts),
+                    "ph_since_ts": self._serialize_metric_ts(ph.since_ts),
+                    "ec_reason": ec.reason,
+                    "ec_sample_count": ec.sample_count,
+                    "ec_slope": ec.slope,
+                    "ec_window_min_samples": ec.window_min_samples,
+                    "ec_telemetry_period_sec": ec.telemetry_period_sec,
+                    "ec_latest_sample_ts": self._serialize_metric_ts(ec.latest_sample_ts),
+                    "ec_since_ts": self._serialize_metric_ts(ec.since_ts),
                 },
             )
             _logger.warning("zone %s: %s, повтор через %.1f с", task.zone_id, msg, retry_delay_sec)
@@ -377,8 +411,8 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=retry_delay_sec,
             )
 
-        current_ph = float(ph["value"])
-        current_ec = float(ec["value"])
+        current_ph = float(ph.value)
+        current_ec = float(ec.value)
         workflow_ready = self._workflow_ready_values_match(
             task=task,
             runtime=runtime,
@@ -509,28 +543,51 @@ class CorrectionHandler(BaseStageHandler):
                 limit_value=corr.max_attempts,
             )
 
-        # Build dose plan
+        # Build dose plan. PlannerConfigurationError indicates a fail-closed
+        # config issue (missing process gain, unsupported multi_sequential
+        # permutation, calibration out of range, etc.) — translate it to a
+        # correction-specific TaskExecutionError so execute_task maps it to
+        # a typed failure instead of an anonymous Ae3LiteError surface.
         actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
-        dose_plan = self._planner.build_dose_plan(
-            current_ph=current_ph, current_ec=current_ec,
-            target_ph=target_ph, target_ec=target_ec,
-            ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
-            correction_config=correction_cfg,
-            workflow_phase=task.workflow.workflow_phase,
-            process_calibrations=runtime.get("process_calibrations"),
-            ec_component_policy=correction_cfg.get("ec_component_policy"),
-            pid_state=pid_state,
-            pid_configs=runtime.get("pid_configs"),
-            now=now,
-            ph_min=self._coerce_float(runtime.get("target_ph_min")),
-            ph_max=self._coerce_float(runtime.get("target_ph_max")),
-            ec_min=self._coerce_float(runtime.get("target_ec_min")),
-            ec_max=self._coerce_float(runtime.get("target_ec_max")),
-            ec_actuator=actuators.get("ec"),
-            ec_actuators=actuators.get("ec_actuators"),
-            ph_up_actuator=actuators.get("ph_up"),
-            ph_down_actuator=actuators.get("ph_down"),
-        )
+        try:
+            dose_plan = self._planner.build_dose_plan(
+                current_ph=current_ph, current_ec=current_ec,
+                target_ph=target_ph, target_ec=target_ec,
+                ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
+                correction_config=correction_cfg,
+                workflow_phase=task.workflow.workflow_phase,
+                process_calibrations=runtime.get("process_calibrations"),
+                ec_component_policy=correction_cfg.get("ec_component_policy"),
+                pid_state=pid_state,
+                pid_configs=runtime.get("pid_configs"),
+                now=now,
+                ph_min=self._coerce_float(runtime.get("target_ph_min")),
+                ph_max=self._coerce_float(runtime.get("target_ph_max")),
+                ec_min=self._coerce_float(runtime.get("target_ec_min")),
+                ec_max=self._coerce_float(runtime.get("target_ec_max")),
+                ec_actuator=actuators.get("ec"),
+                ec_actuators=actuators.get("ec_actuators"),
+                ph_up_actuator=actuators.get("ph_up"),
+                ph_down_actuator=actuators.get("ph_down"),
+            )
+        except PlannerConfigurationError as exc:
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_PLANNER_CONFIG_INVALID",
+                task=task,
+                corr=corr,
+                payload={
+                    "reason": str(exc),
+                    "current_ph": current_ph,
+                    "current_ec": current_ec,
+                    "target_ph": target_ph,
+                    "target_ec": target_ec,
+                },
+            )
+            raise TaskExecutionError(
+                "corr_planner_config_invalid",
+                f"CorrectionPlanner config invalid: {exc}",
+            ) from exc
 
         # Persist updated PID state (integral, prev_error, prev_derivative, etc.)
         # so the controller has memory across correction attempts.
@@ -1130,39 +1187,15 @@ class CorrectionHandler(BaseStageHandler):
         failed_channel: str | None,
         retry_cmd: str,
     ) -> Any:
-        sensor_cmds = self._build_sensor_mode_commands(
+        return await self._sensor_mode_controller.ensure_active_for_dosing(
+            task=task,
             plan=plan,
-            cmd="activate_sensor_mode",
-            params={"stabilization_time_sec": corr.stabilization_sec},
-        )
-        if not sensor_cmds:
-            return task
-        result = await self._command_gateway.run_batch(
-            task=task,
-            commands=sensor_cmds,
-            now=now,
-        )
-        if not result["success"]:
-            raise TaskExecutionError(
-                str(result["error_code"]),
-                str(result["error_message"]),
-            )
-        current_task = result.get("task") or task
-
-        await self._log_correction_event(
-            zone_id=task.zone_id,
-            event_type="CORRECTION_SENSOR_MODE_REACTIVATED",
-            task=task,
             corr=corr,
-            payload={
-                "reason": "pre_dose_reactivation",
-                "failed_node_uid": failed_node_uid,
-                "failed_channel": failed_channel,
-                "retry_cmd": retry_cmd,
-                "stabilization_sec": corr.stabilization_sec,
-            },
+            now=now,
+            failed_node_uid=failed_node_uid,
+            failed_channel=failed_channel,
+            retry_cmd=retry_cmd,
         )
-        return current_task
 
     async def _assert_flow_path_active(
         self,
@@ -1204,94 +1237,25 @@ class CorrectionHandler(BaseStageHandler):
         plan: Any,
         corr: CorrectionState,
         now: datetime,
-        ph: Mapping[str, Any],
-        ec: Mapping[str, Any],
+        ph: DecisionWindowResult,
+        ec: DecisionWindowResult,
     ) -> StageOutcome | None:
-        if corr.activated_here:
-            return None
-        if self._stage_keeps_sensor_mode_active(task=task):
-            return None
-        if not (
-            self._window_empty_for_sensor_reactivation(metric=ph)
-            or self._window_empty_for_sensor_reactivation(metric=ec)
-        ):
-            return None
-
-        sensor_cmds = self._build_sensor_mode_commands(
-            plan=plan,
-            cmd="activate_sensor_mode",
-            params={"stabilization_time_sec": corr.stabilization_sec},
-        )
-        if not sensor_cmds:
-            return None
-
-        result = await self._command_gateway.run_batch(
-            task=task,
-            commands=sensor_cmds,
-            now=now,
-        )
-        if not result["success"]:
-            raise TaskExecutionError(
-                str(result["error_code"]),
-                str(result["error_message"]),
-            )
-        current_task = result.get("task") or task
-
-        await self._log_correction_event(
-            zone_id=task.zone_id,
-            event_type="CORRECTION_SENSOR_MODE_REACTIVATED",
-            task=task,
-            corr=corr,
-            payload={
-                "ph_reason": ph.get("reason"),
-                "ph_sample_count": ph.get("sample_count"),
-                "ec_reason": ec.get("reason"),
-                "ec_sample_count": ec.get("sample_count"),
-                "stabilization_sec": corr.stabilization_sec,
-            },
-        )
-        _logger.warning(
-            "zone %s: decision window is empty, re-activating sensor mode and waiting %ss",
-            task.zone_id,
-            corr.stabilization_sec,
-        )
-        next_corr = replace(corr, corr_step="corr_wait_stable")
-        return StageOutcome(
-            kind="enter_correction",
-            correction=next_corr,
-            due_delay_sec=corr.stabilization_sec,
-            task_override=current_task if current_task is not task else None,
+        return await self._sensor_mode_controller.maybe_reactivate_after_empty_window(
+            task=task, plan=plan, corr=corr, now=now, ph=ph, ec=ec,
         )
 
-    def _window_empty_for_sensor_reactivation(self, *, metric: Mapping[str, Any]) -> bool:
-        if metric.get("ready"):
-            return False
-        if str(metric.get("reason") or "").strip().lower() != "insufficient_samples":
-            return False
-        sample_count = metric.get("sample_count")
-        if sample_count is None:
-            return True
-        try:
-            return int(sample_count) <= 0
-        except (TypeError, ValueError):
-            return False
+    def _window_empty_for_sensor_reactivation(self, *, metric: DecisionWindowResult) -> bool:
+        return SensorModeController.window_empty_for_reactivation(metric=metric)
 
     def _stage_keeps_sensor_mode_active(self, *, task: Any) -> bool:
-        return str(getattr(task, "current_stage", "") or "").strip().lower() in {
-            "irrigation_check",
-            "irrigation_recovery_check",
-        }
+        return SensorModeController.stage_keeps_active(task=task)
 
     def _transition_to_deactivate_or_return(
         self, *, corr: CorrectionState, success: bool,
     ) -> StageOutcome:
-        next_corr = replace(corr, outcome_success=success)
-        if corr.activated_here:
-            next_corr = replace(next_corr, corr_step="corr_deactivate")
-            return StageOutcome(kind="enter_correction", correction=next_corr)
-        # Sensors not activated by us — skip deactivation
-        next_stage = corr.return_stage_success if success else corr.return_stage_fail
-        return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=next_corr)
+        return self._transition_policy.transition_to_deactivate_or_return(
+            corr=corr, success=success,
+        )
 
     async def _correction_exhausted(
         self,
@@ -1302,6 +1266,7 @@ class CorrectionHandler(BaseStageHandler):
     ) -> StageOutcome:
         stage = str(task.current_stage)
         topology = str(getattr(task, "topology", "") or "")
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         CORRECTION_EXHAUSTED.labels(topology=topology, stage=stage).inc()
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -1340,8 +1305,7 @@ class CorrectionHandler(BaseStageHandler):
             )
         except Exception:
             _logger.warning("Не удалось отправить infra alert CORRECTION_EXHAUSTED zone_id=%s", task.zone_id)
-        if str(task.current_stage).strip().lower() == "irrigation_check":
-            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        if stage.strip().lower() == "irrigation_check":
             try:
                 await send_biz_alert(
                     code="biz_irrigation_correction_exhausted",
@@ -1362,26 +1326,13 @@ class CorrectionHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.warning("Не удалось отправить alert irrigation_correction_exhausted zone_id=%s", task.zone_id)
-            return StageOutcome(
-                kind="transition",
-                next_stage="irrigation_check",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
-            )
-        if str(task.current_stage).strip().lower() == "prepare_recirculation_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-            )
-        if str(task.current_stage).strip().lower() == "solution_fill_check":
-            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_check",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
-            )
+        policy_outcome = self._transition_policy.decide_exhausted_transition(
+            current_stage=stage,
+            stage_retry_count=task.workflow.stage_retry_count,
+            level_poll_interval_sec=int(runtime.get("level_poll_interval_sec", 10)),
+        )
+        if policy_outcome is not None:
+            return policy_outcome
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
 
     async def _interrupt_for_stage_deadline(
@@ -1394,32 +1345,25 @@ class CorrectionHandler(BaseStageHandler):
     ) -> StageOutcome | None:
         if corr.corr_step in {"corr_deactivate", "corr_done"}:
             return None
-        if not self._deadline_reached(now=now, deadline=task.workflow.stage_deadline_at):
+        deadline_reached = self._deadline_reached(
+            now=now, deadline=task.workflow.stage_deadline_at,
+        )
+        if not deadline_reached:
             return None
-
         current_stage = str(task.current_stage).strip().lower()
-        if current_stage == "prepare_recirculation_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-            )
-        if current_stage == "solution_fill_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_timeout_stop",
-            )
+        # Resolve targets_reached only when we actually need it (irrigation path):
+        # policy consults it just for the irrigation branch and we want to avoid
+        # an unnecessary telemetry round-trip otherwise.
+        targets_reached: bool | None = None
         if current_stage == "irrigation_check":
-            if await self._targets_reached(task=task, plan=plan, now=now):
-                return StageOutcome(
-                    kind="transition",
-                    next_stage="irrigation_stop_to_ready",
-                )
-            return StageOutcome(
-                kind="transition",
-                next_stage="irrigation_stop_to_recovery",
-            )
-        return None
+            targets_reached = await self._targets_reached(task=task, plan=plan, now=now)
+        return self._transition_policy.decide_stage_deadline_transition(
+            corr=corr,
+            current_stage=current_stage,
+            stage_retry_count=task.workflow.stage_retry_count,
+            deadline_reached=True,
+            targets_reached=targets_reached,
+        )
 
     def _interrupt_for_imminent_flow_probe_deadline(
         self,
@@ -1431,27 +1375,18 @@ class CorrectionHandler(BaseStageHandler):
         current_stage = str(task.current_stage).strip().lower()
         if self._expected_flow_path_state(current_stage=current_stage) is None:
             return None
-
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        if not self._deadline_too_close_for_irr_probe(
+        deadline_too_close = self._deadline_too_close_for_irr_probe(
             now=now,
             deadline=task.workflow.stage_deadline_at,
             runtime=runtime,
-        ):
-            return None
-
-        if current_stage == "prepare_recirculation_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-            )
-        if current_stage == "solution_fill_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_timeout_stop",
-            )
-        return None
+        )
+        return self._transition_policy.decide_imminent_flow_probe_transition(
+            current_stage=current_stage,
+            stage_retry_count=task.workflow.stage_retry_count,
+            expects_flow_path=True,
+            deadline_too_close=deadline_too_close,
+        )
 
     def _enter_correction_after_delay_or_interrupt(
         self,
@@ -1489,32 +1424,27 @@ class CorrectionHandler(BaseStageHandler):
         task_override: Any | None = None,
     ) -> StageOutcome | None:
         current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        # Short-circuit: flow-path probe protection only applies during stages
+        # that drive valves/pumps; other stages' fixtures may not even carry a
+        # stage_deadline_at, so we must avoid touching base helpers below.
         if self._expected_flow_path_state(current_stage=current_stage) is None:
             return None
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        remaining = self._remaining_stage_time_sec(now=now, deadline=task.workflow.stage_deadline_at)
-        if remaining is None:
-            return None
-
-        required_budget = max(0.0, float(due_delay_sec)) + self._irr_probe_deadline_budget_sec(runtime=runtime)
-        if remaining > required_budget:
-            return None
-
-        if current_stage == "prepare_recirculation_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-                task_override=task_override,
-            )
-        if current_stage == "solution_fill_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_timeout_stop",
-                task_override=task_override,
-            )
-        return None
+        remaining = self._remaining_stage_time_sec(
+            now=now, deadline=task.workflow.stage_deadline_at,
+        )
+        required_budget = max(0.0, float(due_delay_sec)) + self._irr_probe_deadline_budget_sec(
+            runtime=runtime,
+        )
+        return self._transition_policy.decide_imminent_retry_then_probe_transition(
+            current_stage=current_stage,
+            stage_retry_count=task.workflow.stage_retry_count,
+            expects_flow_path=True,
+            remaining_sec=remaining,
+            required_budget_sec=required_budget,
+            task_override=task_override,
+        )
 
     def _enforce_attempt_caps(self, *, task: Any) -> bool:
         current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
@@ -1574,104 +1504,6 @@ class CorrectionHandler(BaseStageHandler):
             current_value,
             limit_value,
         )
-
-    async def _read_decision_metric(
-        self,
-        *,
-        zone_id: int,
-        sensor_type: str,
-        telemetry_max_age_sec: int,
-        config: Mapping[str, Any],
-        now: datetime,
-    ) -> Mapping[str, Any]:
-        since_ts = self._decision_window_since_ts(now=now, config=config)
-        window = await self._runtime_monitor.read_metric_window(
-            zone_id=zone_id,
-            sensor_type=sensor_type,
-            since_ts=since_ts,
-            telemetry_max_age_sec=telemetry_max_age_sec,
-        )
-        if not window["has_sensor"] or window["is_stale"]:
-            raise TaskExecutionError(
-                "corr_telemetry_stale",
-                f"{sensor_type} telemetry stale/unavailable during correction check",
-            )
-        summary = self._summarize_metric_window(
-            samples=window["samples"],
-            window_min_samples=int(config["window_min_samples"]),
-            stability_max_slope=float(config["stability_max_slope"]),
-        )
-        if not summary["ready"]:
-            return {
-                "ready": False,
-                "reason": str(summary.get("reason") or "unknown"),
-                "sample_count": int(len(window["samples"])),
-                "slope": summary.get("slope"),
-                "latest_sample_ts": window.get("latest_sample_ts"),
-                "since_ts": since_ts,
-                "window_min_samples": int(config["window_min_samples"]),
-                "telemetry_period_sec": int(config["telemetry_period_sec"]),
-            }
-        return {
-            "ready": True,
-            "value": summary["value"],
-            "sample_count": summary["sample_count"],
-            "slope": summary["slope"],
-        }
-
-    def _format_decision_window_error(
-        self,
-        *,
-        ph: Mapping[str, Any],
-        ec: Mapping[str, Any],
-    ) -> str:
-        details: list[str] = []
-        for sensor_type, metric in (("PH", ph), ("EC", ec)):
-            if metric.get("ready"):
-                continue
-            parts = [f"{sensor_type}={str(metric.get('reason') or 'unknown')}"]
-            sample_count = metric.get("sample_count")
-            if sample_count is not None:
-                parts.append(f"samples={sample_count}")
-            slope = metric.get("slope")
-            if slope is not None:
-                parts.append(f"slope={float(slope):.4f}")
-            details.append(",".join(parts))
-        reason = "; ".join(details) if details else "decision window unavailable"
-        return f"Correction decision window not ready: {reason}"
-
-    def _decision_window_retry_delay_sec(
-        self,
-        *,
-        correction_cfg: Mapping[str, Any],
-        ph: Mapping[str, Any],
-        ec: Mapping[str, Any],
-    ) -> float:
-        retry_delay_sec = self._correction_retry_delay_sec(
-            correction_cfg=correction_cfg,
-            key="decision_window_retry_sec",
-            default=30.0,
-        )
-        starvation_delays = [
-            self._decision_window_missing_sample_delay_sec(metric=metric)
-            for metric in (ph, ec)
-        ]
-        starvation_delays = [delay for delay in starvation_delays if delay is not None]
-        if starvation_delays:
-            return min(retry_delay_sec, max(starvation_delays))
-        return retry_delay_sec
-
-    def _decision_window_missing_sample_delay_sec(self, *, metric: Mapping[str, Any]) -> float | None:
-        if str(metric.get("reason") or "").strip().lower() != "insufficient_samples":
-            return None
-        try:
-            sample_count = int(metric.get("sample_count"))
-            window_min_samples = int(metric.get("window_min_samples"))
-            telemetry_period_sec = float(metric.get("telemetry_period_sec") or 1.0)
-        except (TypeError, ValueError):
-            return None
-        missing_samples = max(1, window_min_samples - sample_count)
-        return max(1.0, telemetry_period_sec * missing_samples)
 
     def _serialize_metric_ts(self, value: Any) -> str | None:
         if isinstance(value, datetime):
@@ -1799,7 +1631,7 @@ class CorrectionHandler(BaseStageHandler):
             process_cfg=process_cfg,
         )
         threshold_effect = expected_effect * float(observe_cfg["min_effect_fraction"])
-        response_metrics = self._analyze_observation_window(
+        response = self._observation_analyzer.analyze_window(
             samples=window["samples"],
             pid_type=pid_type,
             corr=corr,
@@ -1810,9 +1642,9 @@ class CorrectionHandler(BaseStageHandler):
             threshold_effect=threshold_effect,
             window_min_samples=int(observe_cfg["window_min_samples"]),
         )
-        directional_effect = float(response_metrics["tail_effect"])
-        peak_effect = float(response_metrics["peak_effect"])
-        learning_effect = float(response_metrics["learning_effect"])
+        directional_effect = float(response.tail_effect)
+        peak_effect = float(response.peak_effect)
+        learning_effect = float(response.learning_effect)
         is_no_effect = peak_effect < threshold_effect
         next_no_effect_count = int(pid_entry.get("no_effect_count") or 0) + 1 if is_no_effect else 0
         await self._log_correction_event(
@@ -1830,13 +1662,13 @@ class CorrectionHandler(BaseStageHandler):
                 "expected_effect": expected_effect,
                 "actual_effect": directional_effect,
                 "peak_effect": peak_effect,
-                "peak_observed_value": response_metrics["peak_value"],
-                "retention_ratio": response_metrics["retention_ratio"],
-                "wave_score": response_metrics["wave_score"],
-                "wave_detected": response_metrics["wave_detected"],
+                "peak_observed_value": response.peak_value,
+                "retention_ratio": response.retention_ratio,
+                "wave_score": response.wave_score,
+                "wave_detected": response.wave_detected,
                 "reaction_detected": peak_effect >= threshold_effect,
                 "learning_effect": learning_effect,
-                "first_reaction_sec": response_metrics["first_reaction_sec"],
+                "first_reaction_sec": response.first_reaction_sec,
                 "threshold_effect": threshold_effect,
                 "min_effect_fraction": float(observe_cfg["min_effect_fraction"]),
                 "transport_delay_sec": int(observe_cfg["transport_delay_sec"]),
@@ -1854,17 +1686,17 @@ class CorrectionHandler(BaseStageHandler):
                     "last_measurement_at": now,
                     "last_measured_value": observed_value,
                     "no_effect_count": next_no_effect_count,
-                    "stats": self._merge_adaptive_stats(
+                    "stats": self._observation_analyzer.merge_adaptive_stats(
                         pid_entry=pid_entry,
                         pid_type=pid_type,
                         corr=corr,
                         dose_amount_ml=float(dose_amount_ml or 0.0),
                         learning_effect=learning_effect,
                         expected_effect=expected_effect,
-                        first_reaction_sec=response_metrics["first_reaction_sec"],
-                        settle_sec=response_metrics["settle_sec"],
-                        wave_score=response_metrics["wave_score"],
-                        retention_ratio=response_metrics["retention_ratio"],
+                        first_reaction_sec=response.first_reaction_sec,
+                        settle_sec=response.settle_sec,
+                        wave_score=response.wave_score,
+                        retention_ratio=response.retention_ratio,
                     ),
                 },
             },
@@ -1933,208 +1765,20 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState,
         process_cfg: Mapping[str, Any],
     ) -> float:
-        if pid_type == "ec":
-            gain = self._coerce_float(process_cfg.get("ec_gain_per_ml"))
-            amount_ml = corr.ec_amount_ml
-        elif corr.needs_ph_up:
-            gain = self._coerce_float(process_cfg.get("ph_up_gain_per_ml"))
-            amount_ml = corr.ph_amount_ml
-        else:
-            gain = self._coerce_float(process_cfg.get("ph_down_gain_per_ml"))
-            amount_ml = corr.ph_amount_ml
-        if gain is None or gain <= 0 or amount_ml is None or amount_ml <= 0:
+        try:
+            return self._observation_analyzer.expected_effect(
+                pid_type=pid_type, corr=corr, process_cfg=process_cfg,
+            )
+        except ValueError:
             raise TaskExecutionError(
                 "corr_process_gain_missing",
                 f"Для оценки отклика {pid_type} требуется process gain",
             )
-        return float(gain) * float(amount_ml)
-
-    def _directional_effect(
-        self,
-        *,
-        pid_type: str,
-        corr: CorrectionState,
-        baseline_value: float,
-        observed_value: float,
-    ) -> float:
-        if pid_type == "ec":
-            return max(0.0, observed_value - baseline_value)
-        if corr.needs_ph_up:
-            return max(0.0, observed_value - baseline_value)
-        return max(0.0, baseline_value - observed_value)
-
-    def _analyze_observation_window(
-        self,
-        *,
-        samples: Any,
-        pid_type: str,
-        corr: CorrectionState,
-        baseline_value: float,
-        observed_value: float,
-        last_dose_at: datetime,
-        dose_amount_ml: float,
-        threshold_effect: float,
-        window_min_samples: int,
-    ) -> dict[str, Any]:
-        sample_list = [item for item in (list(samples) if isinstance(samples, (list, tuple)) else []) if item.get("value") is not None]
-        if not sample_list:
-            tail_effect = self._directional_effect(
-                pid_type=pid_type,
-                corr=corr,
-                baseline_value=baseline_value,
-                observed_value=observed_value,
-            )
-            return {
-                "tail_effect": tail_effect,
-                "peak_effect": tail_effect,
-                "peak_value": observed_value,
-                "retention_ratio": 1.0 if tail_effect > 0 else 0.0,
-                "wave_score": 0.0,
-                "wave_detected": False,
-                "learning_effect": tail_effect,
-                "first_reaction_sec": None,
-                "settle_sec": None,
-            }
-
-        tail_size = min(len(sample_list), max(window_min_samples, math.ceil(len(sample_list) / 2)))
-        tail_values = [float(item["value"]) for item in sample_list[-tail_size:]]
-        tail_value = float(median(tail_values))
-        directional_effects = [
-            self._directional_effect(
-                pid_type=pid_type,
-                corr=corr,
-                baseline_value=baseline_value,
-                observed_value=float(item["value"]),
-            )
-            for item in sample_list
-        ]
-        peak_index = max(range(len(directional_effects)), key=directional_effects.__getitem__)
-        peak_effect = float(directional_effects[peak_index])
-        peak_value = float(sample_list[peak_index]["value"])
-        tail_effect = self._directional_effect(
-            pid_type=pid_type,
-            corr=corr,
-            baseline_value=baseline_value,
-            observed_value=tail_value,
-        )
-        retention_ratio = 0.0 if peak_effect <= 0 else max(0.0, min(1.0, tail_effect / peak_effect))
-        wave_score = 0.0 if peak_effect <= 0 else max(0.0, min(1.0, 1.0 - retention_ratio))
-        wave_detected = peak_effect >= threshold_effect and wave_score >= 0.35
-        learning_effect = tail_effect if not wave_detected else (tail_effect + ((peak_effect - tail_effect) * 0.35))
-
-        trigger_effect = max(threshold_effect * 0.5, 1e-6)
-        first_reaction_sec: float | None = None
-        settle_sec: float | None = None
-        first_reaction_ts: datetime | None = None
-        for sample, effect in zip(sample_list, directional_effects):
-            ts = sample.get("ts")
-            if effect >= trigger_effect and isinstance(ts, datetime):
-                first_reaction_ts = ts
-                break
-        last_sample_ts = sample_list[-1].get("ts")
-        if isinstance(first_reaction_ts, datetime):
-            first_reaction_sec = max(0.0, (first_reaction_ts - last_dose_at).total_seconds())
-            if isinstance(last_sample_ts, datetime):
-                settle_sec = max(0.0, (last_sample_ts - first_reaction_ts).total_seconds())
-
-        if dose_amount_ml <= 0:
-            learning_effect = 0.0
-
-        return {
-            "tail_effect": float(tail_effect),
-            "peak_effect": peak_effect,
-            "peak_value": peak_value,
-            "retention_ratio": retention_ratio,
-            "wave_score": wave_score,
-            "wave_detected": wave_detected,
-            "learning_effect": float(max(0.0, learning_effect)),
-            "first_reaction_sec": first_reaction_sec,
-            "settle_sec": settle_sec,
-        }
-
-    def _merge_adaptive_stats(
-        self,
-        *,
-        pid_entry: Mapping[str, Any],
-        pid_type: str,
-        corr: CorrectionState,
-        dose_amount_ml: float,
-        learning_effect: float,
-        expected_effect: float,
-        first_reaction_sec: float | None,
-        settle_sec: float | None,
-        wave_score: float,
-        retention_ratio: float,
-    ) -> Mapping[str, Any]:
-        stats = dict(pid_entry.get("stats")) if isinstance(pid_entry.get("stats"), Mapping) else {}
-        adaptive = dict(stats.get("adaptive")) if isinstance(stats.get("adaptive"), Mapping) else {}
-        gains = dict(adaptive.get("gains")) if isinstance(adaptive.get("gains"), Mapping) else {}
-        timing = dict(adaptive.get("timing")) if isinstance(adaptive.get("timing"), Mapping) else {}
-
-        gain_key = "ec_gain_per_ml" if pid_type == "ec" else ("ph_up_gain_per_ml" if corr.needs_ph_up else "ph_down_gain_per_ml")
-        gain_entry = dict(gains.get(gain_key)) if isinstance(gains.get(gain_key), Mapping) else {}
-        gain_observations = int(gain_entry.get("observations") or 0)
-        if dose_amount_ml > 0 and learning_effect > 0:
-            learned_gain = learning_effect / dose_amount_ml
-            gain_entry["ema"] = self._ema(gain_entry.get("ema"), learned_gain, gain_observations)
-            gain_entry["observations"] = gain_observations + 1
-            gains[gain_key] = gain_entry
-
-        adaptive["gains"] = gains
-        adaptive["effectiveness_ema"] = self._ema_ratio(
-            adaptive.get("effectiveness_ema"),
-            0.0 if expected_effect <= 0 else learning_effect / expected_effect,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["retention_ema"] = self._ema_ratio(
-            adaptive.get("retention_ema"),
-            retention_ratio,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["wave_score_ema"] = self._ema_ratio(
-            adaptive.get("wave_score_ema"),
-            wave_score,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["observations"] = int(adaptive.get("observations") or 0) + 1
-
-        timing_observations = int(timing.get("observations") or 0)
-        if first_reaction_sec is not None:
-            timing["transport_delay_sec_ema"] = self._ema(
-                timing.get("transport_delay_sec_ema"),
-                first_reaction_sec,
-                timing_observations,
-            )
-            timing_observations += 1
-        if settle_sec is not None:
-            timing["settle_sec_ema"] = self._ema(
-                timing.get("settle_sec_ema"),
-                settle_sec,
-                max(0, timing_observations - 1),
-            )
-        timing["observations"] = max(timing_observations, int(timing.get("observations") or 0), 1)
-        adaptive["timing"] = timing
-
-        stats["adaptive"] = adaptive
-        return stats
-
-    def _ema(self, previous: Any, current: float, observations: int, alpha: float = 0.2) -> float:
-        try:
-            prev_value = float(previous)
-        except (TypeError, ValueError):
-            prev_value = current
-        if observations <= 0:
-            return round(current, 6)
-        return round((prev_value * (1.0 - alpha)) + (current * alpha), 6)
-
-    def _ema_ratio(self, previous: Any, current: float, observations: int) -> float:
-        return max(0.0, min(1.0, self._ema(previous, current, observations)))
 
     def _expected_cross_coupling_ph(self, *, corr: CorrectionState, process_cfg: Mapping[str, Any]) -> float:
-        gain = self._coerce_float(process_cfg.get("ph_per_ec_ml"))
-        if gain is None or corr.ec_amount_ml is None:
-            return 0.0
-        return float(gain) * float(corr.ec_amount_ml)
+        return self._observation_analyzer.expected_cross_coupling_ph(
+            corr=corr, process_cfg=process_cfg,
+        )
 
     async def _no_effect_limit_reached(
         self,
@@ -2189,18 +1833,12 @@ class CorrectionHandler(BaseStageHandler):
             )
         except Exception:
             _logger.warning("Не удалось отправить infra alert CORRECTION_NO_EFFECT zone_id=%s", task.zone_id)
-        current_stage = str(task.current_stage).strip().lower()
-        if current_stage == "prepare_recirculation_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-            )
-        if current_stage == "solution_fill_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_timeout_stop",
-            )
+        policy_outcome = self._transition_policy.decide_no_effect_transition(
+            current_stage=str(task.current_stage),
+            stage_retry_count=task.workflow.stage_retry_count,
+        )
+        if policy_outcome is not None:
+            return policy_outcome
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
 
     async def _log_correction_event(
@@ -2212,106 +1850,27 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState | None = None,
         payload: Mapping[str, Any] | None = None,
     ) -> None:
-        event_payload: dict[str, Any] = with_runtime_event_contract(payload)
-        if task is not None:
-            task_id = getattr(task, "id", None)
-            stage = str(getattr(task, "current_stage", "") or "").strip()
-            workflow = getattr(task, "workflow", None)
-            workflow_phase = str(getattr(workflow, "workflow_phase", "") or "").strip()
-            stage_entered_at = self._serialize_metric_ts(getattr(workflow, "stage_entered_at", None))
-            topology = str(getattr(task, "topology", "") or "").strip()
-            if task_id is not None:
-                event_payload.setdefault("task_id", int(task_id))
-            if stage:
-                event_payload.setdefault("stage", stage)
-                event_payload.setdefault("current_stage", stage)
-            if workflow_phase:
-                event_payload.setdefault("workflow_phase", workflow_phase)
-            correction_window_id = self._correction_window_id(task=task)
-            if correction_window_id:
-                event_payload.setdefault("correction_window_id", correction_window_id)
-            if stage_entered_at:
-                event_payload.setdefault("stage_entered_at", stage_entered_at)
-            if topology:
-                event_payload.setdefault("topology", topology)
-            snapshot_ctx = self._event_snapshot_context(task=task, corr=corr)
-            if isinstance(snapshot_ctx, Mapping):
-                snapshot_event_id = snapshot_ctx.get("snapshot_event_id")
-                if snapshot_event_id is not None:
-                    event_payload.setdefault("caused_by_event_id", snapshot_event_id)
-                for key, value in snapshot_ctx.items():
-                    event_payload.setdefault(key, value)
-        if corr is not None:
-            if corr.corr_step:
-                event_payload.setdefault("corr_step", corr.corr_step)
-            event_payload.setdefault("attempt", corr.attempt)
-            event_payload.setdefault("ec_attempt", corr.ec_attempt)
-            event_payload.setdefault("ph_attempt", corr.ph_attempt)
-            event_payload.setdefault("ec_max_attempts", corr.ec_max_attempts)
-            event_payload.setdefault("ph_max_attempts", corr.ph_max_attempts)
-        try:
-            await create_zone_event(zone_id, event_type, event_payload)
-        except Exception:
-            _logger.warning("Не удалось записать zone event %s", event_type, exc_info=True)
-
-    def _event_snapshot_context(
-        self,
-        *,
-        task: Any,
-        corr: CorrectionState | None,
-    ) -> Mapping[str, Any] | None:
-        snapshot_ctx = self._probe_snapshot_context(task=task)
-        if isinstance(snapshot_ctx, Mapping) and snapshot_ctx:
-            return snapshot_ctx
-        if corr is None:
-            return None
-
-        created_at = corr.snapshot_created_at.isoformat() if isinstance(corr.snapshot_created_at, datetime) else None
-        cmd_id = str(corr.snapshot_cmd_id or "").strip() or None
-        source_event_type = str(corr.snapshot_source_event_type or "").strip() or None
-        event_id = corr.snapshot_event_id if isinstance(corr.snapshot_event_id, int) else None
-        context = {
-            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
-            "snapshot_created_at": created_at,
-            "snapshot_cmd_id": cmd_id,
-            "snapshot_source_event_type": source_event_type,
-        }
-        filtered = {key: value for key, value in context.items() if value is not None}
-        return filtered or None
+        await self._event_logger.log(
+            zone_id=zone_id,
+            event_type=event_type,
+            task=task,
+            corr=corr,
+            payload=payload,
+        )
 
     def _correction_window_id(self, *, task: Any | None) -> str | None:
-        if task is None:
-            return None
-        task_id = getattr(task, "id", None)
-        if task_id is None:
-            return None
-        stage = str(getattr(task, "current_stage", "") or "").strip()
-        workflow = getattr(task, "workflow", None)
-        workflow_phase = str(getattr(workflow, "workflow_phase", "") or "").strip()
-        if not stage or not workflow_phase:
-            return None
-        return f"task:{int(task_id)}:{workflow_phase}:{stage}"
+        return CorrectionEventLogger.correction_window_id(task=task)
 
     def _observe_seq(self, *, corr: CorrectionState, pid_type: str, after_dose: bool = False) -> int | None:
-        current = corr.ec_attempt if pid_type == "ec" else corr.ph_attempt
-        observe_seq = int(current) + (1 if after_dose else 0)
-        return observe_seq if observe_seq > 0 else None
+        return CorrectionEventLogger.observe_seq(
+            corr=corr, pid_type=pid_type, after_dose=after_dose,
+        )
 
     def _build_sensor_mode_commands(
         self, *, plan: Any, cmd: str, params: Mapping[str, Any],
     ) -> tuple[PlannedCommand, ...]:
-        raw_named = getattr(plan, "named_plans", None)
-        named = raw_named if isinstance(raw_named, Mapping) else {}
-        source_key = "sensor_mode_activate" if cmd == "activate_sensor_mode" else "sensor_mode_deactivate"
-        templates = named.get(source_key, ())
-        return tuple(
-            PlannedCommand(
-                step_no=t.step_no,
-                node_uid=t.node_uid,
-                channel=t.channel,
-                payload={"cmd": cmd, "params": dict(params)},
-            )
-            for t in templates
+        return self._sensor_mode_controller.build_commands(
+            plan=plan, cmd=cmd, params=params,
         )
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
