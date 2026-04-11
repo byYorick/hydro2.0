@@ -384,7 +384,6 @@ async function loadNewNodes(): Promise<void> {
       }
     })
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load new nodes:', err)
   } finally {
     stopLoading()

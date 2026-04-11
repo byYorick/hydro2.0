@@ -15,12 +15,37 @@ function hasDataKey(value: unknown): value is ApiResponseLike<unknown> {
 }
 
 /**
- * Извлекает данные из API ответа
- * Поддерживает разные форматы ответов:
- * - { data: T } - обернутый ответ
- * - T - прямой ответ
- * - { data: { data: T } } - двойная обертка
- * 
+ * Признаки того, что значение — это пагинированный envelope, а не обёртка,
+ * которую нужно ещё раз развернуть. Laravel resource отдаёт пагинированные
+ * списки в форме `{ data: [...], current_page, last_page, per_page, total }`;
+ * двойной unwrap такого объекта терял бы метаданные пагинации.
+ */
+const PAGINATION_KEYS = [
+  'current_page',
+  'last_page',
+  'per_page',
+  'total',
+  'meta',
+  'links',
+] as const
+
+function isPaginatedEnvelope(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return PAGINATION_KEYS.some((key) => key in value)
+}
+
+/**
+ * Извлекает данные из API ответа.
+ *
+ * Поддерживает несколько форматов:
+ * - `T` — прямой ответ
+ * - `{ data: T }` — обернутый ответ
+ * - `{ data: { data: T } }` — двойная обёртка (status-envelope поверх data)
+ *
+ * Защита от потери пагинации: если `response.data` выглядит как
+ * `{ data: [...], current_page, last_page, ... }`, вложенный `data.data`
+ * НЕ разворачивается, иначе теряются `current_page`/`last_page`/`meta`.
+ *
  * @param response - Ответ от API
  * @returns Извлеченные данные или null
  */
@@ -28,21 +53,23 @@ export function extractData<T = unknown>(response: unknown): T | null {
   if (!response) {
     return null
   }
-  
+
   // Если response уже является нужным типом
   if (isRecord(response) && !hasDataKey(response)) {
     return response as T
   }
-  
+
   // Стандартный формат: { data: T }
   if (hasDataKey(response) && typeof response.data !== 'undefined') {
     // Проверяем, не является ли data тоже обернутым объектом
-    if (hasDataKey(response.data)) {
+    // (НО не разворачиваем пагинированные envelope-ы — они тоже содержат `data`,
+    //  но вместе с `current_page`/`last_page`/`meta`, и unwrap сломал бы пагинацию).
+    if (hasDataKey(response.data) && !isPaginatedEnvelope(response.data)) {
       return response.data.data as T
     }
     return response.data as T
   }
-  
+
   return response as T
 }
 

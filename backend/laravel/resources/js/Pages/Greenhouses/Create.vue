@@ -186,7 +186,6 @@ async function onSubmit() {
     showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
     router.visit('/')
   } catch (error: any) {
-    // Ошибка уже обработана в useApi через showToast, но добавляем обработку ошибок валидации
     logger.error('Failed to create greenhouse:', error)
     
     // Обработка ошибок валидации (422)

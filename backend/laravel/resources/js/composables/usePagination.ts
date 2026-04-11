@@ -2,6 +2,7 @@
  * Composable для управления пагинацией с сохранением состояния в localStorage
  */
 import { ref, watch, onMounted } from 'vue'
+import { logger } from '@/utils/logger'
 
 interface PaginationState {
   currentPage: number
@@ -57,7 +58,7 @@ export function usePagination(options: UsePaginationOptions = {}) {
         }
       }
     } catch (error) {
-      console.warn(`[usePagination] Failed to load state from localStorage:`, error)
+      logger.warn('[usePagination] Failed to load state from localStorage:', error)
     }
 
     return {
@@ -81,7 +82,7 @@ export function usePagination(options: UsePaginationOptions = {}) {
       }
       localStorage.setItem(storageKey, JSON.stringify(state))
     } catch (error) {
-      console.warn(`[usePagination] Failed to save state to localStorage:`, error)
+      logger.warn('[usePagination] Failed to save state to localStorage:', error)
     }
   }
 

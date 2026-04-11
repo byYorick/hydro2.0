@@ -113,7 +113,7 @@ export function useStoreEvents() {
       try {
         listener(data)
       } catch (error) {
-        console.error(`[StoreEvents] Error in listener for "${event}":`, error)
+        logger.error(`[StoreEvents] Error in listener for "${event}":`, error)
       }
     }
     

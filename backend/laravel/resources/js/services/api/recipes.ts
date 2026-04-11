@@ -12,7 +12,7 @@
  *   DELETE /api/recipe-revision-phases/:id
  */
 import type { Recipe } from '@/types'
-import { apiClient, apiGet, apiPost, apiPostVoid, apiPatch, apiPatchVoid, apiPut, apiDelete } from './_client'
+import { apiGet, apiPost, apiPostVoid, apiPatch, apiPatchVoid, apiPut, apiDelete } from './_client'
 
 export interface PaginatedRecipesEnvelope {
   data: Recipe[]
@@ -50,22 +50,12 @@ export const recipesApi = {
   },
 
   /**
-   * Постраничная версия — возвращает envelope с `current_page`/`last_page`,
-   * без применения `extractData` (чтобы не терять метаданные пагинации).
+   * Постраничная версия — возвращает envelope с `current_page`/`last_page`.
+   * `extractData` обновлён так, что пагинированные envelope'ы больше не
+   * разворачиваются, поэтому достаточно стандартного `apiGet`.
    */
-  async listPaginated(params?: RecipesListParams): Promise<PaginatedRecipesEnvelope> {
-    const response = await apiClient.get<unknown>('/recipes', { params })
-    const body = response.data as { data?: unknown } | null
-    if (body && typeof body === 'object' && 'data' in body) {
-      const inner = body.data
-      if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
-        return inner as PaginatedRecipesEnvelope
-      }
-      if (Array.isArray(inner)) {
-        return { data: inner as Recipe[] }
-      }
-    }
-    return { data: [] }
+  listPaginated(params?: RecipesListParams): Promise<PaginatedRecipesEnvelope> {
+    return apiGet<PaginatedRecipesEnvelope>('/recipes', { params })
   },
 
   getById(recipeId: number): Promise<Recipe> {

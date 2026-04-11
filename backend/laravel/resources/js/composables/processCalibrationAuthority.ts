@@ -51,8 +51,27 @@ export function processCalibrationNamespace(mode: ProcessCalibrationMode): strin
   return PROCESS_CALIBRATION_NAMESPACE_MAP[mode]
 }
 
+/**
+ * Калибровка существует в authority-store (в том числе materialized system default).
+ * Используется `ProcessCalibrationPanel` для отображения секции «Режим: X».
+ */
 export function isSavedProcessCalibration(calibration: ZoneProcessCalibration | null | undefined): boolean {
   return Boolean(calibration)
+}
+
+/**
+ * Калибровка готова для боевого использования runtime'ом — т.е. это не
+ * synthetic `system_default`, а реально сохранённая оператором/учёным
+ * запись. Используется `CorrectionRuntimeReadinessCard` для fail-closed
+ * проверки: system_default → fallback → runtime не должен дозировать.
+ */
+export function isRuntimeReadyProcessCalibration(
+  calibration: ZoneProcessCalibration | null | undefined,
+): boolean {
+  if (!calibration) return false
+  return calibration.source !== null
+    && calibration.source !== undefined
+    && calibration.source !== 'system_default'
 }
 
 export function documentToZoneProcessCalibration(

@@ -1,6 +1,22 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { api } from "@/services/api";
 import { useAutomationConfig } from "@/composables/useAutomationConfig";
+import {
+  addHoursToTime,
+  clamp,
+  createDefaultForm,
+  extractCollectionItems,
+  extractNodesFromResponse,
+  extractPaginatedCollection,
+  formatDate as formatDateHelper,
+  formatDateTime as formatDateTimeHelper,
+  getNowLocalDatetimeValue,
+  isValidHHMM,
+  normalizeDatetimeLocal,
+  toFiniteNumber,
+  type WizardFormState,
+  type ZoneNodeResponse,
+} from "@/composables/growthCycleWizardHelpers";
 import type { useToast } from "@/composables/useToast";
 import type { useZones } from "@/composables/useZones";
 import { logger } from "@/utils/logger";
@@ -52,12 +68,6 @@ interface WizardRecipePhase {
   extensions?: Record<string, unknown> | null;
 }
 
-interface WizardFormState {
-  zoneId: number | null;
-  startedAt: string;
-  expectedHarvestAt: string;
-}
-
 interface GrowthCycleSubmitPayload {
   zoneId: number;
   cycleId?: number;
@@ -88,13 +98,6 @@ interface UseGrowthCycleWizardOptions {
   emit: GrowthCycleWizardEmit;
   showToast: ReturnType<typeof useToast>["showToast"];
   fetchZones: ReturnType<typeof useZones>["fetchZones"];
-}
-
-interface ZoneNodeResponse {
-  id?: number;
-  uid?: string;
-  name?: string;
-  channels?: DeviceChannel[];
 }
 
 interface RecipeListItem {
@@ -152,164 +155,10 @@ interface InfrastructureInstanceDto {
   }>;
 }
 
-interface PaginatedCollectionPayload<T> {
-  items: T[];
-  currentPage: number | null;
-  lastPage: number | null;
-}
-
-function getNowLocalDatetimeValue(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function createDefaultForm(zoneId?: number): WizardFormState {
-  return {
-    zoneId: zoneId || null,
-    startedAt: getNowLocalDatetimeValue(),
-    expectedHarvestAt: "",
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
-function normalizeDatetimeLocal(value: string | null | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const raw = value.trim();
-  if (!raw) {
-    return null;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
-    return raw;
-  }
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.toISOString().slice(0, 16);
-}
-
-function isValidHHMM(value: string): boolean {
-  if (!/^\d{2}:\d{2}$/.test(value)) {
-    return false;
-  }
-
-  const [h, m] = value.split(":").map(Number);
-  return Number.isFinite(h) && Number.isFinite(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59;
-}
-
-function addHoursToTime(start: string, hours: number): string {
-  const [h, m] = (isValidHHMM(start) ? start : "06:00").split(":").map(Number);
-  const startMinutes = h * 60 + m;
-  const delta = Math.round(clamp(hours, 0, 24) * 60);
-  const totalMinutes = (startMinutes + delta) % (24 * 60);
-  const endH = Math.floor(totalMinutes / 60)
-    .toString()
-    .padStart(2, "0");
-  const endM = (totalMinutes % 60).toString().padStart(2, "0");
-  return `${endH}:${endM}`;
-}
-
-function extractNodesFromResponse(raw: unknown): ZoneNodeResponse[] {
-  if (Array.isArray(raw)) {
-    return raw as ZoneNodeResponse[];
-  }
-
-  if (raw && typeof raw === "object") {
-    const payload = raw as {
-      data?: unknown;
-    };
-
-    if (Array.isArray(payload.data)) {
-      return payload.data as ZoneNodeResponse[];
-    }
-
-    if (payload.data && typeof payload.data === "object") {
-      const nested = payload.data as { data?: unknown };
-      if (Array.isArray(nested.data)) {
-        return nested.data as ZoneNodeResponse[];
-      }
-    }
-  }
-
-  return [];
-}
-
-function extractCollectionItems<T>(raw: unknown): T[] {
-  return extractPaginatedCollection<T>(raw).items;
-}
-
-function extractPaginatedCollection<T>(raw: unknown): PaginatedCollectionPayload<T> {
-  if (Array.isArray(raw)) {
-    return {
-      items: raw as T[],
-      currentPage: null,
-      lastPage: null,
-    };
-  }
-
-  if (!raw || typeof raw !== "object") {
-    return {
-      items: [],
-      currentPage: null,
-      lastPage: null,
-    };
-  }
-
-  const payload = raw as { data?: unknown };
-  if (Array.isArray(payload.data)) {
-    return {
-      items: payload.data as T[],
-      currentPage: null,
-      lastPage: null,
-    };
-  }
-
-  if (payload.data && typeof payload.data === "object") {
-    const nested = payload.data as {
-      data?: unknown;
-      current_page?: unknown;
-      last_page?: unknown;
-    };
-    if (Array.isArray(nested.data)) {
-      return {
-        items: nested.data as T[],
-        currentPage: toFiniteNumber(nested.current_page),
-        lastPage: toFiniteNumber(nested.last_page),
-      };
-    }
-  }
-
-  return {
-    items: [],
-    currentPage: null,
-    lastPage: null,
-  };
-}
+// Helpers (getNowLocalDatetimeValue, createDefaultForm, clamp, toFiniteNumber,
+// normalizeDatetimeLocal, isValidHHMM, addHoursToTime, extractNodesFromResponse,
+// extractCollectionItems, extractPaginatedCollection, formatDate, formatDateTime)
+// вынесены в `growthCycleWizardHelpers.ts`.
 
 export function useGrowthCycleWizard({
   props,
@@ -549,37 +398,8 @@ export function useGrowthCycleWizard({
     return "";
   });
 
-  function formatDateTime(dateString: string): string {
-    if (!dateString) {
-      return "";
-    }
-
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return dateString;
-    }
-  }
-
-  function formatDate(dateString: string): string {
-    if (!dateString) {
-      return "";
-    }
-
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString("ru-RU");
-    } catch {
-      return dateString;
-    }
-  }
+  const formatDateTime = formatDateTimeHelper;
+  const formatDate = formatDateHelper;
 
   function getPhaseLabel(phase: WizardRecipePhase): string {
     const name = typeof phase.name === "string" ? phase.name.trim() : "";
@@ -1165,7 +985,7 @@ export function useGrowthCycleWizard({
           name: node.name,
           type: "unknown",
           status: "unknown",
-          channels: Array.isArray(node.channels) ? node.channels.map((channel) => ({ ...channel })) as DeviceChannel[] : [],
+          channels: Array.isArray(node.channels) ? node.channels.map((channel) => ({ ...channel })) as unknown as DeviceChannel[] : [],
         }));
       zoneDevicesLoaded.value = true;
     } catch (err) {

@@ -12,7 +12,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
-// @ts-ignore
 import NavLink from '@/Components/NavLink.vue'
 
 interface NavItem {

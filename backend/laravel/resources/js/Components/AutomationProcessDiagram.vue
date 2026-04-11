@@ -607,6 +607,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { AutomationState, HoveredElement, IrrNodeState } from '@/types/Automation'
+import {
+  elementTitle,
+  formatIrrStateValue,
+  formatNumber,
+  formatUpdatedAt,
+  tankFillHeight,
+  tankFillY,
+} from '@/composables/automationProcessDiagramHelpers'
 
 interface Props {
   flowOffset: number
@@ -680,26 +688,6 @@ const tooltipStyle = computed(() => {
   }
 })
 
-function formatUpdatedAt(value: string | null | undefined): string {
-  if (!value) return ''
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return value
-  return d.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
-
-function formatIrrStateValue(value: boolean | null | undefined): string {
-  if (value === true) return 'Вкл'
-  if (value === false) return 'Выкл'
-  return '—'
-}
-
 const irrStateRows = computed(() => {
   const state = props.irrNodeState
   if (!state) return []
@@ -717,30 +705,9 @@ const irrStateRows = computed(() => {
   ]
 })
 
-// ─── Tank geometry helpers ──────────────────────────────────────────────────
-
-function clampPercent(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 0
-  return Math.max(0, Math.min(100, parsed))
-}
-
-function tankFillY(levelPercent: number): number {
-  const normalized = clampPercent(levelPercent)
-  return 70 + 250 * (1 - normalized / 100)
-}
-
-function tankFillHeight(levelPercent: number): number {
-  const normalized = clampPercent(levelPercent)
-  return 250 * (normalized / 100)
-}
-
-function formatNumber(value: number | null | undefined, digits = 1): string {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return '-'
-  }
-  return Number(value).toFixed(digits)
-}
+// Pure helpers (clampPercent, tankFillY/Height, formatNumber, formatUpdatedAt,
+// formatIrrStateValue, elementTitle) вынесены в
+// `automationProcessDiagramHelpers.ts` для unit-тестов и разгрузки компонента.
 
 // ─── Tooltip helpers ────────────────────────────────────────────────────────
 
@@ -816,24 +783,6 @@ function elementData(element: string): Record<string, string> {
     }
   }
   return {}
-}
-
-function elementTitle(element: string): string {
-  const map: Record<string, string> = {
-    clean: 'Бак чистой воды',
-    nutrient: 'Бак рабочего раствора',
-    buffer: 'Буферный бак',
-    pipes: 'Линии потока',
-    correction: 'Контур коррекции',
-    correction_node: 'Узел коррекции',
-    valve_in: 'Входной клапан',
-    valve_out: 'Выходной клапан',
-    pump_in: 'Насос набора',
-    pump: 'Главный насос',
-    circulation: 'Насос рециркуляции',
-    pump_correction: 'Насос дозирования',
-  }
-  return map[element] ?? element
 }
 
 function handleHover(element: string, event: MouseEvent): void {

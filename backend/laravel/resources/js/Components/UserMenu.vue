@@ -162,8 +162,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { route } from '@/utils/route'
-// @ts-ignore
-import { translateRole } from '@/utils/i18n.js'
+import { translateRole } from '@/utils/i18n'
 import Badge from '@/Components/Badge.vue'
 import type { User } from '@/types/User'
 

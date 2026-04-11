@@ -19,149 +19,12 @@
       </summary>
 
       <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
-        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label
-              class="text-xs text-[color:var(--text-muted)]"
-              :title="zoneAutomationFieldHelp('water.irrigationDecisionStrategy')"
-            >
-              Режим полива
-              <select
-                v-model="waterForm.irrigationDecisionStrategy"
-                data-test="irrigation-decision-strategy"
-                class="input-select mt-1 w-full"
-                :disabled="!ctx.canConfigure.value"
-              >
-                <option value="task">По времени</option>
-                <option value="smart_soil_v1">Умный полив</option>
-              </select>
-            </label>
-            <div
-              v-if="waterForm.irrigationDecisionStrategy === 'task'"
-              class="text-xs text-[color:var(--text-muted)] md:col-span-3"
-            >
-              <div class="font-semibold text-[color:var(--text-primary)]">
-                Параметры из текущей recipe phase
-              </div>
-              <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
-                <div>Mode: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.mode ?? '—' }}</span></div>
-                <div>Interval: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.intervalSec ?? '—' }}</span> сек</div>
-                <div>Duration: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.durationSec ?? '—' }}</span> сек</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <IrrigationModeSelector
+          v-model:water-form="waterForm"
+          :recipe-irrigation-summary="recipeIrrigationSummary"
+        />
 
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.intervalMinutes')"
-          >
-            Интервал полива (мин)
-            <input
-              v-model.number="waterForm.intervalMinutes"
-              type="number"
-              min="5"
-              max="1440"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || waterForm.irrigationDecisionStrategy === 'task'"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.durationSeconds')"
-          >
-            Длительность полива (сек)
-            <input
-              v-model.number="waterForm.durationSeconds"
-              type="number"
-              min="1"
-              max="3600"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || waterForm.irrigationDecisionStrategy === 'task'"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.irrigationBatchL')"
-          >
-            Порция полива (л)
-            <input
-              v-model.number="waterForm.irrigationBatchL"
-              type="number"
-              min="1"
-              max="500"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.fillTemperatureC')"
-          >
-            Температура набора (°C)
-            <input
-              v-model.number="waterForm.fillTemperatureC"
-              type="number"
-              min="5"
-              max="35"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.cleanTankFillL')"
-          >
-            Объём чистого бака (л)
-            <input
-              v-model.number="waterForm.cleanTankFillL"
-              type="number"
-              min="10"
-              max="5000"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.nutrientTankTargetL')"
-          >
-            Объём бака раствора (л)
-            <input
-              v-model.number="waterForm.nutrientTankTargetL"
-              type="number"
-              min="10"
-              max="5000"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.fillWindowStart')"
-          >
-            Окно набора воды: от
-            <input
-              v-model="waterForm.fillWindowStart"
-              type="time"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.fillWindowEnd')"
-          >
-            Окно набора воды: до
-            <input
-              v-model="waterForm.fillWindowEnd"
-              type="time"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value"
-            />
-          </label>
-        </div>
+        <IrrigationBasicFieldsGrid v-model:water-form="waterForm" />
 
         <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
           <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
@@ -573,6 +436,8 @@
 
 <script setup lang="ts">
 import Button from '@/Components/Button.vue'
+import IrrigationBasicFieldsGrid from '@/Components/ZoneAutomation/IrrigationBasicFieldsGrid.vue'
+import IrrigationModeSelector from '@/Components/ZoneAutomation/IrrigationModeSelector.vue'
 import SmartIrrigationControlsGroup from '@/Components/ZoneAutomation/SmartIrrigationControlsGroup.vue'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { useZoneAutomationSectionContext } from '@/composables/useZoneAutomationSectionContext'

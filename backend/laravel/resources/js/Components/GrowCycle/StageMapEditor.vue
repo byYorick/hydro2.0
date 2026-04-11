@@ -85,6 +85,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
+import { logger } from '@/utils/logger'
 import { GROW_STAGES, getStageForPhase, type GrowStage } from '@/utils/growStages'
 
 interface Props {
@@ -132,7 +133,7 @@ async function loadStageMap() {
       originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
     }
   } catch (error) {
-    console.error('Failed to load stage map:', error)
+    logger.error('[StageMapEditor] Failed to load stage map:', error)
   }
 }
 
@@ -176,7 +177,7 @@ async function saveChanges() {
     originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
     showToast('Маппинг стадий сохранен', 'success')
   } catch (error) {
-    console.error('Failed to save stage map:', error)
+    logger.error('[StageMapEditor] Failed to save stage map:', error)
     showToast('Ошибка при сохранении', 'error')
   } finally {
     saving.value = false

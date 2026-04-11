@@ -255,7 +255,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRole } from '@/composables/useRole'
-// @ts-ignore
 import NavLink from '@/Components/NavLink.vue'
 
 const { isViewer, hasAnyRole } = useRole()

@@ -7,12 +7,20 @@
  * consumer'ы должны ходить через `import { api } from '@/services/api'`.
  */
 import { ref, type Ref } from 'vue'
-import type { AxiosResponse } from 'axios'
+import type { AxiosRequestConfig, AxiosResponse } from 'axios'
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/services/api/_client'
 import type { ToastHandler } from '@/services/api'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+
+interface AxiosLikeError {
+  message?: string
+  response?: {
+    status?: number
+    headers?: Record<string, string>
+  }
+}
 
 export interface RateLimitedRequestOptions {
   retries?: number
@@ -72,26 +80,27 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
       maxDelay = 30000,
     } = options
 
-    let lastError: any = null
+    let lastError: unknown = null
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const result = await requestFn()
-        
+
         // Успешный запрос - сбрасываем счетчик ошибок
         if (attempt > 0) {
           logger.info(`[useRateLimitedApi] Request succeeded after ${attempt} retries`)
         }
-        
+
         return result
-      } catch (err: any) {
+      } catch (err) {
         lastError = err
-        
+        const error = err as AxiosLikeError
+
         // Проверяем, является ли ошибка rate limit (429)
-        const isRateLimit = err.response?.status === 429
-        
+        const isRateLimit = error.response?.status === 429
+
         // Проверяем, есть ли заголовок Retry-After
-        const retryAfter = err.response?.headers?.['retry-after']
+        const retryAfter = error.response?.headers?.['retry-after']
         
         if (isRateLimit && retryAfter) {
           // Используем значение из Retry-After заголовка
@@ -126,7 +135,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
         if (isRateLimit) {
           logger.warn(`[useRateLimitedApi] Rate limit hit, retrying after ${delay}ms (attempt ${attempt + 1}/${retries})`)
         } else {
-          logger.warn(`[useRateLimitedApi] Request failed, retrying after ${delay}ms (attempt ${attempt + 1}/${retries}):`, err.message)
+          logger.warn(`[useRateLimitedApi] Request failed, retrying after ${delay}ms (attempt ${attempt + 1}/${retries}):`, error.message)
         }
         
         if (showToast && attempt === 0 && !isRateLimit) {
@@ -146,7 +155,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
    */
   async function rateLimitedGet<T = unknown>(
     url: string,
-    config?: any,
+    config?: AxiosRequestConfig,
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
@@ -160,8 +169,8 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
    */
   async function rateLimitedPost<T = unknown>(
     url: string,
-    data?: any,
-    config?: any,
+    data?: unknown,
+    config?: AxiosRequestConfig,
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
@@ -175,8 +184,8 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
    */
   async function rateLimitedPatch<T = unknown>(
     url: string,
-    data?: any,
-    config?: any,
+    data?: unknown,
+    config?: AxiosRequestConfig,
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
@@ -190,7 +199,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
    */
   async function rateLimitedDelete<T = unknown>(
     url: string,
-    config?: any,
+    config?: AxiosRequestConfig,
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(

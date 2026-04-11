@@ -9,6 +9,15 @@ import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtu
 import { setupRouterGuards } from './utils/routerGuards';
 import { installZiggy } from './utils/ziggy';
 import { setupVueErrorHandlers } from './utils/vueErrorHandlers';
+import { setToastHandler } from './utils/apiClient';
+import { useToast } from './composables/useToast';
+
+// Подключаем единый global-показ Toast для axios-interceptor'а.
+// Ранее это делал `useApi(showToast)` как side-effect первой инициализации;
+// после миграции на typed `services/api/` мы регистрируем обработчик один раз
+// на уровне приложения. Без этого axios ошибки не попадали в UI.
+const { showToast: __bootstrapShowToast } = useToast();
+setToastHandler(__bootstrapShowToast);
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

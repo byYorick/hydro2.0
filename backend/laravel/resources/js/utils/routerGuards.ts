@@ -13,9 +13,21 @@ import { logger } from './logger'
 // Маркер для определения обёрнутых методов (защита от HMR наложения обёрток)
 const WRAPPER_MARKER = Symbol('routerWrapper')
 
+type ReloadMethod = typeof router.reload
+type VisitMethod = typeof router.visit
+type ReloadOptions = Parameters<ReloadMethod>[0]
+type VisitFirstArg = Parameters<VisitMethod>[0]
+type VisitOptions = Parameters<VisitMethod>[1]
+
+// Обёрнутые методы router помечаются Symbol-маркером; тип расширяем тут,
+// чтобы читать маркер без `any`.
+type MarkedRouterMethod<T extends (...args: never[]) => unknown> = T & {
+  [WRAPPER_MARKER]?: true
+}
+
 interface OriginalRouterMethods {
-  reload: typeof router.reload | null
-  visit: typeof router.visit | null
+  reload: ReloadMethod | null
+  visit: VisitMethod | null
   isWrapped: boolean
 }
 
@@ -75,16 +87,18 @@ function shouldPreventReload(url: string): boolean {
  */
 export function setupRouterGuards(): void {
   // Проверяем, не обёрнуты ли уже методы (защита от HMR наложения обёрток)
-  const isReloadWrapped = router.reload && (router.reload as any)[WRAPPER_MARKER] === true
-  const isVisitWrapped = router.visit && (router.visit as any)[WRAPPER_MARKER] === true
-  
+  const reloadRef = router.reload as MarkedRouterMethod<ReloadMethod>
+  const visitRef = router.visit as MarkedRouterMethod<VisitMethod>
+  const isReloadWrapped = Boolean(reloadRef && reloadRef[WRAPPER_MARKER])
+  const isVisitWrapped = Boolean(visitRef && visitRef[WRAPPER_MARKER])
+
   if (isReloadWrapped || isVisitWrapped) {
     // Методы уже обёрнуты, восстанавливаем оригинальные перед повторной обёрткой
     logger.debug('[routerGuards] Router methods already wrapped, restoring originals before re-wrap', {
       isReloadWrapped,
       isVisitWrapped,
     })
-    
+
     if (originalRouterMethods.reload) {
       router.reload = originalRouterMethods.reload
     }
@@ -92,17 +106,17 @@ export function setupRouterGuards(): void {
       router.visit = originalRouterMethods.visit
     }
   }
-  
+
   // Сохраняем оригинальные методы (если ещё не сохранены или были восстановлены)
-  if (!originalRouterMethods.reload || (originalRouterMethods.reload as any)[WRAPPER_MARKER] === true) {
+  if (!originalRouterMethods.reload || (originalRouterMethods.reload as MarkedRouterMethod<ReloadMethod>)[WRAPPER_MARKER]) {
     originalRouterMethods.reload = router.reload.bind(router)
   }
-  if (!originalRouterMethods.visit || (originalRouterMethods.visit as any)[WRAPPER_MARKER] === true) {
+  if (!originalRouterMethods.visit || (originalRouterMethods.visit as MarkedRouterMethod<VisitMethod>)[WRAPPER_MARKER]) {
     originalRouterMethods.visit = router.visit.bind(router)
   }
-  
+
   // Перехватываем все вызовы router.reload() и router.visit() для предотвращения циклов
-  const wrappedReload = function(options?: any) {
+  const wrappedReload = function (options?: ReloadOptions) {
     // Проверяем только reload() на текущий URL (включая query параметры)
     const currentUrl = window.location.pathname + window.location.search
     if (shouldPreventReload(currentUrl)) {
@@ -112,24 +126,26 @@ export function setupRouterGuards(): void {
       })
       return Promise.resolve()
     }
-    logger.debug('[routerGuards] router.reload() called', { 
+    logger.debug('[routerGuards] router.reload() called', {
       options,
       currentUrl: currentUrl,
       stack: new Error().stack,
     })
     return originalRouterMethods.reload ? originalRouterMethods.reload(options) : Promise.resolve()
-  }
-  
+  } as MarkedRouterMethod<ReloadMethod>
+
   // Помечаем обёрнутый метод маркером
-  ;(wrappedReload as any)[WRAPPER_MARKER] = true
+  wrappedReload[WRAPPER_MARKER] = true
   router.reload = wrappedReload
-  
-  const wrappedVisit = function(url: string | any, options?: any) {
+
+  const wrappedVisit = function (url: VisitFirstArg, options?: VisitOptions) {
     // Блокируем только visit() на тот же URL (включая query параметры), легитимная навигация разрешена
     // Если URL отличается, это нормальная навигация, не блокируем
-    const targetUrl = typeof url === 'string' ? url : url?.url || window.location.pathname
+    const targetUrl = typeof url === 'string'
+      ? url
+      : ((url as { url?: string })?.url ?? window.location.pathname)
     const currentUrl = window.location.pathname + window.location.search
-    
+
     // Логируем все вызовы router.visit() для отладки автоматических переходов
     logger.debug('[routerGuards] router.visit() called', {
       url: targetUrl,
@@ -137,7 +153,7 @@ export function setupRouterGuards(): void {
       options,
       stack: new Error().stack,
     })
-    
+
     // Сравниваем полные URL включая query параметры
     if (shouldPreventReload(targetUrl) && targetUrl === currentUrl) {
       logger.warn('[routerGuards] Prevented router.visit() to same URL due to reload limit', {
@@ -148,12 +164,12 @@ export function setupRouterGuards(): void {
       return Promise.resolve()
     }
     return originalRouterMethods.visit ? originalRouterMethods.visit(url, options) : Promise.resolve()
-  }
-  
+  } as MarkedRouterMethod<VisitMethod>
+
   // Помечаем обёрнутый метод маркером
-  ;(wrappedVisit as any)[WRAPPER_MARKER] = true
+  wrappedVisit[WRAPPER_MARKER] = true
   router.visit = wrappedVisit
-  
+
   // Помечаем, что методы обёрнуты
   originalRouterMethods.isWrapped = true
 }
@@ -162,11 +178,13 @@ export function setupRouterGuards(): void {
  * Восстанавливает оригинальные методы router (для HMR cleanup)
  */
 export function restoreRouterMethods(): void {
-  if (originalRouterMethods.reload && router.reload && (router.reload as any)[WRAPPER_MARKER] === true) {
+  const currentReload = router.reload as MarkedRouterMethod<ReloadMethod>
+  const currentVisit = router.visit as MarkedRouterMethod<VisitMethod>
+  if (originalRouterMethods.reload && currentReload && currentReload[WRAPPER_MARKER]) {
     router.reload = originalRouterMethods.reload
     logger.debug('[routerGuards] HMR: Restored original router.reload')
   }
-  if (originalRouterMethods.visit && router.visit && (router.visit as any)[WRAPPER_MARKER] === true) {
+  if (originalRouterMethods.visit && currentVisit && currentVisit[WRAPPER_MARKER]) {
     router.visit = originalRouterMethods.visit
     logger.debug('[routerGuards] HMR: Restored original router.visit')
   }

@@ -237,7 +237,6 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
-// @ts-ignore
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'

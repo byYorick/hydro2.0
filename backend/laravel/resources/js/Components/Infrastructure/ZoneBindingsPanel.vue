@@ -81,6 +81,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
 import axios from 'axios'
+import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number
@@ -178,7 +179,7 @@ async function load() {
     }
   } catch (e: unknown) {
     error.value = 'Ошибка загрузки данных'
-    console.error(e)
+    logger.error('[ZoneBindingsPanel] load failed:', e)
   } finally {
     loading.value = false
   }

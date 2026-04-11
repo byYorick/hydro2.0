@@ -19,15 +19,6 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
-// Mock useApi
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn()
-    }
-  }))
-}))
-
 vi.mock('../useRateLimitedApi', () => ({
   useRateLimitedApi: vi.fn(() => ({
     rateLimitedGet: vi.fn()
@@ -56,15 +47,9 @@ describe('useTelemetry', () => {
 
   beforeEach(async () => {
     clearTelemetryCache()
-    const { useApi } = await import('../useApi')
     const { useRateLimitedApi } = await import('../useRateLimitedApi')
     mockApiGet = vi.fn()
     mockRateLimitedGet = vi.fn((url: string, config?: any) => mockApiGet(url, config))
-    vi.mocked(useApi).mockReturnValue({
-      api: {
-        get: mockApiGet,
-      },
-    } as any)
     vi.mocked(useRateLimitedApi).mockReturnValue({
       rateLimitedGet: mockRateLimitedGet,
     } as any)

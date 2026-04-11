@@ -215,7 +215,7 @@ import Badge from '@/Components/Badge.vue'
 import Card from '@/Components/Card.vue'
 import {
   documentToZoneProcessCalibration,
-  isSavedProcessCalibration,
+  isRuntimeReadyProcessCalibration,
   PROCESS_CALIBRATION_MODES,
   processCalibrationNamespace,
 } from '@/composables/processCalibrationAuthority'
@@ -347,7 +347,7 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
 
   return modes.map((mode) => {
     const specific = byMode.get(mode)
-    if (isSavedProcessCalibration(specific)) {
+    if (isRuntimeReadyProcessCalibration(specific)) {
       return {
         mode,
         label: phaseLabels[mode],
@@ -358,7 +358,7 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
       }
     }
 
-    if (isSavedProcessCalibration(generic)) {
+    if (isRuntimeReadyProcessCalibration(generic)) {
       return {
         mode,
         label: phaseLabels[mode],

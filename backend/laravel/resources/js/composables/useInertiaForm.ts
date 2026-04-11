@@ -6,6 +6,7 @@ import { useForm } from '@inertiajs/vue3'
 import { router } from '@inertiajs/vue3'
 import type { FormDataKeys, FormDataType } from '@inertiajs/core'
 import { useToast } from './useToast'
+import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from '@/services/api'
@@ -144,15 +145,13 @@ export function useInertiaForm<T extends FormDataType<T>>(
       try {
         onStoreUpdate(page.props || page)
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('[useInertiaForm] Error in onStoreUpdate callback:', error)
+        logger.error('[useInertiaForm] Error in onStoreUpdate callback:', error)
       }
     }
 
     // Выполняем reload, если нужно (deprecated - используйте onStoreUpdate)
     if (reloadOnSuccess) {
-      // eslint-disable-next-line no-console
-      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
+      logger.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
       if (Array.isArray(reloadOnSuccess)) {
         router.reload({ only: reloadOnSuccess, preserveUrl })
       } else {

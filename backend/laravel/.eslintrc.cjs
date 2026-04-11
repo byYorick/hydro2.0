@@ -80,27 +80,26 @@ module.exports = {
   },
   overrides: [
     {
-      // Единственные два файла, которым разрешено импортировать apiClient
-      // напрямую: внутренний клиент services/api/ и legacy useApi.ts.
+      // Файлы, которым разрешено импортировать apiClient напрямую:
+      //   - `services/api/_client.ts` — внутренний client services/api/
+      //   - `composables/useRateLimitedApi.ts` — нужен raw axios для Retry-After
+      //   - `app.js` — регистрирует global toast handler при bootstrap
       // Всё остальное должно ходить через `import { api } from '@/services/api'`.
       files: [
         'resources/js/services/api/_client.ts',
-        'resources/js/composables/useApi.ts',
-        // useRateLimitedApi нужен raw axios для Retry-After заголовков
         'resources/js/composables/useRateLimitedApi.ts',
+        'resources/js/app.js',
       ],
       rules: {
         'no-restricted-imports': 'off',
       },
     },
     {
-      // Warn-маркер для legacy импортов useApi. На момент Phase 3 весь
-      // production код уже мигрирован на `import { api } from '@/services/api'`;
-      // оставляем маркер на будущее, если кто-то добавит новый файл.
+      // Warn-маркер: если кто-то в новом коде попытается импортировать
+      // `@/utils/apiClient` или несуществующий `@/composables/useApi`.
       files: ['resources/js/**/*.{ts,tsx,vue}'],
       excludedFiles: [
         'resources/js/services/api/**',
-        'resources/js/composables/useApi.ts',
       ],
       rules: {
         'no-restricted-imports': ['warn', {
@@ -111,7 +110,7 @@ module.exports = {
             },
             {
               name: '@/composables/useApi',
-              message: 'useApi — legacy путь. Новый код должен использовать `import { api } from \'@/services/api\'` и добавлять методы в services/api/<domain>.ts.',
+              message: 'useApi удалён в Phase 4. Используй `import { api } from \'@/services/api\'`.',
             },
           ],
         }],
