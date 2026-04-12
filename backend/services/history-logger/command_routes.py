@@ -38,6 +38,24 @@ _NON_REPUBLISHABLE_COMMAND_STATUSES = _FINAL_COMMAND_STATUSES | {"ACK"}
 _REPUBLISH_ALLOWED_STATUSES = {"QUEUED", "SEND_FAILED"}
 _POST_PUBLISH_ALLOWED_STATUSES = _NON_REPUBLISHABLE_COMMAND_STATUSES | _REPUBLISH_ALLOWED_STATUSES | {"SENT"}
 
+# Audit F8 + F10: centralised constants for previously inline magic values.
+# Tuple (not list) so accidental mutation raises; underscore prefix marks
+# them private to this module.
+
+#: Exponential backoff schedule for MQTT publish retry attempts.
+#: The first retry fires 500ms after the first failure, then 1s, then 2s.
+#: Total worst-case delay is ~3.5s before bubbling a 500 to the caller,
+#: which keeps Laravel's dispatch loop responsive while still absorbing
+#: transient MQTT broker hiccups.
+_MQTT_PUBLISH_RETRY_DELAYS_SEC: tuple[float, ...] = (0.5, 1.0, 2.0)
+
+#: Statuses that must never be produced by history-logger or persisted
+#: into ``commands.status``. ACCEPTED/FAILED are legacy values from the
+#: pre-ae3 dispatch pipeline and are explicitly blocked at both inbound
+#: validation (normalize_status) and would be surfaced here if any new
+#: code path ever tried to materialise them.
+_FORBIDDEN_COMMAND_STATUSES = frozenset({"ACCEPTED", "FAILED"})
+
 
 def _validate_command_request_contract(req: CommandRequest) -> None:
     if "legacy_type" in req.model_fields_set:
@@ -273,18 +291,55 @@ def _normalize_command_status(status: Any) -> str:
 
 
 async def _ensure_post_publish_status_persisted(cmd_id: str) -> None:
+    """Verify the commands row is in a post-publish-valid state.
+
+    Raises a ``RuntimeError`` with the full ``(reason, cmd_id, observed_status)``
+    context so the caller's ``logger.error(..., exc_info=True)`` captures
+    something actionable in the trace rather than a bare error name.
+
+    Audit F11: the previous version raised
+    ``RuntimeError("post_publish_status_not_transitioned")`` without the
+    actual cmd_id, forcing a manual lookup to correlate the failure with
+    a specific command.
+    """
     rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
     if not rows:
-        raise RuntimeError(f"command_not_found_after_publish:{cmd_id}")
+        raise RuntimeError(f"command_not_found_after_publish:cmd_id={cmd_id}")
     status = _normalize_command_status(rows[0].get("status"))
     if status not in _POST_PUBLISH_ALLOWED_STATUSES:
-        raise RuntimeError(f"invalid_post_publish_status:{status}")
+        raise RuntimeError(
+            f"invalid_post_publish_status:cmd_id={cmd_id} status={status!r} "
+            f"allowed={sorted(_POST_PUBLISH_ALLOWED_STATUSES)}"
+        )
     if status == "QUEUED":
-        raise RuntimeError("post_publish_status_not_transitioned")
+        raise RuntimeError(
+            f"post_publish_status_not_transitioned:cmd_id={cmd_id} "
+            f"status still QUEUED after publish — MQTT publish succeeded but "
+            f"mark_command_sent failed to flip to SENT before this check"
+        )
 
 
 def _normalize_params_for_idempotency(params: Any) -> str:
-    """Канонизация params для проверки коллизий cmd_id."""
+    """Канонизация params для проверки коллизий cmd_id.
+
+    Audit F14: this is NOT a duplicate of ``canonical_json_payload`` from
+    ``common.hmac_utils``. The two serialisers have different contracts:
+
+    * ``canonical_json_payload`` — HMAC signing format. Uses custom float
+      canonicalisation (cJSON-compatible) and strips the ``sig`` key. Its
+      output is fed into ``hmac.new(secret, payload.encode(), sha256)`` and
+      any change produces a different signature. Cannot change numeric
+      format without breaking every node's verification.
+
+    * ``_normalize_params_for_idempotency`` — idempotency key for DB
+      collision detection on ``(cmd_id, params_hash)``. Uses ``sort_keys``
+      to handle Laravel historically persisting params in different key
+      orders between runs. Numeric format must match whatever Laravel
+      emits, not the cJSON canonical form.
+
+    Merging them would break either HMAC verification on nodes or
+    idempotency collision detection for legacy Laravel rows.
+    """
     candidate = {} if params is None else params
     if isinstance(candidate, str):
         try:
@@ -696,7 +751,7 @@ async def publish_zone_command(
         return skip_response
 
     max_retries = 3
-    retry_delays = [0.5, 1.0, 2.0]
+    retry_delays = _MQTT_PUBLISH_RETRY_DELAYS_SEC
 
     publish_success = False
     last_error: Any = None
@@ -775,7 +830,21 @@ async def publish_zone_command(
                 f"Correlation ACK sent for command {cmd_id} (status: SENT)"
             )
         except Exception as e:
-            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
+            # Audit F1+F5: send_status_to_laravel normally queues on HTTP
+            # failure (enqueue_on_failure=True inside deliver_status_to_laravel)
+            # so this except block only trips on catastrophic errors —
+            # cancellation, pool exhaustion, queue enqueue failure. Command
+            # IS already marked SENT in our DB and published to MQTT, so we
+            # don't raise. Full exc_info is required for post-mortem: without
+            # it we only see the exception type, no traceback, no way to
+            # distinguish a Redis outage from a pool exhaustion.
+            logger.warning(
+                "Failed to send correlation ACK for command %s: %s",
+                cmd_id,
+                e,
+                exc_info=True,
+                extra={"cmd_id": cmd_id},
+            )
 
         COMMANDS_SENT.labels(zone_id=str(zone_id), metric=req.get_command_name()).inc()
 
@@ -867,7 +936,7 @@ async def publish_node_command(
         return skip_response
 
     max_retries = 3
-    retry_delays = [0.5, 1.0, 2.0]
+    retry_delays = _MQTT_PUBLISH_RETRY_DELAYS_SEC
 
     publish_success = False
     last_error: Any = None
@@ -946,7 +1015,21 @@ async def publish_node_command(
                 f"Correlation ACK sent for command {cmd_id} (status: SENT)"
             )
         except Exception as e:
-            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
+            # Audit F1+F5: send_status_to_laravel normally queues on HTTP
+            # failure (enqueue_on_failure=True inside deliver_status_to_laravel)
+            # so this except block only trips on catastrophic errors —
+            # cancellation, pool exhaustion, queue enqueue failure. Command
+            # IS already marked SENT in our DB and published to MQTT, so we
+            # don't raise. Full exc_info is required for post-mortem: without
+            # it we only see the exception type, no traceback, no way to
+            # distinguish a Redis outage from a pool exhaustion.
+            logger.warning(
+                "Failed to send correlation ACK for command %s: %s",
+                cmd_id,
+                e,
+                exc_info=True,
+                extra={"cmd_id": cmd_id},
+            )
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 
@@ -1054,7 +1137,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
 
     mqtt = await get_mqtt_client()
     max_retries = 3
-    retry_delays = [0.5, 1.0, 2.0]
+    retry_delays = _MQTT_PUBLISH_RETRY_DELAYS_SEC
 
     publish_success = False
     last_error: Any = None
@@ -1132,7 +1215,21 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
                 f"Correlation ACK sent for command {cmd_id} (status: SENT)"
             )
         except Exception as e:
-            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
+            # Audit F1+F5: send_status_to_laravel normally queues on HTTP
+            # failure (enqueue_on_failure=True inside deliver_status_to_laravel)
+            # so this except block only trips on catastrophic errors —
+            # cancellation, pool exhaustion, queue enqueue failure. Command
+            # IS already marked SENT in our DB and published to MQTT, so we
+            # don't raise. Full exc_info is required for post-mortem: without
+            # it we only see the exception type, no traceback, no way to
+            # distinguish a Redis outage from a pool exhaustion.
+            logger.warning(
+                "Failed to send correlation ACK for command %s: %s",
+                cmd_id,
+                e,
+                exc_info=True,
+                extra={"cmd_id": cmd_id},
+            )
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 

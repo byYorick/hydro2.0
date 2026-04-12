@@ -17,6 +17,60 @@ from common.mqtt import AsyncMqttClient, MqttClient
 logger = logging.getLogger(__name__)
 
 
+# ── Command validation bounds (audit F2 + F7) ─────────────────────────
+
+#: Maximum acceptable offset between a caller-supplied ``ts`` and server
+#: time before the command is rejected as stale/replayed. MQTT spec
+#: mandates a 10-second window for timestamp validation on the node side;
+#: history-logger enforces the same contract at command creation time so
+#: stale clocks fail fast with an actionable error instead of silently
+#: reaching a node that will reject the signed payload as too old.
+_MAX_COMMAND_TS_OFFSET_SEC: int = 10
+
+#: Absolute bounds for dose volume in millilitres. Tighter than the
+#: NodeConfig safe_limits (which is hardware-specific) — these reject
+#: out-of-range doses before HMAC is even computed. Per project spec:
+#: 0.1 ml minimum effective dose, 5.0 ml per-pulse safety ceiling.
+_MIN_DOSE_ML: float = 0.1
+_MAX_DOSE_ML: float = 5.0
+
+#: Absolute bounds for pump run duration in milliseconds. The 60000 ms
+#: ceiling matches the firmware-side pump_driver safety limit — any
+#: command asking for more than 60 seconds of continuous pumping is
+#: a configuration or integration bug, not a legitimate dose.
+_MIN_DURATION_MS: int = 1
+_MAX_DURATION_MS: int = 60000
+
+
+def _validate_command_params(*, cmd: str, params: dict) -> None:
+    """Reject commands with out-of-range dose/duration fields.
+
+    Called from ``_create_command_payload`` before HMAC signing so bad
+    requests fail with a clear ValueError naming the exact field and
+    bound, rather than producing a signed payload that a node would
+    silently reject or — worse — dose far more than intended.
+
+    Bounds are intentionally conservative; node-side config can be
+    tighter via NodeConfig.safe_limits, but never looser than these.
+    """
+    dose_ml = params.get("ml") if isinstance(params.get("ml"), (int, float)) else None
+    if dose_ml is not None and not (_MIN_DOSE_ML <= float(dose_ml) <= _MAX_DOSE_ML):
+        raise ValueError(
+            f"command {cmd} params.ml={dose_ml} out of bounds "
+            f"[{_MIN_DOSE_ML}, {_MAX_DOSE_ML}]"
+        )
+    duration_ms = (
+        params.get("duration_ms") if isinstance(params.get("duration_ms"), (int, float)) else None
+    )
+    if duration_ms is not None and not (
+        _MIN_DURATION_MS <= int(duration_ms) <= _MAX_DURATION_MS
+    ):
+        raise ValueError(
+            f"command {cmd} params.duration_ms={duration_ms} out of bounds "
+            f"[{_MIN_DURATION_MS}, {_MAX_DURATION_MS}]"
+        )
+
+
 def _create_command_payload(
     cmd_id: Optional[str] = None,
     params: Optional[dict] = None,
@@ -24,7 +78,17 @@ def _create_command_payload(
     ts: Optional[int] = None,
     sig: Optional[str] = None,
 ) -> dict:
-    """Создать payload для команды MQTT."""
+    """Создать payload для команды MQTT.
+
+    Audit F2: a caller-supplied ``ts`` is validated against server time —
+    offsets larger than ``_MAX_COMMAND_TS_OFFSET_SEC`` are rejected so a
+    client with a skewed clock (or a replay attempt) fails before HMAC
+    is produced. When ``ts`` is absent we stamp with current UTC seconds.
+
+    Audit F7: dose/duration params are bound-checked via
+    ``_validate_command_params`` before HMAC is computed, so out-of-range
+    commands never reach a node signed.
+    """
     cmd_id = cmd_id or str(uuid.uuid4())
     if not cmd:
         raise ValueError("'cmd' is required")
@@ -32,10 +96,21 @@ def _create_command_payload(
     if not secret:
         raise ValueError("node_default_secret is not configured")
 
-    payload = {"cmd": cmd, "cmd_id": cmd_id, "params": params or {}}
+    effective_params = params or {}
+    _validate_command_params(cmd=cmd, params=effective_params)
 
+    payload = {"cmd": cmd, "cmd_id": cmd_id, "params": effective_params}
+
+    now_ts = int(time.time())
     if ts is None:
-        ts = int(time.time())
+        ts = now_ts
+    else:
+        offset = abs(now_ts - int(ts))
+        if offset > _MAX_COMMAND_TS_OFFSET_SEC:
+            raise ValueError(
+                f"command {cmd} ts={ts} stale: offset {offset}s exceeds "
+                f"maximum {_MAX_COMMAND_TS_OFFSET_SEC}s"
+            )
 
     payload["ts"] = ts
     payload_str = canonical_json_payload(payload)

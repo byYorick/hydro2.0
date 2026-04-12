@@ -223,6 +223,17 @@ class IrrigationCheckHandler(BaseStageHandler):
         event: Mapping[str, Any] | None,
         expected: Mapping[str, bool],
     ) -> bool:
+        """Decide whether a recorded storage event confirms an actively-low level.
+
+        Audit F11: the fallback chain used for ``level_min_state`` is
+        intentional, not redundant. Older MQTT event payloads wrote the
+        level-switch flags into the top-level ``state`` key, newer ones moved
+        them into the ``snapshot`` sub-dict. We prefer ``state`` because it
+        reflects the instantaneous reading, and fall back to ``snapshot`` so
+        events serialised by the legacy path still trigger the low-level
+        branch. If neither carries the flag we treat it as "not confirmed"
+        (the explicit ``False`` return below).
+        """
         payload = self._storage_event_payload(event)
         snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), Mapping) else None
         state = payload.get("state") if isinstance(payload.get("state"), Mapping) else None
@@ -231,10 +242,13 @@ class IrrigationCheckHandler(BaseStageHandler):
         for key, value in expected.items():
             if key not in snapshot or bool(snapshot.get(key)) != bool(value):
                 return False
+        # Preferred source: live state block. Fallback: snapshot block.
         level_min_state = self._event_bool(state, ("level_solution_min", "solution_level_min"))
         if level_min_state is None:
             level_min_state = self._event_bool(snapshot, ("level_solution_min", "solution_level_min"))
-        # Для solution_min runtime трактует low-condition как деактивированный нижний switch.
+        # runtime трактует low-condition как деактивированный нижний switch.
+        # If neither payload shape carried the flag at all, level_min_state
+        # remains None and we return False — "not confirmed".
         return level_min_state is False
 
     def _event_bool(

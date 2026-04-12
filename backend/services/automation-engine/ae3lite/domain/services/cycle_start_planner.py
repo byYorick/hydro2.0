@@ -29,6 +29,19 @@ class CycleStartPlanner:
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
+        """Build a deterministic command plan for the task+snapshot pair.
+
+        Contract (audit F12):
+          * Pure function — no mutation of ``task`` or ``snapshot``
+          * Deterministic for identical inputs — two calls with the same
+            ``task`` and ``snapshot`` produce structurally-equal results
+          * Not cached — ``execute_task`` calls build() at most once per
+            task run, and ``snapshot`` may change between runs, so a cache
+            would be both unnecessary and incorrect. Memoize only in tests
+            if the same inputs are reused.
+          * Fail-closed — raises ``PlannerConfigurationError`` instead of
+            silently degrading on missing/invalid config
+        """
         if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:

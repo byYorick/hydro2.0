@@ -68,6 +68,37 @@ _MAX_CORRECTION_SLACK_SEC: int = 7200
 #: certainly stuck and should be bounced by the scheduler instead.
 _MAX_STAGE_TOTAL_SEC: int = 86400
 
+#: Absolute cap on a single ``due_delay_sec`` value coming out of any
+#: handler outcome. Audit F7: handlers that forget a bound or read a
+#: broken config could schedule a task a week in the future, which
+#: looks like a dead zone from the scheduler's point of view. Clamp
+#: to the stage cap — anything larger is a bug, not a feature.
+_MAX_DUE_DELAY_SEC: int = _MAX_STAGE_TOTAL_SEC
+
+
+def _clamp_due_delay_sec(raw: Any) -> int:
+    """Clamp a handler-supplied ``due_delay_sec`` to ``[0, _MAX_DUE_DELAY_SEC]``.
+
+    Treats non-numeric or negative values as 0 (immediate retry). Never
+    raises — the scheduler should keep moving even if a handler returns
+    something weird, and the value is also logged by the caller so
+    observability surfaces the anomaly.
+    """
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    if value < 0:
+        return 0
+    if value > _MAX_DUE_DELAY_SEC:
+        logger.warning(
+            "workflow_router: due_delay_sec=%s превышает верхний предел %ss; ограничиваю",
+            value,
+            _MAX_DUE_DELAY_SEC,
+        )
+        return _MAX_DUE_DELAY_SEC
+    return value
+
 
 class WorkflowRouter:
     """Оркестратор topology-driven workflow: dispatch → handler → apply outcome → requeue.
@@ -229,7 +260,7 @@ class WorkflowRouter:
     ) -> Any:
         """Оставляет задачу в том же stage и ставит повторный запуск с задержкой."""
         workflow = task.workflow
-        due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
+        due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
 
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
@@ -270,6 +301,14 @@ class WorkflowRouter:
 
         topology = task.topology
         next_def = self._registry.get(topology, next_stage)
+        # Audit F8: same-stage transitions are intentional — handlers like
+        # ``CorrectionHandler._interrupt_for_imminent_retry_then_probe_deadline``
+        # and ``_correction_exhausted`` use them to schedule a retry of the
+        # current stage without resetting ``stage_entered_at`` or the existing
+        # deadline. When this branch fires we skip ``_record_stage_duration``
+        # (the stage is not actually ending) and reuse the prior deadline; the
+        # caller is expected to bump ``stage_retry_count`` explicitly if the
+        # retry should count against an attempt budget.
         same_stage = next_stage == task.current_stage
 
         # Записать метрики завершённого stage
@@ -309,7 +348,7 @@ class WorkflowRouter:
             pending_manual_step=None,
         )
 
-        due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
+        due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
@@ -359,7 +398,7 @@ class WorkflowRouter:
             CORRECTION_STARTED.labels(topology=task.topology).inc()
 
         workflow = task.workflow
-        due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
+        due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
@@ -538,6 +577,16 @@ class WorkflowRouter:
             return None
         timeout_sec = runtime.get(stage_def.timeout_key)
         if timeout_sec is None:
+            # Audit F13: a missing timeout_key in runtime config is almost
+            # always a config error, not a "stage has no deadline" intent.
+            # Log it once so ops see the anomaly in the scheduler log rather
+            # than silently getting an unbounded stage duration.
+            logger.warning(
+                "workflow_router: timeout_key=%r для stage=%s отсутствует в runtime; "
+                "stage будет без deadline до исправления конфига",
+                stage_def.timeout_key,
+                stage_def.name,
+            )
             return None
         return now + timedelta(seconds=int(timeout_sec))
 
