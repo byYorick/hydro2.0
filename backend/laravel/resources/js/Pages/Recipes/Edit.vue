@@ -39,6 +39,8 @@
           :micro-products="microProducts"
           @add-phase="addPhase"
           @remove-phase="removePhase"
+          @plant-created="onPlantCreated"
+          @save="onSave"
         />
       </Card>
     </div>
@@ -78,6 +80,12 @@ onMounted(() => {
   void loadPlants()
   void loadNutrientProducts()
 })
+
+function onPlantCreated(plant: { id: number; name: string }): void {
+  if (!plants.value.some(p => p.id === plant.id)) {
+    plants.value.push(plant)
+  }
+}
 
 function onSave(): void {
   void saveRecipe({ redirectToRecipe: Boolean(recipe?.id) })

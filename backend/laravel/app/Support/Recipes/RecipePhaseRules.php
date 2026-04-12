@@ -50,6 +50,7 @@ class RecipePhaseRules
             $prefix.'ec_max' => $ecBoundRules,
             $prefix.'nutrient_program_code' => ['nullable', 'string', 'max:64'],
             $prefix.'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
+            $prefix.'nutrient_ec_dosing_mode' => ['nullable', 'string', 'in:sequential,parallel'],
             $prefix.'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             $prefix.'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             $prefix.'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],

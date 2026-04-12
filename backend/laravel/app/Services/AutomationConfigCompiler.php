@@ -17,8 +17,7 @@ class AutomationConfigCompiler
         private readonly AutomationConfigRegistry $registry,
         private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
         private readonly RecipeNutritionRuntimeConfigResolver $recipeNutritionRuntimeConfigResolver,
-    ) {
-    }
+    ) {}
 
     public function compileAffectedScopes(string $scopeType, int $scopeId): void
     {
@@ -320,7 +319,7 @@ class AutomationConfigCompiler
             return null;
         }
 
-        return [
+        $result = [
             'mode' => $mode,
             'solution_volume_l' => $phase->nutrient_solution_volume_l,
             'components' => [
@@ -330,6 +329,13 @@ class AutomationConfigCompiler
                 'micro' => ['ratio_pct' => $phase->nutrient_micro_ratio_pct],
             ],
         ];
+
+        $ecDosingMode = trim((string) ($phase->nutrient_ec_dosing_mode ?? ''));
+        if ($ecDosingMode !== '') {
+            $result['ec_dosing_mode'] = $ecDosingMode;
+        }
+
+        return $result;
     }
 
     private function documentVersion(string $namespace, string $scopeType, int $scopeId): int

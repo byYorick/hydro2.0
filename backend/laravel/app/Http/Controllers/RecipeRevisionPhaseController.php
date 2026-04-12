@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Services\RecipeRevisionPhaseService;
-use App\Support\Recipes\RecipePhasePresenter;
 use App\Support\Recipes\RecipePhasePayloadNormalizer;
+use App\Support\Recipes\RecipePhasePresenter;
 use App\Support\Recipes\RecipePhaseRules;
 use App\Support\Recipes\RecipePhaseTargetValidator;
 use Illuminate\Http\JsonResponse;
@@ -22,8 +22,7 @@ class RecipeRevisionPhaseController extends Controller
         private RecipePhasePresenter $phasePresenter,
         private RecipePhasePayloadNormalizer $payloadNormalizer,
         private RecipePhaseTargetValidator $targetValidator,
-    ) {
-    }
+    ) {}
 
     /**
      * Создать фазу в ревизии рецепта
@@ -32,7 +31,7 @@ class RecipeRevisionPhaseController extends Controller
     public function store(Request $request, RecipeRevision $recipeRevision): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -76,7 +75,7 @@ class RecipeRevisionPhaseController extends Controller
     public function update(Request $request, RecipeRevisionPhase $recipeRevisionPhase): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -120,7 +119,7 @@ class RecipeRevisionPhaseController extends Controller
     public function destroy(RecipeRevisionPhase $recipeRevisionPhase): JsonResponse
     {
         $user = request()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -169,6 +168,18 @@ class RecipeRevisionPhaseController extends Controller
         $micro = $data['nutrient_micro_ratio_pct'] ?? $existingPhase?->nutrient_micro_ratio_pct;
 
         $hasAnyRatio = $npk !== null || $calcium !== null || $magnesium !== null || $micro !== null;
+
+        // Если nutrient_mode требует ratio-based дозирования и EC target задан —
+        // доли компонентов обязательны (AE3 вычисляет per-phase EC target из них).
+        $nutrientMode = $data['nutrient_mode'] ?? $existingPhase?->nutrient_mode;
+        $ecTarget = $data['ec_target'] ?? $existingPhase?->ec_target;
+        $ratioBasedMode = in_array($nutrientMode, ['ratio_ec_pid', 'delta_ec_by_k'], true);
+
+        if ($ratioBasedMode && is_numeric($ecTarget) && (float) $ecTarget > 0 && ! $hasAnyRatio) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'nutrient_ratio_components' => 'Для режимов ratio_ec_pid/delta_ec_by_k при EC target > 0 обязательны все 4 доли компонентов питания.',
+            ]);
+        }
 
         if (! $hasAnyIncomingRatio && ! $hasAnyRatio) {
             return;

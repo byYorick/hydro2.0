@@ -94,6 +94,7 @@ export interface RecipePhase {
   irrigation_duration_sec?: number | null
   nutrient_program_code?: string | null
   nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null
+  nutrient_ec_dosing_mode?: 'sequential' | 'parallel' | null
   nutrient_npk_ratio_pct?: number | string | null
   nutrient_calcium_ratio_pct?: number | string | null
   nutrient_magnesium_ratio_pct?: number | string | null

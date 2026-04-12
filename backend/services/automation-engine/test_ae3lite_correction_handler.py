@@ -39,6 +39,8 @@ RUNTIME = {
     "level_switch_on_threshold": 0.5,
     "target_ph": 6.0,
     "target_ec": 2.0,
+    "target_ec_prepare": 2.0,
+    "npk_ec_share": 1.0,
     "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
     "process_calibrations": {
         "solution_fill": {
@@ -398,7 +400,8 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.correction.outcome_success is True
 
 
-async def test_corr_check_prepare_recirc_soft_tolerance_without_ready_band_keeps_dosing():
+async def test_corr_check_prepare_recirc_soft_tolerance_without_ready_band_keeps_dosing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
     corr = _base_corr(
         corr_step="corr_check",
         attempt=1,

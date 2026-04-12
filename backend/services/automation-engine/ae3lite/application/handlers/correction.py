@@ -310,7 +310,7 @@ class CorrectionHandler(BaseStageHandler):
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         max_age = int(runtime.get("telemetry_max_age_sec", 300))
         target_ph = float(runtime["target_ph"])
-        target_ec = float(runtime["target_ec"])
+        target_ec = self._effective_ec_target(task=task, runtime=runtime)
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_tol_pct = float(tolerance.get("ph_pct", 15.0))
         ec_tol_pct = float(tolerance.get("ec_pct", 25.0))
@@ -361,8 +361,8 @@ class CorrectionHandler(BaseStageHandler):
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
             ph_min=self._coerce_float(runtime.get("target_ph_min")),
             ph_max=self._coerce_float(runtime.get("target_ph_max")),
-            ec_min=self._coerce_float(runtime.get("target_ec_min")),
-            ec_max=self._coerce_float(runtime.get("target_ec_max")),
+            ec_min=self._effective_ec_min(task=task, runtime=runtime),
+            ec_max=self._effective_ec_max(task=task, runtime=runtime),
         )
         success_reached = (
             correction_targets_reached and workflow_ready
@@ -380,8 +380,8 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ph": target_ph, "target_ec": target_ec,
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                     "workflow_ready": workflow_ready,
                 },
             )
@@ -418,8 +418,8 @@ class CorrectionHandler(BaseStageHandler):
                 now=now,
                 ph_min=self._coerce_float(runtime.get("target_ph_min")),
                 ph_max=self._coerce_float(runtime.get("target_ph_max")),
-                ec_min=self._coerce_float(runtime.get("target_ec_min")),
-                ec_max=self._coerce_float(runtime.get("target_ec_max")),
+                ec_min=self._effective_ec_min(task=task, runtime=runtime),
+                ec_max=self._effective_ec_max(task=task, runtime=runtime),
                 ec_actuator=actuators.get("ec"),
                 ec_actuators=actuators.get("ec_actuators"),
                 ph_up_actuator=actuators.get("ph_up"),
@@ -680,8 +680,8 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ec": target_ec,
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                 },
             )
             _logger.warning(
@@ -768,8 +768,8 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ec": target_ec,
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                     **(
                         dict(dose_plan.deferred_details)
                         if isinstance(dose_plan.deferred_details, Mapping)
@@ -790,8 +790,8 @@ class CorrectionHandler(BaseStageHandler):
                     "retry_after_sec": dose_plan.retry_after_sec,
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                 },
             )
             next_corr = replace(corr, corr_step="corr_check")
@@ -817,8 +817,8 @@ class CorrectionHandler(BaseStageHandler):
                         **(dict(dose_plan.dose_discarded_details) if isinstance(dose_plan.dose_discarded_details, Mapping) else {}),
                         "target_ph_min": runtime.get("target_ph_min"),
                         "target_ph_max": runtime.get("target_ph_max"),
-                        "target_ec_min": runtime.get("target_ec_min"),
-                        "target_ec_max": runtime.get("target_ec_max"),
+                        "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                        "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                     },
                 )
             if current_stage == "prepare_recirculation_check" and not workflow_ready:
@@ -841,8 +841,8 @@ class CorrectionHandler(BaseStageHandler):
                     **(dict(dose_plan.dead_zone_details) if isinstance(dose_plan.dead_zone_details, Mapping) else {}),
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                 },
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
@@ -946,8 +946,8 @@ class CorrectionHandler(BaseStageHandler):
                 "target_ec": target_ec,
                 "target_ph_min": runtime.get("target_ph_min"),
                 "target_ph_max": runtime.get("target_ph_max"),
-                "target_ec_min": runtime.get("target_ec_min"),
-                "target_ec_max": runtime.get("target_ec_max"),
+                "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                 "needs_ec": dose_plan.needs_ec,
                 "needs_ph_up": dose_plan.needs_ph_up,
                 "needs_ph_down": dose_plan.needs_ph_down,
@@ -1032,10 +1032,29 @@ class CorrectionHandler(BaseStageHandler):
             failed_channel=corr.ec_channel,
             retry_cmd="dose",
         )
-        # Multi-component EC dosing must be idempotent on partial failures.
-        # SequentialCommandGateway executes commands one-by-one and may fail after some successes,
-        # so we dispatch at most ONE component per invocation and resume using ec_current_seq_index.
-        if seq:
+        is_parallel = str(getattr(corr, "ec_component", "") or "").strip().lower() == "multi_parallel"
+        if seq and is_parallel:
+            # multi_parallel: отправляем ВСЕ dose-команды за один batch.
+            # Все компоненты (Ca, Mg, Micro) дозируются одновременно.
+            batch_cmds: list[PlannedCommand] = []
+            for idx, item in enumerate(seq):
+                comp = str(item.get("component") or "").strip().lower()
+                if comp:
+                    IRRIGATION_EC_COMPONENT_DOSE.labels(topology=task.topology, component=comp).inc()
+                batch_cmds.append(PlannedCommand(
+                    step_no=idx + 1,
+                    node_uid=str(item["node_uid"]),
+                    channel=str(item["channel"]),
+                    payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
+                ))
+            result = await self._command_gateway.run_batch(task=current_task, commands=tuple(batch_cmds), now=now)
+            if not result["success"]:
+                raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+            current_task = result.get("task") or current_task
+            corr = replace(corr, ec_current_seq_index=len(seq))
+        elif seq:
+            # multi_sequential: отправляем по ОДНОМУ компоненту за вызов,
+            # возобновляясь через ec_current_seq_index.
             start_idx = int(getattr(corr, "ec_current_seq_index", 0) or 0)
             if start_idx < 0:
                 start_idx = 0
@@ -1111,9 +1130,9 @@ class CorrectionHandler(BaseStageHandler):
                 "observe_seq": self._observe_seq(corr=corr, pid_type="ec", after_dose=True),
                 "ec_component": corr.ec_component,
                 "current_ec": current_ec,
-                "target_ec": runtime.get("target_ec"),
-                "target_ec_min": runtime.get("target_ec_min"),
-                "target_ec_max": runtime.get("target_ec_max"),
+                "target_ec": self._effective_ec_target(task=task, runtime=runtime),
+                "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                 "source": "correction_handler",
             },
         )

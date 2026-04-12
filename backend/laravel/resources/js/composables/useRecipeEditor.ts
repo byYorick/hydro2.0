@@ -159,6 +159,18 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
         showToast(`Сумма nutrient ratio должна быть 100% (${label})`, 'error', TOAST_TIMEOUT.NORMAL)
         return false
       }
+
+      const ratioMode = phase.nutrient_mode === 'ratio_ec_pid' || phase.nutrient_mode === 'delta_ec_by_k'
+      const hasEcTarget = (phase.ec_target ?? 0) > 0
+      const hasAllRatios = phase.nutrient_npk_ratio_pct != null
+        && phase.nutrient_calcium_ratio_pct != null
+        && phase.nutrient_magnesium_ratio_pct != null
+        && phase.nutrient_micro_ratio_pct != null
+      if (ratioMode && hasEcTarget && !hasAllRatios) {
+        const label = phase.name.trim() || `Фаза ${phase.phase_index + 1}`
+        showToast(`Для режима ${phase.nutrient_mode} при EC > 0 обязательны все 4 доли компонентов (${label})`, 'error', TOAST_TIMEOUT.NORMAL)
+        return false
+      }
     }
 
     return true

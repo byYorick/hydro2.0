@@ -35,6 +35,7 @@ export interface RecipePhaseFormState {
   irrigation_duration_sec: number | null
   nutrient_program_code: string | null
   nutrient_mode: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only'
+  nutrient_ec_dosing_mode: 'sequential' | 'parallel'
   nutrient_npk_ratio_pct: number | null
   nutrient_calcium_ratio_pct: number | null
   nutrient_magnesium_ratio_pct: number | null
@@ -159,6 +160,7 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     irrigation_duration_sec: 15,
     nutrient_program_code: DEFAULT_NUTRIENT_PROGRAM_CODE,
     nutrient_mode: 'ratio_ec_pid',
+    nutrient_ec_dosing_mode: 'sequential',
     nutrient_npk_ratio_pct: 44,
     nutrient_calcium_ratio_pct: 36,
     nutrient_magnesium_ratio_pct: 17,
@@ -239,6 +241,7 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     nutrient_mode: phase?.nutrient_mode === 'delta_ec_by_k' || phase?.nutrient_mode === 'dose_ml_l_only'
       ? phase.nutrient_mode
       : 'ratio_ec_pid',
+    nutrient_ec_dosing_mode: phase?.nutrient_ec_dosing_mode === 'parallel' ? 'parallel' : 'sequential',
     nutrient_npk_ratio_pct: toNullableNumber(phase?.nutrient_npk_ratio_pct, base.nutrient_npk_ratio_pct),
     nutrient_calcium_ratio_pct: toNullableNumber(phase?.nutrient_calcium_ratio_pct, base.nutrient_calcium_ratio_pct),
     nutrient_magnesium_ratio_pct: toNullableNumber(phase?.nutrient_magnesium_ratio_pct, base.nutrient_magnesium_ratio_pct),
@@ -284,6 +287,35 @@ export function createRecipeEditorFormState(recipe?: Partial<Recipe> | null): Re
     phases: Array.isArray(recipe?.phases) && recipe.phases.length > 0
       ? recipe.phases.map((phase) => hydrateRecipePhaseForm(phase))
       : [createDefaultRecipePhase(0)],
+  }
+}
+
+export interface EcBreakdown {
+  npk: number
+  calcium: number
+  magnesium: number
+  micro: number
+  total: number
+  npkShare: number
+}
+
+export function computeEcBreakdown(phase: RecipePhaseFormState): EcBreakdown {
+  const ec = phase.ec_target ?? 0
+  const npk = toNullableNumber(phase.nutrient_npk_ratio_pct, 0) ?? 0
+  const calcium = toNullableNumber(phase.nutrient_calcium_ratio_pct, 0) ?? 0
+  const magnesium = toNullableNumber(phase.nutrient_magnesium_ratio_pct, 0) ?? 0
+  const micro = toNullableNumber(phase.nutrient_micro_ratio_pct, 0) ?? 0
+  const sum = npk + calcium + magnesium + micro
+  if (sum <= 0 || ec <= 0) {
+    return { npk: 0, calcium: 0, magnesium: 0, micro: 0, total: 0, npkShare: 0 }
+  }
+  return {
+    npk: +(ec * npk / sum).toFixed(3),
+    calcium: +(ec * calcium / sum).toFixed(3),
+    magnesium: +(ec * magnesium / sum).toFixed(3),
+    micro: +(ec * micro / sum).toFixed(3),
+    total: ec,
+    npkShare: +(npk / sum).toFixed(4),
   }
 }
 
@@ -360,6 +392,7 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
     irrigation_duration_sec: toNullableInt(phase.irrigation_duration_sec),
     nutrient_program_code: phase.nutrient_program_code?.trim() || null,
     nutrient_mode: phase.nutrient_mode,
+    nutrient_ec_dosing_mode: phase.nutrient_ec_dosing_mode || 'sequential',
     nutrient_npk_ratio_pct: toNullableNumber(phase.nutrient_npk_ratio_pct),
     nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct),
     nutrient_magnesium_ratio_pct: toNullableNumber(phase.nutrient_magnesium_ratio_pct),

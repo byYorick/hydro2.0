@@ -1,31 +1,30 @@
-# E104: AE3-Lite hot-reload correction-config on real test_node
+# E112: Per-phase EC target — при подготовке раствора target = full_ec × npk_share
 # DoD:
-# - task входит в running correction loop и публикует dose на живой ноде
-# - correction-config обновляется через публичный Laravel API во время running correction loop
-# - AE подтверждает новую version через `last_applied_at/last_applied_version`
-# - следующий correction command после apply-ack уже ограничен новыми параметрами
+# - рецепт содержит nutrient_mode=ratio_ec_pid и 4 компонента (npk=44%, ca=36%, mg=12%, micro=8%)
+# - при подготовке (solution_fill / tank_recirc) AE целит в target_ec_prepare = 2.33 × 0.44 ≈ 1.025
+# - EC correction доводит раствор до ~1.0 mS/cm (NPK share), а не до полного 2.33
+# - pH correction работает как раньше (полный target)
+# - task не падает, correction loop завершается когда EC в prepare tolerance band
 
-name: E104_ae3_two_tank_realhw_hot_reload_correction_config
+name: E112_ae3_per_phase_ec_target_realhw
 description: |
-  Real-hardware hot-reload flow для native AE3-Lite на `firmware/test_node`.
-  Сценарий готовит test-zone под AE3 two-tank topology, делает reset через protected
-  command pipeline и затем проводит staged setup до `prepare_recirculation_check`.
-  Во время running correction loop сценарий меняет correction-config через API и проверяет,
-  что AE реально применяет новую version и следующая дозировка уже ограничена новым contract
-  уже в активном `tank_recirc` correction loop.
+  Per-phase EC target тест на реальной test_node.
+  Рецепт содержит nutrition ratios (npk=44%, calcium=36%, magnesium=12%, micro=8%).
+  При подготовке раствора AE3 использует target_ec_prepare = ec_target * npk_share = 2.33 * 0.44 = 1.025.
+  EC correction доводит раствор до ~1.0 mS/cm (NPK share), а не до полного 2.33 mS/cm.
 
 actions:
   - step: set_test_context
     type: set
-    fixture_prefix: ae3-realhw-hot-reload-${TIMESTAMP_MS}
+    fixture_prefix: ae3-perphase-ec-${TIMESTAMP_MS}
     test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: ${TEST_NODE_UID}
     test_ph_node_uid: ${TEST_PH_NODE_UID}
     test_ec_node_uid: ${TEST_EC_NODE_UID}
-    recipe_name: ae3-realhw-hot-reload-recipe-${TIMESTAMP_MS}
-    idempotency_key: ae3-realhw-hot-reload-start-cycle-${TIMESTAMP_MS}
+    recipe_name: ae3-perphase-ec-recipe-${TIMESTAMP_MS}
+    idempotency_key: ae3-perphase-ec-start-cycle-${TIMESTAMP_MS}
     scheduler_source: laravel_scheduler
-    scheduler_trace_id: ae3-realhw-hot-reload-trace-${TIMESTAMP_MS}
+    scheduler_trace_id: ae3-perphase-ec-trace-${TIMESTAMP_MS}
 
   - step: capture_scenario_window
     type: database_query
@@ -300,7 +299,197 @@ actions:
       payload:
         preset_id: ${test_node_correction_preset_row.0.id}
         base_config: {}
-        phase_overrides: {}
+        phase_overrides:
+          solution_fill:
+            runtime:
+              required_node_type: irrig
+              clean_fill_timeout_sec: 600
+              solution_fill_timeout_sec: 900
+              clean_fill_retry_cycles: 1
+              level_switch_on_threshold: 0.5
+              clean_max_sensor_label: level_clean_max
+              clean_min_sensor_label: level_clean_min
+              solution_max_sensor_label: level_solution_max
+              solution_min_sensor_label: level_solution_min
+            retry:
+              max_ec_correction_attempts: 3
+              max_ph_correction_attempts: 3
+              prepare_recirculation_timeout_sec: 240
+              prepare_recirculation_max_attempts: 3
+              prepare_recirculation_max_correction_attempts: 20
+              telemetry_stale_retry_sec: 30
+              decision_window_retry_sec: 10
+              low_water_retry_sec: 60
+            controllers:
+              ec:
+                mode: supervisory_allocator
+                kp: 12.0
+                ki: 0.12
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.08
+                max_dose_ml: 20.0
+                max_integral: 24.0
+                min_interval_sec: 20
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 0.0
+                  hard_max: 4.0
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 8
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.08
+                  no_effect_consecutive_limit: 4
+              ph:
+                mode: cross_coupled_pi_d
+                kp: 4.0
+                ki: 0.04
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.05
+                max_dose_ml: 10.0
+                max_integral: 10.0
+                min_interval_sec: 20
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 4.0
+                  hard_max: 8.5
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 8
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.04
+                  no_effect_consecutive_limit: 4
+            dosing:
+              solution_volume_l: 20.0
+              dose_ec_channel: dose_ec_a
+              dose_ph_up_channel: dose_ph_up
+              dose_ph_down_channel: dose_ph_down
+              max_ec_dose_ml: 20.0
+              max_ph_dose_ml: 10.0
+            timing:
+              sensor_mode_stabilization_time_sec: 20
+              stabilization_sec: 10
+              telemetry_max_age_sec: 180
+              irr_state_max_age_sec: 15
+              level_poll_interval_sec: 20
+            tolerance:
+              prepare_tolerance:
+                ph_pct: 10.0
+                ec_pct: 16.0
+            safety:
+              safe_mode_on_no_effect: true
+              block_on_active_no_effect_alert: true
+          tank_recirc:
+            runtime:
+              required_node_type: irrig
+              clean_fill_timeout_sec: 600
+              solution_fill_timeout_sec: 900
+              clean_fill_retry_cycles: 1
+              level_switch_on_threshold: 0.5
+              clean_max_sensor_label: level_clean_max
+              clean_min_sensor_label: level_clean_min
+              solution_max_sensor_label: level_solution_max
+              solution_min_sensor_label: level_solution_min
+            retry:
+              max_ec_correction_attempts: 10
+              max_ph_correction_attempts: 10
+              prepare_recirculation_timeout_sec: 300
+              prepare_recirculation_max_attempts: 3
+              prepare_recirculation_max_correction_attempts: 20
+              telemetry_stale_retry_sec: 30
+              decision_window_retry_sec: 10
+              low_water_retry_sec: 60
+            controllers:
+              ec:
+                mode: supervisory_allocator
+                kp: 18.0
+                ki: 0.18
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.05
+                max_dose_ml: 30.0
+                max_integral: 48.0
+                min_interval_sec: 15
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 0.0
+                  hard_max: 4.0
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 8
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.08
+                  no_effect_consecutive_limit: 4
+              ph:
+                mode: cross_coupled_pi_d
+                kp: 6.0
+                ki: 0.06
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.04
+                max_dose_ml: 16.0
+                max_integral: 16.0
+                min_interval_sec: 15
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 4.0
+                  hard_max: 8.5
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 8
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.04
+                  no_effect_consecutive_limit: 4
+            dosing:
+              solution_volume_l: 20.0
+              dose_ec_channel: dose_ec_a
+              dose_ph_up_channel: dose_ph_up
+              dose_ph_down_channel: dose_ph_down
+              max_ec_dose_ml: 30.0
+              max_ph_dose_ml: 16.0
+            timing:
+              sensor_mode_stabilization_time_sec: 20
+              stabilization_sec: 10
+              telemetry_max_age_sec: 180
+              irr_state_max_age_sec: 15
+              level_poll_interval_sec: 20
+            tolerance:
+              prepare_tolerance:
+                ph_pct: 9.0
+                ec_pct: 15.0
+            safety:
+              safe_mode_on_no_effect: true
+              block_on_active_no_effect_alert: true
     save: correction_config_update_response
 
   - step: cleanup_existing_correction_bindings
@@ -508,27 +697,11 @@ actions:
                   topology: two_tank_drip_substrate_trays
                   required_node_types:
                     - irrig
-                  startup:
-                    level_poll_interval_sec: 5
-                    clean_fill_timeout_sec: 120
-                    solution_fill_timeout_sec: 240
-                    prepare_recirculation_timeout_sec: 30
-                    telemetry_max_age_sec: 10
-                    irr_state_max_age_sec: 30
-                    sensor_mode_stabilization_time_sec: 0
+                  target_ph: 5.1
+                  target_ec: 2.33
                   prepare_tolerance:
-                    ph_pct: 5
-                    ec_pct: 10
-                  correction:
-                    dose_ec_channel: dose_ec_a
-                    dose_ph_up_channel: dose_ph_up
-                    dose_ph_down_channel: dose_ph_down
-                    max_ec_dose_ml: 60.0
-                    max_ph_dose_ml: 40.0
-                    stabilization_sec: 0
-                    max_ec_correction_attempts: 8
-                    max_ph_correction_attempts: 8
-                    solution_volume_l: 20.0
+                    ph_pct: 2
+                    ec_pct: 2
                   two_tank_commands:
                     clean_fill_start:
                       - channel: valve_clean_fill
@@ -685,6 +858,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -695,12 +874,18 @@ actions:
         :grow_cycle_id,
         0,
         'VEG',
-        5.00,
-        4.90,
         5.10,
-        2.40,
-        2.35,
-        2.45,
+        5.00,
+        5.15,
+        2.33,
+        2.30,
+        2.38,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -914,7 +1099,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 120.0
+    timeout: 30.0
     expected_rows: 1
     save: ae_command_row
 
@@ -938,7 +1123,7 @@ actions:
       ) >= 1
     params:
       task_id: ${task_id}
-    timeout: 120.0
+    timeout: 30.0
     expected_rows: 1
 
   - step: wait_runtime_irr_state_snapshot
@@ -970,13 +1155,11 @@ actions:
         error_message
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
-        AND topology = 'two_tank_drip_substrate_trays'
-        AND current_stage = 'clean_fill_check'
+        AND status IN ('pending', 'running', 'completed')
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 120.0
+    timeout: 20.0
     expected_rows: 1
     save: task_progress_row
 
@@ -991,7 +1174,7 @@ actions:
       LIMIT 1
     params:
       zone_id: ${zone_id}
-    timeout: 60.0
+    timeout: 20.0
     expected_rows: 1
     save: workflow_row
 
@@ -1073,11 +1256,15 @@ actions:
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
         AND status = 'pending'
-        AND current_stage = 'solution_fill_check'
+        AND current_stage IN (
+          'solution_fill_check',
+          'prepare_recirculation_start',
+          'prepare_recirculation_check'
+        )
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 40.0
+    timeout: 80.0
     expected_rows: 1
     save: solution_fill_stage_row
 
@@ -1135,6 +1322,35 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
+  - step: wait_sensor_mode_telemetry_cadence
+    type: db.wait
+    query: |
+      SELECT
+        ph.last_ts AS ph_ts,
+        ec.last_ts AS ec_ts,
+        EXTRACT(EPOCH FROM (NOW() - ph.last_ts))::numeric(10,3) AS ph_age_sec,
+        EXTRACT(EPOCH FROM (NOW() - ec.last_ts))::numeric(10,3) AS ec_age_sec
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '6 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '6 seconds'
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: sensor_mode_cadence_row
+    save: sensor_mode_cadence_row
+
   - step: force_solution_tank_full
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1165,6 +1381,39 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+  - step: wait_fill_ec_correction_command
+    type: db.wait
+    query: |
+      SELECT id, channel, payload->>'cmd' AS cmd
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel = 'pump_a'
+        AND payload->>'cmd' = 'dose'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 40.0
+    expected_rows: 1
+    save: fill_ec_correction_row
+
+  - step: load_fill_ph_correction_commands_if_any
+    type: database_query
+    query: |
+      SELECT id, channel, payload->>'cmd' AS cmd
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel IN ('pump_acid', 'pump_base')
+        AND payload->>'cmd' = 'dose'
+      ORDER BY id DESC
+      LIMIT 5
+    params:
+      task_id: ${task_id}
+    expected_rows: 0
+    save: fill_ph_correction_rows
+
   - step: wait_prepare_recirculation_stage
     type: db.wait
     query: |
@@ -1182,7 +1431,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 420.0
+    timeout: 180.0
     expected_rows: 1
     save: prepare_recirc_stage_row
 
@@ -1213,283 +1462,190 @@ actions:
       ) >= 2
     params:
       task_id: ${task_id}
-    timeout: 120.0
+    timeout: 40.0
     expected_rows: 1
+
+  - step: seed_recirculation_sensor_values
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        ph_value: 5.68
+        ec_value: 0.60
+    save: seed_recirculation_sensor_values_response
+
+  - step: wait_seed_recirculation_sensor_values_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_recirculation_sensor_values_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: load_seed_recirculation_command_row
+    type: database_query
+    query: |
+      SELECT id, cmd_id, created_at
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_recirculation_sensor_values_response.data.cmd_id}
+    expected_rows: 1
+    save: seed_recirculation_command_row
+
+  - step: wait_seeded_recirculation_telemetry
+    type: db.wait
+    query: |
+      SELECT
+        ph.last_value AS ph_value,
+        ec.last_value AS ec_value
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ph.last_value BETWEEN 5.63 AND 5.73
+        AND ec.last_value BETWEEN 0.50 AND 0.70
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: seeded_recirculation_telemetry_row
 
   - step: wait_recirculation_ec_correction_command
     type: db.wait
     query: |
-      SELECT id, channel, payload->>'cmd' AS cmd
+      SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
         AND payload->>'cmd' = 'dose'
-        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
+        AND created_at >= CAST(:after_seeded_at AS timestamptz)
       ORDER BY id ASC
       LIMIT 1
     params:
       task_id: ${task_id}
-      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
+      after_seeded_at: ${seed_recirculation_command_row.0.created_at}
     timeout: 120.0
     expected_rows: 1
     save: recirc_ec_correction_row
 
-  - step: hot_reload_correction_config
-    type: api_put
-    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
-    payload:
-      payload:
-        base_config: {}
-        phase_overrides:
-          solution_fill:
-            runtime:
-              required_node_type: irrig
-              clean_fill_timeout_sec: 600
-              solution_fill_timeout_sec: 900
-              clean_fill_retry_cycles: 1
-              level_switch_on_threshold: 0.5
-              clean_max_sensor_label: level_clean_max
-              clean_min_sensor_label: level_clean_min
-              solution_max_sensor_label: level_solution_max
-              solution_min_sensor_label: level_solution_min
-            retry:
-              max_ec_correction_attempts: 3
-              max_ph_correction_attempts: 3
-              prepare_recirculation_timeout_sec: 240
-              prepare_recirculation_max_attempts: 3
-              prepare_recirculation_max_correction_attempts: 20
-              telemetry_stale_retry_sec: 30
-              decision_window_retry_sec: 10
-              low_water_retry_sec: 60
-            controllers:
-              ec:
-                mode: supervisory_allocator
-                kp: 12.0
-                ki: 0.12
-                kd: 0.0
-                derivative_filter_alpha: 0.35
-                deadband: 0.08
-                max_dose_ml: 20.0
-                max_integral: 24.0
-                min_interval_sec: 20
-                anti_windup:
-                  enabled: true
-                overshoot_guard:
-                  enabled: true
-                  hard_min: 0.0
-                  hard_max: 4.0
-                no_effect:
-                  enabled: true
-                  max_count: 2
-                observe:
-                  telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
-                  observe_poll_sec: 2
-                  min_effect_fraction: 0.15
-                  stability_max_slope: 0.08
-                  no_effect_consecutive_limit: 4
-              ph:
-                mode: cross_coupled_pi_d
-                kp: 4.0
-                ki: 0.04
-                kd: 0.0
-                derivative_filter_alpha: 0.35
-                deadband: 0.05
-                max_dose_ml: 10.0
-                max_integral: 10.0
-                min_interval_sec: 20
-                anti_windup:
-                  enabled: true
-                overshoot_guard:
-                  enabled: true
-                  hard_min: 4.0
-                  hard_max: 8.5
-                no_effect:
-                  enabled: true
-                  max_count: 2
-                observe:
-                  telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
-                  observe_poll_sec: 2
-                  min_effect_fraction: 0.15
-                  stability_max_slope: 0.04
-                  no_effect_consecutive_limit: 4
-            dosing:
-              solution_volume_l: 20.0
-              dose_ec_channel: dose_ec_a
-              dose_ph_up_channel: dose_ph_up
-              dose_ph_down_channel: dose_ph_down
-              max_ec_dose_ml: 20.0
-              max_ph_dose_ml: 10.0
-            timing:
-              sensor_mode_stabilization_time_sec: 20
-              stabilization_sec: 10
-              telemetry_max_age_sec: 180
-              irr_state_max_age_sec: 15
-              level_poll_interval_sec: 20
-            tolerance:
-              prepare_tolerance:
-                ph_pct: 10.0
-                ec_pct: 16.0
-            safety:
-              safe_mode_on_no_effect: true
-              block_on_active_no_effect_alert: true
-          tank_recirc:
-            runtime:
-              required_node_type: irrig
-              clean_fill_timeout_sec: 600
-              solution_fill_timeout_sec: 900
-              clean_fill_retry_cycles: 1
-              level_switch_on_threshold: 0.5
-              clean_max_sensor_label: level_clean_max
-              clean_min_sensor_label: level_clean_min
-              solution_max_sensor_label: level_solution_max
-              solution_min_sensor_label: level_solution_min
-            retry:
-              max_ec_correction_attempts: 10
-              max_ph_correction_attempts: 10
-              prepare_recirculation_timeout_sec: 300
-              prepare_recirculation_max_attempts: 3
-              prepare_recirculation_max_correction_attempts: 20
-              telemetry_stale_retry_sec: 30
-              decision_window_retry_sec: 10
-              low_water_retry_sec: 60
-            controllers:
-              ec:
-                mode: supervisory_allocator
-                kp: 18.0
-                ki: 0.18
-                kd: 0.0
-                derivative_filter_alpha: 0.35
-                deadband: 0.05
-                max_dose_ml: 30.0
-                max_integral: 48.0
-                min_interval_sec: 15
-                anti_windup:
-                  enabled: true
-                overshoot_guard:
-                  enabled: true
-                  hard_min: 0.0
-                  hard_max: 4.0
-                no_effect:
-                  enabled: true
-                  max_count: 2
-                observe:
-                  telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
-                  observe_poll_sec: 2
-                  min_effect_fraction: 0.15
-                  stability_max_slope: 0.08
-                  no_effect_consecutive_limit: 4
-              ph:
-                mode: cross_coupled_pi_d
-                kp: 6.0
-                ki: 0.06
-                kd: 0.0
-                derivative_filter_alpha: 0.35
-                deadband: 0.04
-                max_dose_ml: 16.0
-                max_integral: 16.0
-                min_interval_sec: 15
-                anti_windup:
-                  enabled: true
-                overshoot_guard:
-                  enabled: true
-                  hard_min: 4.0
-                  hard_max: 8.5
-                no_effect:
-                  enabled: true
-                  max_count: 2
-                observe:
-                  telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
-                  observe_poll_sec: 2
-                  min_effect_fraction: 0.15
-                  stability_max_slope: 0.04
-                  no_effect_consecutive_limit: 4
-            dosing:
-              solution_volume_l: 20.0
-              dose_ec_channel: dose_ec_a
-              dose_ph_up_channel: dose_ph_up
-              dose_ph_down_channel: dose_ph_down
-              max_ec_dose_ml: 30.0
-              max_ph_dose_ml: 16.0
-            timing:
-              sensor_mode_stabilization_time_sec: 20
-              stabilization_sec: 10
-              telemetry_max_age_sec: 180
-              irr_state_max_age_sec: 15
-              level_poll_interval_sec: 20
-            tolerance:
-              prepare_tolerance:
-                ph_pct: 9.0
-                ec_pct: 15.0
-            safety:
-              safe_mode_on_no_effect: true
-              block_on_active_no_effect_alert: true
-    save: hot_reload_response
-
-  - step: set_hot_reload_version
-    type: set
-    hot_reload_version: ${hot_reload_response.data.version}
-
-  - step: wait_hot_reload_apply_ack
+  - step: wait_recirculation_ec_peak_decay_pair
     type: db.wait
     query: |
-      SELECT
-        CAST(COALESCE(acd.payload->>'last_applied_version', '0') AS integer) AS last_applied_version,
-        CAST(acd.payload->>'last_applied_at' AS timestamptz) AS last_applied_at
-      FROM automation_config_documents acd
-      WHERE acd.namespace = 'zone.correction'
-        AND acd.scope_type = 'zone'
-        AND acd.scope_id = CAST(:zone_id AS bigint)
-        AND CAST(COALESCE(acd.payload->>'last_applied_version', '0') AS integer) = CAST(:version AS integer)
-        AND NULLIF(acd.payload->>'last_applied_at', '') IS NOT NULL
-      LIMIT 1
+      WITH first_ph_dose AS (
+        SELECT MIN(cmd.created_at) AS ph_created_at
+        FROM ae_commands cmd
+        WHERE cmd.task_id = CAST(:task_id AS bigint)
+          AND cmd.publish_status = 'accepted'
+          AND cmd.channel IN ('pump_acid', 'pump_base')
+          AND cmd.payload->>'cmd' = 'dose'
+          AND cmd.created_at >= CAST(:after_command_at AS timestamptz)
+      ),
+      ec_samples AS (
+        SELECT
+          tsamp.ts,
+          tsamp.value
+        FROM telemetry_samples tsamp
+        JOIN sensors s ON s.id = tsamp.sensor_id
+        WHERE s.node_id = CAST(:ec_node_id AS bigint)
+          AND s.type = 'EC'
+          AND s.label = 'ec_sensor'
+          AND tsamp.ts >= CAST(:after_command_at AS timestamptz) + INTERVAL '2 seconds'
+          AND tsamp.ts >= NOW() - INTERVAL '90 seconds'
+      ),
+      observe_pair AS (
+        SELECT
+          peak.ts AS peak_ts,
+          peak.value AS peak_value,
+          decay.ts AS decay_ts,
+          decay.value AS decay_value
+        FROM ec_samples peak
+        JOIN ec_samples decay
+          ON decay.ts >= peak.ts + INTERVAL '2 seconds'
+        LEFT JOIN first_ph_dose ph ON true
+        WHERE peak.value >= 0.65
+          AND decay.value <= peak.value - 0.002
+          AND (ph.ph_created_at IS NULL OR decay.ts < ph.ph_created_at)
+        ORDER BY peak.value DESC, decay.ts ASC
+        LIMIT 1
+      )
+      SELECT peak_ts, peak_value, decay_ts, decay_value
+      FROM observe_pair
     params:
-      zone_id: ${zone_id}
-      version: ${hot_reload_version}
+      task_id: ${task_id}
+      ec_node_id: ${ec_node_id}
+      after_command_at: ${recirc_ec_correction_row.0.created_at}
     timeout: 180.0
     expected_rows: 1
-    save: hot_reload_applied_row
+    save: recirc_ec_observe_row
 
-  - step: wait_post_reload_correction_command
+  - step: wait_recirculation_ph_correction_command
     type: db.wait
     query: |
-      SELECT
-        id,
-        channel,
-        payload->>'cmd' AS cmd,
-        CAST(COALESCE(payload->'params'->>'ml', '0') AS numeric) AS ml,
-        created_at
+      SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND id > CAST(:after_command_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel IN ('pump_a', 'pump_acid', 'pump_base')
+        AND channel IN ('pump_acid', 'pump_base')
         AND payload->>'cmd' = 'dose'
-        AND created_at >= CAST(:applied_at AS timestamptz)
-        AND (
-          (channel = 'pump_a' AND CAST(COALESCE(payload->'params'->>'ml', '0') AS numeric) <= 30.0)
-          OR
-          (channel IN ('pump_acid', 'pump_base') AND CAST(COALESCE(payload->'params'->>'ml', '0') AS numeric) <= 16.0)
-        )
+        AND created_at >= CAST(:after_seeded_at AS timestamptz)
       ORDER BY id ASC
       LIMIT 1
     params:
       task_id: ${task_id}
       after_command_id: ${recirc_ec_correction_row.0.id}
-      applied_at: ${hot_reload_applied_row.0.last_applied_at}
-    timeout: 240.0
+      after_seeded_at: ${seed_recirculation_command_row.0.created_at}
+    timeout: 180.0
     expected_rows: 1
-    save: post_reload_correction_row
+    save: recirc_ph_correction_row
 
-  - step: wait_targets_reached_on_node_after_hot_reload
+  - step: wait_task_not_failed_after_sequential_loop
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        status,
+        current_stage,
+        workflow_phase,
+        error_code,
+        corr_step
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND status IN ('pending', 'completed')
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 120.0
+    expected_rows: 1
+    save: task_not_failed_after_sequential_loop_row
+
+  - step: wait_targets_reached_on_node_after_sequential_loop
     type: db.wait
     query: |
       SELECT
@@ -1509,29 +1665,15 @@ actions:
         AND ecs.label = 'ec_sensor'
         AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
         AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ph.last_value BETWEEN 4.90 AND 5.15
-        AND ec.last_value BETWEEN 2.30 AND 2.60
+        AND ph.last_value BETWEEN 5.00 AND 5.15
+        AND ec.last_value BETWEEN 0.85 AND 1.20
       LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
     timeout: 420.0
     expected_rows: 1
-    save: targets_reached_after_hot_reload_row
-
-  - step: wait_task_alive_after_hot_reload
-    type: db.wait
-    query: |
-      SELECT id, status, current_stage, error_code, error_message, due_at
-      FROM ae_tasks
-      WHERE id = CAST(:task_id AS bigint)
-        AND status IN ('pending', 'completed')
-      LIMIT 1
-    params:
-      task_id: ${task_id}
-    timeout: 60.0
-    expected_rows: 1
-    save: task_after_hot_reload_row
+    save: targets_reached_after_sequential_loop_row
 
   - step: load_expected_ae_command_counts
     type: database_query
@@ -1554,6 +1696,12 @@ actions:
             AND payload->>'cmd' = 'set_relay'
             AND COALESCE(payload->'params'->>'state', 'false') = 'true'
         )::int AS solution_fill_start_cnt,
+        COUNT(*) FILTER (
+          WHERE publish_status = 'accepted'
+            AND channel = 'valve_solution_supply'
+            AND payload->>'cmd' = 'set_relay'
+            AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+        )::int AS prepare_recirculation_start_cnt,
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
             AND channel = 'pump_a'
@@ -1596,11 +1744,6 @@ actions:
     expected_rows: 1
     save: task_command_count_row
 
-  - step: get_zone_correction_config_after_hot_reload
-    type: api_get
-    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
-    save: correction_config_response
-
   - step: get_internal_task_status
     type: http_request
     method: GET
@@ -1642,7 +1785,7 @@ assertions:
 
   - name: runtime_task_pending_clean_fill_check
     type: custom_assert
-    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'"
+    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and 'two_tank' in str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower()"
 
   - name: workflow_phase_tank_filling
     type: custom_assert
@@ -1650,42 +1793,31 @@ assertions:
 
   - name: solution_fill_stage_reached
     type: custom_assert
-    condition: "str(context.get('solution_fill_stage_row', [{}])[0].get('current_stage', '')).lower() == 'solution_fill_check'"
+    condition: "str(context.get('solution_fill_stage_row', [{}])[0].get('current_stage', '')).lower() in ('solution_fill_check', 'prepare_recirculation_start', 'prepare_recirculation_check')"
 
-  - name: hot_reload_response_ok
-    type: json_assertion
-    source: hot_reload_response
-    expected:
-      - field: status
-        operator: equals
-        value: ok
-      - field: data.version
-        operator: equals
-        value: ${hot_reload_version}
-
-  - name: hot_reload_apply_ack_persisted
+  - name: prepare_recirculation_stage_reached
     type: custom_assert
-    condition: "int(context.get('hot_reload_applied_row', [{}])[0].get('last_applied_version', 0)) == int(context.get('hot_reload_version', 0))"
+    condition: "str(context.get('prepare_recirc_stage_row', [{}])[0].get('current_stage', '')).lower() == 'prepare_recirculation_check' and str(context.get('prepare_recirc_stage_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_recirc'"
 
-  - name: correction_config_api_reports_applied_version
+  - name: telemetry_cadence_after_sensor_mode
     type: custom_assert
-    condition: "int(context.get('correction_config_response', {}).get('data', {}).get('last_applied_version', context.get('hot_reload_applied_row', [{}])[0].get('last_applied_version', 0))) == int(context.get('hot_reload_version', 0))"
+    condition: "len(context.get('sensor_mode_cadence_row', [])) == 1 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ph_age_sec', 999.0)) <= 6.0 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ec_age_sec', 999.0)) <= 6.0"
 
-  - name: correction_config_api_reports_applied_timestamp
+  - name: recirculation_ec_peak_observed
     type: custom_assert
-    condition: "bool(context.get('correction_config_response', {}).get('data', {}).get('last_applied_at') or context.get('hot_reload_applied_row', [{}])[0].get('last_applied_at'))"
+    condition: "len(context.get('recirc_ec_observe_row', [])) == 1"
 
-  - name: task_alive_after_hot_reload
+  - name: recirculation_ec_decay_observed
     type: custom_assert
-    condition: "str(context.get('task_after_hot_reload_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not str(context.get('task_after_hot_reload_row', [{}])[0].get('error_code', '') or '').strip()"
+    condition: "len(context.get('recirc_ec_observe_row', [])) == 1"
 
-  - name: post_reload_command_is_clamped
+  - name: task_not_failed_after_sequential_loop
     type: custom_assert
-    condition: "((context.get('post_reload_correction_row', [{}])[0].get('channel') == 'pump_a') and float(context.get('post_reload_correction_row', [{}])[0].get('ml', 999.0)) <= 30.0) or ((context.get('post_reload_correction_row', [{}])[0].get('channel') in ('pump_acid', 'pump_base')) and float(context.get('post_reload_correction_row', [{}])[0].get('ml', 999.0)) <= 16.0)"
+    condition: "str(context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('error_code')"
 
-  - name: targets_reached_after_hot_reload
+  - name: targets_reached_after_sequential_loop
     type: custom_assert
-    condition: "len(context.get('targets_reached_after_hot_reload_row', [])) == 1"
+    condition: "len(context.get('targets_reached_after_sequential_loop_row', [])) == 1"
 
   - name: at_least_ten_ae_commands_logged
     type: custom_assert
@@ -1703,31 +1835,25 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('solution_fill_start_cnt', 0)) >= 1"
 
-
-  - name: ec_correction_logged
+  - name: prepare_recirculation_start_logged
     type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 1"
+    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('prepare_recirculation_start_cnt', 0)) >= 1"
+
+  - name: ec_correction_logged_twice
+    type: custom_assert
+    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
+
+  - name: sequential_ph_correction_logged
+    type: custom_assert
+    condition: "len(context.get('recirc_ph_correction_row', [])) == 1"
 
   - name: runtime_never_resets_node_during_task
     type: custom_assert
     condition: "int(context.get('runtime_reset_commands_row', [{}])[0].get('runtime_reset_cnt', 0)) == 0"
 
-  - name: internal_task_not_failed_after_hot_reload
-    type: json_assertion
-    source: internal_task_response
-    path: json
-    expected:
-      - field: status
-        operator: equals
-        value: ok
-      - field: data.task_id
-        operator: equals
-        value: ${task_id}
-      - field: data.status
-        operator: in
-        value:
-          - pending
-          - completed
+  - name: internal_task_not_failed
+    type: custom_assert
+    condition: "str(context.get('internal_task_response', {}).get('json', {}).get('status', '')).lower() == 'ok' and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', '')) and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('status', '')).lower() in ('pending', 'completed')"
 
 cleanup:
   - step: reset_test_node_after_run

@@ -83,7 +83,7 @@ async def test_corr_dose_ec_dispatches_sequence_ca_mg_micro(monkeypatch) -> None
         current_stage="irrigation_check",
         workflow=SimpleNamespace(workflow_phase="irrigating"),
     )
-    plan = SimpleNamespace(runtime={"pid_state": {}})
+    plan = SimpleNamespace(runtime={"pid_state": {}, "target_ec": 1.5})
 
     out1 = await handler._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
     assert out1.kind == "enter_correction"
@@ -161,7 +161,7 @@ async def test_corr_dose_ec_resumes_sequence_after_partial_failure(monkeypatch) 
         current_stage="irrigation_check",
         workflow=SimpleNamespace(workflow_phase="irrigating"),
     )
-    plan = SimpleNamespace(runtime={"pid_state": {}})
+    plan = SimpleNamespace(runtime={"pid_state": {}, "target_ec": 1.5})
 
     out1 = await handler._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
     assert out1.correction.ec_current_seq_index == 1

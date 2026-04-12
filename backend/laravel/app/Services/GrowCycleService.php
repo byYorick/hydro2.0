@@ -1416,6 +1416,7 @@ class GrowCycleService
             'ec_max' => $templatePhase->ec_max,
             'nutrient_program_code' => $templatePhase->nutrient_program_code,
             'nutrient_mode' => $templatePhase->nutrient_mode,
+            'nutrient_ec_dosing_mode' => $templatePhase->nutrient_ec_dosing_mode,
             'nutrient_npk_ratio_pct' => $templatePhase->nutrient_npk_ratio_pct,
             'nutrient_calcium_ratio_pct' => $templatePhase->nutrient_calcium_ratio_pct,
             'nutrient_magnesium_ratio_pct' => $templatePhase->nutrient_magnesium_ratio_pct,

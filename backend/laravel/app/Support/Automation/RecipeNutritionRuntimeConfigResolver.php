@@ -48,7 +48,9 @@ final class RecipeNutritionRuntimeConfigResolver
             );
 
             if ($irrigationRatios !== []) {
-                data_set($resolved, 'phases.irrigation.ec_dosing_mode', 'multi_sequential');
+                $recipeEcDosingMode = strtolower(trim((string) ($nutrition['ec_dosing_mode'] ?? '')));
+                $irrigationEcDosingMode = $recipeEcDosingMode === 'parallel' ? 'multi_parallel' : 'multi_sequential';
+                data_set($resolved, 'phases.irrigation.ec_dosing_mode', $irrigationEcDosingMode);
                 data_set($resolved, 'phases.irrigation.ec_component_ratios', $componentRatios);
                 data_set(
                     $resolved,
@@ -78,7 +80,6 @@ final class RecipeNutritionRuntimeConfigResolver
     }
 
     /**
-     * @param  mixed  $rawComponents
      * @return array<string, float>
      */
     private function extractComponentRatios(mixed $rawComponents): array
@@ -110,7 +111,6 @@ final class RecipeNutritionRuntimeConfigResolver
     }
 
     /**
-     * @param  mixed  $current
      * @param  array<int, string>  $extra
      * @return array<int, string>
      */

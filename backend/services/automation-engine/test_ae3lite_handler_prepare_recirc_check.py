@@ -39,6 +39,8 @@ RUNTIME = {
     "irr_state_wait_poll_interval_sec": 0.005,
     "target_ph": 5.8,
     "target_ec": 1.4,
+    "target_ec_prepare": 1.4,
+    "npk_ec_share": 1.0,
     "prepare_tolerance": {"ph_pct": 15, "ec_pct": 25},
     "correction": {
         "max_ec_correction_attempts": 3,

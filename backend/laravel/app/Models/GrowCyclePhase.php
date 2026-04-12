@@ -24,6 +24,7 @@ class GrowCyclePhase extends Model
         'ec_max',
         'nutrient_program_code',
         'nutrient_mode',
+        'nutrient_ec_dosing_mode',
         'nutrient_npk_ratio_pct',
         'nutrient_calcium_ratio_pct',
         'nutrient_magnesium_ratio_pct',

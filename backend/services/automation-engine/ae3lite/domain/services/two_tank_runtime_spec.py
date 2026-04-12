@@ -171,6 +171,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         )
     target_ph = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ph")
     target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
+    npk_ec_share = _compute_prepare_ec_share(solution_fill_cfg, resolved_base_cfg)
+    target_ec_prepare = round(target_ec * npk_ec_share, 4)
     runtime: dict[str, Any] = {
         "required_node_types": required_node_types,
         "clean_fill_timeout_sec": _require_int(
@@ -262,6 +264,17 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "target_ph_max": _resolve_phase_target_bound(snapshot=snapshot, key="ph", bound="max", fallback=target_ph),
         "target_ec_min": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec),
         "target_ec_max": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec),
+        # Per-phase EC targets для двухбакового контура:
+        # Подготовка (solution_fill / tank_recirc) — только доля NPK от полного EC.
+        # Полив (irrigation) — полный EC (кумулятивно: NPK уже в растворе).
+        "target_ec_prepare": target_ec_prepare,
+        "target_ec_prepare_min": round(
+            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec) * npk_ec_share, 4
+        ),
+        "target_ec_prepare_max": round(
+            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec) * npk_ec_share, 4
+        ),
+        "npk_ec_share": npk_ec_share,
         "prepare_tolerance": dict(default_prepare_tolerance),
         "prepare_tolerance_by_phase": prepare_tolerance_by_phase,
         "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
@@ -584,6 +597,40 @@ def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> in
         1,
         _MAX_CORRECTION_ATTEMPTS,
     )
+
+
+def _compute_prepare_ec_share(
+    solution_fill_cfg: Mapping[str, Any],
+    base_cfg: Mapping[str, Any],
+) -> float:
+    """Доля EC для фазы подготовки (NPK) от полного target.
+
+    Берёт ec_component_ratios из solution_fill или base конфига.
+    Если ratios не заданы — возвращает 1.0 (backward compat: single mode
+    без multi-component, target_ec_prepare = target_ec).
+    """
+    ratios = _to_mapping(solution_fill_cfg.get("ec_component_ratios")) or _to_mapping(
+        base_cfg.get("ec_component_ratios")
+    )
+    if not ratios:
+        return 1.0
+
+    npk = 0.0
+    total = 0.0
+    for k, v in ratios.items():
+        try:
+            val = float(v)
+        except (TypeError, ValueError):
+            continue
+        if val > 0:
+            total += val
+            if str(k).strip().lower() == "npk":
+                npk = val
+
+    if total <= 0 or npk <= 0:
+        return 1.0
+
+    return npk / total
 
 
 def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:

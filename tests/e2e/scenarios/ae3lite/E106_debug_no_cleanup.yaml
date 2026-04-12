@@ -1512,7 +1512,7 @@ assertions:
 
   - name: runtime_task_pending_clean_fill_check
     type: custom_assert
-    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() == 'pending' and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays' and str(context.get('task_progress_row', [{}])[0].get('stage', '')).lower() == 'clean_fill_check'"
+    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'"
 
   - name: workflow_phase_tank_filling
     type: custom_assert

@@ -52,6 +52,7 @@ class DosePlan:
     ec_duration_ms: int = 0
     ec_retry_after_sec: Optional[int] = None
     ec_dose_sequence: tuple[EcDoseStep, ...] = ()
+    ec_dosing_mode: str = "single"
 
     needs_ph_up: bool = False
     needs_ph_down: bool = False
@@ -274,12 +275,13 @@ class CorrectionPlanner:
                 # Используем нормализованный phase_key (irrigating|irrigation|irrig_recirc → irrigation),
                 # а не сырой workflow_phase, чтобы fail-closed логика совпадала с normalize_phase_key
                 # и мы не откатывались к NPK из-за опечатки.
+                is_multi = ec_dosing_mode in ("multi_sequential", "multi_parallel")
                 multi_fail_closed = (
-                    ec_dosing_mode == "multi_sequential"
+                    is_multi
                     and "npk" in excluded_set
                     and phase_key == "irrigation"
                 )
-                if ec_dosing_mode == "multi_sequential" and isinstance(ec_actuators, Mapping):
+                if is_multi and isinstance(ec_actuators, Mapping):
                     ec_pid_entry = _pid_entry(pid_state, "ec")
                     ec_pid_update = _next_pid_state(
                         kind="ec",
@@ -421,7 +423,7 @@ class CorrectionPlanner:
                             total_ms += int(duration_ms)
 
                         if seq:
-                            ec_component_name = "multi_sequential"
+                            ec_component_name = ec_dosing_mode
                             ec_dose_sequence = tuple(seq)
                             ec_node_uid = seq[0].node_uid
                             ec_channel = seq[0].channel
@@ -442,18 +444,18 @@ class CorrectionPlanner:
                 # Fail-closed: если включён multi_sequential и NPK исключён во время полива,
                 # нельзя откатываться к single-dose, который по умолчанию выберет ec_npk_pump.
                 if multi_fail_closed and not ec_dose_sequence:
-                    discarded = ()
+                    discarded_names = ()
                     if isinstance(ec_discarded_details, Mapping):
                         raw_discarded = ec_discarded_details.get("discarded")
                         if isinstance(raw_discarded, list):
-                            discarded = tuple(
+                            discarded_names = tuple(
                                 str(item.get("component") or "").strip().lower()
                                 for item in raw_discarded
                                 if isinstance(item, Mapping)
                             )
-                    discarded_components = ", ".join(sorted({name for name in discarded if name})) or "none"
+                    discarded_components = ", ".join(sorted({name for name in discarded_names if name})) or "none"
                     raise PlannerConfigurationError(
-                        "EC multi_sequential produced no safe non-NPK doses during irrigation "
+                        f"EC {ec_dosing_mode} produced no safe non-NPK doses during irrigation "
                         f"(discarded={discarded_components})"
                     )
                 if not ec_dose_sequence and not multi_fail_closed:
@@ -606,6 +608,7 @@ class CorrectionPlanner:
             ec_duration_ms=ec_duration_ms,
             ec_retry_after_sec=ec_retry_after,
             ec_dose_sequence=ec_dose_sequence,
+            ec_dosing_mode=ec_dosing_mode if ec_dose_sequence else "single",
             needs_ph_up=ph_needs_up,
             needs_ph_down=ph_needs_down,
             ph_node_uid=ph_node_uid,

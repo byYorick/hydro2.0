@@ -767,7 +767,7 @@ class BaseStageHandler:
             return False
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = float(runtime["target_ph"])
-        ec_target = float(runtime["target_ec"])
+        ec_target = self._effective_ec_target(task=task, runtime=runtime)
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
         # Correction success stays aligned with the canonical target tolerance.
@@ -821,7 +821,7 @@ class BaseStageHandler:
     ) -> bool:
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = float(runtime["target_ph"])
-        ec_target = float(runtime["target_ec"])
+        ec_target = self._effective_ec_target(task=task, runtime=runtime)
         ph_ok = self._value_matches_ready_band(
             current=current_ph,
             target=ph_target,
@@ -833,8 +833,8 @@ class BaseStageHandler:
             current=current_ec,
             target=ec_target,
             tolerance_pct=float(tolerance.get("ec_pct", 25) or 25),
-            explicit_min=self._coerce_float(runtime.get("target_ec_min")),
-            explicit_max=self._coerce_float(runtime.get("target_ec_max")),
+            explicit_min=self._effective_ec_min(task=task, runtime=runtime),
+            explicit_max=self._effective_ec_max(task=task, runtime=runtime),
         )
         return ph_ok and ec_ok
 
@@ -1101,6 +1101,37 @@ class BaseStageHandler:
             window_min_samples=window_min_samples,
             stability_max_slope=stability_max_slope,
         )
+
+    # ── Per-phase EC target (NPK share для подготовки) ────────────
+
+    def _effective_ec_target(self, *, task: Any, runtime: Mapping[str, Any]) -> float:
+        """EC target с учётом текущей фазы workflow.
+
+        solution_fill / tank_recirc → target_ec_prepare (NPK-доля от полного EC)
+        irrigation / irrig_recirc   → target_ec (полный, кумулятивный)
+        """
+        phase = self._runtime_phase_key(task=task)
+        if phase in ("solution_fill", "tank_recirc"):
+            prepare = runtime.get("target_ec_prepare")
+            if prepare is not None:
+                return float(prepare)
+        return float(runtime.get("target_ec") or 0.0)
+
+    def _effective_ec_min(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+        phase = self._runtime_phase_key(task=task)
+        if phase in ("solution_fill", "tank_recirc"):
+            val = runtime.get("target_ec_prepare_min")
+            if val is not None:
+                return float(val)
+        return self._coerce_float(runtime.get("target_ec_min"))
+
+    def _effective_ec_max(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+        phase = self._runtime_phase_key(task=task)
+        if phase in ("solution_fill", "tank_recirc"):
+            val = runtime.get("target_ec_prepare_max")
+            if val is not None:
+                return float(val)
+        return self._coerce_float(runtime.get("target_ec_max"))
 
     def _runtime_phase_key(self, *, task: Any) -> str:
         workflow = getattr(task, "workflow", None)

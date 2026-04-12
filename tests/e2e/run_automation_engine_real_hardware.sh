@@ -164,6 +164,7 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"
   "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
   "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
+  "scenarios/ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml"
 )
 SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"
