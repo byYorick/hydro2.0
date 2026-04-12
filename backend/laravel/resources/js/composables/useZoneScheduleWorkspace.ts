@@ -28,6 +28,7 @@ export interface TimelineDisplayItem {
   label: string
   detail: string | null
   grouped?: boolean
+  _count?: number
 }
 
 interface DecisionDescriptorInput {
@@ -396,6 +397,181 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     return normalized || 'Decision'
   }
 
+  function statusLabel(status: string | null | undefined): string {
+    const normalized = String(status ?? '').trim().toLowerCase()
+    const labels: Record<string, string> = {
+      running: 'Выполняется',
+      completed: 'Завершён',
+      failed: 'Ошибка',
+      cancelled: 'Отменён',
+      pending: 'Ожидает',
+      claimed: 'Занят',
+      waiting_command: 'Ожидает команды',
+      idle: 'Ожидание',
+      accepted: 'Принят',
+      skipped: 'Пропущен',
+      unknown: 'Неизвестно',
+    }
+    return labels[normalized] ?? status ?? '—'
+  }
+
+  function modeLabel(mode: string | null | undefined): string {
+    const normalized = String(mode ?? '').trim().toLowerCase()
+    const labels: Record<string, string> = {
+      time: 'по расписанию',
+      smart: 'умный',
+      force: 'принудительно',
+      task: 'задача',
+      manual: 'вручную',
+      auto: 'авто',
+    }
+    return labels[normalized] ?? mode ?? '—'
+  }
+
+  function workflowStageLabel(stage: string | null | undefined): string | null {
+    const raw = asNonEmptyString(stage)
+    if (!raw) return null
+    const normalized = raw.toLowerCase()
+    const labels: Record<string, string> = {
+      // Общие
+      startup: 'Запуск',
+      idle: 'Ожидание',
+      waiting: 'Ожидание',
+      ready: 'Готов',
+      complete_ready: 'Готовность',
+      cycle_start: 'Запуск цикла',
+      decision_gate: 'Шлюз решения',
+      apply: 'Применение',
+      await_ready: 'Ожидание готовности',
+      unknown: 'Неизвестно',
+      completed_run: 'Выполнение завершено',
+      completed_skip: 'Пропуск завершён',
+      // Заполнение чистой водой
+      clean_fill: 'Заполнение чистой водой',
+      clean_fill_start: 'Запуск заполнения (чистая вода)',
+      clean_fill_check: 'Проверка заполнения',
+      clean_fill_cycle: 'Цикл заполнения',
+      clean_fill_stop_to_solution: 'Заполнение → раствор',
+      clean_fill_retry_stop: 'Повтор заполнения — стоп',
+      clean_fill_source_empty_stop: 'Источник пуст — стоп',
+      clean_fill_timeout_stop: 'Таймаут заполнения — стоп',
+      // Заполнение раствором
+      solution_fill: 'Заполнение раствором',
+      solution_fill_start: 'Запуск заполнения (раствор)',
+      solution_fill_check: 'Проверка заполнения раствором',
+      solution_fill_stop_to_prepare: 'Заполнение → подготовка',
+      solution_fill_stop_to_ready: 'Заполнение → готовность',
+      solution_fill_leak_stop: 'Утечка — стоп',
+      solution_fill_source_empty_stop: 'Источник пуст — стоп',
+      solution_fill_timeout_stop: 'Таймаут — стоп',
+      // Рециркуляция
+      prepare_recirculation: 'Подготовка рециркуляции',
+      prepare_recirculation_check: 'Проверка рециркуляции',
+      prepare_recirculation_start: 'Запуск рециркуляции',
+      prepare_recirculation_stop_to_ready: 'Остановка рециркуляции',
+      prepare_recirculation_window_exhausted: 'Окно рециркуляции исчерпано',
+      prepare_recirculation_solution_low_stop: 'Низкий уровень — стоп',
+      irrig_recirc: 'Полив с рециркуляцией',
+      tank_recirc: 'Рециркуляция бака',
+      tank_filling: 'Заполнение бака',
+      // Полив
+      irrigation_check: 'Проверка полива',
+      irrigating: 'Полив',
+      irrigation_start: 'Запуск полива',
+      irrigation_stop_to_ready: 'Полив → готовность',
+      irrigation_stop_to_recovery: 'Полив → восстановление',
+      irrigation_stop_to_setup: 'Полив → настройка',
+      irrigation_recovery_check: 'Проверка восстановления',
+      irrigation_recovery_start: 'Запуск восстановления',
+      irrigation_recovery_stop_to_ready: 'Восстановление → готовность',
+      // Коррекция
+      exit_correction: 'Выход из коррекции',
+      pre_dose_reactivation: 'Реактивация перед дозой',
+      corr_return_stage_success: 'Коррекция: возврат успешен',
+      corr_return_stage_fail: 'Коррекция: возврат неудачен',
+      corr_step: 'Шаг коррекции',
+      correction: 'Коррекция',
+      dose: 'Дозирование',
+      dosing: 'Дозирование',
+      flush: 'Промывка',
+      drain: 'Слив',
+      fill: 'Заполнение',
+    }
+    return labels[normalized] ?? raw
+  }
+
+  function eventTypeLabel(eventType: string | null | undefined): string {
+    const raw = String(eventType ?? '').trim()
+    const labels: Record<string, string> = {
+      // Задачи AE
+      AE_TASK_STARTED: 'Переход стадии',
+      AE_TASK_COMPLETED: 'Задача завершена',
+      AE_TASK_FAILED: 'Ошибка задачи',
+      // Коррекция (общие)
+      CORRECTION_OBSERVATION_EVALUATED: 'Оценка наблюдения',
+      CORRECTION_DECISION_MADE: 'Решение о коррекции',
+      CORRECTION_SENSOR_MODE_REACTIVATED: 'Реактивация датчика',
+      CORRECTION_WINDOW_OPENED: 'Окно коррекции открыто',
+      CORRECTION_WINDOW_CLOSED: 'Окно коррекции закрыто',
+      CORRECTION_COMPLETE: 'Коррекция завершена',
+      CORRECTION_CHECK: 'Проверка коррекции',
+      CORRECTION_STANDALONE: 'Автономная коррекция',
+      CORRECTION_EXHAUSTED: 'Попытки коррекции исчерпаны',
+      CORRECTION_NO_EFFECT: 'Коррекция без эффекта',
+      CORRECTION_ACTION_DEFERRED: 'Коррекция отложена',
+      CORRECTION_INTERRUPTED_STAGE_COMPLETE: 'Коррекция прервана',
+      CORRECTION_LIMIT_POLICY_APPLIED: 'Лимит коррекций',
+      CORRECTION_ATTEMPT_CAP_IGNORED: 'Лимит попыток',
+      CORRECTION_PLANNER_CONFIG_INVALID: 'Ошибка конфигурации',
+      // Коррекция (пропуски)
+      CORRECTION_SKIPPED: 'Коррекция пропущена',
+      CORRECTION_SKIPPED_COOLDOWN: 'Пропуск: откат',
+      CORRECTION_SKIPPED_DEAD_ZONE: 'Пропуск: мёртвая зона',
+      CORRECTION_SKIPPED_DOSE_DISCARDED: 'Пропуск: доза сброшена',
+      CORRECTION_SKIPPED_FRESHNESS: 'Пропуск: устаревшие данные',
+      CORRECTION_SKIPPED_WATER_LEVEL: 'Пропуск: уровень воды',
+      CORRECTION_SKIPPED_WINDOW_NOT_READY: 'Пропуск: окно не готово',
+      // pH / EC
+      PH_CORRECTED: 'pH скорректирован',
+      EC_CORRECTED: 'EC скорректирован',
+      EC_DOSING: 'Дозирование EC',
+      // Полив
+      IRRIGATION_APPROVED: 'Полив разрешён',
+      IRRIGATION_SKIPPED: 'Полив пропущен',
+      IRRIGATION_STARTED: 'Полив начат',
+      IRRIGATION_STOPPED: 'Полив остановлен',
+      IRRIGATION_READY: 'Полив готов',
+      IRRIGATION_DECISION_EVALUATED: 'Решение о поливе',
+      IRRIGATION_DECISION_SNAPSHOT_LOCKED: 'Параметры полива зафиксированы',
+      IRRIGATION_EC_MULTI_DOSE: 'Мульти-доза EC',
+      IRRIGATION_CORRECTION_STARTED: 'Коррекция полива начата',
+      IRRIGATION_CORRECTION_COMPLETED: 'Коррекция полива завершена',
+      IRRIGATION_LOW_SOLUTION: 'Низкий уровень раствора',
+      IRRIGATION_SOLUTION_LOW: 'Раствор на минимуме',
+      IRRIGATION_SOLUTION_MIN_DETECTED: 'Обнаружен минимум раствора',
+      IRRIGATION_WAIT_READY_TIMEOUT: 'Таймаут ожидания готовности',
+      IRRIGATION_RECOVERY_STARTED: 'Восстановление начато',
+      IRRIGATION_RECOVERY_COMPLETED: 'Восстановление завершено',
+      // Дозы и команды
+      DOSE_DISPATCHED: 'Доза отправлена',
+      COMMAND_SENT: 'Команда отправлена',
+      COMMAND_ACKNOWLEDGED: 'Команда подтверждена',
+      COMMAND_RESPONSE_RECEIVED: 'Ответ на команду',
+      COMMAND_TIMEOUT: 'Таймаут команды',
+      // Датчики и аварии
+      LEVEL_SWITCH_CHANGED: 'Датчик уровня изменился',
+      WATER_LEVEL_SWITCH: 'Датчик уровня воды',
+      EMERGENCY_STOP_ACTIVATED: 'Аварийная остановка',
+      // Освещение
+      LIGHTING_STARTED: 'Освещение включено',
+      LIGHTING_COMPLETED: 'Освещение выключено',
+      // Прочее
+      ZONE_EVENT: 'Событие зоны',
+      CORRECTION_FAILED: 'Ошибка коррекции',
+    }
+    return labels[raw] ?? raw.replace(/_/g, ' ').toLowerCase()
+  }
+
   function decisionReasonLabel(reasonCode: string | null | undefined): string | null {
     const normalized = String(reasonCode ?? '').trim().toLowerCase()
     if (normalized === '') return null
@@ -423,8 +599,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     }
 
     if (step.event_type === 'AE_TASK_STARTED') {
-      const stageLabel = asNonEmptyString(step.stage)
-      return stageLabel ?? 'Переход стадии'
+      const rawStage = asNonEmptyString(step.stage)
+      return rawStage ? (workflowStageLabel(rawStage) ?? rawStage) : 'Переход стадии'
     }
 
     if (step.event_type === 'AE_TASK_FAILED') {
@@ -433,11 +609,10 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
     const details = isRecord(step.details) ? step.details : null
     const humanErrorCode = resolveHumanErrorMessage({ code: step.error_code }, null)
-    const candidates = [
-      step.reason_code,
-      asNonEmptyString(details?.stage),
-      asNonEmptyString(details?.current_stage),
-      step.status,
+    const candidates: Array<string | null | undefined> = [
+      workflowStageLabel(step.reason_code),
+      workflowStageLabel(asNonEmptyString(details?.stage)),
+      workflowStageLabel(asNonEmptyString(details?.current_stage)),
       humanErrorCode,
       step.reason,
     ]
@@ -480,8 +655,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     if (sensorCount !== null || samples !== null) {
       const telemetryBits: string[] = []
       if (sensorCount !== null) telemetryBits.push(`сенсоров ${Math.round(sensorCount)}`)
-      if (samples !== null) telemetryBits.push(`samples ${Math.round(samples)}`)
-      infoParts.push(`Telemetry: ${telemetryBits.join(', ')}.`)
+      if (samples !== null) telemetryBits.push(`замеров ${Math.round(samples)}`)
+      infoParts.push(`Телеметрия: ${telemetryBits.join(', ')}.`)
     }
 
     if (readDecisionBool(details, result, ['spread_alert']) === true) {
@@ -495,7 +670,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
     const strategy = readDecisionString(details, result, ['strategy'])
     if (strategy) {
-      infoParts.push(`Strategy: ${strategy}.`)
+      infoParts.push(`Стратегия: ${strategy}.`)
     }
 
     if (!reasonLabel && errorCode) {
@@ -517,8 +692,22 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
       if (step.event_type === 'AE_TASK_STARTED' && previous?.event_type === 'AE_TASK_STARTED') {
         previous.grouped = true
         previous.at = step.at
-        previous.label = previous.label === label ? label : `${previous.label} -> ${label}`
-        previous.detail = detail ?? previous.detail ?? 'Переходы стадий AE'
+        previous.label = previous.label === label ? label : `${previous.label} → ${label}`
+        previous.detail = detail ?? previous.detail ?? 'Переходы стадий'
+        continue
+      }
+
+      if (
+        step.event_type === 'IRRIGATION_DECISION_SNAPSHOT_LOCKED' &&
+        previous?.event_type === 'IRRIGATION_DECISION_SNAPSHOT_LOCKED'
+      ) {
+        const prevCount = previous._count ?? 1
+        const newCount = prevCount + 1
+        previous._count = newCount
+        previous.grouped = true
+        previous.at = step.at
+        previous.detail = detail ?? previous.detail
+        previous.label = `${label} ×${newCount}`
         continue
       }
 
@@ -537,6 +726,42 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
   function timelineDetail(step: ExecutionRun['timeline'][number] | null | undefined, label: string): string | null {
     if (!step) return null
 
+    const details = isRecord(step.details) ? step.details : null
+
+    // Специфичная обработка по event_type
+    if (step.event_type === 'IRRIGATION_DECISION_SNAPSHOT_LOCKED') {
+      const parts: string[] = []
+      const strategy = asNonEmptyString(details?.strategy)
+      if (strategy) parts.push(`Стратегия: ${modeLabel(strategy)}`)
+      const phaseName = asNonEmptyString(details?.phase_name)
+      if (phaseName) parts.push(`Фаза рецепта: ${phaseName}`)
+      const bundleRevision = asNonEmptyString(details?.bundle_revision)
+      if (bundleRevision) parts.push(`Ревизия: ${String(bundleRevision).slice(0, 12)}`)
+      return parts.length > 0 ? parts.join(' · ') : 'Параметры полива зафиксированы'
+    }
+
+    if (step.event_type === 'IRRIGATION_DECISION_EVALUATED') {
+      const outcome = asNonEmptyString(details?.outcome ?? step.decision)
+      const degraded = details?.degraded === true
+      const reasonCode = asNonEmptyString(details?.reason_code ?? step.reason_code)
+      if (!outcome) return null
+      const outcomeLabel = decisionLabel(outcome, degraded)
+      return reasonCode ? `${outcomeLabel} · ${reasonCode}` : outcomeLabel
+    }
+
+    if (step.event_type === 'IRRIGATION_CORRECTION_COMPLETED') {
+      const success = typeof details?.success === 'boolean' ? details.success : null
+      if (success === true) return 'Коррекция достигла цели.'
+      if (success === false) return 'Коррекция не достигла цели.'
+      return null
+    }
+
+    if (step.event_type === 'IRRIGATION_EC_MULTI_DOSE') {
+      const topology = asNonEmptyString(details?.topology)
+      return topology ? `Топология: ${topology}` : null
+    }
+
+    // Общий путь: decision field → reason → reason_code → error_code
     const decision = asNonEmptyString(step.decision)
     if (decision) {
       return describeDecision({
@@ -558,10 +783,6 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     const errorCode = asNonEmptyString(step.error_code)
     if (errorCode && errorCode !== label) {
       return resolveHumanErrorMessage({ code: errorCode }, errorCode) || errorCode
-    }
-
-    if (step.event_type === 'AE_TASK_STARTED') {
-      return 'Переход стадии automation-engine'
     }
 
     return null
@@ -661,8 +882,12 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     formatDateTime,
     formatRelativeTrigger,
     statusVariant,
+    statusLabel,
+    modeLabel,
+    eventTypeLabel,
     controlModeLabel,
     laneLabel,
+    workflowStageLabel,
     decisionLabel,
     decisionReasonLabel,
     describeDecision,

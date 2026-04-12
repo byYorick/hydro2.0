@@ -87,12 +87,13 @@ export function classifyEventKind(kind) {
     kind.endsWith('_DOSE_NO_EFFECT')
   ) return 'WARNING'
 
+  if (kind === 'AE_TASK_STARTED') return 'INFO'
+
   // AE / irrigation workflow events
   if (
     kind === 'PUMP_CALIBRATION_FINISHED' ||
     kind === 'CLEAN_FILL_COMPLETED' ||
     kind === 'SOLUTION_FILL_COMPLETED' ||
-    kind === 'AE_TASK_STARTED' ||
     kind === 'AE_TASK_COMPLETED' ||
     kind === 'CORRECTION_COMPLETE' ||
     kind === 'IRRIGATION_CORRECTION_STARTED'
@@ -215,17 +216,34 @@ export function translateEventKind(kind) {
     'EQUIPMENT_ANOMALY_RELEASED': 'Оборудование: блокировка снята',
 
     // Irrigation / AE workflow events
-    'IRR_STATE_SNAPSHOT': 'Снимок состояния ирригации',
-    'IRRIGATION_DECISION_SNAPSHOT_LOCKED': 'Снимок decision-controller полива зафиксирован',
-    'IRRIGATION_CORRECTION_STARTED': 'Полив: окно inline-коррекции открыто',
+    'IRR_STATE_SNAPSHOT': 'Снимок ирригации',
+    'IRRIGATION_DECISION_SNAPSHOT_LOCKED': 'Параметры полива зафиксированы',
+    'IRRIGATION_DECISION_EVALUATED': 'Решение о поливе',
+    'IRRIGATION_CORRECTION_STARTED': 'Полив: окно коррекции открыто',
+    'IRRIGATION_CORRECTION_COMPLETED': 'Полив: коррекция завершена',
+    'IRRIGATION_EC_MULTI_DOSE': 'Полив: многодозовая EC-коррекция',
+    'CORRECTION_SENSOR_MODE_REACTIVATED': 'Коррекция: датчик реактивирован',
+    'CORRECTION_OBSERVATION_EVALUATED': 'Коррекция: наблюдение оценено',
+    'IRRIGATION_START': 'Полив запущен',
+    'IRRIGATION_STOP': 'Полив остановлен',
     'COMMAND_TIMEOUT': 'Таймаут команды',
     'PUMP_CALIBRATION_FINISHED': 'Калибровка насоса завершена',
     'PUMP_CALIBRATION_RUN_SKIPPED': 'Калибровка насоса пропущена',
-    'CLEAN_FILL_COMPLETED': 'Наполнение чистой водой завершено',
-    'SOLUTION_FILL_COMPLETED': 'Наполнение раствором завершено',
-    'AE_TASK_STARTED': 'Задача автоматизации запущена',
-    'AE_TASK_COMPLETED': 'Задача автоматизации завершена',
-    'AE_TASK_FAILED': 'Ошибка задачи автоматизации',
+    'CLEAN_FILL_COMPLETED': 'Чистая вода: заполнение завершено',
+    'SOLUTION_FILL_COMPLETED': 'Раствор: заполнение завершено',
+    'AE_TASK_STARTED': 'Задача AE запущена',
+    'AE_TASK_COMPLETED': 'Задача AE завершена',
+    'AE_TASK_FAILED': 'Задача AE: ошибка',
+    'IRRIGATION_CHECK': 'Проверка полива',
+    'IRRIGATION_DECISION_APPLIED': 'Решение о поливе применено',
+    'SOLUTION_TANK_STARTUP_GUARD_TRIGGERED': 'Защита бака: запуск заблокирован',
+    'SOLUTION_TANK_MIN_TRIGGERED': 'Бак: уровень раствора критически низкий',
+    'WATER_LEVEL_SENSOR_CHANGED': 'Датчик уровня воды: изменение',
+    'LEVEL_SWITCH_CHANGED': 'Датчик уровня: изменение',
+    'ZONE_AUTOMATION_STARTED': 'Автоматизация зоны запущена',
+    'ZONE_AUTOMATION_STOPPED': 'Автоматизация зоны остановлена',
+    'ZONE_WORKFLOW_STATE_RESET': 'Состояние workflow сброшено',
+    'CYCLE_RECIPE_REBASED': 'Рецепт цикла обновлён',
 
     // Alerts
     'ALERT_TRIGGERED': 'Тревога сработала',
@@ -258,6 +276,41 @@ export function translateEventKind(kind) {
     'PHASE_CHANGE': 'Смена фазы',
   }
   return translations[kind] || kind
+}
+
+/**
+ * Переводит стадию/фазу AE workflow на русский
+ * @param {string} value - стадия или фаза (напр. irrigation_check, irrig_recirc)
+ * @returns {string}
+ */
+export function translateWorkflowStage(value) {
+  if (!value) return value
+  const translations = {
+    // Workflow phases
+    'ready': 'Готов',
+    'irrigating': 'Полив',
+    'irrig_recirc': 'Рециркуляция',
+    'startup': 'Запуск',
+    'clean_fill': 'Заполнение чистой водой',
+    'solution_fill': 'Заполнение раствором',
+    'prepare_recirculation': 'Подготовка рециркуляции',
+    'idle': 'Ожидание',
+    'fault': 'Сбой',
+    // Stages
+    'await_ready': 'Ожидание готовности',
+    'irrigation_start': 'Старт полива',
+    'irrigation_check': 'Проверка полива',
+    'irrigation_stop': 'Остановка полива',
+    'irrigation_stop_to_ready': 'Завершение → готов',
+    'completed_run': 'Цикл завершён',
+    'decision_gate': 'Шлюз решения',
+    'correction_window': 'Окно коррекции',
+    'clean_fill_start': 'Старт заполнения водой',
+    'solution_fill_start': 'Старт заполнения раствором',
+    'recirculation_start': 'Старт рециркуляции',
+    'recirculation_stop': 'Остановка рециркуляции',
+  }
+  return translations[value] ?? value
 }
 
 /**

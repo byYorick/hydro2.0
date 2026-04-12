@@ -83,6 +83,11 @@ class ExecuteTaskUseCase:
             raise TaskExecutionError("ae3_task_missing_owner", f"У задачи {task.id} отсутствует claimed_by owner")
 
         first_run = str(getattr(task, "status", "")).strip().lower() == "claimed"
+        # AE_TASK_STARTED должен эмититься ровно один раз за жизнь задачи.
+        # После реквея (running→pending→claimed) статус снова "claimed",
+        # поэтому используем персистентный флаг start_event_emitted.
+        emit_start_event = first_run and not bool(getattr(task, "start_event_emitted", False))
+
         running_task = await self._task_repository.mark_running(task_id=task.id, owner=owner, now=now)
         if running_task is None:
             raise TaskExecutionError("ae3_task_running_transition_failed", f"Не удалось перевести задачу {task.id} в состояние running")
@@ -99,14 +104,22 @@ class ExecuteTaskUseCase:
                 plan=plan,
                 owner=owner,
                 now=now,
-                emit_observability=first_run,
+                emit_observability=emit_start_event,
             )
-            if first_run:
+            if emit_start_event:
                 await self._emit_start_readiness_confirmed(
                     task=running_task,
                     snapshot=snapshot,
                     plan=plan,
                 )
+                try:
+                    await self._task_repository.mark_start_event_emitted(task_id=running_task.id)
+                except Exception:
+                    logger.warning(
+                        "AE3 не смог выставить start_event_emitted для task_id=%s",
+                        running_task.id,
+                        exc_info=True,
+                    )
                 start_observability_emitted = True
 
             # В v2 все two_tank-задачи идут через WorkflowRouter
@@ -551,7 +564,17 @@ class ExecuteTaskUseCase:
             and isinstance(getattr(task, "irrigation_decision_config", None), Mapping)
         )
         if has_persisted_snapshot:
-            if emit_observability:
+            # Emit only when the task is still in its initial irrigation_start stage —
+            # i.e., snapshot was set at task-creation time and this is the very first
+            # claim, before any transition to irrigation_check or subsequent poll
+            # re-enqueues.  After each poll, update_stage() resets status to 'pending'
+            # and then the task is re-claimed (status='claimed'), making first_run=True
+            # on every cycle.  Guarding by current_stage prevents duplicate events on
+            # every subsequent re-claim in irrigation_check.
+            is_initial_stage = (
+                str(getattr(task, "current_stage", "") or "").strip().lower() == "irrigation_start"
+            )
+            if emit_observability and is_initial_stage:
                 await self._emit_irrigation_decision_snapshot_locked(
                     task=task,
                     snapshot=snapshot,

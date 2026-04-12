@@ -220,9 +220,10 @@ class ScheduleDispatcherTest extends TestCase
             ->orderByDesc('id')
             ->first();
         $this->assertNotNull($row);
-        $payload = json_decode((string) $row->payload, true, 512, JSON_THROW_ON_ERROR);
-        $this->assertSame('lighting_tick', $payload['task_type'] ?? null);
-        $this->assertSame('lighting_tick', $payload['topology'] ?? null);
+        $this->assertSame('lighting_tick', $row->task_type);
+        $this->assertSame('lighting_tick', $row->topology);
+        $this->assertSame('LIGHTING_TICK', $row->intent_type);
+        $this->assertSame('laravel_scheduler', $row->intent_source);
     }
 
     public function test_dispatch_posts_start_cycle_for_ae3_diagnostics_task(): void
@@ -305,9 +306,9 @@ class ScheduleDispatcherTest extends TestCase
             ->orderByDesc('id')
             ->first();
         $this->assertNotNull($row);
-        $payload = json_decode((string) $row->payload, true, 512, JSON_THROW_ON_ERROR);
-        $this->assertSame('diagnostics', $payload['task_type'] ?? null);
-        $this->assertSame('cycle_start', $payload['workflow'] ?? null);
-        $this->assertSame('DIAGNOSTICS_TICK', $row->intent_type ?? null);
+        $this->assertSame('cycle_start', $row->task_type);
+        $this->assertSame('DIAGNOSTICS_TICK', $row->intent_type);
+        $this->assertSame('laravel_scheduler', $row->intent_source);
+        $this->assertNull($row->payload);
     }
 }

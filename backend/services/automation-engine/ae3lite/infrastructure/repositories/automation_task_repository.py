@@ -422,6 +422,17 @@ class PgAutomationTaskRepository:
 
     # ── Status transitions ──────────────────────────────────────────
 
+    async def mark_start_event_emitted(self, *, task_id: int) -> None:
+        """Помечает задачу как уже получившую AE_TASK_STARTED событие (идемпотентно)."""
+        await self._execute(
+            """
+            UPDATE ae_tasks
+            SET start_event_emitted = TRUE
+            WHERE id = $1
+            """,
+            task_id,
+        )
+
     async def mark_running(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
         return await self._update_task_status(
             task_id=task_id,

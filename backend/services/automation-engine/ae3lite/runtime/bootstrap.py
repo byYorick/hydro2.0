@@ -8,7 +8,6 @@ from typing import Any, Callable
 
 import httpx
 
-from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import (
     ClaimNextTaskUseCase,
     CreateTaskFromIntentUseCase,
@@ -82,7 +81,7 @@ def build_ae3_runtime_bundle(
     create_task_from_intent_use_case = CreateTaskFromIntentUseCase(
         task_repository=task_repository,
         zone_lease_repository=zone_lease_repository,
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=zone_intent_repository,
         zone_alert_repository=zone_alert_repository,
     )
     command_gateway = SequentialCommandGateway(

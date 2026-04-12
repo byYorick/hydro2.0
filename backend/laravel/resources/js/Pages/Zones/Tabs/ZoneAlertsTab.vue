@@ -1,25 +1,44 @@
 <template>
-  <div class="space-y-4">
-    <AlertFilterBar
-      v-model="selectedStatus"
-      :query="query"
-      @update:query="query = $event"
-    />
+  <div class="space-y-2">
 
-    <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+    <!-- Компактная шапка -->
+    <div class="flex flex-wrap items-center gap-1.5 px-1">
+      <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">Алерты</span>
+      <Badge variant="danger" size="sm">{{ filteredAlerts.length }}</Badge>
+      <div class="mx-1 h-3.5 w-px bg-[color:var(--border-muted)]"></div>
+      <button
+        v-for="status in statusOptions"
+        :key="status.value"
+        type="button"
+        class="h-5 px-2 rounded text-[10px] font-semibold uppercase tracking-wide border transition-colors"
+        :class="selectedStatus === status.value
+          ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
+          : 'border-transparent text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)] hover:text-[color:var(--text-muted)]'"
+        @click="selectedStatus = status.value"
+      >
+        {{ status.label }}
+      </button>
+      <div class="ml-auto flex items-center">
+        <input
+          :value="query"
+          class="input-field h-6 w-32 text-xs px-2"
+          placeholder="Поиск..."
+          @input="query = ($event.target as HTMLInputElement).value"
+        />
+      </div>
+    </div>
+
+    <!-- Список алертов -->
+    <section class="surface-card border border-[color:var(--border-muted)] rounded-xl p-2">
       <div
         v-if="filteredAlerts.length === 0"
-        class="text-sm text-[color:var(--text-dim)] text-center py-6"
+        class="py-6 text-center text-[11px] text-[color:var(--text-dim)]"
       >
         Алерты по текущим фильтрам не найдены
       </div>
 
-      <div
-        v-else
-        class="h-[520px]"
-      >
+      <div v-else-if="useVirtual" class="h-[calc(100vh-260px)]">
         <VirtualList
-          v-if="useVirtual"
           :items="filteredAlerts"
           :item-size="96"
           class="h-full"
@@ -28,7 +47,7 @@
           <template #default="{ item }">
             <button
               type="button"
-              class="w-full text-left rounded-xl px-3 py-3 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
+              class="w-full text-left rounded-xl px-3 py-2 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
               :data-testid="`zone-alert-row-${item.id}`"
               @click="openDetails(item)"
             >
@@ -36,22 +55,19 @@
             </button>
           </template>
         </VirtualList>
+      </div>
 
-        <div
-          v-else
-          class="space-y-1 max-h-[520px] overflow-y-auto"
+      <div v-else class="max-h-[calc(100vh-260px)] space-y-0.5 overflow-y-auto pr-0.5">
+        <button
+          v-for="item in filteredAlerts"
+          :key="item.id"
+          type="button"
+          class="w-full text-left rounded-xl px-3 py-2 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
+          :data-testid="`zone-alert-row-${item.id}`"
+          @click="openDetails(item)"
         >
-          <button
-            v-for="item in filteredAlerts"
-            :key="item.id"
-            type="button"
-            class="w-full text-left rounded-xl px-3 py-3 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
-            :data-testid="`zone-alert-row-${item.id}`"
-            @click="openDetails(item)"
-          >
-            <AlertRow :item="item" />
-          </button>
-        </div>
+          <AlertRow :item="item" />
+        </button>
       </div>
     </section>
 
@@ -67,8 +83,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import Badge from '@/Components/Badge.vue'
 import VirtualList from '@/Components/VirtualList.vue'
-import AlertFilterBar from '@/Components/Alerts/AlertFilterBar.vue'
 import AlertRow from '@/Components/Alerts/AlertRow.vue'
 import AlertDetailModal from '@/Components/Alerts/AlertDetailModal.vue'
 import { api } from '@/services/api'
@@ -93,6 +109,12 @@ interface Props {
 const props = defineProps<Props>()
 
 const { showToast } = useToast()
+
+const statusOptions: Array<{ value: 'ALL' | 'ACTIVE' | 'RESOLVED'; label: string }> = [
+  { value: 'ALL', label: 'Все' },
+  { value: 'ACTIVE', label: 'Активные' },
+  { value: 'RESOLVED', label: 'Решённые' },
+]
 
 const selectedStatus = ref<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL')
 const query = ref('')

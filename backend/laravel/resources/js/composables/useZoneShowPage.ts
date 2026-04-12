@@ -39,9 +39,8 @@ interface LoadingState extends Record<string, boolean> {
 // ─── Module-level constants ───────────────────────────────────────────────────
 
 const zoneTabs = [
-  { id: 'overview', label: 'Обзор' },
-  { id: 'telemetry', label: 'Телеметрия' },
   { id: 'cycle', label: 'Цикл' },
+  { id: 'telemetry', label: 'Телеметрия' },
   { id: 'automation', label: 'Автоматизация' },
   { id: 'scheduler', label: 'Планировщик' },
   { id: 'events', label: 'События' },

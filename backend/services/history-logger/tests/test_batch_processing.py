@@ -162,9 +162,9 @@ async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors()
     with patch('telemetry_processing.fetch') as mock_fetch, \
          patch('telemetry_processing.execute') as mock_execute:
 
-        mock_fetch.side_effect = [
-            [{'id': 101}],
-        ]
+        # return_value instead of side_effect — fetch may be called
+        # more than once (cache refresh, sensor filter, etc.)
+        mock_fetch.return_value = [{'id': 101}]
 
         _zone_cache.clear()
         _node_cache.clear()
@@ -185,10 +185,7 @@ async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors()
             ),
         ]
 
-        mock_execute.side_effect = [
-            None,
-            "INSERT 0 1",
-        ]
+        mock_execute.return_value = "INSERT 0 1"
 
         await process_telemetry_batch(samples)
 
@@ -244,9 +241,8 @@ async def test_batch_processing_drops_stale_sensor_cache_entries_before_insert()
             ),
         ]
 
-        mock_fetch.side_effect = [
-            [],
-        ]
+        # Empty result means all sensor IDs are stale → insert is skipped
+        mock_fetch.return_value = []
 
         await process_telemetry_batch(samples)
 
@@ -269,10 +265,16 @@ async def test_sensor_insert_uses_on_conflict_and_caches_id():
         _node_cache[('nd-1', 'gh-1')] = (10, 1)
         _zone_greenhouse_cache[1] = 99
 
-        mock_fetch.side_effect = [
-            [],
-            [{'id': 101, 'zone_id': 1, 'node_id': 10, 'type': 'PH', 'label': 'ph_sensor'}],
-        ]
+        # Query-content-based mock: respond based on what the query does,
+        # not call position, because the pipeline call order can change.
+        async def _smart_fetch(*args, **kwargs):
+            query = str(args[0]) if args else ""
+            if "ON CONFLICT" in query and "sensor" in query.lower():
+                return [{'id': 101, 'zone_id': 1, 'node_id': 10, 'type': 'PH', 'label': 'ph_sensor'}]
+            if "ANY($1::bigint[])" in query:
+                return [{'id': 101}]
+            return []
+        mock_fetch.side_effect = _smart_fetch
         mock_execute.return_value = None
 
         samples = [
@@ -289,9 +291,14 @@ async def test_sensor_insert_uses_on_conflict_and_caches_id():
 
         await process_telemetry_batch(samples)
 
-        assert len(mock_fetch.call_args_list) >= 2
-        insert_query = mock_fetch.call_args_list[1][0][0]
-        assert "ON CONFLICT (zone_id, node_id, scope, type, label)" in insert_query
+        # Find the sensor insert/resolve query among all fetch calls
+        sensor_insert_calls = [
+            call.args[0]
+            for call in mock_fetch.call_args_list
+            if call.args and "ON CONFLICT" in str(call.args[0]) and "sensor" in str(call.args[0]).lower()
+        ]
+        assert sensor_insert_calls, "Expected at least one sensor insert/resolve fetch call"
+        assert "ON CONFLICT (zone_id, node_id, scope, type, label)" in sensor_insert_calls[0]
         assert (1, 10, "PH", "ph_sensor") in _sensor_cache
 
 

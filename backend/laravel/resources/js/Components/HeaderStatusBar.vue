@@ -1,6 +1,7 @@
 <template>
-  <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-2 bg-[color:var(--bg-surface-strong)] border-b border-[color:var(--border-muted)] overflow-x-auto">
-    <div class="flex items-center gap-2 sm:gap-4 text-xs shrink-0">
+  <div class="relative bg-[color:var(--bg-surface-strong)] border-b border-[color:var(--border-muted)]">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
       <!-- Core Status -->
       <div class="flex items-center gap-2 group relative">
         <div class="relative">
@@ -361,7 +362,8 @@
         <ThemeToggle />
       </div>
     </div>
-    
+    </div><!-- end overflow-x-auto -->
+
     <!-- Модальное окно мониторинга сервисов -->
     <SystemMonitoringModal
       :show="showMonitoringModal"

@@ -937,3 +937,32 @@ async def test_router_tolerates_workflow_repo_failure_after_transition_persist()
     assert result is task
     assert len(tr.update_stage_calls) == 1
     assert len(wr.upsert_calls) == 1
+
+
+async def test_router_poll_await_ready_does_not_overwrite_zone_workflow_state():
+    """Regression: await_ready poll must NOT write workflow_phase into zone_workflow_state.
+
+    When a previous irrigation fails with a sensor error, zone_workflow_state is
+    reset to "idle".  The scheduler then creates a new irrigation task with
+    current_stage="await_ready".  If _apply_poll wrote task.workflow.workflow_phase
+    ("ready") into zone_workflow_state on each tick, the next tick would see
+    "ready" (written by itself) and start irrigation even when tanks are empty —
+    skipping the fill cycle entirely.
+
+    After the fix: zone_workflow_state is left untouched while the task is in
+    await_ready; only the fill-cycle task is allowed to set it to "ready".
+    """
+    poll_outcome = StageOutcome(kind="poll", due_delay_sec=10)
+    # Task created by scheduler after failed irrigation: current_stage="await_ready",
+    # workflow_phase="ready" (initial phase for irrigation tasks).
+    task = _make_task(stage="await_ready", phase="ready")
+    router, _tr, wr = _make_router(return_task=task)
+    router._handlers["await_ready"] = _StubHandler(poll_outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    # zone_workflow_state must NOT have been touched — fill-cycle drives it.
+    assert wr.upsert_calls == [], (
+        "await_ready poll must not write into zone_workflow_state; "
+        f"got unexpected upsert calls: {wr.upsert_calls}"
+    )

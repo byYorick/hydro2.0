@@ -229,7 +229,7 @@ class ExecutionRunReadModel
             'intents.intent_type',
             'intents.status as intent_status',
             'intents.idempotency_key as correlation_id',
-            'intents.payload as intent_payload',
+            'intents.task_type as intent_task_type',
         ];
 
         $select[] = $this->optionalTaskColumnSelect('irrigation_mode');
@@ -285,11 +285,10 @@ class ExecutionRunReadModel
         return $rows->map(function ($row) use ($activeTaskRows): array {
             $executionId = (string) ($row->id ?? '');
             $activeTask = $activeTaskRows[$executionId] ?? null;
-            $intentPayload = $this->normalizeJson($row->intent_payload ?? null);
 
             $taskType = $this->resolvePublicTaskType(
                 activeTaskType: is_object($activeTask) ? (string) ($activeTask->task_type ?? '') : '',
-                intentPayload: $intentPayload,
+                intentTaskType: (string) ($row->intent_task_type ?? ''),
                 intentType: (string) ($row->intent_type ?? ''),
                 runtimeTaskType: (string) ($row->runtime_task_type ?? ''),
             );
@@ -416,14 +415,12 @@ class ExecutionRunReadModel
                 'tasks.updated_at',
                 'tasks.intent_id',
                 'intents.intent_type',
-                'intents.payload as intent_payload',
+                'intents.task_type as intent_task_type',
             ]);
 
         if (! is_object($row)) {
             return null;
         }
-
-        $intentPayload = $this->normalizeJson($row->intent_payload ?? null);
 
         $errorCode = $this->resolveString($row->error_code ?? null);
         $errorMessage = $this->resolveString($row->error_message ?? null);
@@ -434,7 +431,7 @@ class ExecutionRunReadModel
             'intent_id' => isset($row->intent_id) ? (string) $row->intent_id : null,
             'task_type' => $this->resolvePublicTaskType(
                 activeTaskType: '',
-                intentPayload: $intentPayload,
+                intentTaskType: (string) ($row->intent_task_type ?? ''),
                 intentType: (string) ($row->intent_type ?? ''),
                 runtimeTaskType: (string) ($row->runtime_task_type ?? ''),
             ),
@@ -472,8 +469,8 @@ class ExecutionRunReadModel
             ->first([
                 'intents.id',
                 'intents.intent_type',
+                'intents.task_type',
                 'intents.status',
-                'intents.payload',
                 'intents.error_code',
                 'intents.error_message',
                 'intents.updated_at',
@@ -482,8 +479,6 @@ class ExecutionRunReadModel
         if (! is_object($row)) {
             return null;
         }
-
-        $intentPayload = $this->normalizeJson($row->payload ?? null);
 
         $errorCode = $this->resolveString($row->error_code ?? null);
         $errorMessage = $this->resolveString($row->error_message ?? null);
@@ -494,7 +489,7 @@ class ExecutionRunReadModel
             'intent_id' => (string) ($row->id ?? ''),
             'task_type' => $this->resolvePublicTaskType(
                 activeTaskType: '',
-                intentPayload: $intentPayload,
+                intentTaskType: (string) ($row->task_type ?? ''),
                 intentType: (string) ($row->intent_type ?? ''),
                 runtimeTaskType: '',
             ),
@@ -506,18 +501,15 @@ class ExecutionRunReadModel
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $intentPayload
-     */
     private function resolvePublicTaskType(
         string $activeTaskType,
-        array $intentPayload,
+        string $intentTaskType,
         string $intentType,
         string $runtimeTaskType,
     ): string {
         $candidates = [
             strtolower(trim($activeTaskType)),
-            strtolower(trim((string) ($intentPayload['task_type'] ?? ''))),
+            strtolower(trim($intentTaskType)),
             strtolower(trim($intentType)),
             strtolower(trim($runtimeTaskType)),
         ];

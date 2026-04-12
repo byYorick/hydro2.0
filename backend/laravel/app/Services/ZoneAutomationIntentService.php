@@ -16,7 +16,7 @@ class ZoneAutomationIntentService
     }
 
     /**
-     * Топология для AE3 intent payload (обязательна для LegacyIntentMapper).
+     * Топология для AE3 intent (resolved из zone logic profile).
      */
     public function resolveAe3TopologyForZone(int $zoneId): string
     {
@@ -47,23 +47,21 @@ class ZoneAutomationIntentService
         $this->documents->ensureZoneDefaults($zoneId);
 
         $now = CarbonImmutable::now('UTC')->setMicroseconds(0);
-        $intentPayload = [
-            'source' => trim($source) !== '' ? trim($source) : 'laravel_api',
-            'task_type' => 'irrigation_start',
-            'workflow' => 'irrigation_start',
-            'mode' => $mode === 'force' ? 'force' : 'normal',
-            'topology' => $this->resolveAe3TopologyForZone($zoneId),
-        ];
-        if ($requestedDurationSec !== null) {
-            $intentPayload['requested_duration_sec'] = max(1, $requestedDurationSec);
-        }
+        $intentSource = trim($source) !== '' ? trim($source) : 'laravel_api';
+        $irrigationMode = $mode === 'force' ? 'force' : 'normal';
+        $topology = $this->resolveAe3TopologyForZone($zoneId);
+        $durationSec = $requestedDurationSec !== null ? max(1, $requestedDurationSec) : null;
 
         $row = DB::selectOne(
             "
             INSERT INTO zone_automation_intents (
                 zone_id,
                 intent_type,
-                payload,
+                task_type,
+                topology,
+                irrigation_mode,
+                irrigation_requested_duration_sec,
+                intent_source,
                 idempotency_key,
                 status,
                 not_before,
@@ -72,10 +70,14 @@ class ZoneAutomationIntentService
                 created_at,
                 updated_at
             )
-            VALUES (?, 'IRRIGATE_ONCE', ?::jsonb, ?, 'pending', ?, 0, 3, ?, ?)
+            VALUES (?, 'IRRIGATE_ONCE', 'irrigation_start', ?, ?, ?, ?, ?, 'pending', ?, 0, 3, ?, ?)
             ON CONFLICT (zone_id, idempotency_key)
             DO UPDATE SET
-                payload = EXCLUDED.payload,
+                task_type = EXCLUDED.task_type,
+                topology = EXCLUDED.topology,
+                irrigation_mode = EXCLUDED.irrigation_mode,
+                irrigation_requested_duration_sec = EXCLUDED.irrigation_requested_duration_sec,
+                intent_source = EXCLUDED.intent_source,
                 not_before = EXCLUDED.not_before,
                 updated_at = EXCLUDED.updated_at
             WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
@@ -83,7 +85,10 @@ class ZoneAutomationIntentService
             ",
             [
                 $zoneId,
-                json_encode($intentPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $topology,
+                $irrigationMode,
+                $durationSec,
+                $intentSource,
                 $idempotencyKey,
                 $now,
                 $now,
@@ -97,8 +102,8 @@ class ZoneAutomationIntentService
             'zone_id' => $zoneId,
             'idempotency_key' => $idempotencyKey,
             'intent_id' => $intentId,
-            'mode' => $intentPayload['mode'],
-            'source' => $intentPayload['source'],
+            'mode' => $irrigationMode,
+            'source' => $intentSource,
         ]);
 
         return $intentId;

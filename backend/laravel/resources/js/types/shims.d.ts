@@ -26,6 +26,7 @@ declare module '@/utils/i18n' {
   export function translateCycleType(cycleType: string): string;
   export function translateStrategy(strategy: string): string;
   export function translateDeviceType(type: string): string;
+  export function translateWorkflowStage(value: string): string;
 }
 
 declare module '../../../vendor/tightenco/ziggy/dist/index.esm.js' {

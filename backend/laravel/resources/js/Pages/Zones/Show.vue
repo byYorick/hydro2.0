@@ -1,32 +1,15 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-3">
+    <div class="space-y-2">
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5">
         <Tabs
           v-model="activeTab"
           :tabs="zoneTabs"
           aria-label="Разделы зоны"
         />
       </div>
-      <ZoneOverviewTab
-        v-if="activeTab === 'overview'"
-        :zone="zone"
-        :variant="variant"
-        :active-grow-cycle="activeGrowCycle"
-        :active-cycle="activeCycle"
-        :loading="{ irrigate: loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION') }"
-        :can-operate-zone="canOperateZone"
-        :targets="targets"
-        :telemetry="telemetry"
-        :computed-phase-progress="computedPhaseProgress"
-        :computed-phase-days-elapsed="computedPhaseDaysElapsed"
-        :computed-phase-days-total="computedPhaseDaysTotal"
-        :events="events"
-        @start-irrigation="openActionModal('START_IRRIGATION')"
-        @force-irrigation="openActionModal('FORCE_IRRIGATION')"
-      />
       <ZoneTelemetryTab
-        v-else-if="activeTab === 'telemetry'"
+        v-if="activeTab === 'telemetry'"
         :zone-id="zoneId"
         :chart-time-range="chartTimeRange"
         :chart-data-ph="chartDataPh"
@@ -40,9 +23,12 @@
       />
       <ZoneCycleTab
         v-else-if="activeTab === 'cycle'"
+        :zone="zone"
+        :variant="variant"
         :active-grow-cycle="activeGrowCycle"
-        :zone-status="zone.status"
-        :cycles-list="cyclesList"
+        :can-operate-zone="canOperateZone"
+        :targets="targets"
+        :telemetry="telemetry"
         :computed-phase-progress="computedPhaseProgress"
         :computed-phase-days-elapsed="computedPhaseDaysElapsed"
         :computed-phase-days-total="computedPhaseDaysTotal"
@@ -51,7 +37,16 @@
         :phase-time-left-label="phaseTimeLeftLabel"
         :can-manage-recipe="canManageRecipe"
         :can-manage-cycle="canManageCycle"
-        :loading="loading"
+        :loading="{
+          irrigate: loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION'),
+          cyclePause: loading.cyclePause,
+          cycleResume: loading.cycleResume,
+          cycleHarvest: loading.cycleHarvest,
+          cycleAbort: loading.cycleAbort,
+          nextPhase: loading.nextPhase,
+        }"
+        @start-irrigation="openActionModal('START_IRRIGATION')"
+        @force-irrigation="openActionModal('FORCE_IRRIGATION')"
         @run-cycle="onRunCycle"
         @refresh-cycle="refreshZoneState"
         @change-recipe="onCycleChangeRecipe"
@@ -157,7 +152,7 @@ import ZoneAlertsTab from "@/Pages/Zones/Tabs/ZoneAlertsTab.vue";
 import ZoneCycleTab from "@/Pages/Zones/Tabs/ZoneCycleTab.vue";
 import ZoneDevicesTab from "@/Pages/Zones/Tabs/ZoneDevicesTab.vue";
 import ZoneEventsTab from "@/Pages/Zones/Tabs/ZoneEventsTab.vue";
-import ZoneOverviewTab from "@/Pages/Zones/Tabs/ZoneOverviewTab.vue";
+
 import ZoneSchedulerTab from "@/Pages/Zones/Tabs/ZoneSchedulerTab.vue";
 import ZoneTelemetryTab from "@/Pages/Zones/Tabs/ZoneTelemetryTab.vue";
 import ZoneDetailModals from "@/Pages/Zones/ZoneDetailModals.vue";
@@ -201,7 +196,6 @@ const {
     cycleStatusLabel,
     cycleStatusVariant,
     phaseTimeLeftLabel,
-    cyclesList,
     chartTimeRange,
     chartDataPh,
     chartDataEc,

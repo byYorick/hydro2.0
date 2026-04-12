@@ -1,4 +1,4 @@
-"""Создаёт или разрешает каноническую задачу AE3-Lite из legacy scheduler intent."""
+"""Создаёт или разрешает каноническую задачу AE3-Lite из scheduler intent."""
 
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ class CreateTaskFromIntentUseCase:
         *,
         task_repository: Any,
         zone_lease_repository: Any,
-        legacy_intent_mapper: Any,
+        zone_intent_repository: Any,
         zone_alert_repository: Any | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._zone_lease_repository = zone_lease_repository
-        self._legacy_intent_mapper = legacy_intent_mapper
+        self._zone_intent_repository = zone_intent_repository
         self._zone_alert_repository = zone_alert_repository
 
     async def run(
@@ -122,7 +122,7 @@ class CreateTaskFromIntentUseCase:
                         },
                     )
 
-                meta = self._legacy_intent_mapper.extract_intent_metadata(
+                meta = self._zone_intent_repository.extract_intent_metadata(
                     source=source,
                     intent_row=intent_row,
                 )

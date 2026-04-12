@@ -495,19 +495,16 @@ class GrowCycleService
         $this->documents->ensureZoneDefaults($zoneId);
 
         $now = Carbon::now('UTC')->setMicroseconds(0);
-        $intentPayload = [
-            'source' => 'laravel_grow_cycle_start',
-            'task_type' => 'diagnostics',
-            'workflow' => 'cycle_start',
-            'topology' => 'two_tank_drip_substrate_trays',
-            'grow_cycle_id' => $cycleId,
-        ];
 
         DB::table('zone_automation_intents')->upsert(
             [[
                 'zone_id' => $zoneId,
                 'intent_type' => 'DIAGNOSTICS_TICK',
-                'payload' => json_encode($intentPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'task_type' => 'cycle_start',
+                'topology' => 'two_tank_drip_substrate_trays',
+                'irrigation_mode' => null,
+                'irrigation_requested_duration_sec' => null,
+                'intent_source' => 'laravel_grow_cycle_start',
                 'idempotency_key' => $idempotencyKey,
                 'status' => 'pending',
                 'not_before' => $now,
@@ -520,7 +517,11 @@ class GrowCycleService
             [
                 'zone_id',
                 'intent_type',
-                'payload',
+                'task_type',
+                'topology',
+                'irrigation_mode',
+                'irrigation_requested_duration_sec',
+                'intent_source',
                 'status',
                 'not_before',
                 'updated_at',
@@ -1083,7 +1084,7 @@ class GrowCycleService
                     ->orWhere(function ($cycleQuery) use ($cycleId) {
                         $cycleQuery
                             ->where('intent_type', 'DIAGNOSTICS_TICK')
-                            ->whereRaw("COALESCE(payload->>'workflow', '') = 'cycle_start'")
+                            ->where('task_type', 'cycle_start')
                             ->whereRaw(
                                 "COALESCE(NULLIF(payload->>'grow_cycle_id', ''), '0')::bigint = ?",
                                 [$cycleId]

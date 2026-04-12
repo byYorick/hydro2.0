@@ -1,53 +1,49 @@
 <template>
   <div
-    class="relative flex gap-3 px-1 py-2"
-    :class="canExpand ? 'cursor-pointer select-none' : ''"
+    class="relative flex items-start gap-2 px-2.5 py-1.5 transition-colors"
+    :class="canExpand ? 'cursor-pointer hover:bg-[color:var(--bg-elevated)]/40 select-none' : ''"
     @click="canExpand ? $emit('toggle') : undefined"
   >
-    <div class="relative flex w-4 shrink-0 justify-center">
-      <span
-        class="mt-1.5 h-2 w-2 rounded-full shrink-0"
-        :class="eventDotClass(item.kind)"
-      ></span>
+    <!-- Цветная точка -->
+    <div class="flex shrink-0 items-center pt-[5px]">
+      <span class="h-1.5 w-1.5 rounded-full shrink-0" :class="eventDotClass(item.kind)"></span>
     </div>
 
     <div class="min-w-0 flex-1">
-      <div class="flex items-start justify-between gap-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge
-            :variant="getEventVariant(item.kind)"
-            class="text-xs shrink-0"
-          >
-            {{ translateEventKind(item.kind) }}
-          </Badge>
-          <span class="text-xs text-[color:var(--text-dim)]">
-            {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
-          </span>
-        </div>
+      <!-- Строка: бейдж + время + стрелка -->
+      <div class="flex flex-wrap items-center gap-1">
+        <Badge :variant="getEventVariant(item.kind)" size="sm">
+          {{ translateEventKind(item.kind) }}
+        </Badge>
+        <span class="text-[10px] text-[color:var(--text-muted)]">
+          {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
+        </span>
         <span
           v-if="canExpand"
-          class="shrink-0 text-[10px] text-[color:var(--text-dim)]"
+          class="ml-auto shrink-0 text-[10px] text-[color:var(--text-dim)]"
         >
           {{ expanded ? '▲' : '▼' }}
         </span>
       </div>
 
-      <p class="mt-0.5 text-sm text-[color:var(--text-muted)]">
+      <!-- Сообщение -->
+      <p
+        v-if="item.message"
+        class="mt-0.5 text-[11px] leading-snug text-[color:var(--text-muted)]"
+      >
         {{ item.message }}
       </p>
 
+      <!-- Расширенные детали -->
       <div
         v-if="expanded && details.length > 0"
-        class="mt-2 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3"
+        class="mt-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-2"
       >
-        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs font-mono">
-          <template
-            v-for="detail in details"
-            :key="detail.label"
-          >
-            <span class="text-[color:var(--text-dim)] whitespace-nowrap">{{ detail.label }}:</span>
+        <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[10px]">
+          <template v-for="detail in details" :key="detail.label">
+            <span class="whitespace-nowrap text-[color:var(--text-dim)]">{{ detail.label }}:</span>
             <strong
-              class="min-w-0 break-words font-mono text-[11px] leading-snug"
+              class="min-w-0 break-words font-mono leading-snug"
               :class="detail.variant === 'error' ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
             >
               {{ detail.value }}
@@ -77,5 +73,5 @@ defineEmits<{
 }>()
 
 const canExpand = computed(() => hasExpandablePayload(props.item))
-const details = computed(() => props.expanded ? buildEventDetails(props.item) : [])
+const details = computed(() => (props.expanded ? buildEventDetails(props.item) : []))
 </script>

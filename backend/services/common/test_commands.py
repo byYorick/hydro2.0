@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -7,7 +7,10 @@ import pytest
 async def test_send_command_uses_cmd_field_for_history_logger_request():
     from common.command_orchestrator import send_command
 
-    mock_response = AsyncMock()
+    # MagicMock (not AsyncMock) because httpx Response.json() is synchronous.
+    # AsyncMock would make .json() return a coroutine that is never awaited,
+    # triggering RuntimeWarning: coroutine was never awaited.
+    mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": "ok"}
 

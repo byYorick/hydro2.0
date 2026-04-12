@@ -1,4 +1,4 @@
-import { translateEventKind } from '@/utils/i18n'
+import { translateEventKind, translateWorkflowStage } from '@/utils/i18n'
 import { readNumber, readString, toPayloadRecord } from '@/utils/eventPayload'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -20,11 +20,21 @@ const RUNTIME_CORRELATED_KINDS = new Set([
   'CORRECTION_COMPLETE',
   'CORRECTION_DECISION_MADE',
   'CORRECTION_EXHAUSTED',
+  'CORRECTION_OBSERVATION_EVALUATED',
+  'CORRECTION_SENSOR_MODE_REACTIVATED',
   'EC_DOSING',
+  'IRRIGATION_CORRECTION_COMPLETED',
   'IRRIGATION_CORRECTION_STARTED',
+  'IRRIGATION_DECISION_EVALUATED',
   'IRRIGATION_DECISION_SNAPSHOT_LOCKED',
+  'IRRIGATION_EC_MULTI_DOSE',
   'IRR_STATE_SNAPSHOT',
   'PH_CORRECTED',
+])
+
+// Типы, которые объединяются в общую группу по виду (нет task_id / cw_id в payload)
+const KIND_BUCKET_KINDS = new Set([
+  'IRR_STATE_SNAPSHOT',
 ])
 
 function parseEventTime(value: string | undefined): number {
@@ -60,24 +70,31 @@ function buildContext(event: ZoneEvent): {
   const causedByEventId = readNumber(payload, 'caused_by_event_id')
   const isRuntimeEvent = RUNTIME_CORRELATED_KINDS.has(event.kind)
 
-  const contextBits = [workflowPhase, stage].filter(Boolean)
-  const subtitle = contextBits.length > 0 ? contextBits.join(' / ') : null
+  const phaseLabel = workflowPhase ? translateWorkflowStage(workflowPhase) : null
+  const stageLabel = stage ? translateWorkflowStage(stage) : null
+  const contextBits = [phaseLabel, stageLabel].filter(Boolean)
+  const subtitle = contextBits.length > 0 ? contextBits.join(' → ') : null
 
   if (correctionWindowId) {
+    const windowTitle = taskId !== null
+      ? `Задача #${taskId} · ${describeCorrectionWindow(correctionWindowId)}`
+      : describeCorrectionWindow(correctionWindowId)
     return {
       groupKey: `correction_window:${correctionWindowId}`,
-      title: taskId !== null
-        ? `AE задача #${taskId} · ${describeCorrectionWindow(correctionWindowId)}`
-        : describeCorrectionWindow(correctionWindowId),
+      title: windowTitle,
       subtitle,
       isCorrelated: true,
     }
   }
 
   if (taskId !== null && isRuntimeEvent) {
+    const phaseName = readString(payload, 'phase_name')
+    const title = phaseName
+      ? `Задача #${taskId} · ${phaseName}`
+      : `Задача #${taskId}`
     return {
       groupKey: `task:${taskId}`,
-      title: `AE задача #${taskId}`,
+      title,
       subtitle,
       isCorrelated: true,
     }
@@ -86,7 +103,7 @@ function buildContext(event: ZoneEvent): {
   if (snapshotEventId !== null && isRuntimeEvent) {
     return {
       groupKey: `snapshot:${snapshotEventId}`,
-      title: `Связка snapshot #${snapshotEventId}`,
+      title: `Связанные события (снимок #${snapshotEventId})`,
       subtitle,
       isCorrelated: true,
     }
@@ -95,9 +112,19 @@ function buildContext(event: ZoneEvent): {
   if (causedByEventId !== null && isRuntimeEvent) {
     return {
       groupKey: `cause:${causedByEventId}`,
-      title: `Связка event #${causedByEventId}`,
+      title: `Связанные события (причина #${causedByEventId})`,
       subtitle,
       isCorrelated: true,
+    }
+  }
+
+  // Одиночные runtime-события без ключей группируются в общий «ведро» по типу
+  if (KIND_BUCKET_KINDS.has(event.kind)) {
+    return {
+      groupKey: `bucket:${event.kind}`,
+      title: translateEventKind(event.kind),
+      subtitle: null,
+      isCorrelated: false,
     }
   }
 
@@ -141,13 +168,19 @@ export function groupZoneEvents(events: ZoneEvent[]): ZoneEventGroup[] {
   })
 
   return Array.from(buckets.values())
-    .map((group) => ({
-      ...group,
-      events: [...group.events].sort((left, right) => {
+    .map((group) => {
+      const sorted = [...group.events].sort((left, right) => {
         const timeDiff = parseEventTime(right.occurred_at) - parseEventTime(left.occurred_at)
         if (timeDiff !== 0) return timeDiff
         return right.id - left.id
-      }),
-    }))
+      })
+      const isBucket = group.id.startsWith('bucket:')
+      const events = isBucket ? sorted.slice(0, 3) : sorted
+      const total = group.events.length
+      const badge = isBucket && total > 3
+        ? `последние 3 из ${total}`
+        : formatGroupBadge(events.length)
+      return { ...group, events, badge }
+    })
     .sort((left, right) => parseEventTime(right.latestOccurredAt) - parseEventTime(left.latestOccurredAt))
 }

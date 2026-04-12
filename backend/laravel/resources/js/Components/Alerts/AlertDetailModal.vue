@@ -6,173 +6,101 @@
     data-testid="zone-alert-details-modal"
     @close="$emit('close')"
   >
-    <div
-      v-if="alert"
-      class="space-y-4 text-sm"
-    >
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Тип
-          </div>
-          <div class="font-semibold text-[color:var(--text-primary)]">
-            {{ getAlertTitle(alert) }}
-          </div>
+    <div v-if="alert" class="space-y-2.5">
+
+      <!-- Основные поля: компактная сетка ключ–значение -->
+      <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2">
+        <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs">
+          <span class="text-[color:var(--text-dim)] whitespace-nowrap">тип</span>
+          <span class="font-sans font-semibold text-[color:var(--text-primary)] break-words">{{ getAlertTitle(alert) }}</span>
+
+          <span class="text-[color:var(--text-dim)] whitespace-nowrap">статус</span>
+          <span class="font-sans text-[color:var(--text-primary)]">{{ translateStatus(alert.status) }}</span>
+
+          <template v-if="alert.code">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">код</span>
+            <span class="text-[color:var(--text-primary)]">{{ alert.code }}</span>
+          </template>
+
+          <template v-if="alert.source">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">источник</span>
+            <span class="font-sans text-[color:var(--text-primary)]">{{ alert.source }}</span>
+          </template>
+
+          <template v-if="alert.severity">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">severity</span>
+            <span class="text-[color:var(--text-primary)]">{{ alert.severity }}</span>
+          </template>
+
+          <template v-if="alert.node_uid">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">node</span>
+            <span class="text-[color:var(--text-primary)]">{{ alert.node_uid }}</span>
+          </template>
+
+          <template v-if="alert.hardware_id">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">hw</span>
+            <span class="text-[color:var(--text-primary)]">{{ alert.hardware_id }}</span>
+          </template>
+
+          <template v-if="typeof alert.error_count === 'number'">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">count</span>
+            <span class="text-[color:var(--text-primary)]">{{ alert.error_count }}</span>
+          </template>
+
+          <span class="text-[color:var(--text-dim)] whitespace-nowrap">создан</span>
+          <span class="font-sans text-[color:var(--text-primary)]">{{ formatAlertDate(alert.created_at) }}</span>
+
+          <template v-if="alert.resolved_at">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">решён</span>
+            <span class="font-sans text-[color:var(--text-primary)]">{{ formatAlertDate(alert.resolved_at) }}</span>
+          </template>
         </div>
-        <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Статус
-          </div>
-          <div class="font-semibold text-[color:var(--text-primary)]">
-            {{ translateStatus(alert.status) }}
-          </div>
+      </div>
+
+      <!-- Сообщение / описание / рекомендация -->
+      <div
+        v-if="message || description || recommendation"
+        class="space-y-1.5"
+      >
+        <div v-if="message" class="space-y-0.5">
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Сообщение</p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ message }}</p>
         </div>
-        <div
-          v-if="alert.code"
-          class="space-y-1"
+        <div v-if="description" class="space-y-0.5">
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Описание</p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ description }}</p>
+        </div>
+        <div v-if="recommendation" class="space-y-0.5">
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Что делать</p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ recommendation }}</p>
+        </div>
+      </div>
+
+      <!-- Payload details (сворачиваемый) -->
+      <div v-if="detailsJson">
+        <button
+          type="button"
+          class="flex w-full items-center gap-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2.5 py-1.5 transition-colors hover:bg-[color:var(--bg-elevated)]/80"
+          @click="payloadExpanded = !payloadExpanded"
         >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Код
-          </div>
-          <div class="font-mono text-[color:var(--text-primary)]">
-            {{ alert.code }}
-          </div>
-        </div>
-        <div
-          v-if="alert.source"
-          class="space-y-1"
-        >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Источник
-          </div>
-          <div class="text-[color:var(--text-primary)]">
-            {{ alert.source }}
-          </div>
-        </div>
-        <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Создан
-          </div>
-          <div class="text-[color:var(--text-primary)]">
-            {{ formatAlertDate(alert.created_at) }}
-          </div>
-        </div>
-        <div
-          v-if="alert.resolved_at"
-          class="space-y-1"
-        >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Решён
-          </div>
-          <div class="text-[color:var(--text-primary)]">
-            {{ formatAlertDate(alert.resolved_at) }}
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="alert.severity || alert.node_uid || alert.hardware_id || typeof alert.error_count === 'number'"
-        class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-3"
-      >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-          Контекст
-        </div>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <span
-            v-if="alert.severity"
-            class="metric-pill"
-          >
-            severity <span class="text-[color:var(--text-primary)]">{{ String(alert.severity) }}</span>
-          </span>
-          <span
-            v-if="alert.node_uid"
-            class="metric-pill"
-          >
-            node <span class="font-mono text-[color:var(--text-primary)]">{{ alert.node_uid }}</span>
-          </span>
-          <span
-            v-if="alert.hardware_id"
-            class="metric-pill"
-          >
-            hw <span class="font-mono text-[color:var(--text-primary)]">{{ alert.hardware_id }}</span>
-          </span>
-          <span
-            v-if="typeof alert.error_count === 'number'"
-            class="metric-pill"
-          >
-            count <span class="text-[color:var(--text-primary)]">{{ alert.error_count }}</span>
-          </span>
-        </div>
-      </div>
-
-      <div
-        v-if="message"
-        class="space-y-1"
-      >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-          Сообщение
-        </div>
-        <div class="text-[color:var(--text-primary)]">
-          {{ message }}
-        </div>
-      </div>
-
-      <div
-        v-if="description"
-        class="space-y-1"
-      >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-          Описание
-        </div>
-        <div class="text-[color:var(--text-primary)]">
-          {{ description }}
-        </div>
-      </div>
-
-      <div
-        v-if="recommendation"
-        class="space-y-1"
-      >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-          Что делать
-        </div>
-        <div class="text-[color:var(--text-primary)]">
-          {{ recommendation }}
-        </div>
-      </div>
-
-      <div
-        v-if="detailsJson"
-        class="space-y-1"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-            Payload details
-          </div>
-          <div class="flex items-center gap-2">
+          <span class="text-[11px] text-[color:var(--text-dim)]">{{ payloadExpanded ? '⌄' : '›' }}</span>
+          <span class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Payload</span>
+          <div class="ml-auto flex items-center gap-1.5">
+            <span v-if="copyState === 'copied'" class="text-[11px] text-[color:var(--accent-green)]">Скопировано</span>
+            <span v-else-if="copyState === 'failed'" class="text-[11px] text-[color:var(--accent-red)]">Ошибка</span>
             <span
-              v-if="copyState === 'copied'"
-              class="text-xs text-[color:var(--accent-green)]"
+              class="h-5 px-2 text-[11px] rounded border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] transition-colors"
+              :class="copyState === 'copying' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'"
+              @click.stop="copyPayload"
             >
-              Скопировано
+              {{ copyState === 'copying' ? '...' : 'Копировать' }}
             </span>
-            <span
-              v-else-if="copyState === 'failed'"
-              class="text-xs text-[color:var(--accent-red)]"
-            >
-              Не удалось скопировать
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="copyState === 'copying'"
-              @click="copyPayload"
-            >
-              {{ copyState === 'copying' ? 'Копирую...' : 'Скопировать' }}
-            </Button>
           </div>
-        </div>
-        <pre class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs overflow-x-auto text-[color:var(--text-primary)]">{{ detailsJson }}</pre>
+        </button>
+        <pre
+          v-if="payloadExpanded"
+          class="mt-1 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-2 text-[10px] overflow-x-auto text-[color:var(--text-primary)] leading-relaxed"
+        >{{ detailsJson }}</pre>
       </div>
     </div>
 
@@ -180,6 +108,7 @@
       <Button
         v-if="alert && canResolve"
         variant="success"
+        size="sm"
         :disabled="resolveLoading"
         data-testid="zone-alert-resolve-button"
         @click="$emit('resolve')"
@@ -223,6 +152,7 @@ const description = computed(() => (props.alert ? getAlertDescription(props.aler
 const recommendation = computed(() => (props.alert ? getAlertRecommendation(props.alert) : ''))
 
 const copyState = ref<'idle' | 'copying' | 'copied' | 'failed'>('idle')
+const payloadExpanded = ref(false)
 
 const detailsJson = computed(() => {
   if (!props.alert?.details) return ''

@@ -3,34 +3,43 @@
     v-if="user"
     class="relative"
   >
+    <!-- Collapsed: только аватар с tooltip -->
+    <div v-if="collapsed" class="relative group/user flex justify-center">
+      <button
+        class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)] bg-[color:var(--bg-elevated)] hover:ring-2 hover:ring-[color:var(--accent-green)]/40 transition-all"
+        :class="{ 'ring-2 ring-[color:var(--accent-green)]/40': open }"
+        @click="open = !open"
+      >
+        {{ userInitials }}
+      </button>
+      <div class="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 opacity-0 group-hover/user:opacity-100 transition-opacity duration-150">
+        <div class="whitespace-nowrap rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2.5 py-1.5 text-xs font-medium text-[color:var(--text-primary)] shadow-lg">
+          {{ user?.name }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Expanded: аватар + имя + роль -->
     <button
-      class="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors text-sm text-[color:var(--text-primary)]"
+      v-else
+      class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[color:var(--bg-elevated)] transition-colors"
       :class="{ 'bg-[color:var(--bg-elevated)]': open }"
       @click="open = !open"
     >
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-full bg-[color:var(--bg-surface-strong)] flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)]">
-          {{ userInitials }}
-        </div>
-        <div class="hidden sm:flex flex-col items-start">
-          <span class="text-xs font-medium text-[color:var(--text-primary)]">{{ user?.name }}</span>
-          <span class="text-[10px] text-[color:var(--text-muted)]">{{ translateRole(user?.role) }}</span>
-        </div>
-        <svg
-          class="w-4 h-4 text-[color:var(--text-muted)] transition-transform"
-          :class="{ 'rotate-180': open }"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M5 15l7-7 7 7"
-          />
-        </svg>
+      <div class="w-7 h-7 shrink-0 rounded-full bg-[color:var(--bg-elevated)] flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)]">
+        {{ userInitials }}
       </div>
+      <div class="flex-1 min-w-0 text-left">
+        <div class="text-xs font-medium text-[color:var(--text-primary)] truncate">{{ user?.name }}</div>
+        <div class="text-[10px] text-[color:var(--text-muted)] truncate">{{ translateRole(user?.role) }}</div>
+      </div>
+      <svg
+        class="w-3.5 h-3.5 shrink-0 text-[color:var(--text-muted)] transition-transform"
+        :class="{ 'rotate-180': open }"
+        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+      </svg>
     </button>
 
     <!-- Overlay для закрытия меню -->
@@ -51,7 +60,8 @@
     >
       <div
         v-show="open"
-        class="absolute left-0 bottom-full mb-2 w-56 rounded-md shadow-[var(--shadow-card)] bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] z-50"
+        class="absolute w-56 rounded-md shadow-[var(--shadow-card)] bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] z-50"
+        :class="collapsed ? 'left-full ml-3 bottom-0' : 'left-0 bottom-full mb-2'"
         @click.stop
       >
         <div class="py-1">
@@ -165,6 +175,8 @@ import { route } from '@/utils/route'
 import { translateRole } from '@/utils/i18n'
 import Badge from '@/Components/Badge.vue'
 import type { User } from '@/types/User'
+
+defineProps<{ collapsed?: boolean }>()
 
 const page = usePage()
 const open = ref(false)

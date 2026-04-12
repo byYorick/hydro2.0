@@ -77,6 +77,9 @@ class AutomationTask:
     irrigation_wait_ready_deadline_at: Optional[datetime] = None
     irrigation_setup_deadline_at: Optional[datetime] = None
 
+    # ── Observability flags ─────────────────────────────────────────
+    start_event_emitted: bool = False
+
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
         """Собирает сущность из asyncpg Record или dict-подобной строки."""
@@ -214,6 +217,7 @@ class AutomationTask:
             irrigation_replay_count=int(row.get("irrigation_replay_count") or 0),
             irrigation_wait_ready_deadline_at=_naive(row.get("irrigation_wait_ready_deadline_at")),
             irrigation_setup_deadline_at=_naive(row.get("irrigation_setup_deadline_at")),
+            start_event_emitted=bool(row.get("start_event_emitted", False)),
         )
 
     @property

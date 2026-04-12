@@ -350,30 +350,19 @@ class ScheduleDispatcher
             app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
 
             $topology = app(ZoneAutomationIntentService::class)->resolveAe3TopologyForZone($zoneId);
-            $intentPayload = match ($taskType) {
-                'irrigation' => [
-                    'source' => 'laravel_scheduler',
-                    'task_type' => 'irrigation_start',
-                    'workflow' => 'irrigation_start',
-                    'topology' => $topology,
-                    'mode' => 'normal',
-                ],
-                'lighting' => [
-                    'source' => 'laravel_scheduler',
-                    'task_type' => 'lighting_tick',
-                    'workflow' => 'lighting_tick',
-                    'topology' => 'lighting_tick',
-                ],
-                default => [
-                    'source' => 'laravel_scheduler',
-                    'task_type' => $taskType,
-                    'workflow' => 'cycle_start',
-                    'topology' => $topology,
-                ],
+
+            $aeTaskType = match ($taskType) {
+                'irrigation' => 'irrigation_start',
+                'lighting' => 'lighting_tick',
+                default => 'cycle_start',
             };
+            $aeTopology = $taskType === 'lighting' ? 'lighting_tick' : $topology;
+            $irrigationMode = $taskType === 'irrigation' ? 'normal' : null;
+            $irrigationDurationSec = null;
             if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
-                $intentPayload['requested_duration_sec'] = max(1, (int) $payload['duration_sec']);
+                $irrigationDurationSec = max(1, (int) $payload['duration_sec']);
             }
+
             $intentType = $this->mapTaskTypeToIntentType($taskType);
             $now = SchedulerRuntimeHelper::nowUtc();
 
@@ -382,7 +371,11 @@ class ScheduleDispatcher
                 INSERT INTO zone_automation_intents (
                     zone_id,
                     intent_type,
-                    payload,
+                    task_type,
+                    topology,
+                    irrigation_mode,
+                    irrigation_requested_duration_sec,
+                    intent_source,
                     idempotency_key,
                     status,
                     not_before,
@@ -391,10 +384,14 @@ class ScheduleDispatcher
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?::jsonb, ?, 'pending', ?, 0, 3, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 'laravel_scheduler', ?, 'pending', ?, 0, 3, ?, ?)
                 ON CONFLICT (zone_id, idempotency_key)
                 DO UPDATE SET
-                    payload = EXCLUDED.payload,
+                    task_type = EXCLUDED.task_type,
+                    topology = EXCLUDED.topology,
+                    irrigation_mode = EXCLUDED.irrigation_mode,
+                    irrigation_requested_duration_sec = EXCLUDED.irrigation_requested_duration_sec,
+                    intent_source = EXCLUDED.intent_source,
                     not_before = EXCLUDED.not_before,
                     updated_at = EXCLUDED.updated_at
                 WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
@@ -403,7 +400,10 @@ class ScheduleDispatcher
                 [
                     $zoneId,
                     $intentType,
-                    json_encode($intentPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    $aeTaskType,
+                    $aeTopology,
+                    $irrigationMode,
+                    $irrigationDurationSec,
                     $correlationId,
                     $triggerTime,
                     $now,

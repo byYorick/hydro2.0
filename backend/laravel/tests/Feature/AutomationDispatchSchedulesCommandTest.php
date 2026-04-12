@@ -102,17 +102,11 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->orderByDesc('id')
             ->first();
         $this->assertNotNull($intentRow);
-        $intentPayloadRaw = $intentRow->payload ?? null;
-        $intentPayload = is_string($intentPayloadRaw)
-            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
-            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
-        $this->assertIsArray($intentPayload);
-        $this->assertSame('laravel_scheduler', $intentPayload['source'] ?? null);
-        $this->assertSame('irrigation_start', $intentPayload['task_type'] ?? null);
-        $this->assertSame('two_tank_drip_substrate_trays', $intentPayload['topology'] ?? null);
-        $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
-        $this->assertArrayNotHasKey('task_payload', $intentPayload);
-        $this->assertArrayNotHasKey('schedule_payload', $intentPayload);
+        $this->assertNull($intentRow->payload);
+        $this->assertSame('laravel_scheduler', $intentRow->intent_source);
+        $this->assertSame('irrigation_start', $intentRow->task_type);
+        $this->assertSame('two_tank_drip_substrate_trays', $intentRow->topology);
+        $this->assertSame('normal', $intentRow->irrigation_mode);
 
         $task = LaravelSchedulerActiveTask::query()
             ->where('task_id', '1001')
@@ -408,12 +402,9 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->first();
         $this->assertNotNull($intentRow);
 
-        $intentPayloadRaw = $intentRow->payload ?? null;
-        $intentPayload = is_string($intentPayloadRaw)
-            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
-            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
-        $this->assertSame('diagnostics', $intentPayload['task_type'] ?? null);
-        $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
+        $this->assertNull($intentRow->payload);
+        $this->assertSame('cycle_start', $intentRow->task_type);
+        $this->assertSame('laravel_scheduler', $intentRow->intent_source);
 
         Http::assertSent(function (Request $request) use ($zone): bool {
             if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {

@@ -186,7 +186,9 @@ body {
 
 .nav-link {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   padding: 0.7rem 0.9rem;
   border-radius: 12px;
   color: var(--text-muted);
@@ -347,25 +349,53 @@ body {
   background: rgba(63, 220, 120, 0.08);
 }
 
+.btn-success {
+  background: linear-gradient(120deg, rgba(63, 220, 120, 0.9), rgba(47, 190, 100, 0.85));
+  color: #070b10;
+  border-color: rgba(63, 220, 120, 0.5);
+  box-shadow: 0 0 12px rgba(63, 220, 120, 0.35), 0 4px 14px rgba(63, 220, 120, 0.2);
+}
+
+.btn-success:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(63, 220, 120, 0.5), 0 6px 20px rgba(63, 220, 120, 0.3);
+}
+
+.btn-success:disabled {
+  opacity: 0.5;
+}
+
+.btn-danger {
+  background: linear-gradient(120deg, rgba(255, 82, 82, 0.9), rgba(220, 50, 50, 0.85));
+  color: #fff;
+  border-color: rgba(255, 82, 82, 0.5);
+  box-shadow: 0 0 12px rgba(255, 82, 82, 0.3), 0 4px 14px rgba(255, 82, 82, 0.15);
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(255, 82, 82, 0.45), 0 6px 20px rgba(255, 82, 82, 0.25);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  border-radius: 4px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid transparent;
 }
 
 .badge--xs {
-  font-size: 0.62rem;
-  padding: 0.35rem 0.7rem;
+  font-size: 0.58rem;
+  padding: 0.12rem 0.4rem;
 }
 
 .badge--sm {
-  font-size: 0.72rem;
-  padding: 0.4rem 0.8rem;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
 }
 
 .badge--success {

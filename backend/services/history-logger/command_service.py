@@ -27,48 +27,57 @@ logger = logging.getLogger(__name__)
 #: reaching a node that will reject the signed payload as too old.
 _MAX_COMMAND_TS_OFFSET_SEC: int = 10
 
-#: Absolute bounds for dose volume in millilitres. Tighter than the
-#: NodeConfig safe_limits (which is hardware-specific) — these reject
-#: out-of-range doses before HMAC is even computed. Per project spec:
-#: 0.1 ml minimum effective dose, 5.0 ml per-pulse safety ceiling.
-_MIN_DOSE_ML: float = 0.1
-_MAX_DOSE_ML: float = 5.0
+#: Safety ceiling for ``params.ml`` — the per-command dose volume in
+#: millilitres. This is a **transport-layer sanity guard**, not a domain
+#: bound: CorrectionPlanner in AE3 already enforces ``max_ec_dose_ml``
+#: (default 50 ml) and ``max_ph_dose_ml`` (default 20 ml) per zone config.
+#: The ceiling here catches integration bugs (e.g., a caller passing litres
+#: instead of ml) without interfering with large-volume EC nutrition pulses
+#: that are legitimate for 100+ litre tanks.
+_MAX_DOSE_ML_SANITY: float = 500.0
 
-#: Absolute bounds for pump run duration in milliseconds. The 60000 ms
-#: ceiling matches the firmware-side pump_driver safety limit — any
-#: command asking for more than 60 seconds of continuous pumping is
-#: a configuration or integration bug, not a legitimate dose.
-_MIN_DURATION_MS: int = 1
-_MAX_DURATION_MS: int = 60000
+#: Absolute bounds for pump run duration in milliseconds. The 300000 ms
+#: (5 minutes) ceiling is a transport-layer sanity guard. Firmware-side
+#: pump_driver has its own per-NodeConfig safe_limits. This catches
+#: integration bugs without blocking large-tank multi-component dosing
+#: sequences where the pump legitimately runs for > 60s per step.
+_MAX_DURATION_MS_SANITY: int = 300_000
 
 
 def _validate_command_params(*, cmd: str, params: dict) -> None:
-    """Reject commands with out-of-range dose/duration fields.
+    """Reject commands with clearly out-of-range dose/duration fields.
 
-    Called from ``_create_command_payload`` before HMAC signing so bad
-    requests fail with a clear ValueError naming the exact field and
-    bound, rather than producing a signed payload that a node would
-    silently reject or — worse — dose far more than intended.
-
-    Bounds are intentionally conservative; node-side config can be
-    tighter via NodeConfig.safe_limits, but never looser than these.
+    Transport-layer sanity guard only — the real domain bounds live in
+    CorrectionPlanner (``max_ec_dose_ml``, ``max_ph_dose_ml``) and
+    pump_calibration config. History-logger rejects only values that are
+    obviously bugs (negative, zero dose, or absurdly large) so a
+    misconfigured caller cannot accidentally send a signed command that
+    orders hundreds of ml or minutes of pumping.
     """
     dose_ml = params.get("ml") if isinstance(params.get("ml"), (int, float)) else None
-    if dose_ml is not None and not (_MIN_DOSE_ML <= float(dose_ml) <= _MAX_DOSE_ML):
-        raise ValueError(
-            f"command {cmd} params.ml={dose_ml} out of bounds "
-            f"[{_MIN_DOSE_ML}, {_MAX_DOSE_ML}]"
-        )
+    if dose_ml is not None:
+        if float(dose_ml) <= 0:
+            raise ValueError(
+                f"command {cmd} params.ml={dose_ml} must be positive"
+            )
+        if float(dose_ml) > _MAX_DOSE_ML_SANITY:
+            raise ValueError(
+                f"command {cmd} params.ml={dose_ml} exceeds sanity ceiling "
+                f"{_MAX_DOSE_ML_SANITY}"
+            )
     duration_ms = (
         params.get("duration_ms") if isinstance(params.get("duration_ms"), (int, float)) else None
     )
-    if duration_ms is not None and not (
-        _MIN_DURATION_MS <= int(duration_ms) <= _MAX_DURATION_MS
-    ):
-        raise ValueError(
-            f"command {cmd} params.duration_ms={duration_ms} out of bounds "
-            f"[{_MIN_DURATION_MS}, {_MAX_DURATION_MS}]"
-        )
+    if duration_ms is not None:
+        if int(duration_ms) <= 0:
+            raise ValueError(
+                f"command {cmd} params.duration_ms={duration_ms} must be positive"
+            )
+        if int(duration_ms) > _MAX_DURATION_MS_SANITY:
+            raise ValueError(
+                f"command {cmd} params.duration_ms={duration_ms} exceeds sanity "
+                f"ceiling {_MAX_DURATION_MS_SANITY}"
+            )
 
 
 def _create_command_payload(

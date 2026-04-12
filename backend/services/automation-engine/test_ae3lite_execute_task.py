@@ -727,6 +727,12 @@ async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emi
 
 @pytest.mark.asyncio
 async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_snapshot(monkeypatch) -> None:
+    # The IRRIGATION_DECISION_SNAPSHOT_LOCKED event must fire exactly once per task
+    # lifetime: when the task is at the irrigation_start stage (commands about to be
+    # sent).  All irrigation_start tasks begin at await_ready; the event must NOT
+    # fire there (await_ready polls N times before the zone becomes ready, which
+    # would produce N duplicates).  Similarly, it must NOT fire on subsequent
+    # re-claims in irrigation_check.
     recorded_events: list[tuple[int, str, dict]] = []
 
     async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
@@ -739,7 +745,7 @@ async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_
 
     claimed_task = replace(
         _make_task(
-            stage="await_ready",
+            stage="irrigation_start",
             topology="two_tank",
             task_type="irrigation_start",
             irrigation_decision_strategy="smart_soil_v1",
@@ -774,6 +780,53 @@ async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_
         "min_samples": 3,
         "stale_after_sec": 600,
     }
+
+
+@pytest.mark.asyncio
+async def test_execute_task_irrigation_prelocked_snapshot_no_duplicate_events_on_poll_reclaim(monkeypatch) -> None:
+    # Regression: IRRIGATION_DECISION_SNAPSHOT_LOCKED was emitted on every re-claim
+    # after a poll because update_stage() resets status to 'pending' and re-claim
+    # sets status back to 'claimed' (first_run=True).  Verify that stages OTHER
+    # than irrigation_start (specifically await_ready and irrigation_check) do NOT
+    # emit the event even on the first claimed pick-up.
+    for poll_stage in ("await_ready", "irrigation_check"):
+        recorded_events: list[tuple[int, str, dict]] = []
+
+        async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+            recorded_events.append((zone_id, event_type, payload))
+
+        monkeypatch.setattr(
+            "ae3lite.application.use_cases.execute_task.create_zone_event",
+            _record_zone_event,
+        )
+
+        claimed_task = replace(
+            _make_task(
+                stage=poll_stage,
+                topology="two_tank",
+                task_type="irrigation_start",
+                irrigation_decision_strategy="smart_soil_v1",
+                irrigation_decision_config={"lookback_sec": 1800},
+                irrigation_bundle_revision="bundle-locked-123456",
+            ),
+            status="claimed",
+        )
+        task_repo = _TaskRepoRunning(running_task=claimed_task)
+        use_case = ExecuteTaskUseCase(
+            task_repository=task_repo,
+            zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+            planner=_PlannerIrrigationLockSnapshot(),
+            command_gateway=_GatewayOk(),
+            workflow_router=_WorkflowRouterPending(),
+        )
+
+        await use_case.run(task=claimed_task, now=NOW)
+
+        snapshot_events = [evt for _, evt, _ in recorded_events if evt == "IRRIGATION_DECISION_SNAPSHOT_LOCKED"]
+        assert snapshot_events == [], (
+            f"IRRIGATION_DECISION_SNAPSHOT_LOCKED emitted unexpectedly at stage={poll_stage!r}: "
+            f"got {snapshot_events}"
+        )
 
 
 @pytest.mark.asyncio

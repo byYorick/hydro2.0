@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import CreateTaskFromIntentUseCase
 from ae3lite.api.contracts import StartCycleRequest
 from ae3lite.domain.errors import TaskCreateError
 from ae3lite.domain.entities import AutomationTask
+from ae3lite.infrastructure.repositories.zone_intent_repository import PgZoneIntentRepository
 
 
 NOW = datetime(2026, 3, 14, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
@@ -178,7 +178,7 @@ async def test_create_task_from_intent_uses_shared_locked_connection_for_checks_
     use_case = CreateTaskFromIntentUseCase(
         task_repository=_TaskRepo(conn),
         zone_lease_repository=_LeaseRepo(conn),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
         zone_alert_repository=_AlertRepo(conn),
     )
 
@@ -195,12 +195,9 @@ async def test_create_task_from_intent_uses_shared_locked_connection_for_checks_
                 "zone_id": 7,
                 "intent_type": "diagnostics_tick",
                 "retry_count": 0,
-                "payload": {
-                    "workflow": "cycle_start",
-                    "task_type": "diagnostics",
-                    "source": "laravel_scheduler",
-                    "topology": "two_tank",
-                },
+                "task_type": "cycle_start",
+                "topology": "two_tank",
+                "intent_source": "laravel_scheduler",
                 "idempotency_key": "idem-1",
             },
             now=NOW,
@@ -249,7 +246,7 @@ async def test_create_task_from_intent_locks_irrigation_decision_snapshot_before
     use_case = CreateTaskFromIntentUseCase(
         task_repository=task_repo,
         zone_lease_repository=_LeaseRepo(conn),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
         zone_alert_repository=_AlertRepo(conn),
     )
 
@@ -266,14 +263,11 @@ async def test_create_task_from_intent_locks_irrigation_decision_snapshot_before
                 "zone_id": 7,
                 "intent_type": "irrigation",
                 "retry_count": 0,
-                "payload": {
-                    "workflow": "cycle_start",
-                    "task_type": "irrigation_start",
-                    "source": "zone_ui",
-                    "topology": "two_tank",
-                    "mode": "normal",
-                    "requested_duration_sec": 120,
-                },
+                "task_type": "irrigation_start",
+                "topology": "two_tank",
+                "intent_source": "zone_ui",
+                "irrigation_mode": "normal",
+                "irrigation_requested_duration_sec": 120,
                 "idempotency_key": "idem-irrigation",
             },
             now=NOW,
@@ -292,7 +286,7 @@ async def test_create_task_from_intent_fails_closed_without_active_grow_cycle() 
     use_case = CreateTaskFromIntentUseCase(
         task_repository=_TaskRepo(conn),
         zone_lease_repository=_LeaseRepo(conn),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
         zone_alert_repository=_AlertRepo(conn),
     )
 
@@ -310,12 +304,9 @@ async def test_create_task_from_intent_fails_closed_without_active_grow_cycle() 
                     "zone_id": 7,
                     "intent_type": "diagnostics_tick",
                     "retry_count": 0,
-                    "payload": {
-                        "workflow": "cycle_start",
-                        "task_type": "diagnostics",
-                        "source": "laravel_scheduler",
-                        "topology": "two_tank",
-                    },
+                    "task_type": "cycle_start",
+                    "topology": "two_tank",
+                    "intent_source": "laravel_scheduler",
                     "idempotency_key": "idem-missing-cycle",
                 },
                 now=NOW,

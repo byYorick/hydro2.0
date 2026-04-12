@@ -1,10 +1,10 @@
 <template>
-  <Card class="relative overflow-hidden">
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-sm font-semibold">
+  <div class="relative overflow-hidden">
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-xs font-semibold text-[color:var(--text-primary)]">
         Устройства зоны
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1.5">
         <button
           class="p-1.5 rounded border transition-colors"
           :class="viewMode === 'grid' 
@@ -162,20 +162,20 @@
       </div>
     </div>
 
-    <!-- Сетка визуализация (SCADA стиль) -->
+    <!-- Сетка визуализация -->
     <div
       v-else-if="viewMode === 'grid' && devices.length > 0"
-      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"
     >
       <Link
         v-for="device in devices"
         :key="device.id"
         :href="`/devices/${device.id}`"
-        class="group relative rounded-lg border-2 p-4 transition-all duration-200 hover:shadow-lg hover:scale-105 bg-[color:var(--bg-surface-strong)]"
+        class="group relative rounded-lg border-2 p-2.5 transition-all duration-200 hover:shadow-lg hover:scale-105 bg-[color:var(--bg-surface-strong)]"
         :class="getDeviceCardClass(device)"
       >
-        <!-- SCADA статус индикатор -->
-        <div class="absolute top-2 right-2 flex items-center gap-2 z-10">
+        <!-- Статус индикатор -->
+        <div class="absolute top-1.5 right-1.5 flex items-center gap-1.5 z-10">
           <StatusIndicator
             :status="getDeviceStatus(device)"
             :pulse="device.status === 'online'"
@@ -183,72 +183,58 @@
           />
           <Badge
             :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'"
-            class="text-[10px] px-1.5 py-0.5"
+            size="sm"
           >
             {{ device.status?.toUpperCase() || 'UNKNOWN' }}
           </Badge>
         </div>
 
-        <!-- Иконка устройства (SCADA стиль) -->
-        <div class="flex items-center justify-center mb-3">
-          <div class="text-4xl relative">
+        <!-- Иконка -->
+        <div class="flex items-center justify-center mb-1.5">
+          <div class="text-3xl relative">
             {{ getDeviceIcon(device.type) }}
-            <!-- Индикатор активности -->
             <div
               v-if="device.status === 'online'"
-              class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[color:var(--accent-green)] animate-pulse"
+              class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"
             ></div>
           </div>
         </div>
 
-        <!-- Название (SCADA стиль) -->
-        <div class="text-sm font-bold text-center mb-1 truncate px-1">
+        <!-- Название -->
+        <div class="text-xs font-bold text-center mb-0.5 truncate px-1">
           {{ device.uid || device.name || `Device ${device.id}` }}
         </div>
 
-        <!-- Тип (SCADA стиль) -->
-        <div class="text-xs font-medium text-[color:var(--text-muted)] text-center mb-3 uppercase tracking-wide">
+        <!-- Тип -->
+        <div class="text-[10px] font-medium text-[color:var(--text-muted)] text-center mb-2 uppercase tracking-wide">
           {{ translateDeviceType(device.type) }}
         </div>
 
-        <!-- Дополнительная информация (SCADA стиль) -->
-        <div class="text-xs text-[color:var(--text-dim)] space-y-1.5 border-t border-[color:var(--border-muted)] pt-2">
-          <div
-            v-if="device.fw_version"
-            class="flex items-center justify-between"
-          >
+        <!-- Доп. информация -->
+        <div class="text-[11px] text-[color:var(--text-dim)] space-y-1 border-t border-[color:var(--border-muted)] pt-1.5">
+          <div v-if="device.fw_version" class="flex items-center justify-between">
             <span class="text-[color:var(--text-muted)]">FW:</span>
             <span class="font-semibold text-[color:var(--text-primary)]">{{ device.fw_version }}</span>
           </div>
-          <div
-            v-if="device.last_seen_at"
-            class="flex items-center justify-between"
-          >
-            <span class="text-[color:var(--text-muted)]">Последний раз:</span>
+          <div v-if="device.last_seen_at" class="flex items-center justify-between">
+            <span class="text-[color:var(--text-muted)]">Был:</span>
             <span class="font-medium text-[color:var(--text-primary)]">{{ formatLastSeen(device.last_seen_at) }}</span>
           </div>
-          <div
-            v-if="device.channels && device.channels.length > 0"
-            class="flex items-center justify-between"
-          >
+          <div v-if="device.channels && device.channels.length > 0" class="flex items-center justify-between">
             <span class="text-[color:var(--text-muted)]">Каналов:</span>
             <span class="font-semibold text-[color:var(--accent-cyan)]">{{ device.channels.length }}</span>
           </div>
         </div>
 
-        <!-- Кнопка просмотра конфигурации (для управляющих ролей) -->
-        <div
-          v-if="canManage"
-          class="mt-2 flex justify-center"
-          @click.stop
-        >
+        <!-- Кнопка конфига -->
+        <div v-if="canManage" class="mt-1.5 flex justify-center" @click.stop>
           <Button
             size="sm"
             variant="outline"
-            class="text-xs w-full"
+            class="text-[11px] w-full"
             @click.stop="$emit('configure', device)"
           >
-            Просмотр конфига
+            Конфиг
           </Button>
         </div>
       </Link>
@@ -275,13 +261,12 @@
         </Button>
       </template>
     </div>
-  </Card>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
-import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import StatusIndicator from '@/Components/StatusIndicator.vue'

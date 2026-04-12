@@ -1,4 +1,4 @@
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
@@ -72,53 +72,100 @@ export function getEventMessage(event: CycleEvent): string {
   return translateEventKind(type)
 }
 
+export interface UseCycleEventsOptions {
+  limit?: number
+}
+
 /**
- * Загрузка событий цикла. Перезагружается при смене cycle_id или phase_id.
+ * Загрузка событий цикла с поддержкой пагинации.
  * @param getCycleId — функция-геттер для zone_id текущего цикла
  * @param getPhaseId — функция-геттер для id текущей фазы (для реагирования на смену фазы)
+ * @param options — { limit } для пагинации (по умолчанию 50)
  */
 export function useCycleEvents(
   getCycleId: () => number | null | undefined,
   getPhaseId: () => number | null | undefined = () => undefined,
+  options: UseCycleEventsOptions = {},
 ) {
   const { showToast } = useToast()
+  const limit = options.limit ?? 50
   const events = ref<CycleEvent[]>([])
   const loading = ref(false)
+  const loadingMore = ref(false)
+  const hasMore = ref(true)
+
+  function parseItems(response: unknown): Record<string, unknown>[] {
+    if (Array.isArray(response)) return response as Record<string, unknown>[]
+    if (
+      response && typeof response === 'object' && 'data' in response
+      && Array.isArray((response as { data?: unknown }).data)
+    ) {
+      return (response as { data: Record<string, unknown>[] }).data
+    }
+    return []
+  }
+
+  function mapEvents(items: Record<string, unknown>[]): CycleEvent[] {
+    return items.map((e) => {
+      const parsed = parseEventPayload(e)
+      return {
+        id: (e.event_id || e.id) as number | string,
+        type: e.type as string,
+        details: parsed,
+        message: typeof e.message === 'string' ? e.message : undefined,
+        created_at: e.created_at as string | undefined,
+      }
+    })
+  }
 
   async function loadEvents(): Promise<void> {
     const zoneId = getCycleId()
     if (!zoneId) {
       events.value = []
+      hasMore.value = false
       return
     }
 
     loading.value = true
     try {
-      const response = await api.zones.events(zoneId, { cycle_only: true, limit: 50 }) as Record<string, unknown>[] | { data?: Record<string, unknown>[] }
-      const items: Record<string, unknown>[] = Array.isArray(response)
-        ? response
-        : (Array.isArray((response as { data?: Record<string, unknown>[] })?.data)
-          ? ((response as { data: Record<string, unknown>[] }).data)
-          : [])
-
-      events.value = items
-        .map((e) => {
-          const parsed = parseEventPayload(e)
-          return {
-            id: (e.event_id || e.id) as number | string,
-            type: e.type as string,
-            details: parsed,
-            message: typeof e.message === 'string' ? e.message : undefined,
-            created_at: e.created_at as string | undefined,
-          }
-        })
-        .reverse()
+      const response = await api.zones.events(zoneId, { cycle_only: true, limit })
+      const items = parseItems(response)
+      const mapped = mapEvents(items)
+      events.value = mapped.reverse()
+      hasMore.value = items.length >= limit
     } catch (err) {
       logger.error('Failed to load cycle events:', err)
       showToast('Ошибка загрузки событий цикла', 'error')
       events.value = []
+      hasMore.value = false
     } finally {
       loading.value = false
+    }
+  }
+
+  async function loadMore(): Promise<void> {
+    const zoneId = getCycleId()
+    if (!zoneId || !hasMore.value || loadingMore.value) return
+
+    const oldest = events.value[0]
+    if (!oldest) return
+
+    loadingMore.value = true
+    try {
+      const response = await api.zones.events(zoneId, {
+        cycle_only: true,
+        limit,
+        before_id: oldest.id,
+      })
+      const items = parseItems(response)
+      const mapped = mapEvents(items)
+      events.value = [...mapped.reverse(), ...events.value]
+      hasMore.value = items.length >= limit
+    } catch (err) {
+      logger.error('Failed to load more cycle events:', err)
+      showToast('Ошибка загрузки событий', 'error')
+    } finally {
+      loadingMore.value = false
     }
   }
 
@@ -135,6 +182,7 @@ export function useCycleEvents(
         loadEvents()
       } else {
         events.value = []
+        hasMore.value = false
       }
     },
   )
@@ -148,5 +196,5 @@ export function useCycleEvents(
     },
   )
 
-  return { events, loading, loadEvents }
+  return { events, loading, loadingMore, hasMore: computed(() => hasMore.value), loadEvents, loadMore }
 }

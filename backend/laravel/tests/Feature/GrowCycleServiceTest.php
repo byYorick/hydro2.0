@@ -288,19 +288,11 @@ class GrowCycleServiceTest extends TestCase
             ->first();
 
         $this->assertNotNull($intentRow);
-        $payloadRaw = $intentRow->payload ?? null;
-        $payload = is_string($payloadRaw)
-            ? json_decode($payloadRaw, true, 512, JSON_THROW_ON_ERROR)
-            : (is_array($payloadRaw) ? $payloadRaw : []);
-
-        $this->assertIsArray($payload);
-        $this->assertSame('laravel_grow_cycle_start', $payload['source'] ?? null);
-        $this->assertSame('diagnostics', $payload['task_type'] ?? null);
-        $this->assertSame('cycle_start', $payload['workflow'] ?? null);
-        $this->assertSame('two_tank_drip_substrate_trays', $payload['topology'] ?? null);
-        $this->assertSame($cycleId, $payload['grow_cycle_id'] ?? null);
-        $this->assertArrayNotHasKey('task_payload', $payload);
-        $this->assertArrayNotHasKey('schedule_payload', $payload);
+        $this->assertNull($intentRow->payload);
+        $this->assertSame('laravel_grow_cycle_start', $intentRow->intent_source);
+        $this->assertSame('cycle_start', $intentRow->task_type);
+        $this->assertSame('two_tank_drip_substrate_trays', $intentRow->topology);
+        $this->assertSame('DIAGNOSTICS_TICK', $intentRow->intent_type);
 
         $this->assertDatabaseHas('automation_config_documents', [
             'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,

@@ -21,6 +21,18 @@
         </Button>
       </div>
 
+      <!-- Кнопка "Загрузить ещё" сверху (старые события) -->
+      <div v-if="paginated && hasMore && events.length > 0" class="text-center">
+        <button
+          type="button"
+          :disabled="loadingMore"
+          class="text-xs text-[color:var(--accent-cyan)] hover:underline disabled:opacity-50"
+          @click="loadMore"
+        >
+          {{ loadingMore ? 'Загрузка...' : 'Загрузить ещё' }}
+        </button>
+      </div>
+
       <div
         v-if="events.length > 0"
         class="space-y-1 max-h-[400px] overflow-y-auto"
@@ -74,10 +86,14 @@ import {
 interface Props {
   zoneId: number | null | undefined
   phaseId?: number | null
+  limit?: number
+  paginated?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   phaseId: undefined,
+  limit: 50,
+  paginated: false,
 })
 
 function formatDateTime(dateStr: string | null | undefined): string {
@@ -95,8 +111,9 @@ function formatDateTime(dateStr: string | null | undefined): string {
   }
 }
 
-const { events, loading, loadEvents } = useCycleEvents(
+const { events, loading, loadingMore, hasMore, loadEvents, loadMore } = useCycleEvents(
   () => props.zoneId,
   () => props.phaseId,
+  { limit: props.limit },
 )
 </script>

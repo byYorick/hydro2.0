@@ -1,18 +1,22 @@
 <template>
-  <div class="space-y-4">
-    <div
-      v-if="canOperateZone"
-      class="flex justify-end"
-    >
-      <Button
-        size="sm"
-        variant="outline"
-        @click="$emit('open-pump-calibration')"
-      >
-        Калибровка насосов
-      </Button>
+  <div class="space-y-2">
+
+    <!-- Шапка: заголовок + кнопка калибровки -->
+    <div class="flex items-center gap-1.5 px-1">
+      <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">Устройства</span>
+      <div class="ml-auto">
+        <Button
+          v-if="canOperateZone"
+          size="sm"
+          variant="outline"
+          @click="$emit('open-pump-calibration')"
+        >
+          Калибровка насосов
+        </Button>
+      </div>
     </div>
-    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
       <ZoneDevicesVisualization
         :zone-name="zone.name"
         :zone-status="zone.status"
@@ -22,16 +26,16 @@
         @configure="(device) => $emit('configure', device)"
       />
     </div>
-    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
       <UnassignedNodeErrorsWidget
         :zone-id="zone.id"
         :limit="5"
       />
     </div>
-    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
       <ZoneBindingsPanel :zone-id="zone.id" />
     </div>
-    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
       <AutomationEngine :zone-id="zone.id" />
     </div>
   </div>

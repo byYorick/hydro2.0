@@ -5,10 +5,14 @@ from uuid import uuid4
 
 import pytest
 
-from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import CreateTaskFromIntentUseCase
 from ae3lite.domain.errors import TaskCreateError
-from ae3lite.infrastructure.repositories import PgAutomationTaskRepository, PgZoneAlertRepository, PgZoneLeaseRepository
+from ae3lite.infrastructure.repositories import (
+    PgAutomationTaskRepository,
+    PgZoneAlertRepository,
+    PgZoneIntentRepository,
+    PgZoneLeaseRepository,
+)
 from common.db import execute, fetch
 
 
@@ -172,12 +176,9 @@ def _intent_row(zone_id: int, prefix: str) -> dict[str, object]:
         "zone_id": zone_id,
         "intent_type": "diagnostics_tick",
         "retry_count": 0,
-        "payload": {
-            "workflow": "cycle_start",
-            "task_type": "diagnostics",
-            "source": "laravel_scheduler",
-            "topology": "two_tank",
-        },
+        "task_type": "cycle_start",
+        "topology": "two_tank",
+        "intent_source": "laravel_scheduler",
         "idempotency_key": f"{prefix}-idem",
     }
 
@@ -188,14 +189,11 @@ def _irrigation_intent_row(zone_id: int, prefix: str) -> dict[str, object]:
         "zone_id": zone_id,
         "intent_type": "irrigation",
         "retry_count": 0,
-        "payload": {
-            "workflow": "cycle_start",
-            "task_type": "irrigation_start",
-            "source": "zone_ui",
-            "topology": "two_tank",
-            "mode": "normal",
-            "requested_duration_sec": 180,
-        },
+        "task_type": "irrigation_start",
+        "topology": "two_tank",
+        "intent_source": "zone_ui",
+        "irrigation_mode": "normal",
+        "irrigation_requested_duration_sec": 180,
         "idempotency_key": f"{prefix}-irrigation-idem",
     }
 
@@ -207,7 +205,7 @@ async def test_create_task_from_intent_creates_canonical_pending_task() -> None:
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -237,7 +235,7 @@ async def test_create_task_from_intent_persists_irrigation_runtime_columns() -> 
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -296,7 +294,7 @@ async def test_create_task_from_intent_deduplicates_same_idempotency_key() -> No
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -331,7 +329,7 @@ async def test_create_task_from_intent_allows_same_idempotency_key_in_other_zone
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -371,7 +369,7 @@ async def test_create_task_from_intent_rejects_active_zone_lease() -> None:
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -409,7 +407,7 @@ async def test_create_task_from_intent_rejects_zone_with_active_blocking_alert()
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
         zone_alert_repository=PgZoneAlertRepository(),
     )
 
@@ -451,7 +449,7 @@ async def test_create_task_from_intent_terminal_mode_fails_closed_when_task_miss
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -481,7 +479,7 @@ async def test_create_task_from_intent_rejects_missing_topology() -> None:
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:
@@ -498,11 +496,9 @@ async def test_create_task_from_intent_rejects_missing_topology() -> None:
                     "zone_id": zone_id,
                     "intent_type": "diagnostics_tick",
                     "retry_count": 0,
-                    "payload": {
-                        "workflow": "cycle_start",
-                        "task_type": "diagnostics",
-                        "source": "laravel_scheduler",
-                    },
+                    "task_type": "cycle_start",
+                    "topology": "",
+                    "intent_source": "laravel_scheduler",
                     "idempotency_key": f"{prefix}-idem",
                 },
                 now=now,
@@ -521,7 +517,7 @@ async def test_create_task_from_intent_rejects_zone_without_active_grow_cycle() 
     use_case = CreateTaskFromIntentUseCase(
         task_repository=PgAutomationTaskRepository(),
         zone_lease_repository=PgZoneLeaseRepository(),
-        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_intent_repository=PgZoneIntentRepository(),
     )
 
     try:

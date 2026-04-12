@@ -51,15 +51,10 @@ class ZoneCommandForceIrrigationAe3Test extends TestCase
         $this->assertNotNull($intentRow);
         $this->assertSame('IRRIGATE_ONCE', $intentRow->intent_type);
         $this->assertSame('pending', $intentRow->status);
-        $intentPayloadRaw = $intentRow->payload ?? null;
-        $intentPayload = is_string($intentPayloadRaw)
-            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
-            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
-        $this->assertSame('zone_commands_force_irrigation', $intentPayload['source'] ?? null);
-        $this->assertSame('irrigation_start', $intentPayload['task_type'] ?? null);
-        $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
-        $this->assertSame('force', $intentPayload['mode'] ?? null);
-        $this->assertSame(90, $intentPayload['requested_duration_sec'] ?? null);
+        $this->assertSame('zone_commands_force_irrigation', $intentRow->intent_source);
+        $this->assertSame('irrigation_start', $intentRow->task_type);
+        $this->assertSame('force', $intentRow->irrigation_mode);
+        $this->assertSame(90, (int) $intentRow->irrigation_requested_duration_sec);
 
         Http::assertSent(function (HttpRequest $request) use ($zone): bool {
             $body = $request->data();

@@ -52,7 +52,7 @@ async def test_batch_upsert_single_query():
         
         # Мокаем execute для проверки количества вызовов
         with patch('telemetry_processing.execute') as mock_execute, \
-             patch('telemetry_processing.fetch', return_value=[]):
+             patch('telemetry_processing.fetch', return_value=[{'id': 101}, {'id': 102}, {'id': 103}]):
             
             await process_telemetry_batch(samples)
             
@@ -106,7 +106,7 @@ async def test_batch_upsert_latest_timestamp():
         
         # Мокаем execute для проверки значения
         with patch('telemetry_processing.execute') as mock_execute, \
-             patch('telemetry_processing.fetch', return_value=[]):
+             patch('telemetry_processing.fetch', return_value=[{'id': 101}, {'id': 102}, {'id': 103}]):
             
             await process_telemetry_batch(samples)
             
@@ -155,7 +155,7 @@ async def test_batch_upsert_fallback():
             return None
         
         with patch('telemetry_processing.execute', side_effect=mock_execute_side_effect) as mock_execute, \
-             patch('telemetry_processing.fetch', return_value=[]):
+             patch('telemetry_processing.fetch', return_value=[{'id': 101}, {'id': 102}, {'id': 103}]):
             
             await process_telemetry_batch(samples)
             

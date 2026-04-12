@@ -21,6 +21,7 @@
       <div class="flex justify-end gap-2">
         <Button
           variant="secondary"
+          size="sm"
           @click="$emit('close')"
         >
           Отмена

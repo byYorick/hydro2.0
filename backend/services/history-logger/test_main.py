@@ -387,16 +387,21 @@ async def test_process_telemetry_batch_includes_ts_parameter():
             )
             query = call_args[0][0]  # SQL запрос
             params = call_args[0][1:]  # Параметры
-            
-            # Проверяем, что в запросе есть 6 плейсхолдеров для каждого образца
-            assert "$6" in query or "$12" in query
-            
-            # Проверяем, что параметров достаточно (6 на образец)
-            assert len(params) >= 12
-            
-            # Проверяем, что ts присутствует в параметрах (позиции 2 и 8)
-            assert isinstance(params[1], datetime)
-            assert isinstance(params[7], datetime)
+
+            # Batch insert uses UNNEST($1::bigint[], $2::timestamp[], ...)
+            # so params are 6 arrays, not 6×N scalars.
+            assert "UNNEST" in query or "unnest" in query
+            assert "$6" in query
+
+            # 6 array params: sensor_ids, ts[], zone_ids, values, qualities, metadata
+            assert len(params) == 6
+
+            # Each array should contain 2 elements (one per sample)
+            ts_array = params[1]
+            assert isinstance(ts_array, (list, tuple))
+            assert len(ts_array) == 2
+            assert isinstance(ts_array[0], datetime)
+            assert isinstance(ts_array[1], datetime)
 
 
 @pytest.mark.asyncio
@@ -472,13 +477,15 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
         # Проверяем, что execute был вызван
         assert mock_execute.called
         
-        # Проверяем, что zone_id был правильно извлечен (должен быть 1)
+        # Batch UNNEST: params[2] is the zone_ids array, not a scalar
         call_args = next(
             call for call in mock_execute.call_args_list
             if "telemetry_samples" in str(call)
         )
         params = call_args[0][1:]
-        assert params[2] == 1
+        zone_ids_array = params[2]
+        assert isinstance(zone_ids_array, (list, tuple))
+        assert zone_ids_array[0] == 1
 
 
 def test_effective_anomaly_throttle_sec_long_for_infra_codes_in_testing(monkeypatch):
@@ -809,6 +816,9 @@ async def test_process_telemetry_batch_refreshes_stale_node_cache_before_unassig
             return [{"id": 101, "zone_id": 1, "pending_zone_id": None}]
         if "from zones where id = any($1)" in normalized:
             return [{"id": 1, "greenhouse_id": 1}]
+        # _filter_existing_sensor_ids: confirm cached sensor 501 exists
+        if "from sensors" in normalized and "any($1" in normalized:
+            return [{"id": 501}]
         return []
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \

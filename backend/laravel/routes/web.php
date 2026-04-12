@@ -821,7 +821,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                         ->where('zone_id', $zoneIdInt)
                         ->select($eventSelect)
                         ->latest('created_at')
-                        ->limit(20)
+                        ->limit(100)
                         ->get();
 
                     $events = $eventsRaw->map(function ($event) use ($eventMessageFormatter, $hasPayloadJson) {

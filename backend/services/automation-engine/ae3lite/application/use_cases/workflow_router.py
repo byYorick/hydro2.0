@@ -276,11 +276,21 @@ class WorkflowRouter:
             error_code="ae3_poll_apply_failed",
             error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
         )
-        await self._safe_upsert_workflow_phase(
-            task=resolved_task,
-            workflow_phase=workflow.workflow_phase,
-            now=now,
-        )
+        # await_ready reads zone_workflow_state to decide whether the fill cycle
+        # completed and irrigation is safe (via plan.runtime["zone_workflow_phase"]).
+        # Writing "ready" back into zone_workflow_state on each poll tick would
+        # create a self-fulfilling loop: on the very next tick the handler sees
+        # "ready" written by *itself* and starts irrigation even when tanks are
+        # still empty — for example after a failed irrigation_check that left
+        # zone_workflow_state="idle" due to a level-sensor error.  Only the fill
+        # cycle tasks (prepare_recirculation_stop_to_ready etc.) are allowed to
+        # set zone_workflow_state="ready"; await_ready must leave it untouched.
+        if task.current_stage != "await_ready":
+            await self._safe_upsert_workflow_phase(
+                task=resolved_task,
+                workflow_phase=workflow.workflow_phase,
+                now=now,
+            )
         return resolved_task
 
     async def _apply_transition(

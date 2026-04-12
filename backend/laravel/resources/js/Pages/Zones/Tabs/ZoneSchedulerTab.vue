@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-6">
+  <div class="space-y-3">
     <SchedulerHeader
       :zone-id="zoneId"
       :horizon="horizon"
@@ -15,69 +15,66 @@
       @refresh="refreshWorkspace"
     />
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-      <div class="space-y-6">
-        <SchedulerCurrentStateCard
-          :updated-at="updatedAt"
-          :format-date-time="formatDateTime"
-          :active-run="activeRun"
-          :automation-state="automationState"
-          :workspace-control-mode="workspace?.control?.control_mode"
-          :active-process-labels="activeProcessLabels"
-          :status-variant="statusVariant"
-          :control-mode-label="controlModeLabel"
-          :lane-label="laneLabel"
-          :decision-variant="decisionVariant"
-          :decision-label="decisionLabel"
-          :decision-reason-label="decisionReasonLabel"
-        />
+    <!-- Живая строка состояния -->
+    <SchedulerStatusStrip
+      :updated-at="updatedAt"
+      :format-date-time="formatDateTime"
+      :active-run="activeRun"
+      :automation-state="automationState"
+      :active-process-labels="activeProcessLabels"
+      :lane-label="laneLabel"
+      :decision-variant="decisionVariant"
+      :decision-label="decisionLabel"
+    />
 
-        <SchedulerAttentionPanel
-          :items="attentionItems"
-          :attention-card-class="attentionCardClass"
-        />
+    <!-- Алерты danger — поверх всего -->
+    <SchedulerAttentionPanel
+      v-if="dangerItems.length > 0"
+      :items="dangerItems"
+    />
 
-        <SchedulerExecutableWindows
-          :windows="nextExecutableWindows"
-          :timezone="workspace?.control?.timezone"
-          :config-only-lanes="configOnlyLanes"
-          :lane-label="laneLabel"
-          :format-date-time="formatDateTime"
-          :format-relative-trigger="formatRelativeTrigger"
-        />
-      </div>
+    <!-- Один столбец -->
+    <div class="space-y-3">
+      <SchedulerNextWindow
+        :windows="nextExecutableWindows"
+        :timezone="workspace?.control?.timezone"
+        :config-only-lanes="configOnlyLanes"
+        :lane-label="laneLabel"
+        :mode-label="modeLabel"
+        :format-date-time="formatDateTime"
+        :format-relative-trigger="formatRelativeTrigger"
+      />
 
-      <div class="space-y-6">
-        <SchedulerRunsPanel
-          :runtime="workspace?.control?.automation_runtime"
-          :active-run="activeRun"
-          :active-run-decision-summary="activeRunDecisionSummary"
-          :recent-runs="recentRuns"
-          :selected-execution-id="selectedExecution?.execution_id ?? null"
-          :lane-label="laneLabel"
-          :status-variant="statusVariant"
-          :decision-variant="decisionVariant"
-          :decision-label="decisionLabel"
-          :format-date-time="formatDateTime"
-          :decision-summary="decisionSummary"
-          @select-run="fetchExecution"
-        />
+      <SchedulerAttentionPanel
+        v-if="dangerItems.length === 0 && softItems.length > 0"
+        :items="softItems"
+      />
 
-        <SchedulerRunDetail
-          :detail-loading="detailLoading"
-          :selected-execution="selectedExecution"
-          :condensed-timeline="condensedTimeline"
-          :selected-execution-error-message="selectedExecutionErrorMessage"
-          :selected-execution-decision-summary="selectedExecutionDecisionSummary"
-          :lane-label="laneLabel"
-          :status-variant="statusVariant"
-          :decision-variant="decisionVariant"
-          :decision-label="decisionLabel"
-          :format-date-time="formatDateTime"
-        />
-      </div>
+      <SchedulerRunsColumn
+        :runtime="workspace?.control?.automation_runtime"
+        :active-run="activeRun"
+        :active-run-decision-summary="activeRunDecisionSummary"
+        :recent-runs="recentRuns"
+        :selected-execution="selectedExecution"
+        :detail-loading="detailLoading"
+        :condensed-timeline="condensedTimeline"
+        :selected-execution-error-message="selectedExecutionErrorMessage"
+        :selected-execution-decision-summary="selectedExecutionDecisionSummary"
+        :lane-label="laneLabel"
+        :stage-label="workflowStageLabel"
+        :status-variant="statusVariant"
+        :status-label="statusLabel"
+        :event-type-label="eventTypeLabel"
+        :decision-variant="decisionVariant"
+        :decision-label="decisionLabel"
+        :format-date-time="formatDateTime"
+        :decision-summary="decisionSummary"
+        @select-run="fetchExecution"
+        @close-detail="clearSelectedExecution"
+      />
     </div>
 
+    <!-- Диагностика — аккордеон внизу -->
     <SchedulerDiagnostics
       :can-diagnose="canDiagnose"
       :diagnostics-available="Boolean(workspace?.capabilities?.diagnostics_available)"
@@ -85,6 +82,7 @@
       :diagnostics-error="diagnosticsError"
       :diagnostics="diagnostics"
       :status-variant="statusVariant"
+      :status-label="statusLabel"
       :lane-label="laneLabel"
       :format-date-time="formatDateTime"
     />
@@ -99,11 +97,10 @@ import { useZoneScheduleWorkspace } from '@/composables/useZoneScheduleWorkspace
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 import SchedulerHeader from '@/Components/Scheduler/SchedulerHeader.vue'
-import SchedulerCurrentStateCard from '@/Components/Scheduler/SchedulerCurrentStateCard.vue'
+import SchedulerStatusStrip from '@/Components/Scheduler/SchedulerStatusStrip.vue'
 import SchedulerAttentionPanel from '@/Components/Scheduler/SchedulerAttentionPanel.vue'
-import SchedulerExecutableWindows from '@/Components/Scheduler/SchedulerExecutableWindows.vue'
-import SchedulerRunsPanel from '@/Components/Scheduler/SchedulerRunsPanel.vue'
-import SchedulerRunDetail from '@/Components/Scheduler/SchedulerRunDetail.vue'
+import SchedulerNextWindow from '@/Components/Scheduler/SchedulerNextWindow.vue'
+import SchedulerRunsColumn from '@/Components/Scheduler/SchedulerRunsColumn.vue'
 import SchedulerDiagnostics from '@/Components/Scheduler/SchedulerDiagnostics.vue'
 
 const props = defineProps<ZoneAutomationTabProps>()
@@ -142,27 +139,35 @@ const {
   formatDateTime,
   formatRelativeTrigger,
   statusVariant,
+  statusLabel,
+  modeLabel,
+  eventTypeLabel,
   controlModeLabel,
   laneLabel,
+  workflowStageLabel,
   decisionLabel,
-  decisionReasonLabel,
   describeDecision,
 } = useZoneScheduleWorkspace(props, { showToast })
 
 const zoneId = computed(() => props.zoneId)
-const selectedExecutionErrorMessage = computed(() => resolveHumanErrorMessage({
-  code: selectedExecution.value?.error_code,
-  message: selectedExecution.value?.error_message,
-  humanMessage: selectedExecution.value?.human_error_message,
-}))
+
+const selectedExecutionErrorMessage = computed(() =>
+  resolveHumanErrorMessage({
+    code: selectedExecution.value?.error_code,
+    message: selectedExecution.value?.error_message,
+    humanMessage: selectedExecution.value?.human_error_message,
+  }),
+)
 const activeRunDecisionSummary = computed(() => decisionSummary(activeRun.value))
 const selectedExecutionDecisionSummary = computed(() => decisionSummary(selectedExecution.value))
 
-function attentionCardClass(tone: 'danger' | 'warning' | 'info'): string {
-  if (tone === 'danger') return 'border-red-200 bg-red-50/70'
-  if (tone === 'warning') return 'border-amber-200 bg-amber-50/70'
-  return 'border-sky-200 bg-sky-50/70'
-}
+// Разделяем attention items на danger и остальные
+const dangerItems = computed(() =>
+  attentionItems.value.filter((i) => i.tone === 'danger'),
+)
+const softItems = computed(() =>
+  attentionItems.value.filter((i) => i.tone !== 'danger'),
+)
 
 function decisionVariant(
   outcome: string | null | undefined,
@@ -192,9 +197,17 @@ function decisionSummary(execution: {
     errorCode: execution.error_code,
   })
   const replayCount = typeof execution.replay_count === 'number' ? execution.replay_count : 0
-  const replayLabel = replayCount > 0 ? `Setup replay: ${replayCount}` : null
+  const replayLabel = replayCount > 0 ? `Replay: ${replayCount}` : null
 
-  return [detail, replayLabel].filter((part): part is string => Boolean(part && part.trim() !== '')).join(' · ') || null
+  return (
+    [detail, replayLabel]
+      .filter((part): part is string => Boolean(part && part.trim() !== ''))
+      .join(' · ') || null
+  )
+}
+
+function clearSelectedExecution(): void {
+  selectedExecution.value = null
 }
 
 function changeHorizon(nextHorizon: '24h' | '7d'): void {
@@ -236,6 +249,6 @@ watch(
   () => props.zoneId,
   () => {
     void refreshWorkspace()
-  }
+  },
 )
 </script>
