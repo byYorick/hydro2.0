@@ -25,7 +25,7 @@
 
             <!-- Nav -->
             <nav
-              class="flex-1 py-2 overflow-y-auto scrollbar-glow transition-all duration-300"
+              class="flex-1 py-2 overflow-y-auto overflow-x-hidden scrollbar-glow transition-all duration-300"
               :class="collapsed ? 'px-2' : 'px-3'"
             >
               <RoleBasedNavigation :collapsed="collapsed" />

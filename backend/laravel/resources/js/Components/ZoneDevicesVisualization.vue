@@ -143,9 +143,7 @@
               </div>
               
               <!-- Иконка устройства -->
-              <div class="text-xl sm:text-2xl mb-1">
-                {{ getDeviceIcon(device.type) }}
-              </div>
+              <div class="w-8 h-8 sm:w-10 sm:h-10 mb-1 text-[color:var(--text-dim)]" v-html="getDeviceIconSvg(device.type)"></div>
               
               <!-- Название устройства -->
               <div class="text-[9px] sm:text-xs font-semibold text-center truncate w-full px-1">
@@ -165,79 +163,71 @@
     <!-- Сетка визуализация -->
     <div
       v-else-if="viewMode === 'grid' && devices.length > 0"
-      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"
+      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
     >
-      <Link
+      <div
         v-for="device in devices"
         :key="device.id"
-        :href="`/devices/${device.id}`"
-        class="group relative rounded-lg border-2 p-2.5 transition-all duration-200 hover:shadow-lg hover:scale-105 bg-[color:var(--bg-surface-strong)]"
+        class="group relative rounded-lg border bg-[color:var(--bg-surface-strong)] flex flex-col overflow-hidden"
         :class="getDeviceCardClass(device)"
       >
-        <!-- Статус индикатор -->
-        <div class="absolute top-1.5 right-1.5 flex items-center gap-1.5 z-10">
-          <StatusIndicator
-            :status="getDeviceStatus(device)"
-            :pulse="device.status === 'online'"
-            size="small"
-          />
+        <!-- Шапка карточки: иконка + имя + статус -->
+        <Link
+          :href="`/devices/${device.id}`"
+          class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-[color:var(--bg-elevated)]/40 transition-colors"
+        >
+          <span class="w-5 h-5 shrink-0 text-[color:var(--text-dim)]" v-html="getDeviceIconSvg(device.type)"></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[11px] font-semibold truncate text-[color:var(--text-primary)]">
+              {{ device.uid || device.name || `#${device.id}` }}
+            </div>
+            <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wide">
+              {{ translateDeviceType(device.type) }}
+            </div>
+          </div>
           <Badge
             :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'"
             size="sm"
+            class="shrink-0"
           >
-            {{ device.status?.toUpperCase() || 'UNKNOWN' }}
+            {{ device.status === 'online' ? '●' : device.status === 'offline' ? '○' : '◑' }}
           </Badge>
-        </div>
+        </Link>
 
-        <!-- Иконка -->
-        <div class="flex items-center justify-center mb-1.5">
-          <div class="text-3xl relative">
-            {{ getDeviceIcon(device.type) }}
-            <div
-              v-if="device.status === 'online'"
-              class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"
-            ></div>
+        <!-- Связь и память -->
+        <div
+          v-if="device.rssi != null || device.free_heap_bytes != null || device.uptime_seconds != null"
+          class="border-t border-[color:var(--border-muted)] px-2 py-1 space-y-0.5"
+        >
+          <div v-if="device.rssi != null" class="flex items-center justify-between font-mono text-[10px]">
+            <span class="text-[color:var(--text-dim)]">Wi-Fi</span>
+            <span :class="rssiClass(device.rssi)">{{ device.rssi }} dBm</span>
+          </div>
+          <div v-if="device.free_heap_bytes != null" class="flex items-center justify-between font-mono text-[10px]">
+            <span class="text-[color:var(--text-dim)]">Heap</span>
+            <span class="text-[color:var(--text-primary)]">{{ formatHeap(device.free_heap_bytes) }}</span>
+          </div>
+          <div v-if="device.uptime_seconds != null" class="flex items-center justify-between font-mono text-[10px]">
+            <span class="text-[color:var(--text-dim)]">Uptime</span>
+            <span class="text-[color:var(--text-primary)]">{{ formatUptime(device.uptime_seconds) }}</span>
           </div>
         </div>
 
-        <!-- Название -->
-        <div class="text-xs font-bold text-center mb-0.5 truncate px-1">
-          {{ device.uid || device.name || `Device ${device.id}` }}
-        </div>
-
-        <!-- Тип -->
-        <div class="text-[10px] font-medium text-[color:var(--text-muted)] text-center mb-2 uppercase tracking-wide">
-          {{ translateDeviceType(device.type) }}
-        </div>
-
-        <!-- Доп. информация -->
-        <div class="text-[11px] text-[color:var(--text-dim)] space-y-1 border-t border-[color:var(--border-muted)] pt-1.5">
-          <div v-if="device.fw_version" class="flex items-center justify-between">
-            <span class="text-[color:var(--text-muted)]">FW:</span>
-            <span class="font-semibold text-[color:var(--text-primary)]">{{ device.fw_version }}</span>
-          </div>
-          <div v-if="device.last_seen_at" class="flex items-center justify-between">
-            <span class="text-[color:var(--text-muted)]">Был:</span>
-            <span class="font-medium text-[color:var(--text-primary)]">{{ formatLastSeen(device.last_seen_at) }}</span>
-          </div>
-          <div v-if="device.channels && device.channels.length > 0" class="flex items-center justify-between">
-            <span class="text-[color:var(--text-muted)]">Каналов:</span>
-            <span class="font-semibold text-[color:var(--accent-cyan)]">{{ device.channels.length }}</span>
+        <!-- Футер: FW + last_seen + кнопка -->
+        <div class="mt-auto border-t border-[color:var(--border-muted)] px-2 py-1 flex items-center gap-2 text-[10px] text-[color:var(--text-dim)]">
+          <span v-if="device.fw_version" class="font-mono">v{{ device.fw_version }}</span>
+          <span v-if="device.last_seen_at" class="truncate">{{ formatLastSeen(device.last_seen_at) }}</span>
+          <div v-if="canManage" class="ml-auto shrink-0" @click.stop>
+            <button
+              type="button"
+              class="h-5 px-1.5 text-[10px] rounded border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)] transition-colors"
+              @click.stop="$emit('configure', device)"
+            >
+              Конфиг
+            </button>
           </div>
         </div>
-
-        <!-- Кнопка конфига -->
-        <div v-if="canManage" class="mt-1.5 flex justify-center" @click.stop>
-          <Button
-            size="sm"
-            variant="outline"
-            class="text-[11px] w-full"
-            @click.stop="$emit('configure', device)"
-          >
-            Конфиг
-          </Button>
-        </div>
-      </Link>
+      </div>
     </div>
 
     <!-- Пустое состояние -->
@@ -310,17 +300,35 @@ const zoneStatusClass = computed(() => {
   }
 })
 
-function getDeviceIcon(type: string | undefined): string {
+function getDeviceIconSvg(type: string | undefined): string {
+  const a = `xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"`
   const icons: Record<string, string> = {
-    ph: '🧪',
-    ec: '⚡',
-    sensor: '📊',
-    actuator: '🔧',
-    controller: '🎛️',
-    irrig: '💧',
-    climate: '🌡️',
+    // Колба — pH сенсор
+    ph: `<svg ${a}><path d="M8 3h8"/><path d="M9 3v6L5 17a1 1 0 00.9 1.5h12.2A1 1 0 0019 17l-4-8V3"/><line x1="8" y1="14" x2="16" y2="14"/></svg>`,
+    // Синусоида — EC/проводимость
+    ec: `<svg ${a}><path d="M2 12c2-6 4-6 6 0s4 6 6 0 4-6 6 0"/></svg>`,
+    // Концентрические окружности — датчик
+    sensor: `<svg ${a}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>`,
+    // Шестерня — актуатор
+    actuator: `<svg ${a}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
+    // Чип CPU — контроллер
+    controller: `<svg ${a}><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`,
+    // Капля воды — полив/насос
+    irrig: `<svg ${a}><path d="M12 2C6.5 9 4 13 4 16a8 8 0 0016 0c0-3-2.5-7-8-14z"/></svg>`,
+    // Термометр — климат
+    climate: `<svg ${a}><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg>`,
+    // Лампочка — освещение
+    light: `<svg ${a}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 014.95 11.95A5 5 0 0115 18H9a5 5 0 01-1.95-4.05A7 7 0 0112 2z"/></svg>`,
+    // Тумблер — реле
+    relay: `<svg ${a}><rect x="1" y="8" width="22" height="8" rx="4"/><circle cx="16" cy="12" r="3" fill="currentColor" stroke="none"/></svg>`,
+    // Волны — датчик уровня воды
+    water_sensor: `<svg ${a}><path d="M2 12c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 1.5 2 3 2"/><path d="M2 17c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 1.5 2 3 2"/><line x1="12" y1="3" x2="12" y2="9"/></svg>`,
+    // Стрелки цикла — рециркуляция
+    recirculation: `<svg ${a}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
   }
-  return icons[type || 'sensor'] || '📱'
+  // Крест в прямоугольнике — неизвестный тип
+  const fallback = `<svg ${a}><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`
+  return icons[type ?? ''] ?? fallback
 }
 
 function translateDeviceType(type: string | undefined): string {
@@ -332,8 +340,13 @@ function translateDeviceType(type: string | undefined): string {
     controller: 'Контроллер',
     irrig: 'Насос',
     climate: 'Климат',
+    light: 'Освещение',
+    relay: 'Реле',
+    water_sensor: 'Уровень воды',
+    recirculation: 'Рециркуляция',
+    unknown: 'Устройство',
   }
-  return types[type || 'sensor'] || 'Устройство'
+  return types[type ?? ''] ?? 'Устройство'
 }
 
 function getDeviceShortName(device: Device): string {
@@ -431,5 +444,24 @@ function formatLastSeen(timestamp: string | undefined): string {
   if (diffHours < 24) return `${diffHours} ч назад`
   const diffDays = Math.floor(diffHours / 24)
   return `${diffDays} дн назад`
+}
+
+function rssiClass(rssi: number): string {
+  if (rssi >= -60) return 'text-[color:var(--accent-green)]'
+  if (rssi >= -75) return 'text-[color:var(--accent-amber)]'
+  return 'text-[color:var(--accent-red)]'
+}
+
+function formatHeap(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+  return `${Math.floor(seconds / 86400)}d`
 }
 </script>

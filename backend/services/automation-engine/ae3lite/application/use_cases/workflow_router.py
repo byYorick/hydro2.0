@@ -380,6 +380,11 @@ class WorkflowRouter:
             workflow_phase=next_def.workflow_phase,
             now=now,
         )
+        await self._safe_emit_irrigation_lifecycle_event(
+            task=task,
+            from_stage=task.current_stage,
+            to_stage=next_stage,
+        )
         await self._safe_upsert_workflow_phase(
             task=resolved_task,
             workflow_phase=next_def.workflow_phase,
@@ -675,6 +680,49 @@ class WorkflowRouter:
                 task_id,
                 from_stage,
                 to_stage,
+                exc_info=True,
+            )
+
+    # Переходы, для которых создаётся zone_event (полив: старт/стоп/пропуск)
+    _IRRIGATION_LIFECYCLE_EVENTS: dict[tuple[str | None, str], tuple[str, str]] = {
+        ("complete_ready", "irrigation_start"): ("IRRIGATION_CYCLE_STARTED", "Полив запущен"),
+        ("decision_gate", "irrigation_start"): ("IRRIGATION_CYCLE_STARTED", "Полив запущен"),
+        ("irrigation_start", "irrigation_check"): ("IRRIGATION_CYCLE_STARTED", "Полив запущен"),
+        ("irrigation_check", "irrigation_stop_to_ready"): ("IRRIGATION_CYCLE_FINISHED", "Полив завершён"),
+        ("irrigation_check", "irrigation_stop_to_recovery"): ("IRRIGATION_CYCLE_FINISHED", "Полив завершён, запуск recovery"),
+        ("irrigation_check", "irrigation_stop_to_setup"): ("IRRIGATION_CYCLE_STOPPED", "Полив остановлен: низкий уровень раствора"),
+        ("decision_gate", "completed_skip"): ("IRRIGATION_CYCLE_SKIPPED", "Полив пропущен"),
+    }
+
+    async def _safe_emit_irrigation_lifecycle_event(
+        self,
+        *,
+        task: Any,
+        from_stage: str | None,
+        to_stage: str,
+    ) -> None:
+        key = (from_stage, to_stage)
+        entry = self._IRRIGATION_LIFECYCLE_EVENTS.get(key)
+        if entry is None:
+            return
+        event_type, label = entry
+        try:
+            create_zone_event(
+                int(task.zone_id),
+                event_type,
+                {
+                    "task_id": task.id,
+                    "from_stage": from_stage,
+                    "to_stage": to_stage,
+                    "label": label,
+                },
+            )
+        except Exception:
+            logger.warning(
+                "AE3 не смог записать %s zone_id=%s task_id=%s",
+                event_type,
+                task.zone_id,
+                task.id,
                 exc_info=True,
             )
 

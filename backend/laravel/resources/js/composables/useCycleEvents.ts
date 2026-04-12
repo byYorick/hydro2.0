@@ -29,10 +29,15 @@ function parseEventPayload(raw: Record<string, unknown>): Record<string, unknown
 }
 
 export function getEventVariant(type: string): BadgeVariant {
-  if (type.includes('HARVESTED') || type.includes('STARTED') || type.includes('RESUMED')) {
+  if (type === 'IRRIGATION_CYCLE_STARTED') return 'info'
+  if (type === 'IRRIGATION_CYCLE_FINISHED') return 'success'
+  if (type === 'IRRIGATION_CYCLE_STOPPED') return 'danger'
+  if (type === 'IRRIGATION_CYCLE_SKIPPED') return 'warning'
+  if (type === 'AE_TASK_FAILED') return 'danger'
+  if (type.includes('HARVESTED') || type.includes('STARTED') || type.includes('RESUMED') || type.includes('COMPLETED')) {
     return 'success'
   }
-  if (type.includes('ABORTED') || type.includes('CRITICAL')) {
+  if (type.includes('ABORTED') || type.includes('CRITICAL') || type.includes('FAILED')) {
     return 'danger'
   }
   if (type.includes('PAUSED') || type.includes('WARNING')) {
@@ -67,6 +72,22 @@ export function getEventMessage(event: CycleEvent): string {
   }
   if (type === 'ALERT_CREATED') {
     return `Критическое предупреждение: ${details.message || details.code || 'alert'}`
+  }
+  if (type === 'IRRIGATION_CYCLE_STARTED') {
+    return String(details.label ?? 'Полив запущен')
+  }
+  if (type === 'IRRIGATION_CYCLE_FINISHED') {
+    return String(details.label ?? 'Полив завершён')
+  }
+  if (type === 'IRRIGATION_CYCLE_STOPPED') {
+    return String(details.label ?? 'Полив остановлен')
+  }
+  if (type === 'IRRIGATION_CYCLE_SKIPPED') {
+    return String(details.label ?? 'Полив пропущен')
+  }
+  if (type === 'AE_TASK_FAILED') {
+    const reason = String(details.error_message ?? details.error_code ?? '')
+    return `Ошибка выполнения${reason ? `: ${reason}` : ''}`
   }
 
   return translateEventKind(type)

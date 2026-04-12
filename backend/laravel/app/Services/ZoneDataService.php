@@ -164,16 +164,23 @@ class ZoneDataService
 
         if ($cycleOnly) {
             $cycleEventTypes = [
+                // Жизненный цикл
                 'CYCLE_CREATED',
                 'CYCLE_STARTED',
                 'CYCLE_PAUSED',
                 'CYCLE_RESUMED',
                 'CYCLE_HARVESTED',
                 'CYCLE_ABORTED',
+                'CYCLE_ADJUSTED',
                 'CYCLE_RECIPE_REBASED',
                 'PHASE_TRANSITION',
                 'RECIPE_PHASE_CHANGED',
-                'ZONE_COMMAND',
+                // Полив: старт/завершение/остановка/пропуск/ошибка
+                'IRRIGATION_CYCLE_STARTED',
+                'IRRIGATION_CYCLE_FINISHED',
+                'IRRIGATION_CYCLE_STOPPED',
+                'IRRIGATION_CYCLE_SKIPPED',
+                'AE_TASK_FAILED',
             ];
 
             $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')

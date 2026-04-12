@@ -91,6 +91,13 @@ export interface Device {
   pending_zone_id?: number | null
   channels?: DeviceChannel[]
   last_seen_at?: string
+  last_heartbeat_at?: string
   created_at?: string
   updated_at?: string
+  uptime_seconds?: number | null
+  free_heap_bytes?: number | null
+  rssi?: number | null
+  hardware_revision?: string | null
+  hardware_id?: string | null
+  validated?: boolean | null
 }

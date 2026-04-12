@@ -1,13 +1,16 @@
 <template>
-  <!-- Collapsed: icon only + tooltip -->
-  <div v-if="collapsed" class="relative group/nav">
+  <!-- Collapsed: icon only + tooltip (Teleport → position:fixed, не режется overflow:hidden сайдбара) -->
+  <div v-if="collapsed" class="relative">
     <Link
+      ref="linkEl"
       :href="href"
       :prefetch="true"
       class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
       :class="isActive
         ? 'nav-link--active text-[color:var(--nav-active-text)]'
         : 'text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]'"
+      @mouseenter="onTipEnter"
+      @mouseleave="showTip = false"
     >
       <svg
         v-if="icon"
@@ -21,13 +24,16 @@
         v-html="icon"
       />
     </Link>
-    <!-- Tooltip -->
-    <div class="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 opacity-0 group-hover/nav:opacity-100 transition-opacity duration-150">
-      <div class="whitespace-nowrap rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2.5 py-1.5 text-xs font-medium text-[color:var(--text-primary)] shadow-lg">
+    <Teleport to="body">
+      <div
+        v-if="showTip"
+        class="fixed z-[200] pointer-events-none whitespace-nowrap rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2.5 py-1.5 text-xs font-medium text-[color:var(--text-primary)] shadow-lg"
+        :style="{ top: `${tipTop}px`, left: `${tipLeft}px`, transform: 'translateY(-50%)' }"
+      >
         {{ label }}
         <span class="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[color:var(--border-muted)]"></span>
       </div>
-    </div>
+    </Teleport>
   </div>
 
   <!-- Expanded: icon + label -->
@@ -38,7 +44,7 @@
     :class="[
       mobile
         ? 'flex flex-col items-center justify-center text-xs transition-colors px-2 py-2'
-        : 'nav-link text-sm',
+        : 'nav-link text-sm min-w-0',
       mobile
         ? isActive ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-dim)]'
         : isActive ? 'nav-link--active' : ''
@@ -55,12 +61,12 @@
       stroke-linejoin="round"
       v-html="icon"
     />
-    <slot>{{ label }}</slot>
+    <slot><span class="truncate">{{ label }}</span></slot>
   </Link>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 
 const props = defineProps<{
@@ -76,4 +82,18 @@ const isActive = computed(() => {
   const current = page.url || '/'
   return current === props.href || (props.href !== '/' && current.startsWith(props.href))
 })
+
+const linkEl = ref<{ $el: HTMLElement } | null>(null)
+const showTip = ref(false)
+const tipTop = ref(0)
+const tipLeft = ref(0)
+
+function onTipEnter() {
+  const el = linkEl.value?.$el
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  tipTop.value = r.top + r.height / 2
+  tipLeft.value = r.right + 12
+  showTip.value = true
+}
 </script>

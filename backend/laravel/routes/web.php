@@ -673,7 +673,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             }
 
             $devices = \App\Models\DeviceNode::query()
-                ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
+                ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at', 'rssi', 'free_heap_bytes', 'uptime_seconds'])
                 ->where('zone_id', $zoneIdInt)
                 ->with([
                     'zone:id,name',
@@ -786,6 +786,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     'status' => $device->status,
                     'fw_version' => $device->fw_version,
                     'last_seen_at' => $device->last_seen_at?->toIso8601String(),
+                    'rssi' => $device->rssi,
+                    'free_heap_bytes' => $device->free_heap_bytes,
+                    'uptime_seconds' => $device->uptime_seconds,
                     'zone' => $device->zone ? [
                         'id' => $device->zone->id,
                         'name' => $device->zone->name,

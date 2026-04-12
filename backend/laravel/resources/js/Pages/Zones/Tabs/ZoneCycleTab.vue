@@ -3,7 +3,7 @@
     <!-- ===== ACTIVE CYCLE ===== -->
     <template v-if="hasCycle">
       <!-- Hero bar -->
-      <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-4 md:p-5">
+      <section class="surface-card relative z-10 overflow-visible rounded-2xl border border-[color:var(--border-muted)] p-4 md:p-5">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="min-w-0">
             <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
