@@ -1,5 +1,6 @@
 import type { ComputedRef, Ref } from 'vue'
 import { api } from '@/services/api'
+import { syncFormsFromRecipePhase } from '@/services/automation/recipePhaseSync'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
@@ -13,7 +14,6 @@ import {
   upsertZoneLogicProfilePayload,
 } from './zoneLogicProfileDocument'
 import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
-import { resolveRecipePhaseSystemType } from './recipeSystemType'
 import type {
   Plant,
   Recipe,
@@ -58,17 +58,6 @@ interface SetupWizardRecipeAutomationFlowsOptions {
   automationAppliedAt: Ref<string | null>
   loadRecipes: () => Promise<void>
   visit: (url: string) => void
-}
-
-function toNumberOrNull(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  return null
-}
-
-function resolveSystemTypeFromPhase(phase: RecipePhase | undefined, current: WaterFormState['systemType']): WaterFormState['systemType'] {
-  return resolveRecipePhaseSystemType(phase, current)
 }
 
 function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
@@ -118,38 +107,14 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       return
     }
 
-    const systemType = resolveSystemTypeFromPhase(phase, waterForm.systemType)
-    const phTarget = toNumberOrNull(phase.ph_target)
-    const ecTarget = toNumberOrNull(phase.ec_target)
-    const tempAirTarget = toNumberOrNull(phase.extensions?.day_night?.temperature?.day ?? phase.temp_air_target)
-    const humidityTarget = toNumberOrNull(phase.extensions?.day_night?.humidity?.day ?? phase.humidity_target)
-    const photoperiod = toNumberOrNull(phase.lighting_photoperiod_hours)
-    const irrigationIntervalSec = toNumberOrNull(phase.irrigation_interval_sec)
-    const irrigationDurationSec = toNumberOrNull(phase.irrigation_duration_sec)
-
-    waterForm.systemType = systemType
-    if (phTarget !== null) {
-      waterForm.targetPh = Number(phTarget.toFixed(2))
-    }
-    if (ecTarget !== null) {
-      waterForm.targetEc = Number(ecTarget.toFixed(2))
-    }
-    if (tempAirTarget !== null) {
-      climateForm.dayTemp = Number(tempAirTarget.toFixed(1))
-    }
-    if (humidityTarget !== null) {
-      climateForm.dayHumidity = Math.round(humidityTarget)
-    }
-    if (photoperiod !== null) {
-      lightingForm.luxDay = Math.max(4000, photoperiod * 1000)
-      lightingForm.hoursOn = Math.min(24, Math.max(0, Number(photoperiod.toFixed(1))))
-    }
-    if (irrigationIntervalSec !== null && irrigationIntervalSec > 0) {
-      waterForm.intervalMinutes = Math.max(1, Math.round(irrigationIntervalSec / 60))
-    }
-    if (irrigationDurationSec !== null && irrigationDurationSec > 0) {
-      waterForm.durationSeconds = Math.round(irrigationDurationSec)
-    }
+    syncFormsFromRecipePhase(
+      phase,
+      { waterForm, climateForm, lightingForm },
+      {
+        readDayNightExtensions: true,
+        syncLuxDayFromPhotoperiod: true,
+      },
+    )
   }
 
   async function loadRecipeDetails(recipeId: number | null): Promise<Recipe | null> {

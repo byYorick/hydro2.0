@@ -83,116 +83,18 @@
         </div>
       </div>
 
-      <div
+      <WizardRecipeStep
         v-if="currentStep === 2"
-        class="space-y-4"
-      >
-        <div>
-          <label class="block text-sm font-medium mb-2">Выберите рецепт</label>
-          <div class="flex gap-2 mb-3">
-            <Button
-              size="sm"
-              :variant="recipeMode === 'select' ? 'primary' : 'secondary'"
-              @click="recipeMode = 'select'"
-            >
-              Выбрать существующий
-            </Button>
-            <Button
-              size="sm"
-              :variant="recipeMode === 'create' ? 'primary' : 'secondary'"
-              @click="recipeMode = 'create'"
-            >
-              Создать новый
-            </Button>
-          </div>
-
-          <div v-if="recipeMode === 'select'">
-            <select
-              v-model="selectedRecipeId"
-              class="input-select w-full"
-              @change="onRecipeSelected"
-            >
-              <option :value="null">
-                Выберите рецепт
-              </option>
-              <option
-                v-for="recipe in availableRecipes"
-                :key="recipe.id"
-                :value="recipe.id"
-              >
-                {{ recipe.name }} ({{ recipe.phases_count || 0 }} фаз)
-              </option>
-            </select>
-          </div>
-          <div v-else>
-            <RecipeCreateWizard
-              :show="recipeMode === 'create'"
-              @close="recipeMode = 'select'"
-              @created="onRecipeCreated"
-            />
-          </div>
-        </div>
-
-        <div
-          v-if="selectedRecipe"
-          class="space-y-2"
-        >
-          <label class="block text-sm font-medium mb-2">Ревизия</label>
-          <select
-            v-model="selectedRevisionId"
-            class="input-select w-full"
-          >
-            <option :value="null">
-              Выберите ревизию
-            </option>
-            <option
-              v-for="revision in availableRevisions"
-              :key="revision.id"
-              :value="revision.id"
-            >
-              {{ revision.revision_number ? `Rev ${revision.revision_number}` : 'Актуальная опубликованная ревизия' }}
-              — {{ revision.description || "Без описания" }}
-            </option>
-          </select>
-        </div>
-
-        <div
-          v-if="selectedRevision"
-          class="mt-4 p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
-        >
-          <div class="text-sm font-semibold mb-2">
-            {{ selectedRecipe.name }}
-          </div>
-          <div
-            v-if="selectedRecipe.description"
-            class="text-xs text-[color:var(--text-muted)] mb-3"
-          >
-            {{ selectedRecipe.description }}
-          </div>
-          <div class="text-xs font-medium mb-2">
-            Фазы рецепта:
-          </div>
-          <div class="space-y-2">
-            <div
-              v-for="(phase, index) in selectedRevision.phases"
-              :key="index"
-              class="flex items-center justify-between p-2 rounded bg-[color:var(--bg-surface-strong)]"
-            >
-              <div>
-                <div class="text-xs font-medium">
-                  {{ phase.name || `Фаза ${index + 1}` }}
-                </div>
-                <div class="text-xs text-[color:var(--text-dim)]">
-                  {{ phase.duration_days ?? (phase.duration_hours ? Math.round(phase.duration_hours / 24) : "-") }} дней
-                </div>
-              </div>
-              <div class="text-xs text-[color:var(--text-muted)]">
-                pH: {{ phase.ph_min ?? "-" }}–{{ phase.ph_max ?? "-" }} EC: {{ phase.ec_min ?? "-" }}–{{ phase.ec_max ?? "-" }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+        v-model:recipe-mode="recipeMode"
+        v-model:selected-recipe-id="selectedRecipeId"
+        v-model:selected-revision-id="selectedRevisionId"
+        :available-recipes="availableRecipes"
+        :selected-recipe="selectedRecipe"
+        :available-revisions="availableRevisions"
+        :selected-revision="selectedRevision"
+        @recipe-selected="onRecipeSelected"
+        @recipe-created="onRecipeCreated"
+      />
 
       <div
         v-if="currentStep === 3"
@@ -243,264 +145,44 @@
         @save-soil-moisture-binding="saveSoilMoistureBinding"
       />
 
-      <div
+      <WizardCalibrationStep
         v-if="currentStep === 5"
-        class="space-y-4"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <h3 class="text-sm font-semibold">
-              Калибровка насосов
-            </h3>
-            <p class="text-xs text-[color:var(--text-muted)] mt-1">
-              Используется тот же calibration flow, что и в setup wizard. Сохранённые значения берутся только из backend `pump_calibrations`.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="primary"
-            :disabled="!form.zoneId || loadingPumpCalibrationRun || loadingPumpCalibrationSave"
-            @click="openPumpCalibrationModal"
-          >
-            Открыть калибровку насосов
-          </Button>
-        </div>
+        :zone-id="form.zoneId"
+        :devices-loading="isZoneDevicesLoading"
+        :devices-error="zoneDevicesError"
+        :pump-channels-count="pumpChannels.length"
+        :mapped-pump-components="mappedPumpComponents"
+        :calibrated-channels="calibratedChannels"
+        :missing-pump-components="missingPumpComponents"
+        :loading-run="loadingPumpCalibrationRun"
+        :loading-save="loadingPumpCalibrationSave"
+        @open-modal="openPumpCalibrationModal"
+        @refresh="refreshPumpCalibrationData(true)"
+      />
 
-        <div
-          v-if="isZoneDevicesLoading"
-          class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)]"
-        >
-          Загружаю насосы зоны...
-        </div>
-
-        <div
-          v-else-if="zoneDevicesError"
-          class="p-4 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)] text-sm text-[color:var(--badge-danger-text)] space-y-2"
-        >
-          <div>{{ zoneDevicesError }}</div>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="refreshPumpCalibrationData(true)"
-          >
-            Повторить
-          </Button>
-        </div>
-
-        <div
-          v-else-if="pumpChannels.length === 0"
-          class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)] space-y-2"
-        >
-          <div>В зоне не найдены дозирующие насосы для calibration flow.</div>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="refreshPumpCalibrationData(true)"
-          >
-            Обновить список
-          </Button>
-        </div>
-
-        <div
-          v-else
-          class="space-y-3"
-        >
-          <div
-            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-3"
-          >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div class="text-sm font-medium">
-                  Сохранено {{ calibratedChannels.length }} из {{ mappedPumpComponents.length }} ожидаемых pump calibration.
-                </div>
-                <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                  Launch wizard не записывает `ml/sec` локально. Сначала сохраните калибровки через общую модалку, затем readiness автоматически разрешит запуск.
-                </div>
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                :disabled="loadingPumpCalibrationRun || loadingPumpCalibrationSave"
-                @click="refreshPumpCalibrationData(true)"
-              >
-                Обновить статус
-              </Button>
-            </div>
-
-            <div class="flex flex-wrap gap-2">
-              <span
-                v-for="item in mappedPumpComponents"
-                :key="item.component"
-                class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs"
-                :class="item.calibrated
-                  ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]'
-                  : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'"
-              >
-                {{ item.label }}: {{ item.calibrated ? 'готово' : 'не сохранено' }}
-              </span>
-            </div>
-          </div>
-
-          <div
-            v-if="missingPumpComponents.length > 0"
-            class="p-3 rounded-lg bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] text-sm text-[color:var(--badge-warning-text)]"
-          >
-            Для correction runtime ещё не сохранены: {{ missingPumpComponents.join(', ') }}.
-          </div>
-
-          <div
-            v-if="calibratedChannels.length > 0"
-            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
-          >
-            <div class="text-xs text-[color:var(--text-dim)] mb-2">
-              Уже сохранено
-            </div>
-            <div class="space-y-1">
-              <div
-                v-for="channel in calibratedChannels"
-                :key="channel.id"
-                class="text-sm text-[color:var(--text-primary)]"
-              >
-                {{ channel.label }}: {{ channel.calibration?.ml_per_sec ?? '-' }} мл/сек
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
+      <WizardConfirmStep
         v-if="currentStep === 6"
-        class="space-y-4"
-      >
-        <h3 class="text-sm font-semibold mb-1">
-          Предпросмотр запуска
-        </h3>
-
-        <ReadinessChecklist
-          :zone-id="form.zoneId"
-          :readiness="zoneReadiness"
-          :loading="zoneReadinessLoading"
-        />
-
-        <div class="space-y-3">
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Зона
-            </div>
-            <div class="text-sm font-medium">
-              {{ zoneName || `Зона #${form.zoneId}` }}
-            </div>
-          </div>
-
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Рецепт
-            </div>
-            <div class="text-sm font-medium">
-              {{ selectedRecipe?.name || "Не выбран" }}
-            </div>
-            <div
-              v-if="totalDurationDays > 0"
-              class="text-xs text-[color:var(--text-muted)] mt-1"
-            >
-              Оценочная длительность: {{ Math.round(totalDurationDays) }} дней
-            </div>
-          </div>
-
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Период
-            </div>
-            <div class="text-sm font-medium">
-              Старт: {{ formatDateTime(form.startedAt) }}
-            </div>
-            <div
-              v-if="form.expectedHarvestAt"
-              class="text-xs text-[color:var(--text-muted)] mt-1"
-            >
-              Сбор: {{ formatDate(form.expectedHarvestAt) }}
-            </div>
-          </div>
-
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Автоматика
-            </div>
-            <div class="text-sm font-medium">
-              Автоматика: pH {{ waterForm.targetPh }}, EC {{ waterForm.targetEc }}, система {{ waterForm.systemType }}
-            </div>
-          </div>
-
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Полив
-            </div>
-            <div class="text-sm font-medium">
-              {{ irrigationStrategyLabel }} · {{ waterForm.systemType }}
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)] mt-1">
-              {{ irrigationScheduleSummary }}
-            </div>
-            <div
-              v-if="tanksCount === 2"
-              class="text-xs text-[color:var(--text-muted)] mt-1"
-            >
-              Баки: {{ waterForm.cleanTankFillL }} / {{ waterForm.nutrientTankTargetL }} л, партия {{ waterForm.irrigationBatchL }} л
-            </div>
-            <div
-              v-if="isSmartIrrigation"
-              class="text-xs text-[color:var(--text-muted)] mt-1"
-            >
-              Датчик влажности: {{ soilMoistureBoundNodeChannelId ? `node_channel_id ${soilMoistureBoundNodeChannelId}` : 'не привязан' }}
-            </div>
-          </div>
-
-          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">
-              Калибровка насосов
-            </div>
-            <div class="text-sm font-medium">
-              {{ calibratedChannels.length }} сохранено, {{ missingPumpComponents.length }} требуют внимания
-            </div>
-          </div>
-
-          <div
-            v-if="selectedRevision"
-            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
-          >
-            <div class="text-xs text-[color:var(--text-dim)] mb-2">
-              План фаз:
-            </div>
-            <div class="space-y-2">
-              <div
-                v-for="(phase, index) in selectedRevision.phases"
-                :key="index"
-                class="flex items-center justify-between text-xs"
-              >
-                <span class="font-medium">{{ phase.name || `Фаза ${index + 1}` }}</span>
-                <span class="text-[color:var(--text-muted)]">{{ phase.duration_days ?? (phase.duration_hours ? Math.round(phase.duration_hours / 24) : "-") }} дней</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-if="validationErrors.length > 0"
-          class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
-        >
-          <div class="text-sm font-medium text-[color:var(--badge-danger-text)] mb-1">
-            Ошибки валидации:
-          </div>
-          <ul class="text-xs text-[color:var(--badge-danger-text)] list-disc list-inside">
-            <li
-              v-for="validationError in validationErrors"
-              :key="validationError"
-            >
-              {{ validationError }}
-            </li>
-          </ul>
-        </div>
-      </div>
+        :zone-id="form.zoneId"
+        :zone-name="zoneName"
+        :readiness="zoneReadiness"
+        :readiness-loading="zoneReadinessLoading"
+        :recipe-name="selectedRecipe?.name"
+        :recipe-phases="selectedRevision?.phases ?? []"
+        :total-duration-days="totalDurationDays"
+        :started-at="form.startedAt"
+        :expected-harvest-at="form.expectedHarvestAt"
+        :water-form="waterForm"
+        :tanks-count="tanksCount"
+        :is-smart-irrigation="isSmartIrrigation"
+        :irrigation-strategy-label="irrigationStrategyLabel"
+        :irrigation-schedule-summary="irrigationScheduleSummary"
+        :soil-moisture-bound-node-channel-id="soilMoistureBoundNodeChannelId"
+        :calibrated-count="calibratedChannels.length"
+        :missing-pump-components="missingPumpComponents"
+        :validation-errors="validationErrors"
+        :format-date-time="formatDateTime"
+        :format-date="formatDate"
+      />
 
       <div
         v-if="error && validationErrors.length === 0"
@@ -594,10 +276,11 @@ import { useZones } from "@/composables/useZones";
 import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import ErrorBoundary from "@/Components/ErrorBoundary.vue";
-import ReadinessChecklist from "@/Components/GrowCycle/ReadinessChecklist.vue";
 import PumpCalibrationModal from "@/Components/PumpCalibrationModal.vue";
-import RecipeCreateWizard from "@/Components/RecipeCreateWizard.vue";
 import WizardAutomationStep from "@/Components/GrowCycle/steps/WizardAutomationStep.vue";
+import WizardCalibrationStep from "@/Components/GrowCycle/steps/WizardCalibrationStep.vue";
+import WizardConfirmStep from "@/Components/GrowCycle/steps/WizardConfirmStep.vue";
+import WizardRecipeStep from "@/Components/GrowCycle/steps/WizardRecipeStep.vue";
 import { usePumpCalibration } from "@/composables/usePumpCalibration";
 import { usePumpCalibrationActions } from "@/composables/usePumpCalibrationActions";
 import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";

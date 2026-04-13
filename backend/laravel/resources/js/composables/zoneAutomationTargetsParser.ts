@@ -1,10 +1,9 @@
+import { clamp } from '@/services/automation/parsingUtils'
 import type { IrrigationSystem, WaterFormState, ZoneAutomationForms } from './zoneAutomationTypes'
 
 type Dictionary = Record<string, unknown>
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
+export { clamp }
 
 function asRecord(value: unknown): Dictionary | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

@@ -5,6 +5,10 @@
  * и облегчить unit-тестирование независимых utility-функций.
  */
 
+import { clamp, isValidHHMM, toFiniteNumber } from '@/services/automation/parsingUtils'
+
+export { clamp, isValidHHMM, toFiniteNumber }
+
 export interface WizardFormState {
   zoneId: number | null
   startedAt: string
@@ -38,25 +42,6 @@ export function createDefaultForm(zoneId?: number): WizardFormState {
   }
 }
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-export function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) {
-      return parsed
-    }
-  }
-
-  return null
-}
-
 export function normalizeDatetimeLocal(value: string | null | undefined): string | null {
   if (!value) {
     return null
@@ -77,15 +62,6 @@ export function normalizeDatetimeLocal(value: string | null | undefined): string
   }
 
   return parsed.toISOString().slice(0, 16)
-}
-
-export function isValidHHMM(value: string): boolean {
-  if (!/^\d{2}:\d{2}$/.test(value)) {
-    return false
-  }
-
-  const [h, m] = value.split(':').map(Number)
-  return Number.isFinite(h) && Number.isFinite(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59
 }
 
 export function addHoursToTime(start: string, hours: number): string {

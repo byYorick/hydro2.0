@@ -2,6 +2,7 @@
  * Grow cycles API client.
  *
  * Эндпоинты:
+ *   POST /api/grow-cycles/:id/start
  *   POST /api/grow-cycles/:id/pause
  *   POST /api/grow-cycles/:id/resume
  *   POST /api/grow-cycles/:id/advance-phase
@@ -25,6 +26,10 @@ export interface ChangeRecipeRevisionPayload {
 }
 
 export const growCyclesApi = {
+  start(cycleId: number): Promise<void> {
+    return apiPostVoid(`/grow-cycles/${cycleId}/start`, {})
+  },
+
   pause(cycleId: number): Promise<void> {
     return apiPostVoid(`/grow-cycles/${cycleId}/pause`, {})
   },

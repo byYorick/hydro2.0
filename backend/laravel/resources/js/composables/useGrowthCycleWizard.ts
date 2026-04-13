@@ -2,7 +2,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { api } from "@/services/api";
 import { useAutomationConfig } from "@/composables/useAutomationConfig";
 import {
-  addHoursToTime,
   clamp,
   createDefaultForm,
   extractCollectionItems,
@@ -11,7 +10,6 @@ import {
   formatDate as formatDateHelper,
   formatDateTime as formatDateTimeHelper,
   getNowLocalDatetimeValue,
-  isValidHHMM,
   normalizeDatetimeLocal,
   toFiniteNumber,
   type WizardFormState,
@@ -30,12 +28,14 @@ import {
   useAutomationDefaults,
 } from "@/composables/useAutomationDefaults";
 import { applyAutomationFromRecipe, syncSystemToTankLayout, validateForms } from "@/composables/zoneAutomationFormLogic";
+import { syncFormsFromRecipePhase as syncFormsFromRecipePhaseShared } from "@/services/automation/recipePhaseSync";
+import { buildCreateGrowCyclePayload } from "@/services/automation/growCyclePayload";
+import { useZoneReadiness } from "@/composables/useZoneReadiness";
 import {
   payloadFromZoneLogicDocument,
   resolveZoneLogicProfileEntry,
   upsertZoneLogicProfilePayload,
 } from "@/composables/zoneLogicProfileDocument";
-import { resolveRecipePhaseSystemType } from "@/composables/recipeSystemType";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationProfilePayload";
 import type { ClimateFormState, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
 import type { Device, DeviceChannel } from "@/types/Device";
@@ -116,19 +116,6 @@ interface RecipeRevisionData {
   phases?: WizardRecipePhase[];
 }
 
-interface ZoneLaunchReadiness {
-  ready: boolean;
-  errors?: string[];
-  checks?: Record<string, boolean>;
-  warnings?: string[];
-  blocking_alerts?: Array<Record<string, unknown>>;
-  dispatch_enabled?: boolean;
-}
-
-interface ZoneHealthPayload {
-  readiness?: ZoneLaunchReadiness | null;
-}
-
 interface InfrastructureInstanceDto {
   id: number;
   owner_type?: string;
@@ -200,8 +187,12 @@ export function useGrowthCycleWizard({
   const isZoneDevicesLoading = ref(false);
   const zoneDevicesLoaded = ref(false);
   const zoneDevicesError = ref<string | null>(null);
-  const zoneReadiness = ref<ZoneLaunchReadiness | null>(null);
-  const zoneReadinessLoading = ref(false);
+  const {
+    readiness: zoneReadiness,
+    loading: zoneReadinessLoading,
+    load: loadZoneReadiness,
+    reset: resetZoneReadiness,
+  } = useZoneReadiness();
 
   const soilMoistureBindingLoading = ref(false);
   const soilMoistureBindingError = ref<string | null>(null);
@@ -468,38 +459,20 @@ export function useGrowthCycleWizard({
   }
 
   function syncFormsFromRecipePhase(phase: WizardRecipePhase): void {
-    const systemType = resolveRecipePhaseSystemType(phase, waterForm.value.systemType);
-    waterForm.value.systemType = systemType;
-    waterForm.value.tanksCount = systemType === "nft" ? 0 : 2;
-
-    const phTarget = toFiniteNumber(phase.ph_target);
-    const ecTarget = toFiniteNumber(phase.ec_target);
-    const tempAirTarget = toFiniteNumber(phase.temp_air_target);
-    const humidityTarget = toFiniteNumber(phase.humidity_target);
-    const intervalSec = toFiniteNumber(phase.irrigation_interval_sec);
-    const durationSec = toFiniteNumber(phase.irrigation_duration_sec);
-    const hoursOn = toFiniteNumber(phase.lighting_photoperiod_hours);
-    const scheduleStart = isValidHHMM(String(phase.lighting_start_time || ""))
-      ? String(phase.lighting_start_time)
-      : "06:00";
-
-    if (phTarget !== null) waterForm.value.targetPh = Number(phTarget.toFixed(2));
-    if (ecTarget !== null) waterForm.value.targetEc = Number(ecTarget.toFixed(2));
-    if (tempAirTarget !== null) climateForm.value.dayTemp = Number(tempAirTarget.toFixed(1));
-    if (humidityTarget !== null) climateForm.value.dayHumidity = Math.round(humidityTarget);
-    if (hoursOn !== null) {
-      lightingForm.value.hoursOn = clamp(Math.round(hoursOn), 1, 24);
-      lightingForm.value.scheduleStart = scheduleStart;
-      lightingForm.value.scheduleEnd = addHoursToTime(scheduleStart, lightingForm.value.hoursOn);
-    }
-    if (intervalSec !== null && intervalSec > 0) {
-      waterForm.value.intervalMinutes = Math.max(5, Math.round(intervalSec / 60));
-    }
-    if (durationSec !== null && durationSec > 0) {
-      waterForm.value.durationSeconds = Math.max(10, Math.round(durationSec));
-    }
-
-    climateForm.value.enabled = true;
+    syncFormsFromRecipePhaseShared(
+      phase,
+      {
+        waterForm: waterForm.value,
+        climateForm: climateForm.value,
+        lightingForm: lightingForm.value,
+      },
+      {
+        minIntervalMinutes: 5,
+        minDurationSeconds: 10,
+        syncLightingSchedule: true,
+        enableClimateOnSync: true,
+      },
+    );
   }
 
   function syncRecipeLaunchTargetsFromPhase(phase: WizardRecipePhase): void {
@@ -667,7 +640,7 @@ export function useGrowthCycleWizard({
     zoneDevicesLoaded.value = false;
     zoneDevices.value = [];
     zoneDevicesError.value = null;
-    zoneReadiness.value = null;
+    resetZoneReadiness();
   }
 
   function syncSelectedRecipe(): void {
@@ -1131,23 +1104,6 @@ export function useGrowthCycleWizard({
     }
   }
 
-  async function loadZoneReadiness(zoneId: number): Promise<void> {
-    zoneReadinessLoading.value = true;
-
-    try {
-      const payload = await api.zones.getHealth<ZoneHealthPayload | ZoneLaunchReadiness | null>(zoneId);
-      const readinessPayload = payload && typeof payload === "object" && "readiness" in payload
-        ? (payload as ZoneHealthPayload).readiness ?? null
-        : (payload as ZoneLaunchReadiness | null);
-      zoneReadiness.value = readinessPayload;
-    } catch (err) {
-      logger.warn("[GrowthCycleWizard] Failed to load zone readiness", { zoneId, err });
-      zoneReadiness.value = null;
-    } finally {
-      zoneReadinessLoading.value = false;
-    }
-  }
-
   async function saveAutomationProfile(zoneId: number, subsystems: Record<string, unknown>): Promise<void> {
     const currentDocument = await automationConfig.getDocument<Record<string, unknown>>("zone", zoneId, "zone.logic_profile");
     const nextPayload = upsertZoneLogicProfilePayload(
@@ -1211,23 +1167,18 @@ export function useGrowthCycleWizard({
       }
 
       const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined;
-      const cycleResponse = await api.zones.createGrowCycle<{ id?: number } & Record<string, unknown>>(zoneId, {
-        recipe_revision_id: selectedRevisionId.value,
-        plant_id: selectedPlantId.value,
-        planting_at: plantingAt,
-        start_immediately: true,
-        irrigation: {
-          system_type: waterForm.value.systemType,
-          interval_minutes: waterForm.value.intervalMinutes,
-          duration_seconds: waterForm.value.durationSeconds,
-          clean_tank_fill_l: tanksCount.value === 2 ? waterForm.value.cleanTankFillL : undefined,
-          nutrient_tank_target_l: tanksCount.value === 2 ? waterForm.value.nutrientTankTargetL : undefined,
-          irrigation_batch_l: tanksCount.value === 2 ? waterForm.value.irrigationBatchL : undefined,
-        },
-        settings: {
-          expected_harvest_at: form.value.expectedHarvestAt || undefined,
-        },
+      const payload = buildCreateGrowCyclePayload({
+        waterForm: waterForm.value,
+        recipeRevisionId: selectedRevisionId.value,
+        plantId: selectedPlantId.value,
+        plantingAt,
+        expectedHarvestAt: form.value.expectedHarvestAt,
+        startImmediately: true,
       });
+      const cycleResponse = await api.zones.createGrowCycle<{ id?: number } & Record<string, unknown>>(
+        zoneId,
+        payload as unknown as Record<string, unknown>,
+      );
 
       const createdCycleId = toFiniteNumber(cycleResponse?.id);
       const cycleId = createdCycleId ? Math.round(createdCycleId) : null;
@@ -1289,8 +1240,7 @@ export function useGrowthCycleWizard({
     isZoneDevicesLoading.value = false;
     zoneDevicesLoaded.value = false;
     zoneDevicesError.value = null;
-    zoneReadiness.value = null;
-    zoneReadinessLoading.value = false;
+    resetZoneReadiness();
   }
 
   async function initializeWizardState(): Promise<void> {
@@ -1352,8 +1302,7 @@ export function useGrowthCycleWizard({
         zoneDevices.value = [];
         zoneDevicesLoaded.value = false;
         zoneDevicesError.value = null;
-        zoneReadiness.value = null;
-        zoneReadinessLoading.value = false;
+        resetZoneReadiness();
         return;
       }
 

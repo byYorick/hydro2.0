@@ -7,6 +7,7 @@ import { generateUid } from '@/utils/transliterate'
 import { createSetupWizardDataFlows } from './setupWizardDataFlows'
 import { createSetupWizardRecipeAutomationFlows } from './setupWizardRecipeAutomationFlows'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { useZoneReadiness } from './useZoneReadiness'
 import {
   asRecord,
   GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
@@ -39,21 +40,6 @@ import type {
 } from './zoneAutomationTypes'
 
 export type { Mode, SystemType, Greenhouse, GreenhouseType, Zone, Plant, Recipe, Node, RecipePhaseForm } from './setupWizardTypes'
-
-interface ZoneLaunchReadiness {
-  checked?: boolean
-  ready: boolean
-  checks?: Record<string, boolean>
-  errors?: string[]
-  warnings?: string[]
-  error_details?: Array<Record<string, unknown>>
-  blocking_alerts?: Array<Record<string, unknown>>
-  dispatch_enabled?: boolean
-}
-
-interface ZoneHealthResponse {
-  readiness?: ZoneLaunchReadiness | null
-}
 
 type ZoneAssignmentRole =
   | 'irrigation'
@@ -206,8 +192,11 @@ export function useSetupWizard() {
   const availableRecipes = ref<Recipe[]>([])
   const availableNodes = ref<Node[]>([])
   const greenhouseClimateNodes = ref<Node[]>([])
-  const zoneLaunchReadiness = ref<ZoneLaunchReadiness | null>(null)
-  const zoneLaunchReadinessLoading = ref(false)
+  const {
+    readiness: zoneLaunchReadiness,
+    loading: zoneLaunchReadinessLoading,
+    load: loadZoneLaunchReadiness,
+  } = useZoneReadiness()
 
   const selectedGreenhouseId = ref<number | null>(null)
   const selectedZoneId = ref<number | null>(null)
@@ -649,23 +638,7 @@ export function useSetupWizard() {
   }
 
   async function refreshZoneLaunchReadiness(zoneId: number | null = selectedZoneId.value): Promise<void> {
-    if (!zoneId) {
-      zoneLaunchReadiness.value = null
-      zoneLaunchReadinessLoading.value = false
-      return
-    }
-
-    zoneLaunchReadinessLoading.value = true
-
-    try {
-      const payload = await api.zones.getHealth<ZoneHealthResponse | ZoneLaunchReadiness>(zoneId)
-      zoneLaunchReadiness.value = (payload as ZoneHealthResponse | null)?.readiness
-        ?? (payload as ZoneLaunchReadiness | null)
-    } catch {
-      zoneLaunchReadiness.value = null
-    } finally {
-      zoneLaunchReadinessLoading.value = false
-    }
+    await loadZoneLaunchReadiness(zoneId)
   }
 
   function resetGreenhouseClimateState(): void {

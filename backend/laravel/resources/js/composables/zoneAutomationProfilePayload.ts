@@ -1,3 +1,4 @@
+import { isValidHHMM } from '@/services/automation/parsingUtils'
 import { clamp, syncSystemToTankLayout } from './zoneAutomationTargetsParser'
 import type { ZoneAutomationForms } from './zoneAutomationTypes'
 import {
@@ -37,12 +38,6 @@ function twoTankCommandsFromTemplates(
   return out
 }
 
-function isValidTimeHHMM(value: string): boolean {
-  if (!/^\d{2}:\d{2}$/.test(value)) return false
-  const [h, m] = value.split(':').map(Number)
-  return h >= 0 && h <= 23 && m >= 0 && m <= 59
-}
-
 function normalizeNumber(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
@@ -74,7 +69,7 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
     return 'Порог полного бака должен быть в диапазоне (0;1].'
   }
 
-  if (!isValidTimeHHMM(waterForm.fillWindowStart) || !isValidTimeHHMM(waterForm.fillWindowEnd)) {
+  if (!isValidHHMM(waterForm.fillWindowStart) || !isValidHHMM(waterForm.fillWindowEnd)) {
     return 'Укажите корректное время окна заполнения (формат HH:MM, 00:00–23:59).'
   }
 

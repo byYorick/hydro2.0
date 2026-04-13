@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ZoneNotReadyException;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\GrowCycle;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
+use App\Services\GrowCycleOrchestrator;
 use App\Services\GrowCyclePresenter;
 use App\Services\GrowCycleService;
 use App\Services\ZoneReadinessService;
@@ -26,6 +28,7 @@ class GrowCycleController extends Controller
         private EffectiveTargetsService $effectiveTargetsService,
         private ZoneReadinessService $zoneReadinessService,
         private ZoneService $zoneService,
+        private GrowCycleOrchestrator $growCycleOrchestrator,
     ) {}
 
     /**
@@ -99,24 +102,19 @@ class GrowCycleController extends Controller
         }
 
         try {
-            $zone->loadMissing('nodes.channels');
-            $this->zoneService->ensureAe3AutomationBootstrap($zone);
-            $readiness = $this->checkZoneReadiness($zone);
-            if (($readiness['ready'] ?? false) !== true) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Zone is not ready for cycle start',
-                    'readiness_errors' => $readiness['errors'] ?? [],
-                    'readiness' => $readiness,
-                ], Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
-
-            $cycle = $this->growCycleService->startCycle($growCycle);
+            $cycle = $this->growCycleOrchestrator->startExistingCycle($growCycle);
 
             return response()->json([
                 'status' => 'ok',
                 'data' => $cycle,
             ]);
+        } catch (ZoneNotReadyException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'readiness_errors' => $e->errors(),
+                'readiness' => $e->readiness(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -413,50 +411,20 @@ class GrowCycleController extends Controller
             'phase_overrides' => ['prohibited'],
         ]);
 
-        $startImmediately = (bool) ($data['start_immediately'] ?? false);
-        if ($startImmediately) {
-            $zone->loadMissing('nodes.channels');
-            $this->zoneService->ensureAe3AutomationBootstrap($zone);
-            $readiness = $this->checkZoneReadiness($zone);
-            if ($readiness['ready'] !== true) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Zone is not ready for cycle start',
-                    'readiness_errors' => $readiness['errors'] ?? [],
-                    'readiness' => $readiness,
-                ], Response::HTTP_UNPROCESSABLE_ENTITY);
-            }
-        }
-
         try {
-            $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
-            $createPayload = $data;
-            $createPayload['start_immediately'] = false;
-
-            $cycle = $this->growCycleService->createCycle(
-                $zone,
-                $revision,
-                $data['plant_id'],
-                $createPayload,
-                $user->id
-            );
-            $this->growCycleService->syncCycleConfigDocuments($cycle, $data, $user->id);
-
-            if ($startImmediately) {
-                $cycle = $this->growCycleService->startCycle(
-                    $cycle->fresh(),
-                    isset($data['planting_at']) && $data['planting_at']
-                        ? \Carbon\Carbon::parse($data['planting_at'])
-                        : now()
-                );
-            }
-
-            $cycle->refresh()->load('recipeRevision', 'currentPhase', 'plant');
+            $cycle = $this->growCycleOrchestrator->createCycle($zone, $data, $user->id);
 
             return response()->json([
                 'status' => 'ok',
                 'data' => $cycle,
             ], Response::HTTP_CREATED);
+        } catch (ZoneNotReadyException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'readiness_errors' => $e->errors(),
+                'readiness' => $e->readiness(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -473,22 +441,6 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-    }
-
-    /**
-     * Проверить готовность зоны к запуску цикла.
-     *
-     * @return array{
-     *   ready: bool,
-     *   required_assets: array{main_pump: bool, drain: bool},
-     *   optional_assets: array{light: bool, vent: bool, heater: bool, mist: bool},
-     *   nodes: array{online: int, total: int, all_online: bool},
-     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
-     * }
-     */
-    private function checkZoneReadiness(Zone $zone): array
-    {
-        return $this->zoneReadinessService->checkZoneReadiness($zone);
     }
 
     /**
