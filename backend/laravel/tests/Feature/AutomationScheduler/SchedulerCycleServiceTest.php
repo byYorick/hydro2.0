@@ -191,6 +191,50 @@ class SchedulerCycleServiceTest extends TestCase
         $this->assertSame('start_cycle_intent_terminal', ($taskLog->details ?? [])['error'] ?? null);
     }
 
+    public function test_run_cycle_records_zone_busy_backpressure_separately_from_failures(): void
+    {
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_cycle_zone_busy',
+                        'zone_id' => $zone->id,
+                        'active_task_id' => 2,
+                        'active_task_status' => 'pending',
+                    ],
+                ], 409);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(1, (int) ($stats['zones_total'] ?? 0));
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['attempted_dispatches'] ?? 0));
+        $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertDatabaseHas('laravel_scheduler_dispatch_metric_totals', [
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'result' => 'backpressure',
+            'total' => 1,
+        ]);
+
+        $taskLog = SchedulerLog::query()
+            ->where('task_name', 'laravel_scheduler_task_irrigation_zone_'.$zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($taskLog);
+        $this->assertSame('failed', $taskLog->status);
+        $this->assertSame('start_cycle_zone_busy', ($taskLog->details ?? [])['error'] ?? null);
+    }
+
     public function test_run_cycle_does_not_duplicate_dispatch_for_locally_expired_alive_task_outside_poll_batch(): void
     {
         [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');

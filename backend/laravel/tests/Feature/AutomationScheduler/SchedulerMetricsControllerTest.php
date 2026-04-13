@@ -26,17 +26,17 @@ class SchedulerMetricsControllerTest extends TestCase
         /** @var SchedulerMetricsStore $metricsStore */
         $metricsStore = $this->app->make(SchedulerMetricsStore::class);
         $metricsStore->recordDispatchTotals([
-            sprintf('%d|%s|%s', $zone->id, 'irrigation', 'accepted') => 2,
+            sprintf('%d|%s|%s', $zone->id, 'irrigation', 'success') => 2,
         ]);
         $metricsStore->recordDispatchTotals([
-            sprintf('%d|%s|%s', $zone->id, 'irrigation', 'accepted') => 1,
+            sprintf('%d|%s|%s', $zone->id, 'irrigation', 'success') => 1,
         ]);
         $metricsStore->observeCycleDuration('start_cycle', 0.3);
         $metricsStore->observeCycleDuration('start_cycle', 1.2);
 
         $this->createMetricLog(
             SchedulerConstants::METRIC_DISPATCHES_TOTAL,
-            ['zone_id' => $zone->id, 'task_type' => 'irrigation', 'result' => 'accepted'],
+            ['zone_id' => $zone->id, 'task_type' => 'irrigation', 'result' => 'success'],
             999,
         );
         DB::table('scheduler_logs')->delete();
@@ -76,7 +76,7 @@ class SchedulerMetricsControllerTest extends TestCase
         $this->assertIsString($body);
         $this->assertStringContainsString('# TYPE laravel_scheduler_dispatches_total counter', $body);
         $this->assertStringContainsString(
-            'laravel_scheduler_dispatches_total{result="accepted",task_type="irrigation",zone_id="'.$zone->id.'"} 3',
+            'laravel_scheduler_dispatches_total{result="success",task_type="irrigation",zone_id="'.$zone->id.'"} 3',
             $body,
         );
         $this->assertStringContainsString('# TYPE laravel_scheduler_cycle_duration_seconds histogram', $body);

@@ -95,7 +95,7 @@ groups:
       - alert: LaravelSchedulerDispatchFailureRateHigh
         expr: |
           (
-            (sum(rate(laravel_scheduler_dispatches_total{result!~"accepted|deduplicated"}[5m])) or vector(0))
+            (sum(rate(laravel_scheduler_dispatches_total{result!~"success|backpressure"}[5m])) or vector(0))
             /
             clamp_min((sum(rate(laravel_scheduler_dispatches_total[5m])) or vector(0)), 0.001)
           ) > 0.05

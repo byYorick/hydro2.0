@@ -15,6 +15,12 @@ class ScheduleDispatcher
 {
     use ResolvesAutomationRuntime;
 
+    private const ZONE_BUSY_ERRORS = [
+        'start_cycle_zone_busy',
+        'start_irrigation_zone_busy',
+        'start_lighting_tick_zone_busy',
+    ];
+
     public function __construct(
         private readonly ActiveTaskStore $activeTaskStore,
         private readonly ActiveTaskPoller $activeTaskPoller,
@@ -190,6 +196,28 @@ class ScheduleDispatcher
                 return [
                     'dispatched' => false,
                     'retryable' => false,
+                    'reason' => $err,
+                ];
+            }
+            if (
+                $response->status() === 409
+                && is_array($detail)
+                && in_array($detail['error'] ?? null, self::ZONE_BUSY_ERRORS, true)
+            ) {
+                $err = (string) ($detail['error'] ?? 'start_cycle_zone_busy');
+                $writeLog($taskName, 'failed', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'error' => $err,
+                    'status_code' => $response->status(),
+                    'response' => $responseBody,
+                    'schedule_key' => $scheduleKey,
+                    'correlation_id' => $correlationId,
+                ]);
+
+                return [
+                    'dispatched' => false,
+                    'retryable' => true,
                     'reason' => $err,
                 ];
             }

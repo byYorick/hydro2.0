@@ -570,6 +570,34 @@ async def test_corr_check_fails_closed_when_prepare_recirc_flow_path_is_inactive
     assert gateway.calls[0]["commands"][0].channel == "storage_state"
 
 
+async def test_corr_check_solution_fill_probe_mismatch_yields_to_raced_completed_event(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=2.0))
+    handler._probe_irr_state = AsyncMock(side_effect=TaskExecutionError("irr_state_mismatch", "pump off"))
+
+    reads = {"completion": 0}
+
+    async def _fake_read(*, task, event_types, max_age_sec):
+        if "SOLUTION_FILL_COMPLETED" not in event_types:
+            return None
+        reads["completion"] += 1
+        if reads["completion"] == 1:
+            return None
+        return {"event_id": 27, "event_type": "SOLUTION_FILL_COMPLETED", "payload": {"channel": "storage_state"}}
+
+    monkeypatch.setattr(handler, "_read_recent_storage_event", _fake_read)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+    assert reads["completion"] >= 2
+
+
 async def test_corr_check_ignores_attempt_caps_during_solution_fill():
     """solution_fill must remain in one correction window until no-effect or stage timeout."""
     corr = _base_corr(corr_step="corr_check", attempt=6, max_attempts=5)

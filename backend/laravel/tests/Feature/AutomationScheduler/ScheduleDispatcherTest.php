@@ -311,4 +311,72 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertSame('laravel_scheduler', $row->intent_source);
         $this->assertNull($row->payload);
     }
+
+    public function test_dispatch_preserves_zone_busy_reason_for_backpressure_metrics(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-cycle' => Http::response([
+                'detail' => [
+                    'error' => 'start_cycle_zone_busy',
+                    'zone_id' => $zone->id,
+                    'active_task_id' => 42,
+                    'active_task_status' => 'pending',
+                ],
+            ], 409),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-04-13 18:28:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'diagnostics',
+            intervalSec: 240,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'start_cycle_zone_busy',
+        ], $result);
+        $this->assertNotEmpty($logs);
+        $this->assertSame('failed', $logs[0]['status']);
+        $this->assertSame('start_cycle_zone_busy', $logs[0]['context']['error']);
+        $this->assertSame(409, $logs[0]['context']['status_code']);
+    }
 }

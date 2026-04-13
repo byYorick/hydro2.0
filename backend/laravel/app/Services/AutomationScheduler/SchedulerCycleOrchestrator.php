@@ -10,6 +10,13 @@ use Illuminate\Support\Str;
 
 class SchedulerCycleOrchestrator
 {
+    private const BACKPRESSURE_REASONS = [
+        'schedule_busy',
+        'start_cycle_zone_busy',
+        'start_irrigation_zone_busy',
+        'start_lighting_tick_zone_busy',
+    ];
+
     /**
      * @var array<int, array{task_name: string, status: string, details: string, created_at: string}>
      */
@@ -358,9 +365,12 @@ class SchedulerCycleOrchestrator
         string $taskType,
         array $dispatchResult,
     ): void {
+        $reason = (string) ($dispatchResult['reason'] ?? '');
         $result = 'not_dispatched';
         if ((bool) ($dispatchResult['dispatched'] ?? false)) {
             $result = 'success';
+        } elseif (in_array($reason, self::BACKPRESSURE_REASONS, true)) {
+            $result = 'backpressure';
         } elseif ((bool) ($dispatchResult['retryable'] ?? false)) {
             $result = 'retryable_failed';
         } else {

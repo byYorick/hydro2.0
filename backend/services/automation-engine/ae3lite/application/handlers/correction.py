@@ -176,7 +176,19 @@ class CorrectionHandler(BaseStageHandler):
             )
             if imminent_probe_outcome is not None:
                 return imminent_probe_outcome
-            await self._assert_flow_path_active(task=task, plan=plan, now=now)
+            try:
+                await self._assert_flow_path_active(task=task, plan=plan, now=now)
+            except TaskExecutionError as exc:
+                raced_completion_outcome = await self._interrupt_for_raced_solution_fill_completion(
+                    task=task,
+                    plan=plan,
+                    corr=corr,
+                    now=now,
+                    exc=exc,
+                )
+                if raced_completion_outcome is not None:
+                    return raced_completion_outcome
+                raise
         if step == "corr_activate":
             return await self._run_activate(task=task, plan=plan, corr=corr, now=now)
         if step == "corr_wait_stable":
@@ -255,6 +267,20 @@ class CorrectionHandler(BaseStageHandler):
         if str(task.current_stage).strip().lower() != "solution_fill_check":
             return None
 
+        recent_storage_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("SOLUTION_FILL_COMPLETED",),
+            max_age_sec=86400,
+        )
+        recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
+        if recent_event_type == "SOLUTION_FILL_COMPLETED":
+            return await self._solution_fill_completion_outcome(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
+            )
+
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         try:
             solution_max = await self._read_level(
@@ -303,6 +329,70 @@ class CorrectionHandler(BaseStageHandler):
             next_stage,
         )
         return StageOutcome(kind="transition", next_stage=next_stage)
+
+    async def _solution_fill_completion_outcome(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome:
+        workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
+        next_stage = "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
+            task=task,
+            corr=corr,
+            payload={
+                "next_stage": next_stage,
+                "targets_reached": workflow_ready,
+                "reason": "solution_tank_full",
+            },
+        )
+        _logger.info(
+            "zone %s: solution fill completed during correction; interrupting corr_step=%s -> %s",
+            task.zone_id,
+            corr.corr_step,
+            next_stage,
+        )
+        return StageOutcome(kind="transition", next_stage=next_stage)
+
+    async def _interrupt_for_raced_solution_fill_completion(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+        exc: TaskExecutionError,
+    ) -> StageOutcome | None:
+        if exc.code != "irr_state_mismatch":
+            return None
+        if str(task.current_stage).strip().lower() != "solution_fill_check":
+            return None
+
+        raced_completion_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("SOLUTION_FILL_COMPLETED",),
+            max_age_sec=86400,
+        )
+        raced_event_type = str((raced_completion_event or {}).get("event_type") or "").strip().upper()
+        if raced_event_type != "SOLUTION_FILL_COMPLETED":
+            return None
+
+        _logger.info(
+            "zone %s: corr probe увидел уже выключенный fill-state, но node успела опубликовать completion; corr_step=%s",
+            task.zone_id,
+            corr.corr_step,
+        )
+        return await self._solution_fill_completion_outcome(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+        )
 
     async def _run_check(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
