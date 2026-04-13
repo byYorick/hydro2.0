@@ -152,6 +152,7 @@ class GrowCycleService
                     'plant_id' => $plantId,
                     'user_id' => $userId,
                     'source' => 'web',
+                    'correlation_id' => $this->resolveCorrelationId(),
                 ],
             ]);
 
@@ -215,6 +216,27 @@ class GrowCycleService
             // В новой модели фазы уже установлены при создании цикла через createPhaseSnapshot()
             // Вычисляем ожидаемую дату сбора
             $this->computeExpectedHarvest($cycle);
+
+            // Явный CYCLE_STARTED event: PLANNED → RUNNING transition в audit log.
+            // До этой правки был только CYCLE_CREATED (при createCycle), что
+            // смешивало "цикл создан" и "цикл фактически запущен".
+            $zone = $cycle->zone;
+            if ($zone) {
+                ZoneEvent::create([
+                    'zone_id' => $zone->id,
+                    'type' => 'CYCLE_STARTED',
+                    'entity_type' => 'grow_cycle',
+                    'entity_id' => (string) $cycle->id,
+                    'payload_json' => [
+                        'cycle_id' => $cycle->id,
+                        'recipe_revision_id' => $cycle->recipe_revision_id,
+                        'current_phase_id' => $cycle->current_phase_id,
+                        'planting_at' => $plantingAt->toIso8601String(),
+                        'source' => 'backend',
+                        'correlation_id' => $this->resolveCorrelationId(),
+                    ],
+                ]);
+            }
 
             Log::info('Grow cycle started', [
                 'cycle_id' => $cycle->id,
@@ -891,6 +913,7 @@ class GrowCycleService
                     'cycle_id' => $cycle->id,
                     'user_id' => $userId,
                     'source' => 'web',
+                    'correlation_id' => $this->resolveCorrelationId(),
                 ],
             ]);
 
@@ -920,6 +943,14 @@ class GrowCycleService
             $cycle->update(['status' => GrowCycleStatus::RUNNING]);
             $cycle->refresh();
 
+            // Пересчитываем effective bundle: за время pause пользователь мог
+            // изменить PID/correction/logic profile зоны — AE3 должен увидеть
+            // актуальные targets после resume.
+            $this->automationConfigCompiler->compileAffectedScopes(
+                AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+                (int) $cycle->id,
+            );
+
             $zone = $cycle->zone;
             $this->syncZoneStatus($zone, 'RUNNING');
 
@@ -933,6 +964,7 @@ class GrowCycleService
                     'cycle_id' => $cycle->id,
                     'user_id' => $userId,
                     'source' => 'web',
+                    'correlation_id' => $this->resolveCorrelationId(),
                 ],
             ]);
 
@@ -976,6 +1008,11 @@ class GrowCycleService
                     'Grow cycle %d harvested before AE3 start-cycle task completed',
                     (int) $cycle->id
                 )
+            );
+            $this->cancelAllZoneAutomationState(
+                $cycle,
+                $zone,
+                'grow_cycle_harvested',
             );
             $this->syncZoneStatus($zone, 'NEW');
 
@@ -1024,6 +1061,11 @@ class GrowCycleService
 
             $zone = $cycle->zone;
             $this->cancelGrowCycleStartRuntimeState($cycle, $zone);
+            $this->cancelAllZoneAutomationState(
+                $cycle,
+                $zone,
+                'grow_cycle_aborted',
+            );
             $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
@@ -1125,6 +1167,103 @@ class GrowCycleService
         // lets the worker release the zone lease in its normal finally-path.
     }
 
+    /**
+     * Отменяет ВСЕ активные pending/claimed/running intents и ae_tasks зоны.
+     * Вызывается при harvest/abort цикла, чтобы не оставить orphaned irrigation/
+     * lighting intents и tasks после завершения цикла (они не привязаны к
+     * grow_cycle_id в payload, поэтому cancelGrowCycleStartRuntimeState их не
+     * обрабатывает). Lease зоны AE3 worker освободит в finally-path.
+     */
+    protected function cancelAllZoneAutomationState(
+        GrowCycle $cycle,
+        Zone $zone,
+        string $errorCode,
+        ?string $errorMessage = null,
+    ): void {
+        if (strtolower(trim((string) $zone->automation_runtime)) !== 'ae3') {
+            return;
+        }
+
+        $zoneId = (int) $zone->id;
+        $cycleId = (int) $cycle->id;
+        if ($zoneId <= 0) {
+            return;
+        }
+
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+        $errorMessage ??= sprintf(
+            'Grow cycle %d ended — cancelling remaining zone automation state',
+            $cycleId
+        );
+
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->whereIn('status', ['pending', 'claimed', 'running'])
+            ->update([
+                'status' => 'cancelled',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+            ]);
+
+        DB::table('ae_tasks')
+            ->where('zone_id', $zoneId)
+            ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])
+            ->update([
+                'status' => 'cancelled',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+            ]);
+    }
+
+    /**
+     * Отменяет pending (undispatched) scheduler-intents зоны при смене фазы.
+     * IRRIGATE_ONCE / LIGHTING_TICK, созданные под параметры предыдущей фазы,
+     * не должны превращаться в AE3 tasks после advancePhase — scheduler создаст
+     * новые intents под новую фазу на следующей итерации dispatch.
+     */
+    protected function cancelStalePendingIntentsOnPhaseAdvance(int $zoneId): void
+    {
+        if ($zoneId <= 0) {
+            return;
+        }
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->where('status', 'pending')
+            ->whereIn('intent_type', ['IRRIGATE_ONCE', 'LIGHTING_TICK'])
+            ->update([
+                'status' => 'cancelled',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => 'phase_advanced_before_dispatch',
+                'error_message' => 'Intent from previous phase cancelled because cycle advanced to next phase before dispatch',
+            ]);
+    }
+
+    /**
+     * Возвращает correlation id текущего запроса (X-Trace-Id header) или null.
+     * Используется для включения trace id в `zone_events.payload_json` —
+     * позволяет корреляцию lifecycle событий цикла с HTTP-запросом, командами
+     * в history-logger и AE3 workflow.
+     */
+    protected function resolveCorrelationId(): ?string
+    {
+        if (! function_exists('request')) {
+            return null;
+        }
+        try {
+            $req = request();
+            $trace = $req?->header('X-Trace-Id') ?? $req?->header('X-Correlation-Id');
+            return is_string($trace) && $trace !== '' ? $trace : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private function syncZoneStatus(Zone $zone, string $status): void
     {
         if ($zone->status === $status) {
@@ -1168,6 +1307,10 @@ class GrowCycleService
         }
 
         return DB::transaction(function () use ($cycle, $currentPhase, $currentPhaseTemplate, $nextPhaseTemplate, $userId) {
+            // Захватываем row-level lock на цикл, чтобы параллельные advancePhase
+            // не создали два snapshot'а и не получили race на current_phase_id.
+            $cycle = GrowCycle::query()->whereKey($cycle->id)->lockForUpdate()->firstOrFail();
+
             // Создаем снапшот следующей фазы
             $nextPhaseSnapshot = $this->createPhaseSnapshot($cycle, $nextPhaseTemplate, now());
 
@@ -1178,6 +1321,20 @@ class GrowCycleService
                 'phase_started_at' => now(),
                 'step_started_at' => null,
             ]);
+
+            // Пересчитываем effective bundle под новую фазу, чтобы AE3 получил
+            // актуальные targets/ratios/ec_dosing_mode/nutrient_mode.
+            $this->automationConfigCompiler->compileAffectedScopes(
+                AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+                (int) $cycle->id,
+            );
+
+            // Отменяем pending intents предыдущей фазы (IRRIGATE_ONCE/LIGHTING_TICK),
+            // которые ещё не диспатчены в AE3. Параметры этих intents (интервал,
+            // длительность) относятся к старой фазе и не должны выполниться в новой.
+            // Intents в статусах claimed/running/waiting_command не трогаем —
+            // там уже идёт активное выполнение, AE3 завершит их самостоятельно.
+            $this->cancelStalePendingIntentsOnPhaseAdvance((int) $cycle->zone_id);
 
             $zone = $cycle->zone;
 
@@ -1207,6 +1364,7 @@ class GrowCycleService
                     'to_phase_template_id' => $nextPhaseTemplate->id, // Шаблон для истории
                     'user_id' => $userId,
                     'source' => 'web',
+                    'correlation_id' => $this->resolveCorrelationId(),
                 ],
             ]);
 
@@ -1235,7 +1393,8 @@ class GrowCycleService
         $currentPhase = $cycle->currentPhase;
         $currentPhaseTemplate = $currentPhase?->recipeRevisionPhase;
 
-        return DB::transaction(function () use ($cycle, $currentPhaseTemplate, $newPhase, $comment, $userId) {
+        return DB::transaction(function () use ($cycle, $currentPhase, $currentPhaseTemplate, $newPhase, $comment, $userId) {
+            $cycle = GrowCycle::query()->whereKey($cycle->id)->lockForUpdate()->firstOrFail();
             // Создаем снапшот новой фазы
             $newPhaseSnapshot = $this->createPhaseSnapshot($cycle, $newPhase, now());
 
@@ -1246,6 +1405,20 @@ class GrowCycleService
                 'phase_started_at' => now(),
                 'step_started_at' => null,
             ]);
+
+            // Пересчитываем effective bundle под новую фазу, чтобы AE3 получил
+            // актуальные targets/ratios/ec_dosing_mode/nutrient_mode.
+            $this->automationConfigCompiler->compileAffectedScopes(
+                AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+                (int) $cycle->id,
+            );
+
+            // Отменяем pending intents предыдущей фазы (IRRIGATE_ONCE/LIGHTING_TICK),
+            // которые ещё не диспатчены в AE3. Параметры этих intents (интервал,
+            // длительность) относятся к старой фазе и не должны выполниться в новой.
+            // Intents в статусах claimed/running/waiting_command не трогаем —
+            // там уже идёт активное выполнение, AE3 завершит их самостоятельно.
+            $this->cancelStalePendingIntentsOnPhaseAdvance((int) $cycle->zone_id);
 
             $zone = $cycle->zone;
 
@@ -1285,7 +1458,19 @@ class GrowCycleService
     }
 
     /**
-     * Сменить ревизию рецепта
+     * Сменить ревизию рецепта.
+     *
+     * Режимы applyMode:
+     * - 'now'         — обновляет recipe_revision_id И сразу создаёт snapshot первой
+     *                   фазы новой ревизии (current_phase_id меняется немедленно).
+     *                   Bundle пересчитывается с НОВОЙ фазой → AE3 сразу видит
+     *                   новые targets/ratios/extensions.
+     * - 'next_phase'  — обновляет ТОЛЬКО recipe_revision_id; current_phase_id и
+     *                   snapshot текущей фазы остаются прежними. Bundle
+     *                   пересчитывается, но читает СТАРЫЙ snapshot, поэтому AE3
+     *                   продолжает работать на старых параметрах. Новые применятся
+     *                   только при следующем advancePhase() — там next-фаза будет
+     *                   взята уже из новой ревизии и snapshot'нута.
      */
     public function changeRecipeRevision(
         GrowCycle $cycle,
@@ -1299,6 +1484,7 @@ class GrowCycleService
         }
 
         return DB::transaction(function () use ($cycle, $newRevision, $applyMode, $userId) {
+            $cycle = GrowCycle::query()->whereKey($cycle->id)->lockForUpdate()->firstOrFail();
             $zone = $cycle->zone;
             $oldRevisionId = $cycle->recipe_revision_id;
 
@@ -1347,6 +1533,7 @@ class GrowCycleService
                         'apply_mode' => 'now',
                         'user_id' => $userId,
                         'source' => 'web',
+                        'correlation_id' => $this->resolveCorrelationId(),
                     ],
                 ]);
             } else {
@@ -1368,9 +1555,17 @@ class GrowCycleService
                         'apply_mode' => 'next_phase',
                         'user_id' => $userId,
                         'source' => 'web',
+                        'correlation_id' => $this->resolveCorrelationId(),
                     ],
                 ]);
             }
+
+            // Пересчитываем effective bundle, чтобы AE3 получил актуальные
+            // targets из новой revision/фазы.
+            $this->automationConfigCompiler->compileAffectedScopes(
+                AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+                (int) $cycle->id,
+            );
 
             // Отправляем WebSocket broadcast
             broadcast(new GrowCycleUpdated($cycle->fresh(), 'RECIPE_REVISION_CHANGED'));
@@ -1403,10 +1598,30 @@ class GrowCycleService
         RecipeRevisionPhase $templatePhase,
         ?Carbon $startedAt = null,
     ): GrowCyclePhase {
+        // Разрешение конфликта UNIQUE (grow_cycle_id, phase_index): при
+        // changeRecipeRevision('now') новая ревизия начинается с phase_index=0,
+        // но в цикле уже есть snapshot с таким phase_index из старой ревизии.
+        // Используем max(phase_index)+1 чтобы сохранить исторические snapshot'ы
+        // и обеспечить уникальность. Для обычного advancePhase/createCycle
+        // phase_index берётся из template напрямую.
+        $phaseIndex = $templatePhase->phase_index;
+        if ($cycle !== null) {
+            $conflict = GrowCyclePhase::query()
+                ->where('grow_cycle_id', $cycle->id)
+                ->where('phase_index', $phaseIndex)
+                ->exists();
+            if ($conflict) {
+                $maxIndex = (int) GrowCyclePhase::query()
+                    ->where('grow_cycle_id', $cycle->id)
+                    ->max('phase_index');
+                $phaseIndex = $maxIndex + 1;
+            }
+        }
+
         $attributes = [
             'grow_cycle_id' => $cycle?->id,
             'recipe_revision_phase_id' => $templatePhase->id,
-            'phase_index' => $templatePhase->phase_index,
+            'phase_index' => $phaseIndex,
             'name' => $templatePhase->name,
             'ph_target' => $templatePhase->ph_target,
             'ph_min' => $templatePhase->ph_min,
@@ -1433,6 +1648,9 @@ class GrowCycleService
             'nutrient_ec_stop_tolerance' => $templatePhase->nutrient_ec_stop_tolerance,
             'nutrient_solution_volume_l' => $templatePhase->nutrient_solution_volume_l,
             'irrigation_mode' => $templatePhase->irrigation_mode,
+            'irrigation_system_type' => $templatePhase->irrigation_system_type,
+            'substrate_type' => $templatePhase->substrate_type,
+            'day_night_enabled' => $templatePhase->day_night_enabled,
             'irrigation_interval_sec' => $templatePhase->irrigation_interval_sec,
             'irrigation_duration_sec' => $templatePhase->irrigation_duration_sec,
             'lighting_photoperiod_hours' => $templatePhase->lighting_photoperiod_hours,

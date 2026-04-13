@@ -386,6 +386,26 @@ Planner:
    должно приводить к fail-closed, без silent fallback на catalog defaults или устаревшие
    `diagnostics.execution.*`.
 
+### 5.4 Per-phase EC и day/night в runtime spec (2026-04-13)
+
+Two-tank `cycle_start` runtime spec (`backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py`) расширен полями, которые AE3 handlers обязан использовать вместо сырых `target_ec`:
+
+| Поле runtime spec | Источник | Назначение |
+|-------------------|----------|------------|
+| `target_ec_prepare` | `target_ec * npk_ec_share` | EC target для prepare-фаз (`solution_fill`, `tank_recirc`) — только NPK-доля. |
+| `target_ec_prepare_min` / `target_ec_prepare_max` | `phase.ec_min/ec_max * npk_ec_share` | Диапазон prepare-target. |
+| `npk_ec_share` | `nutrient_npk_ratio_pct / Σratios` | Коэффициент NPK от полного EC; `1.0` если ratios отсутствуют (legacy phase). |
+| `day_night_enabled` | `phase.day_night_enabled` | Включает late-binding override pH/EC по локальному времени. |
+| `day_night_config` | `phase.extensions.day_night` (нормализованный) | `{enabled, lighting, ph, ec}` — готовый для handler. |
+
+Handler-уровневые accessors (`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107..1245`):
+- `_effective_ec_target/min/max(task, runtime)` — выбирает prepare vs full target по `task.workflow_phase`;
+- `_effective_ph_target/min/max(task, runtime)` — применяет day/night override;
+- `_is_day_now(day_night_config)` — late-binding, использует `datetime.now()` локального процесса AE3;
+- `_day_night_override_scaled` сохраняет NPK-долю при night-override для prepare-фаз.
+
+Полная семантика — `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 (per-phase EC) и §10 (day/night).
+
 ---
 
 ## 7. Минимальная схема данных

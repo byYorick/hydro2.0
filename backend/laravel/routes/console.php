@@ -85,3 +85,19 @@ Schedule::command('automation:dispatch-schedules')
     ->onOneServer()
     ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
     ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');
+
+// Watchdog для зависших AE3 tasks: находит tasks с истёкшим stage_deadline_at или
+// claimed без прогресса и помечает failed, освобождая partial unique (zone_id).
+Schedule::command('ae3:reap-stale-tasks')
+    ->everyMinute()
+    ->withoutOverlapping(1)
+    ->onOneServer()
+    ->description('AE3 watchdog: reaps stale claimed/running tasks');
+
+// Retention: ежедневно удаляет terminal ae_tasks и intents старше 90 дней,
+// чтобы runtime таблицы не росли бесконечно. Audit остаётся в zone_events.
+Schedule::command('ae3:cleanup-old-tasks --days=90')
+    ->dailyAt('03:30')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->description('AE3 retention: cleanup completed/failed ae_tasks and intents');

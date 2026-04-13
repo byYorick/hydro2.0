@@ -1,12 +1,12 @@
 <?php
 
 use App\Http\Controllers\AiController;
-use App\Http\Controllers\AutomationBundleController;
-use App\Http\Controllers\AutomationConfigController;
-use App\Http\Controllers\AutomationPresetController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AutomationBundleController;
+use App\Http\Controllers\AutomationConfigController;
+use App\Http\Controllers\AutomationPresetController;
 use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
@@ -26,10 +26,11 @@ use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\ScheduleExecutionController;
 use App\Http\Controllers\ScheduleDiagnosticsController;
-use App\Http\Controllers\ScheduleWorkspaceController;
+use App\Http\Controllers\ScheduleExecutionController;
 use App\Http\Controllers\SchedulerMetricsController;
+use App\Http\Controllers\ScheduleWorkspaceController;
+use App\Http\Controllers\SensorCalibrationController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
@@ -46,7 +47,6 @@ use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
-use App\Http\Controllers\SensorCalibrationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -169,8 +169,11 @@ Route::middleware([
     Route::get('recipes', [RecipeController::class, 'index']);
     Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
     Route::get('recipes/{recipe}/stage-map', [RecipeController::class, 'getStageMap']);
+    Route::get('recipes/{recipe}/active-usage', [RecipeController::class, 'activeUsage']);
     Route::get('nutrient-products', [NutrientProductController::class, 'index']);
     Route::get('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'show']);
+    Route::get('substrates', [\App\Http\Controllers\SubstrateController::class, 'index']);
+    Route::get('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'show']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
@@ -249,6 +252,11 @@ Route::middleware([
         Route::post('nutrient-products', [NutrientProductController::class, 'store']);
         Route::patch('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'update']);
         Route::delete('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'destroy']);
+
+        // Substrates
+        Route::post('substrates', [\App\Http\Controllers\SubstrateController::class, 'store']);
+        Route::patch('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'update']);
+        Route::delete('substrates/{substrate}', [\App\Http\Controllers\SubstrateController::class, 'destroy']);
 
         // Recipe revisions
         Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);

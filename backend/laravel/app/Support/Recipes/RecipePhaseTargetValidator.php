@@ -86,6 +86,67 @@ class RecipePhaseTargetValidator
             label: 'EC',
             attributePrefix: $attributePrefix,
         );
+
+        $this->validateDayNightExtensions($validator, $data, $attributePrefix);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function validateDayNightExtensions($validator, array $data, string $attributePrefix): void
+    {
+        if (! array_key_exists('day_night_enabled', $data) && ! array_key_exists('extensions', $data)) {
+            return;
+        }
+
+        $enabled = (bool) ($data['day_night_enabled'] ?? false);
+        $extensions = is_array($data['extensions'] ?? null) ? $data['extensions'] : null;
+        $dayNight = is_array($extensions['day_night'] ?? null) ? $extensions['day_night'] : null;
+
+        if (! $enabled || $dayNight === null) {
+            return;
+        }
+
+        foreach (['ph' => ['label' => 'pH', 'upper' => 14.0], 'ec' => ['label' => 'EC', 'upper' => 20.0]] as $metric => $spec) {
+            $section = is_array($dayNight[$metric] ?? null) ? $dayNight[$metric] : null;
+            if ($section === null) {
+                continue;
+            }
+
+            foreach (['day', 'night'] as $profile) {
+                $target = $this->toFloatOrNull($section[$profile] ?? null);
+                $min = $this->toFloatOrNull($section[$profile.'_min'] ?? null);
+                $max = $this->toFloatOrNull($section[$profile.'_max'] ?? null);
+
+                $attrBase = $attributePrefix.'extensions.day_night.'.$metric.'.'.$profile;
+                $label = $spec['label'].' ('.$profile.')';
+
+                if ($min !== null && $max !== null && $min > $max) {
+                    $validator->errors()->add($attrBase.'_min', "{$label}: min не может быть больше max.");
+                    continue;
+                }
+                if ($target !== null && $min !== null && $max !== null && ($target < $min || $target > $max)) {
+                    $validator->errors()->add($attrBase, "{$label}: target должен быть в диапазоне min..max.");
+                }
+                foreach (['target' => $target, 'min' => $min, 'max' => $max] as $kind => $value) {
+                    if ($value === null) {
+                        continue;
+                    }
+                    if ($value < 0.0 || $value > $spec['upper']) {
+                        $attrKey = $kind === 'target' ? $attrBase : $attrBase.'_'.$kind;
+                        $validator->errors()->add($attrKey, "{$label}: значение {$kind} вне допустимого диапазона 0..{$spec['upper']}.");
+                    }
+                }
+            }
+        }
+    }
+
+    private function toFloatOrNull(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        return is_numeric($value) ? (float) $value : null;
     }
 
     /**

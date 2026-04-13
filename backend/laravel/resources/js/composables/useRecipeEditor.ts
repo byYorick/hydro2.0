@@ -40,6 +40,8 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   const plantsLoading = ref(false)
   const nutrientProducts = ref<NutrientProduct[]>([])
   const nutrientProductsLoading = ref(false)
+  const substrates = ref<import('@/services/api/substrates').Substrate[]>([])
+  const substratesLoading = ref(false)
   const initialPhaseIds = ref<number[]>(
     Array.isArray(initialRecipe?.phases)
       ? initialRecipe.phases
@@ -87,6 +89,18 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
       showToast('Не удалось загрузить список удобрений', 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       nutrientProductsLoading.value = false
+    }
+  }
+
+  async function loadSubstrates(): Promise<void> {
+    try {
+      substratesLoading.value = true
+      substrates.value = await api.substrates.list()
+    } catch (error) {
+      logger.error('Failed to load substrates', { error })
+      showToast('Не удалось загрузить список субстратов', 'error', TOAST_TIMEOUT.NORMAL)
+    } finally {
+      substratesLoading.value = false
     }
   }
 
@@ -321,6 +335,9 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     sortedPhases,
     loadPlants,
     loadNutrientProducts,
+    substrates,
+    substratesLoading,
+    loadSubstrates,
     reset,
     addPhase,
     removePhase,

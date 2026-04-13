@@ -31,6 +31,7 @@ import { recipesApi } from './recipes'
 import { settingsApi } from './settings'
 import { setupWizardApi } from './setupWizard'
 import { simulationsApi } from './simulations'
+import { substratesApi } from './substrates'
 import { systemApi } from './system'
 import { telemetryApi } from './telemetry'
 import { usersApi } from './users'
@@ -57,6 +58,7 @@ export const api = {
   settings: settingsApi,
   setupWizard: setupWizardApi,
   simulations: simulationsApi,
+  substrates: substratesApi,
   system: systemApi,
   telemetry: telemetryApi,
   users: usersApi,

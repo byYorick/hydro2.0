@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 #: reaching a node that will reject the signed payload as too old.
 _MAX_COMMAND_TS_OFFSET_SEC: int = 10
 
+#: Early-warning threshold: когда фактический offset приближается к лимиту,
+#: логируем warning чтобы обнаруживать clock drift ДО того как он вызовет
+#: отказы. Прод-инфра должна мониторить эти warnings и триггерить NTP sync.
+_CLOCK_SKEW_WARNING_SEC: int = 5
+
 #: Safety ceiling for ``params.ml`` — the per-command dose volume in
 #: millilitres. This is a **transport-layer sanity guard**, not a domain
 #: bound: CorrectionPlanner in AE3 already enforces ``max_ec_dose_ml``
@@ -119,6 +124,12 @@ def _create_command_payload(
             raise ValueError(
                 f"command {cmd} ts={ts} stale: offset {offset}s exceeds "
                 f"maximum {_MAX_COMMAND_TS_OFFSET_SEC}s"
+            )
+        if offset >= _CLOCK_SKEW_WARNING_SEC:
+            logger.warning(
+                "Clock skew approaching command ts tolerance: offset=%ds (max=%ds). "
+                "Check NTP sync on caller. cmd=%s cmd_id=%s",
+                offset, _MAX_COMMAND_TS_OFFSET_SEC, cmd, cmd_id,
             )
 
     payload["ts"] = ts

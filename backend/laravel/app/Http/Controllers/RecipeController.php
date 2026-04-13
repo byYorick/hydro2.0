@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GrowCycleStatus;
+use App\Models\GrowCycle;
 use App\Models\Recipe;
 use App\Services\RecipeService;
 use App\Support\Recipes\RecipeAggregatePresenter;
@@ -77,6 +79,39 @@ class RecipeController extends Controller
         ]);
 
         return response()->json(['status' => 'ok', 'data' => $this->presenter->presentDetail($recipe)]);
+    }
+
+    /**
+     * Список активных grow-cycle, использующих этот рецепт.
+     * Используется фронтом для предупреждения "рецепт активен в зоне".
+     * GET /api/recipes/{recipe}/active-usage
+     */
+    public function activeUsage(Recipe $recipe): JsonResponse
+    {
+        $cycles = GrowCycle::query()
+            ->with(['zone:id,name', 'recipeRevision:id,recipe_id,revision_number,status'])
+            ->whereHas('recipeRevision', fn ($q) => $q->where('recipe_id', $recipe->id))
+            ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
+            ->get(['id', 'zone_id', 'recipe_revision_id', 'status', 'started_at']);
+
+        $items = $cycles->map(fn (GrowCycle $cycle) => [
+            'cycle_id' => $cycle->id,
+            'zone_id' => $cycle->zone_id,
+            'zone_name' => $cycle->zone?->name,
+            'revision_id' => $cycle->recipe_revision_id,
+            'revision_number' => $cycle->recipeRevision?->revision_number,
+            'status' => $cycle->status->value,
+            'started_at' => $cycle->started_at,
+        ]);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'recipe_id' => $recipe->id,
+                'active_cycles' => $items,
+                'count' => $items->count(),
+            ],
+        ]);
     }
 
     /**

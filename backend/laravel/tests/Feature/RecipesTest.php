@@ -127,6 +127,103 @@ class RecipesTest extends TestCase
         $this->assertDatabaseMissing('recipes', ['id' => $recipe->id]);
     }
 
+    public function test_active_usage_returns_empty_when_no_active_cycles(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/recipes/{$recipe->id}/active-usage");
+
+        $resp->assertOk()
+            ->assertJsonPath('data.recipe_id', $recipe->id)
+            ->assertJsonPath('data.count', 0)
+            ->assertJsonPath('data.active_cycles', []);
+    }
+
+    public function test_active_usage_returns_running_cycles(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+            'revision_number' => 3,
+        ]);
+        $cycle = GrowCycle::factory()->create([
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => \App\Enums\GrowCycleStatus::RUNNING,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/recipes/{$recipe->id}/active-usage");
+
+        $resp->assertOk()
+            ->assertJsonPath('data.count', 1)
+            ->assertJsonPath('data.active_cycles.0.cycle_id', $cycle->id)
+            ->assertJsonPath('data.active_cycles.0.revision_id', $revision->id)
+            ->assertJsonPath('data.active_cycles.0.revision_number', 3)
+            ->assertJsonPath('data.active_cycles.0.status', 'RUNNING')
+            ->assertJsonPath('data.active_cycles.0.zone_id', $cycle->zone_id);
+    }
+
+    public function test_active_usage_excludes_finished_and_aborted_cycles(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        GrowCycle::factory()->create([
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => \App\Enums\GrowCycleStatus::HARVESTED,
+        ]);
+        GrowCycle::factory()->create([
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => \App\Enums\GrowCycleStatus::ABORTED,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/recipes/{$recipe->id}/active-usage");
+
+        $resp->assertOk()->assertJsonPath('data.count', 0);
+    }
+
+    public function test_active_usage_includes_planned_and_paused_cycles(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        GrowCycle::factory()->create([
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => \App\Enums\GrowCycleStatus::PLANNED,
+        ]);
+        GrowCycle::factory()->create([
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => \App\Enums\GrowCycleStatus::PAUSED,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/recipes/{$recipe->id}/active-usage");
+
+        $resp->assertOk()->assertJsonPath('data.count', 2);
+    }
+
+    public function test_active_usage_requires_auth(): void
+    {
+        $recipe = Recipe::factory()->create();
+        $this->getJson("/api/recipes/{$recipe->id}/active-usage")->assertStatus(401);
+    }
+
     public function test_delete_recipe_used_in_zones_returns_error(): void
     {
         $token = $this->token();

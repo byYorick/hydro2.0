@@ -282,6 +282,15 @@ class CorrectionPlanner:
                     and phase_key == "irrigation"
                 )
                 if is_multi and isinstance(ec_actuators, Mapping):
+                    # В режиме multi_parallel все компоненты дозируются
+                    # одновременно. Если два компонента указывают на один
+                    # (node_uid, channel), pump получит суперпозицию команд
+                    # и распределение потока между компонентами будет
+                    # непредсказуемым → неверные дозы. Fail-closed на такой
+                    # конфиг (для sequential режима проблемы нет — насосы
+                    # работают по очереди).
+                    if ec_dosing_mode == "multi_parallel":
+                        _assert_distinct_parallel_actuators(ec_actuators)
                     ec_pid_entry = _pid_entry(pid_state, "ec")
                     ec_pid_update = _next_pid_state(
                         kind="ec",
@@ -705,6 +714,31 @@ def _merge_pid_deadband(*, controller_cfg: Mapping[str, Any], pid_cfg: Mapping[s
     return merged
 
 
+def _assert_distinct_parallel_actuators(ec_actuators: Mapping[str, Any]) -> None:
+    """Fail-closed: в multi_parallel каждый компонент должен быть на своём канале.
+
+    Если два компонента (calcium/magnesium/micro/npk) делят один (node_uid,
+    channel), parallel-команды для них вызовут суперпозицию на pump'е —
+    реальный поток распределится непредсказуемо → неверные дозы. В
+    sequential режиме это допустимо (насосы работают по очереди).
+    """
+    seen: dict[tuple[str, str], str] = {}
+    for name, actuator in ec_actuators.items():
+        if not isinstance(actuator, Mapping):
+            continue
+        node_uid = str(actuator.get("node_uid") or "").strip().lower()
+        channel = str(actuator.get("channel") or "").strip().lower()
+        if not node_uid or not channel:
+            continue
+        key = (node_uid, channel)
+        if key in seen:
+            raise PlannerConfigurationError(
+                f"multi_parallel ec dosing requires distinct (node_uid, channel) per "
+                f"component, but '{name}' and '{seen[key]}' share ({node_uid}, {channel})"
+            )
+        seen[key] = str(name)
+
+
 def _find_ec_component_actuator(
     *,
     ec_actuators: Mapping[str, Any],
@@ -1113,9 +1147,21 @@ def _dose_ml_to_ms(
     min_dose_ms = _positive_int(pump_calibration.get("min_dose_ms"), 0)
     ml_min = _positive_float(pump_calibration.get("ml_per_sec_min"), 0.0)
     ml_max = _positive_float(pump_calibration.get("ml_per_sec_max"), 0.0)
+    # Hard-cap на максимальную длительность одной дозы. Защищает от runaway
+    # pump при ненормально медленной калибровке (ml_per_sec близко к нулю) или
+    # вне-граничных dose_ml. Источник cap: pump_calibration.max_dose_ms либо
+    # дефолт 300_000 мс (5 минут — соответствует sanity guard history-logger
+    # `_MAX_DURATION_MS_SANITY`). Для зон с медленными насосами/большими дозами
+    # (solution_fill, tank_recirc) можно задать явно больший cap в
+    # pump_calibration.max_dose_ms.
+    max_dose_ms = _positive_int(pump_calibration.get("max_dose_ms"), 300_000)
     if min_dose_ms <= 0 or ml_min <= 0 or ml_max <= 0 or ml_max < ml_min:
         raise PlannerConfigurationError(
             "pump_calibration config is invalid; expected min_dose_ms/ml_per_sec_min/ml_per_sec_max"
+        )
+    if max_dose_ms <= 0 or max_dose_ms < min_dose_ms:
+        raise PlannerConfigurationError(
+            f"pump_calibration.max_dose_ms={max_dose_ms} must be positive and >= min_dose_ms={min_dose_ms}"
         )
     raw = calibration.get("ml_per_sec")
     if raw is None:
@@ -1156,6 +1202,31 @@ def _dose_ml_to_ms(
             {
                 "computed_duration_ms": duration_ms,
                 "min_dose_ms": min_dose_ms,
+                "dose_ml": round(dose_ml, 4),
+                "ml_per_sec": ml_per_sec,
+            },
+        )
+    if duration_ms > max_dose_ms:
+        # Runaway-guard: clamp на max_dose_ms, но сохраняем информацию об
+        # исходной требуемой длительности для observability. Дальнейший dose
+        # tuning (снизить dose_ml) сделает следующая итерация коррекции по
+        # измерениям — мы не пропускаем ход, просто предотвращаем одноразовый
+        # рейд насоса на часы.
+        _logger.warning(
+            "Dose duration clamped to max_dose_ms: computed %dms > max %dms "
+            "(dose_ml=%.4f, ml_per_sec=%.4f). Possible calibration drift or "
+            "oversized dose command.",
+            duration_ms,
+            max_dose_ms,
+            dose_ml,
+            ml_per_sec,
+        )
+        return (
+            max_dose_ms,
+            "clamped_to_max_dose_ms",
+            {
+                "computed_duration_ms": duration_ms,
+                "max_dose_ms": max_dose_ms,
                 "dose_ml": round(dose_ml, 4),
                 "ml_per_sec": ml_per_sec,
             },

@@ -803,6 +803,14 @@ class ZoneReadinessService
                 continue;
             }
 
+            // Bootstrap-материализованный PID не считается «сохранённым пользователем».
+            // AE3 нужны namespace'ы в БД для compile bundle, но для cycle start
+            // пользователь обязан явно сохранить PID-настройки.
+            if (($document?->source ?? null) === 'bootstrap') {
+                $missing[] = $type;
+                continue;
+            }
+
             try {
                 $this->registry->validate($namespace, $payload);
             } catch (\InvalidArgumentException $exception) {

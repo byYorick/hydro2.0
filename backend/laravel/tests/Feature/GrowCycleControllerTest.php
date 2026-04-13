@@ -193,6 +193,23 @@ class GrowCycleControllerTest extends TestCase
             ->count();
     }
 
+    /**
+     * Документы, явно сохранённые пользователем (исключает bootstrap-материализацию,
+     * которая нужна AE3 для compileBundle, но не считается «пользовательской»).
+     */
+    private function userSavedPidAuthorityDocumentCount(Zone $zone): int
+    {
+        return AutomationConfigDocument::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->whereIn('namespace', [
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            ])
+            ->where('source', '!=', 'bootstrap')
+            ->count();
+    }
+
     #[Test]
     public function it_creates_a_grow_cycle(): void
     {
@@ -278,7 +295,7 @@ class GrowCycleControllerTest extends TestCase
     #[Test]
     public function it_rejects_immediate_start_when_required_zone_pid_authority_documents_are_not_saved(): void
     {
-        $this->assertSame(0, $this->pidAuthorityDocumentCount($this->zone));
+        $this->assertSame(0, $this->userSavedPidAuthorityDocumentCount($this->zone));
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
@@ -296,7 +313,9 @@ class GrowCycleControllerTest extends TestCase
         $errors = $response->json('readiness_errors', []);
         $this->assertContains('PID-настройки pH не сохранены для зоны', $errors);
         $this->assertContains('PID-настройки EC не сохранены для зоны', $errors);
-        $this->assertSame(0, $this->pidAuthorityDocumentCount($this->zone));
+        // Bootstrap может создать namespace'ы (нужны AE3 для compileBundle),
+        // но user-saved PID документов не должно появиться от такого вызова.
+        $this->assertSame(0, $this->userSavedPidAuthorityDocumentCount($this->zone));
     }
 
     #[Test]

@@ -37,6 +37,7 @@ class PgZoneSnapshotReadModel:
                     SELECT
                         z.id AS zone_id,
                         z.greenhouse_id,
+                        g.timezone AS greenhouse_timezone,
                         z.automation_runtime,
                         gc.id AS grow_cycle_id,
                         gc.current_phase_id,
@@ -51,6 +52,9 @@ class PgZoneSnapshotReadModel:
                         gcp.ec_min,
                         gcp.ec_max,
                         gcp.irrigation_mode,
+                        gcp.irrigation_system_type,
+                        gcp.substrate_type,
+                        gcp.day_night_enabled,
                         gcp.irrigation_interval_sec,
                         gcp.irrigation_duration_sec,
                         gcp.lighting_photoperiod_hours,
@@ -63,6 +67,8 @@ class PgZoneSnapshotReadModel:
                         gcp.mist_mode,
                         gcp.extensions AS phase_extensions
                     FROM zones z
+                    LEFT JOIN greenhouses g
+                        ON g.id = z.greenhouse_id
                     LEFT JOIN grow_cycles gc
                         ON gc.zone_id = z.id
                        AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')

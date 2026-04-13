@@ -122,4 +122,28 @@ export const recipesApi = {
   ): Promise<unknown> {
     return apiPut<unknown>(`/recipes/${recipeId}/stage-map`, payload)
   },
+
+  /**
+   * Активные grow-cycle, использующие этот рецепт. Используется для UI-warning
+   * "Recipe used in active cycle — изменения применятся только после revision switch".
+   */
+  getActiveUsage(recipeId: number): Promise<RecipeActiveUsage> {
+    return apiGet<RecipeActiveUsage>(`/recipes/${recipeId}/active-usage`)
+  },
+}
+
+export interface RecipeActiveUsageItem {
+  cycle_id: number
+  zone_id: number
+  zone_name: string | null
+  revision_id: number
+  revision_number: number | null
+  status: string
+  started_at: string | null
+}
+
+export interface RecipeActiveUsage {
+  recipe_id: number
+  active_cycles: RecipeActiveUsageItem[]
+  count: number
 }

@@ -13,6 +13,12 @@
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не имеют права переопределять canonical `pH/EC target|min|max`;
 - zone automation UI показывает эти значения как readonly derived fields, а не как редактируемые runtime-настройки.
 
+Актуализация per-phase EC и day/night (2026-04-13):
+- runtime-spec для two-tank добавляет `target_ec_prepare`, `target_ec_prepare_min`, `target_ec_prepare_max`, `npk_ec_share` — см. §10;
+- AE3 handler выбирает между prepare-target и full-target по текущей фазе workflow (`solution_fill`/`tank_recirc` ↔ `irrigation`/`irrig_recirc`);
+- при `day_night_enabled=true` на phase snapshot AE3 применяет late-binding override pH/EC по локальному времени — см. §11;
+- compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
+
 **Связанные документы:**
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон
@@ -852,7 +858,113 @@ Python сервисы должны регулярно обновлять targets
 
 ---
 
-## 8. Связанные документы
+## 9. Per-Phase EC Target (NPK share для prepare-фаз)
+
+**Дата:** 2026-04-13. **Статус:** реализовано (`PER_PHASE_EC_TARGET_PLAN.md` помечен DONE).
+
+### 9.1. Проблема
+
+В двухбаковой топологии (`SUBSTRATE`/`RECIRC`) в фазах подготовки раствора (`solution_fill`, `tank_recirc`) дозируется **только NPK** — остальные компоненты (Ca/Mg/Micro) добавляются позже, в `irrigation`/`irrig_recirc`.
+
+Раньше runtime использовал единый `target_ec` для всех фаз → NPK передозировался в ~2.3× (NPK сам по себе тащил EC до полного 1.5 mS/cm), а Ca/Mg/micro не дозировались в irrigation, потому что gap уже был отрицательный.
+
+### 9.2. Runtime spec extensions
+
+`backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py` теперь добавляет в runtime spec:
+
+| Поле | Значение |
+|------|----------|
+| `target_ec` | Полный EC из phase snapshot (как раньше). |
+| `target_ec_min`, `target_ec_max` | Полный диапазон. |
+| `target_ec_prepare` | `target_ec * npk_ec_share` (округлено до 4 знаков). |
+| `target_ec_prepare_min`, `target_ec_prepare_max` | `phase.ec_min/ec_max * npk_ec_share`. |
+| `npk_ec_share` | Доля NPK от суммы всех `ec_component_ratios`; если ratios не заданы (legacy phase) → `1.0` (backward compat). |
+
+Функция: `_compute_prepare_ec_share(solution_fill_cfg, base_cfg)` — `two_tank_runtime_spec.py:605`.
+
+`ec_component_ratios` собираются на стороне Laravel из flat-полей фазы (`nutrient_npk_ratio_pct`, `nutrient_calcium_ratio_pct`, `nutrient_magnesium_ratio_pct`, `nutrient_micro_ratio_pct`) через `App\Support\Automation\RecipeNutritionRuntimeConfigResolver` (`backend/laravel/app/Support/Automation/RecipeNutritionRuntimeConfigResolver.php:41`) и попадают в compiled bundle как `phases.{phase}.ec_component_ratios`.
+
+### 9.3. Handler выбор target по фазе
+
+`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107` — `_effective_ec_target/min/max`:
+
+- `phase ∈ {solution_fill, tank_recirc}` → возвращается `target_ec_prepare*`;
+- `phase ∈ {irrigation, irrig_recirc}` или иное → полный `target_ec*`.
+
+`build_dose_plan` / `is_within_tolerance` / `_targets_reached` / `_workflow_ready_values_match` теперь все используют именно эти effective accessors, а не сырое `runtime["target_ec"]`.
+
+### 9.4. Сохранение NPK-доли при day/night ночном override
+
+Если `day_night_enabled=true` и текущее время попадает в night-окно, full-target EC заменяется на `day_night.ec.night`. Для prepare-фаз результирующий EC масштабируется на `npk_ec_share`, чтобы NPK-доля относительно ночного полного целевого EC сохранялась — см. `_day_night_override_scaled` (`base.py:1214`).
+
+---
+
+## 10. Day/Night Override для pH/EC/климата
+
+**Дата:** 2026-04-13.
+
+### 10.1. Активация
+
+Override активируется флагом фазы `day_night_enabled=true` (поле `recipe_revision_phases.day_night_enabled` / `grow_cycle_phases.day_night_enabled`, см. `RECIPE_ENGINE_FULL.md` §2.1.1).
+
+### 10.2. Структура `extensions.day_night`
+
+```jsonc
+{
+  "day_night": {
+    "lighting": {
+      "day_start_time": "06:00",     // HH:MM начало дневного окна (локальное время)
+      "day_hours": 18                 // длительность дневного окна в часах
+    },
+    "ph": {
+      "day": 6.0, "day_min": 5.8, "day_max": 6.2,
+      "night": 6.2, "night_min": 6.0, "night_max": 6.4
+    },
+    "ec": {
+      "day": 1.5, "day_min": 1.3, "day_max": 1.7,
+      "night": 1.2, "night_min": 1.0, "night_max": 1.4
+    },
+    "temperature":  {"day": 24.0, "night": 18.0},
+    "humidity":     {"day": 60.0, "night": 70.0},
+    "soil_moisture":{"day": 60.0, "night": 50.0}
+  }
+}
+```
+
+Backend-валидация (pH/EC) — `App\Support\Recipes\RecipePhaseTargetValidator::validateDayNightExtensions` (`backend/laravel/app/Support/Recipes/RecipePhaseTargetValidator.php:96`):
+- pH ∈ `[0..14]`, EC ∈ `[0..20]`;
+- `min ≤ target ≤ max` для каждого профиля (day, night);
+- ошибки добавляются на ключи `extensions.day_night.{ph|ec}.{profile}{_min|_max}`.
+
+### 10.3. Runtime spec
+
+Two-tank runtime spec собирает поля:
+
+- `runtime["day_night_enabled"]` — bool;
+- `runtime["day_night_config"]` — структура `{enabled, lighting, ph, ec}`, готовая к late-binding в handler (`two_tank_runtime_spec.py:639` — `_build_day_night_config`).
+
+### 10.4. Late-binding в handler
+
+`backend/services/automation-engine/ae3lite/application/handlers/base.py`:
+- `_is_day_now(day_night_config)` — статический метод, использует `datetime.now()` (локальное время процесса AE3) и значения `day_start_time + day_hours`. При невалидных параметрах возвращает `True` (fallback на day-таргеты).
+- `_day_night_override(runtime, metric, kind, default)` — выбирает `day`/`night` ключи по результату `_is_day_now`.
+- `_effective_ph_target/min/max` и `_effective_ec_target/min/max` оборачивают базовое значение через override.
+
+### 10.5. Pre-phase + night = scaled prepare
+
+Для prepare-фаз с активным night-override применяется `_day_night_override_scaled` (`base.py:1214`): сначала `target_ec_min/max` подменяется на ночное значение, затем умножается на `npk_ec_share`. Цель — сохранить семантику «в prepare дозируется только NPK» даже при ночном target.
+
+---
+
+## 11. Compile bundle при смене фазы
+
+При `advancePhase`, `setPhase`, `changeRecipeRevision` (любой режим) `App\Services\GrowCycleService` обязан вызвать `AutomationConfigCompiler::compileAffectedScopes(SCOPE_GROW_CYCLE, $cycleId)` после обновления `current_phase_id` / `recipe_revision_id` (`backend/laravel/app/Services/GrowCycleService.php:1188,1264,1409`). Без этого AE3 продолжит читать старый `automation_effective_bundles` snapshot и ошибочно применит targets предыдущей фазы.
+
+Для защиты от race condition при параллельных API вызовах все три метода открываются с `GrowCycle::lockForUpdate()->firstOrFail()` (`GrowCycleService.php:1173,1250,1333`).
+
+---
+
+## 12. Связанные документы
 
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон

@@ -16,6 +16,13 @@ Recipe Engine — это подсистема, которая управляет
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
+Актуализация (2026-04-13):
+- В `recipe_revision_phases` / `grow_cycle_phases` добавлены flat-поля `irrigation_system_type`, `substrate_type`, `day_night_enabled`, `nutrient_ec_dosing_mode` (см. §2.1.1).
+- Появилась справочная таблица `substrates` и CRUD endpoints `/api/substrates` (см. §2.4).
+- Snapshot immutability и роль `GrowCyclePhase` как единственного runtime-источника зафиксированы в §3.5.
+- Уточнена семантика `changeRecipeRevision('now' | 'next_phase')` и инвариант пересчёта compiled bundle при смене фазы (§3.3).
+- Добавлен endpoint `GET /api/recipes/{recipe}/active-usage` для предупреждения UI о редактировании используемого рецепта (§4.1).
+
 ---
 
 ## 1. Назначение Recipe Engine
@@ -74,6 +81,10 @@ CREATE TABLE recipe_revision_phases (
     ph_max DECIMAL(4,2),
     ec_target DECIMAL(5,2),
     irrigation_mode ENUM('SUBSTRATE', 'RECIRC'),
+    irrigation_system_type VARCHAR(32),     -- enum: drip_tape|drip_emitter|ebb_flow|nft|dwc|aeroponics
+    substrate_type VARCHAR(64),             -- FK-by-code → substrates.code
+    day_night_enabled BOOLEAN,              -- активирует extensions.day_night override
+    nutrient_ec_dosing_mode VARCHAR(32),    -- enum: sequential|parallel
     irrigation_interval_sec INT,
     temp_air_target DECIMAL(5,2),
     -- Прогресс
@@ -84,6 +95,52 @@ CREATE TABLE recipe_revision_phases (
     extensions JSONB
 );
 ```
+
+### 2.1.1. Новые flat-поля фазы (2026-04-13)
+
+Все поля nullable; полный список колонок — в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §5.3 / §6.2.
+
+| Поле | Тип | Назначение |
+|------|-----|------------|
+| `irrigation_system_type` | string(32) | Тип ирригационной системы фазы. Допустимые значения enum: `drip_tape`, `drip_emitter`, `ebb_flow`, `nft`, `dwc`, `aeroponics`. Используется для согласованности с `applicable_systems` выбранного субстрата. |
+| `substrate_type` | string(64) | Код субстрата из таблицы `substrates` (`substrates.code`). FK хранится по коду, а не по `id`, чтобы сохранить читаемость snapshot после удаления записи в каталоге. |
+| `day_night_enabled` | bool | Если `true` — runtime применяет `extensions.day_night` overrides для pH/EC (см. `EFFECTIVE_TARGETS_SPEC.md` §11) и климатики; если `false`/`null` — overrides игнорируются. |
+| `nutrient_ec_dosing_mode` | string(32) | enum `sequential` \| `parallel`. Определяет, дозируются ли компоненты NPK/Ca/Mg/Micro последовательно (`sequential`, по одному с mixing time между шагами) или параллельно (`parallel`, single-step) в irrigation-фазе при EC коррекции. Колонка добавлена миграцией `2026_04_12_200000_add_nutrient_ec_dosing_mode_to_phases.php`. |
+
+Колонки `irrigation_system_type`, `substrate_type`, `day_night_enabled` добавлены миграцией `backend/laravel/database/migrations/2026_04_13_150000_add_system_substrate_daynight_to_phases.php` одновременно в `recipe_revision_phases` (template) и `grow_cycle_phases` (snapshot) — иначе нарушается принцип snapshot immutability (§3.5).
+
+Backend-валидация значений `extensions.day_night` для pH/EC выполняется в `backend/laravel/app/Support/Recipes/RecipePhaseTargetValidator.php:96` (`validateDayNightExtensions`): диапазоны `0..14` (pH) / `0..20` (EC), `min ≤ target ≤ max` для day и night-профиля.
+
+---
+
+### 2.4. Каталог субстратов (`substrates`)
+
+Таблица `substrates` (миграция `backend/laravel/database/migrations/2026_04_13_120000_create_substrates_table.php`) — справочник субстратов, на которые могут ссылаться фазы рецепта через `recipe_revision_phases.substrate_type` (по `code`).
+
+Структура:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | bigint PK | — |
+| `code` | string(64) UNIQUE | Короткий идентификатор (латиница, цифры, `_`); используется как FK-by-code. |
+| `name` | string(255) | Человекочитаемое название. |
+| `components` | jsonb | Массив `[{name, label, ratio_pct}, ...]`. Сумма `ratio_pct` обязана быть `100%` (валидация в `App\Http\Requests\SubstrateRequest`). |
+| `applicable_systems` | jsonb | Массив enum `irrigation_system_type` (см. §2.1.1), для которых субстрат подходит. UI использует это для фильтрации совместимости. |
+| `notes` | text nullable | Произвольное описание. |
+
+Модель: `App\Models\Substrate`. Form Request: `App\Http\Requests\SubstrateRequest`. Контроллер: `backend/laravel/app/Http/Controllers/SubstrateController.php`.
+
+REST endpoints (см. также `../04_BACKEND_CORE/REST_API_REFERENCE.md`):
+
+| Метод | Путь | Auth | Назначение |
+|-------|------|------|------------|
+| GET | `/api/substrates` | sanctum | Список субстратов |
+| GET | `/api/substrates/{substrate}` | sanctum | Детали |
+| POST | `/api/substrates` | sanctum + agronomist | Создать |
+| PATCH | `/api/substrates/{substrate}` | sanctum + agronomist | Обновить |
+| DELETE | `/api/substrates/{substrate}` | sanctum + agronomist | Удалить |
+
+Удаление не каскадирует на phase-snapshot: snapshot хранит `substrate_type` как код-строку (см. §3.5).
 
 ---
 
@@ -139,8 +196,23 @@ CREATE TABLE recipe_revision_phases (
 ### 3.3. Переходы фаз
 
 - **Автоматические**: Через `PhaseProgressEngine` по времени/temperature/GDD
-- **Ручные**: Агроном через UI → `POST /api/grow-cycles/{id}/set-phase`
+- **Ручные**: Агроном через UI → `POST /api/grow-cycles/{id}/set-phase` или `POST /api/grow-cycles/{id}/advance-phase`
 - **История**: Все переходы логируются в `grow_cycle_transitions`
+
+#### Инварианты `GrowCycleService` при смене фазы (2026-04-13)
+
+В начале DB transaction `advancePhase`, `setPhase` и `changeRecipeRevision` берут row-level lock на цикл (`GrowCycle::query()->whereKey($id)->lockForUpdate()->firstOrFail()`) — защита от race condition при параллельных API-вызовах (`backend/laravel/app/Services/GrowCycleService.php:1173,1250,1333`).
+
+После обновления `current_phase_id` (или после смены `recipe_revision_id`) обязательно вызывается `AutomationConfigCompiler::compileAffectedScopes(SCOPE_GROW_CYCLE, $cycleId)` (`GrowCycleService.php:1188,1264,1409`). Это гарантирует, что AE3 при следующем `start-cycle`/`start-irrigation` получит actual targets/ratios/`ec_dosing_mode`/`nutrient_mode`. Пропуск compile приводит к тому, что AE3 продолжает работать со старыми bundles из `automation_effective_bundles`.
+
+#### Семантика `changeRecipeRevision($mode)`
+
+Метод `App\Services\GrowCycleService::changeRecipeRevision()` поддерживает два режима применения новой ревизии (`backend/laravel/app/Services/GrowCycleService.php:1321`):
+
+- **`mode='now'`** — обновляются `recipe_revision_id` и **немедленно** создаётся snapshot первой фазы новой ревизии (`current_phase_id` указывает на новый snapshot). Compiled bundle пересчитывается под новую фазу, AE3 после очередного wake-up получает обновлённые targets.
+- **`mode='next_phase'`** — обновляется только `recipe_revision_id`, текущая фаза-snapshot и `current_phase_id` сохраняются. Compiled bundle пересчитывается, но читает старый snapshot. Параметры новой ревизии применяются только при следующем `advancePhase()`, который возьмёт next-фазу из новой ревизии.
+
+> ⚠️ Известный баг (`mode='now'`): создаётся второй snapshot с `phase_index=0`, что нарушает UNIQUE constraint `(grow_cycle_id, phase_index)` на `grow_cycle_phases` (см. §6.2 в DATA_MODEL_REFERENCE). Требует отдельного fix (использовать `max(phase_index)+1` или ослабить constraint).
 
 ### 3.4. Overrides (перекрытия)
 
@@ -149,9 +221,56 @@ CREATE TABLE recipe_revision_phases (
 - Включаются в effective targets через compiled bundle, без merge через устаревшие таблицы
 - Для `pH/EC target|min|max` overrides запрещены: эти поля всегда берутся только из phase snapshot / recipe phase
 
+### 3.5. Snapshot immutability (инвариант)
+
+Ключевой архитектурный инвариант разделения template ↔ snapshot:
+
+- `RecipeRevisionPhase` — **template**, редактируется только пока `recipe_revisions.status = DRAFT`. После `publish` ревизия становится `PUBLISHED` и иммутабельна.
+- `GrowCyclePhase` — **snapshot**, копируется из template один раз при `createPhaseSnapshot` (вызывается из `createCycle`, `advancePhase`, `setPhase`, `changeRecipeRevision('now')`).
+- AE3 runtime читает только из snapshot (`grow_cycle_phases`), **не** из template. Это обеспечивает воспроизводимость и audit trail.
+- Активный цикл (`status IN PLANNED|RUNNING|PAUSED`) может ссылаться только на `PUBLISHED` ревизию.
+- Изменение template (через создание новой DRAFT-ревизии и её редактирование) **не влияет** на работающий цикл до явного перехода: `advancePhase` / `setPhase` / `changeRecipeRevision`.
+- Bootstrap-материализованные авторити-документы (`source='bootstrap'`) не считаются user-saved для cycle-readiness — `App\Services\ZoneReadinessService::checkRequiredPidConfigs` (`backend/laravel/app/Services/ZoneReadinessService.php:809`) помечает PID как missing, пока пользователь не сохранит конфигурацию явно. Это блокирует start cycle, но не мешает AE3 получить bundle для выполнения операций.
+
 ---
 
-## 4. Связь с контроллерами (новая модель)
+## 4. UI / Frontend контракты
+
+### 4.1. `GET /api/recipes/{recipe}/active-usage`
+
+Endpoint возвращает список активных grow-cycle, использующих ревизии данного рецепта. Используется фронтом (`backend/laravel/resources/js/Pages/Recipes/Edit.vue`) для предупреждения "рецепт активен в N зонах — сохранение создаст новую DRAFT-ревизию".
+
+Контроллер: `backend/laravel/app/Http/Controllers/RecipeController.php:89` (`activeUsage`).
+
+Фильтр: только `GrowCycle.status IN (PLANNED, RUNNING, PAUSED)`, связь — через `recipe_revision.recipe_id`.
+
+Response:
+```json
+{
+  "status": "ok",
+  "data": {
+    "recipe_id": 1,
+    "count": 1,
+    "active_cycles": [
+      {
+        "cycle_id": 1,
+        "zone_id": 5,
+        "zone_name": "Zone A",
+        "revision_id": 3,
+        "revision_number": 2,
+        "status": "RUNNING",
+        "started_at": "2026-04-01T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+UI: amber-баннер в редакторе рецепта; сохранение изменений всегда создаёт новую DRAFT-ревизию (PUBLISHED ревизию редактировать запрещено, см. §3.5).
+
+---
+
+## 5. Связь с контроллерами (новая модель)
 
 **Контроллеры получают данные через runtime read-model (AE3):**
 
@@ -222,9 +341,9 @@ CREATE TABLE recipe_revision_phases (
 
 ---
 
-## 5. Правила для ИИ-агентов (после рефакторинга)
+## 6. Правила для ИИ-агентов (после рефакторинга)
 
-### 5.1. Обязательные правила
+### 6.1. Обязательные правила
 
 1. **Всегда использовать GrowCycle как центр истины** — не ссылаться на zone_recipe_instances
 2. **Версионировать рецепты** — новые изменения через RecipeRevision, а не прямое редактирование
@@ -232,14 +351,14 @@ CREATE TABLE recipe_revision_phases (
 4. **Тестировать контракты** — изменения в EffectiveTargetsService требуют обновления тестов
 5. **Разделять read-path по назначению** — UI и integration tooling используют Laravel API, runtime automation-engine использует direct SQL read-model
 
-### 5.2. Новая модель данных
+### 6.2. Новая модель данных
 
 - **RecipeRevision** — для версионирования рецептов
 - **GrowCycle** — для активных циклов (1 на зону)
 - **GrowCyclePhase** — снапшоты фаз (не ссылаются на шаблоны)
 - **EffectiveTargetsService** — Laravel business/read-model для targets и integration contracts
 
-### 5.3. Запреты
+### 6.3. Запреты
 
 - ❌ Не добавлять поля в JSON targets — использовать колонки
 - ❌ Не создавать новые связи без GrowCycle

@@ -92,6 +92,8 @@ export interface RecipePhase {
   irrigation_mode?: string | null
   irrigation_interval_sec?: number | null
   irrigation_duration_sec?: number | null
+  irrigation_system_type?: string | null
+  substrate_type?: string | null
   nutrient_program_code?: string | null
   nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null
   nutrient_ec_dosing_mode?: 'sequential' | 'parallel' | null
@@ -110,6 +112,7 @@ export interface RecipePhase {
   nutrient_dose_delay_sec?: number | null
   nutrient_ec_stop_tolerance?: number | string | null
   nutrient_solution_volume_l?: number | string | null
+  day_night_enabled?: boolean | null
   extensions?: RecipePhaseExtensions | null
   created_at?: string
   updated_at?: string

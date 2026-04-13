@@ -426,7 +426,13 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - Timestamp валидация: `abs(now - ts) < 10 секунд` на всех уровнях.
 - HMAC-SHA256: canonical JSON с lexicographic sort ключей, порядок массивов сохранён, без whitespace, числа в формате cJSON, UTF-8, unescaped slashes. `node_secret` — 32 байта на узел.
 - `command_response.ts` — в **миллисекундах**.
-- Ограничения: pH dose interval ≥ 20 сек, EC dose ≥ 10 сек, max pump duration = 60000 мс, доза = 0.1–5.0 мл.
+- Ограничения (безопасные пределы; реальные значения задаются через `zone.correction_config` / `pump_calibration`):
+  - `controllers.{ec,ph}.min_interval_sec` между дозами: конфигурируемо per controller; типовые production-конфиги pH 60–120 с, EC 60–120 с (старые значения "pH ≥ 20 сек, EC ≥ 10 сек" устарели — не опираться на них).
+  - `pump_calibration.max_dose_ms` — hard-cap на одну дозу, дефолт 300 000 мс (5 мин; совпадает с `_MAX_DURATION_MS_SANITY` history-logger), enforce в [`_dose_ml_to_ms`](backend/services/automation-engine/ae3lite/domain/services/correction_planner.py). Защищает от runaway насоса при дрейфе калибровки. Для зон с медленными насосами можно задать больший cap явно.
+  - `pump_calibration.min_dose_ms` — нижний порог; ниже — reason `below_min_dose_ms`, доза discarded.
+  - `controllers.{ec,ph}.max_dose_ml` — контроллерный cap per dose.
+- Sanity bounds на telemetry для PID: pH ∈ [0, 14], EC ∈ [0, 20] mS/cm (см. [`_sensor_value_in_bounds`](backend/services/automation-engine/ae3lite/application/handlers/base.py)). Выход за пределы (error code типа -1/999) → `sensor_out_of_bounds`, PID не обновляется.
+- `ec_dosing_mode='multi_parallel'` требует distinct `(node_uid, channel)` per компонент — fail-closed в [`_assert_distinct_parallel_actuators`](backend/services/automation-engine/ae3lite/domain/services/correction_planner.py). Суперпозиция команд на один pump = неверные дозы.
 - `test_sensor` обязателен для SENSOR-каналов; `restart` и `state` обязательны для всех узлов.
 - 3 последовательных `no-effect` для одного `pid_type` → alert + fail-closed correction window. Обычные correction attempts и `no-effect` — независимые лимиты.
 

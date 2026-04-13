@@ -212,6 +212,7 @@ Breaking-change: обратная совместимость со старыми
 | GET | /api/recipes/{id} | auth:sanctum | Детали рецепта |
 | PATCH | /api/recipes/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить рецепт |
 | DELETE| /api/recipes/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить рецепт |
+| GET | /api/recipes/{id}/active-usage | auth:sanctum | Список активных grow-cycle (`status IN PLANNED|RUNNING|PAUSED`), использующих ревизии этого рецепта; UI использует для warning-баннера в редакторе |
 
 ### Ревизии рецептов (revisions-based)
 
@@ -241,6 +242,20 @@ Breaking-change: обратная совместимость со старыми
 - `extensions.subsystems.irrigation.targets.soil_moisture.{unit,min,max,target}` для smart irrigation decision-controller.
 
 Поля `extensions.day_target/night_target` больше не используются.
+
+### 5.x. Substrates (каталог субстратов)
+
+Справочник субстратов, на которые ссылаются phase-snapshots через `recipe_revision_phases.substrate_type` (FK-by-code).
+
+| Метод | Путь | Auth | Описание |
+|-------|------|------|----------|
+| GET | /api/substrates | auth:sanctum | Список субстратов |
+| GET | /api/substrates/{substrate} | auth:sanctum | Детали субстрата |
+| POST | /api/substrates | auth:sanctum (agronomist) | Создать (валидация: `code` уникален, сумма `components[].ratio_pct = 100%`) |
+| PATCH | /api/substrates/{substrate} | auth:sanctum (agronomist) | Обновить |
+| DELETE | /api/substrates/{substrate} | auth:sanctum (agronomist) | Удалить (не каскадирует на snapshot phase) |
+
+Контроллер: `App\Http\Controllers\SubstrateController`. Form Request: `App\Http\Requests\SubstrateRequest`. Модель: `App\Models\Substrate`. Полная схема таблицы — `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §5.2.2.
 
 ---
 

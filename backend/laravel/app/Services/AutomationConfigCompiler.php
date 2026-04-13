@@ -335,6 +335,15 @@ class AutomationConfigCompiler
             $result['ec_dosing_mode'] = $ecDosingMode;
         }
 
+        $irrigationSystemType = trim((string) ($phase->irrigation_system_type ?? ''));
+        if ($irrigationSystemType !== '') {
+            $result['irrigation_system_type'] = $irrigationSystemType;
+        }
+        $substrateType = trim((string) ($phase->substrate_type ?? ''));
+        if ($substrateType !== '') {
+            $result['substrate_type'] = $substrateType;
+        }
+
         return $result;
     }
 

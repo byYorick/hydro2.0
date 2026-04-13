@@ -344,12 +344,16 @@ class _MockPidStateRepository:
     def __init__(self) -> None:
         self.upsert_calls: list[dict] = []
         self.feedforward_cleared: list[int] = []
+        self.no_effect_resets: list[int] = []
 
     async def upsert_states(self, *, zone_id, now, updates):
         self.upsert_calls.append({"zone_id": zone_id, "updates": updates})
 
     async def clear_feedforward_bias(self, *, zone_id):
         self.feedforward_cleared.append(zone_id)
+
+    async def reset_no_effect_counts(self, *, zone_id):
+        self.no_effect_resets.append(zone_id)
 
 
 def _make_handler(*, monitor=None, gateway=None, pid_repo=None, planner=None) -> CorrectionHandler:
@@ -2797,4 +2801,103 @@ async def test_corr_check_translates_planner_config_error(monkeypatch) -> None:
     payload = planner_invalid_events[0][2]
     assert "process gain" in payload["reason"]
     assert payload["current_ph"] == 8.0
-    assert payload["current_ec"] == 0.5
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Safety gates: E-STOP, no-effect block, auto-resolve no_effect_count
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+async def test_corr_check_raises_on_recent_emergency_stop(monkeypatch: pytest.MonkeyPatch):
+    """L1: если в zone_events есть свежий EMERGENCY_STOP_ACTIVATED,
+    correction прерывается с TaskExecutionError('emergency_stop_activated')."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=5.8, ec=1.85)
+    handler = _make_handler(monitor=monitor)
+
+    # Мокаем _read_recent_storage_event чтобы вернуть свежий E-STOP event.
+    async def _fake_read(*, task, event_types, max_age_sec):
+        if "EMERGENCY_STOP_ACTIVATED" in event_types:
+            return {"event_id": 12345, "type": "EMERGENCY_STOP_ACTIVATED"}
+        return None
+    monkeypatch.setattr(handler, "_read_recent_storage_event", _fake_read)
+
+    from ae3lite.domain.errors import TaskExecutionError
+    with pytest.raises(TaskExecutionError) as excinfo:
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    assert excinfo.value.code == "emergency_stop_activated"
+
+
+async def test_corr_check_success_resets_no_effect_counts(monkeypatch: pytest.MonkeyPatch):
+    """M5: успешный CORRECTION_COMPLETE вызывает reset_no_effect_counts в pid_state_repository.
+    Автоматически снимает block_on_active_no_effect_alert для следующего tick."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)  # в пределах tolerance
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "exit_correction"
+    assert outcome.correction.outcome_success is True
+    # Critical: после успеха no_effect_count сброшен для этой зоны.
+    assert pid_repo.no_effect_resets == [task.zone_id]
+
+
+async def test_corr_check_blocked_by_active_no_effect_alert(monkeypatch: pytest.MonkeyPatch):
+    """M6: если safety.block_on_active_no_effect_alert=True и pid_state.no_effect_count
+    достиг no_effect_consecutive_limit, correction skip'ается с retry=60s
+    и пишется CORRECTION_SKIPPED_BY_ALERT_BLOCK event."""
+    events: list[tuple[int, str, dict]] = []
+
+    async def _capture_event(zone_id, event_type, payload):
+        events.append((zone_id, event_type, dict(payload) if payload else {}))
+
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", _capture_event)
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=5.8, ec=1.85)
+    handler = _make_handler(monitor=monitor)
+
+    runtime = deepcopy(RUNTIME)
+    # Включаем safety gate и задаём limit для EC observe.
+    runtime["correction"]["safety"] = {"block_on_active_no_effect_alert": True}
+    runtime["correction"]["controllers"]["ec"]["observe"] = {"no_effect_consecutive_limit": 3}
+    # pid_state показывает что лимит достигнут.
+    runtime["pid_state"] = {"ec": {"no_effect_count": 3}}
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "retry"
+    assert outcome.due_delay_sec == 60
+    block_events = [e for e in events if e[1] == "CORRECTION_SKIPPED_BY_ALERT_BLOCK"]
+    assert len(block_events) == 1
+    payload = block_events[0][2]
+    assert payload["pid_type"] == "ec"
+    assert payload["no_effect_count"] == 3
+    assert payload["no_effect_limit"] == 3
+    assert payload["reason"] == "active_no_effect_alert_blocks_correction"
+
+
+async def test_corr_check_not_blocked_when_block_flag_false(monkeypatch: pytest.MonkeyPatch):
+    """M6 negative: если block_on_active_no_effect_alert=False, коррекция идёт
+    нормально даже при no_effect_count >= limit (только alert, не block)."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)  # в tolerance → exit success
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    runtime = deepcopy(RUNTIME)
+    runtime["correction"]["safety"] = {"block_on_active_no_effect_alert": False}
+    runtime["correction"]["controllers"]["ec"]["observe"] = {"no_effect_consecutive_limit": 3}
+    runtime["pid_state"] = {"ec": {"no_effect_count": 5}}
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+    # НЕ retry — флаг выключен, коррекция прошла до success.
+    assert outcome.kind == "exit_correction"

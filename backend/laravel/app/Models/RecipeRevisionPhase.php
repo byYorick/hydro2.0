@@ -47,6 +47,9 @@ class RecipeRevisionPhase extends Model
         'nutrient_ec_stop_tolerance',
         'nutrient_solution_volume_l',
         'irrigation_mode',
+        'irrigation_system_type',
+        'substrate_type',
+        'day_night_enabled',
         'irrigation_interval_sec',
         'irrigation_duration_sec',
         // Опциональные параметры
@@ -91,6 +94,7 @@ class RecipeRevisionPhase extends Model
         'target_gdd' => 'decimal:2',
         'dli_target' => 'decimal:2',
         'lighting_start_time' => 'datetime',
+        'day_night_enabled' => 'boolean',
         'extensions' => 'array',
     ];
 

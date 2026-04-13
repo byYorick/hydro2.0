@@ -309,8 +309,36 @@ class CorrectionHandler(BaseStageHandler):
     ) -> StageOutcome:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         max_age = int(runtime.get("telemetry_max_age_sec", 300))
-        target_ph = float(runtime["target_ph"])
+
+        # E-STOP gate: если недавно был EMERGENCY_STOP_ACTIVATED в zone_events,
+        # прерываем correction. Reconcile ожидаемого состояния каналов делают
+        # parent-стадии (solution_fill, prepare_recirc, irrigation_check) —
+        # корректор не владеет состоянием pump/valve, только сенсоров/дозаторов.
+        estop_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("EMERGENCY_STOP_ACTIVATED",),
+            max_age_sec=86400,
+        )
+        if isinstance(estop_event, Mapping):
+            estop_event_id = int(estop_event.get("event_id") or 0)
+            if estop_event_id <= 0 or estop_event_id not in self._reconciled_estop_event_ids:
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="CORRECTION_SKIPPED_EMERGENCY_STOP",
+                    task=task,
+                    corr=corr,
+                    payload={"estop_event_id": estop_event_id},
+                )
+                raise TaskExecutionError(
+                    "emergency_stop_activated",
+                    "Correction прерван: обнаружен недавний EMERGENCY_STOP_ACTIVATED",
+                )
+        target_ph = self._effective_ph_target(task=task, runtime=runtime)
         target_ec = self._effective_ec_target(task=task, runtime=runtime)
+        target_ph_min = self._effective_ph_min(task=task, runtime=runtime)
+        target_ph_max = self._effective_ph_max(task=task, runtime=runtime)
+        target_ec_min = self._effective_ec_min(task=task, runtime=runtime)
+        target_ec_max = self._effective_ec_max(task=task, runtime=runtime)
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_tol_pct = float(tolerance.get("ph_pct", 15.0))
         ec_tol_pct = float(tolerance.get("ec_pct", 25.0))
@@ -318,6 +346,23 @@ class CorrectionHandler(BaseStageHandler):
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.get("pid_state") if isinstance(runtime.get("pid_state"), Mapping) else {}
         enforce_attempt_caps = self._enforce_attempt_caps(task=task)
+
+        # Safety gate: если active no-effect alert не позволяет коррекции
+        # продолжаться (защита от дальнейшей деградации раствора при
+        # конфигурационной проблеме — например, empty reagent bottle), skip
+        # коррекцию. Разблокируется когда no_effect_count сбрасывается в 0 —
+        # либо successful correction (auto-reset в этом же handler), либо
+        # явный ack пользователя через admin endpoint.
+        blocked = self._check_no_effect_block(task=task, correction_cfg=correction_cfg, pid_state=pid_state)
+        if blocked is not None:
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_BY_ALERT_BLOCK",
+                task=task,
+                corr=corr,
+                payload=blocked,
+            )
+            return StageOutcome(kind="retry", due_delay_sec=60)
 
         if self._should_log_limit_policy(task=task, corr=corr):
             await self._log_correction_event(
@@ -359,10 +404,10 @@ class CorrectionHandler(BaseStageHandler):
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
-            ph_min=self._coerce_float(runtime.get("target_ph_min")),
-            ph_max=self._coerce_float(runtime.get("target_ph_max")),
-            ec_min=self._effective_ec_min(task=task, runtime=runtime),
-            ec_max=self._effective_ec_max(task=task, runtime=runtime),
+            ph_min=target_ph_min,
+            ph_max=target_ph_max,
+            ec_min=target_ec_min,
+            ec_max=target_ec_max,
         )
         success_reached = (
             correction_targets_reached and workflow_ready
@@ -378,13 +423,27 @@ class CorrectionHandler(BaseStageHandler):
                 payload={
                     "current_ph": current_ph, "current_ec": current_ec,
                     "target_ph": target_ph, "target_ec": target_ec,
-                    "target_ph_min": runtime.get("target_ph_min"),
-                    "target_ph_max": runtime.get("target_ph_max"),
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    "target_ph_min": target_ph_min,
+                    "target_ph_max": target_ph_max,
+                    "target_ec_min": target_ec_min,
+                    "target_ec_max": target_ec_max,
                     "workflow_ready": workflow_ready,
                 },
             )
+            # Auto-resolve: successful correction снимает "no-effect" состояние.
+            # Сбрасываем no_effect_count в pid_state, чтобы следующий tick начался
+            # с чистого листа. Сам business-alert остаётся в БД как history —
+            # его resolves через notify-path после ack пользователя или через
+            # AlertAutoResolver когда is_no_effect=false стабилизируется.
+            if self._pid_state_repository is not None:
+                try:
+                    await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
+                except Exception:
+                    _logger.warning(
+                        "Failed to reset no_effect_count on CORRECTION_COMPLETE for zone %s",
+                        task.zone_id,
+                        exc_info=True,
+                    )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if enforce_attempt_caps and corr.attempt >= corr.max_attempts:
@@ -416,10 +475,10 @@ class CorrectionHandler(BaseStageHandler):
                 pid_state=pid_state,
                 pid_configs=runtime.get("pid_configs"),
                 now=now,
-                ph_min=self._coerce_float(runtime.get("target_ph_min")),
-                ph_max=self._coerce_float(runtime.get("target_ph_max")),
-                ec_min=self._effective_ec_min(task=task, runtime=runtime),
-                ec_max=self._effective_ec_max(task=task, runtime=runtime),
+                ph_min=target_ph_min,
+                ph_max=target_ph_max,
+                ec_min=target_ec_min,
+                ec_max=target_ec_max,
                 ec_actuator=actuators.get("ec"),
                 ec_actuators=actuators.get("ec_actuators"),
                 ph_up_actuator=actuators.get("ph_up"),
@@ -1592,6 +1651,44 @@ class CorrectionHandler(BaseStageHandler):
         # whole fill stage. Attempt-based exhaustion stays enabled for
         # recirculation windows; fill stops only by no-effect or stage timeout.
         return current_stage != "solution_fill_check"
+
+    def _check_no_effect_block(
+        self,
+        *,
+        task: Any,
+        correction_cfg: Mapping[str, Any],
+        pid_state: Mapping[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """Проверяет флаг safety.block_on_active_no_effect_alert.
+
+        Возвращает payload события (dict) если коррекция должна быть
+        заблокирована из-за активного no-effect alert, иначе None.
+        "Active" определяется через persistent pid_state.no_effect_count
+        против observe.no_effect_limit — тот же порог что триггерит alert.
+        """
+        safety = correction_cfg.get("safety") if isinstance(correction_cfg.get("safety"), Mapping) else {}
+        if not bool(safety.get("block_on_active_no_effect_alert") or False):
+            return None
+
+        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
+        for pid_type in ("ph", "ec"):
+            entry = pid_state.get(pid_type) if isinstance(pid_state.get(pid_type), Mapping) else None
+            if not entry:
+                continue
+            count = int(entry.get("no_effect_count") or 0)
+            if count <= 0:
+                continue
+            controller_cfg = controllers.get(pid_type) if isinstance(controllers.get(pid_type), Mapping) else {}
+            observe = controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
+            limit = int(observe.get("no_effect_consecutive_limit") or observe.get("no_effect_limit") or 0)
+            if limit > 0 and count >= limit:
+                return {
+                    "pid_type": pid_type,
+                    "no_effect_count": count,
+                    "no_effect_limit": limit,
+                    "reason": "active_no_effect_alert_blocks_correction",
+                }
+        return None
 
     def _should_reset_attempt_counters_on_reaction(self, *, task: Any) -> bool:
         # Попытки считаются только для последовательных no-effect циклов.

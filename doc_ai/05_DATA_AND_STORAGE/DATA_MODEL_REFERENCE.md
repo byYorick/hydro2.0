@@ -295,6 +295,29 @@ UNIQUE: (manufacturer, name, component)
 INDEX: nutrient_products_component_idx (component)
 ```
 
+## 5.2.2. substrates (справочник субстратов)
+
+Миграция: `backend/laravel/database/migrations/2026_04_13_120000_create_substrates_table.php`.
+
+```
+id BIGSERIAL PK
+code VARCHAR(64) UNIQUE     -- короткий идентификатор (латиница, цифры, _)
+name VARCHAR(255)
+components JSONB DEFAULT '[]'         -- [{name, label, ratio_pct}, ...], сумма ratio_pct = 100
+applicable_systems JSONB DEFAULT '[]' -- массив enum irrigation_system_type
+notes TEXT NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+```
+
+Связи (логические):
+- `recipe_revision_phases.substrate_type` ссылается на `substrates.code` (FK-by-code, не enforce на уровне БД).
+- `grow_cycle_phases.substrate_type` хранит ту же строку как snapshot — удаление записи в `substrates` не каскадирует на snapshot.
+
+REST API: `/api/substrates` (CRUD, write требует роли agronomist).
+Контроллер: `App\Http\Controllers\SubstrateController`.
+Form Request: `App\Http\Requests\SubstrateRequest` (валидирует `components` и сумму `ratio_pct = 100%`).
+
 ## 5.3. recipe_revision_phases (шаблоны фаз)
 ```
 id BIGSERIAL PK
@@ -327,7 +350,11 @@ nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
 nutrient_solution_volume_l DECIMAL(8,2) NULL
 nutrient_dose_delay_sec INT NULL
 nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
+nutrient_ec_dosing_mode VARCHAR(32) NULL  -- enum: sequential|parallel (миграция 2026_04_12_200000)
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
+irrigation_system_type VARCHAR(32) NULL   -- enum: drip_tape|drip_emitter|ebb_flow|nft|dwc|aeroponics (миграция 2026_04_13_150000)
+substrate_type VARCHAR(64) NULL           -- FK-by-code → substrates.code (миграция 2026_04_13_150000)
+day_night_enabled BOOLEAN NULL            -- активирует extensions.day_night override (миграция 2026_04_13_150000)
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
 lighting_photoperiod_hours INT NULL
@@ -356,6 +383,12 @@ updated_at TIMESTAMP
 UNIQUE: (recipe_revision_id, phase_index)
 INDEX: recipe_revision_phase_idx (recipe_revision_id)
 ```
+
+Семантика новых flat-полей (см. также `../06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md` §2.1.1):
+- `nutrient_ec_dosing_mode` — `sequential` | `parallel`. Управляет порядком дозирования компонентов NPK/Ca/Mg/Micro при EC коррекции в irrigation-фазе.
+- `irrigation_system_type` — тип ирригационной системы фазы; используется для согласованности с `applicable_systems` выбранного субстрата.
+- `substrate_type` — короткий код субстрата из таблицы `substrates` (FK-by-code; см. §5.2.2).
+- `day_night_enabled` — если `true`, AE3 применяет `extensions.day_night.{ph,ec,...}` overrides по локальному времени (см. `EFFECTIVE_TARGETS_SPEC.md` §10).
 
 Правила валидации для топологии `2 бака`:
 - область применения: только при активной runtime-топологии
@@ -461,7 +494,11 @@ nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
 nutrient_solution_volume_l DECIMAL(8,2) NULL
 nutrient_dose_delay_sec INT NULL
 nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
+nutrient_ec_dosing_mode VARCHAR(32) NULL  -- enum: sequential|parallel (snapshot)
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
+irrigation_system_type VARCHAR(32) NULL   -- enum (snapshot)
+substrate_type VARCHAR(64) NULL           -- FK-by-code (snapshot, не каскадирует на удаление subsрата)
+day_night_enabled BOOLEAN NULL            -- snapshot активации day/night override
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
 lighting_photoperiod_hours INT NULL

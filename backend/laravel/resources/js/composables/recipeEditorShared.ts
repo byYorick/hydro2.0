@@ -2,11 +2,11 @@ import type { Recipe, RecipePhase, NutrientProduct } from '@/types'
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType'
 
 export type RecipeIrrigationMode = 'SUBSTRATE' | 'RECIRC'
-export type RecipeSystemType = 'drip' | 'substrate_trays' | 'nft'
+export type RecipeSystemType = 'drip' | 'drip_tape' | 'drip_emitter' | 'ebb_flow' | 'nft' | 'dwc' | 'aeroponics'
 
 export interface RecipePhaseDayNightState {
-  ph: { day: number | null; night: number | null }
-  ec: { day: number | null; night: number | null }
+  ph: { day: number | null; night: number | null; night_min: number | null; night_max: number | null }
+  ec: { day: number | null; night: number | null; night_min: number | null; night_max: number | null }
   temperature: { day: number | null; night: number | null }
   humidity: { day: number | null; night: number | null }
   soil_moisture: { day: number | null; night: number | null }
@@ -31,6 +31,7 @@ export interface RecipePhaseFormState {
   lighting_start_time: string
   irrigation_mode: RecipeIrrigationMode
   irrigation_system_type: RecipeSystemType
+  substrate_type: string | null
   irrigation_interval_sec: number | null
   irrigation_duration_sec: number | null
   nutrient_program_code: string | null
@@ -51,6 +52,7 @@ export interface RecipePhaseFormState {
   nutrient_dose_delay_sec: number | null
   nutrient_ec_stop_tolerance: number | null
   nutrient_solution_volume_l: number | null
+  day_night_enabled: boolean
   day_night: RecipePhaseDayNightState
 }
 
@@ -126,8 +128,8 @@ function resolveIrrigationMode(systemType: RecipeSystemType, rawMode: unknown): 
 
 function emptyDayNight(baseLightHours: number | null, baseStartTime: string): RecipePhaseDayNightState {
   return {
-    ph: { day: 5.8, night: 5.8 },
-    ec: { day: 1.4, night: 1.4 },
+    ph: { day: 5.8, night: 5.8, night_min: 5.7, night_max: 5.9 },
+    ec: { day: 1.4, night: 1.4, night_min: 1.3, night_max: 1.5 },
     temperature: { day: 23, night: 21 },
     humidity: { day: 60, night: 65 },
     soil_moisture: { day: 45, night: 45 },
@@ -155,7 +157,8 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     lighting_photoperiod_hours: 16,
     lighting_start_time: '06:00:00',
     irrigation_mode: 'SUBSTRATE',
-    irrigation_system_type: 'drip',
+    irrigation_system_type: 'drip_tape',
+    substrate_type: null,
     irrigation_interval_sec: 900,
     irrigation_duration_sec: 15,
     nutrient_program_code: DEFAULT_NUTRIENT_PROGRAM_CODE,
@@ -176,9 +179,10 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     nutrient_dose_delay_sec: DEFAULT_NUTRIENT_DOSE_DELAY_SEC,
     nutrient_ec_stop_tolerance: DEFAULT_NUTRIENT_EC_STOP_TOLERANCE,
     nutrient_solution_volume_l: null,
+    day_night_enabled: false,
     day_night: {
-      ph: { day: 5.8, night: 5.7 },
-      ec: { day: 1.6, night: 1.4 },
+      ph: { day: 5.8, night: 5.7, night_min: 5.6, night_max: 5.8 },
+      ec: { day: 1.6, night: 1.4, night_min: 1.3, night_max: 1.5 },
       temperature: { day: 23, night: 20 },
       humidity: { day: 62, night: 66 },
       soil_moisture: { day: 45, night: 45 },
@@ -196,7 +200,17 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
   const dayNight = asRecord(extensions?.day_night)
   const lighting = asRecord(dayNight?.lighting)
   const soilMoisture = asRecord(dayNight?.soil_moisture)
-  const systemType = resolveRecipePhaseSystemType(phase ?? null, base.irrigation_system_type)
+  const coreSystemType = (['drip', 'substrate_trays', 'nft'] as const).includes(base.irrigation_system_type as never)
+    ? (base.irrigation_system_type as 'drip' | 'substrate_trays' | 'nft')
+    : 'drip'
+  const resolvedSystemType = resolveRecipePhaseSystemType(phase ?? null, coreSystemType)
+  const rawPhaseSystem = typeof phase?.irrigation_system_type === 'string' ? phase.irrigation_system_type : null
+  const VALID_SYSTEM_TYPES = ['drip', 'drip_tape', 'drip_emitter', 'ebb_flow', 'nft', 'dwc', 'aeroponics'] as const
+  // substrate_trays (легаси) маппится на drip_tape по смыслу — проливной с субстратом
+  const mappedResolved: RecipeSystemType = resolvedSystemType === 'substrate_trays' ? 'drip_tape' : resolvedSystemType
+  const systemType: RecipeSystemType = rawPhaseSystem && VALID_SYSTEM_TYPES.includes(rawPhaseSystem as never)
+    ? (rawPhaseSystem as RecipeSystemType)
+    : mappedResolved
   const phMin = toNullableNumber(phase?.ph_min ?? phase?.targets?.ph?.min, base.ph_min) ?? base.ph_min
   const phMax = toNullableNumber(phase?.ph_max ?? phase?.targets?.ph?.max, base.ph_max) ?? base.ph_max
   const ecMin = toNullableNumber(phase?.ec_min ?? phase?.targets?.ec?.min, base.ec_min) ?? base.ec_min
@@ -233,6 +247,7 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     lighting_start_time: lightingStartTime,
     irrigation_mode: resolveIrrigationMode(systemType, phase?.irrigation_mode),
     irrigation_system_type: systemType,
+    substrate_type: typeof phase?.substrate_type === 'string' ? phase.substrate_type : null,
     irrigation_interval_sec: toNullableInt(phase?.irrigation_interval_sec ?? phase?.targets?.irrigation_interval_sec, base.irrigation_interval_sec),
     irrigation_duration_sec: toNullableInt(phase?.irrigation_duration_sec ?? phase?.targets?.irrigation_duration_sec, base.irrigation_duration_sec),
     nutrient_program_code: typeof phase?.nutrient_program_code === 'string' && phase.nutrient_program_code.trim().length > 0
@@ -257,13 +272,20 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     nutrient_dose_delay_sec: toNullableInt(phase?.nutrient_dose_delay_sec, base.nutrient_dose_delay_sec),
     nutrient_ec_stop_tolerance: toNullableNumber(phase?.nutrient_ec_stop_tolerance, base.nutrient_ec_stop_tolerance),
     nutrient_solution_volume_l: toNullableNumber(phase?.nutrient_solution_volume_l),
+    day_night_enabled: typeof phase?.day_night_enabled === 'boolean' ? phase.day_night_enabled : false,
     day_night: emptyDayNight(lightHours, lightingStartTime),
   }
 
   result.day_night.ph.day = toNullableNumber(asRecord(dayNight?.ph)?.day, result.ph_target)
   result.day_night.ph.night = toNullableNumber(asRecord(dayNight?.ph)?.night, result.ph_target)
+  const phNight = result.day_night.ph.night ?? result.ph_target ?? 5.8
+  result.day_night.ph.night_min = toNullableNumber(asRecord(dayNight?.ph)?.night_min, +(phNight - 0.1).toFixed(2))
+  result.day_night.ph.night_max = toNullableNumber(asRecord(dayNight?.ph)?.night_max, +(phNight + 0.1).toFixed(2))
   result.day_night.ec.day = toNullableNumber(asRecord(dayNight?.ec)?.day, result.ec_target)
   result.day_night.ec.night = toNullableNumber(asRecord(dayNight?.ec)?.night, result.ec_target)
+  const ecNight = result.day_night.ec.night ?? result.ec_target ?? 1.4
+  result.day_night.ec.night_min = toNullableNumber(asRecord(dayNight?.ec)?.night_min, +(ecNight - 0.1).toFixed(2))
+  result.day_night.ec.night_max = toNullableNumber(asRecord(dayNight?.ec)?.night_max, +(ecNight + 0.1).toFixed(2))
   result.day_night.temperature.day = toNullableNumber(asRecord(dayNight?.temperature)?.day, result.temp_air_target)
   result.day_night.temperature.night = toNullableNumber(asRecord(dayNight?.temperature)?.night, result.temp_air_target)
   result.day_night.humidity.day = toNullableNumber(asRecord(dayNight?.humidity)?.day, result.humidity_target)
@@ -388,8 +410,11 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
     lighting_photoperiod_hours: toNullableInt(phase.lighting_photoperiod_hours),
     lighting_start_time: normalizeTimeString(phase.lighting_start_time),
     irrigation_mode: phase.irrigation_mode,
+    irrigation_system_type: phase.irrigation_system_type,
     irrigation_interval_sec: toNullableInt(phase.irrigation_interval_sec),
     irrigation_duration_sec: toNullableInt(phase.irrigation_duration_sec),
+    substrate_type: phase.substrate_type?.trim() || null,
+    day_night_enabled: !!phase.day_night_enabled,
     nutrient_program_code: phase.nutrient_program_code?.trim() || null,
     nutrient_mode: phase.nutrient_mode,
     nutrient_ec_dosing_mode: phase.nutrient_ec_dosing_mode || 'sequential',
@@ -413,10 +438,14 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
         ph: {
           day: toNullableNumber(phase.day_night.ph.day),
           night: toNullableNumber(phase.day_night.ph.night),
+          night_min: toNullableNumber(phase.day_night.ph.night_min),
+          night_max: toNullableNumber(phase.day_night.ph.night_max),
         },
         ec: {
           day: toNullableNumber(phase.day_night.ec.day),
           night: toNullableNumber(phase.day_night.ec.night),
+          night_min: toNullableNumber(phase.day_night.ec.night_min),
+          night_max: toNullableNumber(phase.day_night.ec.night_max),
         },
         temperature: {
           day: toNullableNumber(phase.day_night.temperature.day),

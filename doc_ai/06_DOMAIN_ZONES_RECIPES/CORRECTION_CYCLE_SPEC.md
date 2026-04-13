@@ -17,6 +17,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - запуск цикла автоматики выполняется через `POST /zones/{id}/start-cycle`;
 - runtime-резолв target/config выполняется через SQL read-model (effective-targets API не используется в runtime path).
 
+Актуализация per-phase EC и day/night (2026-04-13):
+- EC target в correction теперь зависит от текущей фазы workflow: для `solution_fill`/`tank_recirc` используется prepare-target (доля NPK от полного EC), для `irrigation`/`irrig_recirc` — полный EC;
+- handler-уровневые accessors `_effective_ec_target/min/max` и `_effective_ph_target/min/max` (`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107,1129,1143,1157,1161,1167`) выбирают значение по фазе и применяют day/night override (если `day_night_enabled=true` на phase snapshot);
+- `build_dose_plan` / `is_within_tolerance` / `_targets_reached` / `_workflow_ready_values_match` обязаны вызывать только эти effective accessors, без чтения сырого `runtime["target_ec"]`;
+- полный контракт runtime spec (`target_ec_prepare`, `npk_ec_share`, `day_night_config`) и валидация — см. `EFFECTIVE_TARGETS_SPEC.md` §9 / §10.
+
 Актуализация AE3 in-flow correction (2026-03-15):
 - correction decision больше не строится по одному `telemetry_last` sample;
 - для `EC` и `pH` используется модель `dose -> hold -> observe -> decide`;

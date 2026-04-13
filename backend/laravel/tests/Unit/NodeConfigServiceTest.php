@@ -160,13 +160,18 @@ class NodeConfigServiceTest extends TestCase
             ],
         ]);
 
-        AutomationEffectiveBundle::query()->create([
+        // Bootstrap-материализация при создании зоны уже могла создать запись
+        // с (scope_type=zone, scope_id=$zone->id) — перезаписываем её тестовой
+        // конфигурацией с нужными fail_safe_guards.
+        AutomationEffectiveBundle::query()->updateOrCreate([
             'scope_type' => 'zone',
             'scope_id' => $zone->id,
+        ], [
             'bundle_revision' => 'test-rev',
             'schema_revision' => '1',
             'status' => 'valid',
             'inputs_checksum' => 'test-checksum',
+            'compiled_at' => now(),
             'config' => [
                 'zone' => [
                     'logic_profile' => [

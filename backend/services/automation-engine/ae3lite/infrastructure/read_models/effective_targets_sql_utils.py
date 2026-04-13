@@ -258,7 +258,14 @@ def build_base_targets(phase: Dict[str, Any]) -> Dict[str, Any]:
             "mode": phase.get("irrigation_mode"),
             "interval_sec": phase.get("irrigation_interval_sec"),
             "duration_sec": phase.get("irrigation_duration_sec"),
+            "system_type": phase.get("irrigation_system_type"),
+            "substrate_type": phase.get("substrate_type"),
         }
+    if phase.get("day_night_enabled") is not None:
+        targets["day_night_enabled"] = bool(phase.get("day_night_enabled"))
+    greenhouse_timezone = phase.get("greenhouse_timezone")
+    if isinstance(greenhouse_timezone, str) and greenhouse_timezone.strip():
+        targets["greenhouse_timezone"] = greenhouse_timezone.strip()
     if phase.get("lighting_photoperiod_hours") is not None:
         targets["lighting"] = {
             "photoperiod_hours": to_float(phase.get("lighting_photoperiod_hours")),

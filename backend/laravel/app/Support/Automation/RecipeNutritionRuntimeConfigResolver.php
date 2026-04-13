@@ -74,6 +74,18 @@ final class RecipeNutritionRuntimeConfigResolver
         if ($componentRatios !== []) {
             $meta['recipe_component_ratios'] = $componentRatios;
         }
+
+        $irrigationSystemType = strtolower(trim((string) ($nutrition['irrigation_system_type'] ?? '')));
+        if ($irrigationSystemType !== '') {
+            $meta['recipe_irrigation_system_type'] = $irrigationSystemType;
+            data_set($resolved, 'phases.irrigation.system_type', $irrigationSystemType);
+        }
+        $substrateType = strtolower(trim((string) ($nutrition['substrate_type'] ?? '')));
+        if ($substrateType !== '') {
+            $meta['recipe_substrate_type'] = $substrateType;
+            data_set($resolved, 'phases.irrigation.substrate_type', $substrateType);
+        }
+
         data_set($resolved, 'meta', $meta);
 
         return $resolved;

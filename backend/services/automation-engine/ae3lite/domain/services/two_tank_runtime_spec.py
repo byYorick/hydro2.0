@@ -173,6 +173,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
     npk_ec_share = _compute_prepare_ec_share(solution_fill_cfg, resolved_base_cfg)
     target_ec_prepare = round(target_ec * npk_ec_share, 4)
+    day_night_cfg = _build_day_night_config(snapshot)
     runtime: dict[str, Any] = {
         "required_node_types": required_node_types,
         "clean_fill_timeout_sec": _require_int(
@@ -275,6 +276,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec) * npk_ec_share, 4
         ),
         "npk_ec_share": npk_ec_share,
+        "day_night_enabled": day_night_cfg["enabled"],
+        "day_night_config": day_night_cfg,
         "prepare_tolerance": dict(default_prepare_tolerance),
         "prepare_tolerance_by_phase": prepare_tolerance_by_phase,
         "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
@@ -631,6 +634,69 @@ def _compute_prepare_ec_share(
         return 1.0
 
     return npk / total
+
+
+def _build_day_night_config(snapshot: Any) -> dict[str, Any]:
+    """Собирает day/night конфиг из phase_targets для dynamic resolution в handler'ах.
+
+    Возвращаемая структура:
+        {
+            "enabled": bool,
+            "lighting": {"day_start_time": str | None, "day_hours": float | None},
+            "ph":  {"day": float | None, "night": float | None,
+                     "day_min": float | None, "day_max": float | None,
+                     "night_min": float | None, "night_max": float | None},
+            "ec":  {... то же самое ...},
+        }
+    Поля lighting fallback'ятся на фазу (`lighting.start_time` / `lighting.photoperiod_hours`),
+    если `day_night.lighting.*` пусто.
+    """
+    phase_targets = getattr(snapshot, "phase_targets", None)
+    phase_targets = phase_targets if isinstance(phase_targets, Mapping) else {}
+
+    enabled = bool(phase_targets.get("day_night_enabled") or False)
+    extensions = phase_targets.get("extensions") if isinstance(phase_targets.get("extensions"), Mapping) else {}
+    day_night = extensions.get("day_night") if isinstance(extensions.get("day_night"), Mapping) else {}
+    lighting_ext = day_night.get("lighting") if isinstance(day_night.get("lighting"), Mapping) else {}
+
+    # Fallback lighting на фазовые поля
+    day_start_time = lighting_ext.get("day_start_time")
+    if not day_start_time:
+        lighting_base = phase_targets.get("lighting") if isinstance(phase_targets.get("lighting"), Mapping) else {}
+        day_start_time = lighting_base.get("start_time")
+    day_hours = lighting_ext.get("day_hours")
+    if day_hours is None:
+        lighting_base = phase_targets.get("lighting") if isinstance(phase_targets.get("lighting"), Mapping) else {}
+        day_hours = lighting_base.get("photoperiod_hours")
+
+    def _section(key: str) -> dict[str, Any]:
+        section = day_night.get(key) if isinstance(day_night.get(key), Mapping) else {}
+        return {
+            "day": _optional_float(section.get("day")),
+            "night": _optional_float(section.get("night")),
+            "day_min": _optional_float(section.get("day_min")),
+            "day_max": _optional_float(section.get("day_max")),
+            "night_min": _optional_float(section.get("night_min")),
+            "night_max": _optional_float(section.get("night_max")),
+        }
+
+    timezone_raw = phase_targets.get("greenhouse_timezone")
+    timezone = (
+        str(timezone_raw).strip()
+        if isinstance(timezone_raw, str) and timezone_raw.strip()
+        else None
+    )
+
+    return {
+        "enabled": enabled,
+        "lighting": {
+            "day_start_time": str(day_start_time).strip() if isinstance(day_start_time, str) and day_start_time.strip() else None,
+            "day_hours": _optional_float(day_hours),
+            "timezone": timezone,
+        },
+        "ph": _section("ph"),
+        "ec": _section("ec"),
+    }
 
 
 def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:

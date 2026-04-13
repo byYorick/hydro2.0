@@ -766,7 +766,7 @@ class BaseStageHandler:
         if not ph["ready"] or not ec["ready"]:
             return False
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_target = float(runtime["target_ph"])
+        ph_target = self._effective_ph_target(task=task, runtime=runtime)
         ec_target = self._effective_ec_target(task=task, runtime=runtime)
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
@@ -820,14 +820,14 @@ class BaseStageHandler:
         current_ec: float,
     ) -> bool:
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_target = float(runtime["target_ph"])
+        ph_target = self._effective_ph_target(task=task, runtime=runtime)
         ec_target = self._effective_ec_target(task=task, runtime=runtime)
         ph_ok = self._value_matches_ready_band(
             current=current_ph,
             target=ph_target,
             tolerance_pct=float(tolerance.get("ph_pct", 15) or 15),
-            explicit_min=self._coerce_float(runtime.get("target_ph_min")),
-            explicit_max=self._coerce_float(runtime.get("target_ph_max")),
+            explicit_min=self._effective_ph_min(task=task, runtime=runtime),
+            explicit_max=self._effective_ph_max(task=task, runtime=runtime),
         )
         ec_ok = self._value_matches_ready_band(
             current=current_ec,
@@ -893,12 +893,45 @@ class BaseStageHandler:
         )
         if not summary["ready"]:
             return {"ready": False, "reason": summary.get("reason")}
+        # Sanity bounds на абсолютные значения: если датчик вернул error code
+        # (например, pH=-1 при disconnect или EC=999 при short-circuit), не
+        # передаём это в PID — иначе integrator накопит спайк и выдаст runaway
+        # dose. Возвращаем ready=False с reason, handler сделает retry на
+        # следующем tick (те же механики, что у stale/window_not_ready).
+        if not self._sensor_value_in_bounds(sensor_type=sensor_type, value=summary["value"]):
+            _logger.warning(
+                "Sensor value out of sanity bounds: sensor_type=%s value=%s zone_id=%s",
+                sensor_type, summary["value"], zone_id,
+            )
+            return {"ready": False, "reason": "sensor_out_of_bounds"}
         return {
             "ready": True,
             "value": summary["value"],
             "sample_count": summary["sample_count"],
             "slope": summary["slope"],
         }
+
+    @staticmethod
+    def _sensor_value_in_bounds(*, sensor_type: str, value: Any) -> bool:
+        """Возвращает True если значение физически валидно для данного типа.
+
+        Bounds — абсолютные sanity-пределы, не пересекаются с recipe-таргетами.
+        Отсеивают явные error codes от датчиков (pH=-1 при disconnect,
+        EC=999 при short-circuit и т.п.), которые иначе прошли бы stability-
+        фильтр и сломали PID integrator.
+        """
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(numeric):
+            return False
+        key = (sensor_type or "").strip().upper()
+        if key == "PH":
+            return 0.0 <= numeric <= 14.0
+        if key == "EC":
+            return 0.0 <= numeric <= 20.0
+        return True
 
     def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
         return _telemetry_decision_window_since_ts(now=now, config=config)
@@ -1105,33 +1138,185 @@ class BaseStageHandler:
     # ── Per-phase EC target (NPK share для подготовки) ────────────
 
     def _effective_ec_target(self, *, task: Any, runtime: Mapping[str, Any]) -> float:
-        """EC target с учётом текущей фазы workflow.
+        """EC target с учётом текущей фазы workflow и day/night overlay.
 
         solution_fill / tank_recirc → target_ec_prepare (NPK-доля от полного EC)
         irrigation / irrig_recirc   → target_ec (полный, кумулятивный)
+
+        При day_night_enabled и night-интервале полный target (irrigation-фаза)
+        подменяется на day_night.ec.night; prepare target пересчитывается
+        пропорционально из runtime["npk_ec_share"] — соотношение NPK сохраняется.
         """
         phase = self._runtime_phase_key(task=task)
+        base_full = float(runtime.get("target_ec") or 0.0)
+        full_target = self._day_night_override(runtime, "ec", "target", default=base_full)
         if phase in ("solution_fill", "tank_recirc"):
             prepare = runtime.get("target_ec_prepare")
             if prepare is not None:
+                if full_target != base_full and base_full > 0:
+                    share = float(runtime.get("npk_ec_share") or (float(prepare) / base_full))
+                    return round(full_target * share, 4)
                 return float(prepare)
-        return float(runtime.get("target_ec") or 0.0)
+        return full_target
 
     def _effective_ec_min(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
         phase = self._runtime_phase_key(task=task)
         if phase in ("solution_fill", "tank_recirc"):
-            val = runtime.get("target_ec_prepare_min")
-            if val is not None:
-                return float(val)
-        return self._coerce_float(runtime.get("target_ec_min"))
+            base = runtime.get("target_ec_prepare_min")
+            if base is not None:
+                scaled = self._day_night_override_scaled(
+                    runtime, "ec", "min", default=float(base), phase_key="prepare",
+                )
+                return scaled if scaled is not None else float(base)
+        base_val = self._coerce_float(runtime.get("target_ec_min"))
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ec", "min", default=base_val)
 
     def _effective_ec_max(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
         phase = self._runtime_phase_key(task=task)
         if phase in ("solution_fill", "tank_recirc"):
-            val = runtime.get("target_ec_prepare_max")
-            if val is not None:
-                return float(val)
-        return self._coerce_float(runtime.get("target_ec_max"))
+            base = runtime.get("target_ec_prepare_max")
+            if base is not None:
+                scaled = self._day_night_override_scaled(
+                    runtime, "ec", "max", default=float(base), phase_key="prepare",
+                )
+                return scaled if scaled is not None else float(base)
+        base_val = self._coerce_float(runtime.get("target_ec_max"))
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ec", "max", default=base_val)
+
+    def _effective_ph_target(self, *, task: Any, runtime: Mapping[str, Any]) -> float:
+        base = float(runtime.get("target_ph") or 0.0)
+        return self._day_night_override(runtime, "ph", "target", default=base)
+
+    def _effective_ph_min(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+        base_val = self._coerce_float(runtime.get("target_ph_min"))
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ph", "min", default=base_val)
+
+    def _effective_ph_max(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+        base_val = self._coerce_float(runtime.get("target_ph_max"))
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ph", "max", default=base_val)
+
+    # ── Day/Night helpers ────────────────────────────────────────────
+
+    def _day_night_override(
+        self,
+        runtime: Mapping[str, Any],
+        metric: str,
+        kind: str,
+        *,
+        default: float,
+    ) -> float:
+        """Возвращает day- или night-значение для metric (ph/ec) и kind (target/min/max).
+
+        Если day_night_enabled=False или значение не задано — возвращает default.
+        Day-значение из day_night также используется если задано; иначе — default (что
+        соответствует base-таргету фазы, т.е. конвенция: базовый target == day).
+        """
+        config = runtime.get("day_night_config") if isinstance(runtime.get("day_night_config"), Mapping) else None
+        if not config or not bool(config.get("enabled")):
+            return default
+        section = config.get(metric) if isinstance(config.get(metric), Mapping) else None
+        if not section:
+            return default
+        is_day = self._is_day_now(config)
+        if is_day:
+            if kind == "target":
+                key = "day"
+            else:
+                key = f"day_{kind}"
+        else:
+            if kind == "target":
+                key = "night"
+            else:
+                key = f"night_{kind}"
+        value = section.get(key)
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _day_night_override_scaled(
+        self,
+        runtime: Mapping[str, Any],
+        metric: str,
+        kind: str,
+        *,
+        default: float,
+        phase_key: str,
+    ) -> float | None:
+        """Для prepare-фазы (solution_fill/tank_recirc) возвращает min/max, масштабированный NPK share."""
+        if phase_key != "prepare":
+            return default
+        base_full = self._coerce_float(runtime.get(f"target_ec_{kind}"))
+        if base_full is None or base_full <= 0:
+            return default
+        overridden_full = self._day_night_override(runtime, metric, kind, default=base_full)
+        if overridden_full == base_full:
+            return default
+        share = float(runtime.get("npk_ec_share") or (default / base_full))
+        return round(overridden_full * share, 4)
+
+    @staticmethod
+    def _is_day_now(day_night_config: Mapping[str, Any]) -> bool:
+        """Возвращает True если текущее локальное время теплицы попадает в
+        дневной интервал.
+
+        Использует day_start_time (HH:MM) + day_hours + timezone (IANA-имя,
+        например "Europe/Moscow") из config. Если timezone не задан — fallback
+        на UTC. Если day_start_time/day_hours невалидны — возвращает True.
+        """
+        lighting = day_night_config.get("lighting") if isinstance(day_night_config.get("lighting"), Mapping) else {}
+        raw_start = lighting.get("day_start_time")
+        day_hours = lighting.get("day_hours")
+        if not isinstance(raw_start, str) or not raw_start.strip() or day_hours is None:
+            return True
+        parts = raw_start.strip().split(":")
+        if len(parts) < 2:
+            return True
+        try:
+            start_h = int(parts[0])
+            start_m = int(parts[1])
+            hours = float(day_hours)
+        except (TypeError, ValueError):
+            return True
+        if not (0 <= start_h <= 23 and 0 <= start_m <= 59):
+            return True
+        if hours <= 0:
+            return False
+        if hours >= 24:
+            return True
+
+        # Резолвим now в локальном TZ теплицы. `day_start_time` хранится как
+        # HH:MM в локальном времени teplicy, поэтому сравнение должно идти в
+        # том же TZ. Иначе при UTC-контейнере и TZ=МСК night-targets смещаются
+        # на часы разницы.
+        tz_name = lighting.get("timezone") if isinstance(lighting.get("timezone"), str) else None
+        tz: Any = timezone.utc
+        if tz_name:
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(tz_name)
+            except Exception:
+                tz = timezone.utc
+        now_local = datetime.now(tz)
+
+        start_min = start_h * 60 + start_m
+        end_min = (start_min + int(round(hours * 60))) % (24 * 60)
+        now_min = now_local.hour * 60 + now_local.minute
+        if start_min == end_min:
+            return True
+        if start_min < end_min:
+            return start_min <= now_min < end_min
+        return now_min >= start_min or now_min < end_min
 
     def _runtime_phase_key(self, *, task: Any) -> str:
         workflow = getattr(task, "workflow", None)

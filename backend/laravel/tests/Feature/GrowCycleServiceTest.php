@@ -910,4 +910,358 @@ class GrowCycleServiceTest extends TestCase
             'zone_id' => $zone->id,
         ]);
     }
+
+    #[Test]
+    public function it_preserves_snapshot_immutability_when_changing_revision_with_next_phase_mode(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $oldRevision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'revision_number' => 1,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $oldRevision->id,
+            'phase_index' => 0,
+            'name' => 'Old Phase',
+            'ph_target' => 5.80,
+            'ec_target' => 1.40,
+        ]);
+
+        $newRevision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'revision_number' => 2,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $newRevision->id,
+            'phase_index' => 0,
+            'name' => 'New Phase',
+            'ph_target' => 6.20,
+            'ec_target' => 2.00,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $oldRevision, $plant->id);
+        $originalPhaseId = $cycle->current_phase_id;
+        $originalSnapshotPhTarget = (float) $cycle->currentPhase->ph_target;
+        $this->assertSame(5.80, $originalSnapshotPhTarget);
+
+        $user = \App\Models\User::factory()->create(['role' => 'agronomist']);
+        $updated = $this->service->changeRecipeRevision($cycle->fresh(), $newRevision, 'next_phase', $user->id);
+
+        // recipe_revision_id обновился
+        $this->assertSame($newRevision->id, $updated->recipe_revision_id);
+        // current_phase_id не меняется в next_phase режиме
+        $this->assertSame($originalPhaseId, $updated->current_phase_id);
+        // snapshot фазы не изменился — targets остались от старой ревизии
+        $this->assertSame(5.80, (float) $updated->currentPhase->ph_target);
+        $this->assertSame(1.40, (float) $updated->currentPhase->ec_target);
+    }
+
+    #[Test]
+    public function it_creates_new_snapshot_immediately_when_changing_revision_with_now_mode(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $oldRevision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'revision_number' => 1,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $oldRevision->id,
+            'phase_index' => 0,
+            'ph_target' => 5.80,
+            'ec_target' => 1.40,
+        ]);
+
+        $newRevision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'revision_number' => 2,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $newRevision->id,
+            'phase_index' => 0,
+            'ph_target' => 6.20,
+            'ec_target' => 2.00,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $oldRevision, $plant->id);
+        $originalPhaseId = $cycle->current_phase_id;
+
+        $user = \App\Models\User::factory()->create(['role' => 'agronomist']);
+        $updated = $this->service->changeRecipeRevision($cycle->fresh(), $newRevision, 'now', $user->id);
+
+        // current_phase_id сменился на новый snapshot
+        $this->assertNotSame($originalPhaseId, $updated->current_phase_id);
+        // snapshot содержит targets новой ревизии
+        $this->assertSame(6.20, (float) $updated->currentPhase->ph_target);
+        $this->assertSame(2.00, (float) $updated->currentPhase->ec_target);
+        // Для разрешения UNIQUE (grow_cycle_id, phase_index) новому snapshot
+        // назначен max+1 (в цикле уже был snapshot с phase_index=0).
+        $this->assertSame(1, (int) $updated->currentPhase->phase_index);
+        // Исторический snapshot старой ревизии сохранён (не удалён).
+        $this->assertDatabaseHas('grow_cycle_phases', [
+            'id' => $originalPhaseId,
+            'phase_index' => 0,
+        ]);
+    }
+
+    #[Test]
+    public function it_cancels_active_ae_tasks_and_intents_on_harvest(): void
+    {
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+
+        // Эмулируем активный irrigation intent + ae_task (не cycle-start).
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'task_type' => 'irrigation',
+            'status' => 'running',
+            'idempotency_key' => 'test-irr-intent-1',
+            'payload' => json_encode(['source' => 'scheduler']),
+            'not_before' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'running',
+            'idempotency_key' => 'test-irr-task-1',
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $user = \App\Models\User::factory()->create(['role' => 'agronomist']);
+        $this->service->harvest($cycle->fresh(), [], $user->id);
+
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => 'test-irr-intent-1',
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_harvested',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => 'test-irr-task-1',
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_harvested',
+        ]);
+    }
+
+    #[Test]
+    public function it_emits_cycle_started_event_on_start_cycle(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'NEW']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+        $this->service->startCycle($cycle->fresh());
+
+        $this->assertDatabaseHas('zone_events', [
+            'zone_id' => $zone->id,
+            'type' => 'CYCLE_STARTED',
+            'entity_type' => 'grow_cycle',
+            'entity_id' => (string) $cycle->id,
+        ]);
+    }
+
+    #[Test]
+    public function ae3_reap_stale_tasks_marks_expired_tasks_as_failed(): void
+    {
+        $zoneA = Zone::factory()->create();
+        $zoneB = Zone::factory()->create();
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zoneA->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'running',
+            'idempotency_key' => 'reap-test-deadline',
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'stage_deadline_at' => now()->subMinutes(5),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zoneB->id,
+            'task_type' => 'cycle_start',
+            'status' => 'claimed',
+            'idempotency_key' => 'reap-test-claim-stale',
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'claimed_at' => now()->subMinutes(10),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+        ]);
+
+        $this->artisan('ae3:reap-stale-tasks', ['--claim-stale-after' => 60])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => 'reap-test-deadline',
+            'status' => 'failed',
+            'error_code' => 'stage_deadline_exceeded',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => 'reap-test-claim-stale',
+            'status' => 'failed',
+            'error_code' => 'claim_stale',
+        ]);
+    }
+
+    #[Test]
+    public function ae3_cleanup_old_tasks_deletes_only_old_terminal_records(): void
+    {
+        $zone = Zone::factory()->create();
+        // Старая completed — должна быть удалена
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'completed',
+            'idempotency_key' => 'cleanup-old',
+            'scheduled_for' => now()->subDays(120),
+            'due_at' => now()->subDays(120),
+            'created_at' => now()->subDays(120),
+            'updated_at' => now()->subDays(120),
+        ]);
+        // Свежая completed — остаётся
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'completed',
+            'idempotency_key' => 'cleanup-fresh',
+            'scheduled_for' => now()->subDays(10),
+            'due_at' => now()->subDays(10),
+            'created_at' => now()->subDays(10),
+            'updated_at' => now()->subDays(10),
+        ]);
+        // Старая running — остаётся (не terminal)
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'running',
+            'idempotency_key' => 'cleanup-running-old',
+            'scheduled_for' => now()->subDays(200),
+            'due_at' => now()->subDays(200),
+            'created_at' => now()->subDays(200),
+            'updated_at' => now()->subDays(200),
+        ]);
+
+        $this->artisan('ae3:cleanup-old-tasks', ['--days' => 90])
+            ->assertSuccessful();
+
+        $this->assertDatabaseMissing('ae_tasks', ['idempotency_key' => 'cleanup-old']);
+        $this->assertDatabaseHas('ae_tasks', ['idempotency_key' => 'cleanup-fresh']);
+        $this->assertDatabaseHas('ae_tasks', ['idempotency_key' => 'cleanup-running-old']);
+    }
+
+    #[Test]
+    public function cycle_events_include_correlation_id_from_trace_header(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        request()->headers->set('X-Trace-Id', 'trace-abc-123');
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+
+        $event = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'CYCLE_CREATED')
+            ->first();
+        $this->assertNotNull($event);
+        $payload = json_decode($event->payload_json, true);
+        $this->assertSame('trace-abc-123', $payload['correlation_id'] ?? null);
+    }
+
+    #[Test]
+    public function it_cancels_pending_scheduler_intents_on_phase_advance(): void
+    {
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
+        ]);
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+
+        // Stale IRRIGATE_ONCE из предыдущей фазы, ещё не диспатчен.
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'task_type' => 'irrigation',
+            'status' => 'pending',
+            'idempotency_key' => 'test-stale-intent',
+            'payload' => json_encode(['source' => 'scheduler']),
+            'not_before' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        // Running intent не должен быть тронут — AE3 его активно исполняет.
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'task_type' => 'irrigation',
+            'status' => 'running',
+            'idempotency_key' => 'test-running-intent',
+            'payload' => json_encode(['source' => 'scheduler']),
+            'not_before' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $user = \App\Models\User::factory()->create(['role' => 'agronomist']);
+        $this->service->advancePhase($cycle->fresh(), $user->id);
+
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => 'test-stale-intent',
+            'status' => 'cancelled',
+            'error_code' => 'phase_advanced_before_dispatch',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => 'test-running-intent',
+            'status' => 'running',
+        ]);
+    }
 }

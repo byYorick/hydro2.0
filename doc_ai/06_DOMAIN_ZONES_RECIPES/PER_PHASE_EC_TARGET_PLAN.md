@@ -1,8 +1,19 @@
 # Per-Phase EC Target для двухбакового контура
 
+> **STATUS: DONE — реализовано на ветке `ae3` (2026-04-13).**
+>
+> Краткая сводка реализации:
+> - `backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py:174-280,605` — `_compute_prepare_ec_share`, runtime-поля `target_ec_prepare*`, `npk_ec_share`, `day_night_config`.
+> - `backend/services/automation-engine/ae3lite/application/handlers/base.py:1107-1245` — handler accessors `_effective_ec_target/min/max`, `_effective_ph_target/min/max`, day/night override и `_day_night_override_scaled` для prepare.
+> - `backend/laravel/app/Support/Automation/RecipeNutritionRuntimeConfigResolver.php:41` — сборка `phases.{phase}.ec_component_ratios` для compiled bundle.
+> - Канонический контракт зафиксирован в `EFFECTIVE_TARGETS_SPEC.md` §9, описание для AE3 — `../04_BACKEND_CORE/ae3lite.md` §5.4.
+> - Тесты: 1054 AE3 pytest + 822 Laravel — зелёные.
+>
+> Документ сохраняется как исторический план / справочник по физико-химическим долям; новые правила должны вноситься не сюда, а в `EFFECTIVE_TARGETS_SPEC.md`.
+
 **Ветка:** `ae3`  
-**Статус:** Планирование  
-**Дата:** 2026-04-12  
+**Статус:** Планирование (исторический)  
+**Дата:** 2026-04-12 (обновлено 2026-04-13)  
 **Совместимость:** Breaking change для AE3 runtime, backward-compatible при отсутствии nutrition ratios
 
 ---
