@@ -17,7 +17,13 @@ from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts as _telemetry_decision_window_since_ts,
     summarize_window as _telemetry_summarize_window,
 )
-from ae3lite.infrastructure.metrics import EMERGENCY_STOP_RECONCILE, FAIL_SAFE_TRANSITION
+from ae3lite.infrastructure.metrics import (
+    EMERGENCY_STOP_RECONCILE,
+    FAIL_SAFE_TRANSITION,
+    IRR_PROBE_DEFERRED,
+    IRR_PROBE_STREAK_EXHAUSTED,
+    NODE_REBOOT_DETECTED,
+)
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 from common.service_logs import send_service_log
@@ -411,6 +417,35 @@ class BaseStageHandler:
                 node_uid,
                 exc_info=True,
             )
+        NODE_REBOOT_DETECTED.labels(
+            topology=str(getattr(task, "topology", "") or ""),
+            stage=str(getattr(task, "current_stage", "") or ""),
+            node_uid=str(node_uid or "unknown"),
+        ).inc()
+        try:
+            send_service_log(
+                service="automation-engine",
+                level="warning",
+                message="AE3 detected ESP32 reboot pattern during IRR state probe",
+                context={
+                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+                    "task_id": int(getattr(task, "id", 0) or 0) or None,
+                    "node_uid": node_uid,
+                    "stage": details["stage"],
+                    "workflow_phase": details["workflow_phase"],
+                    "diverged_keys": list(diverged_keys),
+                    "node_status": details["node_status"],
+                    "heartbeat_age_sec": details["heartbeat_age_sec"],
+                    "irr_probe_failure_streak": details["irr_probe_failure_streak"],
+                    "detection_reason": details["detection_reason"],
+                },
+            )
+        except Exception:
+            _logger.debug(
+                "AE3 send_service_log failed для NODE_REBOOT_DETECTED zone_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                exc_info=True,
+            )
 
     def _extract_irr_probe_node_uid(self, *, plan: Any) -> str | None:
         named_plans = getattr(plan, "named_plans", None) if plan is not None else None
@@ -527,8 +562,13 @@ class BaseStageHandler:
         streak = await self._task_repository.increment_irr_probe_failure_streak(
             task_id=int(task.id),
         )
+        topology_label = str(getattr(task, "topology", "") or "")
+        stage_label = str(getattr(task, "current_stage", "") or "")
+        IRR_PROBE_DEFERRED.labels(
+            topology=topology_label, stage=stage_label, reason=str(reason or "unknown"),
+        ).inc()
         details: dict[str, Any] = {
-            "stage": str(getattr(task, "current_stage", "") or ""),
+            "stage": stage_label,
             "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
             "reason": reason,
             "streak": int(streak),
@@ -557,6 +597,9 @@ class BaseStageHandler:
                 exc_info=True,
             )
         if exhausted:
+            IRR_PROBE_STREAK_EXHAUSTED.labels(
+                topology=topology_label, stage=stage_label,
+            ).inc()
             try:
                 await send_biz_alert(
                     code="biz_irr_probe_streak_exhausted",

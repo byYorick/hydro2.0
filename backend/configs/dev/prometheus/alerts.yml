@@ -241,6 +241,33 @@ groups:
           summary: "AE3 stage deadline exceeded (stage {{ $labels.stage }})"
           description: "Stage {{ $labels.stage }} (topology={{ $labels.topology }}) hit its hard deadline."
 
+      - alert: AE3IrrProbeStreakExhausted
+        expr: rate(ae3_irr_probe_streak_exhausted_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 IRR probe streak exhausted (stage {{ $labels.stage }})"
+          description: "Polling stage {{ $labels.stage }} (topology={{ $labels.topology }}) escalated после streak подряд идущих deferred IRR probes — нода долго недоступна."
+
+      - alert: AE3NodeRebootDetectedFrequent
+        expr: sum by (node_uid) (increase(ae3_node_reboot_detected_total[1h])) > 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Частые reboot ESP32 ноды (node {{ $labels.node_uid }})"
+          description: "За последний час задетекчено более 2 reboot pattern для node_uid={{ $labels.node_uid }}: проверьте питание, watchdog, brownout, целостность OTA."
+
+      - alert: AE3IrrProbeDeferredHighRate
+        expr: sum by (topology, stage) (rate(ae3_irr_probe_deferred_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 высокая частота deferred IRR probes (stage {{ $labels.stage }})"
+          description: "Stage {{ $labels.stage }} (topology={{ $labels.topology }}) отложил >0.2 probe/sec за 5 минут — нестабильная связь с IRR-нодой или firmware fail-safe срабатывает часто."
+
   - name: ae3_slo_alerts
     interval: 30s
     rules:

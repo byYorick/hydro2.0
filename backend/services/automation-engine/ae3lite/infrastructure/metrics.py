@@ -250,6 +250,24 @@ NODE_RUNTIME_EVENT_KICK = Counter(
     ["event_type", "channel"],
 )
 
+NODE_REBOOT_DETECTED = Counter(
+    "ae3_node_reboot_detected_total",
+    "Detections of ESP32 reboot pattern (all expected truthy snapshot fields turned False) during IRR probe",
+    ["topology", "stage", "node_uid"],
+)
+
+IRR_PROBE_DEFERRED = Counter(
+    "ae3_irr_probe_deferred_total",
+    "IRR probe attempts deferred by backoff (node unreachable / unavailable / stale snapshot)",
+    ["topology", "stage", "reason"],
+)
+
+IRR_PROBE_STREAK_EXHAUSTED = Counter(
+    "ae3_irr_probe_streak_exhausted_total",
+    "Streak of consecutive deferred IRR probes reached limit and stage was escalated",
+    ["topology", "stage"],
+)
+
 CORRECTION_EXHAUSTED = Counter(
     "ae3_correction_exhausted_total",
     "Total correction cycles that exhausted all dose attempts",
