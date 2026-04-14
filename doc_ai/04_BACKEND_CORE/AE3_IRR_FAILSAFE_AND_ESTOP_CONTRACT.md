@@ -298,6 +298,77 @@ Frontend обязан:
 
 ---
 
+## 7a. IRR state probe backoff (resilient probing для polling-stages)
+
+`irrigation_check` и `irrigation_recovery_check` опрашивают IRR-ноду каждые
+`level_poll_interval_sec` через `_probe_irr_state` (`storage_state` команда +
+ожидание `IRR_STATE_SNAPSHOT` zone_event). На реальном железе нода может быть
+временно недоступна (Wi-Fi/MQTT hiccup, reboot ESP32, OTA, кратковременный
+power-glitch). Жёсткий fail-closed на каждом poll-итерации без backoff
+приводит к ложным `irrigation_start` failure'ам и преждевременной эскалации
+recovery, тогда как нода восстановится через 5-15 секунд.
+
+### 7a.1. Backoff контракт
+
+`BaseStageHandler._probe_irr_state_with_backoff()` оборачивает probe и
+действует так:
+
+1. **Pre-probe liveness check** (вариант C). Перед публикацией
+   `storage_state` команды читается `nodes.status` и `nodes.last_heartbeat_at`
+   через `runtime_monitor.read_node_liveness(node_uid)`. Если нода
+   `status='offline'` или `heartbeat_age_sec >
+   _IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC` (по умолчанию 30 s) —
+   probe пропускается, инкрементируется streak, возвращается
+   `StageOutcome(kind="poll")`. Экономит HL roundtrip и MQTT публикацию.
+2. **Resilient probe** (вариант B). Если нода кажется живой — выполняется
+   обычный `_probe_irr_state`. На `irr_state_unavailable` или
+   `irr_state_stale` `TaskExecutionError` НЕ пробрасывается: streak
+   инкрементируется, эмитится zone-event `IRR_STATE_PROBE_DEFERRED`,
+   возвращается `poll`.
+3. **Streak limit / fail-closed**. При достижении
+   `_IRR_PROBE_FAILURE_STREAK_LIMIT` (по умолчанию 5 подряд идущих
+   deferred probes) handler возвращает `exhausted_outcome` (для
+   `irrigation_check` — `transition: irrigation_stop_to_recovery`, для
+   `irrigation_recovery_check` — `fail:
+   irrigation_recovery_probe_exhausted`). Эмитится
+   `IRR_STATE_PROBE_STREAK_EXHAUSTED` zone-event и
+   `biz_irr_probe_streak_exhausted` alert (severity `warning`).
+4. **Reset streak**. После успешного probe `ae_tasks.irr_probe_failure_streak`
+   обнуляется (UPDATE с `WHERE streak <> 0`, чтобы не плодить лишние UPDATE).
+5. **Hardware mismatch — без backoff**. `irr_state_mismatch` (snapshot
+   получен, но valve/pump state не совпадает с `expected`) пробрасывается
+   как TaskExecutionError немедленно. Это safety boundary: расхождение
+   физического состояния — не transient ошибка, а потенциально опасное
+   состояние, требующее fail-closed.
+
+### 7a.2. Где применяется
+
+| Stage | Backoff | Exhausted outcome |
+|-------|---------|-------------------|
+| `irrigation_check` | да | `transition: irrigation_stop_to_recovery` |
+| `irrigation_recovery_check` | да | `fail: irrigation_recovery_probe_exhausted` |
+| `startup`, `clean_fill`, `solution_fill`, `prepare_recirc`, `correction` | нет (strict `_probe_irr_state`) | TaskExecutionError fail-closed |
+
+Полив (poll-based stages) работает в режиме deferred backoff. Setup-stages
+(fill / startup / correction-window) сохраняют строгое поведение — там
+nodes уже должны быть available, transient failure даёт реальные диагнозы,
+а скрытие через streak усложнило бы расследование.
+
+### 7a.3. Поля и события
+
+- `ae_tasks.irr_probe_failure_streak` — счётчик подряд идущих deferred
+  probes. Сбрасывается при успехе.
+- `IRR_STATE_PROBE_DEFERRED` — zone-event на каждый отложенный probe;
+  payload `{stage, workflow_phase, reason, streak, streak_limit, expected,
+  node_uid, node_status, heartbeat_age_sec}`.
+- `IRR_STATE_PROBE_STREAK_EXHAUSTED` — zone-event при достижении лимита.
+- `biz_irr_probe_streak_exhausted` — biz alert (severity `warning`).
+
+`reason` принимает значения: `node_unreachable`, `irr_state_unavailable`,
+`irr_state_stale`.
+
+---
+
 ## 8. Инварианты и fail-closed
 
 1. Firmware и AE3 обязаны останавливаться в одну и ту же безопасную сторону: `OFF`, а не retry-first.
@@ -307,3 +378,7 @@ Frontend обязан:
 4. Отпускание `E-Stop` не отменяет общую обязанность AE3 перепроверить read-model до продолжения логики.
 5. Новые event-коды и config-поля не должны ломать защищённый pipeline
    `ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`.
+6. `irr_state_mismatch` — safety boundary, не оборачивается probe backoff'ом
+   (см. §7a). `irr_state_unavailable` / `irr_state_stale` в polling-стейджах
+   допускают отложенный retry до `_IRR_PROBE_FAILURE_STREAK_LIMIT`, после
+   чего обязательно эскалируются (recovery transition или fail-closed).

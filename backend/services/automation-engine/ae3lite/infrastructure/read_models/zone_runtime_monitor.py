@@ -561,6 +561,40 @@ class PgZoneRuntimeMonitor:
             "cmd_id": str(row.get("snapshot_cmd_id") or "").strip() or None,
         }
 
+    async def read_node_liveness(self, *, node_uid: str) -> Mapping[str, Any]:
+        """Возвращает актуальность heartbeat/LWT узла для pre-probe backoff.
+
+        Используется handler'ами чтобы пропустить `_probe_irr_state` когда нода
+        в reboot/disconnect — probe всё равно упадёт по timeout, а мы сэкономим
+        HL roundtrip и storage_state публикацию.
+        """
+        normalized_uid = str(node_uid or "").strip()
+        if not normalized_uid:
+            return {"found": False, "status": None, "heartbeat_age_sec": None}
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT status, last_heartbeat_at, last_seen_at
+                FROM nodes
+                WHERE uid = $1
+                """,
+                normalized_uid,
+            )
+        if row is None:
+            return {"found": False, "status": None, "heartbeat_age_sec": None}
+
+        status = str(row.get("status") or "").strip().lower() or None
+        heartbeat_age_sec = self._age_sec(row.get("last_heartbeat_at"))
+        last_seen_age_sec = self._age_sec(row.get("last_seen_at"))
+        return {
+            "found": True,
+            "status": status,
+            "heartbeat_age_sec": heartbeat_age_sec,
+            "last_seen_age_sec": last_seen_age_sec,
+        }
+
     async def read_latest_zone_event(
         self,
         *,

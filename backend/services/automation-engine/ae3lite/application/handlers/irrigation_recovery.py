@@ -27,7 +27,7 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
-        await self._probe_irr_state(
+        probe_outcome = await self._probe_irr_state_with_backoff(
             task=task, plan=plan, now=now,
             expected={
                 "valve_irrigation": False,
@@ -35,7 +35,15 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
                 "valve_solution_fill": True,
                 "pump_main": True,
             },
+            poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            exhausted_outcome=StageOutcome(
+                kind="fail",
+                error_code="irrigation_recovery_probe_exhausted",
+                error_message="IRR-нода недоступна: исчерпан лимит подряд идущих probe-deferrals",
+            ),
         )
+        if probe_outcome is not None:
+            return probe_outcome
 
         if pending_manual_step == "irrigation_recovery_stop":
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")

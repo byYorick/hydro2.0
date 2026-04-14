@@ -433,6 +433,31 @@ class PgAutomationTaskRepository:
             task_id,
         )
 
+    async def increment_irr_probe_failure_streak(self, *, task_id: int) -> int:
+        """Инкрементирует счётчик подряд идущих deferred probe IRR state и возвращает новое значение."""
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks
+            SET irr_probe_failure_streak = irr_probe_failure_streak + 1
+            WHERE id = $1
+            RETURNING irr_probe_failure_streak
+            """,
+            task_id,
+        )
+        return int(row["irr_probe_failure_streak"]) if row is not None else 0
+
+    async def reset_irr_probe_failure_streak(self, *, task_id: int) -> None:
+        """Сбрасывает счётчик deferred probe после успешного probe или transition."""
+        await self._execute(
+            """
+            UPDATE ae_tasks
+            SET irr_probe_failure_streak = 0
+            WHERE id = $1
+              AND irr_probe_failure_streak <> 0
+            """,
+            task_id,
+        )
+
     async def mark_running(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
         return await self._update_task_status(
             task_id=task_id,

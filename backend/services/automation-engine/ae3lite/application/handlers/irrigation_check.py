@@ -131,12 +131,19 @@ class IrrigationCheckHandler(BaseStageHandler):
             )
 
         if not probe_verified:
-            await self._probe_irr_state(
+            probe_outcome = await self._probe_irr_state_with_backoff(
                 task=task,
                 plan=plan,
                 now=now,
                 expected=expected_irrigation_state,
+                poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                exhausted_outcome=StageOutcome(
+                    kind="transition",
+                    next_stage="irrigation_stop_to_recovery",
+                ),
             )
+            if probe_outcome is not None:
+                return probe_outcome
 
         if control_mode == "manual":
             return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))

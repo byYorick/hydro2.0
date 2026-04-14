@@ -80,6 +80,9 @@ class AutomationTask:
     # ── Observability flags ─────────────────────────────────────────
     start_event_emitted: bool = False
 
+    # ── IRR probe resilience (incremented on unavailable/stale) ─────
+    irr_probe_failure_streak: int = 0
+
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
         """Собирает сущность из asyncpg Record или dict-подобной строки."""
@@ -218,6 +221,7 @@ class AutomationTask:
             irrigation_wait_ready_deadline_at=_naive(row.get("irrigation_wait_ready_deadline_at")),
             irrigation_setup_deadline_at=_naive(row.get("irrigation_setup_deadline_at")),
             start_event_emitted=bool(row.get("start_event_emitted", False)),
+            irr_probe_failure_streak=int(row.get("irr_probe_failure_streak") or 0),
         )
 
     @property
