@@ -92,7 +92,7 @@ describe('PumpCalibrationsPanel.vue', () => {
     getPumpCalibrationsMock.mockResolvedValue([
       {
         node_channel_id: 101,
-        role: 'ph_acid_pump',
+        role: 'pump_acid',
         component: 'ph_down',
         channel_label: 'pH Down',
         node_uid: 'pump-node-1',
@@ -106,7 +106,7 @@ describe('PumpCalibrationsPanel.vue', () => {
       },
       {
         node_channel_id: 102,
-        role: 'ph_base_pump',
+        role: 'pump_base',
         component: 'ph_up',
         channel_label: 'pH Up',
         node_uid: 'pump-node-1',
@@ -155,7 +155,7 @@ describe('PumpCalibrationsPanel.vue', () => {
       .mockResolvedValueOnce([
         {
           node_channel_id: 102,
-          role: 'ph_base_pump',
+          role: 'pump_base',
           component: 'ph_up',
           channel_label: 'pH Up',
           node_uid: 'pump-node-1',
@@ -171,7 +171,7 @@ describe('PumpCalibrationsPanel.vue', () => {
       .mockResolvedValueOnce([
         {
           node_channel_id: 102,
-          role: 'ph_base_pump',
+          role: 'pump_base',
           component: 'ph_up',
           channel_label: 'pH Up',
           node_uid: 'pump-node-1',

@@ -223,12 +223,12 @@ const historyByRole = computed<Record<string, PumpCalibrationHistoryItem>>(() =>
 
 function roleShortLabel(role: string): string {
   const labels: Record<string, string> = {
-    ph_acid_pump: 'pH-',
-    ph_base_pump: 'pH+',
-    ec_npk_pump: 'N',
-    ec_calcium_pump: 'Ca',
-    ec_magnesium_pump: 'Mg',
-    ec_micro_pump: 'Mi',
+    pump_acid: 'pH-',
+    pump_base: 'pH+',
+    pump_a: 'N',
+    pump_b: 'Ca',
+    pump_c: 'Mg',
+    pump_d: 'Mi',
   }
 
   return labels[role] ?? 'P'
@@ -236,12 +236,12 @@ function roleShortLabel(role: string): string {
 
 function formatPumpLabel(pump: PumpCalibration): string {
   const labels: Record<string, string> = {
-    ph_acid_pump: 'pH Down (кислота)',
-    ph_base_pump: 'pH Up (щёлочь)',
-    ec_npk_pump: 'NPK (питательный)',
-    ec_calcium_pump: 'Кальций (Ca)',
-    ec_magnesium_pump: 'Магний (Mg)',
-    ec_micro_pump: 'Микроэлементы',
+    pump_acid: 'pH Down (кислота)',
+    pump_base: 'pH Up (щёлочь)',
+    pump_a: 'NPK (питательный)',
+    pump_b: 'Кальций (Ca)',
+    pump_c: 'Магний (Mg)',
+    pump_d: 'Микроэлементы',
   }
 
   return labels[pump.role] ?? pump.channel_label ?? pump.channel
@@ -302,12 +302,12 @@ function resolvePumpRole(payload: Record<string, unknown> | null, pumps: PumpCal
 
   const component = typeof payload?.component === 'string' ? payload.component : null
   const componentRoleMap: Record<string, string> = {
-    ph_down: 'ph_acid_pump',
-    ph_up: 'ph_base_pump',
-    npk: 'ec_npk_pump',
-    calcium: 'ec_calcium_pump',
-    magnesium: 'ec_magnesium_pump',
-    micro: 'ec_micro_pump',
+    ph_down: 'pump_acid',
+    ph_up: 'pump_base',
+    npk: 'pump_a',
+    calcium: 'pump_b',
+    magnesium: 'pump_c',
+    micro: 'pump_d',
   }
 
   if (component && componentRoleMap[component]) {

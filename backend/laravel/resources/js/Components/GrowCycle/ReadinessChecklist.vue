@@ -156,14 +156,14 @@ const errors = computed(() => {
     Object.entries(props.readiness.required_assets).forEach(([asset, present]) => {
       if (!present) {
         const assetLabels: Record<string, string> = {
-          main_pump: 'Основная помпа',
+          pump_main: 'Основная помпа',
           drain: 'Дренаж',
-          ph_acid_pump: 'Насос pH кислоты',
-          ph_base_pump: 'Насос pH щёлочи',
-          ec_npk_pump: 'Насос EC NPK',
-          ec_calcium_pump: 'Насос EC Calcium',
-          ec_magnesium_pump: 'Насос EC Magnesium',
-          ec_micro_pump: 'Насос EC Micro',
+          pump_acid: 'Насос pH кислоты',
+          pump_base: 'Насос pH щёлочи',
+          pump_a: 'Насос EC NPK',
+          pump_b: 'Насос EC Calcium',
+          pump_c: 'Насос EC Magnesium',
+          pump_d: 'Насос EC Micro',
           tank_clean: 'Бак чистой воды',
           tank_nutrient: 'Бак раствора',
         }
@@ -200,14 +200,14 @@ const checks = computed((): ReadinessCheck[] => {
   if (props.readiness.required_assets) {
     Object.entries(props.readiness.required_assets).forEach(([asset, present]) => {
       const assetLabels: Record<string, string> = {
-        main_pump: 'Основная помпа',
+        pump_main: 'Основная помпа',
         drain: 'Дренаж',
-        ph_acid_pump: 'Насос pH кислоты',
-        ph_base_pump: 'Насос pH щёлочи',
-        ec_npk_pump: 'Насос EC NPK',
-        ec_calcium_pump: 'Насос EC Calcium',
-        ec_magnesium_pump: 'Насос EC Magnesium',
-        ec_micro_pump: 'Насос EC Micro',
+        pump_acid: 'Насос pH кислоты',
+        pump_base: 'Насос pH щёлочи',
+        pump_a: 'Насос EC NPK',
+        pump_b: 'Насос EC Calcium',
+        pump_c: 'Насос EC Magnesium',
+        pump_d: 'Насос EC Micro',
         tank_clean: 'Бак чистой воды',
         tank_nutrient: 'Бак раствора',
       }
@@ -236,14 +236,14 @@ const checks = computed((): ReadinessCheck[] => {
   if (props.readiness.checks) {
     Object.entries(props.readiness.checks).forEach(([key, passed]) => {
       const checkLabels: Record<string, string> = {
-        main_pump: 'Основная помпа привязана',
+        pump_main: 'Основная помпа привязана',
         drain: 'Дренаж привязан',
-        ph_acid_pump: 'Насос pH кислоты привязан',
-        ph_base_pump: 'Насос pH щёлочи привязан',
-        ec_npk_pump: 'Насос EC NPK привязан',
-        ec_calcium_pump: 'Насос EC Calcium привязан',
-        ec_magnesium_pump: 'Насос EC Magnesium привязан',
-        ec_micro_pump: 'Насос EC Micro привязан',
+        pump_acid: 'Насос pH кислоты привязан',
+        pump_base: 'Насос pH щёлочи привязан',
+        pump_a: 'Насос EC NPK привязан',
+        pump_b: 'Насос EC Calcium привязан',
+        pump_c: 'Насос EC Magnesium привязан',
+        pump_d: 'Насос EC Micro привязан',
         pid_config_ph: 'PID-конфиг pH сохранён',
         pid_config_ec: 'PID-конфиг EC сохранён',
         dispatch_enabled: 'Dispatch в automation-engine включён',

@@ -888,7 +888,7 @@ describe('useGrowthCycleWizard', () => {
             data: {
               readiness: {
                 ready: false,
-                errors: ['Required pump calibrations are missing: ec_npk_pump'],
+                errors: ['Required pump calibrations are missing: pump_a'],
               },
             },
           },
@@ -904,7 +904,7 @@ describe('useGrowthCycleWizard', () => {
     expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/calibrate-pump', expect.anything())
     expect(wizard.error.value).toContain('Required pump calibrations are missing')
     expect(showToast).toHaveBeenCalledWith(
-      'Required pump calibrations are missing: ec_npk_pump',
+      'Required pump calibrations are missing: pump_a',
       'error',
       expect.any(Number),
     )

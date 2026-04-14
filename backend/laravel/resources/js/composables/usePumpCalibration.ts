@@ -34,8 +34,6 @@ const componentKeywords: Record<PumpCalibrationComponent, string[]> = {
 
 const flowPathChannelNames = new Set([
   'pump_main',
-  'main_pump',
-  'pump_irrigation',
   'pump_in',
   'drain',
   'drain_main',
@@ -114,7 +112,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
         const bindingRole = String(channel.binding_role || '').trim().toLowerCase()
         const pumpComponent = normalizeComponent(channel.pump_component ?? channel.pump_calibration?.component)
 
-        if (bindingRole === 'main_pump' || bindingRole === 'drain' || flowPathChannelNames.has(lowerName) || lowerName.startsWith('valve_')) {
+        if (bindingRole === 'pump_main' || bindingRole === 'drain' || flowPathChannelNames.has(lowerName) || lowerName.startsWith('valve_')) {
           return
         }
 

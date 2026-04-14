@@ -54,11 +54,9 @@ export function useZoneAutomationNodeCandidates(
   const irrigation = computed(() => nodes.value.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
     return type === 'irrig'
-      || matchesAnyBindingRole(node, ['main_pump', 'drain'])
+      || matchesAnyBindingRole(node, ['pump_main', 'drain'])
       || matchesAnyChannel(node, [
         'pump_main',
-        'main_pump',
-        'pump_irrigation',
         'valve_irrigation',
         'pump_in',
       ])
@@ -67,14 +65,14 @@ export function useZoneAutomationNodeCandidates(
   const ph = computed(() => nodes.value.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
     return type === 'ph'
-      || matchesAnyBindingRole(node, ['ph_acid_pump', 'ph_base_pump'])
+      || matchesAnyBindingRole(node, ['pump_acid', 'pump_base'])
       || matchesAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
   }))
 
   const ec = computed(() => nodes.value.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
     return type === 'ec'
-      || matchesAnyBindingRole(node, ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'])
+      || matchesAnyBindingRole(node, ['pump_a', 'pump_b', 'pump_c', 'pump_d'])
       || matchesAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
   }))
 

@@ -301,12 +301,12 @@ const phaseLabels: Record<Exclude<ProcessCalibrationMode, 'generic'>, string> = 
 }
 
 const roleLabels: Record<string, string> = {
-  ph_acid_pump: 'насос pH кислоты',
-  ph_base_pump: 'насос pH щёлочи',
-  ec_npk_pump: 'насос EC NPK',
-  ec_calcium_pump: 'насос EC Calcium',
-  ec_magnesium_pump: 'насос EC Magnesium',
-  ec_micro_pump: 'насос EC Micro',
+  pump_acid: 'насос pH кислоты',
+  pump_base: 'насос pH щёлочи',
+  pump_a: 'насос EC NPK',
+  pump_b: 'насос EC Calcium',
+  pump_c: 'насос EC Magnesium',
+  pump_d: 'насос EC Micro',
 }
 
 const pidTypeLabels: Record<'ph' | 'ec', string> = {
@@ -322,8 +322,8 @@ const pumpGroups = computed<PumpGroupStatus[]>(() => {
   )
 
   const groups: Array<{ key: 'ph' | 'ec'; label: string; roles: string[] }> = [
-    { key: 'ph', label: 'Контур дозирования pH', roles: ['ph_acid_pump', 'ph_base_pump'] },
-    { key: 'ec', label: 'Контур дозирования EC', roles: ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'] },
+    { key: 'ph', label: 'Контур дозирования pH', roles: ['pump_acid', 'pump_base'] },
+    { key: 'ec', label: 'Контур дозирования EC', roles: ['pump_a', 'pump_b', 'pump_c', 'pump_d'] },
   ]
 
   return groups.map((group) => {

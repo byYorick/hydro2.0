@@ -101,14 +101,14 @@ type AssignmentKey = 'irrigation' | 'ph_correction' | 'ec_correction' | 'light' 
 
 // role → binding_role mapping для определения текущих привязок
 const BINDING_ROLE_TO_ASSIGNMENT: Record<string, AssignmentKey> = {
-  main_pump: 'irrigation',
+  pump_main: 'irrigation',
   drain: 'irrigation',
-  ph_acid_pump: 'ph_correction',
-  ph_base_pump: 'ph_correction',
-  ec_npk_pump: 'ec_correction',
-  ec_calcium_pump: 'ec_correction',
-  ec_magnesium_pump: 'ec_correction',
-  ec_micro_pump: 'ec_correction',
+  pump_acid: 'ph_correction',
+  pump_base: 'ph_correction',
+  pump_a: 'ec_correction',
+  pump_b: 'ec_correction',
+  pump_c: 'ec_correction',
+  pump_d: 'ec_correction',
   light: 'light',
   vent: 'climate',
   heater: 'climate',

@@ -186,14 +186,14 @@ watch(
 )
 
 const availableRoles = [
-  { value: 'main_pump', label: 'Основная помпа' },
+  { value: 'pump_main', label: 'Основная помпа' },
   { value: 'drain', label: 'Дренаж' },
-  { value: 'ph_acid_pump', label: 'pH кислота' },
-  { value: 'ph_base_pump', label: 'pH щёлочь' },
-  { value: 'ec_npk_pump', label: 'EC NPK' },
-  { value: 'ec_calcium_pump', label: 'EC Calcium' },
-  { value: 'ec_magnesium_pump', label: 'EC Magnesium' },
-  { value: 'ec_micro_pump', label: 'EC Micro' },
+  { value: 'pump_acid', label: 'pH кислота' },
+  { value: 'pump_base', label: 'pH щёлочь' },
+  { value: 'pump_a', label: 'EC NPK' },
+  { value: 'pump_b', label: 'EC Calcium' },
+  { value: 'pump_c', label: 'EC Magnesium' },
+  { value: 'pump_d', label: 'EC Micro' },
   { value: 'mist', label: 'Туман' },
   { value: 'light', label: 'Свет' },
   { value: 'vent', label: 'Вентиляция' },

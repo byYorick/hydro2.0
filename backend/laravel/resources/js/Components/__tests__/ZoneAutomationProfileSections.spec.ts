@@ -93,7 +93,7 @@ describe('ZoneAutomationProfileSections', () => {
             id: 301,
             uid: 'nd-irrig-bound',
             type: 'controller',
-            channels: [{ binding_role: 'main_pump' }],
+            channels: [{ binding_role: 'pump_main' }],
           },
         ],
       },

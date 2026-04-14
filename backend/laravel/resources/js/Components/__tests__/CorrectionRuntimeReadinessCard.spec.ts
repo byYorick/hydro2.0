@@ -132,12 +132,12 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
-      { role: 'ph_acid_pump', ml_per_sec: 0.5 },
-      { role: 'ph_base_pump', ml_per_sec: 0.5 },
-      { role: 'ec_npk_pump', ml_per_sec: 1.0 },
-      { role: 'ec_calcium_pump', ml_per_sec: 1.0 },
-      { role: 'ec_magnesium_pump', ml_per_sec: 0.8 },
-      { role: 'ec_micro_pump', ml_per_sec: 0.8 },
+      { role: 'pump_acid', ml_per_sec: 0.5 },
+      { role: 'pump_base', ml_per_sec: 0.5 },
+      { role: 'pump_a', ml_per_sec: 1.0 },
+      { role: 'pump_b', ml_per_sec: 1.0 },
+      { role: 'pump_c', ml_per_sec: 0.8 },
+      { role: 'pump_d', ml_per_sec: 0.8 },
     ])
 
     const wrapper = mount(CorrectionRuntimeReadinessCard, {
@@ -164,9 +164,9 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
-      { role: 'ph_acid_pump', ml_per_sec: 0.4 },
-      { role: 'ph_base_pump', ml_per_sec: null },
-      { role: 'ec_npk_pump', ml_per_sec: null },
+      { role: 'pump_acid', ml_per_sec: 0.4 },
+      { role: 'pump_base', ml_per_sec: null },
+      { role: 'pump_a', ml_per_sec: null },
     ])
 
     const wrapper = mount(CorrectionRuntimeReadinessCard, {
@@ -189,7 +189,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
-      { role: 'ph_acid_pump', ml_per_sec: null },
+      { role: 'pump_acid', ml_per_sec: null },
     ])
 
     const wrapper = mount(CorrectionRuntimeReadinessCard, {
@@ -255,12 +255,12 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
-      { role: 'ph_acid_pump', ml_per_sec: 0.5 },
-      { role: 'ph_base_pump', ml_per_sec: 0.5 },
-      { role: 'ec_npk_pump', ml_per_sec: 1.0 },
-      { role: 'ec_calcium_pump', ml_per_sec: 1.0 },
-      { role: 'ec_magnesium_pump', ml_per_sec: 0.8 },
-      { role: 'ec_micro_pump', ml_per_sec: 0.8 },
+      { role: 'pump_acid', ml_per_sec: 0.5 },
+      { role: 'pump_base', ml_per_sec: 0.5 },
+      { role: 'pump_a', ml_per_sec: 1.0 },
+      { role: 'pump_b', ml_per_sec: 1.0 },
+      { role: 'pump_c', ml_per_sec: 0.8 },
+      { role: 'pump_d', ml_per_sec: 0.8 },
     ])
 
     const wrapper = mount(CorrectionRuntimeReadinessCard, {

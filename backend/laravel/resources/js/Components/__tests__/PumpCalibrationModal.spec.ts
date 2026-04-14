@@ -274,7 +274,7 @@ describe('PumpCalibrationModal', () => {
             type: 'irrig',
             status: 'online',
             channels: [
-              { id: 100, node_id: 1, channel: 'pump_main', type: 'ACTUATOR', metric: null, unit: null, binding_role: 'main_pump' },
+              { id: 100, node_id: 1, channel: 'pump_main', type: 'ACTUATOR', metric: null, unit: null, binding_role: 'pump_main' },
               { id: 101, node_id: 1, channel: 'pump_npk', type: 'ACTUATOR', metric: null, unit: null, pump_component: 'npk' },
             ],
           },

@@ -63,9 +63,9 @@ const ZONE_ASSIGNMENT_ROLES: ZoneAssignmentRole[] = [
 ]
 
 const ZONE_ASSIGNMENT_BINDING_ROLES: Record<ZoneAssignmentRole, string[]> = {
-  irrigation: ['main_pump', 'drain'],
-  ph_correction: ['ph_acid_pump', 'ph_base_pump'],
-  ec_correction: ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'],
+  irrigation: ['pump_main', 'drain'],
+  ph_correction: ['pump_acid', 'pump_base'],
+  ec_correction: ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
   light: ['light'],
   soil_moisture_sensor: ['soil_moisture_sensor'],
   co2_sensor: ['co2_sensor'],
@@ -114,8 +114,6 @@ function matchesZoneAssignmentRole(node: Node, role: ZoneAssignmentRole): boolea
   if (role === 'irrigation') {
     return type === 'irrig' || hasAnyChannel(node, [
       'pump_main',
-      'main_pump',
-      'pump_irrigation',
       'valve_irrigation',
       'valve_clean_fill',
       'valve_clean_supply',
