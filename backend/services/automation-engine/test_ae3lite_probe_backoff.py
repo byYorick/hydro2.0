@@ -289,6 +289,78 @@ async def test_probe_backoff_propagates_mismatch(monkeypatch) -> None:
     assert repo.reset_calls == 0
 
 
+def test_node_reboot_pattern_detects_all_truthy_diverged() -> None:
+    expected = {"valve_irrigation": True, "valve_solution_supply": True, "pump_main": True}
+    snapshot = {"valve_irrigation": False, "valve_solution_supply": False, "pump_main": False, "level_clean_max": True}
+    is_reboot, diverged = BaseStageHandler._is_node_reboot_pattern(expected=expected, snapshot=snapshot)
+    assert is_reboot is True
+    assert set(diverged) == {"valve_irrigation", "valve_solution_supply", "pump_main"}
+
+
+def test_node_reboot_pattern_rejects_partial_divergence() -> None:
+    expected = {"valve_irrigation": True, "valve_solution_supply": True, "pump_main": True}
+    snapshot = {"valve_irrigation": True, "valve_solution_supply": False, "pump_main": True}
+    is_reboot, diverged = BaseStageHandler._is_node_reboot_pattern(expected=expected, snapshot=snapshot)
+    assert is_reboot is False
+    assert diverged == ["valve_solution_supply"]
+
+
+def test_node_reboot_pattern_rejects_when_no_truthy_expected() -> None:
+    is_reboot, diverged = BaseStageHandler._is_node_reboot_pattern(
+        expected={"valve_irrigation": False}, snapshot={"valve_irrigation": True},
+    )
+    assert is_reboot is False
+    assert diverged == []
+
+
+@pytest.mark.asyncio
+async def test_maybe_emit_node_reboot_event_emits_on_reboot_pattern() -> None:
+    handler = BaseStageHandler(
+        runtime_monitor=_RuntimeMonitorWithLiveness(status="online", heartbeat_age_sec=2.0),
+        command_gateway=object(),
+        task_repository=_TaskRepoStub(),
+    )
+    expected = {"valve_irrigation": True, "valve_solution_supply": True, "pump_main": True}
+    snapshot = {"valve_irrigation": False, "valve_solution_supply": False, "pump_main": False}
+
+    with patch("ae3lite.application.handlers.base.create_zone_event") as zone_event_mock:
+        zone_event_mock.return_value = None
+        await handler._maybe_emit_node_reboot_event(
+            task=_make_task(irr_probe_failure_streak=4),
+            plan=_make_plan(),
+            expected=expected,
+            snapshot=snapshot,
+        )
+
+    zone_event_mock.assert_called_once()
+    args, _ = zone_event_mock.call_args
+    assert args[1] == "NODE_REBOOT_DETECTED"
+    payload = args[2]
+    assert payload["node_uid"] == "nd-irr-1"
+    assert set(payload["diverged_keys"]) == {"valve_irrigation", "valve_solution_supply", "pump_main"}
+    assert payload["detection_reason"] == "all_expected_truthy_diverged_to_false"
+    assert payload["irr_probe_failure_streak"] == 4
+    assert payload["node_status"] == "online"
+
+
+@pytest.mark.asyncio
+async def test_maybe_emit_node_reboot_event_skips_partial_divergence() -> None:
+    handler = BaseStageHandler(
+        runtime_monitor=_RuntimeMonitorWithLiveness(),
+        command_gateway=object(),
+        task_repository=_TaskRepoStub(),
+    )
+    with patch("ae3lite.application.handlers.base.create_zone_event") as zone_event_mock:
+        zone_event_mock.return_value = None
+        await handler._maybe_emit_node_reboot_event(
+            task=_make_task(),
+            plan=_make_plan(),
+            expected={"valve_irrigation": True, "pump_main": True},
+            snapshot={"valve_irrigation": True, "pump_main": False},
+        )
+    zone_event_mock.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_probe_backoff_falls_back_to_strict_probe_without_repo(monkeypatch) -> None:
     """Если task_repository не передан — используется штатный _probe_irr_state."""

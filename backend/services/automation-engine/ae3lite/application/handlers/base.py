@@ -315,6 +315,12 @@ class BaseStageHandler:
             )
         if reason == "mismatch":
             snapshot = last_state["snapshot"] if isinstance(last_state["snapshot"], Mapping) else {}
+            await self._maybe_emit_node_reboot_event(
+                task=task,
+                plan=plan,
+                expected=expected,
+                snapshot=snapshot,
+            )
             for key, value in expected.items():
                 if bool(snapshot.get(key)) != bool(value):
                     raise TaskExecutionError(
@@ -324,6 +330,87 @@ class BaseStageHandler:
         raise TaskExecutionError(
             "irr_state_unavailable", "Снимок состояния IRR-ноды недоступен",
         )
+
+    @staticmethod
+    def _is_node_reboot_pattern(
+        *,
+        expected: Mapping[str, bool],
+        snapshot: Mapping[str, Any],
+    ) -> tuple[bool, list[str]]:
+        """Эвристика: все ожидаемые truthy-поля стали ``False`` в snapshot.
+
+        Это типичный паттерн boot defaults после перезагрузки ESP32 / firmware
+        fail-safe (watchdog, brownout, сработавший firmware-side guard сбрасывает
+        valves/pump в ``False``). Возвращает ``(is_reboot, diverged_keys)``.
+        """
+        truthy_expected = [k for k, v in expected.items() if bool(v)]
+        if not truthy_expected:
+            return False, []
+        diverged = [k for k in truthy_expected if not bool(snapshot.get(k))]
+        return len(diverged) == len(truthy_expected), diverged
+
+    async def _maybe_emit_node_reboot_event(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        expected: Mapping[str, bool],
+        snapshot: Mapping[str, Any],
+    ) -> None:
+        """Эмитит ``NODE_REBOOT_DETECTED`` zone-event при boot-defaults паттерне.
+
+        НЕ подавляет последующий ``irr_state_mismatch`` fail-closed: это
+        диагностический сигнал для post-mortem (operator/agronomist), а не
+        замена safety boundary. Всегда вызывается перед ``raise``.
+        """
+        is_reboot, diverged_keys = self._is_node_reboot_pattern(
+            expected=expected, snapshot=snapshot,
+        )
+        if not is_reboot:
+            return
+        node_uid = self._extract_irr_probe_node_uid(plan=plan)
+        liveness: Mapping[str, Any] = {}
+        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
+        if node_uid and callable(read_node_liveness):
+            try:
+                liveness = await read_node_liveness(node_uid=node_uid) or {}
+            except Exception:
+                _logger.warning(
+                    "AE3 не смог прочитать node liveness для NODE_REBOOT_DETECTED node_uid=%s",
+                    node_uid,
+                    exc_info=True,
+                )
+        details = {
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+            "node_uid": node_uid,
+            "expected": dict(expected),
+            "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else {},
+            "diverged_keys": list(diverged_keys),
+            "detection_reason": "all_expected_truthy_diverged_to_false",
+            "node_status": liveness.get("status") if isinstance(liveness, Mapping) else None,
+            "heartbeat_age_sec": (
+                liveness.get("heartbeat_age_sec") if isinstance(liveness, Mapping) else None
+            ),
+            "last_seen_age_sec": (
+                liveness.get("last_seen_age_sec") if isinstance(liveness, Mapping) else None
+            ),
+            "irr_probe_failure_streak": int(getattr(task, "irr_probe_failure_streak", 0) or 0),
+        }
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "NODE_REBOOT_DETECTED",
+                with_runtime_event_contract(details),
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 не смог записать NODE_REBOOT_DETECTED zone_id=%s task_id=%s node_uid=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                node_uid,
+                exc_info=True,
+            )
 
     def _extract_irr_probe_node_uid(self, *, plan: Any) -> str | None:
         named_plans = getattr(plan, "named_plans", None) if plan is not None else None
