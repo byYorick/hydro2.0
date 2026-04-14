@@ -44,9 +44,9 @@ async def test_corr_dose_ec_dispatches_sequence_ca_mg_micro(monkeypatch) -> None
 
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     seq = [
-        {"component": "calcium", "node_uid": "nd-ca", "channel": "dose_ec_b", "amount_ml": 1.0, "duration_ms": 100},
-        {"component": "magnesium", "node_uid": "nd-mg", "channel": "dose_ec_c", "amount_ml": 2.0, "duration_ms": 200},
-        {"component": "micro", "node_uid": "nd-mi", "channel": "dose_ec_d", "amount_ml": 3.0, "duration_ms": 300},
+        {"component": "calcium", "node_uid": "nd-ca", "channel": "pump_b", "amount_ml": 1.0, "duration_ms": 100},
+        {"component": "magnesium", "node_uid": "nd-mg", "channel": "pump_c", "amount_ml": 2.0, "duration_ms": 200},
+        {"component": "micro", "node_uid": "nd-mi", "channel": "pump_d", "amount_ml": 3.0, "duration_ms": 300},
     ]
     corr = CorrectionState(
         corr_step="corr_dose_ec",
@@ -63,7 +63,7 @@ async def test_corr_dose_ec_dispatches_sequence_ca_mg_micro(monkeypatch) -> None
         outcome_success=None,
         needs_ec=True,
         ec_node_uid="nd-ca",
-        ec_channel="dose_ec_b",
+        ec_channel="pump_b",
         ec_duration_ms=600,
         needs_ph_up=False,
         needs_ph_down=False,
@@ -122,9 +122,9 @@ async def test_corr_dose_ec_resumes_sequence_after_partial_failure(monkeypatch) 
 
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     seq = [
-        {"component": "calcium", "node_uid": "nd-ca", "channel": "dose_ec_b", "amount_ml": 1.0, "duration_ms": 100},
-        {"component": "magnesium", "node_uid": "nd-mg", "channel": "dose_ec_c", "amount_ml": 2.0, "duration_ms": 200},
-        {"component": "micro", "node_uid": "nd-mi", "channel": "dose_ec_d", "amount_ml": 3.0, "duration_ms": 300},
+        {"component": "calcium", "node_uid": "nd-ca", "channel": "pump_b", "amount_ml": 1.0, "duration_ms": 100},
+        {"component": "magnesium", "node_uid": "nd-mg", "channel": "pump_c", "amount_ml": 2.0, "duration_ms": 200},
+        {"component": "micro", "node_uid": "nd-mi", "channel": "pump_d", "amount_ml": 3.0, "duration_ms": 300},
     ]
     corr = CorrectionState(
         corr_step="corr_dose_ec",
@@ -141,7 +141,7 @@ async def test_corr_dose_ec_resumes_sequence_after_partial_failure(monkeypatch) 
         outcome_success=None,
         needs_ec=True,
         ec_node_uid="nd-ca",
-        ec_channel="dose_ec_b",
+        ec_channel="pump_b",
         ec_duration_ms=600,
         needs_ph_up=False,
         needs_ph_down=False,

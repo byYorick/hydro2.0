@@ -124,7 +124,7 @@ class NodeControllerTest extends TestCase
             'infrastructure_instance_id' => $instance->id,
             'node_channel_id' => $channel->id,
             'direction' => 'actuator',
-            'role' => 'ec_npk_pump',
+            'role' => 'pump_a',
         ]);
 
         $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");
@@ -164,13 +164,13 @@ class NodeControllerTest extends TestCase
             'infrastructure_instance_id' => $instance->id,
             'node_channel_id' => $channel->id,
             'direction' => 'actuator',
-            'role' => 'ec_npk_pump',
+            'role' => 'pump_a',
         ]);
 
         $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");
 
         $response->assertStatus(200)
-            ->assertJsonPath('data.data.0.channels.0.binding_role', 'ec_npk_pump');
+            ->assertJsonPath('data.data.0.channels.0.binding_role', 'pump_a');
 
         $channelPayload = $response->json('data.data.0.channels.0');
         $this->assertArrayNotHasKey('config', $channelPayload);

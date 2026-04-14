@@ -766,7 +766,7 @@ class SimulationOrchestratorService
             ['channel' => 'pump_d', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['actuator_type' => 'PUMP', 'pump_calibration' => ['component' => 'micro']]],
         ]);
 
-        $this->upsertSimulationZoneBinding($simZone, $irrigNode, 'pump_main', 'PUMP', 'Основная помпа', 'main_pump');
+        $this->upsertSimulationZoneBinding($simZone, $irrigNode, 'pump_main', 'PUMP', 'Основная помпа', 'pump_main');
         $this->upsertSimulationZoneBinding($simZone, $irrigNode, 'drain_pump', 'PUMP', 'Дренажная помпа', 'drain');
         $this->upsertSimulationZoneBinding($simZone, $irrigNode, 'valve_clean_fill', 'OTHER', 'Клапан clean fill', 'valve_clean_fill');
         $this->upsertSimulationZoneBinding($simZone, $irrigNode, 'valve_clean_supply', 'OTHER', 'Клапан clean supply', 'valve_clean_supply');
@@ -949,7 +949,7 @@ class SimulationOrchestratorService
         $existingRoleSet = array_fill_keys($existingRoles, true);
 
         $definitions = [
-            'ph_acid_pump' => [
+            'pump_acid' => [
                 'node_type' => 'ph',
                 'channel' => 'pump_acid',
                 'label' => 'Насос дозирования кислоты',
@@ -957,7 +957,7 @@ class SimulationOrchestratorService
                 'enabled' => $phControl,
                 'calibration_component' => 'ph_down',
             ],
-            'ph_base_pump' => [
+            'pump_base' => [
                 'node_type' => 'ph',
                 'channel' => 'pump_base',
                 'label' => 'Насос дозирования щёлочи',
@@ -965,7 +965,7 @@ class SimulationOrchestratorService
                 'enabled' => $phControl,
                 'calibration_component' => 'ph_up',
             ],
-            'ec_npk_pump' => [
+            'pump_a' => [
                 'node_type' => 'ec',
                 'channel' => 'pump_a',
                 'label' => 'Насос EC NPK',
@@ -973,7 +973,7 @@ class SimulationOrchestratorService
                 'enabled' => $ecControl,
                 'calibration_component' => 'npk',
             ],
-            'ec_calcium_pump' => [
+            'pump_b' => [
                 'node_type' => 'ec',
                 'channel' => 'pump_b',
                 'label' => 'Насос EC Calcium',
@@ -981,7 +981,7 @@ class SimulationOrchestratorService
                 'enabled' => $ecControl,
                 'calibration_component' => 'calcium',
             ],
-            'ec_magnesium_pump' => [
+            'pump_c' => [
                 'node_type' => 'ec',
                 'channel' => 'pump_c',
                 'label' => 'Насос EC Magnesium',
@@ -989,7 +989,7 @@ class SimulationOrchestratorService
                 'enabled' => $ecControl,
                 'calibration_component' => 'magnesium',
             ],
-            'ec_micro_pump' => [
+            'pump_d' => [
                 'node_type' => 'ec',
                 'channel' => 'pump_d',
                 'label' => 'Насос EC Micro',

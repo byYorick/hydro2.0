@@ -181,7 +181,7 @@ async def _insert_single_step_profile(zone_id: int) -> None:
                                 "steps": [
                                     {
                                         "name": "pump_start",
-                                        "channel": "irrigation_pump",
+                                        "channel": "pump_main",
                                         "cmd": "set_relay",
                                         "params": {"state": True},
                                     }
@@ -266,7 +266,7 @@ async def _prepare_runtime_zone(prefix: str, now: datetime) -> tuple[int, int]:
             created_at,
             updated_at
         )
-        VALUES ($1, $2, 'actuator', 'irrigation_pump', NOW(), NOW())
+        VALUES ($1, $2, 'actuator', 'pump_main', NOW(), NOW())
         """,
         asset_id,
         node_channel_id,

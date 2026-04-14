@@ -85,7 +85,7 @@ class GrowCycleControllerTest extends TestCase
             'config' => [],
         ]);
 
-        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'pump_main', 'Основная помпа');
         $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
     }
 
@@ -396,7 +396,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertNotContains('Дренаж не привязан к каналу', $errors);
         $this->assertNotContains('Нет онлайн нод в зоне', $errors);
         $this->assertNotContains('Zone has no bound nodes', $errors);
-        $this->assertNotContains('Required bindings are missing: main_pump, drain', $errors);
+        $this->assertNotContains('Required bindings are missing: pump_main, drain', $errors);
     }
 
     #[Test]
@@ -501,10 +501,10 @@ class GrowCycleControllerTest extends TestCase
             'config' => [],
         ]);
 
-        $this->bindChannelToRole($ecZone, $npkChannel, 'ec_npk_pump', 'Насос EC NPK');
-        $this->bindChannelToRole($ecZone, $calciumChannel, 'ec_calcium_pump', 'Насос EC Calcium');
-        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'ec_magnesium_pump', 'Насос EC Magnesium');
-        $this->bindChannelToRole($ecZone, $microChannel, 'ec_micro_pump', 'Насос EC Micro');
+        $this->bindChannelToRole($ecZone, $npkChannel, 'pump_a', 'Насос EC NPK');
+        $this->bindChannelToRole($ecZone, $calciumChannel, 'pump_b', 'Насос EC Calcium');
+        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'pump_c', 'Насос EC Magnesium');
+        $this->bindChannelToRole($ecZone, $microChannel, 'pump_d', 'Насос EC Micro');
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$ecZone->id}/grow-cycles", [
@@ -548,7 +548,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ph_acid_pump', 'Насос pH кислоты');
+        ]), 'pump_acid', 'Насос pH кислоты');
         $this->bindChannelToRole($zone, NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_base',
@@ -556,7 +556,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ph_base_pump', 'Насос pH щёлочи');
+        ]), 'pump_base', 'Насос pH щёлочи');
         $this->bindChannelToRole($zone, NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_a',
@@ -564,7 +564,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ec_npk_pump', 'Насос EC NPK');
+        ]), 'pump_a', 'Насос EC NPK');
         $this->bindChannelToRole($zone, NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_b',
@@ -572,7 +572,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ec_calcium_pump', 'Насос EC Calcium');
+        ]), 'pump_b', 'Насос EC Calcium');
         $this->bindChannelToRole($zone, NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_c',
@@ -580,7 +580,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ec_magnesium_pump', 'Насос EC Magnesium');
+        ]), 'pump_c', 'Насос EC Magnesium');
         $this->bindChannelToRole($zone, NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_d',
@@ -588,7 +588,7 @@ class GrowCycleControllerTest extends TestCase
             'metric' => 'pump',
             'unit' => null,
             'config' => [],
-        ]), 'ec_micro_pump', 'Насос EC Micro');
+        ]), 'pump_d', 'Насос EC Micro');
 
         $this->saveZoneLogicProfile($zone, [
             'irrigation' => [
@@ -731,10 +731,10 @@ class GrowCycleControllerTest extends TestCase
             'config' => [],
         ]);
 
-        $this->bindChannelToRole($ecZone, $npkChannel, 'ec_npk_pump', 'Насос EC NPK');
-        $this->bindChannelToRole($ecZone, $calciumChannel, 'ec_calcium_pump', 'Насос EC Calcium');
-        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'ec_magnesium_pump', 'Насос EC Magnesium');
-        $this->bindChannelToRole($ecZone, $microChannel, 'ec_micro_pump', 'Насос EC Micro');
+        $this->bindChannelToRole($ecZone, $npkChannel, 'pump_a', 'Насос EC NPK');
+        $this->bindChannelToRole($ecZone, $calciumChannel, 'pump_b', 'Насос EC Calcium');
+        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'pump_c', 'Насос EC Magnesium');
+        $this->bindChannelToRole($ecZone, $microChannel, 'pump_d', 'Насос EC Micro');
 
         $this->createPumpCalibration($npkChannel, 'npk', 1.0);
         $this->createPumpCalibration($calciumChannel, 'calcium', 1.0);

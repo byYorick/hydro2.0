@@ -104,7 +104,7 @@ class ExtendedInfrastructureSeeder extends Seeder
         // Маппинг типов оборудования на роли и каналы
         $bindingMap = [
             'Основной насос' => [
-                'role' => 'main_pump',
+                'role' => 'pump_main',
                 'channel' => 'pump1',
                 'direction' => 'actuator',
             ],

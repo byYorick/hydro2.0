@@ -106,7 +106,7 @@ class NodeConfigServiceTest extends TestCase
                 'type' => 'irrig',
                 'channels' => [
                     [
-                        'name' => 'main_pump',
+                        'name' => 'pump_main',
                         'type' => 'ACTUATOR',
                         'actuator_type' => 'RELAY',
                     ],
@@ -130,7 +130,7 @@ class NodeConfigServiceTest extends TestCase
                 'type' => 'irrig',
                 'channels' => [
                     [
-                        'name' => 'main_pump',
+                        'name' => 'pump_main',
                         'type' => 'ACTUATOR',
                         'actuator_type' => 'VALVE',
                         'relay_type' => 'NC',

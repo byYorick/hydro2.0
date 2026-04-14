@@ -13,12 +13,12 @@ return [
     'readiness' => [
         // Обязательные bindings для работы зоны
         // Может быть переопределено через переменную окружения ZONE_REQUIRED_BINDINGS
-        // Формат: 'main_pump,ph_control,ec_control' или массив ['main_pump', 'ph_control']
-        'required_bindings' => env('ZONE_REQUIRED_BINDINGS') 
-            ? (is_string(env('ZONE_REQUIRED_BINDINGS')) 
-                ? explode(',', env('ZONE_REQUIRED_BINDINGS')) 
+        // Формат: 'pump_main,ph_control,ec_control' или массив ['pump_main', 'ph_control']
+        'required_bindings' => env('ZONE_REQUIRED_BINDINGS')
+            ? (is_string(env('ZONE_REQUIRED_BINDINGS'))
+                ? explode(',', env('ZONE_REQUIRED_BINDINGS'))
                 : env('ZONE_REQUIRED_BINDINGS'))
-            : ['main_pump', 'drain'], // По умолчанию требуется основной насос и дренаж
+            : ['pump_main', 'drain'], // По умолчанию требуется основной насос и дренаж
 
         // Строгий режим проверки готовности
         // Если true - зона не может стартовать без обязательных bindings

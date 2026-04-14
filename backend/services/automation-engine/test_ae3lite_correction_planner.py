@@ -32,9 +32,9 @@ def _correction_config(*, ph_overrides=None, ec_overrides=None, dosing_overrides
             },
         },
         "solution_volume_l": 100.0,
-        "dose_ec_channel": "dose_ec_a",
-        "dose_ph_up_channel": "dose_ph_up",
-        "dose_ph_down_channel": "dose_ph_down",
+        "dose_ec_channel": "pump_a",
+        "dose_ph_up_channel": "pump_base",
+        "dose_ph_down_channel": "pump_acid",
         "max_ec_dose_ml": 50.0,
         "max_ph_dose_ml": 20.0,
         "pump_calibration": {
@@ -85,12 +85,12 @@ def test_build_dose_plan_selects_npk_component_for_solution_fill_policy() -> Non
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 10.0},
             },
             "ec_calcium": {
                 "node_uid": "ec-node",
-                "channel": "ec_calcium_pump",
+                "channel": "pump_b",
                 "calibration": {"ml_per_sec": 10.0},
             },
         },
@@ -100,7 +100,7 @@ def test_build_dose_plan_selects_npk_component_for_solution_fill_policy() -> Non
 
     assert dose_plan.needs_ec is True
     assert dose_plan.ec_component == "npk"
-    assert dose_plan.ec_channel == "ec_npk_pump"
+    assert dose_plan.ec_channel == "pump_a"
     assert dose_plan.ec_amount_ml == 5.0
     assert dose_plan.ec_duration_ms == 500
 
@@ -957,7 +957,7 @@ def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> 
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 10.0},
             },
         },
@@ -1107,7 +1107,7 @@ def test_build_dose_plan_handles_mixed_naive_aware_last_measurement() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 10.0},
             },
         },
@@ -1168,7 +1168,7 @@ def test_build_dose_plan_allows_ph_when_ec_is_in_retry_window() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 8.0},
             },
         },
@@ -1245,7 +1245,7 @@ def test_build_dose_plan_keeps_ph_and_ec_in_same_correction_window() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 8.0},
             },
         },
@@ -1331,7 +1331,7 @@ def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phas
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 10.0},
             },
         },
@@ -1372,7 +1372,7 @@ def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 # ml_per_sec=1.0 so even small derivative doses exceed _MIN_DOSE_MS (50ms)
                 "calibration": {"ml_per_sec": 1.0},
             },
@@ -1451,7 +1451,7 @@ def test_build_dose_plan_first_pid_tick_without_last_measurement_at_keeps_deriva
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1509,7 +1509,7 @@ def test_pid_integral_accumulates_over_time() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1548,9 +1548,9 @@ def test_build_dose_plan_sets_last_dose_at_when_dose_is_nonzero() -> None:
         pid_state={},
         now=now,
         ec_actuators={
-            "dose_ec_a": {
+            "pump_a": {
                 "node_uid": "ec-node",
-                "channel": "dose_ec_a",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1592,9 +1592,9 @@ def test_build_dose_plan_does_not_set_last_dose_at_when_dose_is_zero() -> None:
         pid_state={},
         now=now,
         ec_actuators={
-            "dose_ec_a": {
+            "pump_a": {
                 "node_uid": "ec-node",
-                "channel": "dose_ec_a",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1861,7 +1861,7 @@ def test_no_integral_spike_after_reset_and_reentry() -> None:
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1938,7 +1938,7 @@ def test_build_dose_plan_exposes_dead_zone_details_and_discarded_payload() -> No
         ec_actuators={
             "ec_npk": {
                 "node_uid": "ec-node",
-                "channel": "ec_npk_pump",
+                "channel": "pump_a",
                 "calibration": {"ml_per_sec": 10.0},
             },
         },

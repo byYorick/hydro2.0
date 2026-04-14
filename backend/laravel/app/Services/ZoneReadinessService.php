@@ -21,15 +21,15 @@ class ZoneReadinessService
     ];
 
     private const PH_REQUIRED_BINDINGS = [
-        'ph_acid_pump',
-        'ph_base_pump',
+        'pump_acid',
+        'pump_base',
     ];
 
     private const EC_REQUIRED_BINDINGS = [
-        'ec_npk_pump',
-        'ec_calcium_pump',
-        'ec_magnesium_pump',
-        'ec_micro_pump',
+        'pump_a',
+        'pump_b',
+        'pump_c',
+        'pump_d',
     ];
 
     public function __construct(
@@ -58,12 +58,12 @@ class ZoneReadinessService
             return [];
         }
 
-        $configured = config('zones.readiness.required_bindings', ['main_pump', 'drain']);
+        $configured = config('zones.readiness.required_bindings', ['pump_main', 'drain']);
         if (is_string($configured)) {
             $configured = array_filter(array_map('trim', explode(',', $configured)));
         }
         if (! is_array($configured)) {
-            $configured = ['main_pump', 'drain'];
+            $configured = ['pump_main', 'drain'];
         }
 
         if (! $this->shouldRequireDrainBinding($zone)) {
@@ -402,22 +402,22 @@ class ZoneReadinessService
         }
 
         $roleMessages = [
-            'main_pump' => 'Основная помпа не привязана к каналу',
+            'pump_main' => 'Основная помпа не привязана к каналу',
             'drain' => 'Дренаж не привязан к каналу',
-            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
-            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
-            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
-            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
-            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
-            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
+            'pump_acid' => 'Насос pH кислоты не привязан к каналу',
+            'pump_base' => 'Насос pH щёлочи не привязан к каналу',
+            'pump_a' => 'Насос EC NPK не привязан к каналу',
+            'pump_b' => 'Насос EC Calcium не привязан к каналу',
+            'pump_c' => 'Насос EC Magnesium не привязан к каналу',
+            'pump_d' => 'Насос EC Micro не привязан к каналу',
         ];
         $calibrationMessages = [
-            'ph_acid_pump' => 'Для насоса pH кислоты не задана калибровка',
-            'ph_base_pump' => 'Для насоса pH щёлочи не задана калибровка',
-            'ec_npk_pump' => 'Для насоса EC NPK не задана калибровка',
-            'ec_calcium_pump' => 'Для насоса EC Calcium не задана калибровка',
-            'ec_magnesium_pump' => 'Для насоса EC Magnesium не задана калибровка',
-            'ec_micro_pump' => 'Для насоса EC Micro не задана калибровка',
+            'pump_acid' => 'Для насоса pH кислоты не задана калибровка',
+            'pump_base' => 'Для насоса pH щёлочи не задана калибровка',
+            'pump_a' => 'Для насоса EC NPK не задана калибровка',
+            'pump_b' => 'Для насоса EC Calcium не задана калибровка',
+            'pump_c' => 'Для насоса EC Magnesium не задана калибровка',
+            'pump_d' => 'Для насоса EC Micro не задана калибровка',
         ];
         $pidMessages = [
             'ph' => 'PID-настройки pH не сохранены для зоны',

@@ -83,9 +83,9 @@ class ZoneCorrectionConfigCatalog
             ],
             'dosing' => [
                 'solution_volume_l' => 100.0,
-                'dose_ec_channel' => 'dose_ec_a',
-                'dose_ph_up_channel' => 'dose_ph_up',
-                'dose_ph_down_channel' => 'dose_ph_down',
+                'dose_ec_channel' => 'pump_a',
+                'dose_ph_up_channel' => 'pump_base',
+                'dose_ph_down_channel' => 'pump_acid',
                 'max_ec_dose_ml' => 80.0,
                 'max_ph_dose_ml' => 35.0,
             ],

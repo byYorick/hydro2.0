@@ -26,7 +26,7 @@ test.describe('Bindings', () => {
           try {
             await firstSelect.selectOption({ label: 'Основная помпа' });
           } catch (e) {
-            await firstSelect.selectOption({ value: 'main_pump' });
+            await firstSelect.selectOption({ value: 'pump_main' });
           }
           
           // Ждем сохранения (может быть автоматическим или через кнопку)

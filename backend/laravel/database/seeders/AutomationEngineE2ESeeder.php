@@ -109,7 +109,7 @@ class AutomationEngineE2ESeeder extends Seeder
                     ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
                 ],
                 'actuators' => [
-                    ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'main_pump'],
+                    ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_main'],
                     ['channel' => 'drain_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'drain'],
                     ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'fan'],
                     ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'heater'],
@@ -129,7 +129,7 @@ class AutomationEngineE2ESeeder extends Seeder
                     ['channel' => 'level_solution_max', 'metric' => 'WATER_LEVEL_SWITCH', 'unit' => 'bool'],
                 ],
                 'actuators' => [
-                    ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'main_pump'],
+                    ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_main'],
                     ['channel' => 'valve_clean_fill', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_clean_fill'],
                     ['channel' => 'valve_clean_supply', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_clean_supply'],
                     ['channel' => 'valve_solution_fill', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_solution_fill'],
@@ -282,7 +282,7 @@ class AutomationEngineE2ESeeder extends Seeder
 
         // 6. Создаем инфраструктуру зоны
         $infrastructure = [
-            ['asset_type' => 'PUMP', 'channel' => 'main_pump', 'label' => 'Main Pump', 'required' => true, 'role' => 'main_pump'],
+            ['asset_type' => 'PUMP', 'channel' => 'pump_main', 'label' => 'Main Pump', 'required' => true, 'role' => 'pump_main'],
             ['asset_type' => 'DRAIN', 'channel' => 'drain_pump', 'label' => 'Drain Pump', 'required' => false, 'role' => 'drain'],
             ['asset_type' => 'FAN', 'channel' => 'fan', 'label' => 'Fan', 'required' => true, 'role' => 'fan'],
             ['asset_type' => 'HEATER', 'channel' => 'heater', 'label' => 'Heater', 'required' => true, 'role' => 'heater'],

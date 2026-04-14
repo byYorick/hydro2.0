@@ -352,7 +352,7 @@ class ZoneEventMessageFormatterTest extends TestCase
             'target_ec_min' => 1.4,
             'target_ec_max' => 1.6,
             'duration_ms' => 2500,
-            'channel' => 'ec_npk_pump',
+            'channel' => 'pump_a',
             'attempt' => 1,
         ]);
 
@@ -360,7 +360,7 @@ class ZoneEventMessageFormatterTest extends TestCase
         $this->assertStringContainsString('1.20 мС/см', $message);
         $this->assertStringContainsString('1.40–1.60 мС/см', $message);
         $this->assertStringContainsString('2500 мс', $message);
-        $this->assertStringContainsString('ec_npk_pump', $message);
+        $this->assertStringContainsString('pump_a', $message);
     }
 
     public function test_format_ec_dosing_shows_target_range_over_single_target(): void
@@ -402,14 +402,14 @@ class ZoneEventMessageFormatterTest extends TestCase
             'target_ph_max' => 6.5,
             'duration_ms' => 1200,
             'direction' => 'up',
-            'channel' => 'ph_base_pump',
+            'channel' => 'pump_base',
         ]);
 
         $this->assertStringContainsString('вверх', $message);
         $this->assertStringContainsString('5.80', $message);
         $this->assertStringContainsString('6.00–6.50', $message);
         $this->assertStringContainsString('1200 мс', $message);
-        $this->assertStringContainsString('ph_base_pump', $message);
+        $this->assertStringContainsString('pump_base', $message);
     }
 
     public function test_format_ph_corrected_direction_down(): void

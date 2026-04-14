@@ -41,7 +41,7 @@ class RunSimulationJobTest extends TestCase
         ]);
         NodeChannel::create([
             'node_id' => $node->id,
-            'channel' => 'main_pump',
+            'channel' => 'pump_main',
             'type' => 'ACTUATOR',
         ]);
 

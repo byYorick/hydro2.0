@@ -290,7 +290,7 @@ class FullServiceTestSeeder extends Seeder
         $createdBindings = 0;
 
         $channelMap = [
-            'pump1' => ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'role' => 'main_pump', 'required' => true],
+            'pump1' => ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'role' => 'pump_main', 'required' => true],
             'pump2' => ['asset_type' => 'DRAIN', 'label' => 'Drain Pump', 'role' => 'drain', 'required' => false],
             'light' => ['asset_type' => 'LIGHT', 'label' => 'Light', 'role' => 'light', 'required' => false],
             'fan' => ['asset_type' => 'FAN', 'label' => 'Fan', 'role' => 'fan', 'required' => false],

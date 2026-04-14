@@ -54,7 +54,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'infrastructure_instance_id' => $infraId,
             'node_channel_id' => $channel->id,
             'direction' => 'actuator',
-            'role' => 'ph_acid_pump',
+            'role' => 'pump_acid',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -123,7 +123,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'infrastructure_instance_id' => $infraId,
             'node_channel_id' => $channel->id,
             'direction' => 'actuator',
-            'role' => 'ec_npk_pump',
+            'role' => 'pump_a',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -132,7 +132,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.0.node_channel_id', $channel->id)
-            ->assertJsonPath('data.0.role', 'ec_npk_pump')
+            ->assertJsonPath('data.0.role', 'pump_a')
             ->assertJsonPath('data.0.component', 'npk');
     }
 
@@ -168,7 +168,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.0.node_channel_id', $channel->id)
-            ->assertJsonPath('data.0.role', 'ec_npk_pump')
+            ->assertJsonPath('data.0.role', 'pump_a')
             ->assertJsonPath('data.0.component', 'npk')
             ->assertJsonPath('data.0.ml_per_sec', 0.75);
     }
@@ -203,7 +203,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'infrastructure_instance_id' => $infraId,
             'node_channel_id' => $channel->id,
             'direction' => 'actuator',
-            'role' => 'main_pump',
+            'role' => 'pump_main',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

@@ -86,7 +86,7 @@ class ZonesTest extends TestCase
             'config' => [],
         ]);
 
-        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'pump_main', 'Основная помпа');
         $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
     }
 

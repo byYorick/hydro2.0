@@ -313,7 +313,7 @@ async def _insert_profile(zone_id: int) -> None:
                                 "steps": [
                                     {
                                         "name": "pump_start",
-                                        "channel": "irrigation_pump",
+                                        "channel": "pump_main",
                                         "cmd": "set_relay",
                                         "params": {"state": True},
                                         "timeout_sec": 20,
@@ -362,9 +362,9 @@ async def _insert_correction_config(zone_id: int) -> None:
             },
             "dosing": {
                 "solution_volume_l": 100.0,
-                "dose_ec_channel": "ec_npk_pump",
-                "dose_ph_up_channel": "ph_base_pump",
-                "dose_ph_down_channel": "ph_acid_pump",
+                "dose_ec_channel": "pump_a",
+                "dose_ph_up_channel": "pump_base",
+                "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
             },
@@ -728,7 +728,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, 'actuator', 'irrigation_pump', NOW(), NOW())
+            VALUES ($1, $2, 'actuator', 'pump_main', NOW(), NOW())
             """,
             asset_id,
             node_channel_id,
@@ -785,7 +785,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         assert snapshot.telemetry_last["water_level"]["value"] == 81.5
         assert snapshot.pid_state["ph"]["integral"] == 1.25
         assert snapshot.pid_configs["ph"]["config"]["kp"] == 1.2
-        assert pump_channel.role == "irrigation_pump"
+        assert pump_channel.role == "pump_main"
         assert pump_channel.node_channel_id == node_channel_id
         assert pump_channel.pump_calibration["ml_per_sec"] == 12.5
         assert pump_channel.pump_calibration["source"] == "manual_calibration"

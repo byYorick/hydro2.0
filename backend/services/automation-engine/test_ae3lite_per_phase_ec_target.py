@@ -121,9 +121,9 @@ def _minimal_zone_correction_config(
         },
         "dosing": {
             "solution_volume_l": 100.0,
-            "dose_ec_channel": "ec_npk_pump",
-            "dose_ph_up_channel": "ph_base_pump",
-            "dose_ph_down_channel": "ph_acid_pump",
+            "dose_ec_channel": "pump_a",
+            "dose_ph_up_channel": "pump_base",
+            "dose_ph_down_channel": "pump_acid",
             "max_ec_dose_ml": 50.0,
             "max_ph_dose_ml": 20.0,
         },

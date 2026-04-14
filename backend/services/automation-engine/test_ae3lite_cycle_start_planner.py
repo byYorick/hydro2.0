@@ -43,9 +43,9 @@ def _minimal_zone_correction_config() -> dict:
             },
             "dosing": {
                 "solution_volume_l": 100.0,
-                "dose_ec_channel": "ec_npk_pump",
-                "dose_ph_up_channel": "ph_base_pump",
-                "dose_ph_down_channel": "ph_acid_pump",
+                "dose_ec_channel": "pump_a",
+                "dose_ph_up_channel": "pump_base",
+                "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
             },
@@ -162,7 +162,7 @@ def _snapshot() -> ZoneSnapshot:
                 "diagnostics": {
                     "steps": [
                         {
-                            "channel": "irrigation_pump",
+                            "channel": "pump_main",
                             "cmd": "set_relay",
                             "params": {"state": True},
                         }
@@ -202,7 +202,7 @@ def _snapshot() -> ZoneSnapshot:
                 node_type="irrig",
                 channel="pump_main",
                 node_channel_id=41,
-                role="irrigation_pump",
+                role="pump_main",
             ),
         ),
         correction_config=_minimal_zone_correction_config(),
@@ -221,7 +221,7 @@ def test_cycle_start_planner_builds_resolved_sequential_plan() -> None:
     assert plan.steps[0].step_no == 1
     assert plan.steps[0].node_uid == "nd-irrig-1"
     assert plan.steps[0].channel == "pump_main"
-    assert plan.steps[0].payload["requested_channel"] == "irrigation_pump"
+    assert plan.steps[0].payload["requested_channel"] == "pump_main"
 
 
 def test_cycle_start_planner_builds_native_two_tank_named_plans() -> None:
@@ -565,15 +565,15 @@ def test_cycle_start_planner_resolves_legacy_dosing_aliases_from_bound_pumps() -
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="pump_acid", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="pump_base", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
                 ZoneActuatorRef(
                     node_uid="nd-ec-1",
                     node_type="ec",
                     channel="pump_a",
                     node_channel_id=49,
-                    role="ec_npk_pump",
+                    role="pump_a",
                     pump_calibration={"component": "npk", "ml_per_sec": 1.0},
                 ),
                 ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=50, role="system", channel_type="SERVICE"),
@@ -606,9 +606,9 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
                     "prepare_recirculation_timeout_sec": 240,
                 },
                 "correction": {
-                    "dose_ec_channel": "ec_npk_pump",
-                    "dose_ph_up_channel": "ph_base_pump",
-                    "dose_ph_down_channel": "ph_acid_pump",
+                    "dose_ec_channel": "pump_a",
+                    "dose_ph_up_channel": "pump_base",
+                    "dose_ph_down_channel": "pump_acid",
                 },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
@@ -621,10 +621,10 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="dose_ph_down", pump_calibration={"ml_per_sec": 1.0}),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="dose_ph_up", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="pump_acid", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="pump_base", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
-                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="dose_ec_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="pump_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=50, role="system", channel_type="SERVICE"),
             ),
         }
@@ -655,9 +655,9 @@ def test_cycle_start_planner_fails_closed_when_dosing_calibration_missing_prefli
                     "prepare_recirculation_timeout_sec": 240,
                 },
                 "correction": {
-                    "dose_ec_channel": "ec_npk_pump",
-                    "dose_ph_up_channel": "ph_base_pump",
-                    "dose_ph_down_channel": "ph_acid_pump",
+                    "dose_ec_channel": "pump_a",
+                    "dose_ph_up_channel": "pump_base",
+                    "dose_ph_down_channel": "pump_acid",
                 },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
@@ -670,10 +670,10 @@ def test_cycle_start_planner_fails_closed_when_dosing_calibration_missing_prefli
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="pump_acid", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="pump_base", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
-                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="ec_npk_pump"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="pump_a"),
                 ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=50, role="system", channel_type="SERVICE"),
             ),
         }
@@ -703,9 +703,9 @@ def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> 
                     "prepare_recirculation_timeout_sec": 240,
                 },
                 "correction": {
-                    "dose_ec_channel": "dose_ec_a",
-                    "dose_ph_up_channel": "ph_base_pump",
-                    "dose_ph_down_channel": "ph_acid_pump",
+                    "dose_ec_channel": "pump_a",
+                    "dose_ph_up_channel": "pump_base",
+                    "dose_ph_down_channel": "pump_acid",
                 },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
@@ -718,11 +718,11 @@ def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> 
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="pump_acid", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="pump_base", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
-                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="dose_ec_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
-                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_b", node_channel_id=50, role="ec_calcium_pump"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="pump_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_b", node_channel_id=50, role="pump_b"),
                 ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=51, role="system", channel_type="SERVICE"),
             ),
         }
@@ -830,14 +830,14 @@ def test_cycle_start_planner_fails_closed_on_ambiguous_actuator_resolution() -> 
                     node_type="irrig",
                     channel="pump_main",
                     node_channel_id=41,
-                    role="irrigation_pump",
+                    role="pump_main",
                 ),
                 ZoneActuatorRef(
                     node_uid="nd-irrig-2",
                     node_type="irrig",
-                    channel="pump_backup",
+                    channel="pump_main",
                     node_channel_id=42,
-                    role="irrigation_pump",
+                    role="pump_main",
                 ),
             ),
         }

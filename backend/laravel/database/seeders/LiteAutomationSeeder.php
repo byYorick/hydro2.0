@@ -263,7 +263,7 @@ class LiteAutomationSeeder extends Seeder
                     ['channel' => 'pump_bus_current', 'metric' => 'PUMP_CURRENT', 'unit' => 'mA'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'pump_irrigation', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
             'ph' => [
@@ -437,14 +437,14 @@ class LiteAutomationSeeder extends Seeder
 
         foreach ($zones as $zoneKey => $zone) {
             $assetMap = [
-                ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'pump_irrigation', 'role' => 'main_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'pump_main', 'role' => 'pump_main', 'required' => true],
                 ['asset_type' => 'DRAIN', 'label' => 'Drain', 'node_role' => 'water', 'channel' => 'drain_main', 'role' => 'drain', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'pH Acid Pump', 'node_role' => 'ph', 'channel' => 'pump_acid', 'role' => 'ph_acid_pump', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'pH Base Pump', 'node_role' => 'ph', 'channel' => 'pump_base', 'role' => 'ph_base_pump', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'EC NPK Pump', 'node_role' => 'ec', 'channel' => 'pump_a', 'role' => 'ec_npk_pump', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'EC Calcium Pump', 'node_role' => 'ec', 'channel' => 'pump_b', 'role' => 'ec_calcium_pump', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'EC Magnesium Pump', 'node_role' => 'ec', 'channel' => 'pump_c', 'role' => 'ec_magnesium_pump', 'required' => true],
-                ['asset_type' => 'PUMP', 'label' => 'EC Micro Pump', 'node_role' => 'ec', 'channel' => 'pump_d', 'role' => 'ec_micro_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'pH Acid Pump', 'node_role' => 'ph', 'channel' => 'pump_acid', 'role' => 'pump_acid', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'pH Base Pump', 'node_role' => 'ph', 'channel' => 'pump_base', 'role' => 'pump_base', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC NPK Pump', 'node_role' => 'ec', 'channel' => 'pump_a', 'role' => 'pump_a', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Calcium Pump', 'node_role' => 'ec', 'channel' => 'pump_b', 'role' => 'pump_b', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Magnesium Pump', 'node_role' => 'ec', 'channel' => 'pump_c', 'role' => 'pump_c', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Micro Pump', 'node_role' => 'ec', 'channel' => 'pump_d', 'role' => 'pump_d', 'required' => true],
                 ['asset_type' => 'FAN', 'label' => 'Ventilation Fan', 'node_role' => 'climate', 'channel' => 'fan_air', 'role' => 'fan', 'required' => false],
                 ['asset_type' => 'LIGHT', 'label' => 'Grow Light', 'node_role' => 'lighting', 'channel' => 'white_light', 'role' => 'light', 'required' => false],
             ];
@@ -502,12 +502,12 @@ class LiteAutomationSeeder extends Seeder
         }
 
         $defaults = [
-            'ph_acid_pump' => ['ml_per_sec' => 1.0, 'component' => 'ph_down'],
-            'ph_base_pump' => ['ml_per_sec' => 1.0, 'component' => 'ph_up'],
-            'ec_npk_pump' => ['ml_per_sec' => 1.0, 'component' => 'npk'],
-            'ec_calcium_pump' => ['ml_per_sec' => 1.0, 'component' => 'calcium'],
-            'ec_magnesium_pump' => ['ml_per_sec' => 1.0, 'component' => 'magnesium'],
-            'ec_micro_pump' => ['ml_per_sec' => 1.0, 'component' => 'micro'],
+            'pump_acid' => ['ml_per_sec' => 1.0, 'component' => 'ph_down'],
+            'pump_base' => ['ml_per_sec' => 1.0, 'component' => 'ph_up'],
+            'pump_a' => ['ml_per_sec' => 1.0, 'component' => 'npk'],
+            'pump_b' => ['ml_per_sec' => 1.0, 'component' => 'calcium'],
+            'pump_c' => ['ml_per_sec' => 1.0, 'component' => 'magnesium'],
+            'pump_d' => ['ml_per_sec' => 1.0, 'component' => 'micro'],
         ];
 
         $now = now();

@@ -39,12 +39,12 @@ class ZonePumpCalibrationsController extends Controller
             );
 
         $roleOrderSql = "CASE zb.role
-            WHEN 'ph_acid_pump' THEN 1
-            WHEN 'ph_base_pump' THEN 2
-            WHEN 'ec_npk_pump' THEN 3
-            WHEN 'ec_calcium_pump' THEN 4
-            WHEN 'ec_magnesium_pump' THEN 5
-            WHEN 'ec_micro_pump' THEN 6
+            WHEN 'pump_acid' THEN 1
+            WHEN 'pump_base' THEN 2
+            WHEN 'pump_a' THEN 3
+            WHEN 'pump_b' THEN 4
+            WHEN 'pump_c' THEN 5
+            WHEN 'pump_d' THEN 6
             ELSE 99
         END";
 

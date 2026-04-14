@@ -27,7 +27,7 @@ class SetupWizardValidateDevicesTest extends TestCase
         ]);
         NodeChannel::query()->create([
             'node_id' => $irrigationNode->id,
-            'channel' => 'pump_irrigation',
+            'channel' => 'pump_main',
             'type' => 'ACTUATOR',
         ]);
 
@@ -92,7 +92,7 @@ class SetupWizardValidateDevicesTest extends TestCase
         ]);
         NodeChannel::query()->create([
             'node_id' => $irrigationNode->id,
-            'channel' => 'pump_irrigation',
+            'channel' => 'pump_main',
             'type' => 'ACTUATOR',
         ]);
 
@@ -151,7 +151,7 @@ class SetupWizardValidateDevicesTest extends TestCase
         ]);
         $irrigationChannel = NodeChannel::query()->create([
             'node_id' => $irrigationNode->id,
-            'channel' => 'pump_irrigation',
+            'channel' => 'pump_main',
             'type' => 'ACTUATOR',
         ]);
         $drainChannel = NodeChannel::query()->create([
@@ -262,14 +262,14 @@ class SetupWizardValidateDevicesTest extends TestCase
             ->all();
 
         $this->assertEqualsCanonicalizing([
-            'main_pump',
+            'pump_main',
             'drain',
-            'ph_acid_pump',
-            'ph_base_pump',
-            'ec_npk_pump',
-            'ec_calcium_pump',
-            'ec_magnesium_pump',
-            'ec_micro_pump',
+            'pump_acid',
+            'pump_base',
+            'pump_a',
+            'pump_b',
+            'pump_c',
+            'pump_d',
             'vent',
             'heater',
             'light',
@@ -277,7 +277,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $irrigationChannel->id,
-            'role' => 'main_pump',
+            'role' => 'pump_main',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $drainChannel->id,
@@ -285,27 +285,27 @@ class SetupWizardValidateDevicesTest extends TestCase
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $phAcidChannel->id,
-            'role' => 'ph_acid_pump',
+            'role' => 'pump_acid',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $phBaseChannel->id,
-            'role' => 'ph_base_pump',
+            'role' => 'pump_base',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $ecAChannel->id,
-            'role' => 'ec_npk_pump',
+            'role' => 'pump_a',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $ecBChannel->id,
-            'role' => 'ec_calcium_pump',
+            'role' => 'pump_b',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $ecCChannel->id,
-            'role' => 'ec_magnesium_pump',
+            'role' => 'pump_c',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $ecDChannel->id,
-            'role' => 'ec_micro_pump',
+            'role' => 'pump_d',
         ]);
         $this->assertDatabaseHas('channel_bindings', [
             'node_channel_id' => $ventChannel->id,

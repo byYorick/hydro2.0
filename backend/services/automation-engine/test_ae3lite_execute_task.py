@@ -192,7 +192,7 @@ class _SnapshotWithIrrActuators:
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=14, role="valve_solution_supply"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=15, role="valve_irrigation"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=16, role="pump_main"),
-        ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=17, role="ph_base_pump"),
+        ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=17, role="pump_base"),
     )
 
 

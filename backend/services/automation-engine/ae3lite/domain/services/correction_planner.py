@@ -457,7 +457,7 @@ class CorrectionPlanner:
                             ec_needs = False
 
                 # Fail-closed: если включён multi_sequential и NPK исключён во время полива,
-                # нельзя откатываться к single-dose, который по умолчанию выберет ec_npk_pump.
+                # нельзя откатываться к single-dose (legacy-default для dose_ec_channel запрещён).
                 if multi_fail_closed and not ec_dose_sequence:
                     discarded_names = ()
                     if isinstance(ec_discarded_details, Mapping):
@@ -479,7 +479,7 @@ class CorrectionPlanner:
                         ec_actuators=ec_actuators,
                         ec_component_policy=ec_component_policy,
                         phase_key=phase_key,
-                        default_channel=str(correction_config.get("dose_ec_channel") or "ec_npk_pump"),
+                        default_channel=str(correction_config.get("dose_ec_channel") or "").strip().lower(),
                     )
                     ec_component_name = resolved_component
                     ec_node_uid = str(resolved_ec["node_uid"])
@@ -542,10 +542,11 @@ class CorrectionPlanner:
                 now=now,
             )
             if ph_retry_after is None:
-                default_channel = (
-                    correction_config.get("dose_ph_up_channel") if ph_needs_up
-                    else correction_config.get("dose_ph_down_channel")
-                ) or ("ph_base_pump" if ph_needs_up else "ph_acid_pump")
+                default_channel = str(
+                    (correction_config.get("dose_ph_up_channel") if ph_needs_up
+                        else correction_config.get("dose_ph_down_channel"))
+                    or ""
+                ).strip().lower()
                 resolved_ph = ph_up_actuator if ph_needs_up else ph_down_actuator
                 if resolved_ph is None:
                     raise PlannerConfigurationError(

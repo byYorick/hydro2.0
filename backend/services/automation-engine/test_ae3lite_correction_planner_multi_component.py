@@ -22,7 +22,7 @@ def _actuator(node_uid: str, channel: str, *, min_effective_ml: float = 0.1) -> 
 
 def _base_correction_cfg() -> dict:
     return {
-        "dose_ec_channel": "dose_ec_a",
+        "dose_ec_channel": "pump_a",
         "dose_ph_up_channel": "pump_base",
         "dose_ph_down_channel": "pump_acid",
         "solution_volume_l": 100.0,
@@ -62,9 +62,9 @@ def test_multi_sequential_splits_ec_gap_by_renormalized_ratios_excluding_npk() -
         }
     }
     ec_actuators = {
-        "calcium": _actuator("nd-ca", "dose_ec_b"),
-        "magnesium": _actuator("nd-mg", "dose_ec_c"),
-        "micro": _actuator("nd-mi", "dose_ec_d"),
+        "calcium": _actuator("nd-ca", "pump_b"),
+        "magnesium": _actuator("nd-mg", "pump_c"),
+        "micro": _actuator("nd-mi", "pump_d"),
     }
 
     plan = planner.build_dose_plan(
@@ -95,7 +95,7 @@ def test_single_mode_backward_compatible_has_empty_sequence() -> None:
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     correction_cfg = {**_base_correction_cfg(), "ec_dosing_mode": "single"}
-    ec_actuator = _actuator("nd-ec", "dose_ec_a")
+    ec_actuator = _actuator("nd-ec", "pump_a")
     plan = planner.build_dose_plan(
         current_ph=6.0,
         current_ec=1.0,
@@ -142,9 +142,9 @@ def test_multi_sequential_reapplies_caps_after_min_effective_bump() -> None:
         }
     }
     ec_actuators = {
-        "calcium": _actuator("nd-ca", "dose_ec_b", min_effective_ml=0.3),
-        "magnesium": _actuator("nd-mg", "dose_ec_c", min_effective_ml=0.1),
-        "micro": _actuator("nd-mi", "dose_ec_d", min_effective_ml=0.1),
+        "calcium": _actuator("nd-ca", "pump_b", min_effective_ml=0.3),
+        "magnesium": _actuator("nd-mg", "pump_c", min_effective_ml=0.1),
+        "micro": _actuator("nd-mi", "pump_d", min_effective_ml=0.1),
     }
 
     plan = planner.build_dose_plan(
@@ -255,9 +255,9 @@ def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_clos
         }
     }
     ec_actuators = {
-        "calcium": _actuator("nd-ca", "dose_ec_b", min_effective_ml=0.1),
-        "magnesium": _actuator("nd-mg", "dose_ec_c", min_effective_ml=0.1),
-        "micro": _actuator("nd-mi", "dose_ec_d", min_effective_ml=0.1),
+        "calcium": _actuator("nd-ca", "pump_b", min_effective_ml=0.1),
+        "magnesium": _actuator("nd-mg", "pump_c", min_effective_ml=0.1),
+        "micro": _actuator("nd-mi", "pump_d", min_effective_ml=0.1),
     }
 
     with pytest.raises(PlannerConfigurationError, match="no safe non-NPK doses during irrigation"):
@@ -302,9 +302,9 @@ def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
     npk = _actuator("nd-ec-1", "pump_a")
     ec_actuators = {
         "pump_a": npk,
-        "ec_npk_pump": npk,
+        "pump_a": npk,
         "ec_npk": npk,
-        "dose_ec_a": npk,
+        "pump_a": npk,
         "calcium": _actuator("nd-ca", "pump_b"),
         "magnesium": _actuator("nd-mg", "pump_c"),
     }

@@ -580,7 +580,7 @@ class PythonBridgeService
             ],
             'FORCE_IRRIGATION' => [
                 'node_type' => 'irrig',
-                'channels' => ['pump_irrigation', 'valve_irrigation'],
+                'channels' => ['pump_main', 'valve_irrigation'],
             ],
             'FORCE_LIGHTING' => [
                 'node_type' => 'light',

@@ -31,7 +31,7 @@ class ZoneReadinessServiceTest extends TestCase
 
         config()->set('zones.readiness.strict_mode', true);
         config()->set('zones.readiness.e2e_mode', false);
-        config()->set('zones.readiness.required_bindings', ['main_pump', 'drain']);
+        config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
         config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', true);
 
         $this->service = app(ZoneReadinessService::class);
@@ -99,14 +99,14 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
         $this->assertFalse($readiness['ready']);
         $this->assertEquals(
-            ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'],
+            ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
             $readiness['missing_bindings']
         );
     }
@@ -125,14 +125,14 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
-        $this->createActuatorBinding($zone, $node, 'pump_acid', 'ph_acid_pump', 'Насос pH кислоты', withCalibration: true);
-        $this->createActuatorBinding($zone, $node, 'pump_base', 'ph_base_pump', 'Насос pH щёлочи', withCalibration: true);
-        $this->createActuatorBinding($zone, $node, 'pump_a', 'ec_npk_pump', 'Насос EC NPK', withCalibration: true);
-        $this->createActuatorBinding($zone, $node, 'pump_b', 'ec_calcium_pump', 'Насос EC Calcium', withCalibration: true);
-        $this->createActuatorBinding($zone, $node, 'pump_c', 'ec_magnesium_pump', 'Насос EC Magnesium', withCalibration: true);
-        $this->createActuatorBinding($zone, $node, 'pump_d', 'ec_micro_pump', 'Насос EC Micro', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_acid', 'pump_acid', 'Насос pH кислоты', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_base', 'pump_base', 'Насос pH щёлочи', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_a', 'pump_a', 'Насос EC NPK', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_b', 'pump_b', 'Насос EC Calcium', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_c', 'pump_c', 'Насос EC Magnesium', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_d', 'pump_d', 'Насос EC Micro', withCalibration: true);
         $this->createPidConfigs($zone);
 
         $readiness = $this->service->checkZoneReadiness($zone);
@@ -154,7 +154,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'offline',
         ]);
 
-        $this->createActuatorBinding($zone, $onlineNode, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $onlineNode, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $onlineNode, 'drain_main', 'drain', 'Дренаж');
         $this->createActuatorBinding($zone, $offlineNode, 'fan_main', 'vent', 'Вентиляция');
         $this->createPidConfigs($zone);
@@ -178,7 +178,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'offline',
         ]);
 
-        $this->createActuatorBinding($zone, $boundOnlineNode, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $boundOnlineNode, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $boundOnlineNode, 'drain_main', 'drain', 'Дренаж');
         $this->createPidConfigs($zone);
 
@@ -203,7 +203,7 @@ class ZoneReadinessServiceTest extends TestCase
             $zone,
             $node,
             'pump_main',
-            'main_pump',
+            'pump_main',
             'Основная помпа',
             ownerType: 'greenhouse'
         );
@@ -221,7 +221,7 @@ class ZoneReadinessServiceTest extends TestCase
 
         $this->assertTrue($readiness['ready']);
         $this->assertEmpty($readiness['missing_bindings']);
-        $this->assertTrue($readiness['checks']['main_pump']);
+        $this->assertTrue($readiness['checks']['pump_main']);
         $this->assertTrue($readiness['checks']['drain']);
         $this->assertTrue($readiness['checks']['online_nodes']);
     }
@@ -242,7 +242,7 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertSame(1, $readiness['nodes']['online']);
         $this->assertTrue($readiness['checks']['has_nodes']);
         $this->assertTrue($readiness['checks']['online_nodes']);
-        $this->assertContains('main_pump', $readiness['missing_bindings']);
+        $this->assertContains('pump_main', $readiness['missing_bindings']);
         $this->assertContains('drain', $readiness['missing_bindings']);
         $this->assertNotContains('Zone has no bound nodes', $readiness['errors']);
     }
@@ -255,7 +255,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createPidConfigs($zone);
 
         $this->storeZoneLogicProfile($zone, [
@@ -270,7 +270,7 @@ class ZoneReadinessServiceTest extends TestCase
         $readiness = $this->service->checkZoneReadiness($zone);
 
         $this->assertTrue($readiness['ready']);
-        $this->assertSame(['main_pump'], $readiness['required_bindings']);
+        $this->assertSame(['pump_main'], $readiness['required_bindings']);
         $this->assertArrayNotHasKey('drain', $readiness['checks']);
         $this->assertEmpty($readiness['missing_bindings']);
     }
@@ -283,7 +283,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
 
         $this->storeZoneLogicProfile($zone, [
             'irrigation' => [
@@ -344,12 +344,12 @@ class ZoneReadinessServiceTest extends TestCase
 
         if ($withCalibration) {
             $component = match ($role) {
-                'ph_acid_pump' => 'ph_down',
-                'ph_base_pump' => 'ph_up',
-                'ec_npk_pump' => 'npk',
-                'ec_calcium_pump' => 'calcium',
-                'ec_magnesium_pump' => 'magnesium',
-                'ec_micro_pump' => 'micro',
+                'pump_acid' => 'ph_down',
+                'pump_base' => 'ph_up',
+                'pump_a' => 'npk',
+                'pump_b' => 'calcium',
+                'pump_c' => 'magnesium',
+                'pump_d' => 'micro',
                 default => 'unknown',
             };
 
@@ -402,14 +402,14 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
         $this->assertFalse($readiness['ready']);
-        $this->assertContains('ph_acid_pump', $readiness['missing_bindings']);
-        $this->assertContains('ec_npk_pump', $readiness['missing_bindings']);
+        $this->assertContains('pump_acid', $readiness['missing_bindings']);
+        $this->assertContains('pump_a', $readiness['missing_bindings']);
     }
 
     public function test_check_zone_readiness_uses_active_logic_profile_capabilities_when_zone_row_is_stale(): void
@@ -426,7 +426,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->storeZoneLogicProfile($zone, [
             'irrigation' => [
                 'enabled' => true,
@@ -445,10 +445,10 @@ class ZoneReadinessServiceTest extends TestCase
         $readiness = $this->service->checkZoneReadiness($zone->fresh());
 
         $this->assertFalse($readiness['ready']);
-        $this->assertContains('ph_acid_pump', $readiness['missing_bindings']);
-        $this->assertContains('ec_npk_pump', $readiness['missing_bindings']);
+        $this->assertContains('pump_acid', $readiness['missing_bindings']);
+        $this->assertContains('pump_a', $readiness['missing_bindings']);
         $this->assertSame(
-            ['main_pump', 'ph_acid_pump', 'ph_base_pump', 'ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'],
+            ['pump_main', 'pump_acid', 'pump_base', 'pump_a', 'pump_b', 'pump_c', 'pump_d'],
             $readiness['required_bindings']
         );
     }
@@ -463,7 +463,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
 
         $readiness = $this->service->checkZoneReadiness($zone);
@@ -481,7 +481,7 @@ class ZoneReadinessServiceTest extends TestCase
             'status' => 'online',
         ]);
 
-        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'pump_main', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
 
         Alert::query()->create([

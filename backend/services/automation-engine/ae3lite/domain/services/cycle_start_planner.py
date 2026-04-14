@@ -14,18 +14,6 @@ class CycleStartPlanner:
     """Строит детерминированный последовательный command plan для cycle_start."""
 
     SUPPORTED_SCHEMA_VERSION = 1
-    LEGACY_EC_COMPONENT_CHANNELS = {
-        "npk": "dose_ec_a",
-        "calcium": "dose_ec_b",
-        "magnesium": "dose_ec_c",
-        "micro": "dose_ec_d",
-    }
-    MODERN_EC_COMPONENT_ROLES = {
-        "npk": "ec_npk_pump",
-        "calcium": "ec_calcium_pump",
-        "magnesium": "ec_magnesium_pump",
-        "micro": "ec_micro_pump",
-    }
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
@@ -472,162 +460,68 @@ class CycleStartPlanner:
         actuators: Sequence[ZoneActuatorRef],
         correction: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Разрешает опциональные ссылки на dosing actuator'ы для модуля коррекции.
+        """Разрешает ссылки на dosing actuator'ы для модуля коррекции.
 
         Возвращает dict с ключами `"ec"`, `"ec_actuators"`, `"ph_up"`, `"ph_down"`.
-        Каждое значение — либо dict вида `{node_uid, channel, calibration}`, либо `None`.
-        Отсутствующие actuator'ы допустимы: `CorrectionPlanner` упадёт уже в момент дозирования.
+        Каждое значение — либо dict вида `{node_uid, channel, calibration}`, либо `None`
+        (только если `dose_*_channel` пустой). Fail-closed:
+        `dose_*_channel` обязан ссылаться на канонический физический канал
+        (`pump_acid`/`pump_base`/`pump_a..d`) — legacy alias'ы больше не
+        резолвятся (см. `doc_ai/01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md`).
         """
-        def _try_resolve(channel_name: str, node_types: List[str]) -> Any:
-            aliases = self._resolve_channel_aliases(channel_name=channel_name, node_types=node_types)
-            for candidate in aliases:
-                try:
-                    actuator = self._resolve_actuator(
-                        actuators=actuators,
-                        requested_channel=candidate,
-                        node_types=node_types,
-                    )
-                    return {
-                        "node_uid": actuator.node_uid,
-                        "channel": actuator.channel,
-                        "calibration": dict(actuator.pump_calibration) if isinstance(actuator.pump_calibration, Mapping) else None,
-                    }
-                except PlannerConfigurationError as exc:
-                    if "Неоднозначное разрешение actuator" in str(exc):
-                        raise
-                    continue
-            return None
+        def _resolve(channel_name: str, node_types: List[str]) -> Any:
+            requested = str(channel_name or "").strip().lower()
+            if not requested:
+                return None
+            try:
+                actuator = self._resolve_actuator(
+                    actuators=actuators,
+                    requested_channel=requested,
+                    node_types=node_types,
+                )
+            except PlannerConfigurationError as exc:
+                # Ambiguous actuator resolution is always fatal — ошибка конфига.
+                if "Неоднозначное разрешение actuator" in str(exc):
+                    raise
+                # Отсутствующий actuator на этапе планирования допустим:
+                # correction-handler упадёт уже в момент дозирования (см. `_validate_required_correction_calibrations`).
+                return None
+            return {
+                "node_uid": actuator.node_uid,
+                "channel": actuator.channel,
+                "calibration": dict(actuator.pump_calibration) if isinstance(actuator.pump_calibration, Mapping) else None,
+            }
 
-        ec_channel = str(correction.get("dose_ec_channel") or "ec_npk_pump").strip().lower()
-        ph_up_channel = str(correction.get("dose_ph_up_channel") or "ph_base_pump").strip().lower()
-        ph_down_channel = str(correction.get("dose_ph_down_channel") or "ph_acid_pump").strip().lower()
+        ec_channel = str(correction.get("dose_ec_channel") or "").strip().lower()
+        ph_up_channel = str(correction.get("dose_ph_up_channel") or "").strip().lower()
+        ph_down_channel = str(correction.get("dose_ph_down_channel") or "").strip().lower()
 
         ec_actuators: dict[str, Any] = {}
         for actuator in actuators:
-            role = str(actuator.role or "").strip().lower()
-            channel = str(actuator.channel or "").strip().lower()
             node_type = str(actuator.node_type or "").strip().lower()
             if node_type != "ec":
                 continue
-            aliases = self._ec_aliases_for_actuator(role=role, channel=channel, pump_calibration=actuator.pump_calibration)
-            if not aliases:
-                continue
+            channel = str(actuator.channel or "").strip().lower()
             value = {
                 "node_uid": actuator.node_uid,
                 "channel": actuator.channel,
                 "calibration": dict(actuator.pump_calibration) if isinstance(actuator.pump_calibration, Mapping) else None,
             }
-            for alias in aliases:
-                ec_actuators.setdefault(alias, value)
+            component = self._extract_ec_component(
+                role=str(actuator.role or ""),
+                pump_calibration=actuator.pump_calibration,
+            )
+            if component:
+                ec_actuators.setdefault(component, value)
+            if channel:
+                ec_actuators.setdefault(channel, value)
 
         return {
-            "ec": _try_resolve(ec_channel, ["ec"]),
+            "ec": _resolve(ec_channel, ["ec"]),
             "ec_actuators": ec_actuators,
-            "ph_up": _try_resolve(ph_up_channel, ["ph"]),
-            "ph_down": _try_resolve(ph_down_channel, ["ph"]),
+            "ph_up": _resolve(ph_up_channel, ["ph"]),
+            "ph_down": _resolve(ph_down_channel, ["ph"]),
         }
-
-    def _resolve_channel_aliases(self, *, channel_name: str, node_types: Sequence[str]) -> List[str]:
-        requested = str(channel_name or "").strip().lower()
-        aliases: List[str] = []
-        if requested:
-            aliases.append(requested)
-
-        normalized_types = {str(item or "").strip().lower() for item in node_types if str(item or "").strip()}
-        if "ec" in normalized_types:
-            component_by_legacy = {
-                value: key for key, value in self.LEGACY_EC_COMPONENT_CHANNELS.items()
-            }
-            if requested.startswith("dose_ec_"):
-                suffix = requested.removeprefix("dose_ec_")
-                if len(suffix) == 1 and suffix.isalpha():
-                    aliases.append(f"pump_{suffix}")
-                component = component_by_legacy.get(requested)
-                if component:
-                    aliases.extend([f"ec_{component}", f"ec_{component}_pump"])
-                    modern_role = self.MODERN_EC_COMPONENT_ROLES.get(component)
-                    if modern_role:
-                        aliases.append(modern_role)
-            if requested.startswith("ec_"):
-                component = requested.removeprefix("ec_")
-                if component.endswith("_pump"):
-                    component = component.removesuffix("_pump")
-                component = component.strip().lower()
-                if component:
-                    legacy_channel = self.LEGACY_EC_COMPONENT_CHANNELS.get(component)
-                    if legacy_channel:
-                        aliases.append(legacy_channel)
-                        suffix = legacy_channel.removeprefix("dose_ec_")
-                        if len(suffix) == 1 and suffix.isalpha():
-                            aliases.append(f"pump_{suffix}")
-                    modern_role = self.MODERN_EC_COMPONENT_ROLES.get(component)
-                    if modern_role:
-                        aliases.append(modern_role)
-            if requested.startswith("pump_"):
-                suffix = requested.removeprefix("pump_")
-                if len(suffix) == 1 and suffix.isalpha():
-                    legacy_channel = f"dose_ec_{suffix}"
-                    aliases.append(legacy_channel)
-                    component = component_by_legacy.get(legacy_channel)
-                    if component:
-                        aliases.extend([f"ec_{component}", f"ec_{component}_pump"])
-                        modern_role = self.MODERN_EC_COMPONENT_ROLES.get(component)
-                        if modern_role:
-                            aliases.append(modern_role)
-
-        if "ph" in normalized_types and requested in {"dose_ph_up", "ph_base_pump", "pump_base"}:
-            aliases.extend(["dose_ph_up", "ph_base_pump", "pump_base"])
-        if "ph" in normalized_types and requested in {"dose_ph_down", "ph_acid_pump", "pump_acid"}:
-            aliases.extend(["dose_ph_down", "ph_acid_pump", "pump_acid"])
-
-        deduped: List[str] = []
-        for alias in aliases:
-            if alias and alias not in deduped:
-                deduped.append(alias)
-        return deduped
-
-    def _ec_aliases_for_actuator(
-        self,
-        *,
-        role: str,
-        channel: str,
-        pump_calibration: Mapping[str, Any] | None,
-    ) -> List[str]:
-        aliases: List[str] = []
-        for value in (role, channel):
-            normalized = str(value or "").strip().lower()
-            if normalized:
-                aliases.append(normalized)
-
-        component_by_legacy = {
-            value: key for key, value in self.LEGACY_EC_COMPONENT_CHANNELS.items()
-        }
-        component = self._extract_ec_component(role=role, pump_calibration=pump_calibration)
-        if not component:
-            component = component_by_legacy.get(role)
-        if not component and channel.startswith("pump_"):
-            suffix = channel.removeprefix("pump_")
-            if len(suffix) == 1 and suffix.isalpha():
-                component = component_by_legacy.get(f"dose_ec_{suffix}")
-        if component:
-            aliases.append(f"ec_{component}")
-            modern_role = self.MODERN_EC_COMPONENT_ROLES.get(component)
-            if modern_role:
-                aliases.append(modern_role)
-            legacy_channel = self.LEGACY_EC_COMPONENT_CHANNELS.get(component)
-            if legacy_channel:
-                aliases.append(legacy_channel)
-
-        if channel.startswith("pump_"):
-            suffix = channel.removeprefix("pump_")
-            if len(suffix) == 1 and suffix.isalpha():
-                aliases.append(f"dose_ec_{suffix}")
-
-        deduped: List[str] = []
-        for alias in aliases:
-            if alias and alias not in deduped:
-                deduped.append(alias)
-        return [alias for alias in deduped if alias.startswith("dose_ec") or alias.startswith("ec_") or alias.startswith("pump_")]
 
     def _extract_ec_component(
         self,
@@ -639,10 +533,6 @@ class CycleStartPlanner:
             raw_component = str(pump_calibration.get("component") or "").strip().lower()
             if raw_component:
                 return raw_component
-
-        if role.startswith("ec_") and role.endswith("_pump"):
-            component = role.removeprefix("ec_").removesuffix("_pump").strip().lower()
-            return component or None
 
         return None
 

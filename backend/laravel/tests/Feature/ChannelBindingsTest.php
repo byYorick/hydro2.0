@@ -49,7 +49,7 @@ class ChannelBindingsTest extends TestCase
             'infrastructure_instance_id' => $instance->id,
             'node_channel_id' => $nodeChannel->id,
             'direction' => 'actuator',
-            'role' => 'main_pump',
+            'role' => 'pump_main',
         ]);
 
         $response->assertStatus(201);
@@ -58,7 +58,7 @@ class ChannelBindingsTest extends TestCase
             'infrastructure_instance_id' => $instance->id,
             'node_channel_id' => $nodeChannel->id,
             'direction' => 'actuator',
-            'role' => 'main_pump',
+            'role' => 'pump_main',
         ]);
     }
 }

@@ -216,7 +216,7 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
             await execute(
                 """
                 INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
-                VALUES ($1, $2, 'actuator', 'irrigation_pump', NOW(), NOW())
+                VALUES ($1, $2, 'actuator', 'pump_main', NOW(), NOW())
                 """,
                 int(rows2[0]["id"]),
                 int(rows[0]["id"]),
@@ -261,9 +261,9 @@ async def _insert_correction_config(zone_id: int) -> None:
             },
             "dosing": {
                 "solution_volume_l": 100.0,
-                "dose_ec_channel": "ec_npk_pump",
-                "dose_ph_up_channel": "ph_base_pump",
-                "dose_ph_down_channel": "ph_acid_pump",
+                "dose_ec_channel": "pump_a",
+                "dose_ph_up_channel": "pump_base",
+                "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
             },

@@ -54,7 +54,7 @@ class ZoneChannelBinding extends Model
     /**
      * Роли оборудования
      */
-    public const ROLE_MAIN_PUMP = 'main_pump';
+    public const ROLE_MAIN_PUMP = 'pump_main';
     public const ROLE_DRAIN_PUMP = 'drain_pump';
     public const ROLE_MISTER = 'mister';
     public const ROLE_FAN = 'fan';

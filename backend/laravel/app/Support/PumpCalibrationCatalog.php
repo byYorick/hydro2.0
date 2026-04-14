@@ -5,21 +5,21 @@ namespace App\Support;
 final class PumpCalibrationCatalog
 {
     public const DOSING_ROLES = [
-        'ph_acid_pump',
-        'ph_base_pump',
-        'ec_npk_pump',
-        'ec_calcium_pump',
-        'ec_magnesium_pump',
-        'ec_micro_pump',
+        'pump_acid',
+        'pump_base',
+        'pump_a',
+        'pump_b',
+        'pump_c',
+        'pump_d',
     ];
 
     public const ROLE_COMPONENT_MAP = [
-        'ph_acid_pump' => 'ph_down',
-        'ph_base_pump' => 'ph_up',
-        'ec_npk_pump' => 'npk',
-        'ec_calcium_pump' => 'calcium',
-        'ec_magnesium_pump' => 'magnesium',
-        'ec_micro_pump' => 'micro',
+        'pump_acid' => 'ph_down',
+        'pump_base' => 'ph_up',
+        'pump_a' => 'npk',
+        'pump_b' => 'calcium',
+        'pump_c' => 'magnesium',
+        'pump_d' => 'micro',
     ];
 
     /**

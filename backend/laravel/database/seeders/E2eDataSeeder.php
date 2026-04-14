@@ -56,7 +56,7 @@ class E2eDataSeeder extends Seeder
                 'lifecycle_state' => 'ASSIGNED_TO_ZONE',
                 'config' => [
                     'sensors' => ['ph', 'ec', 'solution_temp_c', 'air_temp_c', 'air_rh'],
-                    'actuators' => ['main_pump', 'drain_pump', 'fan', 'heater', 'light', 'mister'],
+                    'actuators' => ['pump_main', 'drain_pump', 'fan', 'heater', 'light', 'mister'],
                 ],
             ]
         );
@@ -70,7 +70,7 @@ class E2eDataSeeder extends Seeder
         ];
 
         $actuatorChannels = [
-            ['channel' => 'main_pump', 'type' => 'actuator', 'metric' => 'RELAY', 'unit' => 'bool'],
+            ['channel' => 'pump_main', 'type' => 'actuator', 'metric' => 'RELAY', 'unit' => 'bool'],
             ['channel' => 'drain_pump', 'type' => 'actuator', 'metric' => 'RELAY', 'unit' => 'bool'],
             ['channel' => 'fan', 'type' => 'actuator', 'metric' => 'RELAY', 'unit' => 'bool'],
             ['channel' => 'heater', 'type' => 'actuator', 'metric' => 'RELAY', 'unit' => 'bool'],
