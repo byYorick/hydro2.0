@@ -28,7 +28,8 @@ function parseEventPayload(raw: Record<string, unknown>): Record<string, unknown
   return {}
 }
 
-export function getEventVariant(type: string): BadgeVariant {
+export function getEventVariant(type: string | null | undefined): BadgeVariant {
+  if (typeof type !== 'string' || type.length === 0) return 'neutral'
   if (type === 'IRRIGATION_CYCLE_STARTED') return 'info'
   if (type === 'IRRIGATION_CYCLE_FINISHED') return 'success'
   if (type === 'IRRIGATION_CYCLE_STOPPED') return 'danger'
@@ -46,7 +47,8 @@ export function getEventVariant(type: string): BadgeVariant {
   return 'neutral'
 }
 
-export function getEventTypeLabel(type: string): string {
+export function getEventTypeLabel(type: string | null | undefined): string {
+  if (typeof type !== 'string' || type.length === 0) return ''
   return translateEventKind(type)
 }
 
@@ -55,8 +57,8 @@ export function getEventMessage(event: CycleEvent): string {
     return event.message
   }
 
-  const details = event.details
-  const type = event.type
+  const details = event.details ?? {}
+  const type = event.type ?? ''
 
   if (type === 'CYCLE_HARVESTED') {
     return `Урожай собран${details.batch_label ? ` (партия: ${details.batch_label})` : ''}`

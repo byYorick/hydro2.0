@@ -1,4 +1,4 @@
-import { translateEventKind, translateWorkflowStage } from '@/utils/i18n'
+import { translateEventKind } from '@/utils/i18n'
 import { readNumber, readString, toPayloadRecord } from '@/utils/eventPayload'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -70,14 +70,12 @@ function buildContext(event: ZoneEvent): {
   const causedByEventId = readNumber(payload, 'caused_by_event_id')
   const isRuntimeEvent = RUNTIME_CORRELATED_KINDS.has(event.kind)
 
-  const phaseLabel = workflowPhase ? translateWorkflowStage(workflowPhase) : null
-  const stageLabel = stage ? translateWorkflowStage(stage) : null
-  const contextBits = [phaseLabel, stageLabel].filter(Boolean)
-  const subtitle = contextBits.length > 0 ? contextBits.join(' → ') : null
+  const contextBits = [workflowPhase, stage].filter(Boolean)
+  const subtitle = contextBits.length > 0 ? contextBits.join(' / ') : null
 
   if (correctionWindowId) {
     const windowTitle = taskId !== null
-      ? `Задача #${taskId} · ${describeCorrectionWindow(correctionWindowId)}`
+      ? `AE задача #${taskId} · ${describeCorrectionWindow(correctionWindowId)}`
       : describeCorrectionWindow(correctionWindowId)
     return {
       groupKey: `correction_window:${correctionWindowId}`,
@@ -90,8 +88,8 @@ function buildContext(event: ZoneEvent): {
   if (taskId !== null && isRuntimeEvent) {
     const phaseName = readString(payload, 'phase_name')
     const title = phaseName
-      ? `Задача #${taskId} · ${phaseName}`
-      : `Задача #${taskId}`
+      ? `AE задача #${taskId} · ${phaseName}`
+      : `AE задача #${taskId}`
     return {
       groupKey: `task:${taskId}`,
       title,
