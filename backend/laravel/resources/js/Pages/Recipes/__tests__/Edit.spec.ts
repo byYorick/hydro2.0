@@ -172,8 +172,9 @@ describe('Recipes/Edit.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Редактировать рецепт')
-    expect((wrapper.get('[data-testid="recipe-name-input"]').element as HTMLInputElement).value).toBe('Test Recipe')
-    expect((wrapper.get('[data-testid="recipe-description-input"]').element as HTMLInputElement).value).toBe('Test Description')
+    // recipe-name-display — композитный title "Plant — Label".
+    expect(wrapper.get('[data-testid="recipe-name-display"]').text()).toContain('Test Plant')
+    expect(wrapper.get('[data-testid="recipe-name-display"]').text()).toContain('Test Description')
     expect(wrapper.find('[data-testid="phase-item-0"]').exists()).toBe(true)
   })
 
@@ -194,8 +195,9 @@ describe('Recipes/Edit.vue', () => {
     await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
     await flushPromises()
 
+    // UI composes recipe name from plant + description для новой модели ("Plant — Label"),
+    // см. RecipeEditor.vue recipeName computed.
     expect(recipesUpdateMock).toHaveBeenCalledWith(1, expect.objectContaining({
-      name: 'Test Recipe',
       plant_id: 1,
     }))
     expect(recipesUpdatePhaseMock).toHaveBeenCalledWith(101, expect.objectContaining({

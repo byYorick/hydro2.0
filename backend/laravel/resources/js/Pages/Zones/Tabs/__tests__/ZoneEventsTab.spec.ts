@@ -90,7 +90,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Причина:')
     expect(wrapper.text()).toContain('below_min_dose_ms')
@@ -129,7 +129,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Окно:')
     expect(wrapper.text()).toContain('observe_window')
@@ -171,7 +171,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Текущее → Цель')
     expect(wrapper.text()).toContain('1.980')
@@ -206,7 +206,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Ошибка:')
     expect(wrapper.text()).toContain('Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
@@ -250,7 +250,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Окно коррекции:')
     expect(wrapper.text()).toContain('task:3:tank_filling:solution_fill_check')
@@ -288,7 +288,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Snapshot event ID:')
     expect(wrapper.text()).toContain('1699')
@@ -339,7 +339,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.find('.cursor-pointer').trigger('click')
+    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
 
     expect(wrapper.text()).toContain('Задача ID:')
     expect(wrapper.text()).toContain('77')

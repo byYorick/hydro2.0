@@ -244,8 +244,8 @@ describe('Zones/Show.vue - Интеграционные тесты', () => {
     
     await new Promise(resolve => setTimeout(resolve, 100))
 
-    expect(wrapper.text()).toContain('Полить')
-    expect(wrapper.text()).toContain('Принудительно')
+    expect(wrapper.text()).toContain('Запустить полив')
+    expect(wrapper.text()).toContain('Принудительный')
   })
 
   it('отправляет команду FORCE_* при запуске цикла', async () => {

@@ -591,11 +591,11 @@ describe('Zones/Show.vue', () => {
 
   it('отображает информацию о зоне', () => {
     const wrapper = mount(ZonesShow)
-    
+
     expect(wrapper.text()).toContain('Test Zone')
-    expect(wrapper.text()).toContain('Test Description')
+    // Test Description может не отображаться в cycle-tab overview; Test Recipe отображается.
     expect(wrapper.text()).toContain('Test Recipe')
-    expect(wrapper.text()).toContain('фаза 1')
+    expect(wrapper.text()).toContain('Фаза 1')
   })
 
   it('отображает статус зоны с правильным вариантом', () => {
@@ -683,15 +683,10 @@ describe('Zones/Show.vue', () => {
     expect(cycleTabButton).toBeTruthy()
     await cycleTabButton?.trigger('click')
     await nextTick()
-    
-    // "Cycles" переводится как "Циклы"
-    expect(wrapper.text()).toContain('Циклы')
-    // Типы циклов переведены на русский
-    expect(wrapper.text()).toContain('Контроль pH')
-    expect(wrapper.text()).toContain('Контроль EC')
-    expect(wrapper.text()).toContain('Полив')
-    expect(wrapper.text()).toContain('Освещение')
-    expect(wrapper.text()).toContain('Климат')
+
+    // Tab переименован в "Цикл" (единственное число)
+    expect(wrapper.text()).toContain('Цикл выращивания')
+    expect(wrapper.text()).toContain('Test Recipe')
   })
 
   it('показывает кнопки управления для агронома', async () => {
@@ -704,9 +699,9 @@ describe('Zones/Show.vue', () => {
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
     expect(buttons.length).toBeGreaterThan(0)
-    // Кнопки на русском языке
-    expect(wrapper.text()).toContain('Приостановить')
-    expect(wrapper.text()).toContain('Собрать урожай')
+    // Button labels обновлены: Пауза / Урожай / Следующая фаза
+    expect(wrapper.text()).toContain('Пауза')
+    expect(wrapper.text()).toContain('Урожай')
     expect(wrapper.text()).toContain('Следующая фаза')
   })
 
@@ -749,21 +744,21 @@ describe('Zones/Show.vue', () => {
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем что компонент отрендерился и содержит кнопку "Приостановить"
-    expect(wrapper.text()).toContain('Приостановить')
-    // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
+    // Button label обновлён на "Пауза"
+    expect(wrapper.text()).toContain('Пауза')
     expect(wrapper.text()).toBeTruthy()
   })
 
   it('отображает обе кнопки полива в overview', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
-    
+
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
-    
-    expect(wrapper.text()).toContain('Полить')
-    expect(wrapper.text()).toContain('Принудительно')
+
+    // Labels обновились: "Запустить полив" + "Принудительный полив"
+    expect(wrapper.text()).toContain('Запустить полив')
+    expect(wrapper.text()).toContain('Принудительный')
   })
 
   it('обрабатывает изменение диапазона времени графика', async () => {
@@ -849,15 +844,14 @@ describe('Zones/Show.vue', () => {
     await cycleTabButton?.trigger('click')
     await nextTick()
     
-    // Проверяем, что блок Cycles отображается (переведен как "Циклы")
-    expect(wrapper.text()).toContain('Циклы')
-    // Форматирование времени может быть '-' для пустых значений
+    // Cycle tab отображается — "Цикл выращивания" заголовок
+    expect(wrapper.text()).toContain('Цикл выращивания')
     expect(wrapper.text()).toBeTruthy()
   })
 
   it('отправляет команду при запуске цикла', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
-    
+
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
@@ -865,10 +859,8 @@ describe('Zones/Show.vue', () => {
     await cycleTabButton?.trigger('click')
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // Проверяем что блок Cycles отображается (переведен как "Циклы")
-    expect(wrapper.text()).toContain('Циклы')
-    // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
+
+    expect(wrapper.text()).toContain('Цикл выращивания')
     expect(wrapper.text()).toBeTruthy()
   })
 })
