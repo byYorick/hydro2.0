@@ -134,6 +134,21 @@ async def test_runtime_manual_step_route_maps_business_error(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_manual_step_request_accepts_force_solution_fill_start() -> None:
+    # (b) force_solution_fill_start должен проходить валидацию pattern'а
+    req = ManualStepRequest(manual_step="force_solution_fill_start")
+    assert req.manual_step == "force_solution_fill_start"
+
+
+@pytest.mark.asyncio
+async def test_manual_step_request_rejects_unknown_step() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        ManualStepRequest(manual_step="unknown_step_foo")
+
+
+@pytest.mark.asyncio
 async def test_runtime_control_mode_post_requires_security_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     app, _bundle = _app(monkeypatch)
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/control-mode" and "POST" in route.methods)

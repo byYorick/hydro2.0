@@ -11,7 +11,13 @@ logger = logging.getLogger(__name__)
 AVAILABLE_CONTROL_MODES: Final[tuple[str, ...]] = ("auto", "semi", "manual")
 
 _ALLOWED_MANUAL_STEPS_BY_STAGE: Final[dict[str, list[str]]] = {
-    "startup": ["clean_fill_start", "solution_fill_start"],
+    "startup": [
+        "clean_fill_start",
+        "solution_fill_start",
+        # (b) force: пропустить clean_max check и принудительно начать solution_fill.
+        # Agronomist в manual подтверждает что вода в баке уже есть.
+        "force_solution_fill_start",
+    ],
     "clean_fill_check": ["clean_fill_stop"],
     "solution_fill_check": ["solution_fill_stop"],
     "prepare_recirculation_check": ["prepare_recirculation_stop"],

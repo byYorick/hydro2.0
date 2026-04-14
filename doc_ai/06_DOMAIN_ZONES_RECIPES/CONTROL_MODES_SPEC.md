@@ -130,14 +130,29 @@ Auto-advance **блокируется**, если:
 
 Полный набор для manual зоны:
 
-**Старт этапов:**
-- `start_clean_fill` — запустить заполнение бака чистой водой
-- `start_solution_fill` — запустить заполнение раствором
-- `start_prepare_recirculation` — запустить рециркуляцию для подготовки
-- `start_irrigation` — запустить разовый цикл полива
+**Старт этапов (через `pending_manual_step` на активной task):**
+- `clean_fill_start` — в startup stage, если `clean_max=false`
+- `solution_fill_start` — в startup stage, если `clean_max=true` (после clean fill)
+- `force_solution_fill_start` — в startup stage, **пропускает** `clean_max` guard.
+  Используется когда agronomist сам залил чистую воду / не хочет fill'ить и
+  подтверждает что вода в баке есть. Только в `manual` (не в `semi`).
 
-**Стопы (в любой момент):**
-- `stop_clean_fill`, `stop_solution_fill`, `stop_prepare_recirculation`, `stop_irrigation`, `stop_irrigation_recovery`
+**Стопы (в любой момент на активной task):**
+- `clean_fill_stop`, `solution_fill_stop`, `prepare_recirculation_stop`, `irrigation_stop`, `irrigation_recovery_stop`
+
+**Создание новой task (через HTTP endpoints, не manual_step):**
+- `POST /zones/{id}/start-cycle` — полный workflow с нуля (через startup stage)
+- `POST /zones/{id}/start-irrigation` — разовый цикл полива
+
+**Повторная подготовка раствора** (добавление нутриентов, повторное перемешивание)
+достигается последовательностью:
+1. `POST /zones/{id}/start-cycle` — новая cycle_start task
+2. Agronomist нажимает `solution_fill_start` manual step (или `force_solution_fill_start`
+   если clean tank пустой)
+3. AE3 pipeline startup → solution_fill_start → solution_fill_check
+4. solution_fill_check видит `solution_max=true` → переход в `solution_fill_stop_to_prepare`
+5. prepare_recirculation_start → recirculation + correction
+6. Цель достигнута → complete_ready
 
 ### 5.2. Поведение AE3 в manual
 

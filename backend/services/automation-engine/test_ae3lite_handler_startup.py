@@ -174,6 +174,33 @@ async def test_manual_startup_with_pending_clean_fill_start_transitions() -> Non
     assert outcome.next_stage == "clean_fill_start"
 
 
+@pytest.mark.asyncio
+async def test_manual_startup_force_solution_fill_bypasses_clean_max() -> None:
+    # clean_max=false, но agronomist force'ит solution fill (manual режим)
+    m = _Monitor(clean_max_triggered=False)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual", pending_manual_step="force_solution_fill_start"),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_start"
+
+
+@pytest.mark.asyncio
+async def test_semi_startup_does_not_accept_force_solution_fill_start() -> None:
+    # force_solution_fill_start работает только в manual, не в semi
+    m = _Monitor(clean_max_triggered=False)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="semi", pending_manual_step="force_solution_fill_start"),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+
+
 # ── 3. IRR state unavailable/stale → fail-closed ─────────────────────────────
 
 @pytest.mark.asyncio

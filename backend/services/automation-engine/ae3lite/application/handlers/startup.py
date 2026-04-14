@@ -61,6 +61,16 @@ class StartupHandler(BaseStageHandler):
                     min_stale_error="two_tank_clean_min_level_stale",
                 )
                 return StageOutcome(kind="transition", next_stage="solution_fill_start")
+            # (b) force: agronomist явно пропускает clean_max guard. Без sensor
+            # consistency check — кнопка уже эквивалентна "я знаю что делаю".
+            # См. CONTROL_MODES_SPEC §5.1.
+            if pending_manual_step == "force_solution_fill_start" and control_mode == "manual":
+                logger.warning(
+                    "startup: force_solution_fill_start от agronomist в manual zone_id=%s clean_max_is_triggered=%s",
+                    task.zone_id,
+                    bool(clean_max["is_triggered"]),
+                )
+                return StageOutcome(kind="transition", next_stage="solution_fill_start")
             if not clean_max["is_triggered"] and pending_manual_step == "clean_fill_start":
                 return StageOutcome(
                     kind="transition",
