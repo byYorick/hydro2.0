@@ -1276,9 +1276,12 @@ class GrowCycleService
     }
 
     /**
-     * Переход на следующую фазу
+     * Переход на следующую фазу.
+     *
+     * `$userId` может быть null для системных переходов (cron `phases:auto-advance`):
+     * triggered_by в grow_cycle_transitions имеет nullable FK на users.
      */
-    public function advancePhase(GrowCycle $cycle, int $userId): GrowCycle
+    public function advancePhase(GrowCycle $cycle, ?int $userId): GrowCycle
     {
         $revision = $cycle->recipeRevision;
         if (! $revision) {

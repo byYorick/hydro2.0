@@ -34,6 +34,9 @@ class StartupHandler(BaseStageHandler):
             await self._probe_irr_state(
                 task=task, plan=plan, now=now, expected={"pump_main": False},
             )
+        # Successful probe — clear manual_to_auto reconcile flag (если был выставлен
+        # SetControlModeUseCase). См. CONTROL_MODES_SPEC §6.3 / §9.7.
+        await self._clear_manual_to_auto_reconcile_flag(task=task)
         runtime = plan.runtime
 
         clean_max = await self._read_level(
@@ -106,4 +109,33 @@ class StartupHandler(BaseStageHandler):
             raise TaskExecutionError(
                 str(result["error_code"]),
                 str(result["error_message"]),
+            )
+
+    async def _clear_manual_to_auto_reconcile_flag(self, *, task: Any) -> None:
+        """Очищает `zones.settings.manual_to_auto_reconcile_pending` после
+        successful probe в startup. См. CONTROL_MODES_SPEC.md §6.3 / §9.7.
+
+        Best-effort: если запись не удалась — не блокируем стартап, только
+        warning. Флаг чисто диагностический (UI badge), он не управляет
+        runtime поведением.
+        """
+        try:
+            from common.db import execute  # local import to keep handler module light
+
+            await execute(
+                """
+                UPDATE zones
+                SET settings = COALESCE(settings, '{}'::jsonb) - 'manual_to_auto_reconcile_pending'
+                                                              - 'manual_to_auto_reconcile_requested_at',
+                    updated_at = NOW()
+                WHERE id = $1
+                  AND settings ? 'manual_to_auto_reconcile_pending'
+                """,
+                int(getattr(task, "zone_id", 0) or 0),
+            )
+        except Exception:
+            logger.warning(
+                "AE3 startup: не смог очистить manual_to_auto_reconcile_pending для zone_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                exc_info=True,
             )

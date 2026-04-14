@@ -77,11 +77,42 @@ class ZoneAutomationControlModeController extends Controller
         $validated = $request->validate([
             'control_mode' => ['required', 'string', 'in:auto,semi,manual'],
             'source' => ['nullable', 'string', 'max:64'],
+            'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
+        $user = $request->user();
+        $userRole = $this->resolveUserRole($user);
+        $newMode = $validated['control_mode'];
+        $currentMode = strtolower(trim((string) ($zone->control_mode ?? 'auto')));
+
+        if (! $this->isTransitionAllowedForRole($userRole, $currentMode, $newMode)) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'CONTROL_MODE_FORBIDDEN_FOR_ROLE',
+                'message' => 'Текущая роль не разрешает переключение control_mode в этом направлении.',
+                'details' => [
+                    'role' => $userRole,
+                    'from' => $currentMode,
+                    'to' => $newMode,
+                ],
+            ], 403);
+        }
+
+        if ($userRole === 'operator' && $newMode === 'manual'
+            && empty(trim((string) ($validated['reason'] ?? '')))) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'REASON_REQUIRED_FOR_OPERATOR_EMERGENCY',
+                'message' => 'Operator обязан указать reason при аварийном переходе в manual.',
+            ], 422);
+        }
+
         $payload = [
-            'control_mode' => $validated['control_mode'],
+            'control_mode' => $newMode,
             'source' => $validated['source'] ?? 'frontend',
+            'user_id' => $user?->id,
+            'user_role' => $userRole,
+            'reason' => $validated['reason'] ?? null,
         ];
 
         try {
@@ -139,6 +170,40 @@ class ZoneAutomationControlModeController extends Controller
         if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             abort(403, 'Forbidden: Access denied to this zone');
         }
+    }
+
+    /**
+     * Матрица переходов по ролям из CONTROL_MODES_SPEC.md §8.1:
+     * - Agronomist / Engineer / Admin — любые переходы.
+     * - Operator — только emergency `auto|semi → manual`.
+     * - Viewer — запрещено.
+     */
+    private function isTransitionAllowedForRole(string $role, string $fromMode, string $toMode): bool
+    {
+        $role = strtolower(trim($role));
+        if ($fromMode === $toMode) {
+            return true; // no-op; handled downstream (will be short-circuited)
+        }
+
+        $unrestrictedRoles = ['agronomist', 'engineer', 'admin'];
+        if (in_array($role, $unrestrictedRoles, true)) {
+            return true;
+        }
+
+        if ($role === 'operator') {
+            return in_array($fromMode, ['auto', 'semi'], true) && $toMode === 'manual';
+        }
+
+        return false; // viewer, unknown
+    }
+
+    private function resolveUserRole(?\App\Models\User $user): string
+    {
+        if (! $user) {
+            return '';
+        }
+        $role = strtolower(trim((string) ($user->role ?? '')));
+        return $role !== '' ? $role : 'agronomist';
     }
 
     /**

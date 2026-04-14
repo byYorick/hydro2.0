@@ -44,6 +44,9 @@ class ControlModeRequest(BaseModel):
 
     control_mode: str = Field(..., min_length=1, max_length=16, pattern="^(auto|semi|manual)$")
     source: str = Field(default="laravel_api", min_length=1, max_length=64)
+    user_id: Optional[int] = Field(default=None, ge=0)
+    user_role: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class ManualStepRequest(BaseModel):
@@ -626,6 +629,10 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             zone_id=zone_id,
             control_mode=req.control_mode,
             now=_utcnow(),
+            user_id=req.user_id,
+            user_role=req.user_role,
+            source=req.source,
+            reason=req.reason,
         )
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
         bundle.worker.kick()

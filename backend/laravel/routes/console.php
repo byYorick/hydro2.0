@@ -101,3 +101,13 @@ Schedule::command('ae3:cleanup-old-tasks --days=90')
     ->withoutOverlapping()
     ->onOneServer()
     ->description('AE3 retention: cleanup completed/failed ae_tasks and intents');
+
+// Auto-advance recipe phases для зон в control_mode=auto. Стратегия time:
+// `phase_started_at + duration_hours/days < now`. Guards: нет active task,
+// нет critical/error alerts. Если последняя фаза → biz_recipe_completed_review_required.
+// См. doc_ai/06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md §4.
+Schedule::command('phases:auto-advance')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->description('Auto-advance recipe phases for zones in control_mode=auto');
