@@ -491,6 +491,16 @@ async def _ensure_command_for_publish(
 
         return None
 
+    if cmd_id and cmd_id.startswith("hl-"):
+        # Audit (cmd_id forensics): legitimate AE3 / Laravel callers никогда не
+        # генерируют префикс `hl-` для cmd_id (это есть только в тестовых моках).
+        # Если такое всплыло в проде — нужен полный stack trace для root cause.
+        logger.warning(
+            "[CMD_ID_FORENSICS] About to INSERT command with hl- prefix cmd_id=%s "
+            "zone_id=%s node_uid=%s channel=%s cmd=%s source=%s",
+            cmd_id, zone_id, node_uid, channel, cmd_name, command_source,
+            stack_info=True,
+        )
     try:
         await execute(
             """

@@ -87,8 +87,42 @@ test-laravel: up
 		-e DB_PASSWORD=hydro \
 		laravel php artisan test $(LARAVEL_TEST_ARGS)
 
-test: test-laravel
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest
+.PHONY: test-db-init
+test-db-init: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$(LARAVEL_TEST_DB)'" | grep -q 1 \
+		|| $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -c "CREATE DATABASE $(LARAVEL_TEST_DB) WITH OWNER hydro;"
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d $(LARAVEL_TEST_DB) -c "CREATE EXTENSION IF NOT EXISTS timescaledb; CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/dev/null
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e APP_ENV=testing \
+		-e DB_DATABASE=$(LARAVEL_TEST_DB) \
+		laravel php artisan migrate --force
+
+.PHONY: test-db-reset
+test-db-reset: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -c "DROP DATABASE IF EXISTS $(LARAVEL_TEST_DB);" >/dev/null
+	@$(MAKE) test-db-init
+
+.PHONY: test-ae
+test-ae: test-db-init
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
+		automation-engine pytest $(PYTEST_ARGS)
+
+.PHONY: test-hl
+test-hl: test-db-init
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e PG_DB=$(LARAVEL_TEST_DB) \
+		-e DB_DATABASE=$(LARAVEL_TEST_DB) \
+		history-logger pytest $(PYTEST_ARGS)
+
+.PHONY: test-mqttb
+test-mqttb: test-db-init
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e PG_DB=$(LARAVEL_TEST_DB) \
+		-e DB_DATABASE=$(LARAVEL_TEST_DB) \
+		mqtt-bridge pytest $(PYTEST_ARGS)
+
+test: test-laravel test-ae test-hl test-mqttb
 
 .PHONY: lint
 lint: up

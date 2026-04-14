@@ -83,10 +83,19 @@ docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test
 docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test --filter=TestClassName
 docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test tests/Unit/FooTest.php
 
-# Python — automation-engine (рекомендуемый способ для AE тестов)
-docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q
-docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest tests/path/to/test_file.py -x -q
-docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q -k "test_name"
+# Python — automation-engine (РЕКОМЕНДУЕМЫЙ способ для AE тестов)
+# ВАЖНО: integration-тесты AE3 пишут в БД. Используй `make test-ae` — оно
+# запускает pytest против `hydro_test` (mirror schema из `hydro_dev`), не портит
+# рабочие данные. Conftest автоматически форсирует `PG_DB=hydro_test`.
+make test-ae                                                     # полный AE suite
+make test-ae PYTEST_ARGS="-q test_ae3lite_probe_backoff.py"      # один файл
+make test-ae PYTEST_ARGS="-x -k test_name"                       # фильтр
+make test-db-reset                                               # wipe test DB
+
+# Быстрый экспресс-прогон через docker exec — ТОЛЬКО для unit-тестов без БД.
+# Для интеграционных тестов ВСЕГДА используй `make test-ae`, чтобы не
+# создавать мусорные zones/greenhouses в dev-БД.
+docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q path/to/unit_test.py
 
 # Python — history-logger
 docker compose -f backend/docker-compose.dev.yml exec history-logger pytest -x -q

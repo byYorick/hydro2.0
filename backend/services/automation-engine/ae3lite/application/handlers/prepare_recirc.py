@@ -90,14 +90,22 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 },
             )
 
-        await self._probe_irr_state(
+        probe_outcome = await self._probe_irr_state_with_backoff(
             task=task, plan=plan, now=now,
             expected={
                 "valve_solution_supply": True,
                 "valve_solution_fill": True,
                 "pump_main": True,
             },
+            poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            exhausted_outcome=StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            ),
         )
+        if probe_outcome is not None:
+            return probe_outcome
 
         if pending_manual_step == "prepare_recirculation_stop":
             _logger.info("prepare_recirculation_check: запрошена ручная остановка zone_id=%s", task.zone_id)

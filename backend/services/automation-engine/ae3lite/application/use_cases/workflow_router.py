@@ -148,7 +148,7 @@ class WorkflowRouter:
                 "runtime_monitor": runtime_monitor,
                 "command_gateway": command_gateway,
             }
-            if key in {"await_ready", "decision_gate", "irrigation_check", "irrigation_recovery"}:
+            if key in {"await_ready", "decision_gate", "irrigation_check", "irrigation_recovery", "prepare_recirc"}:
                 kwargs["task_repository"] = task_repository
             if key == "decision_gate":
                 kwargs["decision_controller"] = decision_controller

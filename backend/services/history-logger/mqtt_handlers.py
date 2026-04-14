@@ -1798,6 +1798,19 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 status_value = _resolve_stub_insert_status(normalized_status)
                 cmd_name = "unknown"
 
+                if cmd_id and cmd_id.startswith("hl-"):
+                    # Audit (cmd_id forensics): нода прислала command_response
+                    # с cmd_id, имеющим зарезервированный prefix `hl-`. В нормальном
+                    # потоке нода отвечает с тем cmd_id, который HL отправил в payload.
+                    # Появление `hl-` означает либо retained message от старой публикации,
+                    # либо broken caller. Пишем stack для root cause.
+                    logger.warning(
+                        "[CMD_ID_FORENSICS] command_response stub INSERT with hl- prefix "
+                        "cmd_id=%s node_uid=%s channel=%s status=%s",
+                        cmd_id, node_uid, channel, status_value,
+                        stack_info=True,
+                    )
+
                 await execute(
                     """
                     INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)

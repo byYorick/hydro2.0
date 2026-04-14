@@ -1,0 +1,52 @@
+"""Pytest session bootstrap для AE3-Lite.
+
+Safety rails:
+- integration-тесты AE3 пишут/удаляют в таблицы PostgreSQL (zones, greenhouses,
+  ae_tasks, ae_commands и т.д.);
+- если они запущены против `hydro_dev`, эти INSERT/DELETE смешиваются с
+  реальными данными dev-прогона и оставляют мусор (test fixture только
+  частично чистит за собой);
+- поэтому здесь **жёстко** форсируем `PG_DB=hydro_test` на уровне process env
+  **до** любого импорта `common.db`, чтобы asyncpg pool создавался уже в
+  test-БД.
+
+При необходимости перекрыть имя (например, CI test-db) выставьте
+`AE3_PYTEST_DB` явно — оно имеет приоритет над дефолтным `hydro_test`.
+
+Предусловия: hydro_test DB создана и на неё применены laravel миграции.
+См. `Makefile` target `test-db-init`.
+"""
+
+from __future__ import annotations
+
+import os
+import uuid
+
+_DEFAULT_TEST_DB = "hydro_test"
+_OVERRIDE_ENV_VAR = "AE3_PYTEST_DB"
+_FORBIDDEN_DBS = {"hydro_dev", "hydro_prod", "hydro"}
+
+
+def _select_test_db() -> str:
+    override = os.environ.get(_OVERRIDE_ENV_VAR, "").strip()
+    candidate = override or _DEFAULT_TEST_DB
+    if candidate in _FORBIDDEN_DBS:
+        raise RuntimeError(
+            f"AE3 pytest attempted to use forbidden DB '{candidate}'. "
+            f"Set {_OVERRIDE_ENV_VAR} to a dedicated test database."
+        )
+    return candidate
+
+
+# Применяем override на module-import (до collection), чтобы любой
+# последующий import пути, который создаст asyncpg pool, уже видел
+# правильное имя БД. pytest гарантирует загрузку conftest.py до тестовых
+# модулей.
+_TEST_DB = _select_test_db()
+os.environ["PG_DB"] = _TEST_DB
+os.environ["DB_DATABASE"] = _TEST_DB
+# application_name помогает отличить test-коннекты от live-сервиса в pg_stat_activity.
+os.environ.setdefault(
+    "PG_APP_NAME",
+    f"hydro:ae3-pytest-{uuid.uuid4().hex[:8]}",
+)
