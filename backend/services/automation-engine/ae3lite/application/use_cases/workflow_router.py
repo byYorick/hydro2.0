@@ -707,7 +707,7 @@ class WorkflowRouter:
             return
         event_type, label = entry
         try:
-            create_zone_event(
+            await create_zone_event(
                 int(task.zone_id),
                 event_type,
                 {
