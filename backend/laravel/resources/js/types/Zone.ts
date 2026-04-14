@@ -30,6 +30,8 @@ export interface Zone {
   alerts_count?: number
   crop?: string
   issues?: string[]
+  /** См. CONTROL_MODES_SPEC.md §2: режим управления зоной. */
+  control_mode?: 'auto' | 'semi' | 'manual'
   created_at: string
   updated_at: string
 }

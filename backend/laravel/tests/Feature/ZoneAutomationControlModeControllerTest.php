@@ -68,7 +68,8 @@ class ZoneAutomationControlModeControllerTest extends TestCase
     {
         config()->set('services.automation_engine.scheduler_api_token', 'test-scheduler-token');
 
-        $user = User::factory()->create(['role' => 'operator']);
+        // Agronomist может переключать в любое направление, см. CONTROL_MODES_SPEC §8.1.
+        $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
 
@@ -123,6 +124,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
     public function test_control_mode_update_propagates_upstream_business_conflict(): void
     {
+        // Operator может switch в manual — передаём reason (required per spec §8.1).
         $user = User::factory()->create(['role' => 'operator']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
@@ -139,6 +141,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
             ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/control-mode", [
                 'control_mode' => 'manual',
+                'reason' => 'emergency unit test',
             ]);
 
         $response->assertStatus(422)

@@ -63,6 +63,7 @@ class RecipeRevisionPhase extends Model
         'co2_target',
         // Прогресс фазы
         'progress_model',
+        'phase_advance_strategy',
         'duration_hours',
         'duration_days',
         'base_temp_c',

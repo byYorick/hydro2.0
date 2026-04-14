@@ -34,6 +34,8 @@
             :can-manage="canManageCycle"
             :can-operate="canOperateZone"
             :loading="actionsLoading"
+            :control-mode="controlMode ?? null"
+            :phase-duration-complete="phaseDurationComplete"
             @start-irrigation="$emit('start-irrigation')"
             @force-irrigation="$emit('force-irrigation')"
             @pause="$emit('pause')"
@@ -108,6 +110,7 @@ import { translateStatus } from '@/utils/i18n'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
 import type { GrowCycle } from '@/types/GrowCycle'
+import type { AutomationControlMode } from '@/types/Automation'
 
 interface CycleLoadingState {
   irrigate: boolean
@@ -134,6 +137,10 @@ interface Props {
   canManageRecipe: boolean
   canManageCycle: boolean
   loading: CycleLoadingState
+  /** См. CONTROL_MODES_SPEC.md §4.5: в auto "next phase" недоступен, в semi/manual — доступен. */
+  controlMode?: AutomationControlMode | null
+  /** true если phase_started_at + duration_hours/days < now (фаза готова к advance). */
+  phaseDurationComplete?: boolean
 }
 
 const props = defineProps<Props>()

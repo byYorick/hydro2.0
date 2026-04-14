@@ -12,6 +12,7 @@ export type AutomationManualStep =
   | 'clean_fill_start'
   | 'clean_fill_stop'
   | 'solution_fill_start'
+  | 'force_solution_fill_start'
   | 'solution_fill_stop'
   | 'prepare_recirculation_start'
   | 'prepare_recirculation_stop'

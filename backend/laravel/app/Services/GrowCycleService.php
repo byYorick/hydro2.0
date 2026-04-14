@@ -1665,6 +1665,7 @@ class GrowCycleService
             'humidity_target' => $templatePhase->humidity_target,
             'co2_target' => $templatePhase->co2_target,
             'progress_model' => $templatePhase->progress_model,
+            'phase_advance_strategy' => $templatePhase->phase_advance_strategy ?? 'time',
             'duration_hours' => $templatePhase->duration_hours,
             'duration_days' => $templatePhase->duration_days,
             'base_temp_c' => $templatePhase->base_temp_c,

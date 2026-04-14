@@ -48,6 +48,9 @@ export interface GrowCycle {
     phase_index?: number
     name?: string
     duration_hours?: number
+    duration_days?: number
+    phase_advance_strategy?: string
+    started_at?: string | null
     targets?: Record<string, any>
   } | null
   batch_label?: string | null

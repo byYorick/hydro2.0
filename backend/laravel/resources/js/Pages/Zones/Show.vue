@@ -37,6 +37,8 @@
         :phase-time-left-label="phaseTimeLeftLabel"
         :can-manage-recipe="canManageRecipe"
         :can-manage-cycle="canManageCycle"
+        :control-mode="zone?.control_mode ?? null"
+        :phase-duration-complete="phaseDurationComplete"
         :loading="{
           irrigate: loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION'),
           cyclePause: loading.cyclePause,
@@ -145,6 +147,7 @@
   </AppLayout>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Tabs from "@/Components/Tabs.vue";
 import ZoneAutomationTab from "@/Pages/Zones/Tabs/ZoneAutomationTab.vue";
@@ -229,4 +232,21 @@ const {
     onCycleChangeRecipe,
     confirmChangeRecipe,
 } = useZoneShowPage();
+
+/**
+ * true если phase_started_at + duration_hours/days < now.
+ * Используется UI для показа badge "готова" и подсказок в CycleActionsDropdown.
+ * См. CONTROL_MODES_SPEC.md §4.5.
+ */
+const phaseDurationComplete = computed<boolean>(() => {
+    const phase = activeGrowCycle.value?.currentPhase;
+    if (!phase || !phase.started_at) return false;
+    const startedAt = new Date(phase.started_at).getTime();
+    if (Number.isNaN(startedAt)) return false;
+    const durationMs =
+        (Number(phase.duration_hours ?? 0) * 3_600_000) +
+        (Number(phase.duration_days ?? 0) * 86_400_000);
+    if (durationMs <= 0) return false;
+    return Date.now() >= startedAt + durationMs;
+});
 </script>

@@ -59,11 +59,23 @@
       <button
         v-if="canManage && isActive"
         type="button"
-        :disabled="loading.nextPhase"
+        :disabled="loading.nextPhase || nextPhaseDisabled"
+        :title="nextPhaseHint ?? undefined"
         class="dropdown-action"
+        :class="phaseReadyBadge ? 'dropdown-action--ready' : ''"
         @click="$emit('next-phase')"
       >
-        Следующая фаза
+        <span class="flex items-center justify-between gap-2">
+          <span>Следующая фаза</span>
+          <span
+            v-if="phaseReadyBadge"
+            class="text-[11px] rounded-full bg-emerald-500/15 text-emerald-500 px-1.5 py-0.5"
+          >готова</span>
+          <span
+            v-else-if="controlMode === 'auto'"
+            class="text-[11px] text-[color:var(--text-dim)]"
+          >авто</span>
+        </span>
       </button>
 
       <div
@@ -97,6 +109,7 @@
 import { computed } from 'vue'
 import Dropdown from '@/Components/Dropdown.vue'
 import type { GrowCycleStatus } from '@/types/GrowCycle'
+import type { AutomationControlMode } from '@/types/Automation'
 
 interface CycleLoadingState {
   irrigate: boolean
@@ -112,7 +125,33 @@ const props = defineProps<{
   canManage: boolean
   canOperate: boolean
   loading: CycleLoadingState
+  /**
+   * Control mode зоны. В `auto` advance выполняется cron-ом, UI-кнопка
+   * блокируется. В `semi`/`manual` agronomist нажимает вручную; при
+   * достижении duration показывается badge "готова".
+   * См. CONTROL_MODES_SPEC.md §4.5.
+   */
+  controlMode?: AutomationControlMode | null
+  /**
+   * true если phase_started_at + duration_hours/days уже прошло (фаза готова).
+   * Вычисляется родителем (Zone page) — фронт не дёргает backend на каждый tick.
+   */
+  phaseDurationComplete?: boolean
 }>()
+
+const nextPhaseDisabled = computed<boolean>(() => props.controlMode === 'auto')
+const nextPhaseHint = computed<string | null>(() => {
+  if (props.controlMode === 'auto') {
+    return 'В режиме auto фаза переключается автоматически по таймеру. Смените на semi/manual чтобы управлять вручную.'
+  }
+  if (props.phaseDurationComplete) {
+    return 'Длительность фазы истекла — можно переходить к следующей.'
+  }
+  return null
+})
+const phaseReadyBadge = computed<boolean>(
+  () => props.controlMode !== 'auto' && props.phaseDurationComplete === true,
+)
 
 defineEmits<{
   'start-irrigation': []
@@ -147,5 +186,9 @@ const isActive = computed(() =>
 .dropdown-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dropdown-action--ready {
+  background-color: color-mix(in srgb, var(--accent-green, #10b981) 8%, transparent);
 }
 </style>

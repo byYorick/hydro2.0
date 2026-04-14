@@ -387,9 +387,39 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
 
 async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {
   if (mode === automationControlMode.value || automationControlModeSaving.value) return
+
+  const currentMode = automationControlMode.value
+  let reason: string | undefined
+
+  // Confirm при переходе в manual — прервёт активную task (см. CONTROL_MODES_SPEC §6.2).
+  if (mode === 'manual' && (currentMode === 'auto' || currentMode === 'semi')) {
+    const confirmMessage =
+      'Переход в manual прервёт активную задачу автоматики (полив / заполнение / рециркуляцию). ' +
+      'Оборудование будет остановлено, задача помечена failed. Продолжить?'
+    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
+      return
+    }
+    // Для operator-role бэкенд требует reason. Для agronomist поле необязательное,
+    // но если пользователь введёт — сохранится в audit event.
+    const reasonInput = typeof window !== 'undefined'
+      ? window.prompt('Причина перехода в manual (необязательно):', '')
+      : null
+    reason = reasonInput ?? undefined
+  }
+
+  // Confirm при выходе из manual — система сделает reconcile через startup probe.
+  if ((mode === 'auto' || mode === 'semi') && currentMode === 'manual') {
+    const confirmMessage =
+      `Возврат в ${mode} запустит автоматическую проверку состояния оборудования. ` +
+      'Убедитесь что hardware в согласованном состоянии. Продолжить?'
+    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
+      return
+    }
+  }
+
   pendingControlModeValue.value = mode
   try {
-    await setAutomationControlMode(mode)
+    await setAutomationControlMode(mode, reason)
   } finally {
     pendingControlModeValue.value = null
   }

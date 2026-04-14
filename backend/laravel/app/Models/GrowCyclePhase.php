@@ -55,6 +55,7 @@ class GrowCyclePhase extends Model
         'humidity_target',
         'co2_target',
         'progress_model',
+        'phase_advance_strategy',
         'duration_hours',
         'duration_days',
         'base_temp_c',

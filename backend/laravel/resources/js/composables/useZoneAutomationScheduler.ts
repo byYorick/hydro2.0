@@ -31,6 +31,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     clean_fill_start: false,
     clean_fill_stop: false,
     solution_fill_start: false,
+    force_solution_fill_start: false,
     solution_fill_stop: false,
     prepare_recirculation_start: false,
     prepare_recirculation_stop: false,
@@ -103,17 +104,21 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
   }
 
-  async function setAutomationControlMode(mode: AutomationControlMode): Promise<boolean> {
+  async function setAutomationControlMode(mode: AutomationControlMode, reason?: string): Promise<boolean> {
     if (!props.zoneId) return false
 
     automationControlModeSaving.value = true
     try {
+      const body: { control_mode: AutomationControlMode; source?: string; reason?: string } = {
+        control_mode: mode,
+        source: 'frontend',
+      }
+      if (reason && reason.trim() !== '') {
+        body.reason = reason.trim()
+      }
       const response = await api.zones.setControlMode<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] }; control_mode?: string; allowed_manual_steps?: unknown[] }>(
         props.zoneId,
-        {
-          control_mode: mode,
-          source: 'frontend',
-        }
+        body
       )
 
       const payload = response?.data ?? response ?? {}

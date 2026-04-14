@@ -177,7 +177,7 @@ export const zonesApi = {
 
   setControlMode<T = unknown>(
     zoneId: number,
-    payload: { control_mode: string; source?: string },
+    payload: { control_mode: string; source?: string; reason?: string },
   ): Promise<T> {
     return apiPost<T>(`/zones/${zoneId}/control-mode`, payload)
   },
