@@ -277,3 +277,55 @@ def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_clos
             now=now,
             ec_actuators=ec_actuators,
         )
+
+
+def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+
+    correction_cfg = {
+        **_base_correction_cfg(),
+        "ec_dosing_mode": "multi_parallel",
+        "ec_component_ratios": {"npk": 0.6, "calcium": 0.25, "magnesium": 0.15},
+        "actuators": {},
+    }
+    process_calibrations = {
+        "irrigation": {
+            "ec_gain_per_ml": 0.1,
+            "ec_component_gains": {
+                "npk": {"ec_gain_per_ml": 0.1},
+                "calcium": {"ec_gain_per_ml": 0.1},
+                "magnesium": {"ec_gain_per_ml": 0.1},
+            },
+        }
+    }
+    npk = _actuator("nd-ec-1", "pump_a")
+    ec_actuators = {
+        "pump_a": npk,
+        "ec_npk_pump": npk,
+        "ec_npk": npk,
+        "dose_ec_a": npk,
+        "calcium": _actuator("nd-ca", "pump_b"),
+        "magnesium": _actuator("nd-mg", "pump_c"),
+    }
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="irrigating",
+        process_calibrations=process_calibrations,
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators=ec_actuators,
+    )
+
+    assert plan.needs_ec is True
+    assert plan.ec_component == "multi_parallel"
+    assert {step.component for step in plan.ec_dose_sequence} == {"npk", "calcium", "magnesium"}

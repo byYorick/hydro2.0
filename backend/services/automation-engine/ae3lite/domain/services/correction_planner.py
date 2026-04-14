@@ -29,6 +29,12 @@ _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 #: Предпочтительный порядок EC-компонентов, когда ec_component_policy не настроен.
 #: Компоненты вне этого списка добавляются после перечисленных в алфавитном порядке.
 _EC_COMPONENT_DEFAULT_ORDER: tuple[str, ...] = ("npk", "a", "b", "calcium", "magnesium", "micro", "trace")
+_EC_COMPONENT_LEGACY_ALIAS_MAP: dict[str, str] = {
+    "a": "npk",
+    "b": "calcium",
+    "c": "magnesium",
+    "d": "micro",
+}
 
 
 @dataclass(frozen=True)
@@ -722,7 +728,7 @@ def _assert_distinct_parallel_actuators(ec_actuators: Mapping[str, Any]) -> None
     реальный поток распределится непредсказуемо → неверные дозы. В
     sequential режиме это допустимо (насосы работают по очереди).
     """
-    seen: dict[tuple[str, str], str] = {}
+    seen: dict[tuple[str, str], tuple[str, str]] = {}
     for name, actuator in ec_actuators.items():
         if not isinstance(actuator, Mapping):
             continue
@@ -730,13 +736,42 @@ def _assert_distinct_parallel_actuators(ec_actuators: Mapping[str, Any]) -> None
         channel = str(actuator.get("channel") or "").strip().lower()
         if not node_uid or not channel:
             continue
+        identity = _ec_actuator_identity(name=name, actuator=actuator)
         key = (node_uid, channel)
         if key in seen:
+            seen_identity, seen_name = seen[key]
+            if identity == seen_identity:
+                continue
             raise PlannerConfigurationError(
                 f"multi_parallel ec dosing requires distinct (node_uid, channel) per "
-                f"component, but '{name}' and '{seen[key]}' share ({node_uid}, {channel})"
+                f"component, but '{name}' and '{seen_name}' share ({node_uid}, {channel})"
             )
-        seen[key] = str(name)
+        seen[key] = (identity, str(name))
+
+
+def _ec_actuator_identity(*, name: str, actuator: Mapping[str, Any]) -> str:
+    calibration = actuator.get("calibration")
+    component = ""
+    if isinstance(calibration, Mapping):
+        component = _normalize_ec_component_alias(calibration.get("component"))
+    if component:
+        return component
+    return _normalize_ec_component_alias(name) or str(name).strip().lower()
+
+
+def _normalize_ec_component_alias(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    if not value:
+        return ""
+    if value.startswith("ec_"):
+        return _normalize_ec_component_alias(value.removeprefix("ec_").removesuffix("_pump"))
+    if value.startswith("dose_ec_"):
+        suffix = value.removeprefix("dose_ec_")
+        return _EC_COMPONENT_LEGACY_ALIAS_MAP.get(suffix, _normalize_ec_component_alias(suffix))
+    if value.startswith("pump_"):
+        suffix = value.removeprefix("pump_")
+        return _EC_COMPONENT_LEGACY_ALIAS_MAP.get(suffix, value)
+    return _EC_COMPONENT_LEGACY_ALIAS_MAP.get(value, value)
 
 
 def _find_ec_component_actuator(

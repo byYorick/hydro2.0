@@ -33,6 +33,7 @@ Breaking-change: обратная совместимость со старыми
 **Ключевые документы:**
 - `01_SYSTEM/LOGIC_ARCH.md` — логическая модель (Теплица → Зоны → Ноды → Каналы)
 - `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config)
+- `01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md` — системный план перехода к единым canonical именам насосов
 - `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md` — жизненный цикл узлов
 - `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта
 

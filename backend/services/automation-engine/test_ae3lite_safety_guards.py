@@ -173,6 +173,14 @@ class TestAssertDistinctParallelActuators:
         with pytest.raises(PlannerConfigurationError, match="distinct"):
             _assert_distinct_parallel_actuators(actuators)
 
+    def test_aliases_for_same_component_are_deduped(self) -> None:
+        actuators = {
+            "pump_a": {"node_uid": "ec-node-1", "channel": "pump_a"},
+            "ec_npk_pump": {"node_uid": "ec-node-1", "channel": "pump_a"},
+            "dose_ec_a": {"node_uid": "ec-node-1", "channel": "pump_a"},
+        }
+        _assert_distinct_parallel_actuators(actuators)
+
     def test_empty_actuator_entries_skipped(self) -> None:
         # Нестроковые/пустые значения просто пропускаются, не вызывают ложный conflict
         actuators = {

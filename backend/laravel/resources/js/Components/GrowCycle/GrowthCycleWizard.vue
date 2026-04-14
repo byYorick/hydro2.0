@@ -27,61 +27,20 @@
         </p>
       </div>
 
-      <div
+      <WizardZoneStep
         v-if="currentStep === 0"
-        class="space-y-4"
-      >
-        <div v-if="zoneId">
-          <div class="p-4 rounded-lg bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]">
-            <div class="text-sm font-medium text-[color:var(--badge-success-text)]">
-              Зона выбрана: {{ zoneName || `Зона #${zoneId}` }}
-            </div>
-          </div>
-        </div>
-        <div v-else>
-          <label class="block text-sm font-medium mb-2">Выберите зону</label>
-          <select
-            v-model="form.zoneId"
-            class="input-select w-full"
-            @change="onZoneSelected"
-          >
-            <option :value="null">
-              Выберите зону
-            </option>
-            <option
-              v-for="zone in availableZones"
-              :key="zone.id"
-              :value="zone.id"
-            >
-              {{ zone.name }} ({{ zone.greenhouse?.name || "" }})
-            </option>
-          </select>
-        </div>
-      </div>
+        v-model:selected-zone-id="form.zoneId"
+        :zone-id="zoneId"
+        :zone-name="zoneName"
+        :available-zones="availableZones"
+        @zone-selected="onZoneSelected"
+      />
 
-      <div
+      <WizardPlantStep
         v-if="currentStep === 1"
-        class="space-y-4"
-      >
-        <div>
-          <label class="block text-sm font-medium mb-2">Выберите растение</label>
-          <select
-            v-model="selectedPlantId"
-            class="input-select w-full"
-          >
-            <option :value="null">
-              Выберите растение
-            </option>
-            <option
-              v-for="plant in availablePlants"
-              :key="plant.id"
-              :value="plant.id"
-            >
-              {{ plant.name }} {{ plant.variety ? `(${plant.variety})` : "" }}
-            </option>
-          </select>
-        </div>
-      </div>
+        v-model:selected-plant-id="selectedPlantId"
+        :available-plants="availablePlants"
+      />
 
       <WizardRecipeStep
         v-if="currentStep === 2"
@@ -96,37 +55,12 @@
         @recipe-created="onRecipeCreated"
       />
 
-      <div
+      <WizardDatesStep
         v-if="currentStep === 3"
-        class="space-y-5"
-      >
-        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <h3 class="text-sm font-semibold">
-            Период цикла
-          </h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label class="text-sm">
-              <span class="block font-medium mb-2">Дата начала</span>
-              <input
-                v-model="form.startedAt"
-                type="datetime-local"
-                class="input-field w-full"
-                :min="minStartDate"
-                required
-              />
-            </label>
-            <label class="text-sm">
-              <span class="block font-medium mb-2">Ожидаемая дата сбора (опционально)</span>
-              <input
-                v-model="form.expectedHarvestAt"
-                type="date"
-                class="input-field w-full"
-                :min="form.startedAt ? form.startedAt.slice(0, 10) : undefined"
-              />
-            </label>
-          </div>
-        </section>
-      </div>
+        v-model:started-at="form.startedAt"
+        v-model:expected-harvest-at="form.expectedHarvestAt"
+        :min-start-date="minStartDate"
+      />
 
       <WizardAutomationStep
         v-if="currentStep === 4"
@@ -280,7 +214,10 @@ import PumpCalibrationModal from "@/Components/PumpCalibrationModal.vue";
 import WizardAutomationStep from "@/Components/GrowCycle/steps/WizardAutomationStep.vue";
 import WizardCalibrationStep from "@/Components/GrowCycle/steps/WizardCalibrationStep.vue";
 import WizardConfirmStep from "@/Components/GrowCycle/steps/WizardConfirmStep.vue";
+import WizardDatesStep from "@/Components/GrowCycle/steps/WizardDatesStep.vue";
+import WizardPlantStep from "@/Components/GrowCycle/steps/WizardPlantStep.vue";
 import WizardRecipeStep from "@/Components/GrowCycle/steps/WizardRecipeStep.vue";
+import WizardZoneStep from "@/Components/GrowCycle/steps/WizardZoneStep.vue";
 import { usePumpCalibration } from "@/composables/usePumpCalibration";
 import { usePumpCalibrationActions } from "@/composables/usePumpCalibrationActions";
 import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";

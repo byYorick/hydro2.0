@@ -29,6 +29,13 @@ Breaking-change: обратная совместимость со старыми
 - Events Flow
 - WebSocket Flow
 
+#### [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
+**Системный план унификации имён насосов**
+- Один canonical pump id во всех слоях
+- Удаление legacy alias из runtime и UI
+- Rewrite `channel_bindings.role` и authority-configs
+- План rollout по firmware / backend / AE3 / frontend
+
 #### [NODE_LIFECYCLE_AND_PROVISIONING.md](NODE_LIFECYCLE_AND_PROVISIONING.md)
 **Жизненный цикл узла**
 - Состояния узла (MANUFACTURED → ACTIVE → DECOMMISSIONED)
