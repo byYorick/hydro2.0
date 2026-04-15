@@ -7,6 +7,7 @@
  *   PATCH  /api/zones/{zone}/config-mode/extend     { live_until }
  *   GET    /api/zones/{zone}/config-changes?namespace=...
  *   PUT    /api/grow-cycles/{growCycle}/phase-config { reason, <field>: <value>... }
+ *   PUT    /api/zones/{zone}/correction/live-edit    { reason, phase?, correction_patch?, calibration_patch? }
  */
 import { apiGet, apiPatch, apiPut } from './_client'
 
@@ -75,6 +76,30 @@ export interface PhaseConfigUpdateResponse {
   updated_fields: string[]
 }
 
+export type CorrectionLiveEditPhase =
+  | 'generic'
+  | 'solution_fill'
+  | 'tank_recirc'
+  | 'irrigation'
+
+export interface CorrectionLiveEditPayload {
+  reason: string
+  phase?: CorrectionLiveEditPhase | null
+  correction_patch?: Record<string, unknown>
+  calibration_patch?: Record<string, unknown>
+}
+
+export interface CorrectionLiveEditResponse {
+  status: 'ok'
+  zone_id: number
+  config_revision: number
+  phase: CorrectionLiveEditPhase | null
+  affected_fields: {
+    correction: string[]
+    calibration: string[]
+  }
+}
+
 export const zoneConfigModeApi = {
   show(zoneId: number) {
     return apiGet<ConfigModeState>(`/zones/${zoneId}/config-mode`)
@@ -103,6 +128,13 @@ export const zoneConfigModeApi = {
   updatePhaseConfig(growCycleId: number, payload: PhaseConfigUpdatePayload) {
     return apiPut<PhaseConfigUpdateResponse>(
       `/grow-cycles/${growCycleId}/phase-config`,
+      payload,
+    )
+  },
+
+  updateCorrectionLiveEdit(zoneId: number, payload: CorrectionLiveEditPayload) {
+    return apiPut<CorrectionLiveEditResponse>(
+      `/zones/${zoneId}/correction/live-edit`,
       payload,
     )
   },

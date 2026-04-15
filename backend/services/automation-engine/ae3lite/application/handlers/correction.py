@@ -449,8 +449,8 @@ class CorrectionHandler(BaseStageHandler):
         target_ec_min = self._effective_ec_min(task=task, runtime=runtime)
         target_ec_max = self._effective_ec_max(task=task, runtime=runtime)
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
-        ph_tol_pct = float(tolerance.get("ph_pct", 15.0))
-        ec_tol_pct = float(tolerance.get("ec_pct", 25.0))
+        ph_tol_pct = self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct")
+        ec_tol_pct = self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct")
         correction_cfg = self._correction_config(plan=plan, task=task)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.get("pid_state") if isinstance(runtime.get("pid_state"), Mapping) else {}
@@ -462,7 +462,12 @@ class CorrectionHandler(BaseStageHandler):
         # коррекцию. Разблокируется когда no_effect_count сбрасывается в 0 —
         # либо successful correction (auto-reset в этом же handler), либо
         # явный ack пользователя через admin endpoint.
-        blocked = self._check_no_effect_block(task=task, correction_cfg=correction_cfg, pid_state=pid_state)
+        blocked = self._check_no_effect_block(
+            task=task,
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_state=pid_state,
+        )
         if blocked is not None:
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -1763,6 +1768,7 @@ class CorrectionHandler(BaseStageHandler):
         *,
         task: Any,
         correction_cfg: Mapping[str, Any],
+        process_cfg: Mapping[str, Any],
         pid_state: Mapping[str, Any],
     ) -> Optional[dict[str, Any]]:
         """Проверяет флаг safety.block_on_active_no_effect_alert.
@@ -1776,7 +1782,6 @@ class CorrectionHandler(BaseStageHandler):
         if not bool(safety.get("block_on_active_no_effect_alert") or False):
             return None
 
-        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
         for pid_type in ("ph", "ec"):
             entry = pid_state.get(pid_type) if isinstance(pid_state.get(pid_type), Mapping) else None
             if not entry:
@@ -1784,9 +1789,13 @@ class CorrectionHandler(BaseStageHandler):
             count = int(entry.get("no_effect_count") or 0)
             if count <= 0:
                 continue
-            controller_cfg = controllers.get(pid_type) if isinstance(controllers.get(pid_type), Mapping) else {}
-            observe = controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
-            limit = int(observe.get("no_effect_consecutive_limit") or observe.get("no_effect_limit") or 0)
+            observe_cfg = self._observation_config(
+                kind=pid_type,
+                correction_cfg=correction_cfg,
+                process_cfg=process_cfg,
+                pid_entry=entry,
+            )
+            limit = int(observe_cfg["no_effect_limit"])
             if limit > 0 and count >= limit:
                 return {
                     "pid_type": pid_type,

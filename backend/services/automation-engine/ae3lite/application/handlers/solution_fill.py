@@ -319,15 +319,24 @@ class SolutionFillCheckHandler(BaseStageHandler):
         return_stage_fail: str,
     ) -> CorrectionState:
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
-        ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
+        ec_max_attempts = self._required_correction_int(
+            correction_cfg=correction_cfg,
+            key="max_ec_correction_attempts",
+        )
+        ph_max_attempts = self._required_correction_int(
+            correction_cfg=correction_cfg,
+            key="max_ph_correction_attempts",
+        )
         corr = CorrectionState.build_default(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             max_attempts=max(ec_max_attempts, ph_max_attempts),
             ec_max_attempts=ec_max_attempts,
             ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
-            stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
+            stabilization_sec=self._required_correction_int(
+                correction_cfg=correction_cfg,
+                key="stabilization_sec",
+            ),
             return_stage_success=return_stage_success,
             return_stage_fail=return_stage_fail,
         )

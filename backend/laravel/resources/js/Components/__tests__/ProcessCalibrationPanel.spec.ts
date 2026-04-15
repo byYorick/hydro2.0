@@ -220,7 +220,7 @@ describe('ProcessCalibrationPanel.vue', () => {
     expect(getDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.process_calibration.solution_fill')
     expect(wrapper.text()).toContain('Режим: Наполнение')
     expect(wrapper.text()).toContain('transport_delay_sec + settle_sec = 65 сек')
-    expect(wrapper.text()).toContain('Confidence: 0.75')
+    expect(wrapper.text()).toContain('Доверие: 0.75')
   })
 
   it('подставляет системные дефолты в пустую форму, если сохранённой калибровки ещё нет', async () => {
@@ -238,9 +238,9 @@ describe('ProcessCalibrationPanel.vue', () => {
     expect(inputs[1]?.element).toHaveProperty('value', '45')
     expect(inputs[2]?.element).toHaveProperty('value', '0.11')
     expect(inputs[7]?.element).toHaveProperty('value', '0.75')
-    expect(wrapper.text()).toContain('Materialized bootstrap defaults уже считаются валидной стартовой калибровкой.')
-    expect(wrapper.text()).toContain('Источник: system defaults')
-    expect(wrapper.text()).toContain('Confidence: 0.75')
+    expect(wrapper.text()).toContain('Материализованные bootstrap defaults уже считаются валидной стартовой калибровкой.')
+    expect(wrapper.text()).toContain('Источник: системные значения по умолчанию')
+    expect(wrapper.text()).toContain('Доверие: 0.75')
   })
 
   it('не отправляет save при выходе за диапазон и показывает warning toast', async () => {
@@ -261,7 +261,7 @@ describe('ProcessCalibrationPanel.vue', () => {
 
     expect(updateDocumentMock).not.toHaveBeenCalled()
     expect(showToastMock).toHaveBeenCalledWith('Проверь диапазоны process calibration.', 'warning')
-    expect(wrapper.text()).toContain('Confidence: диапазон 0..1')
+    expect(wrapper.text()).toContain('Доверие к калибровке: диапазон 0..1')
   })
 
   it('сохраняет текущий режим и перезагружает calibrations', async () => {

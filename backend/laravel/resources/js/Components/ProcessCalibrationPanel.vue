@@ -84,9 +84,9 @@
           <div class="font-medium text-[color:var(--text-primary)]">
             {{
               selectedUsesFallback
-                ? `Для режима ${modeLabel(activeMode)} используется generic-калибровка.`
+                ? `Для режима ${modeLabel(activeMode)} используется общий fallback-профиль calibration.`
                 : selectedUsesSystemDefaults
-                  ? `Для режима ${modeLabel(activeMode)} применён materialized system default.`
+                  ? `Для режима ${modeLabel(activeMode)} применён материализованный системный профиль по умолчанию.`
                   : `Режим: ${modeLabel(activeMode)}`
             }}
           </div>
@@ -100,10 +100,10 @@
             Это валидный bootstrap preset зоны. Его можно использовать как стартовую конфигурацию без обязательного первого сохранения.
           </div>
           <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-            <span>Preset: {{ selectedPresetName }}</span>
+            <span>Пресет: {{ selectedPresetName }}</span>
             <span>Источник: {{ calibrationSourceLabel }}</span>
             <span>Активно с: {{ formatDateTime(effectiveCalibration?.valid_from) }}</span>
-            <span>Confidence: {{ formatConfidence(displayedConfidence) }}</span>
+            <span>Доверие: {{ formatConfidence(displayedConfidence) }}</span>
           </div>
         </div>
 
@@ -154,7 +154,7 @@
           </div>
           <div class="mt-2">
             Runtime сначала ждёт доставку дозы до датчика, затем добирает устойчивое окно наблюдения.
-            Materialized bootstrap defaults уже считаются валидной стартовой калибровкой.
+            Материализованные bootstrap defaults уже считаются валидной стартовой калибровкой.
           </div>
         </div>
 
@@ -194,7 +194,7 @@
               <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Время: {{ formatDateTime(event.occurredAt) }}</span>
                 <span>Источник: {{ event.source ?? 'не задан' }}</span>
-                <span>Confidence: {{ formatConfidence(event.confidence) }}</span>
+                <span>Доверие: {{ formatConfidence(event.confidence) }}</span>
                 <span v-if="event.observationWindowLabel">Окно: {{ event.observationWindowLabel }}</span>
               </div>
             </div>
@@ -320,7 +320,7 @@ const modes: Array<{ key: ProcessCalibrationMode; label: string; description: st
   },
   {
     key: 'generic',
-    label: 'Generic',
+    label: 'Общий fallback (generic)',
     description: 'Базовый fallback-профиль, если для конкретной фазы калибровка ещё не задана.',
   },
 ]
@@ -350,8 +350,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'ec_gain_per_ml',
-    label: 'EC gain',
-    description: 'Отклик EC на 1 мл дозы.',
+    label: 'Коэффициент отклика EC',
+    description: 'Показывает, на сколько единиц EC обычно меняется раствор после 1 мл EC-дозы.',
     hint: 'Диапазон 0.001..10.',
     type: 'number',
     step: '0.001',
@@ -361,8 +361,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'ph_up_gain_per_ml',
-    label: 'pH+ gain',
-    description: 'Отклик pH при дозе щёлочи.',
+    label: 'Коэффициент pH-up',
+    description: 'Насколько в среднем меняется pH после 1 мл щёлочи.',
     hint: 'Диапазон 0.001..5.',
     type: 'number',
     step: '0.001',
@@ -372,8 +372,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'ph_down_gain_per_ml',
-    label: 'pH- gain',
-    description: 'Отклик pH при дозе кислоты.',
+    label: 'Коэффициент pH-down',
+    description: 'Насколько в среднем меняется pH после 1 мл кислоты.',
     hint: 'Диапазон 0.001..5.',
     type: 'number',
     step: '0.001',
@@ -383,8 +383,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'ph_per_ec_ml',
-    label: 'pH от EC',
-    description: 'Cross-coupling pH <- EC на 1 мл EC-дозы.',
+    label: 'Поправка pH от EC',
+    description: 'Cross-coupling коэффициент: как EC-доза косвенно влияет на pH.',
     hint: 'Диапазон -2..2.',
     type: 'number',
     step: '0.001',
@@ -394,8 +394,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'ec_per_ph_ml',
-    label: 'EC от pH',
-    description: 'Cross-coupling EC <- pH на 1 мл pH-дозы.',
+    label: 'Поправка EC от pH',
+    description: 'Cross-coupling коэффициент: как pH-доза косвенно влияет на EC.',
     hint: 'Диапазон -2..2.',
     type: 'number',
     step: '0.001',
@@ -405,8 +405,8 @@ const fields: FieldDescriptor[] = [
   },
   {
     key: 'confidence',
-    label: 'Confidence',
-    description: 'Оценка доверия к текущей калибровке.',
+    label: 'Доверие к калибровке',
+    description: 'Оценка качества текущей process calibration в диапазоне 0..1.',
     hint: 'Диапазон 0..1.',
     type: 'number',
     step: '0.01',
@@ -443,13 +443,13 @@ const activeModeDescription = computed(() => modes.find((item) => item.key === a
 const calibrationSourceLabel = computed(() => {
   const selectedSource = effectiveCalibration.value?.source
   if (selectedSource === 'system_default') {
-    return 'system defaults'
+    return 'системные значения по умолчанию'
   }
   if (effectiveCalibration.value?.source) {
     return effectiveCalibration.value.source
   }
   if (selectedUsesSystemDefaults.value) {
-    return 'system defaults'
+    return 'системные значения по умолчанию'
   }
 
   return 'не задан'

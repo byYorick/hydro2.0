@@ -520,7 +520,7 @@ CAS update по `version` обязателен для workflow mutation.
 - CHECK constraint: `config_mode = 'locked' OR live_until IS NOT NULL`
 
 Дополнительная таблица `zone_config_changes`:
-- PK `id`, FK `zone_id`, `revision` (unique per zone), `namespace` (`zone.config_mode` | `zone.correction` | `recipe.phase`), `diff_json`, `user_id`, `reason`, `created_at`
+- PK `id`, FK `zone_id`, `revision` (unique per zone), `namespace` (`zone.config_mode` | `zone.correction` | `zone.correction.live` | `recipe.phase`), `diff_json`, `user_id`, `reason`, `created_at`
 - Unique constraint `(zone_id, revision)` — correctness net против race conditions
 
 **Hot-reload контракт AE3 runtime (Phase 5.5+):**
@@ -604,7 +604,7 @@ Canonical status endpoint для зон на `ae3`.
 
 ### 7.5 Config mode API (Phase 5, 2026-04-15)
 
-Управление `config_mode` (locked/live) и live-edit активной recipe phase:
+Управление `config_mode` (locked/live), live-edit активной recipe phase и fine-tuning correction runtime:
 
 - `GET  /api/zones/{zone}/config-mode` — возвращает текущий state: `{config_mode, config_revision, live_until, live_started_at, config_mode_changed_at, config_mode_changed_by}`. Доступ: any authenticated user с policy `view`.
 - `PATCH /api/zones/{zone}/config-mode` — переключение locked↔live. Body: `{mode, reason, live_until?}`.
@@ -625,6 +625,15 @@ Canonical status endpoint для зон на `ae3`.
   - 409 `NO_ACTIVE_PHASE` если у цикла нет `current_phase_id`
   - 422 `NO_FIELDS_PROVIDED` если payload не содержит whitelisted полей
   - Flow: `GrowCyclePhase::lockForUpdate()` → `forceFill(whitelisted)` → `compileGrowCycleBundle(cycle.id)` → `ZoneConfigRevisionService::bumpAndAudit(namespace='recipe.phase')`
+- `PUT /api/zones/{zone}/correction/live-edit` — live edit correction/PID/observe/process calibration. Body: `{reason, phase?, correction_patch?, calibration_patch?}`.
+  - Role middleware: `role:admin,agronomist,engineer` + policy `setLive`
+  - `phase` общий для обоих patch'ей: без `phase` correction patch идёт в `base_config.*`; с `phase` — в `phase_overrides.{phase}.*`; `calibration_patch` пишет в `zone.process_calibration.{phase}`
+  - 409 `ZONE_NOT_IN_LIVE_MODE` если zone в locked
+  - 422 `NO_FIELDS_PROVIDED` если оба patch'а пусты
+  - 422 `PATH_NOT_WHITELISTED` если в payload есть path вне live-edit whitelist
+  - 422 `CALIBRATION_PHASE_REQUIRED` если передан `calibration_patch` без `phase`
+  - 422 `CALIBRATION_PHASE_UNKNOWN` если `phase` не входит в `generic|solution_fill|tank_recirc|irrigation` для calibration patch
+  - Success: один `bumpAndAudit(namespace='zone.correction.live')` на весь request, даже если одновременно меняются `zone.correction` и `zone.process_calibration.*`
 - **Background cron**: `automation:revert-expired-live-modes` (Laravel scheduler `everyMinute`) — flip истёкших live в locked + `CONFIG_MODE_AUTO_REVERTED` event.
 
 **Authorization invariants:**

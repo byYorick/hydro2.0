@@ -1,5 +1,8 @@
 <template>
-  <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3" data-testid="config-changes-timeline">
+  <section
+    class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3"
+    data-testid="config-changes-timeline"
+  >
     <header class="flex items-center justify-between gap-2">
       <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
         История изменений конфигурации
@@ -11,31 +14,50 @@
           data-testid="config-changes-namespace"
           @change="reload"
         >
-          <option value="">все namespace</option>
-          <option value="zone.config_mode">zone.config_mode</option>
-          <option value="zone.correction">zone.correction</option>
-          <option value="recipe.phase">recipe.phase</option>
+          <option value="">
+            все namespace
+          </option>
+          <option value="zone.config_mode">
+            zone.config_mode
+          </option>
+          <option value="zone.correction">
+            zone.correction
+          </option>
+          <option value="zone.correction.live">
+            zone.correction.live
+          </option>
+          <option value="recipe.phase">
+            recipe.phase
+          </option>
         </select>
         <button
           type="button"
           class="text-xs px-2 py-1 rounded border border-[color:var(--border-muted)]"
           @click="reload"
-        >Обновить</button>
+        >
+          Обновить
+        </button>
       </div>
     </header>
 
     <p
       v-if="loading"
       class="text-xs text-[color:var(--text-dim)] animate-pulse"
-    >загрузка...</p>
+    >
+      загрузка...
+    </p>
     <p
       v-else-if="error"
       class="text-xs text-rose-500 dark:text-rose-400"
-    >{{ error }}</p>
+    >
+      {{ error }}
+    </p>
     <p
       v-else-if="changes.length === 0"
       class="text-xs text-[color:var(--text-dim)]"
-    >Изменений нет.</p>
+    >
+      Изменений нет.
+    </p>
 
     <ul
       v-else
@@ -50,7 +72,9 @@
         <div class="flex flex-wrap items-center gap-2 text-xs">
           <Badge
             :variant="namespaceVariant(entry.namespace)"
-          >{{ entry.namespace }}</Badge>
+          >
+            {{ entry.namespace }}
+          </Badge>
           <span class="text-[color:var(--text-muted)]">rev {{ entry.revision }}</span>
           <span class="text-[color:var(--text-dim)]">
             {{ formatDate(entry.created_at) }}
@@ -125,6 +149,7 @@ async function reload() {
 function namespaceVariant(namespace: string): BadgeVariant {
   if (namespace === 'zone.config_mode') return 'info'
   if (namespace === 'zone.correction') return 'warning'
+  if (namespace === 'zone.correction.live') return 'warning'
   if (namespace === 'recipe.phase') return 'secondary'
   return 'neutral'
 }

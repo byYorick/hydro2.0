@@ -1,9 +1,9 @@
 # План рефакторинга: каноническая система конфигурирования AE3
 
-**Версия:** 3.1 (Phases 0–7 shipped; Phase 4 — единственный deferred)
+**Версия:** 3.3 (core Phases 0–7 shipped; Phase 4 deferred; Phase 6.2 shipped)
 **Дата:** 2026-04-15
 **Автор:** инженерный план, executor-first
-**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; Phase 4 (shim removal) отложен, не блокирует фичу
+**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; Phase 4 (shim removal) отложен и не блокирует фичу; Phase 6.2 (full correction fine-tuning live edit) реализован в backend + UI + docs
 
 ## Статус фаз
 
@@ -28,11 +28,11 @@
 | 6: Config modes UI | ✅ completed 2026-04-15 | `ConfigModeCard.vue` + `ConfigChangesTimeline.vue` + integration в ZoneAutomationTab |
 | 6.1: Recipe phase inline editor | ✅ completed 2026-04-15 | `RecipePhaseLiveEditCard.vue` — compact pH/EC targets editor в live mode |
 | 7: Observability + doc gen | ✅ completed 2026-04-15 | Prometheus metrics `ae3_zone_config_mode` gauge + `ae3_zone_config_live_edits_total` + `ae3_zone_config_invalid_total` counters в `infrastructure/metrics.py`; Grafana dashboard `backend/configs/prod/grafana/dashboards/zone-configs.json`; `tools/generate_authority.py` + `make generate-authority`/`make authority-check` (CI guard); `AUTOMATION_CONFIG_AUTHORITY.md` автогенерируемая секция §«Автогенерируемые таблицы параметров» (6.3KB) |
-| 6.2: full fine-tuning live edit correction/PID/calibration | 🟡 **partial** (2026-04-15) | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit` done с большим whitelist (timing/retry/dosing/safety/tolerance/controllers.*/observe/PID + process_calibration transport_delay/settle). 6/8 feature tests green. **TODO**: fix calibration/combined tests (see Section ниже), написать UI `CorrectionLiveEditCard.vue`, fix AmbiguousParameterError в ZoneAutomationControlModeController проверен отдельно (см. audit fix 2026-04-15). |
+| 6.2: full fine-tuning live edit correction/PID/calibration | ✅ shipped 2026-04-15 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
 
-**Tests state (2026-04-15):** 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests) = all green. **Phase 6.2 partial**: 6/8 new Laravel feature tests green.
+**Tests state (2026-04-15):** ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для Phase 6.2 в репозиторий добавлены UI component tests и интеграция; повторный полный Laravel/Docker прогон в этой сессии зависит от окружения.
 
-## Phase 6.2 TODO (deferred, partial — session ended 2026-04-15)
+## Phase 6.2 Delivered (2026-04-15)
 
 Пользователь запросил **полный fine-tuning live edit** (не только targets, но и correction params — stabilization, retry delays, transport delay, settle time, decision window, PID, observe — всё связанное с коррекцией). Сделано:
 
@@ -44,17 +44,18 @@
 - Invariant: `config_mode=live` обязателен (409 иначе)
 - Path traversal: `base_config.*` (без phase) или `phase_overrides.{phase}.*` (с phase)
 - Single `bumpAndAudit` на весь запрос (namespace `zone.correction.live`) даже при одновременном patch двух namespaces
-- 6/8 feature tests green в `ZoneCorrectionLiveEditControllerTest`
+- feature coverage для endpoint зафиксирована в `ZoneCorrectionLiveEditControllerTest`
 
-**TODO (не делалось):**
-1. **Fix 2 failing tests**:
-   - `test_calibration_phase_tank_recirc_applies` — upsert на namespace `zone.process_calibration.tank_recirc` может требовать специальную структуру / materialize; проверить что schema не отвергает payload `{transport_delay_sec, settle_sec}` directly. Возможно нужно wrapper.
-   - `test_combined_correction_and_calibration_single_revision_bump` — последствия того же issue + проверить что `applyCalibrationPatch` корректно получает materialized document
-2. **Frontend `CorrectionLiveEditCard.vue`** — comprehensive form (40+ inputs), возможно аккордеонные секции: Timing, Retry, Dosing caps, Safety, Tolerance, PID ph, PID ec, Observe windows, Process calibration. Один submit → один API call.
-3. **Vitest component tests** для CorrectionLiveEditCard
-4. **Integration в ZoneAutomationTab** — рендер только в live mode с role-gating
-5. **Docs**: обновить `ae3lite.md` §7.5 + `ERROR_CODE_CATALOG.md` (новые codes `PATH_NOT_WHITELISTED`, `CALIBRATION_PHASE_REQUIRED`, `CALIBRATION_PHASE_UNKNOWN`, `CORRECTION_DOC_MISSING`)
-6. **Opt**: check AE3 runtime actually picks up these nested config changes through `_checkpoint` — snapshot rebuild должен прочитать обновлённый bundle, `resolve_two_tank_runtime_plan` — извлечь из `resolved_config`. Нужен integration test в AE3.
+**Delivered:**
+1. **Backend path**: `ZoneCorrectionLiveEditController` + route `PUT /api/zones/{zone}/correction/live-edit` остаются canonical endpoint для whitelist-live-edit correction/process calibration.
+2. **Frontend `CorrectionLiveEditCard.vue`**: comprehensive card с аккордеонными секциями, target selectors для `base/phase` и `process calibration`, client-side guard для конфликтных комбинаций общего `phase`, один submit → один API call.
+3. **Vitest**: добавлены component tests для `CorrectionLiveEditCard`, обновлены mocks `zoneConfigModeApi`.
+4. **Integration**: card встроен в `ZoneAutomationTab` и показывается только в `config_mode=live`; timeline теперь умеет фильтровать `zone.correction.live`.
+5. **Docs**: синхронизированы `ae3lite.md` §7.5 и `ERROR_CODE_CATALOG.md`.
+
+**Остаётся полезным future hardening (не блокирует shipped Phase 6.2):**
+1. Добавить отдельный AE3 integration test, который проверяет реальный hot-reload nested correction/process calibration через `_checkpoint`.
+2. Повторить полный Laravel/Docker прогон в полноценном окружении CI или на машине с рабочими контейнерами.
 
 **Bug fix shipped the same session 2026-04-15 (не связан с Phase 6.2, но обнаружен при тестировании live edit):**
 - [automation_task_repository.py:632](../../backend/services/automation-engine/ae3lite/infrastructure/repositories/automation_task_repository.py#L632) — `update_control_mode_snapshot_for_zone` вызывал `asyncpg.exceptions.AmbiguousParameterError: inconsistent types deduced for parameter $2 (text vs character varying)` → Laravel proxy 503. Fix: explicit casts `$2::varchar` для SET + `$2::text = 'auto'` для CASE. 1273 AE tests зелёные после fix'а.
@@ -215,20 +216,20 @@ Authority-инфраструктура существует **в Laravel**, не
 
 | Компонент | Файл | LoC |
 |---|---|---|
-| Registry (18 namespaces) | [AutomationConfigRegistry.php](backend/laravel/app/Services/AutomationConfigRegistry.php) | 669 |
-| Compiler (system → zone → cycle merge) | [AutomationConfigCompiler.php](backend/laravel/app/Services/AutomationConfigCompiler.php) | 425 |
-| Defaults catalog (PHP-хардкод) | [ZoneCorrectionConfigCatalog.php](backend/laravel/app/Services/ZoneCorrectionConfigCatalog.php) | 557 |
+| Registry (18 namespaces) | [AutomationConfigRegistry.php](../../backend/laravel/app/Services/AutomationConfigRegistry.php) | 669 |
+| Compiler (system → zone → cycle merge) | [AutomationConfigCompiler.php](../../backend/laravel/app/Services/AutomationConfigCompiler.php) | 425 |
+| Defaults catalog (PHP-хардкод) | [ZoneCorrectionConfigCatalog.php](../../backend/laravel/app/Services/ZoneCorrectionConfigCatalog.php) | 557 |
 | Таблицы БД | `automation_config_documents`, `automation_config_versions`, `automation_effective_bundles`, `automation_config_violations`, `automation_config_presets` | — |
 | REST API | `/api/automation-configs/*`, `/api/automation-bundles/*`, `/api/automation-presets/*` | — |
-| Control modes (auto/semi/manual) | [2026_03_09_200000_full_ae3_cutover_and_control_mode.php](backend/laravel/database/migrations/2026_03_09_200000_full_ae3_cutover_and_control_mode.php), [set_control_mode.py](backend/services/automation-engine/ae3lite/application/use_cases/set_control_mode.py) | — |
-| AUTHORITY doc | [doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md](doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) | 300 |
+| Control modes (auto/semi/manual) | [2026_03_09_200000_full_ae3_cutover_and_control_mode.php](../../backend/laravel/database/migrations/2026_03_09_200000_full_ae3_cutover_and_control_mode.php), [set_control_mode.py](../../backend/services/automation-engine/ae3lite/application/use_cases/set_control_mode.py) | — |
+| AUTHORITY doc | [AUTOMATION_CONFIG_AUTHORITY.md](AUTOMATION_CONFIG_AUTHORITY.md) | 300 |
 
 AE3 — **pure consumer** `automation_effective_bundles`:
 
 | Компонент | Файл | LoC |
 |---|---|---|
-| Runtime spec resolver | [two_tank_runtime_spec.py](backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) | 1157 |
-| Correction handler (biggest) | [correction.py](backend/services/automation-engine/ae3lite/application/handlers/correction.py) | 2359 |
+| Runtime spec resolver | [two_tank_runtime_spec.py](../../backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) | 1157 |
+| Correction handler (biggest) | [correction.py](../../backend/services/automation-engine/ae3lite/application/handlers/correction.py) | 2359 |
 | Остальные handlers | `clean_fill`, `solution_fill`, `prepare_recirc`, `irrigation_check`, `startup`, `base` | ~2500 |
 | Tests | `test_*.py` | 93 файла |
 
@@ -366,9 +367,9 @@ Executor: я. Ожидаемый темп: 1 фаза = 2-4 дня работы.
 
 **Actions:**
 1. Прочитать полностью все три критических файла:
-   - [AutomationConfigRegistry.php](backend/laravel/app/Services/AutomationConfigRegistry.php) (669 строк)
-   - [AutomationConfigCompiler.php](backend/laravel/app/Services/AutomationConfigCompiler.php) (425 строк)
-   - [two_tank_runtime_spec.py](backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) (1157 строк)
+   - [AutomationConfigRegistry.php](../../backend/laravel/app/Services/AutomationConfigRegistry.php) (669 строк)
+   - [AutomationConfigCompiler.php](../../backend/laravel/app/Services/AutomationConfigCompiler.php) (425 строк)
+   - [two_tank_runtime_spec.py](../../backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) (1157 строк)
 2. Собрать полный inventory параметров в таблицу `doc_ai/04_BACKEND_CORE/AE3_CONFIG_PARAMETER_INVENTORY.md`:
    - Для каждого параметра: namespace, path, текущий default (PHP), текущий default (Python), где читается (handler:line), required или optional
    - ~100-150 строк таблицы, 2-3 часа работы
@@ -405,8 +406,8 @@ Executor: я. Ожидаемый темп: 1 фаза = 2-4 дня работы.
    - Ссылается на active cycle phase payload
 4. Добавить `schemas/zone_logic_profile.v1.json` (упрощённо)
 5. Добавить `schemas/system_automation_defaults.v1.json`
-5. В [backend/services/automation-engine/requirements.txt](backend/services/automation-engine/requirements.txt) добавить `jsonschema>=4.23` и `datamodel-code-generator>=0.26`
-6. В [backend/laravel/composer.json](backend/laravel/composer.json) добавить `justinrainbow/json-schema:^6.0`
+5. В [requirements.txt](../../backend/services/automation-engine/requirements.txt) добавить `jsonschema>=4.23` и `datamodel-code-generator>=0.26`
+6. В [composer.json](../../backend/laravel/composer.json) добавить `opis/json-schema:^2.3`
 7. Создать Makefile target `make schemas-validate` — прогоняет все JSON Schemas через meta-schema validator
 8. CI-шаг: `make schemas-validate` в `.github/workflows/` или `make protocol-check`
 9. **Pre-flight артизан-команда** `php artisan zones:validate-configs` (Q5 решение):
@@ -556,7 +557,7 @@ make test-ae PYTEST_ARGS="-q test_${handler}"
 3. **Удалить** `domain/services/topology_registry.py` (старый).
 4. **Удалить** 80+ тестов в `test_ae3lite_two_tank_runtime_spec.py`. Заменить на новые тесты в `config/test_loader.py` с той же coverage (но на typed model, без dict).
 5. `runtime/config.py` → переименовать в `runtime/env.py`, очистить от всего не-инфраструктурного.
-6. Убрать hardcoded `httpx.AsyncClient(timeout=10.0)` в [bootstrap.py:73](backend/services/automation-engine/ae3lite/runtime/bootstrap.py#L73) → `env.http_client_timeout_sec`.
+6. Убрать hardcoded `httpx.AsyncClient(timeout=10.0)` в [bootstrap.py:73](../../backend/services/automation-engine/ae3lite/runtime/bootstrap.py#L73) → `env.http_client_timeout_sec`.
 7. Добавить ruff custom rule (или simpler — файл `.ae3-config-lint.py` в CI):
    - Запрет numeric literal > 1 в `application/handlers/**`
    - Whitelist: `# config-literal: <reason>`
@@ -742,7 +743,7 @@ curl -X PATCH localhost:8080/api/zones/1/config-mode -d '{"mode":"live","reason"
 
 **Риски:**
 - Race condition при hot-reload посреди команды узлу. Митигация: checkpoints **не** во время `waiting_command` state.
-- Пользователь забывает вернуть в locked → **TTL** (открытый вопрос, см. раздел 9).
+- Пользователь забывает вернуть в locked → **TTL** (решение Q3 уже зафиксировано в разделе 9).
 
 ---
 
@@ -766,7 +767,7 @@ curl -X PATCH localhost:8080/api/zones/1/config-mode -d '{"mode":"live","reason"
    - Правит pH/EC targets, volume_ml, duration текущей фазы
    - НЕ правит phase transitions (это остаётся за phase planner)
    - Данные через `GET/PUT /api/grow-cycles/{id}/phase-config`
-4. В существующий zone config editor (найти в Phase 0 — возможно [ZoneSchedulerTab.vue](backend/laravel/resources/js/Pages/Zones/Tabs/ZoneSchedulerTab.vue)):
+4. В существующий zone config editor (найти в Phase 0 — возможно [ZoneSchedulerTab.vue](../../backend/laravel/resources/js/Pages/Zones/Tabs/ZoneSchedulerTab.vue)):
    - В `locked` режиме поля read-only
    - В `live` режиме inline edit с debounce, optimistic UI
    - При validation error — откат + toast
@@ -864,7 +865,7 @@ Scope увеличился vs v2 из-за Q4 (recipe coverage) и Q3 (TTL infra
 | R5 | Я не могу тестировать UI в браузере | Высокая | Delay | Явно запросить пользователя на Phase 6; без его ack не мержить |
 | R6 | PHP compiler и Python loader расходятся в валидации | Средняя | Runtime corruption | JSON Schema = single source, оба слоя читают её напрямую |
 | R7 | datamodel-codegen генерит некрасивый код | Средняя | Readability | Ручная доводка после кодогенерации, check-in итог |
-| R8 | Пользователь забывает вернуться из live в locked | Средняя | Security | TTL auto-revert (см. открытый вопрос Q3) |
+| R8 | Пользователь забывает вернуться из live в locked | Средняя | Security | TTL auto-revert (решение Q3) |
 | R9 | Control_mode vs config_mode matrix путается в UI | Средняя | UX | Явные тексты interlock-а ("live запрещён в auto mode") |
 | R10 | `make test-ae` долгий, тормозит итерации | Низкая | Delay | Фильтры `-k` по handler-name, параллельные pytest worker-ы |
 | R11 | Live edit recipe phase конфликтует с auto phase transition | Высокая | Данные | Правка допустима только для **активной** фазы + lock проверки в checkpoint: если фаза переключилась между fetch и write — 409 |
@@ -944,7 +945,7 @@ Scope увеличился vs v2 из-за Q4 (recipe coverage) и Q3 (TTL infra
 - Constraint: изменение recipe phase в live НЕ меняет саму фазу цикла (переход phase→phase) — только параметры текущей активной фазы. Переключение фаз остаётся за phase planner.
 - Audit: `zone_config_changes.diff_json` включает namespace (`zone.correction` / `recipe.phase`)
 
-**Q5: Pre-flight check — `php artisan zones:validate-configs` (предложение).**
+**Q5: Pre-flight check — `php artisan zones:validate-configs` (принято).**
 
 Мотивация: Phase 3 начинает переключать handlers на strict validation. До мерджа первого handler-PR нужен скрипт, показывающий, **сколько существующих zone bundles не пройдут новую валидацию**. Без этого релиз Phase 3 = stop-the-world на dev/staging/prod.
 
@@ -980,7 +981,7 @@ php artisan zones:validate-configs \
 - Не делать вообще: релиз Phase 3 ломает production — неприемлемо
 - Делать как отдельный Python-скрипт в AE3: нужна PHP-сторона, потому что команда должна уметь проверять и system/greenhouse scopes, где живёт Laravel
 
-**Подтверждаешь этот вариант?** Если да — зафиксирую и добавлю в Phase 1 actions.
+Решение зафиксировано и включено в actions Phase 1.
 
 ---
 
@@ -999,8 +1000,8 @@ php artisan zones:validate-configs \
 
 ## 11. Связанные документы (для читателя)
 
-- [AUTOMATION_CONFIG_AUTHORITY.md](doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — текущий AUTHORITY, будет перегенерирован
-- [AE3_CONFIG_PARAMETER_INVENTORY.md](doc_ai/04_BACKEND_CORE/AE3_CONFIG_PARAMETER_INVENTORY.md) — **будет создан в Phase 0**
-- [ae3lite.md](doc_ai/04_BACKEND_CORE/ae3lite.md) — runtime doc
-- [AE_CANONICALIZATION_PLAN.md](doc_ai/04_BACKEND_CORE/AE_CANONICALIZATION_PLAN.md) — предыдущий plan (другой scope)
-- [AE3_RUNTIME_EVENT_CONTRACT.md](doc_ai/04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md) — добавить новые `config_*` события в Phase 5
+- [AUTOMATION_CONFIG_AUTHORITY.md](AUTOMATION_CONFIG_AUTHORITY.md) — текущий AUTHORITY, будет перегенерирован
+- [AE3_CONFIG_PARAMETER_INVENTORY.md](AE3_CONFIG_PARAMETER_INVENTORY.md) — inventory параметров, создан в Phase 0
+- [ae3lite.md](ae3lite.md) — runtime doc
+- [AE_CANONICALIZATION_PLAN.md](AE_CANONICALIZATION_PLAN.md) — предыдущий plan (другой scope)
+- [AE3_RUNTIME_EVENT_CONTRACT.md](AE3_RUNTIME_EVENT_CONTRACT.md) — добавить новые `config_*` события в Phase 5

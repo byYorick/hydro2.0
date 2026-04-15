@@ -9,6 +9,7 @@ vi.mock('@/services/api/zoneConfigMode', () => ({
     extend: vi.fn(),
     changes: vi.fn(),
     updatePhaseConfig: vi.fn(),
+    updateCorrectionLiveEdit: vi.fn(),
   },
 }))
 
@@ -22,6 +23,8 @@ describe('RecipePhaseLiveEditCard', () => {
   it('disables submit until a field + reason are provided', async () => {
     const w = mount(RecipePhaseLiveEditCard, { props: { growCycleId: 5 } })
     const btn = w.find('[data-testid="recipe-phase-submit"]')
+    expect(w.text()).toContain('Целевой pH')
+    expect(w.text()).toContain('Основная цель pH для активной фазы')
     expect(btn.attributes('disabled')).toBeDefined()
 
     // Only reason
@@ -77,7 +80,7 @@ describe('RecipePhaseLiveEditCard', () => {
 
     const success = w.find('[data-testid="recipe-phase-success"]')
     expect(success.exists()).toBe(true)
-    expect(success.text()).toContain('revision 11')
+    expect(success.text()).toContain('ревизия 11')
   })
 
   it('renders error state on failure', async () => {

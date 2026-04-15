@@ -154,6 +154,56 @@ class ZoneConfigModeControllerTest extends TestCase
         $this->assertNull($zone->live_started_at);
     }
 
+    public function test_update_live_rejects_total_ttl_above_cap_when_zone_is_already_live(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $startedAt = Carbon::now()->subDays(6);
+        $zone = Zone::factory()->create([
+            'control_mode' => 'manual',
+            'config_mode' => 'live',
+            'live_started_at' => $startedAt,
+            'live_until' => Carbon::now()->addHours(1),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/zones/{$zone->id}/config-mode", [
+                'mode' => 'live',
+                'reason' => 'extend live without separate endpoint',
+                'live_until' => Carbon::now()->addDays(2)->toIso8601String(),
+            ]);
+
+        $response->assertStatus(422)->assertJsonPath('code', 'TTL_TOTAL_EXCEEDED');
+    }
+
+    public function test_update_live_keeps_original_live_started_at_when_zone_is_already_live(): void
+    {
+        $user = User::factory()->create(['role' => 'engineer']);
+        $token = $user->createToken('t')->plainTextToken;
+        $startedAt = Carbon::now()->subHours(12)->startOfSecond();
+        $zone = Zone::factory()->create([
+            'control_mode' => 'manual',
+            'config_mode' => 'live',
+            'live_started_at' => $startedAt,
+            'live_until' => Carbon::now()->addHours(1),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/zones/{$zone->id}/config-mode", [
+                'mode' => 'live',
+                'reason' => 'shorten live window safely',
+                'live_until' => Carbon::now()->addHours(2)->toIso8601String(),
+            ]);
+
+        $response->assertOk()->assertJsonPath('config_mode', 'live');
+
+        $zone->refresh();
+        $this->assertNotNull($zone->live_started_at);
+        $this->assertTrue($zone->live_started_at->equalTo($startedAt));
+    }
+
     public function test_extend_requires_live_mode(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);

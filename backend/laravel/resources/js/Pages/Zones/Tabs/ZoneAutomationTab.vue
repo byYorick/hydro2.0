@@ -39,7 +39,7 @@
       <ConfigModeCard
         v-if="props.zoneId"
         :zone-id="Number(props.zoneId)"
-        :control-mode="automationControlMode as 'auto' | 'semi' | 'manual'"
+        :control-mode="configModeControlMode"
         :role="currentUserRole"
         @changed="onConfigModeChanged"
         @state-loaded="onConfigModeStateLoaded"
@@ -50,6 +50,11 @@
         :grow-cycle-id="activeGrowCycleId"
         :initial="recipePhaseInitial"
         @applied="onConfigModeChanged"
+      />
+      <CorrectionLiveEditCard
+        v-if="liveEditEnabled && props.zoneId"
+        :zone-id="Number(props.zoneId)"
+        @applied="onCorrectionLiveEditApplied"
       />
       <ConfigChangesTimeline
         v-if="props.zoneId"
@@ -258,6 +263,7 @@ import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordion
 import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
 import ConfigModeCard from '@/Components/ZoneAutomation/ConfigModeCard.vue'
 import ConfigChangesTimeline from '@/Components/ZoneAutomation/ConfigChangesTimeline.vue'
+import CorrectionLiveEditCard from '@/Components/ZoneAutomation/CorrectionLiveEditCard.vue'
 import RecipePhaseLiveEditCard from '@/Components/ZoneAutomation/RecipePhaseLiveEditCard.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
@@ -313,6 +319,9 @@ function onConfigModeChanged(state?: import('@/services/api/zoneConfigMode').Con
 function onConfigModeStateLoaded(state: import('@/services/api/zoneConfigMode').ConfigModeState): void {
   configModeState.value = state
 }
+function onCorrectionLiveEditApplied(): void {
+  configChangesReloadKey.value += 1
+}
 
 // Phase 6.1 — inline recipe phase edit card visibility
 const liveEditEnabled = computed(() =>
@@ -323,6 +332,9 @@ const activeGrowCycleId = computed<number | null>(() => {
   const id = props.activeGrowCycle?.id
   return typeof id === 'number' && id > 0 ? id : null
 })
+const configModeControlMode = computed<'auto' | 'semi' | 'manual'>(() =>
+  automationControlMode.value as 'auto' | 'semi' | 'manual',
+)
 const recipePhaseInitial = computed(() => {
   const phase = props.currentRecipePhase as Record<string, unknown> | null | undefined
   if (!phase) return {}

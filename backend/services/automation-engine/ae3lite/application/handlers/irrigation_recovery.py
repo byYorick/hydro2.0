@@ -63,15 +63,24 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
 
         _logger.info("irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
-        ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
-        ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
+        ec_max_attempts = self._required_correction_int(
+            correction_cfg=correction_cfg,
+            key="max_ec_correction_attempts",
+        )
+        ph_max_attempts = self._required_correction_int(
+            correction_cfg=correction_cfg,
+            key="max_ph_correction_attempts",
+        )
         corr = CorrectionState.build_default(
             corr_step="corr_check",
             max_attempts=max(ec_max_attempts, ph_max_attempts),
             ec_max_attempts=ec_max_attempts,
             ph_max_attempts=ph_max_attempts,
             activated_here=False,
-            stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
+            stabilization_sec=self._required_correction_int(
+                correction_cfg=correction_cfg,
+                key="stabilization_sec",
+            ),
             return_stage_success=stage_def.on_corr_success or "irrigation_recovery_stop_to_ready",
             return_stage_fail=stage_def.on_corr_fail or "irrigation_recovery_stop_failed",
         )

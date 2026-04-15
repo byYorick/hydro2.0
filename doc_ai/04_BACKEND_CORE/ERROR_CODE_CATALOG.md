@@ -76,6 +76,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `ZONE_NOT_IN_LIVE_MODE` | 409 | `PUT /grow-cycles/{id}/phase-config` вызван при `config_mode=locked` | `Редактирование активной фазы доступно только в config_mode=live.` |
 | `NO_ACTIVE_PHASE` | 409 | У grow cycle не задан `current_phase_id` | `У цикла нет активной фазы.` |
 | `NO_FIELDS_PROVIDED` | 422 | Phase-config PUT не содержит whitelisted полей | `Передай хотя бы одно поле из whitelist.` |
+| `PATH_NOT_WHITELISTED` | 422 | `PUT /zones/{id}/correction/live-edit` содержит path вне correction/process calibration whitelist | `Запрошенное поле нельзя менять через live edit.` |
+| `CALIBRATION_PHASE_REQUIRED` | 422 | Передан `calibration_patch` без `phase` | `Для process calibration укажи phase: generic, solution_fill, tank_recirc или irrigation.` |
+| `CALIBRATION_PHASE_UNKNOWN` | 422 | `phase` для `calibration_patch` не входит в допустимый список | `Указан неизвестный phase для process calibration.` |
 | `ZONE_NOT_FOUND` | 404 | Zone для grow cycle не найдена | `Zone не найдена.` |
 | `PHASE_NOT_FOUND` | 404 | `current_phase_id` указывает на несуществующую phase | `Активная фаза не найдена.` |
 

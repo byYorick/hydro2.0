@@ -50,6 +50,17 @@ _RUNTIME = {
         "solution_fill": {
             "transport_delay_sec": 4,
             "settle_sec": 4,
+            "meta": {
+                "observe": {
+                    "telemetry_period_sec": 2,
+                    "window_min_samples": 3,
+                    "decision_window_sec": 6,
+                    "observe_poll_sec": 2,
+                    "min_effect_fraction": 0.25,
+                    "stability_max_slope": 0.05,
+                    "no_effect_consecutive_limit": 3,
+                },
+            },
         },
     },
     "fail_safe_guards": {
@@ -297,6 +308,23 @@ async def test_filling_targets_not_reached_uses_stage_def_on_corr_fail() -> None
     assert outcome.correction is not None
     assert outcome.correction.return_stage_success == "custom_success"
     assert outcome.correction.return_stage_fail == "custom_stop"
+
+
+@pytest.mark.asyncio
+async def test_filling_targets_not_reached_fails_closed_when_correction_runtime_missing_stabilization() -> None:
+    runtime = {
+        **_RUNTIME,
+        "correction": {
+            "max_ec_correction_attempts": 4,
+            "max_ph_correction_attempts": 3,
+        },
+    }
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert exc_info.value.code == "zone_correction_config_missing_critical"
 
 
 @pytest.mark.asyncio

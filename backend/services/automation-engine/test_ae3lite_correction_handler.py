@@ -54,8 +54,11 @@ RUNTIME = {
                 "observe": {
                     "telemetry_period_sec": 2,
                     "window_min_samples": 3,
+                    "decision_window_sec": 6,
+                    "observe_poll_sec": 2,
                     "min_effect_fraction": 0.25,
                     "stability_max_slope": 0.2,
+                    "no_effect_consecutive_limit": 3,
                 }
             },
         },
@@ -70,8 +73,11 @@ RUNTIME = {
                 "observe": {
                     "telemetry_period_sec": 2,
                     "window_min_samples": 3,
+                    "decision_window_sec": 6,
+                    "observe_poll_sec": 2,
                     "min_effect_fraction": 0.25,
                     "stability_max_slope": 0.2,
+                    "no_effect_consecutive_limit": 3,
                 }
             },
         },
@@ -2549,6 +2555,20 @@ async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
     with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
     assert exc_info.value.code == "corr_pid_state_persist_failed"
+
+
+async def test_corr_check_fails_closed_when_observe_decision_window_missing() -> None:
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    runtime = deepcopy(RUNTIME)
+    del runtime["process_calibrations"]["solution_fill"]["meta"]["observe"]["decision_window_sec"]
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
+    handler = _make_handler(monitor=monitor)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert exc_info.value.code == "zone_correction_config_missing_critical"
 
 
 # ---------------------------------------------------------------------------

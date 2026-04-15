@@ -54,6 +54,17 @@ RUNTIME = {
         "tank_recirc": {
             "transport_delay_sec": 4,
             "settle_sec": 4,
+            "meta": {
+                "observe": {
+                    "telemetry_period_sec": 2,
+                    "window_min_samples": 3,
+                    "decision_window_sec": 6,
+                    "observe_poll_sec": 2,
+                    "min_effect_fraction": 0.25,
+                    "stability_max_slope": 0.05,
+                    "no_effect_consecutive_limit": 3,
+                },
+            },
         },
     },
     "fail_safe_guards": {

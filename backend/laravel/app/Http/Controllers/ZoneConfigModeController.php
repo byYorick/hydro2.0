@@ -52,7 +52,6 @@ class ZoneConfigModeController extends Controller
         ]);
 
         $targetMode = $validated['mode'];
-        $currentMode = $zone->config_mode ?? 'locked';
 
         if ($targetMode === 'live') {
             if (! $user->can('setLive', $zone)) {
@@ -63,30 +62,6 @@ class ZoneConfigModeController extends Controller
                 ], 403);
             }
 
-            $controlMode = strtolower(trim((string) ($zone->control_mode ?? 'auto')));
-            if ($controlMode === 'auto') {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'CONFIG_MODE_CONFLICT_WITH_AUTO',
-                    'message' => 'Нельзя переключить зону в live, пока control_mode=auto.',
-                    'details' => ['control_mode' => $controlMode],
-                ], 409);
-            }
-
-            $liveUntil = Carbon::parse($validated['live_until'])->utc();
-            $deltaSec = $liveUntil->timestamp - Carbon::now()->timestamp;
-            if ($deltaSec < self::MIN_TTL_SECONDS || $deltaSec > self::MAX_TTL_SECONDS) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'TTL_OUT_OF_RANGE',
-                    'message' => 'TTL должен быть от 5 минут до 7 дней.',
-                    'details' => [
-                        'min_sec' => self::MIN_TTL_SECONDS,
-                        'max_sec' => self::MAX_TTL_SECONDS,
-                        'actual_sec' => $deltaSec,
-                    ],
-                ], 422);
-            }
         } else {
             if (! $user->can('update', $zone)) {
                 return response()->json([
@@ -97,16 +72,76 @@ class ZoneConfigModeController extends Controller
             }
         }
 
-        $now = Carbon::now();
+        $loggedFrom = $zone->config_mode ?? 'locked';
+        $loggedZoneId = $zone->id;
 
-        DB::transaction(function () use ($zone, $targetMode, $currentMode, $validated, $user, $now): void {
+        $result = DB::transaction(function () use (
+            $zone,
+            $targetMode,
+            $validated,
+            $user,
+            &$loggedFrom,
+            &$loggedZoneId,
+        ): JsonResponse {
+            /** @var Zone|null $locked */
+            $locked = Zone::lockForUpdate()->find($zone->id);
+            if ($locked === null) {
+                return response()->json(['status' => 'error', 'code' => 'NOT_FOUND'], 404);
+            }
+
+            $currentMode = $locked->config_mode ?? 'locked';
+            $loggedFrom = $currentMode;
+            $loggedZoneId = $locked->id;
+            $now = Carbon::now();
             $updates = [
                 'config_mode' => $targetMode,
                 'config_mode_changed_at' => $now,
                 'config_mode_changed_by' => $user->id,
             ];
+
             if ($targetMode === 'live') {
-                $updates['live_until'] = Carbon::parse($validated['live_until'])->utc();
+                $controlMode = strtolower(trim((string) ($locked->control_mode ?? 'auto')));
+                if ($controlMode === 'auto') {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'CONFIG_MODE_CONFLICT_WITH_AUTO',
+                        'message' => 'Нельзя переключить зону в live, пока control_mode=auto.',
+                        'details' => ['control_mode' => $controlMode],
+                    ], 409);
+                }
+
+                $liveUntil = Carbon::parse($validated['live_until'])->utc();
+                $deltaSec = $liveUntil->timestamp - $now->timestamp;
+                if ($deltaSec < self::MIN_TTL_SECONDS || $deltaSec > self::MAX_TTL_SECONDS) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'TTL_OUT_OF_RANGE',
+                        'message' => 'TTL должен быть от 5 минут до 7 дней.',
+                        'details' => [
+                            'min_sec' => self::MIN_TTL_SECONDS,
+                            'max_sec' => self::MAX_TTL_SECONDS,
+                            'actual_sec' => $deltaSec,
+                        ],
+                    ], 422);
+                }
+
+                $startedAt = $currentMode === 'live'
+                    ? ($locked->live_started_at ?? $now)
+                    : $now;
+                $totalSec = $liveUntil->timestamp - Carbon::parse($startedAt)->timestamp;
+                if ($totalSec > self::MAX_TTL_SECONDS) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'TTL_TOTAL_EXCEEDED',
+                        'message' => 'Суммарное время live не может превышать 7 дней от первого включения.',
+                        'details' => [
+                            'max_total_sec' => self::MAX_TTL_SECONDS,
+                            'actual_total_sec' => $totalSec,
+                        ],
+                    ], 422);
+                }
+
+                $updates['live_until'] = $liveUntil;
                 if ($currentMode !== 'live') {
                     $updates['live_started_at'] = $now;
                 }
@@ -115,38 +150,39 @@ class ZoneConfigModeController extends Controller
                 $updates['live_started_at'] = null;
             }
 
-            $zone->forceFill($updates)->save();
+            $locked->forceFill($updates)->save();
 
             ZoneConfigChange::create([
-                'zone_id' => $zone->id,
-                'revision' => (int) ($zone->config_revision ?? 1),
+                'zone_id' => $locked->id,
+                'revision' => (int) ($locked->config_revision ?? 1),
                 'namespace' => 'zone.config_mode',
                 'diff_json' => [
                     'from' => $currentMode,
                     'to' => $targetMode,
-                    'live_until' => optional($zone->live_until)->toIso8601String(),
+                    'live_until' => optional($locked->live_until)->toIso8601String(),
                 ],
                 'user_id' => $user->id,
                 'reason' => $validated['reason'],
             ]);
+
+            return response()->json([
+                'status' => 'ok',
+                'zone_id' => $locked->id,
+                'config_mode' => $locked->config_mode,
+                'config_revision' => (int) $locked->config_revision,
+                'live_until' => optional($locked->live_until)->toIso8601String(),
+            ]);
         });
 
-        $zone->refresh();
-
         Log::info('zone.config_mode.changed', [
-            'zone_id' => $zone->id,
-            'from' => $currentMode,
+            'zone_id' => $loggedZoneId,
+            'from' => $loggedFrom,
             'to' => $targetMode,
             'user_id' => $user->id,
+            'status' => $result->status(),
         ]);
 
-        return response()->json([
-            'status' => 'ok',
-            'zone_id' => $zone->id,
-            'config_mode' => $zone->config_mode,
-            'config_revision' => (int) $zone->config_revision,
-            'live_until' => optional($zone->live_until)->toIso8601String(),
-        ]);
+        return $result;
     }
 
     public function extend(Request $request, Zone $zone): JsonResponse

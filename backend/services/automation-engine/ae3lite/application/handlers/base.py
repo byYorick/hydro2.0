@@ -12,7 +12,7 @@ from typing import Any, Mapping, Optional, Sequence
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.config import live_reload as _live_reload
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts as _telemetry_decision_window_since_ts,
@@ -30,26 +30,7 @@ from common.db import create_zone_event
 from common.service_logs import send_service_log
 
 
-# ─── Last-resort defaults for `_observation_config` cascade fallback ────────
-#
-# Phase 3.1 / B-6 extraction. These used to be inline magic numbers in
-# `_observation_config()` (lines 1319, 1329, 1387, 1396, 1406 pre-refactor).
-#
-# Rationale for keeping ANY defaults in Python (vs pure fail-closed):
-# legacy test fixtures may pass partial `correction_cfg.controllers.{ph,ec}.observe`
-# dicts. Pydantic `Observe` schema is STRICT (all fields required), so code
-# paths that go through `resolve_two_tank_runtime_plan → RuntimePlan` never hit
-# these defaults — Pydantic rejects missing fields before reaching here.
-#
-# When Phase 4 removes the `_DictShim` transition and handlers receive typed
-# `Observe` models directly, these constants become unreachable and can be
-# deleted. Until then they're the last-resort safety net for raw-dict callers.
-_OBSERVE_DEFAULT_TELEMETRY_PERIOD_SEC = 2
-_OBSERVE_DEFAULT_WINDOW_MIN_SAMPLES = 3
-_OBSERVE_DEFAULT_MIN_EFFECT_FRACTION = 0.25
-_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_PH = 0.02
-_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_EC = 0.05
-_OBSERVE_DEFAULT_NO_EFFECT_CONSECUTIVE_LIMIT = 3
+_MISSING_CONFIG = object()
 
 
 _logger = logging.getLogger(__name__)
@@ -1272,8 +1253,12 @@ class BaseStageHandler:
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
         # Correction success stays aligned with the canonical target tolerance.
-        ph_tol = abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
-        ec_tol = abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
+        ph_tol = abs(ph_target) * (
+            self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct") / 100.0
+        )
+        ec_tol = abs(ec_target) * (
+            self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct") / 100.0
+        )
         ph_min = ph_target - ph_tol
         ph_max = ph_target + ph_tol
         ec_min = ec_target - ec_tol
@@ -1331,14 +1316,14 @@ class BaseStageHandler:
         ph_ok = self._value_matches_ready_band(
             current=current_ph,
             target=ph_target,
-            tolerance_pct=float(tolerance.get("ph_pct", 15) or 15),
+            tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
             explicit_min=self._effective_ph_min(task=task, runtime=runtime),
             explicit_max=self._effective_ph_max(task=task, runtime=runtime),
         )
         ec_ok = self._value_matches_ready_band(
             current=current_ec,
             target=ec_target,
-            tolerance_pct=float(tolerance.get("ec_pct", 25) or 25),
+            tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
             explicit_min=self._effective_ec_min(task=task, runtime=runtime),
             explicit_max=self._effective_ec_max(task=task, runtime=runtime),
         )
@@ -1442,6 +1427,107 @@ class BaseStageHandler:
     def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
         return _telemetry_decision_window_since_ts(now=now, config=config)
 
+    @staticmethod
+    def _mapping_value(mapping: Mapping[str, Any] | None, key: str) -> Any:
+        if not isinstance(mapping, Mapping) or key not in mapping:
+            return _MISSING_CONFIG
+        return mapping[key]
+
+    def _required_config_int(
+        self,
+        *,
+        field_name: str,
+        candidates: Sequence[tuple[str, Any]],
+        minimum: int,
+        error_code: str = ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+    ) -> int:
+        for source_name, raw in candidates:
+            if raw is _MISSING_CONFIG:
+                continue
+            if raw is None or isinstance(raw, bool):
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}",
+                )
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}",
+                ) from None
+            if value < minimum:
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}: требуется >= {minimum}",
+                )
+            return value
+
+        raise TaskExecutionError(
+            error_code,
+            f"Отсутствует обязательный параметр {field_name}",
+        )
+
+    def _required_config_float(
+        self,
+        *,
+        field_name: str,
+        candidates: Sequence[tuple[str, Any]],
+        minimum: float,
+        error_code: str = ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+    ) -> float:
+        for source_name, raw in candidates:
+            if raw is _MISSING_CONFIG:
+                continue
+            if raw is None or isinstance(raw, bool):
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}",
+                )
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}",
+                ) from None
+            if not math.isfinite(value) or value < minimum:
+                raise TaskExecutionError(
+                    error_code,
+                    f"Некорректное значение {field_name} в {source_name}: требуется >= {minimum}",
+                )
+            return value
+
+        raise TaskExecutionError(
+            error_code,
+            f"Отсутствует обязательный параметр {field_name}",
+        )
+
+    def _required_correction_int(
+        self,
+        *,
+        correction_cfg: Mapping[str, Any],
+        key: str,
+        minimum: int = 1,
+    ) -> int:
+        return self._required_config_int(
+            field_name=f"correction.{key}",
+            candidates=((f"correction.{key}", self._mapping_value(correction_cfg, key)),),
+            minimum=minimum,
+        )
+
+    def _required_prepare_tolerance_pct(
+        self,
+        *,
+        tolerance: Mapping[str, Any],
+        key: str,
+    ) -> float:
+        return self._required_config_float(
+            field_name=f"prepare_tolerance.{key}",
+            candidates=((f"prepare_tolerance.{key}", self._mapping_value(tolerance, key)),),
+            minimum=0.1,
+        )
+
     def _prepare_tolerance_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
         tolerance_by_phase = runtime.get("prepare_tolerance_by_phase")
         if isinstance(tolerance_by_phase, Mapping):
@@ -1453,7 +1539,12 @@ class BaseStageHandler:
             if isinstance(generic_cfg, Mapping):
                 return generic_cfg
         tolerance = runtime.get("prepare_tolerance")
-        return tolerance if isinstance(tolerance, Mapping) else {}
+        if isinstance(tolerance, Mapping):
+            return tolerance
+        raise TaskExecutionError(
+            ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+            f"Отсутствует обязательный prepare_tolerance для phase={self._runtime_phase_key(task=task)}",
+        )
 
     def _correction_config_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
         correction_by_phase = runtime.get("correction_by_phase")
@@ -1466,7 +1557,12 @@ class BaseStageHandler:
             if isinstance(generic_cfg, Mapping):
                 return generic_cfg
         correction = runtime.get("correction")
-        return correction if isinstance(correction, Mapping) else {}
+        if isinstance(correction, Mapping):
+            return correction
+        raise TaskExecutionError(
+            ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+            f"Отсутствует обязательный correction runtime для phase={self._runtime_phase_key(task=task)}",
+        )
 
     def _process_cfg_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
         process_calibrations = runtime.get("process_calibrations")
@@ -1501,50 +1597,57 @@ class BaseStageHandler:
         process_meta = process_cfg.get("meta") if isinstance(process_cfg.get("meta"), Mapping) else {}
         observe_cfg = process_meta.get("observe") if isinstance(process_meta.get("observe"), Mapping) else {}
 
-        telemetry_period_sec = max(
-            1,
-            int(
-                observe_cfg.get("telemetry_period_sec")
-                or controller_observe_cfg.get("telemetry_period_sec")
-                or controller_cfg.get("telemetry_period_sec")
-                or _OBSERVE_DEFAULT_TELEMETRY_PERIOD_SEC
+        telemetry_period_sec = self._required_config_int(
+            field_name=f"{kind}.observe.telemetry_period_sec",
+            candidates=(
+                ("process_calibration.meta.observe.telemetry_period_sec", self._mapping_value(observe_cfg, "telemetry_period_sec")),
+                (f"correction.controllers.{kind}.observe.telemetry_period_sec", self._mapping_value(controller_observe_cfg, "telemetry_period_sec")),
+                (f"correction.controllers.{kind}.telemetry_period_sec", self._mapping_value(controller_cfg, "telemetry_period_sec")),
             ),
+            minimum=1,
         )
-        window_min_samples = max(
-            2,
-            int(
-                observe_cfg.get("window_min_samples")
-                or controller_observe_cfg.get("window_min_samples")
-                or controller_cfg.get("window_min_samples")
-                or _OBSERVE_DEFAULT_WINDOW_MIN_SAMPLES
+        window_min_samples = self._required_config_int(
+            field_name=f"{kind}.observe.window_min_samples",
+            candidates=(
+                ("process_calibration.meta.observe.window_min_samples", self._mapping_value(observe_cfg, "window_min_samples")),
+                (f"correction.controllers.{kind}.observe.window_min_samples", self._mapping_value(controller_observe_cfg, "window_min_samples")),
+                (f"correction.controllers.{kind}.window_min_samples", self._mapping_value(controller_cfg, "window_min_samples")),
             ),
+            minimum=2,
+        )
+        explicit_decision_window_sec = self._required_config_int(
+            field_name=f"{kind}.observe.decision_window_sec",
+            candidates=(
+                ("process_calibration.meta.observe.decision_window_sec", self._mapping_value(observe_cfg, "decision_window_sec")),
+                (f"correction.controllers.{kind}.observe.decision_window_sec", self._mapping_value(controller_observe_cfg, "decision_window_sec")),
+                (f"correction.controllers.{kind}.decision_window_sec", self._mapping_value(controller_cfg, "decision_window_sec")),
+            ),
+            minimum=1,
         )
         decision_window_sec = max(
             telemetry_period_sec * window_min_samples,
-            int(
-                observe_cfg.get("decision_window_sec")
-                or controller_observe_cfg.get("decision_window_sec")
-                or controller_cfg.get("decision_window_sec")
-                or 0
+            explicit_decision_window_sec,
+        )
+        transport_delay_sec = self._required_config_int(
+            field_name=f"{kind}.process_calibration.transport_delay_sec",
+            candidates=(
+                ("process_calibration.transport_delay_sec", self._mapping_value(process_cfg, "transport_delay_sec")),
+                (f"correction.controllers.{kind}.observe.transport_delay_sec", self._mapping_value(controller_observe_cfg, "transport_delay_sec")),
+                (f"correction.controllers.{kind}.transport_delay_sec", self._mapping_value(controller_cfg, "transport_delay_sec")),
             ),
+            minimum=1,
+            error_code="corr_process_calibration_missing",
         )
-        transport_delay_sec = int(
-            process_cfg.get("transport_delay_sec")
-            or controller_observe_cfg.get("transport_delay_sec")
-            or controller_cfg.get("transport_delay_sec")
-            or 0
+        settle_sec = self._required_config_int(
+            field_name=f"{kind}.process_calibration.settle_sec",
+            candidates=(
+                ("process_calibration.settle_sec", self._mapping_value(process_cfg, "settle_sec")),
+                (f"correction.controllers.{kind}.observe.settle_sec", self._mapping_value(controller_observe_cfg, "settle_sec")),
+                (f"correction.controllers.{kind}.settle_sec", self._mapping_value(controller_cfg, "settle_sec")),
+            ),
+            minimum=1,
+            error_code="corr_process_calibration_missing",
         )
-        settle_sec = int(
-            process_cfg.get("settle_sec")
-            or controller_observe_cfg.get("settle_sec")
-            or controller_cfg.get("settle_sec")
-            or 0
-        )
-        if transport_delay_sec <= 0 or settle_sec <= 0:
-            raise TaskExecutionError(
-                "corr_process_calibration_missing",
-                f"Для {kind} требуется process calibration с transport_delay_sec/settle_sec",
-            )
 
         adaptive_timing = self._adaptive_observation_timing(pid_entry=pid_entry)
         learned_transport = adaptive_timing.get("transport_delay_sec")
@@ -1560,43 +1663,41 @@ class BaseStageHandler:
             "telemetry_period_sec": telemetry_period_sec,
             "window_min_samples": window_min_samples,
             "decision_window_sec": decision_window_sec,
-            "observe_poll_sec": max(
-                1,
-                int(
-                    observe_cfg.get("observe_poll_sec")
-                    or controller_observe_cfg.get("observe_poll_sec")
-                    or controller_cfg.get("observe_poll_sec")
-                    or telemetry_period_sec
+            "observe_poll_sec": self._required_config_int(
+                field_name=f"{kind}.observe.observe_poll_sec",
+                candidates=(
+                    ("process_calibration.meta.observe.observe_poll_sec", self._mapping_value(observe_cfg, "observe_poll_sec")),
+                    (f"correction.controllers.{kind}.observe.observe_poll_sec", self._mapping_value(controller_observe_cfg, "observe_poll_sec")),
+                    (f"correction.controllers.{kind}.observe_poll_sec", self._mapping_value(controller_cfg, "observe_poll_sec")),
                 ),
+                minimum=1,
             ),
-            "min_effect_fraction": max(
-                0.01,
-                float(
-                    observe_cfg.get("min_effect_fraction")
-                    or controller_observe_cfg.get("min_effect_fraction")
-                    or controller_cfg.get("min_effect_fraction")
-                    or _OBSERVE_DEFAULT_MIN_EFFECT_FRACTION
+            "min_effect_fraction": self._required_config_float(
+                field_name=f"{kind}.observe.min_effect_fraction",
+                candidates=(
+                    ("process_calibration.meta.observe.min_effect_fraction", self._mapping_value(observe_cfg, "min_effect_fraction")),
+                    (f"correction.controllers.{kind}.observe.min_effect_fraction", self._mapping_value(controller_observe_cfg, "min_effect_fraction")),
+                    (f"correction.controllers.{kind}.min_effect_fraction", self._mapping_value(controller_cfg, "min_effect_fraction")),
                 ),
+                minimum=0.01,
             ),
-            "stability_max_slope": max(
-                0.0001,
-                float(
-                    observe_cfg.get("stability_max_slope")
-                    or controller_observe_cfg.get("stability_max_slope")
-                    or controller_cfg.get("stability_max_slope")
-                    or (_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_PH
-                        if kind == "ph"
-                        else _OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_EC)
+            "stability_max_slope": self._required_config_float(
+                field_name=f"{kind}.observe.stability_max_slope",
+                candidates=(
+                    ("process_calibration.meta.observe.stability_max_slope", self._mapping_value(observe_cfg, "stability_max_slope")),
+                    (f"correction.controllers.{kind}.observe.stability_max_slope", self._mapping_value(controller_observe_cfg, "stability_max_slope")),
+                    (f"correction.controllers.{kind}.stability_max_slope", self._mapping_value(controller_cfg, "stability_max_slope")),
                 ),
+                minimum=0.0001,
             ),
-            "no_effect_limit": max(
-                1,
-                int(
-                    observe_cfg.get("no_effect_consecutive_limit")
-                    or controller_observe_cfg.get("no_effect_consecutive_limit")
-                    or controller_cfg.get("no_effect_consecutive_limit")
-                    or _OBSERVE_DEFAULT_NO_EFFECT_CONSECUTIVE_LIMIT
+            "no_effect_limit": self._required_config_int(
+                field_name=f"{kind}.observe.no_effect_consecutive_limit",
+                candidates=(
+                    ("process_calibration.meta.observe.no_effect_consecutive_limit", self._mapping_value(observe_cfg, "no_effect_consecutive_limit")),
+                    (f"correction.controllers.{kind}.observe.no_effect_consecutive_limit", self._mapping_value(controller_observe_cfg, "no_effect_consecutive_limit")),
+                    (f"correction.controllers.{kind}.no_effect_consecutive_limit", self._mapping_value(controller_cfg, "no_effect_consecutive_limit")),
                 ),
+                minimum=1,
             ),
         }
 

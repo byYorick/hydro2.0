@@ -10,6 +10,7 @@ vi.mock('@/services/api/zoneConfigMode', () => {
       extend: vi.fn(),
       changes: vi.fn(),
       updatePhaseConfig: vi.fn(),
+      updateCorrectionLiveEdit: vi.fn(),
     },
   }
 })
