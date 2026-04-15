@@ -28,8 +28,36 @@
 | 6: Config modes UI | ✅ completed 2026-04-15 | `ConfigModeCard.vue` + `ConfigChangesTimeline.vue` + integration в ZoneAutomationTab |
 | 6.1: Recipe phase inline editor | ✅ completed 2026-04-15 | `RecipePhaseLiveEditCard.vue` — compact pH/EC targets editor в live mode |
 | 7: Observability + doc gen | ✅ completed 2026-04-15 | Prometheus metrics `ae3_zone_config_mode` gauge + `ae3_zone_config_live_edits_total` + `ae3_zone_config_invalid_total` counters в `infrastructure/metrics.py`; Grafana dashboard `backend/configs/prod/grafana/dashboards/zone-configs.json`; `tools/generate_authority.py` + `make generate-authority`/`make authority-check` (CI guard); `AUTOMATION_CONFIG_AUTHORITY.md` автогенерируемая секция §«Автогенерируемые таблицы параметров» (6.3KB) |
+| 6.2: full fine-tuning live edit correction/PID/calibration | 🟡 **partial** (2026-04-15) | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit` done с большим whitelist (timing/retry/dosing/safety/tolerance/controllers.*/observe/PID + process_calibration transport_delay/settle). 6/8 feature tests green. **TODO**: fix calibration/combined tests (see Section ниже), написать UI `CorrectionLiveEditCard.vue`, fix AmbiguousParameterError в ZoneAutomationControlModeController проверен отдельно (см. audit fix 2026-04-15). |
 
-**Tests state (2026-04-15):** 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests) = all green.
+**Tests state (2026-04-15):** 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests) = all green. **Phase 6.2 partial**: 6/8 new Laravel feature tests green.
+
+## Phase 6.2 TODO (deferred, partial — session ended 2026-04-15)
+
+Пользователь запросил **полный fine-tuning live edit** (не только targets, но и correction params — stabilization, retry delays, transport delay, settle time, decision window, PID, observe — всё связанное с коррекцией). Сделано:
+
+**Done:**
+- `backend/laravel/app/Http/Controllers/ZoneCorrectionLiveEditController.php` — controller с двумя whitelist'ами:
+  - `LIVE_EDITABLE_CORRECTION_PATHS` (~40 путей) — покрывает `base_config.{timing|retry|dosing|safety|tolerance|controllers.{ph,ec}.{pid params, observe, anti_windup, overshoot_guard, no_effect}}`
+  - `LIVE_EDITABLE_CALIBRATION_PATHS` — transport_delay_sec, settle_sec, confidence, gain params для `zone.process_calibration.{phase}`
+- Route `PUT /api/zones/{zone}/correction/live-edit` с middleware `role:admin,agronomist,engineer` + policy `setLive`
+- Invariant: `config_mode=live` обязателен (409 иначе)
+- Path traversal: `base_config.*` (без phase) или `phase_overrides.{phase}.*` (с phase)
+- Single `bumpAndAudit` на весь запрос (namespace `zone.correction.live`) даже при одновременном patch двух namespaces
+- 6/8 feature tests green в `ZoneCorrectionLiveEditControllerTest`
+
+**TODO (не делалось):**
+1. **Fix 2 failing tests**:
+   - `test_calibration_phase_tank_recirc_applies` — upsert на namespace `zone.process_calibration.tank_recirc` может требовать специальную структуру / materialize; проверить что schema не отвергает payload `{transport_delay_sec, settle_sec}` directly. Возможно нужно wrapper.
+   - `test_combined_correction_and_calibration_single_revision_bump` — последствия того же issue + проверить что `applyCalibrationPatch` корректно получает materialized document
+2. **Frontend `CorrectionLiveEditCard.vue`** — comprehensive form (40+ inputs), возможно аккордеонные секции: Timing, Retry, Dosing caps, Safety, Tolerance, PID ph, PID ec, Observe windows, Process calibration. Один submit → один API call.
+3. **Vitest component tests** для CorrectionLiveEditCard
+4. **Integration в ZoneAutomationTab** — рендер только в live mode с role-gating
+5. **Docs**: обновить `ae3lite.md` §7.5 + `ERROR_CODE_CATALOG.md` (новые codes `PATH_NOT_WHITELISTED`, `CALIBRATION_PHASE_REQUIRED`, `CALIBRATION_PHASE_UNKNOWN`, `CORRECTION_DOC_MISSING`)
+6. **Opt**: check AE3 runtime actually picks up these nested config changes through `_checkpoint` — snapshot rebuild должен прочитать обновлённый bundle, `resolve_two_tank_runtime_plan` — извлечь из `resolved_config`. Нужен integration test в AE3.
+
+**Bug fix shipped the same session 2026-04-15 (не связан с Phase 6.2, но обнаружен при тестировании live edit):**
+- [automation_task_repository.py:632](../../backend/services/automation-engine/ae3lite/infrastructure/repositories/automation_task_repository.py#L632) — `update_control_mode_snapshot_for_zone` вызывал `asyncpg.exceptions.AmbiguousParameterError: inconsistent types deduced for parameter $2 (text vs character varying)` → Laravel proxy 503. Fix: explicit casts `$2::varchar` для SET + `$2::text = 'auto'` для CASE. 1273 AE tests зелёные после fix'а.
 
 **Phase 7 ops artifacts:**
 - Prometheus: `ae3_config_hot_reload_total{result}`, `ae3_shadow_config_validation_total{result,namespace}`, `ae3_zone_config_mode{zone_id}` (gauge 0|1), `ae3_zone_config_live_edits_total{zone_id,handler}`, `ae3_zone_config_invalid_total{zone_id,topology}`

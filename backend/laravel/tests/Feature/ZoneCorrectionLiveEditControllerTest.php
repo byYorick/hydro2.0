@@ -11,7 +11,9 @@ use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Phase 6.2: live edit полный fine-tuning (correction + PID + observe + process_calibration).
+ * Phase 6.2: live edit полный fine-tuning correction.
+ * Whitelist использует категориальные пути из `base_config.*`
+ * (retry/timing/dosing/safety/tolerance/controllers) или `phase_overrides.{phase}.*`.
  */
 class ZoneCorrectionLiveEditControllerTest extends TestCase
 {
@@ -27,33 +29,14 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         ]);
     }
 
-    private function seedCorrectionDoc(Zone $zone): void
+    /** Материализует defaults через registry — резолвер строит полную base_config structure. */
+    private function seedDefaults(Zone $zone): void
     {
-        app(AutomationConfigDocumentService::class)->upsertDocument(
+        app(AutomationConfigDocumentService::class)->getDocument(
             AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
             AutomationConfigRegistry::SCOPE_ZONE,
             $zone->id,
-            [
-                'resolved_config' => [
-                    'base' => [
-                        'stabilization_sec' => 60,
-                        'max_ec_correction_attempts' => 5,
-                        'telemetry_stale_retry_sec' => 30,
-                        'controllers' => [
-                            'ec' => [
-                                'kp' => 0.5,
-                                'observe' => ['decision_window_sec' => 8],
-                            ],
-                        ],
-                    ],
-                    'phases' => [
-                        'tank_recirc' => ['stabilization_sec' => 90],
-                    ],
-                    'meta' => new \stdClass(),
-                ],
-            ],
-            null,
-            'test_seed',
+            true,
         );
     }
 
@@ -62,12 +45,12 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = Zone::factory()->create(['control_mode' => 'auto', 'config_mode' => 'locked']);
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
                 'reason' => 'tune',
-                'correction_patch' => ['stabilization_sec' => 120],
+                'correction_patch' => ['timing.stabilization_sec' => 120],
             ]);
 
         $resp->assertStatus(409)->assertJsonPath('code', 'ZONE_NOT_IN_LIVE_MODE');
@@ -78,7 +61,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
@@ -93,30 +76,30 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
                 'reason' => 'try dosing mode change',
-                'correction_patch' => ['ec_dosing_mode' => 'multi_parallel'],
+                'correction_patch' => ['dosing.ec_dosing_mode' => 'multi_parallel'],
             ]);
 
         $resp->assertStatus(422)->assertJsonPath('code', 'PATH_NOT_WHITELISTED');
     }
 
-    public function test_correction_base_flat_and_nested_paths_applied(): void
+    public function test_base_config_categorical_paths_applied(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
                 'reason' => 'full fine-tuning',
                 'correction_patch' => [
-                    'stabilization_sec' => 45,
-                    'telemetry_stale_retry_sec' => 20,
+                    'timing.stabilization_sec' => 45,
+                    'retry.telemetry_stale_retry_sec' => 20,
                     'controllers.ec.kp' => 0.7,
                     'controllers.ec.observe.decision_window_sec' => 12,
                     'controllers.ec.overshoot_guard.hard_max' => 9.5,
@@ -131,26 +114,29 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
             $zone->id,
             false,
         );
-        $this->assertSame(45, data_get($doc->payload, 'resolved_config.base.stabilization_sec'));
-        $this->assertSame(20, data_get($doc->payload, 'resolved_config.base.telemetry_stale_retry_sec'));
-        $this->assertSame(0.7, data_get($doc->payload, 'resolved_config.base.controllers.ec.kp'));
-        $this->assertSame(12, data_get($doc->payload, 'resolved_config.base.controllers.ec.observe.decision_window_sec'));
-        $this->assertSame(9.5, data_get($doc->payload, 'resolved_config.base.controllers.ec.overshoot_guard.hard_max'));
+        $this->assertSame(45, data_get($doc->payload, 'base_config.timing.stabilization_sec'));
+        $this->assertSame(20, data_get($doc->payload, 'base_config.retry.telemetry_stale_retry_sec'));
+        $this->assertSame(0.7, data_get($doc->payload, 'base_config.controllers.ec.kp'));
+        $this->assertSame(12, data_get($doc->payload, 'base_config.controllers.ec.observe.decision_window_sec'));
+        $this->assertSame(9.5, data_get($doc->payload, 'base_config.controllers.ec.overshoot_guard.hard_max'));
+
+        // resolved_config тоже обновлён (resolver пересобирает после upsert)
+        $this->assertSame(45, data_get($doc->payload, 'resolved_config.base.timing.stabilization_sec'));
     }
 
-    public function test_correction_phase_target_updates_phase_block_only(): void
+    public function test_phase_override_path_applied(): void
     {
         $user = User::factory()->create(['role' => 'engineer']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
                 'reason' => 'tank_recirc phase tune',
                 'phase' => 'tank_recirc',
                 'correction_patch' => [
-                    'stabilization_sec' => 150,
+                    'timing.stabilization_sec' => 150,
                     'controllers.ph.kp' => 0.35,
                 ],
             ]);
@@ -163,10 +149,8 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
             $zone->id,
             false,
         );
-        $this->assertSame(150, data_get($doc->payload, 'resolved_config.phases.tank_recirc.stabilization_sec'));
-        $this->assertSame(0.35, data_get($doc->payload, 'resolved_config.phases.tank_recirc.controllers.ph.kp'));
-        // base остался без изменений
-        $this->assertSame(60, data_get($doc->payload, 'resolved_config.base.stabilization_sec'));
+        $this->assertSame(150, data_get($doc->payload, 'phase_overrides.tank_recirc.timing.stabilization_sec'));
+        $this->assertSame(0.35, data_get($doc->payload, 'phase_overrides.tank_recirc.controllers.ph.kp'));
     }
 
     public function test_calibration_patch_requires_phase(): void
@@ -174,7 +158,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
@@ -190,7 +174,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
             ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
@@ -220,12 +204,12 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         ]);
     }
 
-    public function test_combined_correction_and_calibration_single_request(): void
+    public function test_combined_correction_and_calibration_single_revision_bump(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('t')->plainTextToken;
         $zone = $this->zoneInLive();
-        $this->seedCorrectionDoc($zone);
+        $this->seedDefaults($zone);
         $revisionBefore = (int) ($zone->config_revision ?? 1);
 
         $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
@@ -233,7 +217,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'reason' => 'both',
                 'phase' => 'tank_recirc',
                 'correction_patch' => [
-                    'stabilization_sec' => 75,
+                    'timing.stabilization_sec' => 75,
                     'controllers.ec.observe.decision_window_sec' => 14,
                 ],
                 'calibration_patch' => [
@@ -244,7 +228,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $resp->assertOk();
 
         $zone->refresh();
-        // Single bumpAndAudit — revision++ один раз даже при two namespaces patched
+        // Single bumpAndAudit — revision++ ровно один раз
         $this->assertSame($revisionBefore + 1, (int) $zone->config_revision);
     }
 }
