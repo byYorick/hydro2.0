@@ -41,6 +41,7 @@ use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneConfigModeController;
+use App\Http\Controllers\ZoneCorrectionLiveEditController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStateController;
@@ -232,6 +233,9 @@ Route::middleware([
         Route::post('grow-cycles/{growCycle}/advance-phase', [GrowCycleController::class, 'advancePhase']);
         // Phase 5.6: live edit активной recipe phase (только при config_mode=live)
         Route::put('grow-cycles/{growCycle}/phase-config', [GrowCyclePhaseConfigController::class, 'update'])
+            ->middleware('role:admin,agronomist,engineer');
+        // Phase 6.2: live edit correction timing/attempts/stabilization (only in live mode)
+        Route::put('zones/{zone}/correction/live-edit', [ZoneCorrectionLiveEditController::class, 'update'])
             ->middleware('role:admin,agronomist,engineer');
         Route::post('grow-cycles/{growCycle}/change-recipe-revision', [GrowCycleController::class, 'changeRecipeRevision']);
 
