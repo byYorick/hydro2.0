@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/zone_process_calibration/v1.json",
+  "title": "Zone Process Calibration",
+  "description": "Schema for `zone.process_calibration.{generic,solution_fill,tank_recirc,irrigation}` namespaces. Source: ZoneProcessCalibrationDefaults::forMode. Schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "ec_gain_per_ml",
+    "ph_up_gain_per_ml",
+    "ph_down_gain_per_ml",
+    "ph_per_ec_ml",
+    "ec_per_ph_ml",
+    "transport_delay_sec",
+    "settle_sec",
+    "confidence",
+    "source"
+  ],
+  "properties": {
+    "mode": {
+      "enum": ["generic", "solution_fill", "tank_recirc", "irrigation"]
+    },
+    "ec_gain_per_ml": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "description": "EC change (mS/cm) per 1 ml of EC nutrient injected."
+    },
+    "ph_up_gain_per_ml": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "description": "pH increase per 1 ml of pH-up reagent."
+    },
+    "ph_down_gain_per_ml": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "description": "pH decrease per 1 ml of pH-down reagent (stored positive)."
+    },
+    "ph_per_ec_ml": {
+      "type": "number",
+      "minimum": -1.0,
+      "maximum": 1.0,
+      "description": "Cross-coupling: pH shift per 1 ml of EC nutrient (usually slightly negative)."
+    },
+    "ec_per_ph_ml": {
+      "type": "number",
+      "minimum": -1.0,
+      "maximum": 1.0,
+      "description": "Cross-coupling: EC shift per 1 ml of pH reagent."
+    },
+    "transport_delay_sec": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "settle_sec": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Provenance tag: system_default | manual | auto_calibration | ..."
+    },
+    "meta": {
+      "description": "Free-form metadata. Compiler may write empty array `[]` instead of `{}` (PHP ambiguity); both accepted.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": true },
+        { "type": "array", "maxItems": 0 }
+      ]
+    },
+    "valid_from": {
+      "type": ["string", "null"],
+      "description": "Optional lifecycle timestamp written by compiler from pump_calibrations table."
+    },
+    "valid_to": {
+      "type": ["string", "null"],
+      "description": "Optional lifecycle timestamp written by compiler from pump_calibrations table."
+    },
+    "is_active": {
+      "type": "boolean",
+      "description": "Optional active flag from pump_calibrations table."
+    },
+    "updated_at": {
+      "type": ["string", "null"],
+      "description": "Optional update timestamp from pump_calibrations table."
+    }
+  },
+  "$comment": "AT LEAST ONE of {ec_gain_per_ml, ph_up_gain_per_ml, ph_down_gain_per_ml} must be > 0 for this calibration to be useful. This is enforced in the Pydantic loader, not at the JSON Schema level (a non-zero disjunction constraint would require allOf+anyOf with enumerated value combinations)."
+}

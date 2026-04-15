@@ -190,6 +190,8 @@ services:
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
     volumes:
       - ./laravel:/app
+      # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
+      - ../schemas:/schemas:ro
     ports:
       - "8080:80"
       - "6001:6001"

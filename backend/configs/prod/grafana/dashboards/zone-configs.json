@@ -1,0 +1,160 @@
+{
+  "title": "Zone Configs (AE3 Phase 5-7)",
+  "tags": ["automation-engine", "ae3", "zone-configs", "phase-7"],
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "zone",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "Prometheus" },
+        "query": "label_values(ae3_zone_config_mode, zone_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "text",
+      "title": "Config modes распределение по зонам",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Config modes (locked vs live)"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Live зон сейчас",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum(ae3_zone_config_mode == 1)", "refId": "A", "legendFormat": "live" }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Locked зон сейчас",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "sum(ae3_zone_config_mode == 0)", "refId": "A", "legendFormat": "locked" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Config mode per zone (0=locked, 1=live)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "ae3_zone_config_mode{zone_id=~\"$zone\"}",
+          "refId": "A",
+          "legendFormat": "zone {{zone_id}}"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "text",
+      "title": "Hot-reload и правки",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Hot-reload события (AE3 `_checkpoint` observability)"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Hot-reload outcomes (rate 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(ae3_config_hot_reload_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Applied hot-reloads по handler (rate 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (handler) (rate(ae3_zone_config_live_edits_total{zone_id=~\"$zone\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{handler}}"
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "type": "text",
+      "title": "Schema-валидация",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Schema validation failures\n\nAlert threshold: > 0 в последние 5 минут."
+      }
+    },
+    {
+      "id": 6,
+      "title": "Shadow validation (rate 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(ae3_shadow_config_validation_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Invalid configs detected (zone)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (zone_id) (rate(ae3_zone_config_invalid_total{zone_id=~\"$zone\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "zone {{zone_id}}"
+        }
+      ]
+    }
+  ]
+}

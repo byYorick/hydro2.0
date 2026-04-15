@@ -11,6 +11,7 @@
         "laravel/reverb": "^1.6.2",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10",
+        "opis/json-schema": "^2.3",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {

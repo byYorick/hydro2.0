@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
+from ae3lite.config.errors import ConfigValidationError
+from ae3lite.config.loader import load_zone_correction
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
+from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
+
+_logger = logging.getLogger(__name__)
 
 
 class CycleStartPlanner:
@@ -120,10 +126,16 @@ class CycleStartPlanner:
         workflow: str,
         topology: str,
     ) -> CommandPlan:
+        self._shadow_validate_correction(snapshot=snapshot, task=task)
         runtime = resolve_two_tank_runtime(snapshot)
         runtime = self._apply_irrigation_decision_snapshot(task=task, runtime=runtime)
         runtime = dict(runtime)
         runtime["zone_workflow_phase"] = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
+        # Phase 5: inject zones.config_revision so `_checkpoint()` can compare
+        # against DB revision to trigger hot-reload in live mode.
+        snapshot_config_rev = getattr(snapshot, "config_revision", None)
+        if snapshot_config_rev is not None:
+            runtime["config_revision"] = int(snapshot_config_rev)
         named_plans: dict[str, tuple[PlannedCommand, ...]] = {}
 
         for plan_name, raw_steps in runtime["command_specs"].items():
@@ -188,6 +200,20 @@ class CycleStartPlanner:
 
         self._validate_required_correction_calibrations(runtime=runtime)
 
+        # Phase 3.1 / B-5c: validate dict→RuntimePlan at the planner boundary.
+        # On drift this raises ConfigValidationError; cycle_start fails closed
+        # (correct: a drift between resolver and Pydantic model is a bug).
+        # The legacy dict mutations above (zone_workflow_phase, actuators
+        # injection, correction_by_phase rebuild) are now part of the typed
+        # contract — `RuntimePlan.zone_workflow_phase` and
+        # `CorrectionPhaseRuntime.actuators` cover them.
+        from ae3lite.config.loader import load_runtime_plan
+        typed_runtime = load_runtime_plan(
+            runtime,
+            zone_id=int(getattr(snapshot, "zone_id", 0) or 0) or None,
+            namespace="runtime.plan:two_tank",
+        )
+
         return CommandPlan(
             task_type=task.task_type,
             workflow=workflow,
@@ -195,8 +221,71 @@ class CycleStartPlanner:
             steps=tuple(),
             targets=snapshot.targets,
             named_plans=named_plans,
-            runtime=runtime,
+            runtime=typed_runtime,
         )
+
+    def _shadow_validate_correction(
+        self,
+        *,
+        snapshot: ZoneSnapshot,
+        task: AutomationTask,
+    ) -> None:
+        """Phase 2 shadow validation of snapshot.correction_config against
+        canonical Pydantic schema (`schemas/zone_correction.v1.json`).
+
+        Non-blocking — result is only reported to Prometheus counter
+        `ae3_shadow_config_validation_total{result, namespace}` and logged
+        at WARNING on failure. Phase 3 switches this to strict (raising)
+        once the two runs have been reconciled on dev/staging.
+        """
+        correction_config = getattr(snapshot, "correction_config", None)
+        if not isinstance(correction_config, Mapping):
+            SHADOW_CONFIG_VALIDATION.labels(
+                result="invalid", namespace="zone.correction",
+            ).inc()
+            return
+        # snapshot.correction_config is the compiler-merged `resolved_config`
+        # (has keys `base`, `phases`, `meta`). Validate both the base and
+        # each phase — all three should match the same schema after merge.
+        targets: list[tuple[str, Any]] = []
+        base = correction_config.get("base")
+        if isinstance(base, Mapping):
+            targets.append(("base", base))
+        phases = correction_config.get("phases")
+        if isinstance(phases, Mapping):
+            for phase_name in ("solution_fill", "tank_recirc", "irrigation"):
+                phase_cfg = phases.get(phase_name)
+                if isinstance(phase_cfg, Mapping):
+                    targets.append((f"phases.{phase_name}", phase_cfg))
+        if not targets:
+            SHADOW_CONFIG_VALIDATION.labels(
+                result="invalid", namespace="zone.correction",
+            ).inc()
+            return
+
+        zone_id = getattr(task, "zone_id", None)
+        any_invalid = False
+        for label, payload in targets:
+            try:
+                load_zone_correction(
+                    payload,
+                    zone_id=zone_id,
+                    namespace=f"zone.correction:{label}",
+                )
+            except ConfigValidationError as exc:
+                any_invalid = True
+                _logger.warning(
+                    "ae3_shadow_config_validation_failed",
+                    extra={
+                        "zone_id": zone_id,
+                        "namespace": exc.namespace,
+                        "violations": exc.errors[:20],  # cap log size
+                    },
+                )
+        SHADOW_CONFIG_VALIDATION.labels(
+            result="invalid" if any_invalid else "ok",
+            namespace="zone.correction",
+        ).inc()
 
     def _build_lighting_tick_plan(
         self,

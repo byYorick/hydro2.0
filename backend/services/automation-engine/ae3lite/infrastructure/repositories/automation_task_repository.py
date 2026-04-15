@@ -629,9 +629,9 @@ class PgAutomationTaskRepository:
             """
             WITH updated AS (
                 UPDATE ae_tasks
-                SET control_mode_snapshot = $2,
+                SET control_mode_snapshot = $2::varchar,
                     pending_manual_step = CASE
-                        WHEN $2 = 'auto' THEN NULL
+                        WHEN $2::text = 'auto' THEN NULL
                         ELSE pending_manual_step
                     END,
                     updated_at = $3

@@ -11,6 +11,8 @@ on:
       - 'tools/check_runtime_schema_parity.sh'
       - 'tools/runtime_schema_files.sh'
       - 'tools/sync_runtime_schemas.sh'
+      - 'tools/validate_schemas.py'
+      - 'schemas/**'
       - 'backend/laravel/app/Http/Controllers/**'
       - 'backend/laravel/app/Http/Requests/**'
   pull_request:
@@ -23,6 +25,8 @@ on:
       - 'tools/check_runtime_schema_parity.sh'
       - 'tools/runtime_schema_files.sh'
       - 'tools/sync_runtime_schemas.sh'
+      - 'tools/validate_schemas.py'
+      - 'schemas/**'
       - 'backend/laravel/app/Http/Controllers/**'
       - 'backend/laravel/app/Http/Requests/**'
   workflow_dispatch:
@@ -46,7 +50,11 @@ jobs:
         working-directory: backend/services
         run: |
           pip install --upgrade pip
-          pip install jsonschema pytest pydantic httpx
+          pip install 'jsonschema>=4.23' pytest pydantic httpx
+
+      - name: Validate canonical JSON Schemas (schemas/*.v1.json)
+        run: |
+          python3 tools/validate_schemas.py schemas
 
       - name: Check runtime schema parity (backend source -> firmware mirror)
         run: |

@@ -35,6 +35,28 @@
         @manual-ec="runManualEc"
       />
 
+      <!-- Phase 5/6: Config mode (locked/live) + history -->
+      <ConfigModeCard
+        v-if="props.zoneId"
+        :zone-id="Number(props.zoneId)"
+        :control-mode="automationControlMode as 'auto' | 'semi' | 'manual'"
+        :role="currentUserRole"
+        @changed="onConfigModeChanged"
+        @state-loaded="onConfigModeStateLoaded"
+      />
+      <!-- Phase 6.1: live-only inline edit активной recipe phase -->
+      <RecipePhaseLiveEditCard
+        v-if="liveEditEnabled && activeGrowCycleId"
+        :grow-cycle-id="activeGrowCycleId"
+        :initial="recipePhaseInitial"
+        @applied="onConfigModeChanged"
+      />
+      <ConfigChangesTimeline
+        v-if="props.zoneId"
+        :zone-id="Number(props.zoneId)"
+        :reload-key="configChangesReloadKey"
+      />
+
       <!-- Аккордеон 1: Профиль зоны -->
       <ZoneAutomationAccordionSection
         title="Профиль зоны"
@@ -234,9 +256,13 @@ import AutomationWorkflowCard from '@/Components/AutomationWorkflowCard.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordionSection.vue'
 import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
+import ConfigModeCard from '@/Components/ZoneAutomation/ConfigModeCard.vue'
+import ConfigChangesTimeline from '@/Components/ZoneAutomation/ConfigChangesTimeline.vue'
+import RecipePhaseLiveEditCard from '@/Components/ZoneAutomation/RecipePhaseLiveEditCard.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
+import { useRole } from '@/composables/useRole'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
@@ -274,6 +300,45 @@ const emit = defineEmits<{
 const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
+
+// Phase 5/6 — config mode UI
+const { role: userRoleRef } = useRole()
+const currentUserRole = computed(() => String(userRoleRef.value ?? 'viewer'))
+const configChangesReloadKey = ref(0)
+const configModeState = ref<import('@/services/api/zoneConfigMode').ConfigModeState | null>(null)
+function onConfigModeChanged(state?: import('@/services/api/zoneConfigMode').ConfigModeState): void {
+  if (state) configModeState.value = state
+  configChangesReloadKey.value += 1
+}
+function onConfigModeStateLoaded(state: import('@/services/api/zoneConfigMode').ConfigModeState): void {
+  configModeState.value = state
+}
+
+// Phase 6.1 — inline recipe phase edit card visibility
+const liveEditEnabled = computed(() =>
+  configModeState.value?.config_mode === 'live'
+  && ['agronomist', 'engineer', 'admin'].includes(currentUserRole.value),
+)
+const activeGrowCycleId = computed<number | null>(() => {
+  const id = props.activeGrowCycle?.id
+  return typeof id === 'number' && id > 0 ? id : null
+})
+const recipePhaseInitial = computed(() => {
+  const phase = props.currentRecipePhase as Record<string, unknown> | null | undefined
+  if (!phase) return {}
+  const pick = (k: string): number | null => {
+    const v = phase[k]
+    return typeof v === 'number' ? v : v == null ? null : Number(v) || null
+  }
+  return {
+    ph_target: pick('ph_target'),
+    ph_min: pick('ph_min'),
+    ph_max: pick('ph_max'),
+    ec_target: pick('ec_target'),
+    ec_min: pick('ec_min'),
+    ec_max: pick('ec_max'),
+  }
+})
 
 const {
   role,

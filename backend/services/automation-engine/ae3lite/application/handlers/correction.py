@@ -39,7 +39,7 @@ from ae3lite.application.services.decision_window_reader import (
 from ae3lite.application.services.sensor_mode_controller import SensorModeController
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
-from ae3lite.domain.errors import PlannerConfigurationError, TaskExecutionError
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePlan
 from ae3lite.domain.services.correction_transition_policy import (
     CorrectionTransitionPolicy,
@@ -89,6 +89,13 @@ class _ObservationWindow:
     process_cfg: Mapping[str, Any]
 
 
+# Sub-second polling micro-delay used by `_read_level()` for stale-recheck.
+# This is NOT a business config parameter — it is a telemetry-poll cadence
+# (250 ms) chosen to balance CPU load with responsiveness when sensor data
+# is freshly stale. Does NOT belong in `zone.correction` schema.
+_STALE_RECHECK_DELAY_SEC = 0.25
+
+
 class CorrectionHandler(BaseStageHandler):
     """Handles all ``corr_*`` steps within the correction state machine."""
 
@@ -105,10 +112,12 @@ class CorrectionHandler(BaseStageHandler):
         event_logger: Optional[CorrectionEventLogger] = None,
         sensor_mode_controller: Optional[SensorModeController] = None,
         alert_service: Optional[CorrectionAlertService] = None,
+        live_reload_enabled: bool = False,
     ) -> None:
         super().__init__(
             runtime_monitor=runtime_monitor,
             command_gateway=command_gateway,
+            live_reload_enabled=live_reload_enabled,
         )
         self._planner = planner or CorrectionPlanner()
         self._pid_state_repository = pid_state_repository
@@ -153,6 +162,16 @@ class CorrectionHandler(BaseStageHandler):
                 "corr_state_missing",
                 f"Task {task.id} in correction stage but correction state is None",
             )
+
+        # Phase 5.5: live-mode hot-swap. If zone is in `live` and revision
+        # advanced, `_checkpoint` returns a fresh `RuntimePlan` (otherwise
+        # returns the existing one). We rebuild a new `CommandPlan` via
+        # `dataclasses.replace(plan, runtime=...)` so every `_run_*` step
+        # and every helper that reads `plan.runtime` transparently sees
+        # refreshed targets/config without changing their signatures.
+        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+        if new_runtime is not plan.runtime:
+            plan = replace(plan, runtime=new_runtime)
 
         solution_fill_completion_outcome = await self._interrupt_for_solution_fill_completion(
             task=task,
@@ -398,7 +417,7 @@ class CorrectionHandler(BaseStageHandler):
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        max_age = int(runtime.get("telemetry_max_age_sec", 300))
+        max_age = int(runtime["telemetry_max_age_sec"])
 
         # E-STOP gate: если недавно был EMERGENCY_STOP_ACTIVATED в zone_events,
         # прерываем correction. Reconcile ожидаемого состояния каналов делают
@@ -687,7 +706,6 @@ class CorrectionHandler(BaseStageHandler):
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="telemetry_stale_retry_sec",
-                default=30.0,
             )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -778,7 +796,6 @@ class CorrectionHandler(BaseStageHandler):
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="decision_window_retry_sec",
-                default=30.0,
             )
             _logger.warning(
                 "zone %s: некорректное telemetry value (ph=%s, ec=%s); повтор через %.1f с",
@@ -800,14 +817,13 @@ class CorrectionHandler(BaseStageHandler):
             telemetry_max_age_sec=max_age,
             unavailable_error="two_tank_solution_min_level_unavailable",
             stale_error="two_tank_solution_min_level_stale",
-            stale_recheck_delay_sec=0.25,
+            stale_recheck_delay_sec=_STALE_RECHECK_DELAY_SEC,
             prefer_probe_snapshot=True,
         )
         if not solution_tank_has_solution(solution_min):
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="low_water_retry_sec",
-                default=60.0,
             )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -1930,13 +1946,12 @@ class CorrectionHandler(BaseStageHandler):
             zone_id=task.zone_id,
             sensor_type=sensor_type,
             since_ts=observation_started_at,
-            telemetry_max_age_sec=int(runtime.get("telemetry_max_age_sec", 300)),
+            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
         )
         if not window["has_sensor"] or window["is_stale"]:
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="telemetry_stale_retry_sec",
-                default=30.0,
             )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -1949,7 +1964,7 @@ class CorrectionHandler(BaseStageHandler):
                     "sensor_scope": "observe_window",
                     "reason": f"{sensor_type} telemetry stale/unavailable during observation window",
                     "retry_after_sec": retry_delay_sec,
-                    "telemetry_max_age_sec": int(runtime.get("telemetry_max_age_sec", 300)),
+                    "telemetry_max_age_sec": int(runtime["telemetry_max_age_sec"]),
                 },
             )
             _logger.warning(
@@ -2349,11 +2364,27 @@ class CorrectionHandler(BaseStageHandler):
         *,
         correction_cfg: Mapping[str, Any],
         key: str,
-        default: float,
     ) -> float:
-        raw = correction_cfg.get(key)
+        """Phase 3.1 / B-5e: returns a typed retry-delay from correction config.
+
+        `correction_cfg` is either a `CorrectionPhaseRuntime` Pydantic model
+        (B-5c production path) or a legacy dict (still used by some test
+        fixtures). Both expose `[key]` access via `_DictShim`. The value is
+        guaranteed positive int by the schema (`Annotated[int, Field(ge=1, le=3600)]`).
+
+        Hardcoded `default` parameter removed (was 30.0/60.0) — Pydantic
+        enforces presence; missing field is a fail-closed config bug.
+        """
         try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return default
-        return value if value > 0 else default
+            value = float(correction_cfg[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PlannerConfigurationError(
+                f"correction_cfg[{key!r}] missing or invalid; schema must require it",
+                code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+            ) from exc
+        if value <= 0:
+            raise PlannerConfigurationError(
+                f"correction_cfg[{key!r}]={value!r} must be > 0",
+                code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+            )
+        return value

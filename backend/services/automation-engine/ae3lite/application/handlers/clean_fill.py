@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -35,10 +36,13 @@ class CleanFillCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
+        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+        if new_runtime is not plan.runtime:
+            plan = replace(plan, runtime=new_runtime)
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
+        fail_safe_guards = runtime.fail_safe_guards
 
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
@@ -81,15 +85,15 @@ class CleanFillCheckHandler(BaseStageHandler):
         if control_mode == "manual":
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
         clean_max = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime["clean_max_sensor_labels"],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=runtime.clean_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error="two_tank_clean_level_unavailable",
             stale_error="two_tank_clean_level_stale",
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -107,14 +111,14 @@ class CleanFillCheckHandler(BaseStageHandler):
             _logger.debug("clean_fill_check: бак чистой воды заполнен, выполняется переход zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
 
-        clean_fill_min_check_delay_ms = int(fail_safe_guards.get("clean_fill_min_check_delay_ms", 5000) or 0)
+        clean_fill_min_check_delay_ms = int(fail_safe_guards.clean_fill_min_check_delay_ms)
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_fill_min_check_delay_ms):
             clean_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
-                labels=runtime["clean_min_sensor_labels"],
-                threshold=runtime["level_switch_on_threshold"],
-                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                labels=runtime.clean_min_sensor_labels,
+                threshold=runtime.level_switch_on_threshold,
+                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
                 unavailable_error="two_tank_clean_min_level_unavailable",
                 stale_error="two_tank_clean_min_level_stale",
                 stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -132,7 +136,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             cycle = max(1, task.workflow.clean_fill_cycle)
-            retry_limit = 1 + int(runtime.get("clean_fill_retry_cycles", 0))
+            retry_limit = 1 + int(runtime.clean_fill_retry_cycles)
             if cycle < retry_limit:
                 # Повтор: увеличить цикл, новый дедлайн выставит WorkflowRouter
                 _logger.info(
@@ -184,7 +188,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         # Заполнение ещё идёт: повторный poll
         return StageOutcome(
             kind="poll",
-            due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            due_delay_sec=int(runtime.level_poll_interval_sec),
         )
 
     def _source_empty_outcome(self, *, task: Any) -> StageOutcome:

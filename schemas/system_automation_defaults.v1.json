@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/system_automation_defaults/v1.json",
+  "title": "System Automation Defaults",
+  "description": "Schema for `system.automation_defaults` namespace. v1 — minimal structural coverage. Full parameter list lives in SystemAutomationSettingsCatalog and is out of Phase 1 scope; detailed schema extracted in later phases when Python-side consumers are known.",
+  "type": "object",
+  "additionalProperties": true,
+  "$comment": "Placeholder schema: `additionalProperties: true` is intentional until full inventory of SystemAutomationSettingsCatalog fields is captured. This schema exists so the namespace is discoverable in make schemas-validate and CI gates."
+}

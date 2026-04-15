@@ -39,6 +39,7 @@ class PgZoneSnapshotReadModel:
                         z.greenhouse_id,
                         g.timezone AS greenhouse_timezone,
                         z.automation_runtime,
+                        z.config_revision AS zone_config_revision,
                         gc.id AS grow_cycle_id,
                         gc.current_phase_id,
                         gc.settings AS cycle_settings,
@@ -338,6 +339,11 @@ class PgZoneSnapshotReadModel:
             actuators=actuators,
             process_calibrations=process_calibrations,
             correction_config=correction_config,
+            config_revision=(
+                int(zone_row["zone_config_revision"])
+                if zone_row.get("zone_config_revision") is not None
+                else None
+            ),
         )
 
     @staticmethod

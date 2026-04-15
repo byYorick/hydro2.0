@@ -38,10 +38,13 @@ class SolutionFillCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
+        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+        if new_runtime is not plan.runtime:
+            plan = replace(plan, runtime=new_runtime)
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
+        fail_safe_guards = runtime["fail_safe_guards"]
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=(
@@ -81,7 +84,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 },
             )
         if recent_event_type == "SOLUTION_FILL_COMPLETED":
-            return await self._completed_outcome(task=task, plan=plan, now=now)
+            return await self._completed_outcome(task=task, plan=plan, now=now, runtime=runtime)
 
         try:
             await self._probe_irr_state(
@@ -106,20 +109,20 @@ class SolutionFillCheckHandler(BaseStageHandler):
                         task.zone_id,
                         getattr(task, "id", None),
                     )
-                    return await self._completed_outcome(task=task, plan=plan, now=now)
+                    return await self._completed_outcome(task=task, plan=plan, now=now, runtime=runtime)
             raise
 
         if pending_manual_step == "solution_fill_stop":
-            if await self._should_finish_to_ready(task=task, plan=plan, now=now):
+            if await self._should_finish_to_ready(task=task, plan=plan, now=now, runtime=runtime):
                 return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
             return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
         if control_mode == "manual":
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                due_delay_sec=int(runtime["level_poll_interval_sec"]),
             )
 
-        clean_min_check_delay_ms = int(fail_safe_guards.get("solution_fill_clean_min_check_delay_ms", 5000) or 0)
+        clean_min_check_delay_ms = int(fail_safe_guards["solution_fill_clean_min_check_delay_ms"])
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_min_check_delay_ms):
             clean_min = await self._read_level(
                 task=task,
@@ -141,7 +144,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 )
                 return StageOutcome(kind="transition", next_stage="solution_fill_source_empty_stop")
 
-        solution_min_check_delay_ms = int(fail_safe_guards.get("solution_fill_solution_min_check_delay_ms", 15000) or 0)
+        solution_min_check_delay_ms = int(fail_safe_guards["solution_fill_solution_min_check_delay_ms"])
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, solution_min_check_delay_ms):
             solution_min = await self._read_level(
                 task=task,
@@ -176,7 +179,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
 
         if solution_max["is_triggered"]:
-            return await self._completed_outcome(task=task, plan=plan, now=now)
+            return await self._completed_outcome(task=task, plan=plan, now=now, runtime=runtime)
 
         # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at
@@ -215,10 +218,10 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 )
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
-        if await self._targets_reached(task=task, plan=plan, now=now):
+        if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                due_delay_sec=int(runtime["level_poll_interval_sec"]),
             )
 
         if int(getattr(task.workflow, "stage_retry_count", 0) or 0) > 0:
@@ -229,7 +232,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             )
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                due_delay_sec=int(runtime["level_poll_interval_sec"]),
             )
 
         _logger.info(
@@ -245,8 +248,11 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
         return StageOutcome(kind="enter_correction", correction=corr)
 
-    async def _should_finish_to_ready(self, *, task: Any, plan: Any, now: datetime) -> bool:
-        runtime = plan.runtime
+    async def _should_finish_to_ready(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        if runtime is None:
+            runtime = plan.runtime
         solution_max = await self._read_level(
             task=task,
             zone_id=task.zone_id,
@@ -270,10 +276,13 @@ class SolutionFillCheckHandler(BaseStageHandler):
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
             prefer_probe_snapshot=True,
         )
-        return await self._workflow_ready_reached(task=task, plan=plan, now=now)
+        return await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime)
 
-    async def _completed_outcome(self, *, task: Any, plan: Any, now: datetime) -> StageOutcome:
-        runtime = plan.runtime
+    async def _completed_outcome(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> StageOutcome:
+        if runtime is None:
+            runtime = plan.runtime
         await self._check_sensor_consistency(
             task=task,
             runtime=runtime,
@@ -284,7 +293,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             prefer_probe_snapshot=True,
         )
 
-        if await self._workflow_ready_reached(task=task, plan=plan, now=now):
+        if await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime):
             _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",

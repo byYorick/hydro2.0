@@ -79,7 +79,7 @@ class StartupHandler(BaseStageHandler):
                 )
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 5)),
+                due_delay_sec=int(runtime["level_poll_interval_sec"]),
             )
 
         if clean_max["is_triggered"]:

@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/zone_correction/v1.json",
+  "title": "Zone Correction Configuration",
+  "description": "Schema for the base zone correction config (the body of `base_config` inside zone.correction document payload, and the source of each merged `resolved_config.phases.*` entry). Corresponds to ZoneCorrectionConfigCatalog::defaults(). Document version lives in `automation_config_documents.schema_version` column, not in the payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "controllers",
+    "runtime",
+    "timing",
+    "dosing",
+    "retry",
+    "tolerance",
+    "safety"
+  ],
+  "properties": {
+    "controllers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ph", "ec"],
+      "properties": {
+        "ph": { "$ref": "#/$defs/PhController" },
+        "ec": { "$ref": "#/$defs/EcController" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_node_type",
+        "clean_fill_timeout_sec",
+        "solution_fill_timeout_sec",
+        "clean_fill_retry_cycles",
+        "level_switch_on_threshold",
+        "clean_max_sensor_label",
+        "clean_min_sensor_label",
+        "solution_max_sensor_label",
+        "solution_min_sensor_label"
+      ],
+      "properties": {
+        "required_node_type": { "type": "string", "maxLength": 64, "minLength": 1 },
+        "clean_fill_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+        "solution_fill_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+        "clean_fill_retry_cycles": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "level_switch_on_threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "clean_max_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+        "clean_min_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+        "solution_max_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+        "solution_min_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sensor_mode_stabilization_time_sec",
+        "stabilization_sec",
+        "telemetry_max_age_sec",
+        "irr_state_max_age_sec",
+        "level_poll_interval_sec"
+      ],
+      "properties": {
+        "sensor_mode_stabilization_time_sec": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "stabilization_sec": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "telemetry_max_age_sec": { "type": "integer", "minimum": 5, "maximum": 3600 },
+        "irr_state_max_age_sec": { "type": "integer", "minimum": 5, "maximum": 3600 },
+        "level_poll_interval_sec": { "type": "integer", "minimum": 5, "maximum": 3600 }
+      }
+    },
+    "dosing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "solution_volume_l",
+        "dose_ec_channel",
+        "dose_ph_up_channel",
+        "dose_ph_down_channel",
+        "max_ec_dose_ml",
+        "max_ph_dose_ml",
+        "ec_dosing_mode"
+      ],
+      "properties": {
+        "solution_volume_l": { "type": "number", "minimum": 1.0, "maximum": 10000.0 },
+        "dose_ec_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+        "dose_ph_up_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+        "dose_ph_down_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+        "max_ec_dose_ml": { "type": "number", "minimum": 0.1, "maximum": 1000.0 },
+        "max_ph_dose_ml": { "type": "number", "minimum": 0.1, "maximum": 1000.0 },
+        "ec_dosing_mode": {
+          "enum": ["single", "multi_parallel", "multi_sequential"],
+          "description": "Single = one EC pump, full dose. Multi = parallel pumps per component (NPK/A/B). Added in v1 to remove Python-side fallback to 'single'."
+        }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_ec_correction_attempts",
+        "max_ph_correction_attempts",
+        "prepare_recirculation_timeout_sec",
+        "prepare_recirculation_correction_slack_sec",
+        "prepare_recirculation_max_attempts",
+        "prepare_recirculation_max_correction_attempts",
+        "telemetry_stale_retry_sec",
+        "decision_window_retry_sec",
+        "low_water_retry_sec"
+      ],
+      "properties": {
+        "max_ec_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "max_ph_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "prepare_recirculation_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 7200 },
+        "prepare_recirculation_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
+        "prepare_recirculation_max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "prepare_recirculation_max_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "telemetry_stale_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "decision_window_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "low_water_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    },
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prepare_tolerance"],
+      "properties": {
+        "prepare_tolerance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ph_pct", "ec_pct"],
+          "properties": {
+            "ph_pct": { "type": "number", "minimum": 0.1, "maximum": 100.0 },
+            "ec_pct": { "type": "number", "minimum": 0.1, "maximum": 100.0 }
+          }
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["safe_mode_on_no_effect", "block_on_active_no_effect_alert"],
+      "properties": {
+        "safe_mode_on_no_effect": { "type": "boolean" },
+        "block_on_active_no_effect_alert": { "type": "boolean" }
+      }
+    },
+    "ec_component_ratios": {
+      "description": "Per-component EC contribution (mS/cm or relative weight, depending on recipe convention). Injected by recipe nutrition resolver during grow_cycle compile. Not normalized — sum may exceed 1.0.",
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+    },
+    "ec_excluded_components": {
+      "description": "EC components excluded from dosing (recipe nutrition override).",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+    },
+    "system_type": {
+      "description": "Hydroponic system identifier (e.g. drip, nft) injected by recipe nutrition resolver.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "ec_dosing_mode": {
+      "description": "TOP-LEVEL alias of dosing.ec_dosing_mode injected by recipe nutrition resolver. May differ from dosing.ec_dosing_mode (recipe override). Accepts legacy `multi_sequential` value.",
+      "enum": ["single", "multi_parallel", "multi_sequential"]
+    },
+    "ec_component_policy": {
+      "description": "Policy for multi-component EC dosing (recipe-owned, structure loose at v1).",
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "PhController": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "kp", "ki", "kd",
+        "derivative_filter_alpha", "deadband",
+        "max_dose_ml", "min_interval_sec", "max_integral",
+        "anti_windup", "overshoot_guard", "no_effect", "observe"
+      ],
+      "properties": {
+        "mode": { "const": "cross_coupled_pi_d" },
+        "kp": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "ki": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "kd": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "derivative_filter_alpha": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "deadband": { "type": "number", "minimum": 0.0, "maximum": 2.0 },
+        "max_dose_ml": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 1000.0 },
+        "min_interval_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "max_integral": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 500.0 },
+        "anti_windup": { "$ref": "#/$defs/AntiWindup" },
+        "overshoot_guard": { "$ref": "#/$defs/PhOvershootGuard" },
+        "no_effect": { "$ref": "#/$defs/NoEffect" },
+        "observe": { "$ref": "#/$defs/Observe" }
+      }
+    },
+    "EcController": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "kp", "ki", "kd",
+        "derivative_filter_alpha", "deadband",
+        "max_dose_ml", "min_interval_sec", "max_integral",
+        "anti_windup", "overshoot_guard", "no_effect", "observe"
+      ],
+      "properties": {
+        "mode": { "const": "supervisory_allocator" },
+        "kp": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "ki": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "kd": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "derivative_filter_alpha": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "deadband": { "type": "number", "minimum": 0.0, "maximum": 5.0 },
+        "max_dose_ml": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 1000.0 },
+        "min_interval_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "max_integral": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 500.0 },
+        "anti_windup": { "$ref": "#/$defs/AntiWindup" },
+        "overshoot_guard": { "$ref": "#/$defs/EcOvershootGuard" },
+        "no_effect": { "$ref": "#/$defs/NoEffect" },
+        "observe": { "$ref": "#/$defs/Observe" }
+      }
+    },
+    "AntiWindup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "PhOvershootGuard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "hard_min", "hard_max"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "hard_min": { "type": "number", "minimum": 0.0, "maximum": 14.0 },
+        "hard_max": { "type": "number", "minimum": 0.0, "maximum": 14.0 }
+      }
+    },
+    "EcOvershootGuard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "hard_min", "hard_max"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "hard_min": { "type": "number", "minimum": 0.0, "maximum": 20.0 },
+        "hard_max": { "type": "number", "minimum": 0.0, "maximum": 20.0 }
+      }
+    },
+    "NoEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "max_count"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "max_count": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "Observe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "telemetry_period_sec",
+        "window_min_samples",
+        "decision_window_sec",
+        "observe_poll_sec",
+        "min_effect_fraction",
+        "stability_max_slope",
+        "no_effect_consecutive_limit"
+      ],
+      "properties": {
+        "telemetry_period_sec": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "window_min_samples": { "type": "integer", "minimum": 2, "maximum": 64 },
+        "decision_window_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "observe_poll_sec": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "min_effect_fraction": { "type": "number", "minimum": 0.01, "maximum": 1.0 },
+        "stability_max_slope": { "type": "number", "exclusiveMinimum": 0.0, "maximum": 100.0 },
+        "no_effect_consecutive_limit": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "PhaseOverride": {
+      "description": "Partial override of base config. Any top-level section may be redefined, but structure must match base. No required fields — all sections optional at phase level.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "controllers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ph": { "$ref": "#/$defs/PhController" },
+            "ec": { "$ref": "#/$defs/EcController" }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required_node_type": { "type": "string", "maxLength": 64, "minLength": 1 },
+            "clean_fill_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+            "solution_fill_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 86400 },
+            "clean_fill_retry_cycles": { "type": "integer", "minimum": 0, "maximum": 20 },
+            "level_switch_on_threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "clean_max_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+            "clean_min_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+            "solution_max_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 },
+            "solution_min_sensor_label": { "type": "string", "maxLength": 128, "minLength": 1 }
+          }
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sensor_mode_stabilization_time_sec": { "type": "integer", "minimum": 0, "maximum": 3600 },
+            "stabilization_sec": { "type": "integer", "minimum": 0, "maximum": 3600 },
+            "telemetry_max_age_sec": { "type": "integer", "minimum": 5, "maximum": 3600 },
+            "irr_state_max_age_sec": { "type": "integer", "minimum": 5, "maximum": 3600 },
+            "level_poll_interval_sec": { "type": "integer", "minimum": 5, "maximum": 3600 }
+          }
+        },
+        "dosing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "solution_volume_l": { "type": "number", "minimum": 1.0, "maximum": 10000.0 },
+            "dose_ec_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+            "dose_ph_up_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+            "dose_ph_down_channel": { "type": "string", "maxLength": 64, "minLength": 1 },
+            "max_ec_dose_ml": { "type": "number", "minimum": 0.1, "maximum": 1000.0 },
+            "max_ph_dose_ml": { "type": "number", "minimum": 0.1, "maximum": 1000.0 },
+            "ec_dosing_mode": { "enum": ["single", "multi_parallel", "multi_sequential"] }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_ec_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+            "max_ph_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+            "prepare_recirculation_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 7200 },
+            "prepare_recirculation_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
+            "prepare_recirculation_max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "prepare_recirculation_max_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
+            "telemetry_stale_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+            "decision_window_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+            "low_water_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 }
+          }
+        },
+        "tolerance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prepare_tolerance": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ph_pct": { "type": "number", "minimum": 0.1, "maximum": 100.0 },
+                "ec_pct": { "type": "number", "minimum": 0.1, "maximum": 100.0 }
+              }
+            }
+          }
+        },
+        "safety": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "safe_mode_on_no_effect": { "type": "boolean" },
+            "block_on_active_no_effect_alert": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

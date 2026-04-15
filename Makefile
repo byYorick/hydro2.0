@@ -28,7 +28,8 @@ help:
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
-	@echo "  protocol-check - run protocol contract tests"
+	@echo "  protocol-check - run protocol contract tests (incl. schemas-validate)"
+	@echo "  schemas-validate - validate JSON Schemas under schemas/ against meta-schema"
 	@echo "  logs           - stream logs for selected service (SERVICE=<name>, TAIL=200)"
 	@echo "  logs-core      - stream logs for core runtime services"
 	@echo "  logs-laravel   - stream Laravel logs"
@@ -141,8 +142,27 @@ setup-dev: up
 up-dev: up
 down-dev: down
 
+.PHONY: schemas-validate
+schemas-validate:
+	@echo "Validating JSON Schemas under schemas/..."
+	@if [ -x venv/bin/python3 ]; then \
+		venv/bin/python3 tools/validate_schemas.py schemas; \
+	else \
+		python3 tools/validate_schemas.py schemas; \
+	fi
+
+.PHONY: generate-authority
+generate-authority:
+	@echo "Generating AUTHORITY.md from schemas/*.v1.json..."
+	@python3 tools/generate_authority.py
+
+.PHONY: authority-check
+authority-check:
+	@echo "Checking AUTOMATION_CONFIG_AUTHORITY.md is regenerated (CI guard)..."
+	@python3 tools/generate_authority.py --check
+
 .PHONY: protocol-check
-protocol-check:
+protocol-check: schemas-validate authority-check
 	@echo "Running protocol contract tests..."
 	@./tools/check_runtime_schema_parity.sh
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short

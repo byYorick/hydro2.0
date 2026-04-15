@@ -223,6 +223,7 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
                     "solution_min_sensor_labels": ["level_solution_min"],
                     "level_switch_on_threshold": 0.5,
                     "telemetry_max_age_sec": 60,
+                    "level_poll_interval_sec": 10,
                 },
                 named_plans={"irr_state_probe": probe},
             ),

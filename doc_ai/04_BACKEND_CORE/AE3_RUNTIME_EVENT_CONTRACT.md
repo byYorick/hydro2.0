@@ -182,6 +182,38 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. `caused_by_event_id`
 3. `observe_seq`
 
+### 4.6 `CONFIG_HOT_RELOADED` (Phase 5)
+
+Эмитится в `BaseStageHandler._checkpoint()` когда зона в `config_mode=live`,
+`zones.config_revision` advance'нул выше `plan.runtime.config_revision`, и
+новый RuntimePlan успешно собран через snapshot rebuild.
+
+Поля (`details.*` в zone_events):
+- `revision` (int) — новое значение `zones.config_revision`
+- `previous_revision` (int) — `plan.runtime.config_revision` до swap
+- `task_id` (int) — активная AE3 task
+- `stage` (str) — handler stage в момент checkpoint (`clean_fill_check`, `irrigation_check`, ...)
+
+Инкрементирует metric `ae3_config_hot_reload_total{result=applied}`.
+
+### 4.7 `CONFIG_MODE_AUTO_REVERTED` (Phase 5)
+
+Эмитится в `RevertExpiredLiveModesCommand` когда TTL `zones.live_until`
+истёк, zone auto-flipped в `locked`.
+
+Поля (`payload_json.*`):
+- `reason` = `"ttl_expired"`
+- `previous_live_until` (ISO8601) — что было перед auto-revert
+
+### 4.8 `ZONE_CONFIG_CHANGED` semantic (audit row, not zone_event)
+
+Каждая правка zone/grow_cycle config пишет строку в `zone_config_changes`:
+- `zone_id`, `revision` (unique per zone), `namespace` (`zone.config_mode` /
+  `zone.correction` / `recipe.phase`), `diff_json`, `user_id`, `reason`.
+
+Это audit trail, не runtime event. UI `GET /api/zones/{id}/config-changes`
+возвращает timeline с filter `?namespace=`.
+
 ## 5. E2E / Read-Model Guidance
 
 1. Новый e2e/assertion contract не должен доказывать причинность по `created_at`,

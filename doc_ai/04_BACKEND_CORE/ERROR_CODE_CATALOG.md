@@ -58,6 +58,26 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `irr_state_stale` | `ae3_irr_probe` | Snapshot получен, но `age > irr_state_max_age_sec`. Семантика как у `irr_state_unavailable` (deferred в polling-стейджах) | `Снимок состояния IRR-ноды устарел.` |
 | `irr_state_mismatch` | `ae3_irr_probe` | Snapshot пришёл, но hardware state не совпал с `expected` (valve/pump). **Не** оборачивается backoff'ом — это safety boundary, fail-closed немедленно | `Состояние IRR-ноды не совпало с ожиданиями автоматики.` |
 | `irrigation_recovery_probe_exhausted` | `ae3_irr_probe` | В `irrigation_recovery_check` исчерпан streak подряд идущих deferred probes (`_IRR_PROBE_FAILURE_STREAK_LIMIT=5`) — нода долго недоступна | `IRR-нода недоступна: исчерпан лимит подряд идущих probe-deferrals.` |
+| `ae3_prepare_recirculation_max_attempts_missing` | `ae3_config` | В bundle коррекции для prepare-recirculation отсутствует обязательный `prepare_recirculation_max_attempts` (Phase 3.1 B-7 fail-closed) | `В конфигурации коррекции отсутствует обязательный параметр числа повторов prepare-recirculation.` |
+
+## Коды config modes (Phase 5, HTTP 4xx/5xx)
+
+Возвращаются из `ZoneConfigModeController` и `GrowCyclePhaseConfigController`. Frontend показывает `data.code` + `data.message`.
+
+| code | HTTP | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `FORBIDDEN_SET_LIVE` | 403 | Роль не имеет `ZonePolicy::setLive` (только agronomist/engineer/admin) | `Роль не позволяет переключать зону в live.` |
+| `FORBIDDEN` | 403 | Пользователь не имеет доступа к зоне или недостаточно прав на update | `Нет прав на изменение зоны.` |
+| `CONFIG_MODE_CONFLICT_WITH_AUTO` | 409 | Попытка перейти в `config_mode='live'` при `control_mode='auto'` | `Нельзя переключить зону в live, пока control_mode=auto.` |
+| `TTL_OUT_OF_RANGE` | 422 | `live_until` не попадает в [5 минут, 7 дней] от now | `TTL должен быть от 5 минут до 7 дней.` |
+| `NOT_IN_LIVE_MODE` | 409 | `PATCH /config-mode/extend` вызван для зоны в locked | `Продление доступно только в live режиме.` |
+| `TTL_TOTAL_EXCEEDED` | 422 | Суммарное время от `live_started_at` до `live_until` > 7 дней | `Суммарное время live не может превышать 7 дней от первого включения.` |
+| `TTL_IN_PAST` | 422 | `live_until` в прошлом | `live_until должен быть в будущем.` |
+| `ZONE_NOT_IN_LIVE_MODE` | 409 | `PUT /grow-cycles/{id}/phase-config` вызван при `config_mode=locked` | `Редактирование активной фазы доступно только в config_mode=live.` |
+| `NO_ACTIVE_PHASE` | 409 | У grow cycle не задан `current_phase_id` | `У цикла нет активной фазы.` |
+| `NO_FIELDS_PROVIDED` | 422 | Phase-config PUT не содержит whitelisted полей | `Передай хотя бы одно поле из whitelist.` |
+| `ZONE_NOT_FOUND` | 404 | Zone для grow cycle не найдена | `Zone не найдена.` |
+| `PHASE_NOT_FOUND` | 404 | `current_phase_id` указывает на несуществующую phase | `Активная фаза не найдена.` |
 
 ## Frontend contract
 

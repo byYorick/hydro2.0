@@ -378,6 +378,64 @@ UX:
 - sticky header
 - адаптивный дизайн
 
+## 11.4. ConfigModeCard.vue (Phase 6, 2026-04-15)
+
+Путь: `resources/js/Components/ZoneAutomation/ConfigModeCard.vue`
+
+Рендерит текущий `config_mode` зоны + переключатель locked↔live:
+
+- Badge `🔒 Locked` / `✏️ Live tuning`
+- Countdown до `live_until` (обновляется каждую секунду)
+- Revision counter (`config_revision`)
+- Inline-dialog при переходе в live: TTL minutes (5..10080) + reason (&ge; 3 символов)
+- Кнопка «Продлить TTL» в live режиме
+
+Props: `zoneId: number`, `controlMode: 'auto' | 'semi' | 'manual'`, `role: string`.
+Events: `@changed(state)`, `@state-loaded(state)`.
+
+Role gating (UI side, backend matches):
+- `operator` — только возврат в locked (`update` policy)
+- `agronomist | engineer | admin` — любые переходы (`setLive` policy)
+- Кнопка `live` disabled при `controlMode='auto'` (matching backend 409 `CONFIG_MODE_CONFLICT_WITH_AUTO`)
+
+API client: `services/api/zoneConfigMode.ts` (`zoneConfigModeApi.show/update/extend`).
+
+## 11.5. ConfigChangesTimeline.vue (Phase 6)
+
+Путь: `resources/js/Components/ZoneAutomation/ConfigChangesTimeline.vue`
+
+Список audit entries из `zone_config_changes` с namespace filter (`zone.config_mode` / `zone.correction` / `recipe.phase`) + collapsible diff viewer.
+
+Props: `zoneId: number`, `reloadKey: number` (parent bumps для invalidation).
+
+## 11.6. RecipePhaseLiveEditCard.vue (Phase 6.1)
+
+Путь: `resources/js/Components/ZoneAutomation/RecipePhaseLiveEditCard.vue`
+
+Compact form — 6 numeric inputs (pH target/min/max, EC target/min/max) + reason. Отправляет только filled fields через `zoneConfigModeApi.updatePhaseConfig(growCycleId, payload)` (фильтр `typeof v === 'number' && Number.isFinite(v)`).
+
+Рендерится **только** когда zone в `config_mode='live'` AND role ∈ `{agronomist, engineer, admin}` AND есть active grow cycle. Контроллируется из `ZoneAutomationTab.vue`:
+
+```vue
+<RecipePhaseLiveEditCard
+  v-if="liveEditEnabled && activeGrowCycleId"
+  :grow-cycle-id="activeGrowCycleId"
+  :initial="recipePhaseInitial"
+  @applied="onConfigModeChanged"
+/>
+```
+
+End-to-end UX (Phase 5 + 6/6.1):
+1. Agronomist переключает `control_mode → manual`
+2. `ConfigModeCard` → live dialog (TTL + reason)
+3. Backend 409 если `control_mode=auto` (interlock)
+4. `RecipePhaseLiveEditCard` appears → edits pH/EC targets
+5. `ConfigChangesTimeline` auto-reloads (reload-key bumped)
+6. AE3 hot-swap на следующем handler checkpoint
+7. TTL cron auto-revert в locked при expire
+
+См. также: [AE3_CONFIG_REFACTORING_PLAN.md](../04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md) § Shipped feature summary.
+
 ---
 
 # 12. Стиль UI (Tailwind)

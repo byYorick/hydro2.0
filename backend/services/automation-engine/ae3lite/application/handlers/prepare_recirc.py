@@ -31,11 +31,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
+        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+        if new_runtime is not plan.runtime:
+            plan = replace(plan, runtime=new_runtime)
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
-        solution_min_guard_enabled = bool(fail_safe_guards.get("recirculation_stop_on_solution_min", True))
+        fail_safe_guards = runtime["fail_safe_guards"]
+        solution_min_guard_enabled = bool(fail_safe_guards["recirculation_stop_on_solution_min"])
 
         # Fail-fast перед новой probe-командой. Иначе stage, у которого уже
         # закончилось время, может опубликовать новый storage_state request и упасть
@@ -97,7 +100,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 "valve_solution_fill": True,
                 "pump_main": True,
             },
-            poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            poll_delay_sec=int(runtime["level_poll_interval_sec"]),
             exhausted_outcome=StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
@@ -116,7 +119,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         if control_mode == "manual":
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                due_delay_sec=int(runtime["level_poll_interval_sec"]),
             )
 
         if solution_min_guard_enabled:
@@ -139,7 +142,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 )
                 return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
 
-        if await self._workflow_ready_reached(task=task, plan=plan, now=now):
+        if await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime):
             _logger.debug("prepare_recirculation_check: цели достигнуты zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",

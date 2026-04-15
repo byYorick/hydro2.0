@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import TaskExecutionError
@@ -92,14 +93,11 @@ class _Gateway:
 
 
 class _Plan:
-    runtime = {
-        "clean_max_sensor_labels": ["clean_max"],
-        "clean_min_sensor_labels": ["clean_min"],
-        "level_switch_on_threshold": 0.5,
-        "telemetry_max_age_sec": 300,
-        "level_poll_interval_sec": 10,
-        "fail_safe_guards": {"clean_fill_min_check_delay_ms": 5000},
-    }
+    runtime = make_runtime_plan(
+        clean_max_sensor_labels=["clean_max"],
+        clean_min_sensor_labels=["clean_min"],
+        clean_fill_retry_cycles=0,
+    )
 
 
 def _handler() -> CleanFillCheckHandler:

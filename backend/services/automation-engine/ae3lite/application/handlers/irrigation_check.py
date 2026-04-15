@@ -28,8 +28,16 @@ _logger = logging.getLogger(__name__)
 class IrrigationCheckHandler(BaseStageHandler):
     _STALE_RECHECK_DELAY_SEC = 0.25
 
-    def __init__(self, *, runtime_monitor: Any, command_gateway: Any, task_repository: Any) -> None:
-        super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
+    def __init__(
+        self, *,
+        runtime_monitor: Any, command_gateway: Any, task_repository: Any,
+        live_reload_enabled: bool = False,
+    ) -> None:
+        super().__init__(
+            runtime_monitor=runtime_monitor,
+            command_gateway=command_gateway,
+            live_reload_enabled=live_reload_enabled,
+        )
         self._task_repository = task_repository
 
     async def run(
@@ -40,14 +48,17 @@ class IrrigationCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        runtime = plan.runtime if hasattr(plan, "runtime") else {}
+        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+        if new_runtime is not plan.runtime:
+            plan = replace(plan, runtime=new_runtime)
+        runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
         topology = str(getattr(task, "topology", "") or "")
         deadline = task.workflow.stage_deadline_at
-        recovery = runtime.get("irrigation_recovery") if isinstance(runtime.get("irrigation_recovery"), dict) else {}
-        safety = runtime.get("irrigation_safety") if isinstance(runtime.get("irrigation_safety"), dict) else {}
-        solution_min_guard_enabled = bool(safety.get("stop_on_solution_min", True))
+        recovery = runtime.get("irrigation_recovery") or {}
+        safety = runtime["irrigation_safety"]
+        solution_min_guard_enabled = bool(safety["stop_on_solution_min"])
         expected_irrigation_state = {
             "valve_solution_supply": True,
             "valve_irrigation": True,
@@ -80,7 +91,7 @@ class IrrigationCheckHandler(BaseStageHandler):
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
 
         if self._deadline_reached(now=now, deadline=deadline):
-            if await self._targets_reached(task=task, plan=plan, now=now):
+            if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
                 _observe_duration("ready")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
             _observe_duration("recovery")
@@ -136,7 +147,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 plan=plan,
                 now=now,
                 expected=expected_irrigation_state,
-                poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                poll_delay_sec=int(runtime["level_poll_interval_sec"]),
                 exhausted_outcome=StageOutcome(
                     kind="transition",
                     next_stage="irrigation_stop_to_recovery",
@@ -146,7 +157,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 return probe_outcome
 
         if control_mode == "manual":
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
+            return StageOutcome(kind="poll", due_delay_sec=int(runtime["level_poll_interval_sec"]))
 
         if solution_min_guard_enabled:
             solution_min = await self._read_level(
@@ -170,15 +181,11 @@ class IrrigationCheckHandler(BaseStageHandler):
                     source="sensor",
                 )
 
-        execution = (
-            runtime.get("irrigation_execution")
-            if isinstance(runtime.get("irrigation_execution"), dict)
-            else {}
-        )
-        correction_enabled = bool(execution.get("correction_during_irrigation", True))
+        execution = runtime["irrigation_execution"]
+        correction_enabled = bool(execution["correction_during_irrigation"])
         if correction_enabled:
             stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
-            if stage_retry_count <= 0 and not await self._targets_reached(task=task, plan=plan, now=now):
+            if stage_retry_count <= 0 and not await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
                 correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
                 ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
                 ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
@@ -222,7 +229,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     )
                 return StageOutcome(kind="enter_correction", correction=corr)
 
-        return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
+        return StageOutcome(kind="poll", due_delay_sec=int(runtime["level_poll_interval_sec"]))
 
     def _recent_solution_low_event_confirms_active_low(
         self,

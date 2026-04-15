@@ -38,7 +38,9 @@ use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
+use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
+use App\Http\Controllers\ZoneConfigModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStateController;
@@ -228,6 +230,9 @@ Route::middleware([
         Route::post('grow-cycles/{growCycle}/abort', [GrowCycleController::class, 'abort']);
         Route::post('grow-cycles/{growCycle}/set-phase', [GrowCycleController::class, 'setPhase']);
         Route::post('grow-cycles/{growCycle}/advance-phase', [GrowCycleController::class, 'advancePhase']);
+        // Phase 5.6: live edit активной recipe phase (только при config_mode=live)
+        Route::put('grow-cycles/{growCycle}/phase-config', [GrowCyclePhaseConfigController::class, 'update'])
+            ->middleware('role:admin,agronomist,engineer');
         Route::post('grow-cycles/{growCycle}/change-recipe-revision', [GrowCycleController::class, 'changeRecipeRevision']);
 
         // Nodes
@@ -345,6 +350,14 @@ Route::middleware([
     Route::get('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'show']);
     Route::post('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'update'])
         ->middleware('role:operator,admin,agronomist,engineer');
+
+    // Config mode (locked/live) — Phase 5
+    Route::get('zones/{zone}/config-mode', [ZoneConfigModeController::class, 'show']);
+    Route::patch('zones/{zone}/config-mode', [ZoneConfigModeController::class, 'update'])
+        ->middleware('role:operator,admin,agronomist,engineer');
+    Route::patch('zones/{zone}/config-mode/extend', [ZoneConfigModeController::class, 'extend'])
+        ->middleware('role:admin,agronomist,engineer');
+    Route::get('zones/{zone}/config-changes', [ZoneConfigModeController::class, 'changes']);
     Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/start-irrigation', [ZoneAutomationStartIrrigationController::class, 'store'])

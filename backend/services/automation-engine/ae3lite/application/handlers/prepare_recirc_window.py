@@ -13,15 +13,6 @@ from ae3lite.domain.errors import TaskExecutionError
 _logger = logging.getLogger(__name__)
 
 
-#: Fallback retry budget when neither the phase correction bundle nor its
-#: top-level config carry ``prepare_recirculation_max_attempts``. Set to 3
-#: because the two-tank prepare-recirc window is the last gate before
-#: starting the irrigation cycle — three attempts is the minimum budget
-#: that still allows one correction attempt + one retry + one safety
-#: rollover without escalating to timeout. Audit F14.
-_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS: int = 3
-
-
 class PrepareRecircWindowHandler(BaseStageHandler):
     """Управляет rollover-логикой timeout-окна prepare-recirculation."""
 
@@ -31,8 +22,13 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         runtime_monitor: Any,
         command_gateway: Any,
         alert_repository: Any = None,
+        live_reload_enabled: bool = False,
     ) -> None:
-        super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
+        super().__init__(
+            runtime_monitor=runtime_monitor,
+            command_gateway=command_gateway,
+            live_reload_enabled=live_reload_enabled,
+        )
         self._alert_repository = alert_repository
 
     async def run(
@@ -115,22 +111,26 @@ class PrepareRecircWindowHandler(BaseStageHandler):
     def _prepare_recirculation_max_attempts(self, *, plan: Any, task: Any) -> int:
         """Читает лимит из phase correction bundle (``retry.*`` или top-level).
 
-        Falls back to ``_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS`` if neither
-        the retry sub-bundle nor a top-level key supplies a value — documented
-        default rather than a bare magic number (audit F14).
+        Missing config — fail-closed: ``prepare_recirculation_max_attempts`` is
+        required in ``CorrectionPhaseRuntime`` (RuntimePlan), так что typed
+        load гарантирует наличие поля. Legacy raw-dict path также обязан его
+        иметь — иначе ``PlannerConfigurationError``.
         """
         correction_cfg = self._correction_config(plan=plan, task=task)
-        if not isinstance(correction_cfg, Mapping):
-            return _DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS
-        retry = correction_cfg.get("retry")
-        if isinstance(retry, Mapping):
-            raw = retry.get("prepare_recirculation_max_attempts")
+        if isinstance(correction_cfg, Mapping):
+            retry = correction_cfg.get("retry")
+            if isinstance(retry, Mapping):
+                raw = retry.get("prepare_recirculation_max_attempts")
+                if raw is not None:
+                    return max(1, int(raw))
+            raw = correction_cfg.get("prepare_recirculation_max_attempts")
             if raw is not None:
                 return max(1, int(raw))
-        raw = correction_cfg.get("prepare_recirculation_max_attempts")
-        if raw is not None:
-            return max(1, int(raw))
-        return _DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS
+        raise TaskExecutionError(
+            "ae3_prepare_recirculation_max_attempts_missing",
+            "В bundle коррекции отсутствует обязательный параметр "
+            "prepare_recirculation_max_attempts",
+        )
 
     async def _emit_retry_limit_alert(
         self,

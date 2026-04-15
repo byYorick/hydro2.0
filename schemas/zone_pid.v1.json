@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/zone_pid/v1.json",
+  "title": "Zone PID Configuration",
+  "description": "Schema for `zone.pid.ph` and `zone.pid.ec` namespaces. Same structure for both; defaults differ (source: ZonePidDefaults::forType). Schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dead_zone",
+    "close_zone",
+    "far_zone",
+    "zone_coeffs",
+    "max_integral"
+  ],
+  "properties": {
+    "dead_zone": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "maximum": 10.0,
+      "description": "Width of zero-correction zone around target."
+    },
+    "close_zone": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "maximum": 20.0,
+      "description": "Boundary of close-zone. Must be > dead_zone (see allOf constraints)."
+    },
+    "far_zone": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "maximum": 50.0,
+      "description": "Boundary of far-zone. Must be > close_zone (see allOf constraints)."
+    },
+    "zone_coeffs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["close", "far"],
+      "properties": {
+        "close": { "$ref": "#/$defs/ZoneGains" },
+        "far":   { "$ref": "#/$defs/ZoneGains" }
+      }
+    },
+    "max_integral": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "maximum": 500.0
+    }
+  },
+  "$comment": "Cross-field constraints (close_zone > dead_zone; far_zone > close_zone) are NOT expressible in standard JSON Schema 2020-12 without the non-standard $data extension. These are enforced in the AE3 Pydantic loader (config/schema/zone_pid.py model_validator) and Laravel AutomationConfigRegistry::validateZonePidPayload(). Schema alone only checks bounds and types.",
+  "$defs": {
+    "ZoneGains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kp", "ki", "kd"],
+      "properties": {
+        "kp": { "type": "number", "minimum": 0.0, "maximum": 1000.0 },
+        "ki": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+        "kd": { "type": "number", "minimum": 0.0, "maximum": 100.0 }
+      }
+    }
+  }
+}

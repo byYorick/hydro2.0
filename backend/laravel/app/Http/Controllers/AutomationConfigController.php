@@ -16,6 +16,7 @@ use App\Services\AutomationConfigPresetService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\SystemAutomationSettingsCatalog;
+use App\Services\ZoneConfigRevisionService;
 use App\Services\ZoneCorrectionConfigCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -113,6 +114,19 @@ class AutomationConfigController extends Controller
                 $request->user()?->id
             );
             $this->republishAffectedNodeConfigs($namespace, $scopeType, $scopeId);
+
+            // Phase 5: bump zones.config_revision + write audit row, чтобы AE3
+            // `_checkpoint()` увидел advance и в live-режиме подхватил свежий bundle.
+            if ($scopeType === 'zone') {
+                app(ZoneConfigRevisionService::class)->bumpAndAudit(
+                    scopeType: $scopeType,
+                    scopeId: $scopeId,
+                    namespace: $namespace,
+                    diff: ['previous_keys' => array_keys($previousPayload)],
+                    userId: $request->user()?->id,
+                    reason: 'config update via unified API',
+                );
+            }
 
             return response()->json([
                 'status' => 'ok',

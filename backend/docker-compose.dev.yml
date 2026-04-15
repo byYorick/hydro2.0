@@ -178,6 +178,8 @@ services:
       - ./laravel:/app
       # Монтируем конфигурацию nginx для Vite прокси, чтобы изменения применялись без пересборки
       - ./laravel/nginx-vite-proxy.conf:/opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf:ro
+      # Canonical JSON Schemas (repo root) — JsonSchemaValidator & artisan zones:validate-configs
+      - ../schemas:/schemas:ro
     ports:
       - "8080:80"
       - "5173:5173"
@@ -325,6 +327,8 @@ services:
     volumes:
       - ./services/automation-engine:/app
       - ./services/common:/app/common
+      # Canonical JSON Schemas (repo root) — для parity test (Pydantic ↔ JSON Schema)
+      - ../schemas:/schemas:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9405/health/live\", timeout=2).read()' || exit 1"]
       interval: 15s

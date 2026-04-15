@@ -137,6 +137,8 @@ services:
       - ./laravel:/app
       # Монтируем конфигурацию nginx для Vite прокси, чтобы изменения применялись без пересборки
       - ./laravel/nginx-vite-proxy.conf:/opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf:ro
+      # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
+      - ../schemas:/schemas:ro
     ports:
       - "8080:80"
       - "5173:5173"

@@ -88,11 +88,13 @@ class ZoneCorrectionConfigCatalog
                 'dose_ph_down_channel' => 'pump_acid',
                 'max_ec_dose_ml' => 80.0,
                 'max_ph_dose_ml' => 35.0,
+                'ec_dosing_mode' => 'single',
             ],
             'retry' => [
                 'max_ec_correction_attempts' => 8,
                 'max_ph_correction_attempts' => 8,
                 'prepare_recirculation_timeout_sec' => 900,
+                'prepare_recirculation_correction_slack_sec' => 0,
                 'prepare_recirculation_max_attempts' => 4,
                 'prepare_recirculation_max_correction_attempts' => 40,
                 'telemetry_stale_retry_sec' => 30,
@@ -217,6 +219,13 @@ class ZoneCorrectionConfigCatalog
                     self::field('dosing.dose_ec_channel', 'EC channel', 'Имя актуатора EC-коррекции.', 'string', ['max_length' => 64, 'advanced_only' => true]),
                     self::field('dosing.dose_ph_up_channel', 'pH up channel', 'Имя актуатора pH-up.', 'string', ['max_length' => 64, 'advanced_only' => true]),
                     self::field('dosing.dose_ph_down_channel', 'pH down channel', 'Имя актуатора pH-down.', 'string', ['max_length' => 64, 'advanced_only' => true]),
+                    self::field(
+                        'dosing.ec_dosing_mode',
+                        'EC dosing mode',
+                        'Single = одна общая EC-помпа. Multi-parallel = параллельные помпы на компоненты (NPK/A/B). См. recipe ec_component_ratios.',
+                        'enum',
+                        ['options' => ['single', 'multi_parallel'], 'advanced_only' => true]
+                    ),
                 ],
             ],
             [

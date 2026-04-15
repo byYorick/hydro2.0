@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.5-canonical
-**Дата:** 2026-04-04
-**Статус:** CANONICAL MINIMAL SPEC
+**Версия:** 3.6-canonical
+**Дата:** 2026-04-15
+**Статус:** CANONICAL MINIMAL SPEC (+ Phase 5/5.5+ config modes locked/live in §6.6/7.5)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -509,6 +509,41 @@ CAS update по `version` обязателен для workflow mutation.
 Правило:
 1. switch на `ae3` запрещён, если у зоны есть active task или active lease
 
+### 6.6 Config modes (Phase 5, 2026-04-15)
+
+Миграция `2026_04_15_142400_add_config_mode_to_zones.php` добавляет поля в `zones`:
+- `config_mode TEXT NOT NULL DEFAULT 'locked' CHECK (config_mode IN ('locked','live'))` — `locked` фиксирует cycle snapshot, `live` включает hot-reload на AE3 checkpoint
+- `live_until TIMESTAMP NULL` — TTL, auto-revert cron flip'ает в locked при истечении
+- `live_started_at TIMESTAMP NULL` — первое включение live (для 7-day cap)
+- `config_revision BIGINT NOT NULL DEFAULT 1` — монотонный integer counter, bump'ается через `ZoneConfigRevisionService::bumpAndAudit` при каждом PUT zone-scoped config
+- `config_mode_changed_at`, `config_mode_changed_by` — audit metadata
+- CHECK constraint: `config_mode = 'locked' OR live_until IS NOT NULL`
+
+Дополнительная таблица `zone_config_changes`:
+- PK `id`, FK `zone_id`, `revision` (unique per zone), `namespace` (`zone.config_mode` | `zone.correction` | `recipe.phase`), `diff_json`, `user_id`, `reason`, `created_at`
+- Unique constraint `(zone_id, revision)` — correctness net против race conditions
+
+**Hot-reload контракт AE3 runtime (Phase 5.5+):**
+
+`BaseStageHandler._checkpoint(task, plan, now) -> RuntimePlan` вызывается в начале каждого handler `run()`:
+
+```python
+new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
+if new_runtime is not plan.runtime:
+    plan = replace(plan, runtime=new_runtime)
+runtime = plan.runtime
+```
+
+Семантика:
+1. Если `live_reload_enabled=False` (unit tests) — возвращает `plan.runtime` без изменений
+2. Читает `zones.config_mode`, `zones.config_revision`, `zones.live_until`
+3. Если не live / TTL истёк / revision не advanced → возвращает `plan.runtime`
+4. Иначе: `PgZoneSnapshotReadModel().load(zone_id=...)` + `resolve_two_tank_runtime_plan(snapshot)` → fresh RuntimePlan, stamps `config_revision=new_revision` через `model_copy(update=...)`, эмитит `CONFIG_HOT_RELOADED` zone_event + metric `ae3_config_hot_reload_total{result=applied}`
+
+`dataclasses.replace(plan, runtime=fresh)` создаёт новый immutable CommandPlan — все downstream helpers (в correction.py 9 step methods, в base.py `_workflow_ready_reached`/`_targets_reached`, и т.д.) автоматически видят refresh через `plan.runtime` без изменения сигнатур.
+
+**Cron auto-revert:** `automation:revert-expired-live-modes` (Laravel scheduler `everyMinute`) — select candidates without lock, per-zone `Zone::lockForUpdate()` + double-check `config_mode='live' AND live_until < NOW()` внутри транзакции, flip в locked, write audit + `CONFIG_MODE_AUTO_REVERTED` event.
+
 ---
 
 ## 8. API-контракты
@@ -566,6 +601,55 @@ Canonical status endpoint для зон на `ae3`.
 2. public backward-compatible `FORCE_IRRIGATION` в Laravel обязан маршрутизироваться в
    `POST /zones/{id}/start-irrigation`, а не в direct device command.
 3. `control_mode='manual'` запрещает только автоматические `start/stop` переходы, инициируемые самим AE3 по обычному poll-loop; hardware-originated safe/runtime events (`*_completed`, `*_source_empty`, `*_solution_low`, `emergency_stop_activated`) обязаны продолжать проходить через reconcile.
+
+### 7.5 Config mode API (Phase 5, 2026-04-15)
+
+Управление `config_mode` (locked/live) и live-edit активной recipe phase:
+
+- `GET  /api/zones/{zone}/config-mode` — возвращает текущий state: `{config_mode, config_revision, live_until, live_started_at, config_mode_changed_at, config_mode_changed_by}`. Доступ: any authenticated user с policy `view`.
+- `PATCH /api/zones/{zone}/config-mode` — переключение locked↔live. Body: `{mode, reason, live_until?}`.
+  - Role middleware: `role:operator,admin,agronomist,engineer`
+  - Policy `setLive` (agronomist/engineer/admin) дополнительно проверяется при переходе в live
+  - 409 `CONFIG_MODE_CONFLICT_WITH_AUTO` если zone в `control_mode='auto'` при переходе в live
+  - 422 `TTL_OUT_OF_RANGE` если TTL < 5 min или > 7 days
+  - На success: atomic update + audit row `zone_config_changes{namespace='zone.config_mode'}`
+- `PATCH /api/zones/{zone}/config-mode/extend` — продление live TTL. Body: `{live_until}`.
+  - Role: `role:admin,agronomist,engineer`
+  - Внутри `DB::transaction` + `Zone::lockForUpdate()` — защита от race с TTL cron
+  - 409 `NOT_IN_LIVE_MODE` если zone в locked
+  - 422 `TTL_TOTAL_EXCEEDED` если суммарное время от `live_started_at` > 7 days
+- `GET  /api/zones/{zone}/config-changes?namespace=...&limit=50` — history timeline из `zone_config_changes`.
+- `PUT  /api/grow-cycles/{growCycle}/phase-config` — live edit setpoint'ов активной recipe phase. Body: `{reason, ph_target?, ph_min?, ph_max?, ec_target?, ec_min?, ec_max?, temp_air_target?, humidity_target?, co2_target?, irrigation_{interval,duration}_sec?, lighting_photoperiod_hours?, lighting_start_time?, mist_{interval,duration}_sec?}`.
+  - Role middleware: `role:admin,agronomist,engineer` + policy `setLive`
+  - 409 `ZONE_NOT_IN_LIVE_MODE` если zone в locked — invariant: recipe.phase mutation only in live
+  - 409 `NO_ACTIVE_PHASE` если у цикла нет `current_phase_id`
+  - 422 `NO_FIELDS_PROVIDED` если payload не содержит whitelisted полей
+  - Flow: `GrowCyclePhase::lockForUpdate()` → `forceFill(whitelisted)` → `compileGrowCycleBundle(cycle.id)` → `ZoneConfigRevisionService::bumpAndAudit(namespace='recipe.phase')`
+- **Background cron**: `automation:revert-expired-live-modes` (Laravel scheduler `everyMinute`) — flip истёкших live в locked + `CONFIG_MODE_AUTO_REVERTED` event.
+
+**Authorization invariants:**
+- operator может переключать только в locked (через `update` policy), live — нельзя
+- viewer не может редактировать config
+- admin / agronomist / engineer — любые операции
+
+**Revision bump invariant:**
+- Любой PUT zone-scoped namespace (`zone.correction`, `zone.logic_profile`, ...) или `recipe.phase` через live-edit endpoint автоматически вызывает `ZoneConfigRevisionService::bumpAndAudit` через атомарный SQL `UPDATE zones SET config_revision = COALESCE(config_revision, 0) + 1 WHERE id = ? RETURNING`
+- AE3 `_checkpoint` сравнивает `zones.config_revision` с `plan.runtime.config_revision` → hot-swap при advance
+
+**Cascade bundle recompile (критично для live-mode понимания):**
+
+`AutomationConfigDocumentService::upsertDocument(...)` после сохранения document'а вызывает `AutomationConfigCompiler::compileAffectedScopes($scopeType, $scopeId)`, который для `scopeType='zone'` делегирует `compileZoneCascade(zoneId)`:
+
+1. `compileZoneBundle(zoneId)` — пересобирает `automation_effective_bundles` scope='zone' для этой zone
+2. Для всех `GrowCycle::active()` с `zone_id = $zoneId` — `compileGrowCycleBundle(cycleId)` пересобирает snapshot bundle scope='grow_cycle'
+
+Аналогично, `GrowCyclePhaseConfigController::update` после `forceFill` на `grow_cycle_phases` явно вызывает `compileGrowCycleBundle(growCycle->id)` (без zone cascade — phase принадлежит только одному cycle).
+
+Это означает: к моменту когда AE3 `_checkpoint()` делает `PgZoneSnapshotReadModel().load(zone_id)` и читает `automation_effective_bundles WHERE scope_type='grow_cycle'`, bundle уже отражает свежую config. Нет race window между PUT commit и AE3 read — recompile происходит синхронно в том же request'е, под той же `DB::transaction` (внутри `ZoneConfigRevisionService::bumpAndAudit` или controller-level). Hot-swap всегда читает committed state.
+
+**Idempotent PUT semantics:** любой PUT с тем же payload всё равно bump'ает revision → `CONFIG_HOT_RELOADED` event эмитится → metric `applied` инкрементится. Это accepted trade-off: идемпотентность на уровне содержимого не реализована ради простоты. Handler rebuild при том же payload — no-op для observable behaviour (fresh RuntimePlan структурно идентичен previous), но revision counter продвигается.
+
+---
 
 ---
 

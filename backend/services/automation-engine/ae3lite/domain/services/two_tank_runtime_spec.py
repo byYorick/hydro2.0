@@ -82,6 +82,31 @@ _STAGE_TIMEOUT_GUARDS: dict[str, tuple[str, str]] = {
 }
 
 
+def resolve_two_tank_runtime_plan(snapshot: Any) -> Any:
+    """Phase 3.1 / Option B typed wrapper.
+
+    Calls legacy `resolve_two_tank_runtime()` and validates its dict output
+    against the canonical `RuntimePlan` Pydantic model. Raises
+    `ConfigValidationError` if drift between resolver and model is detected
+    (which is itself a bug — discovery in B-3 confirmed parity).
+
+    Handlers migrated in B-5/B-6 read fields via the typed `RuntimePlan`
+    instance returned here. The legacy dict-version remains unchanged
+    until Phase 4 deletes it.
+    """
+    # Local import avoids a circular import at module load time
+    # (config.loader → ae3lite.config → metrics → various domain services).
+    from ae3lite.config.loader import load_runtime_plan
+
+    runtime_dict = resolve_two_tank_runtime(snapshot)
+    zone_id = int(getattr(snapshot, "zone_id", 0) or 0) or None
+    return load_runtime_plan(
+        runtime_dict,
+        zone_id=zone_id,
+        namespace="runtime.plan:two_tank",
+    )
+
+
 def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
     commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), Mapping) else {}

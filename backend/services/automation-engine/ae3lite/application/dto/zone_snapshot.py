@@ -42,3 +42,6 @@ class ZoneSnapshot:
     process_calibrations: Optional[Mapping[str, Any]] = None
     correction_config: Optional[Mapping[str, Any]] = None
     phase_targets: Optional[Mapping[str, Any]] = None
+    # Phase 5: zones.config_revision at snapshot-load time. Used for live-mode
+    # hot-reload detection.
+    config_revision: Optional[int] = None

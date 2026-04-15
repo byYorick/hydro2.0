@@ -38,8 +38,16 @@ def _naive_utc(dt: datetime) -> datetime:
 
 
 class AwaitReadyHandler(BaseStageHandler):
-    def __init__(self, *, runtime_monitor: Any, command_gateway: Any, task_repository: Any) -> None:
-        super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
+    def __init__(
+        self, *,
+        runtime_monitor: Any, command_gateway: Any, task_repository: Any,
+        live_reload_enabled: bool = False,
+    ) -> None:
+        super().__init__(
+            runtime_monitor=runtime_monitor,
+            command_gateway=command_gateway,
+            live_reload_enabled=live_reload_enabled,
+        )
         self._task_repository = task_repository
 
     async def run(

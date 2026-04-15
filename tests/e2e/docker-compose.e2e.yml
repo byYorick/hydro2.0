@@ -136,6 +136,8 @@ services:
     - DIGITAL_TWIN_URL=http://digital-twin:8003
     volumes:
     - ../../backend/laravel:/app
+    # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
+    - ../../schemas:/schemas:ro
     ports:
     - ${LARAVEL_PORT:-8081}:80
     - ${REVERB_PORT:-6002}:6001

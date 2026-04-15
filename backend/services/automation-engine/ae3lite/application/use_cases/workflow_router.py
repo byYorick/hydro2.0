@@ -147,6 +147,9 @@ class WorkflowRouter:
             kwargs: dict[str, Any] = {
                 "runtime_monitor": runtime_monitor,
                 "command_gateway": command_gateway,
+                # Phase 5: включаем live-mode hot-reload checkpoint в production.
+                # Tests, создающие handlers напрямую, оставляют default False.
+                "live_reload_enabled": True,
             }
             if key in {"await_ready", "decision_gate", "irrigation_check", "irrigation_recovery", "prepare_recirc"}:
                 kwargs["task_repository"] = task_repository

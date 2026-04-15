@@ -30,6 +30,47 @@ INTENT_STALE_RECLAIMED = Counter(
     "Total stale claimed intents reclaimed by AE3",
 )
 
+# ─── Config validation (Phase 2: shadow mode) ───────────────────────
+
+SHADOW_CONFIG_VALIDATION = Counter(
+    "ae3_shadow_config_validation_total",
+    "Shadow-mode validation of resolved correction config against Pydantic "
+    "schema. Labels: result=ok|invalid, namespace=zone.correction|... . "
+    "Does not affect runtime; Phase 3 switches handlers to strict path.",
+    ["result", "namespace"],
+)
+
+# ─── Config hot-reload (Phase 5: live mode) ─────────────────────────
+
+CONFIG_HOT_RELOAD = Counter(
+    "ae3_config_hot_reload_total",
+    "Handler checkpoint triggered a live-mode config refresh. "
+    "Labels: result=applied|no_change|disabled|error, namespace=combined listing.",
+    ["result"],
+)
+
+# Phase 7: config-mode observability for Grafana dashboards
+ZONE_CONFIG_INVALID = Counter(
+    "ae3_zone_config_invalid_total",
+    "Schema-validation failure на resolved zone config "
+    "(shadow / strict validation paths).",
+    ["zone_id", "topology"],
+)
+
+ZONE_CONFIG_MODE = Gauge(
+    "ae3_zone_config_mode",
+    "Per-zone config_mode gauge: 0=locked, 1=live. Updated on checkpoint "
+    "observations so dashboards reflect live state without querying DB.",
+    ["zone_id"],
+)
+
+ZONE_CONFIG_LIVE_EDITS = Counter(
+    "ae3_zone_config_live_edits_total",
+    "Live-mode edit applied (AE3 `_checkpoint` detected revision advance "
+    "and refreshed plan). Labels: zone_id, handler (which stage triggered).",
+    ["zone_id", "handler"],
+)
+
 # ─── Task lifecycle ─────────────────────────────────────────────────
 
 TASK_CREATED = Counter(

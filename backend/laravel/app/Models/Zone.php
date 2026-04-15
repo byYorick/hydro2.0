@@ -29,6 +29,12 @@ class Zone extends Model
         'water_state',
         'solution_started_at',
         'settings',
+        'config_mode',
+        'config_mode_changed_at',
+        'config_mode_changed_by',
+        'live_until',
+        'live_started_at',
+        'config_revision',
     ];
 
     protected $casts = [
@@ -36,6 +42,10 @@ class Zone extends Model
         'capabilities' => 'array',
         'settings' => 'array',
         'solution_started_at' => 'datetime',
+        'config_mode_changed_at' => 'datetime',
+        'live_until' => 'datetime',
+        'live_started_at' => 'datetime',
+        'config_revision' => 'integer',
     ];
 
     public function greenhouse(): BelongsTo

@@ -86,6 +86,8 @@ services:
       - MQTT_PORT=1883
     volumes:
       - ./laravel:/app
+      # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
+      - ../schemas:/schemas:ro
     depends_on:
       db:
         condition: service_healthy

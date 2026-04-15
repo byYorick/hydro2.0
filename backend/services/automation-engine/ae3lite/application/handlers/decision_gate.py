@@ -24,8 +24,16 @@ def _irrigation_decision_alert_dedupe_key(*, outcome: str, zone_id: int, reason_
 
 
 class DecisionGateHandler(BaseStageHandler):
-    def __init__(self, *, runtime_monitor: Any, command_gateway: Any, task_repository: Any, decision_controller: Any) -> None:
-        super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
+    def __init__(
+        self, *,
+        runtime_monitor: Any, command_gateway: Any, task_repository: Any, decision_controller: Any,
+        live_reload_enabled: bool = False,
+    ) -> None:
+        super().__init__(
+            runtime_monitor=runtime_monitor,
+            command_gateway=command_gateway,
+            live_reload_enabled=live_reload_enabled,
+        )
         self._task_repository = task_repository
         self._decision_controller = decision_controller
 

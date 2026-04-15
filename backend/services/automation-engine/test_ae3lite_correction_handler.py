@@ -81,6 +81,11 @@ RUNTIME = {
         "max_ec_correction_attempts": 5,
         "max_ph_correction_attempts": 5,
         "prepare_recirculation_max_correction_attempts": 20,
+        # Phase 3.1 / B-5e: retry delays now required (no Python defaults).
+        # Tests overriding individual delays still work — these are the baseline.
+        "telemetry_stale_retry_sec": 30,
+        "decision_window_retry_sec": 30,
+        "low_water_retry_sec": 60,
         "stabilization_sec": 60,
         "controllers": {
             "ec": {

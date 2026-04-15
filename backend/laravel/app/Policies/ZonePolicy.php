@@ -67,9 +67,25 @@ class ZonePolicy
         if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
+    }
+
+    /**
+     * Determine whether the user can switch zone into config_mode='live'.
+     *
+     * Live mode allows hot-reloading zone.correction and recipe.phase
+     * parameters while a cycle is running — only agronomist/engineer/admin
+     * are qualified to make such tuning decisions (Phase 5 spec Q2).
+     */
+    public function setLive(User $user, Zone $zone): bool
+    {
+        if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+            return false;
+        }
+
+        return in_array($user->role, ['agronomist', 'engineer', 'admin']);
     }
 }
 

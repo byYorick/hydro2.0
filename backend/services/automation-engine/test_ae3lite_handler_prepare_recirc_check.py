@@ -37,6 +37,7 @@ RUNTIME = {
     "irr_state_max_age_sec": 60,
     "irr_state_wait_timeout_sec": 0.02,
     "irr_state_wait_poll_interval_sec": 0.005,
+    "level_poll_interval_sec": 10,
     "target_ph": 5.8,
     "target_ec": 1.4,
     "target_ec_prepare": 1.4,

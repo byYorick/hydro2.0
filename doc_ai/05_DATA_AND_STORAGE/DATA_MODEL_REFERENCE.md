@@ -74,6 +74,15 @@ hardware_profile JSONB
 capabilities JSONB
 settings JSONB
 automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3'))
+control_mode VARCHAR(16) NOT NULL DEFAULT 'auto' CHECK (control_mode IN ('auto','semi','manual'))
+-- Phase 5: config modes (locked/live)
+config_mode VARCHAR(16) NOT NULL DEFAULT 'locked' CHECK (config_mode IN ('locked','live'))
+config_mode_changed_at TIMESTAMP NULL
+config_mode_changed_by BIGINT NULL FK -> users
+live_until TIMESTAMP NULL          -- TTL для auto-revert
+live_started_at TIMESTAMP NULL     -- первое включение live (7-day cap)
+config_revision BIGINT NOT NULL DEFAULT 1
+CHECK (config_mode = 'locked' OR live_until IS NOT NULL)
 created_at
 updated_at
 ```
@@ -84,6 +93,33 @@ zones_status_idx
 zones_uid_unique
 zones_automation_runtime_idx
 ```
+
+## 2.3. zone_config_changes (Phase 5)
+
+Audit trail всех правок конфигурации зоны.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones ON DELETE CASCADE
+revision BIGINT          -- матчит `zones.config_revision` на момент записи
+namespace VARCHAR(64)    -- 'zone.config_mode' | 'zone.correction' | 'recipe.phase'
+diff_json JSONB          -- {from/to} для mode; {before/after} для setpoints
+user_id BIGINT NULL FK -> users  -- NULL для system-originated (TTL auto-revert)
+reason TEXT NULL
+created_at TIMESTAMP DEFAULT NOW()
+UNIQUE (zone_id, revision)  -- correctness net против race
+```
+
+Индексы:
+```
+zone_config_changes_zone_id_created_at_idx
+zone_config_changes_zone_id_namespace_idx
+```
+
+Заполняется через:
+- `ZoneConfigRevisionService::bumpAndAudit` (атомарный `UPDATE ... RETURNING` + INSERT внутри транзакции)
+- `ZoneConfigModeController::update|extend` на switch режима
+- `RevertExpiredLiveModesCommand` на TTL-expire (user_id=NULL, reason='auto-revert: live TTL expired')
 
 ---
 

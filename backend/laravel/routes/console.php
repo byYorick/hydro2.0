@@ -31,6 +31,11 @@ Schedule::job(new \App\Jobs\GeneratePredictionsJob())
     ->everyFifteenMinutes()
     ->description('Генерация прогнозов параметров для активных зон');
 
+// Phase 5: Auto-revert зон с истёкшим config_mode=live TTL в locked
+Schedule::command('automation:revert-expired-live-modes')
+    ->everyMinute()
+    ->description('Auto-revert зон с истёкшим config_mode=live TTL');
+
 // Полный бэкап системы: ежедневно в 3:00
 Schedule::command('backup:full')
     ->dailyAt('03:00')

@@ -11,6 +11,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.config import live_reload as _live_reload
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.domain.services.telemetry_window_summary import (
@@ -27,6 +28,28 @@ from ae3lite.infrastructure.metrics import (
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 from common.service_logs import send_service_log
+
+
+# ─── Last-resort defaults for `_observation_config` cascade fallback ────────
+#
+# Phase 3.1 / B-6 extraction. These used to be inline magic numbers in
+# `_observation_config()` (lines 1319, 1329, 1387, 1396, 1406 pre-refactor).
+#
+# Rationale for keeping ANY defaults in Python (vs pure fail-closed):
+# legacy test fixtures may pass partial `correction_cfg.controllers.{ph,ec}.observe`
+# dicts. Pydantic `Observe` schema is STRICT (all fields required), so code
+# paths that go through `resolve_two_tank_runtime_plan → RuntimePlan` never hit
+# these defaults — Pydantic rejects missing fields before reaching here.
+#
+# When Phase 4 removes the `_DictShim` transition and handlers receive typed
+# `Observe` models directly, these constants become unreachable and can be
+# deleted. Until then they're the last-resort safety net for raw-dict callers.
+_OBSERVE_DEFAULT_TELEMETRY_PERIOD_SEC = 2
+_OBSERVE_DEFAULT_WINDOW_MIN_SAMPLES = 3
+_OBSERVE_DEFAULT_MIN_EFFECT_FRACTION = 0.25
+_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_PH = 0.02
+_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_EC = 0.05
+_OBSERVE_DEFAULT_NO_EFFECT_CONSECUTIVE_LIMIT = 3
 
 
 _logger = logging.getLogger(__name__)
@@ -54,12 +77,17 @@ class BaseStageHandler:
         runtime_monitor: Any,
         command_gateway: Any,
         task_repository: Any = None,
+        live_reload_enabled: bool = False,
     ) -> None:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
         self._task_repository = task_repository
         self._last_probe_state: dict[str, Any] | None = None
         self._reconciled_estop_event_ids: set[int] = set()
+        # Phase 5: live-mode checkpoint toggle. Default False → handler tests
+        # that don't wire a real DB pool see no live-reload noise. Production
+        # `WorkflowRouter` enables it when constructing handlers.
+        self._live_reload_enabled = live_reload_enabled
 
     async def run(
         self,
@@ -70,6 +98,160 @@ class BaseStageHandler:
         now: datetime,
     ) -> StageOutcome:
         raise NotImplementedError
+
+    async def _checkpoint(self, *, task: Any, plan: Any, now: datetime) -> Any:
+        """Phase 5.5: live-mode config hot-swap.
+
+        Returns either ``plan.runtime`` unchanged (locked / no advance / TTL
+        expired) or a *new* ``RuntimePlan`` instance built from the current
+        zone snapshot. Handlers should assign the result back to their local
+        ``runtime`` variable:
+
+            runtime = await self._checkpoint(task=task, plan=plan, now=now)
+
+        Hot-swap is achieved by:
+          1. Comparing `zones.config_revision` (DB) against
+             `plan.runtime.bundle_revision` (in-flight)
+          2. On advance + LIVE mode: re-loading the zone snapshot
+             (`PgZoneSnapshotReadModel().load`) and re-resolving via
+             `resolve_two_tank_runtime_plan` — same code path as
+             cycle_start_planner, so the fresh plan is structurally
+             identical to one built on a fresh task claim.
+          3. Stamping the new revision onto `bundle_revision` so subsequent
+             checkpoints in the same `run()` don't re-trigger.
+
+        Emits `CONFIG_HOT_RELOADED` zone_event + `ae3_config_hot_reload_total`
+        metric on apply. Failures degrade gracefully: returns original runtime
+        with `result=error` metric label.
+        """
+        from ae3lite.infrastructure.metrics import (
+            CONFIG_HOT_RELOAD,
+            ZONE_CONFIG_LIVE_EDITS,
+            ZONE_CONFIG_MODE,
+        )
+
+        runtime = plan.runtime
+        if not self._live_reload_enabled:
+            return runtime
+
+        # Phase 5: compare integer `zones.config_revision` (DB) vs the
+        # monotonic counter snapshot read at plan-build time. Do NOT use
+        # `bundle_revision` — that's a content hash, not a counter.
+        try:
+            current_revision = int(getattr(runtime, "config_revision", None) or 0)
+        except (TypeError, ValueError):
+            current_revision = 0
+
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if zone_id <= 0:
+            CONFIG_HOT_RELOAD.labels(result="disabled").inc()
+            return runtime
+
+        try:
+            from common.db import get_pool
+            pool = await get_pool()
+        except Exception:
+            _logger.warning("checkpoint: DB pool unavailable, skipping live-reload", exc_info=True)
+            CONFIG_HOT_RELOAD.labels(result="error").inc()
+            return runtime
+
+        # Cheap pre-check: read zone's mode/revision/TTL only.
+        try:
+            async with pool.acquire() as conn:
+                zone_row = await conn.fetchrow(
+                    "SELECT config_mode, config_revision, live_until FROM zones WHERE id = $1",
+                    zone_id,
+                )
+        except Exception:
+            _logger.warning("checkpoint: zone read failed zone_id=%s", zone_id, exc_info=True)
+            CONFIG_HOT_RELOAD.labels(result="error").inc()
+            return runtime
+
+        from ae3lite.config.modes import ConfigMode
+
+        if zone_row is None:
+            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
+            return runtime
+        observed_mode = ConfigMode.parse(zone_row.get("config_mode"))
+        # Phase 7 gauge: observer-style publish на каждом checkpoint. Дёшево
+        # потому что уже читаем zone row ради revision сравнения.
+        try:
+            ZONE_CONFIG_MODE.labels(zone_id=str(zone_id)).set(
+                1.0 if observed_mode is ConfigMode.LIVE else 0.0,
+            )
+        except Exception:  # pragma: no cover — metrics exporter issue
+            pass
+        if observed_mode is not ConfigMode.LIVE:
+            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
+            return runtime
+        live_until = zone_row.get("live_until")
+        if isinstance(live_until, datetime):
+            now_utc = datetime.now(timezone.utc)
+            if live_until.tzinfo is None:
+                live_until = live_until.replace(tzinfo=timezone.utc)
+            if live_until < now_utc:
+                CONFIG_HOT_RELOAD.labels(result="no_change").inc()
+                return runtime
+        new_revision = int(zone_row.get("config_revision") or 0)
+        if new_revision <= current_revision:
+            CONFIG_HOT_RELOAD.labels(result="no_change").inc()
+            return runtime
+
+        # Revision advanced — rebuild the full RuntimePlan via the canonical
+        # planner path so the result is structurally identical to a fresh
+        # task-claim plan.
+        try:
+            from ae3lite.infrastructure.read_models.zone_snapshot_read_model import (
+                PgZoneSnapshotReadModel,
+            )
+            from ae3lite.domain.services.two_tank_runtime_spec import (
+                resolve_two_tank_runtime_plan,
+            )
+
+            snapshot = await PgZoneSnapshotReadModel().load(zone_id=zone_id)
+            new_runtime = resolve_two_tank_runtime_plan(snapshot)
+            # Stamp the observed revision so subsequent checkpoints in this
+            # `run()` won't re-trigger. Keep the bundle_revision (content hash)
+            # whatever the resolver chose.
+            new_runtime = new_runtime.model_copy(update={"config_revision": int(new_revision)})
+        except Exception:
+            _logger.warning(
+                "checkpoint: snapshot rebuild failed zone_id=%s rev=%s",
+                zone_id, new_revision, exc_info=True,
+            )
+            CONFIG_HOT_RELOAD.labels(result="error").inc()
+            return runtime
+
+        try:
+            await create_zone_event(
+                zone_id,
+                "CONFIG_HOT_RELOADED",
+                with_runtime_event_contract({
+                    "revision": new_revision,
+                    "previous_revision": current_revision,
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": str(getattr(task, "current_stage", "") or ""),
+                }),
+            )
+        except Exception:
+            _logger.warning(
+                "checkpoint: failed to emit CONFIG_HOT_RELOADED event zone_id=%s",
+                zone_id, exc_info=True,
+            )
+
+        CONFIG_HOT_RELOAD.labels(result="applied").inc()
+        try:
+            ZONE_CONFIG_LIVE_EDITS.labels(
+                zone_id=str(zone_id),
+                handler=str(getattr(task, "current_stage", "") or "unknown"),
+            ).inc()
+        except Exception:  # pragma: no cover — metrics exporter issue
+            pass
+        _logger.info(
+            "config_hot_reload: applied zone_id=%s rev=%s→%s",
+            zone_id, current_revision, new_revision,
+        )
+        return new_runtime
 
     def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
         if deadline is None:
@@ -1055,8 +1237,12 @@ class BaseStageHandler:
 
     # ── PH/EC target evaluation ─────────────────────────────────────
 
-    async def _targets_reached(self, *, task: Any, plan: Any, now: datetime) -> bool:
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+    async def _targets_reached(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        # Phase 5: accept hot-swapped runtime override.
+        if runtime is None:
+            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         max_age = int(runtime.get("telemetry_max_age_sec") or 300)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -1094,8 +1280,13 @@ class BaseStageHandler:
         ec_max = ec_target + ec_tol
         return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
 
-    async def _workflow_ready_reached(self, *, task: Any, plan: Any, now: datetime) -> bool:
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+    async def _workflow_ready_reached(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        # Phase 5: accept hot-swapped runtime from handler. Falls back to
+        # plan.runtime when caller didn't opt into live-mode reassignment.
+        if runtime is None:
+            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         max_age = int(runtime.get("telemetry_max_age_sec") or 300)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -1316,7 +1507,7 @@ class BaseStageHandler:
                 observe_cfg.get("telemetry_period_sec")
                 or controller_observe_cfg.get("telemetry_period_sec")
                 or controller_cfg.get("telemetry_period_sec")
-                or 2
+                or _OBSERVE_DEFAULT_TELEMETRY_PERIOD_SEC
             ),
         )
         window_min_samples = max(
@@ -1325,7 +1516,7 @@ class BaseStageHandler:
                 observe_cfg.get("window_min_samples")
                 or controller_observe_cfg.get("window_min_samples")
                 or controller_cfg.get("window_min_samples")
-                or 3
+                or _OBSERVE_DEFAULT_WINDOW_MIN_SAMPLES
             ),
         )
         decision_window_sec = max(
@@ -1384,7 +1575,7 @@ class BaseStageHandler:
                     observe_cfg.get("min_effect_fraction")
                     or controller_observe_cfg.get("min_effect_fraction")
                     or controller_cfg.get("min_effect_fraction")
-                    or 0.25
+                    or _OBSERVE_DEFAULT_MIN_EFFECT_FRACTION
                 ),
             ),
             "stability_max_slope": max(
@@ -1393,7 +1584,9 @@ class BaseStageHandler:
                     observe_cfg.get("stability_max_slope")
                     or controller_observe_cfg.get("stability_max_slope")
                     or controller_cfg.get("stability_max_slope")
-                    or (0.02 if kind == "ph" else 0.05)
+                    or (_OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_PH
+                        if kind == "ph"
+                        else _OBSERVE_DEFAULT_STABILITY_MAX_SLOPE_EC)
                 ),
             ),
             "no_effect_limit": max(
@@ -1402,7 +1595,7 @@ class BaseStageHandler:
                     observe_cfg.get("no_effect_consecutive_limit")
                     or controller_observe_cfg.get("no_effect_consecutive_limit")
                     or controller_cfg.get("no_effect_consecutive_limit")
-                    or 3
+                    or _OBSERVE_DEFAULT_NO_EFFECT_CONSECUTIVE_LIMIT
                 ),
             ),
         }

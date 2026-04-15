@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hydro2.local/schemas/zone_logic_profile/v1.json",
+  "title": "Zone Logic Profile",
+  "description": "Schema for `zone.logic_profile` namespace. Simplified v1 — covers only the structural invariants currently enforced by AutomationConfigRegistry::validateLogicProfilePayload. Deep subsystem validation is intentionally loose pending dedicated subsystem schemas (climate, irrigation, lighting).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["active_mode", "profiles"],
+  "properties": {
+    "active_mode": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Currently active profile key; must exist in `profiles` when not null. Allowed modes come from ZoneLogicProfileCatalog::allowedModes() and are not hardcoded here."
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Profile" },
+      "description": "Map of mode key => profile config. Key format enforced by business layer."
+    }
+  },
+  "$defs": {
+    "Profile": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Profile config. Open shape in v1 — backend writes lifecycle metadata (mode, is_active, created_at/by, updated_at/by, command_plans) alongside `subsystems`. Structural validation done at subsystem level (separate schemas to be added).",
+      "required": ["subsystems"],
+      "properties": {
+        "subsystems": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Per-subsystem configuration. Structure loose in v1 — each subsystem owns its own sub-schema (to be added)."
+        },
+        "meta": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}
