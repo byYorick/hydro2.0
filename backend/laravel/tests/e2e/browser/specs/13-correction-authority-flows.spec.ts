@@ -1,6 +1,65 @@
 import { test, expect } from '../fixtures/test-data';
 
 test.describe('Correction Authority Flows', () => {
+  test('should apply correction live edit and record timeline entry', async ({ page, apiHelper, testZone }) => {
+    test.setTimeout(120000);
+
+    await apiHelper.primeZoneForLiveEdit(
+      testZone.id,
+      new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    );
+
+    await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' });
+    await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'networkidle' });
+
+    const liveEditCard = page.locator('[data-testid="correction-live-edit"]');
+    await expect(liveEditCard).toBeVisible({ timeout: 15000 });
+
+    await page.locator('[data-testid="correction-live-correction-target"]').selectOption('tank_recirc');
+    await page.locator('[data-testid="correction-live-calibration-target"]').selectOption('tank_recirc');
+    await liveEditCard.getByText('PID-контур EC').click();
+    await page.locator('[data-testid="correction-live-field-controllers__ec__kp"]').fill('0.91');
+    await page.locator('[data-testid="correction-live-calibration-field-transport_delay_sec"]').fill('14');
+    await page.locator('[data-testid="correction-live-reason"]').fill('playwright phase 6.2 live edit');
+    await expect(page.locator('[data-testid="correction-live-correction-dirty"]')).toContainText('1 полей');
+    await expect(page.locator('[data-testid="correction-live-calibration-dirty"]')).toContainText('1 полей');
+
+    await apiHelper.applyCorrectionLiveEdit(testZone.id, {
+      reason: 'playwright phase 6.2 live edit',
+      phase: 'tank_recirc',
+      correction_patch: {
+        'controllers.ec.kp': 0.91,
+      },
+      calibration_patch: {
+        transport_delay_sec: 14,
+      },
+    });
+
+    await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'networkidle' });
+    await expect(page.locator('[data-testid="correction-live-edit"]')).toBeVisible({ timeout: 15000 });
+    await page.locator('[data-testid="correction-live-correction-target"]').selectOption('tank_recirc');
+    await page.locator('[data-testid="correction-live-calibration-target"]').selectOption('tank_recirc');
+    await page.locator('[data-testid="correction-live-edit"]').getByText('PID-контур EC').click();
+    await page.locator('[data-testid="correction-live-reload"]').click();
+    await expect(page.locator('[data-testid="correction-live-field-controllers__ec__kp"]')).toHaveValue('0.91');
+    await expect(page.locator('[data-testid="correction-live-calibration-field-transport_delay_sec"]')).toHaveValue('14');
+
+    const correctionDocument = await apiHelper.getAutomationConfig('zone', testZone.id, 'zone.correction');
+    expect(Number(correctionDocument?.payload?.phase_overrides?.tank_recirc?.controllers?.ec?.kp ?? 0)).toBe(0.91);
+
+    const calibrationDocument = await apiHelper.getAutomationConfig(
+      'zone',
+      testZone.id,
+      'zone.process_calibration.tank_recirc',
+    );
+    expect(Number(calibrationDocument?.payload?.transport_delay_sec ?? 0)).toBe(14);
+
+    await page.locator('[data-testid="config-changes-namespace"]').selectOption('zone.correction.live');
+    const changesList = page.locator('[data-testid="config-changes-list"]');
+    await expect(changesList).toContainText('zone.correction.live', { timeout: 15000 });
+    await expect(changesList).toContainText('playwright phase 6.2 live edit');
+  });
+
   test('should refresh readiness after process calibration and PID saves', async ({ page, testZone }) => {
     test.setTimeout(120000);
 

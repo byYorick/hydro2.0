@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, List, Mapping, Sequence
+import time
+from typing import Any, Callable, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
 from ae3lite.config.errors import ConfigValidationError
 from ae3lite.config.loader import load_zone_correction
+from ae3lite.config.runtime_plan_builder import resolve_two_tank_runtime
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
-from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
 from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
 
 _logger = logging.getLogger(__name__)
@@ -21,6 +22,11 @@ class CycleStartPlanner:
 
     SUPPORTED_SCHEMA_VERSION = 1
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
+    _SHADOW_WARNING_WINDOW_SEC = 60.0
+
+    def __init__(self, *, monotonic_clock: Callable[[], float] | None = None) -> None:
+        self._monotonic_clock = monotonic_clock or time.monotonic
+        self._shadow_warning_last_logged_at: dict[object, float] = {}
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
         """Build a deterministic command plan for the task+snapshot pair.
@@ -230,13 +236,13 @@ class CycleStartPlanner:
         snapshot: ZoneSnapshot,
         task: AutomationTask,
     ) -> None:
-        """Phase 2 shadow validation of snapshot.correction_config against
+        """Non-blocking validation of snapshot.correction_config against
         canonical Pydantic schema (`schemas/zone_correction.v1.json`).
 
         Non-blocking — result is only reported to Prometheus counter
         `ae3_shadow_config_validation_total{result, namespace}` and logged
-        at WARNING on failure. Phase 3 switches this to strict (raising)
-        once the two runs have been reconciled on dev/staging.
+        at WARNING on failure. Runtime currently keeps this hook in shadow mode
+        rather than failing task planning.
         """
         correction_config = getattr(snapshot, "correction_config", None)
         if not isinstance(correction_config, Mapping):
@@ -264,7 +270,8 @@ class CycleStartPlanner:
             return
 
         zone_id = getattr(task, "zone_id", None)
-        any_invalid = False
+        invalid_namespaces: list[str] = []
+        invalid_violations: list[dict[str, Any]] = []
         for label, payload in targets:
             try:
                 load_zone_correction(
@@ -273,19 +280,47 @@ class CycleStartPlanner:
                     namespace=f"zone.correction:{label}",
                 )
             except ConfigValidationError as exc:
-                any_invalid = True
-                _logger.warning(
-                    "ae3_shadow_config_validation_failed",
-                    extra={
-                        "zone_id": zone_id,
-                        "namespace": exc.namespace,
-                        "violations": exc.errors[:20],  # cap log size
-                    },
-                )
+                invalid_namespaces.append(exc.namespace)
+                if not invalid_violations:
+                    invalid_violations = exc.errors[:20]
+        if invalid_namespaces:
+            self._log_shadow_validation_failure(
+                zone_id=zone_id,
+                invalid_namespaces=invalid_namespaces,
+                violations=invalid_violations,
+            )
         SHADOW_CONFIG_VALIDATION.labels(
-            result="invalid" if any_invalid else "ok",
+            result="invalid" if invalid_namespaces else "ok",
             namespace="zone.correction",
         ).inc()
+
+    def _log_shadow_validation_failure(
+        self,
+        *,
+        zone_id: object,
+        invalid_namespaces: Sequence[str],
+        violations: Sequence[dict[str, Any]],
+    ) -> None:
+        if not invalid_namespaces:
+            return
+        rate_limit_key = zone_id if zone_id is not None else "__unknown_zone__"
+        now = self._monotonic_clock()
+        last_logged_at = self._shadow_warning_last_logged_at.get(rate_limit_key)
+        if last_logged_at is not None and (now - last_logged_at) < self._SHADOW_WARNING_WINDOW_SEC:
+            return
+
+        self._shadow_warning_last_logged_at[rate_limit_key] = now
+        _logger.warning(
+            "ae3_shadow_config_validation_failed",
+            extra={
+                "zone_id": zone_id,
+                "namespace": invalid_namespaces[0],
+                "invalid_namespaces": tuple(invalid_namespaces[:5]),
+                "invalid_count": len(invalid_namespaces),
+                "violations": list(violations[:20]),
+                "rate_limit_window_sec": int(self._SHADOW_WARNING_WINDOW_SEC),
+            },
+        )
 
     def _build_lighting_tick_plan(
         self,
@@ -326,7 +361,6 @@ class CycleStartPlanner:
                 "complete_on_ack": True,
             },
         )
-        wf_phase = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
         return CommandPlan(
             task_type=task.task_type,
             workflow="lighting_tick",
@@ -334,7 +368,7 @@ class CycleStartPlanner:
             steps=(planned,),
             targets=dict(targets),
             named_plans={},
-            runtime={"zone_workflow_phase": wf_phase},
+            runtime=None,
         )
 
     def _pick_lighting_actuator(self, actuators: Sequence[ZoneActuatorRef]) -> ZoneActuatorRef | None:

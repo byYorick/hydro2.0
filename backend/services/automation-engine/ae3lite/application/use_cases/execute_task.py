@@ -10,6 +10,7 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any, Mapping
 
+from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from common.db import create_zone_event
@@ -584,12 +585,11 @@ class ExecuteTaskUseCase:
                 )
             return task
 
-        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), Mapping) else {}
-        decision = runtime.get("irrigation_decision")
-        decision_mapping = dict(decision) if isinstance(decision, Mapping) else {}
-        strategy = str(decision_mapping.get("strategy") or "").strip().lower()
-        config = decision_mapping.get("config")
-        config_mapping = dict(config) if isinstance(config, Mapping) else {}
+        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), RuntimePlan) else None
+        decision = runtime.irrigation_decision if runtime is not None else None
+        strategy = str(getattr(decision, "strategy", "") or "").strip().lower()
+        config = getattr(decision, "config", None)
+        config_mapping = config.model_dump(mode="python") if config is not None else {}
         bundle_revision = str(getattr(snapshot, "bundle_revision", "") or "").strip() or None
 
         if strategy == "" and config_mapping == {} and bundle_revision is None:

@@ -28,17 +28,17 @@
       "additionalProperties": true
     },
     "error_code": {
-      "type": "string",
+      "type": ["string", "null"],
       "description": "Код ошибки при status=ERROR",
       "maxLength": 100
     },
     "error_message": {
-      "type": "string",
+      "type": ["string", "null"],
       "description": "Текст ошибки при status=ERROR",
       "maxLength": 512
     },
     "message": {
-      "type": "string",
+      "type": ["string", "null"],
       "description": "Краткое top-level сообщение; backend может использовать как fallback для error_message",
       "maxLength": 512
     }

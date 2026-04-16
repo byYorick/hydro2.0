@@ -47,7 +47,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("CLEAN_FILL_SOURCE_EMPTY", "CLEAN_FILL_COMPLETED", "EMERGENCY_STOP_ACTIVATED"),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
@@ -62,7 +62,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 task=task,
                 reason="clean_fill_source_empty",
                 source="node_event",
-                next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",
+                next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",  # config-literal: allow two retries before fail-closed stop
             )
             return self._source_empty_outcome(task=task)
         if recent_event_type == "CLEAN_FILL_COMPLETED":
@@ -128,7 +128,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                     task=task,
                     reason="clean_fill_source_empty",
                     source="sensor",
-                    next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",
+                    next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",  # config-literal: allow two retries before fail-closed stop
                 )
                 return self._source_empty_outcome(task=task)
 

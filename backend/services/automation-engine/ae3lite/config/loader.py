@@ -8,9 +8,8 @@ Public entry points:
   `ZoneCorrection` model. Raises `ConfigValidationError` on failure with
   structured Pydantic errors.
 
-Phase 2 usage: shadow mode only. Call alongside `resolve_two_tank_runtime()`
-to measure validation drift via Prometheus. Phase 3 migrates handlers to
-read from the typed model directly.
+Payload building and typed loading both live under `ae3lite.config`;
+runtime code should consume the typed model directly.
 """
 
 from __future__ import annotations
@@ -74,8 +73,7 @@ def load_recipe_phase(
     + zone target overrides that AE3 reads as `snapshot.phase_targets`,
     `snapshot.targets`, and `snapshot.diagnostics_execution`.
 
-    Phase 4-prep: required for Phase 5 live-mode hot-reload of recipe phase
-    (Q4 in AE3_CONFIG_REFACTORING_PLAN.md).
+    Used by live-mode hot-reload of recipe phase and by config parity tests.
 
     `cycle_id` is included in the error context but not (yet) stored on
     `ConfigValidationError` — refine when Phase 5 wires the call site.
@@ -104,13 +102,8 @@ def load_runtime_plan(
     zone_id: int | None = None,
     namespace: str = "runtime.plan",
 ) -> RuntimePlan:
-    """Validate and parse the full `plan.runtime` dict produced by
-    `resolve_two_tank_runtime`. Phase 3.1 / Option B target.
-
-    Until B-4 swaps the resolver to return `RuntimePlan` directly, this
-    function is the validation gate (callers wrap the dict-output of
-    `resolve_two_tank_runtime` and feed it through here).
-    """
+    """Validate and parse the full `plan.runtime` dict produced by the
+    AE3 runtime payload builder."""
     if not isinstance(payload, Mapping):
         raise ConfigValidationError(
             zone_id=zone_id,

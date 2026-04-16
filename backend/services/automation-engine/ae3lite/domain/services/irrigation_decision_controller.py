@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any, Mapping, Protocol, Sequence
 
+from ae3lite.config.schema import RuntimePlan
+
 
 @dataclass(frozen=True)
 class IrrigationDecision:
@@ -22,7 +24,7 @@ class IrrigationDecisionStrategy(Protocol):
         *,
         zone_id: int,
         runtime_monitor: Any,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         requested_duration_sec: int | None,
         now: datetime,
     ) -> IrrigationDecision:
@@ -35,7 +37,7 @@ class TaskDecisionStrategy:
         *,
         zone_id: int,
         runtime_monitor: Any,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         requested_duration_sec: int | None,
         now: datetime,
     ) -> IrrigationDecision:
@@ -93,21 +95,21 @@ class SmartSoilDecisionStrategy:
     @staticmethod
     def _resolve_target_band(
         *,
-        soil_target: Mapping[str, Any],
+        soil_target: Any,
         now: datetime,
     ) -> tuple[float | None, float | None, dict[str, Any]]:
-        target_min = _to_float(soil_target.get("min"))
-        target_max = _to_float(soil_target.get("max"))
+        target_min = _to_float(getattr(soil_target, "min", None))
+        target_max = _to_float(getattr(soil_target, "max", None))
         if target_min is not None and target_max is not None:
             return target_min, target_max, {"mode": "band"}
 
-        day = _to_float(soil_target.get("day"))
-        night = _to_float(soil_target.get("night"))
+        day = _to_float(getattr(soil_target, "day", None))
+        night = _to_float(getattr(soil_target, "night", None))
         if day is None and night is None:
             return None, None, {"mode": "missing"}
 
-        day_start_time = str(soil_target.get("day_start_time") or "").strip() or None
-        day_hours = _to_float(soil_target.get("day_hours"))
+        day_start_time = str(getattr(soil_target, "day_start_time", "") or "").strip() or None
+        day_hours = _to_float(getattr(soil_target, "day_hours", None))
         is_day, invalid_schedule = SmartSoilDecisionStrategy._resolve_day_profile(
             now=now,
             day_start_time=day_start_time,
@@ -135,18 +137,17 @@ class SmartSoilDecisionStrategy:
         *,
         zone_id: int,
         runtime_monitor: Any,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         requested_duration_sec: int | None,
         now: datetime,
     ) -> IrrigationDecision:
-        decision_cfg = runtime.get("irrigation_decision") if isinstance(runtime.get("irrigation_decision"), Mapping) else {}
-        config = decision_cfg.get("config") if isinstance(decision_cfg.get("config"), Mapping) else {}
-        lookback_sec = int(config.get("lookback_sec") or 1800)
-        stale_after_sec = int(config.get("stale_after_sec") or 600)
-        min_samples = int(config.get("min_samples") or 3)
-        hysteresis_pct = float(config.get("hysteresis_pct") or 0.0)
-        spread_threshold_pct = float(config.get("spread_alert_threshold_pct") or 0.0)
-        soil_target = runtime.get("soil_moisture_target") if isinstance(runtime.get("soil_moisture_target"), Mapping) else {}
+        config = runtime.irrigation_decision.config
+        lookback_sec = int(config.lookback_sec)
+        stale_after_sec = int(config.stale_after_sec)
+        min_samples = int(config.min_samples)
+        hysteresis_pct = float(config.hysteresis_pct)
+        spread_threshold_pct = float(config.spread_alert_threshold_pct)
+        soil_target = runtime.soil_moisture_target
         target_min, target_max, target_meta = self._resolve_target_band(soil_target=soil_target, now=now)
 
         if target_min is None or target_max is None:
@@ -241,7 +242,7 @@ class IrrigationDecisionController:
         *,
         zone_id: int,
         runtime_monitor: Any,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         mode: str,
         requested_duration_sec: int | None,
         now: datetime,
@@ -253,8 +254,7 @@ class IrrigationDecisionController:
                 details={"requested_duration_sec": requested_duration_sec},
             )
 
-        decision_cfg = runtime.get("irrigation_decision") if isinstance(runtime.get("irrigation_decision"), Mapping) else {}
-        strategy_name = str(decision_cfg.get("strategy") or "task").strip().lower() or "task"
+        strategy_name = str(runtime.irrigation_decision.strategy or "task").strip().lower() or "task"
         strategy = self._strategies.get(strategy_name)
         if strategy is None:
             return IrrigationDecision(

@@ -25,9 +25,10 @@ from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandle
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
 from ae3lite.application.handlers.startup import StartupHandler
+from ae3lite.application.services.workflow_topology import TopologyRegistry
+from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
     CORRECTION_COMPLETED,
@@ -513,13 +514,12 @@ class WorkflowRouter:
     # ── Helpers ─────────────────────────────────────────────────────
 
     def _compute_deadline(
-        self, *, task: Any, stage_def: Any, runtime: Mapping[str, Any], now: datetime,
+        self, *, task: Any, stage_def: Any, runtime: RuntimePlan, now: datetime,
     ) -> Optional[datetime]:
         """Вычисляет `stage_deadline_at` по timeout-ключам из runtime-конфига."""
         if stage_def.name == "irrigation_check":
-            irrigation_runtime = runtime.get("irrigation_execution")
-            irrigation_runtime = irrigation_runtime if isinstance(irrigation_runtime, Mapping) else {}
-            explicit_timeout = irrigation_runtime.get("stage_timeout_sec")
+            irrigation_runtime = runtime.irrigation_execution
+            explicit_timeout = irrigation_runtime.stage_timeout_sec
             if explicit_timeout is not None:
                 try:
                     return now + timedelta(seconds=max(1, int(explicit_timeout)))
@@ -527,13 +527,13 @@ class WorkflowRouter:
                     pass
             requested_duration_sec = getattr(task, "irrigation_requested_duration_sec", None)
             if requested_duration_sec is None:
-                requested_duration_sec = runtime.get("irrigation_requested_duration_sec")
+                requested_duration_sec = getattr(runtime, "irrigation_requested_duration_sec", None)
             if requested_duration_sec is None:
-                requested_duration_sec = irrigation_runtime.get("duration_sec")
+                requested_duration_sec = irrigation_runtime.duration_sec
             if requested_duration_sec is None:
                 return None
-            slack_raw = irrigation_runtime.get("correction_slack_sec")
-            correction_enabled = bool(irrigation_runtime.get("correction_during_irrigation", True))
+            slack_raw = irrigation_runtime.correction_slack_sec
+            correction_enabled = bool(irrigation_runtime.correction_during_irrigation)
             if slack_raw is None:
                 slack = _DEFAULT_CORRECTION_SLACK_SEC if correction_enabled else 0
             else:
@@ -545,14 +545,14 @@ class WorkflowRouter:
             total_sec = min(max(1, total_sec), _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "solution_fill_check":
-            base_raw = runtime.get("solution_fill_timeout_sec")
+            base_raw = runtime.solution_fill_timeout_sec
             if base_raw is None:
                 return None
             try:
                 base_sec = max(1, int(base_raw))
             except (TypeError, ValueError):
                 return None
-            slack_raw = runtime.get("solution_fill_correction_slack_sec")
+            slack_raw = getattr(runtime, "solution_fill_correction_slack_sec", None)
             if slack_raw is None:
                 slack = _DEFAULT_CORRECTION_SLACK_SEC
             else:
@@ -565,14 +565,14 @@ class WorkflowRouter:
         if stage_def.name == "prepare_recirculation_check":
             # Базовое окно берётся из retry-конфига; inline EC/pH-коррекциям нужно
             # дополнительное wall time на реальном пути HL→MQTT→node.
-            base_raw = runtime.get("prepare_recirculation_timeout_sec")
+            base_raw = runtime.prepare_recirculation_timeout_sec
             if base_raw is None:
                 return None
             try:
                 base_sec = max(1, int(base_raw))
             except (TypeError, ValueError):
                 return None
-            slack_raw = runtime.get("prepare_recirculation_correction_slack_sec")
+            slack_raw = getattr(runtime, "prepare_recirculation_correction_slack_sec", None)
             if slack_raw is None:
                 slack = _DEFAULT_CORRECTION_SLACK_SEC
             else:
@@ -583,17 +583,16 @@ class WorkflowRouter:
             total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "irrigation_recovery_check":
-            recovery_runtime = runtime.get("irrigation_recovery")
-            recovery_runtime = recovery_runtime if isinstance(recovery_runtime, Mapping) else {}
-            timeout_sec = recovery_runtime.get("timeout_sec")
+            recovery_runtime = runtime.irrigation_recovery
+            timeout_sec = recovery_runtime.timeout_sec
             if timeout_sec is None and stage_def.timeout_key is not None:
-                timeout_sec = runtime.get(stage_def.timeout_key)
+                timeout_sec = getattr(runtime, stage_def.timeout_key, None)
             if timeout_sec is None:
                 return None
             return now + timedelta(seconds=int(timeout_sec))
         if stage_def.timeout_key is None:
             return None
-        timeout_sec = runtime.get(stage_def.timeout_key)
+        timeout_sec = getattr(runtime, stage_def.timeout_key, None)
         if timeout_sec is None:
             # Audit F13: a missing timeout_key in runtime config is almost
             # always a config error, not a "stage has no deadline" intent.

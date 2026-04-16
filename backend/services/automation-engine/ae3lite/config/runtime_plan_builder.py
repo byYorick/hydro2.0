@@ -1,4 +1,4 @@
-"""Нативный resolver runtime-spec для two-tank `cycle_start` в AE3-Lite."""
+"""Canonical runtime payload builder for two-tank AE3 workflows."""
 
 from __future__ import annotations
 
@@ -83,17 +83,7 @@ _STAGE_TIMEOUT_GUARDS: dict[str, tuple[str, str]] = {
 
 
 def resolve_two_tank_runtime_plan(snapshot: Any) -> Any:
-    """Phase 3.1 / Option B typed wrapper.
-
-    Calls legacy `resolve_two_tank_runtime()` and validates its dict output
-    against the canonical `RuntimePlan` Pydantic model. Raises
-    `ConfigValidationError` if drift between resolver and model is detected
-    (which is itself a bug — discovery in B-3 confirmed parity).
-
-    Handlers migrated in B-5/B-6 read fields via the typed `RuntimePlan`
-    instance returned here. The legacy dict-version remains unchanged
-    until Phase 4 deletes it.
-    """
+    """Build and validate the typed `RuntimePlan` for a snapshot."""
     # Local import avoids a circular import at module load time
     # (config.loader → ae3lite.config → metrics → various domain services).
     from ae3lite.config.loader import load_runtime_plan
@@ -346,6 +336,13 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
         _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
+
+
+__all__ = [
+    "default_two_tank_command_plan",
+    "resolve_two_tank_runtime",
+    "resolve_two_tank_runtime_plan",
+]
 
 
 def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:

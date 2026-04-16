@@ -6,8 +6,7 @@ each `snapshot.correction_config.phases.*` entry after compiler merge
 (for AE3 runtime side).
 
 Constraints match JSON Schema exactly. Drift between this file and
-`zone_correction.v1.json` is a CI bug (Phase 7: auto-generate AUTHORITY.md
-from JSON Schema and compare).
+`zone_correction.v1.json` is a CI bug.
 """
 
 from __future__ import annotations
@@ -23,11 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class _DictShim:
-    """Read-only dict-like API for transition period (Phase 3.1 / B-5).
+    """Read-only dict-like API for compatibility with existing handler access.
 
     Same semantics as `runtime_plan._DictShim`. Defined here to avoid a
     circular import (runtime_plan imports symbols from zone_correction).
-    Phase 4 deletes both copies.
     """
 
     def __iter__(self):  # type: ignore[no-untyped-def]

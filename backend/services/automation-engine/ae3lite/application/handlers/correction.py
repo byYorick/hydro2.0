@@ -289,7 +289,7 @@ class CorrectionHandler(BaseStageHandler):
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("SOLUTION_FILL_COMPLETED",),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "SOLUTION_FILL_COMPLETED":
@@ -395,7 +395,7 @@ class CorrectionHandler(BaseStageHandler):
         raced_completion_event = await self._read_recent_storage_event(
             task=task,
             event_types=("SOLUTION_FILL_COMPLETED",),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         raced_event_type = str((raced_completion_event or {}).get("event_type") or "").strip().upper()
         if raced_event_type != "SOLUTION_FILL_COMPLETED":
@@ -426,7 +426,7 @@ class CorrectionHandler(BaseStageHandler):
         estop_event = await self._read_recent_storage_event(
             task=task,
             event_types=("EMERGENCY_STOP_ACTIVATED",),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day ESTOP replay window
         )
         if isinstance(estop_event, Mapping):
             estop_event_id = int(estop_event.get("event_id") or 0)
@@ -476,7 +476,7 @@ class CorrectionHandler(BaseStageHandler):
                 corr=corr,
                 payload=blocked,
             )
-            return StageOutcome(kind="retry", due_delay_sec=60)
+            return StageOutcome(kind="retry", due_delay_sec=60)  # config-literal: short retry backoff after alert block
 
         if self._should_log_limit_policy(task=task, corr=corr):
             await self._log_correction_event(
@@ -998,7 +998,7 @@ class CorrectionHandler(BaseStageHandler):
                     plan=plan,
                     corr=next_corr,
                     now=now,
-                    due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                    due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),  # config-literal: fallback poll cadence
                 )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -1639,7 +1639,7 @@ class CorrectionHandler(BaseStageHandler):
         policy_outcome = self._transition_policy.decide_exhausted_transition(
             current_stage=stage,
             stage_retry_count=task.workflow.stage_retry_count,
-            level_poll_interval_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            level_poll_interval_sec=int(runtime.get("level_poll_interval_sec", 10)),  # config-literal: fallback poll cadence
         )
         if policy_outcome is not None:
             return policy_outcome

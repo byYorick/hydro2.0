@@ -70,7 +70,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("RECIRCULATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "RECIRCULATION_SOLUTION_LOW" and solution_min_guard_enabled:

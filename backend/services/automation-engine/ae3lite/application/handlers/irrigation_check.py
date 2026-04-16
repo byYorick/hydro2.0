@@ -51,14 +51,13 @@ class IrrigationCheckHandler(BaseStageHandler):
         new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
         if new_runtime is not plan.runtime:
             plan = replace(plan, runtime=new_runtime)
-        runtime = plan.runtime
+        runtime = self._require_runtime_plan(plan=plan)
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
         topology = str(getattr(task, "topology", "") or "")
         deadline = task.workflow.stage_deadline_at
-        recovery = runtime.get("irrigation_recovery") or {}
-        safety = runtime["irrigation_safety"]
-        solution_min_guard_enabled = bool(safety["stop_on_solution_min"])
+        recovery = runtime.irrigation_recovery
+        solution_min_guard_enabled = bool(runtime.irrigation_safety.stop_on_solution_min)
         expected_irrigation_state = {
             "valve_solution_supply": True,
             "valve_irrigation": True,
@@ -67,7 +66,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("IRRIGATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
 
@@ -147,7 +146,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 plan=plan,
                 now=now,
                 expected=expected_irrigation_state,
-                poll_delay_sec=int(runtime["level_poll_interval_sec"]),
+                poll_delay_sec=int(runtime.level_poll_interval_sec),
                 exhausted_outcome=StageOutcome(
                     kind="transition",
                     next_stage="irrigation_stop_to_recovery",
@@ -157,15 +156,15 @@ class IrrigationCheckHandler(BaseStageHandler):
                 return probe_outcome
 
         if control_mode == "manual":
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime["level_poll_interval_sec"]))
+            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
 
         if solution_min_guard_enabled:
             solution_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
-                labels=runtime["solution_min_sensor_labels"],
-                threshold=runtime["level_switch_on_threshold"],
-                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                labels=runtime.solution_min_sensor_labels,
+                threshold=runtime.level_switch_on_threshold,
+                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
                 unavailable_error="two_tank_solution_min_level_unavailable",
                 stale_error="two_tank_solution_min_level_stale",
                 stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -181,8 +180,8 @@ class IrrigationCheckHandler(BaseStageHandler):
                     source="sensor",
                 )
 
-        execution = runtime["irrigation_execution"]
-        correction_enabled = bool(execution["correction_during_irrigation"])
+        execution = runtime.irrigation_execution
+        correction_enabled = bool(execution.correction_during_irrigation)
         if correction_enabled:
             stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
             if stage_retry_count <= 0 and not await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):

@@ -444,7 +444,8 @@ class AutomationConfigRegistry
             if (! is_array($phaseConfig) || array_is_list($phaseConfig)) {
                 throw new InvalidArgumentException("Correction phase {$phase} must be an object.");
             }
-            ZoneCorrectionConfigCatalog::validateFragment($phaseConfig, false);
+            // Phase overrides are intentionally sparse diffs over base_config.
+            ZoneCorrectionConfigCatalog::validateFragment($phaseConfig, true);
         }
     }
 

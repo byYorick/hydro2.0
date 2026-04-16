@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ae3lite.domain.services.two_tank_runtime_spec import (
+from ae3lite.config.runtime_plan_builder import (
     _compute_prepare_ec_share,
     resolve_two_tank_runtime,
 )

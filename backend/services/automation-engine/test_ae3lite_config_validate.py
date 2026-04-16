@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from ae3lite.runtime.config import Ae3RuntimeConfig
+from ae3lite.runtime.env import Ae3RuntimeConfig
 
 
 def _config(**kwargs: object) -> Ae3RuntimeConfig:
@@ -32,6 +32,7 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         start_cycle_rate_limit_max_requests=30,
         start_cycle_rate_limit_window_sec=10,
         verbose_http_logging=False,
+        http_client_timeout_sec=10.0,
         worker_owner="test-worker",
         max_task_execution_sec=900,
     )

@@ -3,7 +3,7 @@
 > **STATUS: DONE — реализовано на ветке `ae3` (2026-04-13).**
 >
 > Краткая сводка реализации:
-> - `backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py:174-280,605` — `_compute_prepare_ec_share`, runtime-поля `target_ec_prepare*`, `npk_ec_share`, `day_night_config`.
+> - `backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py` — `_compute_prepare_ec_share`, runtime-поля `target_ec_prepare*`, `npk_ec_share`, `day_night_config`.
 > - `backend/services/automation-engine/ae3lite/application/handlers/base.py:1107-1245` — handler accessors `_effective_ec_target/min/max`, `_effective_ph_target/min/max`, day/night override и `_day_night_override_scaled` для prepare.
 > - `backend/laravel/app/Support/Automation/RecipeNutritionRuntimeConfigResolver.php:41` — сборка `phases.{phase}.ec_component_ratios` для compiled bundle.
 > - Канонический контракт зафиксирован в `EFFECTIVE_TARGETS_SPEC.md` §9, описание для AE3 — `../04_BACKEND_CORE/ae3lite.md` §5.4.
@@ -30,7 +30,7 @@
 
 ### 1.2 Корневая причина
 
-`runtime["target_ec"]` — единственное значение для всех фаз, полученное из `_resolve_phase_target()` в `two_tank_runtime_spec.py:172-173`. Никакого масштабирования по активным компонентам не происходит.
+`runtime["target_ec"]` — раньше было единственным значением для всех фаз, полученным из `_resolve_phase_target()` в legacy runtime resolver. Никакого масштабирования по активным компонентам не происходило.
 
 ### 1.3 Затронутые точки в коде
 
@@ -148,7 +148,7 @@ target_ec_irrigation = full_ec               # e.g. 1.5 (кумулятивно)
 
 ### Фаза 1 — AE: per-phase EC target в runtime
 
-**Файл:** `backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py`
+**Файл:** `backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py`
 
 **Изменения:**
 
@@ -352,7 +352,7 @@ target_ec_irrigation = full_ec               # e.g. 1.5 (кумулятивно)
 
 | # | Фаза | Файлы | Зависимости |
 |---|------|-------|-------------|
-| 1 | AE: per-phase EC target | `two_tank_runtime_spec.py` | — |
+| 1 | AE: per-phase EC target | `runtime_plan_builder.py` | — |
 | 2 | AE: phase-aware handlers | `base.py`, `correction.py` | Фаза 1 |
 | 3 | AE: тесты | `tests/test_per_phase_ec_target.py` + обновление существующих | Фазы 1-2 |
 | 4 | Frontend: EC-breakdown | `recipeEditorShared.ts`, `RecipeEditor.vue` | Независимо |

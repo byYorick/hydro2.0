@@ -8,7 +8,7 @@ import pytest
 
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.errors import SnapshotBuildError
-from ae3lite.domain.services import CycleStartPlanner
+from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 from ae3lite.infrastructure.read_models import PgZoneSnapshotReadModel
 from common.db import execute, fetch
 

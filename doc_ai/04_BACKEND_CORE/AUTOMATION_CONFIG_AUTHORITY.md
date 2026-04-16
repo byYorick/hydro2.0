@@ -101,6 +101,17 @@ Registry определяет:
 - `checksum`
 - `updated_by`
 
+Для `zone.correction` outer document schema задаётся
+`schemas/zone_correction_document.v1.json`:
+
+- `payload.base_config` валидируется по `schemas/zone_correction.v1.json`;
+- `payload.phase_overrides.{solution_fill|tank_recirc|irrigation}` ссылается на
+  `schemas/zone_correction.v1.json#/$defs/PhaseOverride`;
+- `PhaseOverride` — это **sparse diff** поверх `base_config`, а не полный snapshot
+  `resolved_config`;
+- compiler обязан сначала смержить `base_config + phase_overrides`, и только затем
+  materialize-ить `resolved_config`.
+
 Все изменения версии документа пишутся в `automation_config_versions`.
 
 ### 3.3 Bundles

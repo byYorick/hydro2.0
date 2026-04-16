@@ -23,7 +23,7 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        runtime = plan.runtime
+        runtime = self._require_runtime_plan(plan=plan)
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
@@ -35,7 +35,7 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
                 "valve_solution_fill": True,
                 "pump_main": True,
             },
-            poll_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            poll_delay_sec=int(runtime.level_poll_interval_sec),
             exhausted_outcome=StageOutcome(
                 kind="fail",
                 error_code="irrigation_recovery_probe_exhausted",
@@ -48,7 +48,7 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
         if pending_manual_step == "irrigation_recovery_stop":
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")
         if control_mode == "manual":
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
+            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
 
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):

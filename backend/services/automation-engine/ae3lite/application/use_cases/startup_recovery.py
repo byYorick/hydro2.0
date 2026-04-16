@@ -7,10 +7,10 @@ from datetime import datetime
 from typing import Any, Optional
 
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
 from ae3lite.domain.errors import StartupRecoveryError, TaskExecutionError
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 from ae3lite.infrastructure.metrics import STARTUP_RECOVERY_RUN, STARTUP_RECOVERY_TASK
 
 logger = logging.getLogger(__name__)

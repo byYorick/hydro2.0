@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
 from ae3lite.domain.errors import TaskExecutionError
 
@@ -59,6 +60,13 @@ class _RuntimeMonitorStub:
         }
 
 
+def _plan(*, named_plans=None, **runtime_overrides):
+    return SimpleNamespace(
+        runtime=make_runtime_plan(**runtime_overrides),
+        named_plans=named_plans or {},
+    )
+
+
 @pytest.mark.asyncio
 async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_enabled(monkeypatch) -> None:
     handler = IrrigationCheckHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
@@ -88,12 +96,10 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
-        runtime={
-            "level_poll_interval_sec": 5,
-            "irrigation_execution": {"correction_during_irrigation": True},
-            "irrigation_safety": {"stop_on_solution_min": False},
-        }
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={"correction_during_irrigation": True},
+        irrigation_safety={"stop_on_solution_min": False},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
     out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
@@ -130,12 +136,10 @@ async def test_irrigation_check_skips_correction_when_flag_disabled(monkeypatch)
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
-        runtime={
-            "level_poll_interval_sec": 5,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": False},
-        }
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": False},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
     out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
@@ -170,12 +174,10 @@ async def test_irrigation_check_skips_correction_when_already_exhausted(monkeypa
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
-        runtime={
-            "level_poll_interval_sec": 5,
-            "irrigation_execution": {"correction_during_irrigation": True},
-            "irrigation_safety": {"stop_on_solution_min": False},
-        }
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={"correction_during_irrigation": True},
+        irrigation_safety={"stop_on_solution_min": False},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
     out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
@@ -210,12 +212,10 @@ async def test_irrigation_check_deadline_reached_does_not_probe_before_stop(monk
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
-        runtime={
-            "level_poll_interval_sec": 5,
-            "irrigation_execution": {"correction_during_irrigation": True},
-            "irrigation_safety": {"stop_on_solution_min": False},
-        }
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={"correction_during_irrigation": True},
+        irrigation_safety={"stop_on_solution_min": False},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -271,19 +271,17 @@ async def test_irrigation_check_uses_probe_snapshot_for_solution_min() -> None:
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": True},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": True},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -346,19 +344,17 @@ async def test_irrigation_check_stale_level_recovers_on_safe_recheck(monkeypatch
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": True},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": True},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -421,19 +417,17 @@ async def test_irrigation_check_stale_level_still_fails_when_recheck_is_stale(mo
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": True},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": True},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -501,20 +495,18 @@ async def test_irrigation_check_recent_solution_low_event_uses_setup_replay_path
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": True},
-            "irrigation_recovery": {"max_setup_replays": 2},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": True},
+        irrigation_recovery={"max_setup_replays": 2},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -600,20 +592,18 @@ async def test_irrigation_check_ignores_stale_solution_low_event_when_probe_and_
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": True},
-            "irrigation_safety": {"stop_on_solution_min": True},
-            "irrigation_recovery": {"max_setup_replays": 0},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": True},
+        irrigation_safety={"stop_on_solution_min": True},
+        irrigation_recovery={"max_setup_replays": 0},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -667,20 +657,18 @@ async def test_irrigation_check_ignores_solution_low_event_when_guard_disabled()
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": False},
-            "irrigation_recovery": {"max_setup_replays": 2},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": False},
+        irrigation_recovery={"max_setup_replays": 2},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 
@@ -721,20 +709,18 @@ async def test_irrigation_check_recent_estop_reconcile_failure_raises_emergency_
             stage_entered_at=now - timedelta(seconds=10),
         ),
     )
-    plan = SimpleNamespace(
+    plan = _plan(
         named_plans={"irr_state_probe": ("probe_cmd",)},
-        runtime={
-            "level_poll_interval_sec": 5,
-            "level_switch_on_threshold": 0.5,
-            "telemetry_max_age_sec": 10,
-            "solution_min_sensor_labels": ["level_solution_min"],
-            "irr_state_max_age_sec": 60,
-            "irr_state_wait_timeout_sec": 0.0,
-            "irr_state_wait_poll_interval_sec": 0.05,
-            "irrigation_execution": {"correction_during_irrigation": False},
-            "irrigation_safety": {"stop_on_solution_min": True},
-            "irrigation_recovery": {"max_setup_replays": 2},
-        },
+        level_poll_interval_sec=5,
+        level_switch_on_threshold=0.5,
+        telemetry_max_age_sec=10,
+        solution_min_sensor_labels=["level_solution_min"],
+        irr_state_max_age_sec=60,
+        irr_state_wait_timeout_sec=0.0,
+        irr_state_wait_poll_interval_sec=0.05,
+        irrigation_execution={"correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": True},
+        irrigation_recovery={"max_setup_replays": 2},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
 

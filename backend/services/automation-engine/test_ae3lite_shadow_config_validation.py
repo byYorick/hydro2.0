@@ -1,10 +1,11 @@
-"""Unit tests для shadow validation hook в CycleStartPlanner (Phase 2 / B2 audit fix).
+"""Unit tests для shadow validation hook в CycleStartPlanner.
 
-Покрывает `CycleStartPlanner._shadow_validate_correction` — 4 кодовых пути:
+Покрывает `CycleStartPlanner._shadow_validate_correction` — 5 кодовых путей:
   1. snapshot.correction_config is None / not Mapping → result=invalid
   2. correction_config exists but no base/phases → result=invalid
   3. all targets (base + 3 phases) valid → result=ok
   4. one phase invalid → result=invalid + WARNING log
+  5. repeated invalid payloads within one minute → WARNING rate-limited
 
 Использует `SHADOW_CONFIG_VALIDATION` Prometheus counter напрямую.
 Snapshot — `SimpleNamespace` (стандартный паттерн в AE3 unit-тестах).
@@ -18,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ae3lite.domain.services import CycleStartPlanner
+from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
 
 
@@ -196,3 +197,42 @@ def test_shadow_invalid_when_one_phase_breaks(caplog) -> None:
     assert len(failed_logs) == 1
     assert failed_logs[0].zone_id == 42
     assert failed_logs[0].namespace == "zone.correction:phases.tank_recirc"
+
+
+def test_shadow_warning_is_rate_limited_per_zone(caplog) -> None:
+    base = _valid_base_payload()
+    broken_phase = deepcopy(base)
+    del broken_phase["retry"]
+    correction_config = {
+        "base": base,
+        "phases": {
+            "solution_fill": deepcopy(base),
+            "tank_recirc": broken_phase,
+            "irrigation": deepcopy(base),
+        },
+    }
+    clock = [100.0]
+    planner = CycleStartPlanner(monotonic_clock=lambda: clock[0])
+
+    with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.cycle_start_planner"):
+        planner._shadow_validate_correction(
+            snapshot=_make_snapshot(correction_config), task=_make_task(zone_id=99),
+        )
+        planner._shadow_validate_correction(
+            snapshot=_make_snapshot(correction_config), task=_make_task(zone_id=99),
+        )
+        clock[0] += 61.0
+        planner._shadow_validate_correction(
+            snapshot=_make_snapshot(correction_config), task=_make_task(zone_id=99),
+        )
+
+    failed_logs = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.WARNING and "ae3_shadow_config_validation_failed" in rec.message
+    ]
+    assert len(failed_logs) == 2
+    assert failed_logs[0].zone_id == 99
+    assert failed_logs[0].namespace == "zone.correction:phases.tank_recirc"
+    assert failed_logs[0].rate_limit_window_sec == 60
+    assert failed_logs[0].invalid_count == 1
+    assert failed_logs[1].zone_id == 99

@@ -53,7 +53,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 "SOLUTION_FILL_COMPLETED",
                 "EMERGENCY_STOP_ACTIVATED",
             ),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "SOLUTION_FILL_SOURCE_EMPTY":
@@ -100,7 +100,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 raced_completion_event = await self._read_recent_storage_event(
                     task=task,
                     event_types=("SOLUTION_FILL_COMPLETED",),
-                    max_age_sec=86400,
+                    max_age_sec=86400,  # config-literal: one-day completion-event replay window
                 )
                 raced_event_type = str((raced_completion_event or {}).get("event_type") or "").strip().upper()
                 if raced_event_type == "SOLUTION_FILL_COMPLETED":

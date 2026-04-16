@@ -2,7 +2,7 @@
 
 import pytest
 
-from ae3lite.domain.services.topology_registry import (
+from ae3lite.application.services.workflow_topology import (
     StageDef,
     TopologyRegistry,
     TWO_TANK,

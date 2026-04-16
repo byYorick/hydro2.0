@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)

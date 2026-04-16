@@ -1,4 +1,4 @@
-"""Shared factory for `RuntimePlan` test fixtures (Phase 4).
+"""Shared factory for `RuntimePlan` test fixtures.
 
 Handlers now consume `plan.runtime` as a typed `RuntimePlan` model (no more
 `_DictShim` compat bridge). Tests therefore must construct a fully populated

@@ -29,6 +29,7 @@ help:
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
 	@echo "  protocol-check - run protocol contract tests (incl. schemas-validate)"
+	@echo "  ae3-config-lint - check inline numeric literals in AE3 handlers"
 	@echo "  schemas-validate - validate JSON Schemas under schemas/ against meta-schema"
 	@echo "  logs           - stream logs for selected service (SERVICE=<name>, TAIL=200)"
 	@echo "  logs-core      - stream logs for core runtime services"
@@ -151,6 +152,10 @@ schemas-validate:
 		python3 tools/validate_schemas.py schemas; \
 	fi
 
+.PHONY: ae3-config-lint
+ae3-config-lint:
+	@python3 tools/ae3_config_lint.py
+
 .PHONY: generate-authority
 generate-authority:
 	@echo "Generating AUTHORITY.md from schemas/*.v1.json..."
@@ -162,7 +167,7 @@ authority-check:
 	@python3 tools/generate_authority.py --check
 
 .PHONY: protocol-check
-protocol-check: schemas-validate authority-check
+protocol-check: schemas-validate authority-check ae3-config-lint
 	@echo "Running protocol contract tests..."
 	@./tools/check_runtime_schema_parity.sh
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short

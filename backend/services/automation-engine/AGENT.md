@@ -34,11 +34,13 @@ ae3lite/
   domain/
     entities/       # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
     errors.py       # Все domain-ошибки
-    services/       # CycleStartPlanner, two_tank_runtime_spec
+    services/       # CycleStartPlanner
   application/
     use_cases/      # create_task, claim_next, execute_task, finalize_task,
                     # reconcile_command, startup_recovery, two_tank_executor
+    services/       # workflow_topology, sensor_mode_controller, decision_window_reader
     adapters/       # intent mapping adapter (фактическое имя модуля см. в каталоге)
+  config/           # Pydantic schemas, runtime_plan_builder, loader
   infrastructure/
     repositories/   # PgAutomationTaskRepository, PgZoneWorkflowRepository,
                     # PgZoneLease, PgAeCommandRepository
@@ -48,7 +50,7 @@ ae3lite/
   runtime/
     worker.py       # Ae3RuntimeWorker (drain loop)
     bootstrap.py    # build_ae3_runtime_bundle()
-    config.py       # Ae3RuntimeConfig.from_env()
+    env.py          # Ae3RuntimeConfig.from_env()
     app.py          # create_app() / serve()
 main.py             # точка входа → ae3lite.main
 ```

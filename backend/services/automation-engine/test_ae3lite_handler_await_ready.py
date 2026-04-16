@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.await_ready import AwaitReadyHandler
 from ae3lite.domain.errors import TaskExecutionError
 
@@ -19,12 +20,16 @@ class _TaskRepoStub:
         return self._updated_task
 
 
+def _plan(**runtime_overrides):
+    return SimpleNamespace(runtime=make_runtime_plan(**runtime_overrides))
+
+
 @pytest.mark.asyncio
 async def test_await_ready_transitions_to_decision_gate_when_phase_is_ready() -> None:
     handler = AwaitReadyHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task = SimpleNamespace(id=1, zone_id=7, claimed_by="worker", irrigation_wait_ready_deadline_at=None)
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "ready"})
+    plan = _plan(zone_workflow_phase="ready")
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
     assert out.kind == "transition"
     assert out.next_stage == "decision_gate"
@@ -36,7 +41,7 @@ async def test_await_ready_sets_deadline_and_polls_when_not_ready() -> None:
     handler = AwaitReadyHandler(runtime_monitor=object(), command_gateway=object(), task_repository=repo)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task = SimpleNamespace(id=1, zone_id=7, claimed_by="worker", irrigation_wait_ready_deadline_at=None)
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "tank_filling"})
+    plan = _plan(zone_workflow_phase="tank_filling")
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
     assert out.kind == "poll"
     assert repo.calls
@@ -53,7 +58,7 @@ async def test_await_ready_raises_when_deadline_persist_fails() -> None:
     )
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task = SimpleNamespace(id=1, zone_id=7, claimed_by="worker", irrigation_wait_ready_deadline_at=None)
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "tank_filling"})
+    plan = _plan(zone_workflow_phase="tank_filling")
 
     with pytest.raises(TaskExecutionError, match="Не удалось сохранить deadline wait_ready"):
         await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
@@ -64,7 +69,7 @@ async def test_await_ready_raises_when_owner_missing() -> None:
     handler = AwaitReadyHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task = SimpleNamespace(id=1, zone_id=7, claimed_by=None, irrigation_wait_ready_deadline_at=None)
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "tank_filling"})
+    plan = _plan(zone_workflow_phase="tank_filling")
 
     with pytest.raises(TaskExecutionError, match="отсутствует owner"):
         await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
@@ -80,7 +85,7 @@ async def test_await_ready_fails_on_deadline_exceeded() -> None:
         claimed_by="worker",
         irrigation_wait_ready_deadline_at=now - timedelta(seconds=1),
     )
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "startup"})
+    plan = _plan(zone_workflow_phase="startup")
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
     assert out.kind == "fail"
     assert out.error_code == "irrigation_wait_ready_timeout"
@@ -117,7 +122,7 @@ async def test_await_ready_timeout_emits_zone_event_and_biz_alert(monkeypatch: p
         irrigation_wait_ready_deadline_at=now - timedelta(seconds=1),
         topology="two_tank",
     )
-    plan = SimpleNamespace(runtime={"zone_workflow_phase": "startup", "grow_cycle_id": 99})
+    plan = _plan(zone_workflow_phase="startup", grow_cycle_id=99)
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
     assert out.kind == "fail"
     assert len(events) == 1

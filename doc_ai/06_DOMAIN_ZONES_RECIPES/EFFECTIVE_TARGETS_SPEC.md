@@ -870,7 +870,7 @@ Python сервисы должны регулярно обновлять targets
 
 ### 9.2. Runtime spec extensions
 
-`backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py` теперь добавляет в runtime spec:
+`backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py` теперь добавляет в runtime spec:
 
 | Поле | Значение |
 |------|----------|
@@ -880,7 +880,7 @@ Python сервисы должны регулярно обновлять targets
 | `target_ec_prepare_min`, `target_ec_prepare_max` | `phase.ec_min/ec_max * npk_ec_share`. |
 | `npk_ec_share` | Доля NPK от суммы всех `ec_component_ratios`; если ratios не заданы (legacy phase) → `1.0` (backward compat). |
 
-Функция: `_compute_prepare_ec_share(solution_fill_cfg, base_cfg)` — `two_tank_runtime_spec.py:605`.
+Функция: `_compute_prepare_ec_share(solution_fill_cfg, base_cfg)` в `runtime_plan_builder.py`.
 
 `ec_component_ratios` собираются на стороне Laravel из flat-полей фазы (`nutrient_npk_ratio_pct`, `nutrient_calcium_ratio_pct`, `nutrient_magnesium_ratio_pct`, `nutrient_micro_ratio_pct`) через `App\Support\Automation\RecipeNutritionRuntimeConfigResolver` (`backend/laravel/app/Support/Automation/RecipeNutritionRuntimeConfigResolver.php:41`) и попадают в compiled bundle как `phases.{phase}.ec_component_ratios`.
 
@@ -941,7 +941,7 @@ Backend-валидация (pH/EC) — `App\Support\Recipes\RecipePhaseTargetVal
 Two-tank runtime spec собирает поля:
 
 - `runtime["day_night_enabled"]` — bool;
-- `runtime["day_night_config"]` — структура `{enabled, lighting, ph, ec}`, готовая к late-binding в handler (`two_tank_runtime_spec.py:639` — `_build_day_night_config`).
+- `runtime["day_night_config"]` — структура `{enabled, lighting, ph, ec}`, готовая к late-binding в handler (`runtime_plan_builder.py`, `_build_day_night_config`).
 
 ### 10.4. Late-binding в handler
 

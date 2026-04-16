@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.services.two_tank_runtime_spec import (
+from ae3lite.config.runtime_plan_builder import (
     default_two_tank_command_plan,
     resolve_two_tank_runtime,
 )

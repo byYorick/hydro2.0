@@ -20,9 +20,9 @@ import pytest
 from unittest.mock import AsyncMock
 
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
+from ae3lite.application.services.workflow_topology import StageDef
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.domain.services.topology_registry import StageDef
 
 
 NOW = datetime(2026, 3, 10, 12, 0, 0, tzinfo=timezone.utc)

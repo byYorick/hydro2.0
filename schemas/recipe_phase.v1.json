@@ -154,7 +154,7 @@
     },
     "TwoTankCommands": {
       "type": "object",
-      "description": "Per-plan relay command overrides. Plan names are fixed by AE3 two-tank topology; see two_tank_runtime_spec.py _REQUIRED_TWO_TANK_PLAN_CHANNELS.",
+      "description": "Per-plan relay command overrides. Plan names are fixed by AE3 two-tank topology; see runtime_plan_builder.py _REQUIRED_TWO_TANK_PLAN_CHANNELS.",
       "additionalProperties": false,
       "properties": {
         "irrigation_start":            { "$ref": "#/$defs/CommandList" },

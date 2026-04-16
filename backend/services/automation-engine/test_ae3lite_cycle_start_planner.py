@@ -7,7 +7,7 @@ import pytest
 from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.services import CycleStartPlanner
+from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 
 
 def _minimal_zone_correction_config() -> dict:

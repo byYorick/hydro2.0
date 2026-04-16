@@ -46,10 +46,11 @@ class DecisionGateHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         owner = str(getattr(task, "claimed_by", "") or "")
+        runtime = self._require_runtime_plan(plan=plan)
         decision = await self._decision_controller.evaluate(
             zone_id=int(task.zone_id),
             runtime_monitor=self._runtime_monitor,
-            runtime=plan.runtime if hasattr(plan, "runtime") else {},
+            runtime=runtime,
             mode=str(getattr(task, "irrigation_mode", None) or "normal"),
             requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
             now=now,
@@ -58,9 +59,7 @@ class DecisionGateHandler(BaseStageHandler):
             task_id=int(task.id),
             owner=owner,
             now=now,
-            irrigation_decision_strategy=str(
-                ((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy")
-            ),
+            irrigation_decision_strategy=str(runtime.irrigation_decision.strategy or ""),
             irrigation_decision_outcome=decision.outcome,
             irrigation_decision_reason_code=decision.reason_code,
             irrigation_decision_degraded=decision.degraded,
@@ -70,7 +69,7 @@ class DecisionGateHandler(BaseStageHandler):
 
         IRRIGATION_DECISION.labels(
             topology=str(getattr(task, "topology", "") or ""),
-            strategy=str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
+            strategy=str(runtime.irrigation_decision.strategy or ""),
             outcome=str(decision.outcome or ""),
         ).inc()
 
@@ -97,8 +96,8 @@ class DecisionGateHandler(BaseStageHandler):
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),
                         "stage": "decision_gate",
-                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
-                        "bundle_revision": str((plan.runtime or {}).get("bundle_revision") or ""),
+                        "strategy": str(runtime.irrigation_decision.strategy or ""),
+                        "bundle_revision": str(runtime.bundle_revision or ""),
                         "reason_code": str(getattr(decision, "reason_code", "") or ""),
                         "degraded": bool(getattr(decision, "degraded", False)),
                     },
@@ -120,8 +119,8 @@ class DecisionGateHandler(BaseStageHandler):
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),
                         "stage": "decision_gate",
-                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
-                        "bundle_revision": str((plan.runtime or {}).get("bundle_revision") or ""),
+                        "strategy": str(runtime.irrigation_decision.strategy or ""),
+                        "bundle_revision": str(runtime.bundle_revision or ""),
                         "reason_code": str(getattr(decision, "reason_code", "") or ""),
                         "degraded": True,
                     },
@@ -143,8 +142,8 @@ class DecisionGateHandler(BaseStageHandler):
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),
                         "stage": "decision_gate",
-                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
-                        "bundle_revision": str((plan.runtime or {}).get("bundle_revision") or ""),
+                        "strategy": str(runtime.irrigation_decision.strategy or ""),
+                        "bundle_revision": str(runtime.bundle_revision or ""),
                         "error_code": str(getattr(decision, "reason_code", "") or ""),
                         "reason_code": str(getattr(decision, "reason_code", "") or ""),
                         "degraded": bool(getattr(decision, "degraded", False)),
@@ -177,17 +176,15 @@ class DecisionGateHandler(BaseStageHandler):
         plan: Any,
         decision: Any,
     ) -> None:
-        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), Mapping) else {}
-        decision_cfg = runtime.get("irrigation_decision")
-        decision_cfg = decision_cfg if isinstance(decision_cfg, Mapping) else {}
+        runtime = self._require_runtime_plan(plan=plan)
         details = {
             "task_id": int(getattr(task, "id", 0) or 0),
             "zone_id": int(getattr(task, "zone_id", 0) or 0),
             "stage": str(getattr(task, "current_stage", "") or ""),
             "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
             "topology": str(getattr(task, "topology", "") or ""),
-            "strategy": str(decision_cfg.get("strategy") or getattr(task, "irrigation_decision_strategy", "") or ""),
-            "bundle_revision": str((runtime.get("bundle_revision") or getattr(task, "irrigation_bundle_revision", "") or "")).strip() or None,
+            "strategy": str(runtime.irrigation_decision.strategy or getattr(task, "irrigation_decision_strategy", "") or ""),
+            "bundle_revision": str((runtime.bundle_revision or getattr(task, "irrigation_bundle_revision", "") or "")).strip() or None,
             "outcome": str(getattr(decision, "outcome", "") or ""),
             "reason_code": str(getattr(decision, "reason_code", "") or ""),
             "degraded": bool(getattr(decision, "degraded", False)),

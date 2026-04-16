@@ -1,19 +1,14 @@
-"""Pydantic v2 model for the full `plan.runtime` dict shape (Phase 3.1 / Option B).
+"""Pydantic v2 model for the full `plan.runtime` dict shape.
 
 `RuntimePlan` mirrors the output of `resolve_two_tank_runtime(snapshot)` —
 that is, the dict that handlers consume as `plan.runtime`. Unlike
 `ZoneCorrection` (which mirrors raw `zone.correction` document), this model
 is the **resolved + flattened** runtime view used by AE3 handlers.
 
-Phase 3 migration target: handlers read from typed `RuntimePlan` instead of
-raw dicts. `resolve_two_tank_runtime()` will be adapted in B-4 to return
-`RuntimePlan.model_validate(...)` instead of dict.
-
 Drift detection: `test_ae3lite_pydantic_jsonschema_parity.py` covers
 `ZoneCorrection`. RuntimePlan does NOT have a JSON Schema mirror — it is the
 Python-only contract for AE3 handlers (the canonical source for this
-shape lives in `resolve_two_tank_runtime` itself). Phase 7 may add JSON
-Schema export from this Pydantic model for documentation purposes.
+shape lives in `resolve_two_tank_runtime` itself).
 """
 
 from __future__ import annotations
@@ -251,14 +246,12 @@ class RuntimePlan(_DictShim, BaseModel):
     in `resolve_two_tank_runtime` output that adds/removes/renames a key must
     be reflected here.
 
-    **Transition shim (Phase 3.1 / B-5):** to allow legacy handlers and tests
-    that still read `plan.runtime["X"]` / `plan.runtime.get("X", default)` to
-    keep working while migration to typed access is in flight, `RuntimePlan`
+    `RuntimePlan`
     implements a read-only dict-like API (`__getitem__`, `get`, `__contains__`,
     `keys`, `items`, `values`). Legacy nested reads like
     `plan.runtime["correction"]["retry"]["telemetry_stale_retry_sec"]` still
     work because nested values are also dict-like (Pydantic models with the
-    same shim). Phase 4 deletes this shim once all readers use typed access.
+    same shim).
 
     Per-instance shim cost: ~1 attribute lookup + ~1 dict() call per top-level
     read. Negligible vs handler I/O.
@@ -330,6 +323,8 @@ class RuntimePlan(_DictShim, BaseModel):
     # Derived: cycle_start_planner injects the active workflow phase string
     # (snapshot.workflow_phase normalized) for handler convenience.
     zone_workflow_phase: str | None = None
+    # Optional cycle context consumed by await_ready observability/events.
+    grow_cycle_id: int | None = None
     # Derived: cycle_start_planner injects the bundle_revision tag locked
     # for the active irrigation decision snapshot. Optional — only set when
     # `task.irrigation_bundle_revision` is non-empty.
