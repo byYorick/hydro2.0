@@ -181,5 +181,5 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         return result.get("task") or task
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        runtime = self._require_runtime_plan(plan=plan)
         return self._correction_config_for_task(task=task, runtime=runtime)

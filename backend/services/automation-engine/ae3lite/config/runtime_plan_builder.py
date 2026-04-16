@@ -9,8 +9,6 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 
 # ── Значения по умолчанию для лимитов retry/attempt ─────────────────────────
 
-#: Максимальное число попыток коррекции в `prepare_recirculation` перед эскалацией.
-_DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
 _MAX_CORRECTION_ATTEMPTS: int = 500
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
@@ -206,11 +204,9 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_timeout_sec",
             minimum=30,
         ),
-        # Совпадает с дедлайном workflow_router.prepare_recirculation_check:
-        # базовое окно + slack, по умолчанию 900 с, если параметр не задан.
-        "prepare_recirculation_correction_slack_sec": _resolve_bounded_int(
+        "prepare_recirculation_correction_slack_sec": _require_int(
             recirc_retry_cfg.get("prepare_recirculation_correction_slack_sec"),
-            default=900,
+            path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_correction_slack_sec",
             minimum=0,
             maximum=7200,
         ),
@@ -240,7 +236,12 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.solution_fill.timing.irr_state_max_age_sec",
             minimum=5,
         ),
-        "irr_state_wait_timeout_sec": _resolve_float(execution.get("startup", {}).get("irr_state_wait_timeout_sec"), 5.0, 0.0, 30.0),
+        "irr_state_wait_timeout_sec": _require_float(
+            _to_mapping(execution.get("startup")).get("irr_state_wait_timeout_sec"),
+            path="diagnostics_execution.startup.irr_state_wait_timeout_sec",
+            minimum=0.0,
+            maximum=30.0,
+        ),
         "sensor_mode_stabilization_time_sec": _require_int(
             fill_timing_cfg.get("sensor_mode_stabilization_time_sec"),
             path="correction_config.base/phases.solution_fill.timing.sensor_mode_stabilization_time_sec",
@@ -613,15 +614,6 @@ def _require_str(raw_value: Any, *, path: str) -> str:
     if value:
         return value
     raise PlannerConfigurationError(f"Отсутствует обязательное поле correction_config: {path}")
-
-
-def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
-    return _resolve_bounded_int(
-        raw_value,
-        _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS,
-        1,
-        _MAX_CORRECTION_ATTEMPTS,
-    )
 
 
 def _compute_prepare_ec_share(
@@ -1148,7 +1140,12 @@ def _build_correction_cfg(
         "controllers": controllers_cfg,
         "pump_calibration": dict(pump_calibration_cfg),
         "ec_component_policy": _normalize_component_policy(phase_cfg.get("ec_component_policy")),
-        "ec_dosing_mode": str(phase_cfg.get("ec_dosing_mode") or "single").strip().lower() or "single",
+        "ec_dosing_mode": _require_str(
+            phase_cfg.get("ec_dosing_mode")
+            if phase_cfg.get("ec_dosing_mode") is not None
+            else dosing_cfg.get("ec_dosing_mode"),
+            path="dosing.ec_dosing_mode",
+        ),
         "ec_component_ratios": _to_mapping(phase_cfg.get("ec_component_ratios")),
         "ec_excluded_components": tuple(
             str(x).strip().lower()

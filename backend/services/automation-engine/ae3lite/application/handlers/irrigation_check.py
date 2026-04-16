@@ -237,7 +237,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     )
                 return StageOutcome(kind="enter_correction", correction=corr)
 
-        return StageOutcome(kind="poll", due_delay_sec=int(runtime["level_poll_interval_sec"]))
+        return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
 
     def _recent_solution_low_event_confirms_active_low(
         self,
@@ -312,7 +312,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         # stale counter and re-enter the same branch on the next tick — a
         # runaway loop that manifested as repeated solution_min alerts without
         # the replay budget ever actually decrementing.
-        max_replays = int(recovery.get("max_setup_replays") or 0)
+        max_replays = int(recovery.max_setup_replays or 0)
         next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
         if next_replay_count > max_replays:
             try:

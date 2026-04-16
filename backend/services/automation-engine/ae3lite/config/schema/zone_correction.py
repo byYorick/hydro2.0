@@ -5,6 +5,12 @@ Mirrors `schemas/zone_correction.v1.json`. This is the shape of both
 each `snapshot.correction_config.phases.*` entry after compiler merge
 (for AE3 runtime side).
 
+Unlike `RuntimePlan`, this module still keeps a small `_DictShim`
+compatibility layer intentionally: it is used only for raw authority/config
+schema objects and parity with older config-reader code. Runtime handlers must
+consume typed `RuntimePlan` objects from `config/schema/runtime_plan.py` and
+must not rely on this shim.
+
 Constraints match JSON Schema exactly. Drift between this file and
 `zone_correction.v1.json` is a CI bug.
 """
@@ -22,10 +28,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class _DictShim:
-    """Read-only dict-like API for compatibility with existing handler access.
+    """Read-only dict-like API for authority-schema compatibility only.
 
-    Same semantics as `runtime_plan._DictShim`. Defined here to avoid a
-    circular import (runtime_plan imports symbols from zone_correction).
+    Same semantics as the historical runtime shim, but retained here solely
+    for `zone.correction`/schema consumers. This is not part of the typed
+    `RuntimePlan` runtime path.
     """
 
     def __iter__(self):  # type: ignore[no-untyped-def]
@@ -67,8 +74,8 @@ class _DictShim:
         return (self[k] for k in self.keys())
 
 
-# Register _DictShim as a virtual Mapping subclass so that
-# `isinstance(model, Mapping)` returns True in legacy handler code.
+# Register `_DictShim` as a virtual `Mapping` for raw authority-schema
+# consumers. Runtime handlers must not depend on this for `RuntimePlan`.
 Mapping.register(_DictShim)
 
 # ─── Primitive type aliases ────────────────────────────────────────────────

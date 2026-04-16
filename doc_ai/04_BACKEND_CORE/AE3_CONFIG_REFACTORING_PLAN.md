@@ -19,7 +19,7 @@
 | 3.1 B-5a–d (Variant 3 + transition shim) | ✅ completed 2026-04-15 | `_DictShim` mixin, CommandPlan typed runtime |
 | 3.1 B-5e/B-6 (hardcoded defaults removal) | ✅ completed 2026-04-15 | correction.py retry defaults + base.py `_OBSERVE_DEFAULT_*` |
 | 3.1 B-7 (strict-required runtime reads) | ✅ completed 2026-04-15 | 5 handlers migrated (clean_fill, solution_fill, prepare_recirc, irrigation_check, startup); `_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS` deleted |
-| 4: shim removal | ✅ completed 2026-04-16 | [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py), [workflow_topology.py](../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py), [env.py](../../backend/services/automation-engine/ae3lite/runtime/env.py), [ae3_config_lint.py](../../tools/ae3_config_lint.py), renamed tests [test_ae3lite_runtime_plan_builder.py](../../backend/services/automation-engine/test_ae3lite_runtime_plan_builder.py) |
+| 4: shim removal | ✅ completed 2026-04-16 | [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py), [workflow_topology.py](../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py), [env.py](../../backend/services/automation-engine/ae3lite/runtime/env.py), [ae3_config_lint.py](../../tools/ae3_config_lint.py), renamed tests [test_ae3lite_runtime_plan_builder.py](../../backend/services/automation-engine/test_ae3lite_runtime_plan_builder.py) and [test_ae3lite_workflow_topology.py](../../backend/services/automation-engine/test_ae3lite_workflow_topology.py) |
 | 5: Config modes backend (locked/live) | ✅ completed 2026-04-15 | migration + ZoneConfigModeController + ZonePolicy::setLive + RevertExpiredLiveModesCommand + AE3 `config/modes.py`/`live_reload.py` + `BaseStageHandler._checkpoint()` |
 | 5 audit + fixes | ✅ completed 2026-04-15 | [AE3_CONFIG_REFACTORING_AUDIT_PHASE_5.md](AE3_CONFIG_REFACTORING_AUDIT_PHASE_5.md) — 3 CRITICAL + 2 MAJOR fixes |
 | 5.1 (revision bump в unified API) | ✅ completed 2026-04-15 | `ZoneConfigRevisionService::bumpAndAudit` + wiring в `AutomationConfigController::update` |
@@ -30,7 +30,7 @@
 | 7: Observability + doc gen | ✅ completed 2026-04-15 | Prometheus metrics `ae3_zone_config_mode` gauge + `ae3_zone_config_live_edits_total` + `ae3_zone_config_invalid_total` counters в `infrastructure/metrics.py`; Grafana dashboard `backend/configs/prod/grafana/dashboards/zone-configs.json`; `tools/generate_authority.py` + `make generate-authority`/`make authority-check` (CI guard); `AUTOMATION_CONFIG_AUTHORITY.md` автогенерируемая секция §«Автогенерируемые таблицы параметров» (6.3KB) |
 | 6.2: full fine-tuning live edit correction/PID/calibration | ✅ fully closed 2026-04-16 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, AE3 integration test `test_ae3lite_checkpoint_hot_swap_integration.py`, browser E2E `13-correction-authority-flows.spec.ts`, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
 
-**Tests state (2026-04-16):** ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для полного закрытия Phase 6.2 добавлены AE3 integration test на `_checkpoint()` live hot-reload и browser E2E live-edit flow; targeted rerun зафиксирован в этой сессии.
+**Tests state (2026-04-16):** исторический snapshot на 2026-04-15/16: ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для полного закрытия Phase 6.2 добавлены AE3 integration test на `_checkpoint()` live hot-reload и browser E2E live-edit flow; дополнительно после runtime typed cutover подтверждён расширенный AE rerun: `226 passed` по 12 профильным pytest-файлам (`await_ready`, `irrigation_runtime_integration`, `irrigation_check_correction`, `cycle_start_planner`, `workflow_router`, `irrigation_recovery`, `probe_backoff`, `correction_handler_multi_dose`, `irrigation_decision_controller`, `solution_fill`, `prepare_recirc_check`, `correction_handler`).
 
 ## Phase 6.2 Delivered (2026-04-15)
 
@@ -203,8 +203,9 @@ audit M-5 (incomplete Phase 2 DoD). Phase 2 acceptance валиден.
 - `m-1` — закрыто: `ec_dosing_mode` добавлен в `ZoneCorrectionConfigCatalog::fieldCatalog()` (UI editor)
 - `m-2` — закрыто: `.env.example` содержит `AUTOMATION_SCHEMAS_ROOT`
 - `m-3` — закрыто: WARNING логи shadow validation rate-limited (не чаще 1 раза на зону в 60 сек)
-- `m-4` — open: удалить оставшийся `_DictShim` nested mapping-compat и перевести runtime readers/tests на attribute/typed access; `CommandPlan.runtime` уже narrowed to `RuntimePlan | None`
+- `m-4` — закрыто: runtime-side mapping compat удалён; `RuntimePlan` больше не использует `_DictShim`, runtime readers/tests переведены на attribute/typed access, `CommandPlan.runtime` narrowed до `RuntimePlan | None`. Оставшийся `_DictShim` в `zone_correction.py` — это raw authority-schema compat-слой, не runtime path и не часть этого хвоста.
 - `m-5` — закрыто: `$defs/PhaseOverride` и sparse override semantics зафиксированы в authority/data-model docs
+- Residual builder fallbacks — закрыто: `runtime_plan_builder.py` больше не подставляет silent defaults для `retry.prepare_recirculation_correction_slack_sec`, `diagnostics_execution.startup.irr_state_wait_timeout_sec` и `dosing.ec_dosing_mode`; runtime fail-closed читает schema-required поля из bundle.
 
 ---
 
@@ -553,6 +554,7 @@ make test-ae PYTEST_ARGS="-q test_${handler}"
 **Shipped artifacts:**
 - runtime payload builder moved to [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py)
 - workflow topology graph moved to [workflow_topology.py](../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py)
+- legacy test name replaced with [test_ae3lite_workflow_topology.py](../../backend/services/automation-engine/test_ae3lite_workflow_topology.py)
 - runtime env moved to [env.py](../../backend/services/automation-engine/ae3lite/runtime/env.py) with `http_client_timeout_sec`
 - legacy tests renamed to [test_ae3lite_runtime_plan_builder.py](../../backend/services/automation-engine/test_ae3lite_runtime_plan_builder.py)
 - CI gate added in [ae3_config_lint.py](../../tools/ae3_config_lint.py) and wired into `make protocol-check`

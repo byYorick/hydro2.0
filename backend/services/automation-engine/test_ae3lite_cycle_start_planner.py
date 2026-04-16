@@ -35,6 +35,7 @@ def _minimal_zone_correction_config() -> dict:
                 "max_ec_correction_attempts": 5,
                 "max_ph_correction_attempts": 5,
                 "prepare_recirculation_timeout_sec": 1200,
+                "prepare_recirculation_correction_slack_sec": 0,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
                 "telemetry_stale_retry_sec": 15,
@@ -48,6 +49,7 @@ def _minimal_zone_correction_config() -> dict:
                 "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
+                "ec_dosing_mode": "single",
             },
             "tolerance": {
                 "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
@@ -236,6 +238,7 @@ def test_cycle_start_planner_builds_native_two_tank_named_plans() -> None:
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -279,6 +282,7 @@ def test_cycle_start_planner_builds_native_two_tank_with_short_alias() -> None:
                 "topology": "two_tank",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -325,6 +329,7 @@ def test_two_tank_plan_runtime_zone_workflow_phase_matches_snapshot_workflow_pha
                 "topology": "two_tank",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -346,7 +351,7 @@ def test_two_tank_plan_runtime_zone_workflow_phase_matches_snapshot_workflow_pha
         }
     )
     plan = planner.build(task=_task(now), snapshot=snapshot)
-    assert plan.runtime.get("zone_workflow_phase") == "ready"
+    assert plan.runtime.zone_workflow_phase == "ready"
 
 
 def test_cycle_start_planner_uses_locked_irrigation_decision_snapshot_for_active_task() -> None:
@@ -378,6 +383,7 @@ def test_cycle_start_planner_uses_locked_irrigation_decision_snapshot_for_active
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -402,10 +408,10 @@ def test_cycle_start_planner_uses_locked_irrigation_decision_snapshot_for_active
 
     plan = planner.build(task=task, snapshot=snapshot)
 
-    assert plan.runtime["irrigation_decision"]["strategy"] == "task"
-    assert plan.runtime["irrigation_decision"]["config"]["lookback_sec"] == 900
-    assert plan.runtime["irrigation_decision"]["config"]["min_samples"] == 2
-    assert plan.runtime["bundle_revision"] == "bundle-locked-1234567890"
+    assert plan.runtime.irrigation_decision.strategy == "task"
+    assert plan.runtime.irrigation_decision.config.lookback_sec == 900
+    assert plan.runtime.irrigation_decision.config.min_samples == 2
+    assert plan.runtime.bundle_revision == "bundle-locked-1234567890"
 
 
 def test_cycle_start_planner_rejects_incomplete_solution_fill_start_contract() -> None:
@@ -420,6 +426,7 @@ def test_cycle_start_planner_rejects_incomplete_solution_fill_start_contract() -
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -460,6 +467,9 @@ def test_cycle_start_planner_injects_stage_timeout_guard_into_pump_main_start() 
                 "workflow": "cycle_start",
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
+                "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
+                },
             },
             "command_plans": {
                 "schema_version": 1,
@@ -505,6 +515,9 @@ def test_cycle_start_planner_ignores_empty_generic_steps_for_native_two_tank_top
                 "workflow": "cycle_start",
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
+                "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
+                },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
                 },
@@ -550,6 +563,7 @@ def test_cycle_start_planner_resolves_legacy_dosing_aliases_from_bound_pumps() -
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -583,7 +597,7 @@ def test_cycle_start_planner_resolves_legacy_dosing_aliases_from_bound_pumps() -
 
     plan = planner.build(task=_task(now), snapshot=snapshot)
 
-    correction_actuators = plan.runtime["correction"]["actuators"]
+    correction_actuators = plan.runtime.correction.actuators
     assert correction_actuators["ec"]["channel"] == "pump_a"
     assert correction_actuators["ph_up"]["channel"] == "pump_base"
     assert correction_actuators["ph_down"]["channel"] == "pump_acid"
@@ -601,6 +615,7 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -632,7 +647,7 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
 
     plan = planner.build(task=_task(now), snapshot=snapshot)
 
-    correction_actuators = plan.runtime["correction"]["actuators"]
+    correction_actuators = plan.runtime.correction.actuators
     assert correction_actuators["ec"]["channel"] == "pump_a"
     assert correction_actuators["ph_up"]["channel"] == "pump_base"
     assert correction_actuators["ph_down"]["channel"] == "pump_acid"
@@ -650,6 +665,7 @@ def test_cycle_start_planner_fails_closed_when_dosing_calibration_missing_prefli
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -698,6 +714,7 @@ def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> 
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,
@@ -730,7 +747,7 @@ def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> 
 
     plan = planner.build(task=_task(now), snapshot=snapshot)
 
-    correction_actuators = plan.runtime["correction"]["actuators"]
+    correction_actuators = plan.runtime.correction.actuators
     assert correction_actuators["ec"]["channel"] == "pump_a"
     assert correction_actuators["ec_actuators"]["pump_b"]["channel"] == "pump_b"
 
@@ -748,6 +765,7 @@ def test_cycle_start_planner_fails_closed_when_pid_configs_missing_preflight() -
                 "topology": "two_tank_drip_substrate_trays",
                 "required_node_types": ["irrig"],
                 "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
                     "prepare_recirculation_timeout_sec": 240,

@@ -25,7 +25,6 @@ from ae3lite.config.schema.zone_correction import (
     Safety,
     Timing,
     Tolerance,
-    _DictShim,
 )
 
 
@@ -47,7 +46,7 @@ HoursFloat = Annotated[float, Field(ge=0.0, le=24.0)]
 
 # ─── Sub-blocks (nested) ───────────────────────────────────────────────────
 
-class PrepareToleranceRuntime(_DictShim, BaseModel):
+class PrepareToleranceRuntime(BaseModel):
     """Runtime tolerance for prepare phase (mirrors source dict from
     `_build_prepare_tolerance_cfg`)."""
 
@@ -57,7 +56,7 @@ class PrepareToleranceRuntime(_DictShim, BaseModel):
     ec_pct: Annotated[float, Field(ge=0.1, le=100.0)]
 
 
-class CommandStep(_DictShim, BaseModel):
+class CommandStep(BaseModel):
     """One step in a command plan (relay/pump/pwm). Mirrors entries produced
     by `_normalize_command_steps`."""
 
@@ -70,7 +69,7 @@ class CommandStep(_DictShim, BaseModel):
     complete_on_ack: bool
 
 
-class FailSafeGuards(_DictShim, BaseModel):
+class FailSafeGuards(BaseModel):
     """Fail-safe delay/debounce guards consumed by phase handlers.
 
     Note: keys differ from `recipe_phase.FailSafeGuards` — runtime spec
@@ -87,7 +86,7 @@ class FailSafeGuards(_DictShim, BaseModel):
     estop_debounce_ms: EstopMs
 
 
-class IrrigationExecution(_DictShim, BaseModel):
+class IrrigationExecution(BaseModel):
     """Resolved irrigation execution params from `targets.irrigation`."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -99,7 +98,7 @@ class IrrigationExecution(_DictShim, BaseModel):
     stage_timeout_sec: int | None = None
 
 
-class IrrigationDecisionConfig(_DictShim, BaseModel):
+class IrrigationDecisionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     lookback_sec: Annotated[int, Field(ge=60, le=86400)]
@@ -109,14 +108,14 @@ class IrrigationDecisionConfig(_DictShim, BaseModel):
     spread_alert_threshold_pct: Annotated[float, Field(ge=0.0, le=100.0)]
 
 
-class IrrigationDecision(_DictShim, BaseModel):
+class IrrigationDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     strategy: str
     config: IrrigationDecisionConfig
 
 
-class IrrigationRecovery(_DictShim, BaseModel):
+class IrrigationRecovery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     max_continue_attempts: Annotated[int, Field(ge=1, le=30)]
@@ -125,19 +124,19 @@ class IrrigationRecovery(_DictShim, BaseModel):
     max_setup_replays: Annotated[int, Field(ge=0, le=10)]
 
 
-class IrrigationSafety(_DictShim, BaseModel):
+class IrrigationSafety(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     stop_on_solution_min: bool
 
 
-class SoilMoistureTarget(_DictShim, BaseModel):
+class SoilMoistureTarget(BaseModel):
     """Loose schema — two variants supported (subsystems.targets vs day_night
     fallback). All numeric fields optional. Validated structurally only."""
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
-    unit: str
+    unit: str | None = None
     min: float | None = None
     max: float | None = None
     target: float | None = None
@@ -147,7 +146,7 @@ class SoilMoistureTarget(_DictShim, BaseModel):
     day_hours: float | None = None
 
 
-class DayNightLighting(_DictShim, BaseModel):
+class DayNightLighting(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     day_start_time: str | None = None
@@ -155,7 +154,7 @@ class DayNightLighting(_DictShim, BaseModel):
     timezone: str | None = None
 
 
-class DayNightChannelTargets(_DictShim, BaseModel):
+class DayNightChannelTargets(BaseModel):
     """Day/night targets for one channel (ph or ec). All optional —
     resolver sets None when source missing."""
 
@@ -169,7 +168,7 @@ class DayNightChannelTargets(_DictShim, BaseModel):
     night_max: float | None = None
 
 
-class DayNightConfig(_DictShim, BaseModel):
+class DayNightConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool
@@ -180,7 +179,7 @@ class DayNightConfig(_DictShim, BaseModel):
 
 # ─── Per-phase correction config ──────────────────────────────────────────
 
-class CorrectionPhaseRuntime(_DictShim, BaseModel):
+class CorrectionPhaseRuntime(BaseModel):
     """Flattened per-phase correction config produced by
     `_build_correction_cfg`. Differs from `ZoneCorrection`: hierarchy is
     promoted to the top level (no nested `dosing`/`retry`/`timing`), and
@@ -207,6 +206,7 @@ class CorrectionPhaseRuntime(_DictShim, BaseModel):
     controllers: Controllers
     pump_calibration: Mapping[str, Any]
     ec_component_policy: Mapping[str, Any]
+    safety: Mapping[str, Any] | None = None
     ec_dosing_mode: Literal["single", "multi_parallel", "multi_sequential"]
     ec_component_ratios: Mapping[str, Any]
     ec_excluded_components: tuple[str, ...]
@@ -215,7 +215,7 @@ class CorrectionPhaseRuntime(_DictShim, BaseModel):
 
 # ─── Process calibration (per phase) ───────────────────────────────────────
 
-class ProcessCalibrationRuntime(_DictShim, BaseModel):
+class ProcessCalibrationRuntime(BaseModel):
     """Loose model: calibration entries are read straight from
     `pump_calibrations` table — they carry lifecycle metadata
     (`valid_from/to`, `is_active`, `meta`) that resolver does not strip.
@@ -238,7 +238,7 @@ class ProcessCalibrationRuntime(_DictShim, BaseModel):
 
 # ─── Root: RuntimePlan ─────────────────────────────────────────────────────
 
-class RuntimePlan(_DictShim, BaseModel):
+class RuntimePlan(BaseModel):
     """Full typed mirror of `plan.runtime` dict (output of
     `resolve_two_tank_runtime`).
 
@@ -246,15 +246,9 @@ class RuntimePlan(_DictShim, BaseModel):
     in `resolve_two_tank_runtime` output that adds/removes/renames a key must
     be reflected here.
 
-    `RuntimePlan`
-    implements a read-only dict-like API (`__getitem__`, `get`, `__contains__`,
-    `keys`, `items`, `values`). Legacy nested reads like
-    `plan.runtime["correction"]["retry"]["telemetry_stale_retry_sec"]` still
-    work because nested values are also dict-like (Pydantic models with the
-    same shim).
-
-    Per-instance shim cost: ~1 attribute lookup + ~1 dict() call per top-level
-    read. Negligible vs handler I/O.
+    Runtime access is attribute-based (`runtime.target_ph`,
+    `runtime.correction.max_ec_dose_ml`, etc.). Runtime readers/tests must not
+    rely on dict-like access or `_DictShim` compatibility.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -273,6 +267,7 @@ class RuntimePlan(_DictShim, BaseModel):
     telemetry_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_wait_timeout_sec: Annotated[float, Field(ge=0.0, le=30.0)]
+    irr_state_wait_poll_interval_sec: Annotated[float, Field(ge=0.0, le=5.0)] | None = None
     sensor_mode_stabilization_time_sec: ShortSeconds
 
     # Sensor labels (plural — singular dropped in v1)

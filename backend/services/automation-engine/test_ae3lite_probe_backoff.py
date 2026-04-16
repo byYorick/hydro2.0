@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
@@ -63,7 +64,7 @@ def _make_task(*, irr_probe_failure_streak: int = 0) -> SimpleNamespace:
 
 def _make_plan(*, node_uid: str = "nd-irr-1") -> SimpleNamespace:
     cmd = SimpleNamespace(node_uid=node_uid, channel="storage_state")
-    return SimpleNamespace(named_plans={"irr_state_probe": (cmd,)}, runtime={})
+    return SimpleNamespace(named_plans={"irr_state_probe": (cmd,)}, runtime=make_runtime_plan())
 
 
 @pytest.mark.asyncio

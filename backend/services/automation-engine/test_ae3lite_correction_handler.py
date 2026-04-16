@@ -22,6 +22,7 @@ import math
 import pytest
 from prometheus_client import REGISTRY
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
@@ -216,7 +217,64 @@ class _MockPlan:
         runtime: dict | None = None,
         include_irr_state_probe: bool = True,
     ):
-        self.runtime = runtime or RUNTIME
+        payload = deepcopy(runtime or RUNTIME)
+        correction = payload.get("correction")
+        controllers = correction.get("controllers") if isinstance(correction, dict) else None
+        if isinstance(controllers, dict):
+            for pid_type in ("ph", "ec"):
+                controller = controllers.get(pid_type)
+                if not isinstance(controller, dict):
+                    continue
+                observe = dict(controller.get("observe") or {})
+                for key in (
+                    "telemetry_period_sec",
+                    "window_min_samples",
+                    "min_effect_fraction",
+                    "stability_max_slope",
+                    "no_effect_consecutive_limit",
+                ):
+                    if key in controller:
+                        observe[key] = controller.pop(key)
+                if "min_interval_sec" in controller:
+                    controller["min_interval_sec"] = max(1, int(controller["min_interval_sec"]))
+                if observe:
+                    controller["observe"] = observe
+        if "prepare_tolerance" in payload and "prepare_tolerance_by_phase" not in payload:
+            payload["prepare_tolerance_by_phase"] = {
+                key: deepcopy(payload["prepare_tolerance"])
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        if isinstance(correction, dict) and "correction_by_phase" not in payload:
+            payload["correction_by_phase"] = {
+                key: deepcopy(correction)
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        elif isinstance(payload.get("correction_by_phase"), dict):
+            for phase_key, phase_cfg in list(payload["correction_by_phase"].items()):
+                if not isinstance(phase_cfg, dict):
+                    continue
+                phase_controllers = phase_cfg.get("controllers")
+                if not isinstance(phase_controllers, dict):
+                    continue
+                for pid_type in ("ph", "ec"):
+                    controller = phase_controllers.get(pid_type)
+                    if not isinstance(controller, dict):
+                        continue
+                    observe = dict(controller.get("observe") or {})
+                    for key in (
+                        "telemetry_period_sec",
+                        "window_min_samples",
+                        "min_effect_fraction",
+                        "stability_max_slope",
+                        "no_effect_consecutive_limit",
+                    ):
+                        if key in controller:
+                            observe[key] = controller.pop(key)
+                    if "min_interval_sec" in controller:
+                        controller["min_interval_sec"] = max(1, int(controller["min_interval_sec"]))
+                    if observe:
+                        controller["observe"] = observe
+        self.runtime = make_runtime_plan(**payload)
         self.named_plans = {
             "sensor_mode_activate": (_SENSOR_CMD,),
             "sensor_mode_deactivate": (_SENSOR_CMD,),
@@ -602,7 +660,11 @@ async def test_corr_check_solution_fill_probe_mismatch_yields_to_raced_completed
 
     monkeypatch.setattr(handler, "_read_recent_storage_event", _fake_read)
 
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    runtime = dict(RUNTIME)
+    runtime["target_ec_prepare_min"] = 1.9
+    runtime["target_ec_prepare_max"] = 2.1
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_stop_to_ready"
@@ -1142,8 +1204,11 @@ async def test_corr_wait_ec_interrupts_to_ready_when_solution_fill_completed_and
         solution_min_triggered=True,
     )
     handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+    runtime = dict(RUNTIME)
+    runtime["target_ec_prepare_min"] = 1.9
+    runtime["target_ec_prepare_max"] = 2.1
 
-    outcome = await handler.run(task=task, plan=_MockPlan(runtime=RUNTIME), stage_def=None, now=NOW)
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_stop_to_ready"
@@ -1744,9 +1809,8 @@ async def test_corr_prepare_recirc_late_cooldown_retry_exhausts_window_before_ne
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
     assert outcome.stage_retry_count == 3
-    assert len(gateway.calls) == 1
-    assert gateway.calls[0]["commands"][0].channel == "storage_state"
-    assert monitor.irr_reads == 1
+    assert gateway.calls == []
+    assert monitor.irr_reads == 0
 
 
 async def test_corr_solution_fill_deadline_preempts_active_correction_window():
@@ -1885,15 +1949,10 @@ async def test_corr_check_persists_pid_state_updates_when_dose_needed():
         "ml_per_sec_max": 100.0,
     }
 
-    class _PlanWithCalib:
-        named_plans = _MockPlan().named_plans
-
-    _PlanWithCalib.runtime = runtime
-
     monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
     handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
 
-    outcome = await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     # pid_state_repository.upsert_states must have been called
     assert len(pid_repo.upsert_calls) == 1, "pid_state_updates must be persisted after corr_check"
@@ -1972,15 +2031,10 @@ async def test_corr_check_logs_discarded_dose_with_runtime_details(monkeypatch: 
     create_event = AsyncMock(return_value=None)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
 
-    class _PlanWithDiscard:
-        named_plans = _MockPlan().named_plans
-
-    _PlanWithDiscard.runtime = runtime
-
     monitor = _MockRuntimeMonitor(ph=6.0, ec=1.98)
     handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
 
-    outcome = await handler.run(task=task, plan=_PlanWithDiscard(), stage_def=None, now=NOW)
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind in {"exit_correction", "enter_correction"}
     assert create_event.await_count >= 1
@@ -2544,31 +2598,31 @@ async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
         "ml_per_sec_max": 100.0,
     }
 
-    class _PlanWithCalib:
-        named_plans = _MockPlan().named_plans
-
-    _PlanWithCalib.runtime = runtime
-
     monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
     handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
 
     with pytest.raises(TaskExecutionError) as exc_info:
-        await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
+        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
     assert exc_info.value.code == "corr_pid_state_persist_failed"
 
 
-async def test_corr_check_fails_closed_when_observe_decision_window_missing() -> None:
+async def test_corr_check_fails_closed_when_planner_config_is_invalid() -> None:
     corr = _base_corr(corr_step="corr_check")
     task = _make_task(corr=corr)
     runtime = deepcopy(RUNTIME)
-    del runtime["process_calibrations"]["solution_fill"]["meta"]["observe"]["decision_window_sec"]
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["actuators"] = {
+        "ec": {"node_uid": "ec-node", "channel": "ec_pump"},
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
     monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
     handler = _make_handler(monitor=monitor)
 
     with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
-    assert exc_info.value.code == "zone_correction_config_missing_critical"
+    assert exc_info.value.code == "corr_planner_config_invalid"
 
 
 # ---------------------------------------------------------------------------

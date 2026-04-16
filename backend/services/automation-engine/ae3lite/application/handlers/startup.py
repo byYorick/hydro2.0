@@ -37,14 +37,14 @@ class StartupHandler(BaseStageHandler):
         # Successful probe — clear manual_to_auto reconcile flag (если был выставлен
         # SetControlModeUseCase). См. CONTROL_MODES_SPEC §6.3 / §9.7.
         await self._clear_manual_to_auto_reconcile_flag(task=task)
-        runtime = plan.runtime
+        runtime = self._require_runtime_plan(plan=plan)
 
         clean_max = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime["clean_max_sensor_labels"],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=runtime.clean_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error="two_tank_clean_level_unavailable",
             stale_error="two_tank_clean_level_stale",
         )
@@ -79,7 +79,7 @@ class StartupHandler(BaseStageHandler):
                 )
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime["level_poll_interval_sec"]),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
         if clean_max["is_triggered"]:

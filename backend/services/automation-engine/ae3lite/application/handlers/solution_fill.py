@@ -41,10 +41,10 @@ class SolutionFillCheckHandler(BaseStageHandler):
         new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
         if new_runtime is not plan.runtime:
             plan = replace(plan, runtime=new_runtime)
-        runtime = plan.runtime
+        runtime = self._require_runtime_plan(plan=plan)
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime["fail_safe_guards"]
+        fail_safe_guards = runtime.fail_safe_guards
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=(
@@ -119,17 +119,17 @@ class SolutionFillCheckHandler(BaseStageHandler):
         if control_mode == "manual":
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime["level_poll_interval_sec"]),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
-        clean_min_check_delay_ms = int(fail_safe_guards["solution_fill_clean_min_check_delay_ms"])
+        clean_min_check_delay_ms = int(fail_safe_guards.solution_fill_clean_min_check_delay_ms)
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_min_check_delay_ms):
             clean_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
-                labels=runtime["clean_min_sensor_labels"],
-                threshold=runtime["level_switch_on_threshold"],
-                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                labels=runtime.clean_min_sensor_labels,
+                threshold=runtime.level_switch_on_threshold,
+                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
                 unavailable_error="two_tank_clean_min_level_unavailable",
                 stale_error="two_tank_clean_min_level_stale",
                 stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -144,14 +144,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 )
                 return StageOutcome(kind="transition", next_stage="solution_fill_source_empty_stop")
 
-        solution_min_check_delay_ms = int(fail_safe_guards["solution_fill_solution_min_check_delay_ms"])
+        solution_min_check_delay_ms = int(fail_safe_guards.solution_fill_solution_min_check_delay_ms)
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, solution_min_check_delay_ms):
             solution_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
-                labels=runtime["solution_min_sensor_labels"],
-                threshold=runtime["level_switch_on_threshold"],
-                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                labels=runtime.solution_min_sensor_labels,
+                threshold=runtime.level_switch_on_threshold,
+                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
                 unavailable_error="two_tank_solution_min_level_unavailable",
                 stale_error="two_tank_solution_min_level_stale",
                 stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -169,9 +169,9 @@ class SolutionFillCheckHandler(BaseStageHandler):
         solution_max = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime["solution_max_sensor_labels"],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=runtime.solution_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error="two_tank_solution_level_unavailable",
             stale_error="two_tank_solution_level_stale",
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
@@ -221,7 +221,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime["level_poll_interval_sec"]),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
         if int(getattr(task.workflow, "stage_retry_count", 0) or 0) > 0:
@@ -232,7 +232,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             )
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime["level_poll_interval_sec"]),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
         _logger.info(
@@ -256,9 +256,9 @@ class SolutionFillCheckHandler(BaseStageHandler):
         solution_max = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime["solution_max_sensor_labels"],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=runtime.solution_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error="two_tank_solution_level_unavailable",
             stale_error="two_tank_solution_level_stale",
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,

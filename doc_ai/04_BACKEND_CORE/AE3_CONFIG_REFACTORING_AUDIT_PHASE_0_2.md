@@ -2,7 +2,7 @@
 
 **Дата:** 2026-04-15
 **Аудитор:** self-review исполнителя
-**Статус:** найдено 2 CRITICAL, 5 MAJOR, 5 MINOR; ничего не блокирует Phase 3 безусловно, но **2 CRITICAL должны быть исправлены** до старта Phase 3
+**Статус:** исторический audit snapshot на 2026-04-15: найдено 2 CRITICAL, 5 MAJOR, 5 MINOR; часть findings позже закрыта в последующих фазах плана, но сам документ сохраняется как audit trail того состояния.
 
 ---
 
@@ -12,7 +12,7 @@
 |---|---|---|
 | Phase 0 inventory | покрытие 19 namespaces, 48+ полей `zone.correction`, 8 weird behaviors задокументированы | — |
 | Phase 1 schemas | 7 schemas valid, 4/4 feature tests, pre-flight artisan работает | **bind mount только в dev compose**; CI workflow не вызывает schemas-validate |
-| Phase 2 Pydantic + shadow | 1150 unit-тестов green, метрика live в Prometheus | **drift Pydantic ↔ JSON Schema (Percent)**; нет тестов на shadow hook |
+| Phase 2 Pydantic + shadow | 1150 unit-тестов green на момент audit snapshot, метрика live в Prometheus | **drift Pydantic ↔ JSON Schema (Percent)**; нет тестов на shadow hook |
 
 **Что критично исправить ДО Phase 3:**
 1. C-1 — `Percent` drift в Pydantic (validation теряет boundary).

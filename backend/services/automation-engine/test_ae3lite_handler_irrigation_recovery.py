@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.irrigation_recovery import IrrigationRecoveryCheckHandler
 
 
@@ -29,7 +30,7 @@ async def test_recovery_transitions_to_stop_when_targets_reached(monkeypatch) ->
         topology="two_tank",
         workflow=SimpleNamespace(control_mode="auto", pending_manual_step=None, stage_deadline_at=now + timedelta(seconds=10)),
     )
-    plan = SimpleNamespace(runtime={"level_poll_interval_sec": 5})
+    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=5))
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None), now=now)
     assert out.kind == "transition"
     assert out.next_stage == "irrigation_recovery_stop_to_ready"
@@ -57,7 +58,7 @@ async def test_recovery_enters_correction_when_targets_not_met(monkeypatch) -> N
         topology="two_tank",
         workflow=SimpleNamespace(control_mode="auto", pending_manual_step=None, stage_deadline_at=now + timedelta(seconds=10)),
     )
-    plan = SimpleNamespace(runtime={"level_poll_interval_sec": 5})
+    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=5))
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None), now=now)
     assert out.kind == "enter_correction"
     assert out.correction is not None
@@ -83,7 +84,7 @@ async def test_recovery_fails_on_timeout(monkeypatch) -> None:
         topology="two_tank",
         workflow=SimpleNamespace(control_mode="auto", pending_manual_step=None, stage_deadline_at=now - timedelta(seconds=1)),
     )
-    plan = SimpleNamespace(runtime={"level_poll_interval_sec": 5})
+    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=5))
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None), now=now)
     assert out.kind == "fail"
     assert out.error_code == "irrigation_recovery_timeout"

@@ -113,6 +113,7 @@ def make_runtime_plan_dict(**overrides: Any) -> dict:
         "telemetry_max_age_sec": 300,
         "irr_state_max_age_sec": 60,
         "irr_state_wait_timeout_sec": 5.0,
+        "irr_state_wait_poll_interval_sec": None,
         "sensor_mode_stabilization_time_sec": 8,
         "clean_max_sensor_labels": ["level_clean_max"],
         "clean_min_sensor_labels": ["level_clean_min"],
@@ -181,7 +182,7 @@ def make_runtime_plan_dict(**overrides: Any) -> dict:
             "interval_sec": None,
             "correction_during_irrigation": True,
             "correction_slack_sec": 900,
-            "stage_timeout_sec": 3600,
+            "stage_timeout_sec": None,
         },
         "irrigation_decision": {
             "strategy": "task",

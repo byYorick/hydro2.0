@@ -441,7 +441,7 @@ class BaseStageHandler:
                 "irr_state_probe_plan_missing",
                 f"Для stage={getattr(task, 'current_stage', None)} отсутствует command plan зонда IRR state",
             )
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        runtime = self._require_runtime_plan(plan=plan)
         last_state: Mapping[str, Any] = {}
         last_probe_cmd_id: str | None = None
         total_attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
@@ -1447,6 +1447,16 @@ class BaseStageHandler:
             return _MISSING_CONFIG
         return getattr(mapping, key)
 
+    @staticmethod
+    def _mapping_view(value: Any) -> Mapping[str, Any]:
+        if isinstance(value, Mapping):
+            return value
+        if value is not None and hasattr(value, "model_dump"):
+            dumped = value.model_dump(mode="python")
+            if isinstance(dumped, Mapping):
+                return dumped
+        return {}
+
     def _required_config_int(
         self,
         *,
@@ -1546,12 +1556,12 @@ class BaseStageHandler:
         phase_key = self._runtime_phase_key(task=task)
         phase_cfg = runtime.prepare_tolerance_by_phase.get(phase_key)
         if phase_cfg is not None:
-            return phase_cfg
+            return self._mapping_view(phase_cfg)
         generic_cfg = runtime.prepare_tolerance_by_phase.get("generic")
         if generic_cfg is not None:
-            return generic_cfg
+            return self._mapping_view(generic_cfg)
         if runtime.prepare_tolerance is not None:
-            return runtime.prepare_tolerance
+            return self._mapping_view(runtime.prepare_tolerance)
         raise TaskExecutionError(
             ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             f"Отсутствует обязательный prepare_tolerance для phase={self._runtime_phase_key(task=task)}",
@@ -1561,12 +1571,12 @@ class BaseStageHandler:
         phase_key = self._runtime_phase_key(task=task)
         phase_cfg = runtime.correction_by_phase.get(phase_key)
         if phase_cfg is not None:
-            return phase_cfg
+            return self._mapping_view(phase_cfg)
         generic_cfg = runtime.correction_by_phase.get("generic")
         if generic_cfg is not None:
-            return generic_cfg
+            return self._mapping_view(generic_cfg)
         if runtime.correction is not None:
-            return runtime.correction
+            return self._mapping_view(runtime.correction)
         raise TaskExecutionError(
             ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             f"Отсутствует обязательный correction runtime для phase={self._runtime_phase_key(task=task)}",
@@ -1577,14 +1587,14 @@ class BaseStageHandler:
         phase_key = self._runtime_phase_key(task=task)
         process_cfg = process_calibrations.get(phase_key)
         if process_cfg is not None:
-            return process_cfg
+            return self._mapping_view(process_cfg)
         generic_cfg = process_calibrations.get("generic")
         if generic_cfg is not None:
-            return generic_cfg
+            return self._mapping_view(generic_cfg)
         if phase_key == "irrigation":
             solution_fill_cfg = process_calibrations.get("solution_fill")
             if solution_fill_cfg is not None:
-                return solution_fill_cfg
+                return self._mapping_view(solution_fill_cfg)
         return {}
 
     def _observation_config(
@@ -1595,12 +1605,14 @@ class BaseStageHandler:
         process_cfg: Mapping[str, Any],
         pid_entry: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
-        controller_cfg = controllers.get(kind) if isinstance(controllers.get(kind), Mapping) else {}
-        controller_observe_cfg = (
-            controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
-        )
-        process_meta = process_cfg.get("meta") if isinstance(process_cfg.get("meta"), Mapping) else {}
+        controllers_raw = self._mapping_value(correction_cfg, "controllers")
+        controllers = controllers_raw if isinstance(controllers_raw, Mapping) else {}
+        controller_raw = controllers.get(kind)
+        controller_cfg = controller_raw if isinstance(controller_raw, Mapping) else {}
+        controller_observe_raw = self._mapping_value(controller_cfg, "observe")
+        controller_observe_cfg = controller_observe_raw if isinstance(controller_observe_raw, Mapping) else {}
+        process_meta_raw = self._mapping_value(process_cfg, "meta")
+        process_meta = process_meta_raw if isinstance(process_meta_raw, Mapping) else {}
         observe_cfg = process_meta.get("observe") if isinstance(process_meta.get("observe"), Mapping) else {}
 
         telemetry_period_sec = self._required_config_int(
@@ -1760,7 +1772,7 @@ class BaseStageHandler:
 
         При day_night_enabled и night-интервале полный target (irrigation-фаза)
         подменяется на day_night.ec.night; prepare target пересчитывается
-        пропорционально из runtime["npk_ec_share"] — соотношение NPK сохраняется.
+        пропорционально из runtime.npk_ec_share — соотношение NPK сохраняется.
         """
         phase = self._runtime_phase_key(task=task)
         base_full = float(runtime.target_ec)
@@ -1956,7 +1968,7 @@ class BaseStageHandler:
         self,
         *,
         task: Any,
-        runtime: Mapping[str, Any],
+        runtime: Any,
         min_labels_key: str,
         min_unavailable_error: str,
         min_stale_error: str,
@@ -1964,12 +1976,18 @@ class BaseStageHandler:
         prefer_probe_snapshot: bool = False,
     ) -> None:
         """Read min-level sensor and assert it's triggered (consistency with max)."""
+        min_labels = self._mapping_value(runtime, min_labels_key)
+        if min_labels is _MISSING_CONFIG:
+            raise TaskExecutionError(
+                ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+                f"Отсутствует runtime.{min_labels_key}",
+            )
         level = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime[min_labels_key],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=min_labels,
+            threshold=float(runtime.level_switch_on_threshold),
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error=min_unavailable_error,
             stale_error=min_stale_error,
             stale_recheck_delay_sec=stale_recheck_delay_sec,

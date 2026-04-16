@@ -281,7 +281,7 @@ class WorkflowRouter:
             error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
         )
         # await_ready reads zone_workflow_state to decide whether the fill cycle
-        # completed and irrigation is safe (via plan.runtime["zone_workflow_phase"]).
+        # completed and irrigation is safe (via plan.runtime.zone_workflow_phase).
         # Writing "ready" back into zone_workflow_state on each poll tick would
         # create a self-fulfilling loop: on the very next tick the handler sees
         # "ready" written by *itself* and starts irrigation even when tanks are
@@ -333,7 +333,12 @@ class WorkflowRouter:
             STAGE_RETRY.labels(topology=topology, stage=next_stage).inc()
 
         # Вычислить новое состояние workflow
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), RuntimePlan) else None
+        if runtime is None:
+            raise TaskExecutionError(
+                "runtime_plan_missing",
+                "Отсутствует typed RuntimePlan в command plan",
+            )
         deadline = (
             task.workflow.stage_deadline_at
             if same_stage

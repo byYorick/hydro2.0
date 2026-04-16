@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.services.workflow_topology import StageDef
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -208,7 +209,18 @@ class _ProbeGateway(_MockGateway):
 
 class _MockPlan:
     def __init__(self, runtime: dict | None = None) -> None:
-        self.runtime = runtime or RUNTIME
+        payload = dict(runtime or RUNTIME)
+        if "prepare_tolerance" in payload and "prepare_tolerance_by_phase" not in payload:
+            payload["prepare_tolerance_by_phase"] = {
+                key: dict(payload["prepare_tolerance"])
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        if "correction" in payload and "correction_by_phase" not in payload:
+            payload["correction_by_phase"] = {
+                key: dict(payload["correction"])
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        self.runtime = make_runtime_plan(**payload)
         self.named_plans = {"irr_state_probe": ("probe_cmd",)}
 
 
@@ -290,20 +302,20 @@ async def test_targets_reached_transitions_to_stop_ready() -> None:
 
 @pytest.mark.asyncio
 async def test_targets_reached_within_tolerance() -> None:
-    """target_ph=5.8 tol=15% → [4.93, 6.67]; ph=6.0 ec=1.2 → within bounds."""
-    handler = _make_handler(monitor=_Monitor(ph=6.0, ec=1.2))
+    """Prepare-phase explicit ready band remains authoritative for tank_recirc."""
+    handler = _make_handler(monitor=_Monitor(ph=6.0, ec=1.4))
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
 
 
 @pytest.mark.asyncio
-async def test_targets_soft_tolerance_without_explicit_ready_band_enters_correction() -> None:
+async def test_targets_outside_explicit_prepare_ready_band_enter_correction() -> None:
     runtime = dict(RUNTIME)
     runtime["target_ph_min"] = 5.6
     runtime["target_ph_max"] = 6.0
-    runtime["target_ec_min"] = 1.2
-    runtime["target_ec_max"] = 1.45
+    runtime["target_ec_prepare_min"] = 1.2
+    runtime["target_ec_prepare_max"] = 1.45
     handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.5))
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
@@ -316,8 +328,8 @@ async def test_targets_soft_tolerance_without_explicit_ready_band_enters_correct
 async def test_targets_reached_uses_explicit_ready_band_when_present() -> None:
     runtime = dict(RUNTIME)
     runtime["prepare_tolerance"] = {"ph_pct": 1, "ec_pct": 1}
-    runtime["target_ec_min"] = 1.9
-    runtime["target_ec_max"] = 2.1
+    runtime["target_ec_prepare_min"] = 1.9
+    runtime["target_ec_prepare_max"] = 2.1
     handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.91))
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
