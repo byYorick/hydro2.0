@@ -221,31 +221,103 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs">
-            <div class="text-[color:var(--text-muted)]">Расписание полива</div>
-            <div class="text-[color:var(--text-primary)]">каждые {{ waterForm.intervalMinutes }} мин на {{ waterForm.durationSeconds }} сек</div>
-
-            <div class="text-[color:var(--text-muted)]">Порция полива</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.irrigationBatchL }} л</div>
-
-            <div class="text-[color:var(--text-muted)]">Объём чистого бака</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.cleanTankFillL }} л</div>
-
-            <div class="text-[color:var(--text-muted)]">Объём бака раствора</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.nutrientTankTargetL }} л</div>
-
-            <div class="text-[color:var(--text-muted)]">Температура набора</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.fillTemperatureC }} °C</div>
-
-            <div class="text-[color:var(--text-muted)]">Окно набора воды</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.fillWindowStart }} — {{ waterForm.fillWindowEnd }}</div>
-
-            <div class="text-[color:var(--text-muted)]">Коррекция при поливе</div>
-            <div class="text-[color:var(--text-primary)]">{{ waterForm.correctionDuringIrrigation ? 'Да' : 'Нет' }}</div>
-          </div>
-
-          <div class="text-[11px] text-[color:var(--text-dim)]">
-            Параметры полива и коррекции задаются через профиль автоматики. Цели pH/EC берутся из рецепта.
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал полива (мин)
+              <input
+                v-model.number="waterForm.intervalMinutes"
+                type="number"
+                min="5"
+                max="1440"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Длительность полива (сек)
+              <input
+                v-model.number="waterForm.durationSeconds"
+                type="number"
+                min="1"
+                max="3600"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Порция полива (л)
+              <input
+                v-model.number="waterForm.irrigationBatchL"
+                type="number"
+                min="1"
+                max="500"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Коррекция при поливе
+              <select
+                v-model="waterForm.correctionDuringIrrigation"
+                class="input-select mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              >
+                <option :value="true">Да</option>
+                <option :value="false">Нет</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Объём чистого бака (л)
+              <input
+                v-model.number="waterForm.cleanTankFillL"
+                type="number"
+                min="10"
+                max="5000"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Объём бака раствора (л)
+              <input
+                v-model.number="waterForm.nutrientTankTargetL"
+                type="number"
+                min="10"
+                max="5000"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Температура набора (°C)
+              <input
+                v-model.number="waterForm.fillTemperatureC"
+                type="number"
+                min="5"
+                max="35"
+                step="0.1"
+                class="input-field mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Окно набора воды
+              <div class="mt-1 flex gap-1">
+                <input
+                  v-model="waterForm.fillWindowStart"
+                  type="time"
+                  class="input-field w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="self-center text-[color:var(--text-dim)]">—</span>
+                <input
+                  v-model="waterForm.fillWindowEnd"
+                  type="time"
+                  class="input-field w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+              </div>
+            </label>
           </div>
         </div>
 
