@@ -19,8 +19,9 @@ from ae3lite.application.use_cases import (
     SetControlModeUseCase,
     StartupRecoveryUseCase,
 )
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
-from ae3lite.domain.services import CycleStartPlanner, TopologyRegistry
+from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecisionController
 from ae3lite.infrastructure.clients import HistoryLoggerClient
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
@@ -35,7 +36,7 @@ from ae3lite.infrastructure.repositories import (
     PgZoneLeaseRepository,
     PgZoneWorkflowRepository,
 )
-from ae3lite.runtime.config import Ae3RuntimeConfig
+from ae3lite.runtime.env import Ae3RuntimeConfig
 from ae3lite.runtime.worker import Ae3RuntimeWorker
 from common.biz_alerts import BizAlertPublisher
 from common.db import fetch
@@ -70,7 +71,7 @@ def build_ae3_runtime_bundle(
     command_repository = PgAeCommandRepository()
     task_status_read_model = PgTaskStatusReadModel()
     zone_intent_repository = PgZoneIntentRepository()
-    http_client = httpx.AsyncClient(timeout=10.0)
+    http_client = httpx.AsyncClient(timeout=config.http_client_timeout_sec)
     history_logger_client = HistoryLoggerClient(
         base_url=config.history_logger_url,
         token=config.history_logger_api_token,

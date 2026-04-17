@@ -11,16 +11,17 @@ from typing import Any
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.dto.stage_outcome import StageOutcome
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
-RUNTIME = {"solution_fill_timeout_sec": 3600, "clean_fill_timeout_sec": 1800}
+RUNTIME = make_runtime_plan(solution_fill_timeout_sec=3600, clean_fill_timeout_sec=1800)
 
 
 # ── Task factory ────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ def _make_task(**kwargs) -> AutomationTask:
 
 class _MockPlan:
     def __init__(self, *, runtime: dict | None = None):
-        self.runtime = runtime or RUNTIME
+        self.runtime = make_runtime_plan(**runtime) if isinstance(runtime, dict) else RUNTIME
         self.named_plans: dict = {}
         self.targets: dict = {}
 
@@ -814,7 +815,12 @@ async def test_router_prepare_recirculation_check_deadline_includes_correction_s
 
     await router.run(
         task=task,
-        plan=_MockPlan(runtime={"prepare_recirculation_timeout_sec": 600}),
+        plan=_MockPlan(
+            runtime={
+                "prepare_recirculation_timeout_sec": 600,
+                "prepare_recirculation_correction_slack_sec": 900,
+            },
+        ),
         now=NOW,
     )
 

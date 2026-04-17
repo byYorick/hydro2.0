@@ -102,11 +102,42 @@ export interface SeededGreenhouseClimateNodes {
   uids: string[];
 }
 
+export interface ZoneLiveEditState {
+  id: number;
+  control_mode: string;
+  config_mode: string;
+  live_until: string | null;
+}
+
 export class APITestHelper {
   constructor(
     private request: APIRequestContext, 
     private token?: string
   ) {}
+
+  static bootstrapToken(email: string, role: string): string {
+    const output = execFileSync(
+      'php',
+      ['artisan', 'e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      },
+    );
+
+    const token = output
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => line.includes('|'));
+
+    if (!token) {
+      throw new Error(`Failed to bootstrap E2E auth token: ${output}`);
+    }
+
+    return token;
+  }
 
   private async getHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -329,6 +360,23 @@ export class APITestHelper {
       $uids = [${safeUids.join(', ')}];
       $deleted = \\App\\Models\\DeviceNode::query()->whereIn('uid', $uids)->delete();
       echo json_encode(['deleted' => $deleted], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async primeZoneForLiveEdit(zoneId: number, liveUntilIso: string): Promise<ZoneLiveEditState> {
+    return this.runArtisanTinkerJson<ZoneLiveEditState>(`
+      $zone = \\App\\Models\\Zone::query()->findOrFail(${zoneId});
+      $zone->control_mode = 'manual';
+      $zone->config_mode = 'live';
+      $zone->live_started_at = now();
+      $zone->live_until = '${liveUntilIso}';
+      $zone->save();
+      echo json_encode([
+        'id' => $zone->id,
+        'control_mode' => $zone->control_mode,
+        'config_mode' => $zone->config_mode,
+        'live_until' => optional($zone->live_until)->toISOString(),
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     `);
   }
 
@@ -668,6 +716,71 @@ export class APITestHelper {
 
     const result = await response.json();
     return result.data;
+  }
+
+  async setZoneControlMode(
+    zoneId: number,
+    controlMode: 'auto' | 'semi' | 'manual',
+    reason = 'playwright control mode setup'
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/control-mode`, {
+      headers,
+      data: {
+        control_mode: controlMode,
+        source: 'playwright',
+        reason,
+      },
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to set control mode for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
+  }
+
+  async setZoneConfigMode(
+    zoneId: number,
+    payload: {
+      mode: 'locked' | 'live';
+      reason: string;
+      live_until?: string | null;
+    }
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.patch(`${baseURL}/api/zones/${zoneId}/config-mode`, {
+      headers,
+      data: payload,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to set config mode for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
+  }
+
+  async applyCorrectionLiveEdit(
+    zoneId: number,
+    payload: {
+      reason: string;
+      phase?: 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation';
+      correction_patch?: Record<string, unknown>;
+      calibration_patch?: Record<string, unknown>;
+    }
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.put(`${baseURL}/api/zones/${zoneId}/correction/live-edit`, {
+      headers,
+      data: payload,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to apply correction live edit for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
   }
 
   async getAutomationConfig(scopeType: 'system' | 'greenhouse' | 'zone' | 'grow_cycle', scopeId: number, namespace: string): Promise<any> {

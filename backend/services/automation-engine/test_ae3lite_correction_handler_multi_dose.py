@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
 
@@ -83,7 +84,7 @@ async def test_corr_dose_ec_dispatches_sequence_ca_mg_micro(monkeypatch) -> None
         current_stage="irrigation_check",
         workflow=SimpleNamespace(workflow_phase="irrigating"),
     )
-    plan = SimpleNamespace(runtime={"pid_state": {}, "target_ec": 1.5})
+    plan = SimpleNamespace(runtime=make_runtime_plan(pid_state={}, target_ec=1.5))
 
     out1 = await handler._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
     assert out1.kind == "enter_correction"
@@ -161,7 +162,7 @@ async def test_corr_dose_ec_resumes_sequence_after_partial_failure(monkeypatch) 
         current_stage="irrigation_check",
         workflow=SimpleNamespace(workflow_phase="irrigating"),
     )
-    plan = SimpleNamespace(runtime={"pid_state": {}, "target_ec": 1.5})
+    plan = SimpleNamespace(runtime=make_runtime_plan(pid_state={}, target_ec=1.5))
 
     out1 = await handler._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
     assert out1.correction.ec_current_seq_index == 1
@@ -176,4 +177,3 @@ async def test_corr_dose_ec_resumes_sequence_after_partial_failure(monkeypatch) 
     out3 = await handler._run_dose_ec(task=task, plan=plan, corr=out1.correction, now=now)
     assert out3.correction.ec_current_seq_index == 2
     assert gateway.batches[-1][0].node_uid == "nd-mg"
-

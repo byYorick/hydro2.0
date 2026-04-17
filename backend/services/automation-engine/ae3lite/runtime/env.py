@@ -1,4 +1,4 @@
-"""Конфигурация runtime для standalone-приложения AE3-Lite."""
+"""Environment-backed runtime settings for standalone AE3-Lite."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ class Ae3RuntimeConfig:
     start_cycle_rate_limit_max_requests: int
     start_cycle_rate_limit_window_sec: int
     verbose_http_logging: bool
+    http_client_timeout_sec: float
     worker_owner: str
     max_task_execution_sec: int
 
@@ -78,6 +79,7 @@ class Ae3RuntimeConfig:
             start_cycle_rate_limit_max_requests=max(0, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS", "30"))),
             start_cycle_rate_limit_window_sec=max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10"))),
             verbose_http_logging=_env_true("AE_DEV_VERBOSE_HTTP_LOGGING", default_verbose),
+            http_client_timeout_sec=max(0.1, float(os.getenv("AE_HTTP_CLIENT_TIMEOUT_SEC", "10.0"))),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
             max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
         )
@@ -107,6 +109,11 @@ class Ae3RuntimeConfig:
                     "start_cycle_rate_limit_window_sec must be > 0 when rate limiting is enabled. "
                     "Set AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC to a positive integer."
                 )
+        if float(self.http_client_timeout_sec) <= 0.0:
+            raise ValueError(
+                "http_client_timeout_sec must be > 0. "
+                "Set AE_HTTP_CLIENT_TIMEOUT_SEC to a positive number."
+            )
 
 
 __all__ = ["Ae3RuntimeConfig"]

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecisionController
 
 
@@ -28,13 +29,13 @@ class _RuntimeMonitor:
 @pytest.mark.asyncio
 async def test_smart_soil_runs_when_below_target_band() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600, "hysteresis_pct": 2.0},
         },
-        "soil_moisture_target": {"min": 38.0, "max": 48.0, "target": 43.0},
-    }
+        soil_moisture_target={"min": 38.0, "max": 48.0, "target": 43.0},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 30.0}, {"value": 31.0})},
         {"sensor_label": "soil-2", "samples": ({"value": 32.0}, {"value": 33.0})},
@@ -56,13 +57,13 @@ async def test_smart_soil_runs_when_below_target_band() -> None:
 @pytest.mark.asyncio
 async def test_smart_soil_skips_inside_target_band() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 2, "stale_after_sec": 600, "hysteresis_pct": 0.0},
         },
-        "soil_moisture_target": {"min": 38.0, "max": 48.0, "target": 43.0},
-    }
+        soil_moisture_target={"min": 38.0, "max": 48.0, "target": 43.0},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 41.0}, {"value": 42.0})},
     ))
@@ -83,13 +84,13 @@ async def test_smart_soil_skips_inside_target_band() -> None:
 @pytest.mark.asyncio
 async def test_smart_soil_returns_degraded_run_when_samples_missing() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600},
         },
-        "soil_moisture_target": {"min": 38.0, "max": 48.0, "target": 43.0},
-    }
+        soil_moisture_target={"min": 38.0, "max": 48.0, "target": 43.0},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 34.0},)},
     ), is_stale=True)
@@ -111,13 +112,13 @@ async def test_smart_soil_returns_degraded_run_when_samples_missing() -> None:
 @pytest.mark.asyncio
 async def test_smart_soil_accepts_day_night_curve_target() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600, "hysteresis_pct": 0.0},
         },
-        "soil_moisture_target": {"day": 40.0, "night": 55.0, "day_start_time": "06:00:00", "day_hours": 16},
-    }
+        soil_moisture_target={"day": 40.0, "night": 55.0, "day_start_time": "06:00:00", "day_hours": 16},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 30.0}, {"value": 31.0})},
         {"sensor_label": "soil-2", "samples": ({"value": 32.0}, {"value": 33.0})},
@@ -139,13 +140,13 @@ async def test_smart_soil_accepts_day_night_curve_target() -> None:
 @pytest.mark.asyncio
 async def test_smart_soil_works_with_single_sensor_and_low_sample_count() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600, "hysteresis_pct": 0.0},
         },
-        "soil_moisture_target": {"min": 40.0, "max": 50.0, "target": 45.0},
-    }
+        soil_moisture_target={"min": 40.0, "max": 50.0, "target": 45.0},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 30.0},)},
     ))
@@ -171,7 +172,7 @@ async def test_force_mode_bypasses_decision_strategy() -> None:
     result = await controller.evaluate(
         zone_id=7,
         runtime_monitor=_RuntimeMonitor(()),
-        runtime={},
+        runtime=make_runtime_plan(),
         mode="force",
         requested_duration_sec=120,
         now=NOW,
@@ -188,7 +189,7 @@ async def test_unknown_strategy_fails_closed() -> None:
     result = await controller.evaluate(
         zone_id=7,
         runtime_monitor=_RuntimeMonitor(()),
-        runtime={"irrigation_decision": {"strategy": "smart_soil_v9"}},
+        runtime=make_runtime_plan(irrigation_decision={"strategy": "smart_soil_v9"}),
         mode="normal",
         requested_duration_sec=120,
         now=NOW,
@@ -202,13 +203,13 @@ async def test_unknown_strategy_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_smart_soil_marks_invalid_day_schedule_as_degraded() -> None:
     controller = IrrigationDecisionController()
-    runtime = {
-        "irrigation_decision": {
+    runtime = make_runtime_plan(
+        irrigation_decision={
             "strategy": "smart_soil_v1",
             "config": {"lookback_sec": 1800, "min_samples": 1, "stale_after_sec": 600, "hysteresis_pct": 0.0},
         },
-        "soil_moisture_target": {"day": 40.0, "night": 55.0, "day_start_time": "bad", "day_hours": 16},
-    }
+        soil_moisture_target={"day": 40.0, "night": 55.0, "day_start_time": "bad", "day_hours": 16},
+    )
     monitor = _RuntimeMonitor((
         {"sensor_label": "soil-1", "samples": ({"value": 30.0},)},
     ))

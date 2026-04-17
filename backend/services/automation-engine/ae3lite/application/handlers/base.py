@@ -11,6 +11,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.domain.services.telemetry_window_summary import (
@@ -184,7 +185,7 @@ class BaseStageHandler:
             from ae3lite.infrastructure.read_models.zone_snapshot_read_model import (
                 PgZoneSnapshotReadModel,
             )
-            from ae3lite.domain.services.two_tank_runtime_spec import (
+            from ae3lite.config.runtime_plan_builder import (
                 resolve_two_tank_runtime_plan,
             )
 
@@ -254,27 +255,36 @@ class BaseStageHandler:
         remaining = (_utc_naive_dt(deadline) - _utc_naive_dt(now)).total_seconds()
         return max(0.0, remaining)
 
-    def _irr_probe_deadline_budget_sec(self, *, runtime: Mapping[str, Any]) -> float:
+    def _require_runtime_plan(self, *, plan: Any) -> RuntimePlan:
+        runtime = getattr(plan, "runtime", None)
+        if isinstance(runtime, RuntimePlan):
+            return runtime
+        raise TaskExecutionError(
+            ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+            "Отсутствует typed RuntimePlan в command plan",
+        )
+
+    def _irr_probe_deadline_budget_sec(self, *, runtime: RuntimePlan) -> float:
         # На реальном test-node roundtrip команды и состояния может занимать несколько секунд.
         # Если запускать новый IRR probe слишком близко к дедлайну stage, команда
         # может упасть уже на polling после дедлайна, а не пойти по ожидаемому stage path.
-        wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
+        wait_timeout = self._coerce_float(runtime.irr_state_wait_timeout_sec)
         attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
         # Бюджет должен покрывать и roundtrip команды storage_state, и последующее
         # ожидание snapshot. На реальном железе этот путь легко превышает 5 с,
         # и для transient-потери MQTT probe допускается один republish.
-        single_attempt_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0
+        single_attempt_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0  # config-literal: fixed command roundtrip budget
         base_budget = (single_attempt_budget * attempts) + (
             self._IRR_STATE_PROBE_RETRY_DELAY_SEC * self._IRR_STATE_PROBE_RETRY_COUNT
         )
-        return max(8.0, base_budget)
+        return max(8.0, base_budget)  # config-literal: minimum safe IRR probe budget
 
     def _deadline_too_close_for_irr_probe(
         self,
         *,
         now: datetime,
         deadline: datetime | None,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
     ) -> bool:
         remaining = self._remaining_stage_time_sec(now=now, deadline=deadline)
         if remaining is None:
@@ -286,7 +296,7 @@ class BaseStageHandler:
         *,
         task: Any,
         event_types: Sequence[str],
-        max_age_sec: int = 3600,
+        max_age_sec: int = 3600,  # config-literal: default recent-event lookup window
     ) -> Mapping[str, Any] | None:
         read_latest_zone_event = getattr(self._runtime_monitor, "read_latest_zone_event", None)
         if not callable(read_latest_zone_event):
@@ -360,7 +370,7 @@ class BaseStageHandler:
         event = await self._read_recent_storage_event(
             task=task,
             event_types=("EMERGENCY_STOP_ACTIVATED",),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day ESTOP replay window
         )
         if not isinstance(event, Mapping):
             return
@@ -430,7 +440,7 @@ class BaseStageHandler:
                 "irr_state_probe_plan_missing",
                 f"Для stage={getattr(task, 'current_stage', None)} отсутствует command plan зонда IRR state",
             )
-        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        runtime = self._require_runtime_plan(plan=plan)
         last_state: Mapping[str, Any] = {}
         last_probe_cmd_id: str | None = None
         total_attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
@@ -822,14 +832,14 @@ class BaseStageHandler:
         self,
         *,
         task: Any,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         expected: Mapping[str, bool],
         expected_cmd_id: str | None = None,
     ) -> Mapping[str, Any]:
-        max_age_sec = int(runtime.get("irr_state_max_age_sec") or 60)
-        wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
-        poll_interval = self._coerce_float(runtime.get("irr_state_wait_poll_interval_sec"))
-        timeout_sec = max(0.0, wait_timeout if wait_timeout is not None else 5.0)
+        max_age_sec = int(runtime.irr_state_max_age_sec)
+        wait_timeout = self._coerce_float(runtime.irr_state_wait_timeout_sec)
+        poll_interval = self._coerce_float(getattr(runtime, "irr_state_wait_poll_interval_sec", None))
+        timeout_sec = max(0.0, wait_timeout if wait_timeout is not None else 5.0)  # config-literal: fallback probe wait budget
         interval_sec = max(0.05, poll_interval if poll_interval is not None else 0.5)
 
         state = await self._runtime_monitor.read_latest_irr_state(
@@ -1222,8 +1232,8 @@ class BaseStageHandler:
     ) -> bool:
         # Phase 5: accept hot-swapped runtime override.
         if runtime is None:
-            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        max_age = int(runtime.get("telemetry_max_age_sec") or 300)
+            runtime = self._require_runtime_plan(plan=plan)
+        max_age = int(runtime.telemetry_max_age_sec)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         ph = await self._read_target_metric_window(
@@ -1270,8 +1280,8 @@ class BaseStageHandler:
         # Phase 5: accept hot-swapped runtime from handler. Falls back to
         # plan.runtime when caller didn't opt into live-mode reassignment.
         if runtime is None:
-            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        max_age = int(runtime.get("telemetry_max_age_sec") or 300)
+            runtime = self._require_runtime_plan(plan=plan)
+        max_age = int(runtime.telemetry_max_age_sec)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         ph = await self._read_target_metric_window(
@@ -1427,10 +1437,24 @@ class BaseStageHandler:
         return _telemetry_decision_window_since_ts(now=now, config=config)
 
     @staticmethod
-    def _mapping_value(mapping: Mapping[str, Any] | None, key: str) -> Any:
-        if not isinstance(mapping, Mapping) or key not in mapping:
+    def _mapping_value(mapping: Any, key: str) -> Any:
+        if isinstance(mapping, Mapping):
+            if key not in mapping:
+                return _MISSING_CONFIG
+            return mapping[key]
+        if mapping is None or not hasattr(mapping, key):
             return _MISSING_CONFIG
-        return mapping[key]
+        return getattr(mapping, key)
+
+    @staticmethod
+    def _mapping_view(value: Any) -> Mapping[str, Any]:
+        if isinstance(value, Mapping):
+            return value
+        if value is not None and hasattr(value, "model_dump"):
+            dumped = value.model_dump(mode="python")
+            if isinstance(dumped, Mapping):
+                return dumped
+        return {}
 
     def _required_config_int(
         self,
@@ -1527,57 +1551,49 @@ class BaseStageHandler:
             minimum=0.1,
         )
 
-    def _prepare_tolerance_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
-        tolerance_by_phase = runtime.get("prepare_tolerance_by_phase")
-        if isinstance(tolerance_by_phase, Mapping):
-            phase_key = self._runtime_phase_key(task=task)
-            phase_cfg = tolerance_by_phase.get(phase_key)
-            if isinstance(phase_cfg, Mapping):
-                return phase_cfg
-            generic_cfg = tolerance_by_phase.get("generic")
-            if isinstance(generic_cfg, Mapping):
-                return generic_cfg
-        tolerance = runtime.get("prepare_tolerance")
-        if isinstance(tolerance, Mapping):
-            return tolerance
+    def _prepare_tolerance_for_task(self, *, task: Any, runtime: RuntimePlan) -> Any:
+        phase_key = self._runtime_phase_key(task=task)
+        phase_cfg = runtime.prepare_tolerance_by_phase.get(phase_key)
+        if phase_cfg is not None:
+            return self._mapping_view(phase_cfg)
+        generic_cfg = runtime.prepare_tolerance_by_phase.get("generic")
+        if generic_cfg is not None:
+            return self._mapping_view(generic_cfg)
+        if runtime.prepare_tolerance is not None:
+            return self._mapping_view(runtime.prepare_tolerance)
         raise TaskExecutionError(
             ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             f"Отсутствует обязательный prepare_tolerance для phase={self._runtime_phase_key(task=task)}",
         )
 
-    def _correction_config_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
-        correction_by_phase = runtime.get("correction_by_phase")
-        if isinstance(correction_by_phase, Mapping):
-            phase_key = self._runtime_phase_key(task=task)
-            phase_cfg = correction_by_phase.get(phase_key)
-            if isinstance(phase_cfg, Mapping):
-                return phase_cfg
-            generic_cfg = correction_by_phase.get("generic")
-            if isinstance(generic_cfg, Mapping):
-                return generic_cfg
-        correction = runtime.get("correction")
-        if isinstance(correction, Mapping):
-            return correction
+    def _correction_config_for_task(self, *, task: Any, runtime: RuntimePlan) -> Any:
+        phase_key = self._runtime_phase_key(task=task)
+        phase_cfg = runtime.correction_by_phase.get(phase_key)
+        if phase_cfg is not None:
+            return self._mapping_view(phase_cfg)
+        generic_cfg = runtime.correction_by_phase.get("generic")
+        if generic_cfg is not None:
+            return self._mapping_view(generic_cfg)
+        if runtime.correction is not None:
+            return self._mapping_view(runtime.correction)
         raise TaskExecutionError(
             ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             f"Отсутствует обязательный correction runtime для phase={self._runtime_phase_key(task=task)}",
         )
 
-    def _process_cfg_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
-        process_calibrations = runtime.get("process_calibrations")
-        if not isinstance(process_calibrations, Mapping):
-            return {}
+    def _process_cfg_for_task(self, *, task: Any, runtime: RuntimePlan) -> Any:
+        process_calibrations = runtime.process_calibrations
         phase_key = self._runtime_phase_key(task=task)
         process_cfg = process_calibrations.get(phase_key)
-        if isinstance(process_cfg, Mapping):
-            return process_cfg
+        if process_cfg is not None:
+            return self._mapping_view(process_cfg)
         generic_cfg = process_calibrations.get("generic")
-        if isinstance(generic_cfg, Mapping):
-            return generic_cfg
+        if generic_cfg is not None:
+            return self._mapping_view(generic_cfg)
         if phase_key == "irrigation":
             solution_fill_cfg = process_calibrations.get("solution_fill")
-            if isinstance(solution_fill_cfg, Mapping):
-                return solution_fill_cfg
+            if solution_fill_cfg is not None:
+                return self._mapping_view(solution_fill_cfg)
         return {}
 
     def _observation_config(
@@ -1588,12 +1604,14 @@ class BaseStageHandler:
         process_cfg: Mapping[str, Any],
         pid_entry: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
-        controller_cfg = controllers.get(kind) if isinstance(controllers.get(kind), Mapping) else {}
-        controller_observe_cfg = (
-            controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
-        )
-        process_meta = process_cfg.get("meta") if isinstance(process_cfg.get("meta"), Mapping) else {}
+        controllers_raw = self._mapping_value(correction_cfg, "controllers")
+        controllers = controllers_raw if isinstance(controllers_raw, Mapping) else {}
+        controller_raw = controllers.get(kind)
+        controller_cfg = controller_raw if isinstance(controller_raw, Mapping) else {}
+        controller_observe_raw = self._mapping_value(controller_cfg, "observe")
+        controller_observe_cfg = controller_observe_raw if isinstance(controller_observe_raw, Mapping) else {}
+        process_meta_raw = self._mapping_value(process_cfg, "meta")
+        process_meta = process_meta_raw if isinstance(process_meta_raw, Mapping) else {}
         observe_cfg = process_meta.get("observe") if isinstance(process_meta.get("observe"), Mapping) else {}
 
         telemetry_period_sec = self._required_config_int(
@@ -1612,7 +1630,7 @@ class BaseStageHandler:
                 (f"correction.controllers.{kind}.observe.window_min_samples", self._mapping_value(controller_observe_cfg, "window_min_samples")),
                 (f"correction.controllers.{kind}.window_min_samples", self._mapping_value(controller_cfg, "window_min_samples")),
             ),
-            minimum=2,
+            minimum=2,  # config-literal: decision window needs at least two samples
         )
         explicit_decision_window_sec = self._required_config_int(
             field_name=f"{kind}.observe.decision_window_sec",
@@ -1745,7 +1763,7 @@ class BaseStageHandler:
 
     # ── Per-phase EC target (NPK share для подготовки) ────────────
 
-    def _effective_ec_target(self, *, task: Any, runtime: Mapping[str, Any]) -> float:
+    def _effective_ec_target(self, *, task: Any, runtime: RuntimePlan) -> float:
         """EC target с учётом текущей фазы workflow и day/night overlay.
 
         solution_fill / tank_recirc → target_ec_prepare (NPK-доля от полного EC)
@@ -1753,60 +1771,60 @@ class BaseStageHandler:
 
         При day_night_enabled и night-интервале полный target (irrigation-фаза)
         подменяется на day_night.ec.night; prepare target пересчитывается
-        пропорционально из runtime["npk_ec_share"] — соотношение NPK сохраняется.
+        пропорционально из runtime.npk_ec_share — соотношение NPK сохраняется.
         """
         phase = self._runtime_phase_key(task=task)
-        base_full = float(runtime.get("target_ec") or 0.0)
+        base_full = float(runtime.target_ec)
         full_target = self._day_night_override(runtime, "ec", "target", default=base_full)
         if phase in ("solution_fill", "tank_recirc"):
-            prepare = runtime.get("target_ec_prepare")
+            prepare = runtime.target_ec_prepare
             if prepare is not None:
                 if full_target != base_full and base_full > 0:
-                    share = float(runtime.get("npk_ec_share") or (float(prepare) / base_full))
+                    share = float(runtime.npk_ec_share or (float(prepare) / base_full))
                     return round(full_target * share, 4)
                 return float(prepare)
         return full_target
 
-    def _effective_ec_min(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+    def _effective_ec_min(self, *, task: Any, runtime: RuntimePlan) -> float | None:
         phase = self._runtime_phase_key(task=task)
         if phase in ("solution_fill", "tank_recirc"):
-            base = runtime.get("target_ec_prepare_min")
+            base = runtime.target_ec_prepare_min
             if base is not None:
                 scaled = self._day_night_override_scaled(
                     runtime, "ec", "min", default=float(base), phase_key="prepare",
                 )
                 return scaled if scaled is not None else float(base)
-        base_val = self._coerce_float(runtime.get("target_ec_min"))
+        base_val = self._coerce_float(runtime.target_ec_min)
         if base_val is None:
             return None
         return self._day_night_override(runtime, "ec", "min", default=base_val)
 
-    def _effective_ec_max(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
+    def _effective_ec_max(self, *, task: Any, runtime: RuntimePlan) -> float | None:
         phase = self._runtime_phase_key(task=task)
         if phase in ("solution_fill", "tank_recirc"):
-            base = runtime.get("target_ec_prepare_max")
+            base = runtime.target_ec_prepare_max
             if base is not None:
                 scaled = self._day_night_override_scaled(
                     runtime, "ec", "max", default=float(base), phase_key="prepare",
                 )
                 return scaled if scaled is not None else float(base)
-        base_val = self._coerce_float(runtime.get("target_ec_max"))
+        base_val = self._coerce_float(runtime.target_ec_max)
         if base_val is None:
             return None
         return self._day_night_override(runtime, "ec", "max", default=base_val)
 
-    def _effective_ph_target(self, *, task: Any, runtime: Mapping[str, Any]) -> float:
-        base = float(runtime.get("target_ph") or 0.0)
+    def _effective_ph_target(self, *, task: Any, runtime: RuntimePlan) -> float:
+        base = float(runtime.target_ph)
         return self._day_night_override(runtime, "ph", "target", default=base)
 
-    def _effective_ph_min(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
-        base_val = self._coerce_float(runtime.get("target_ph_min"))
+    def _effective_ph_min(self, *, task: Any, runtime: RuntimePlan) -> float | None:
+        base_val = self._coerce_float(runtime.target_ph_min)
         if base_val is None:
             return None
         return self._day_night_override(runtime, "ph", "min", default=base_val)
 
-    def _effective_ph_max(self, *, task: Any, runtime: Mapping[str, Any]) -> float | None:
-        base_val = self._coerce_float(runtime.get("target_ph_max"))
+    def _effective_ph_max(self, *, task: Any, runtime: RuntimePlan) -> float | None:
+        base_val = self._coerce_float(runtime.target_ph_max)
         if base_val is None:
             return None
         return self._day_night_override(runtime, "ph", "max", default=base_val)
@@ -1815,7 +1833,7 @@ class BaseStageHandler:
 
     def _day_night_override(
         self,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         metric: str,
         kind: str,
         *,
@@ -1827,10 +1845,10 @@ class BaseStageHandler:
         Day-значение из day_night также используется если задано; иначе — default (что
         соответствует base-таргету фазы, т.е. конвенция: базовый target == day).
         """
-        config = runtime.get("day_night_config") if isinstance(runtime.get("day_night_config"), Mapping) else None
-        if not config or not bool(config.get("enabled")):
+        config = runtime.day_night_config
+        if config is None or not bool(config.enabled):
             return default
-        section = config.get(metric) if isinstance(config.get(metric), Mapping) else None
+        section = getattr(config, metric, None)
         if not section:
             return default
         is_day = self._is_day_now(config)
@@ -1844,7 +1862,7 @@ class BaseStageHandler:
                 key = "night"
             else:
                 key = f"night_{kind}"
-        value = section.get(key)
+        value = getattr(section, key, None)
         try:
             if value is None:
                 return default
@@ -1854,7 +1872,7 @@ class BaseStageHandler:
 
     def _day_night_override_scaled(
         self,
-        runtime: Mapping[str, Any],
+        runtime: RuntimePlan,
         metric: str,
         kind: str,
         *,
@@ -1864,17 +1882,17 @@ class BaseStageHandler:
         """Для prepare-фазы (solution_fill/tank_recirc) возвращает min/max, масштабированный NPK share."""
         if phase_key != "prepare":
             return default
-        base_full = self._coerce_float(runtime.get(f"target_ec_{kind}"))
+        base_full = self._coerce_float(getattr(runtime, f"target_ec_{kind}", None))
         if base_full is None or base_full <= 0:
             return default
         overridden_full = self._day_night_override(runtime, metric, kind, default=base_full)
         if overridden_full == base_full:
             return default
-        share = float(runtime.get("npk_ec_share") or (default / base_full))
+        share = float(runtime.npk_ec_share or (default / base_full))
         return round(overridden_full * share, 4)
 
     @staticmethod
-    def _is_day_now(day_night_config: Mapping[str, Any]) -> bool:
+    def _is_day_now(day_night_config: Any) -> bool:
         """Возвращает True если текущее локальное время теплицы попадает в
         дневной интервал.
 
@@ -1882,9 +1900,9 @@ class BaseStageHandler:
         например "Europe/Moscow") из config. Если timezone не задан — fallback
         на UTC. Если day_start_time/day_hours невалидны — возвращает True.
         """
-        lighting = day_night_config.get("lighting") if isinstance(day_night_config.get("lighting"), Mapping) else {}
-        raw_start = lighting.get("day_start_time")
-        day_hours = lighting.get("day_hours")
+        lighting = getattr(day_night_config, "lighting", None)
+        raw_start = getattr(lighting, "day_start_time", None)
+        day_hours = getattr(lighting, "day_hours", None)
         if not isinstance(raw_start, str) or not raw_start.strip() or day_hours is None:
             return True
         parts = raw_start.strip().split(":")
@@ -1907,7 +1925,7 @@ class BaseStageHandler:
         # HH:MM в локальном времени teplicy, поэтому сравнение должно идти в
         # том же TZ. Иначе при UTC-контейнере и TZ=МСК night-targets смещаются
         # на часы разницы.
-        tz_name = lighting.get("timezone") if isinstance(lighting.get("timezone"), str) else None
+        tz_name = getattr(lighting, "timezone", None) if isinstance(getattr(lighting, "timezone", None), str) else None
         tz: Any = timezone.utc
         if tz_name:
             try:
@@ -1949,7 +1967,7 @@ class BaseStageHandler:
         self,
         *,
         task: Any,
-        runtime: Mapping[str, Any],
+        runtime: Any,
         min_labels_key: str,
         min_unavailable_error: str,
         min_stale_error: str,
@@ -1957,12 +1975,18 @@ class BaseStageHandler:
         prefer_probe_snapshot: bool = False,
     ) -> None:
         """Read min-level sensor and assert it's triggered (consistency with max)."""
+        min_labels = self._mapping_value(runtime, min_labels_key)
+        if min_labels is _MISSING_CONFIG:
+            raise TaskExecutionError(
+                ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+                f"Отсутствует runtime.{min_labels_key}",
+            )
         level = await self._read_level(
             task=task,
             zone_id=task.zone_id,
-            labels=runtime[min_labels_key],
-            threshold=runtime["level_switch_on_threshold"],
-            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            labels=min_labels,
+            threshold=float(runtime.level_switch_on_threshold),
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
             unavailable_error=min_unavailable_error,
             stale_error=min_stale_error,
             stale_recheck_delay_sec=stale_recheck_delay_sec,

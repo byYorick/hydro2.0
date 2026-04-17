@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases import StartupRecoveryUseCase
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.repositories import (
     PgAeCommandRepository,

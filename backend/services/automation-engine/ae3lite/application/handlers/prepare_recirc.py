@@ -34,11 +34,11 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
         if new_runtime is not plan.runtime:
             plan = replace(plan, runtime=new_runtime)
-        runtime = plan.runtime
+        runtime = self._require_runtime_plan(plan=plan)
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime["fail_safe_guards"]
-        solution_min_guard_enabled = bool(fail_safe_guards["recirculation_stop_on_solution_min"])
+        fail_safe_guards = runtime.fail_safe_guards
+        solution_min_guard_enabled = bool(fail_safe_guards.recirculation_stop_on_solution_min)
 
         # Fail-fast перед новой probe-командой. Иначе stage, у которого уже
         # закончилось время, может опубликовать новый storage_state request и упасть
@@ -70,7 +70,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("RECIRCULATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
-            max_age_sec=86400,
+            max_age_sec=86400,  # config-literal: one-day storage-event replay window
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "RECIRCULATION_SOLUTION_LOW" and solution_min_guard_enabled:
@@ -100,7 +100,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 "valve_solution_fill": True,
                 "pump_main": True,
             },
-            poll_delay_sec=int(runtime["level_poll_interval_sec"]),
+            poll_delay_sec=int(runtime.level_poll_interval_sec),
             exhausted_outcome=StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
@@ -119,16 +119,16 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         if control_mode == "manual":
             return StageOutcome(
                 kind="poll",
-                due_delay_sec=int(runtime["level_poll_interval_sec"]),
+                due_delay_sec=int(runtime.level_poll_interval_sec),
             )
 
         if solution_min_guard_enabled:
             solution_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
-                labels=runtime["solution_min_sensor_labels"],
-                threshold=runtime["level_switch_on_threshold"],
-                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                labels=runtime.solution_min_sensor_labels,
+                threshold=runtime.level_switch_on_threshold,
+                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
                 unavailable_error="two_tank_solution_min_level_unavailable",
                 stale_error="two_tank_solution_min_level_stale",
                 prefer_probe_snapshot=True,

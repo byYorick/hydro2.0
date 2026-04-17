@@ -388,7 +388,7 @@ Planner:
 
 ### 5.4 Per-phase EC и day/night в runtime spec (2026-04-13)
 
-Two-tank `cycle_start` runtime spec (`backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py`) расширен полями, которые AE3 handlers обязан использовать вместо сырых `target_ec`:
+Two-tank `cycle_start` runtime spec (`backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py`) расширен полями, которые AE3 handlers обязан использовать вместо сырых `target_ec`:
 
 | Поле runtime spec | Источник | Назначение |
 |-------------------|----------|------------|

@@ -29,7 +29,7 @@ from ae3lite.infrastructure.intent_status_listener import IntentStatusListener
 from ae3lite.infrastructure.metrics import NODE_RUNTIME_EVENT_KICK
 from ae3lite.infrastructure.zone_event_listener import ZoneEventListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
-from ae3lite.runtime.config import Ae3RuntimeConfig
+from ae3lite.runtime.env import Ae3RuntimeConfig
 from common.db import fetch, get_pool
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log

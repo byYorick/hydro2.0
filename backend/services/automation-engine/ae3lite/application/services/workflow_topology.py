@@ -1,4 +1,4 @@
-"""Реестр topology: статический граф stage для маршрутизации workflow.
+"""Canonical workflow topology graph for AE3 runtime routing/recovery.
 
 Каждая topology, например ``two_tank_drip_substrate_trays``, задаёт
 отображение имени stage в :class:`StageDef`. :class:`TopologyRegistry`
@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping, Optional, Tuple
 
 
@@ -355,3 +355,6 @@ class TopologyRegistry:
                     f"Stage {name!r} одновременно содержит terminal_error и next_stage"
                 )
         return errors
+
+
+__all__ = ["GENERIC_CYCLE_START", "StageDef", "TopologyRegistry", "TWO_TANK"]

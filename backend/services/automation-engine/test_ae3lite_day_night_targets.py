@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from ae3lite.application.handlers.base import BaseStageHandler
-from ae3lite.domain.services.two_tank_runtime_spec import _build_day_night_config
+from ae3lite.config.runtime_plan_builder import _build_day_night_config
 
 
 # ── _build_day_night_config ───────────────────────────────────────────────────

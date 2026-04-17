@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import TaskExecutionError
@@ -208,7 +209,18 @@ class _ProbeGateway:
 
 class _Plan:
     def __init__(self, runtime: dict | None = None) -> None:
-        self.runtime = runtime or _RUNTIME
+        payload = dict(runtime or _RUNTIME)
+        if "prepare_tolerance" in payload and "prepare_tolerance_by_phase" not in payload:
+            payload["prepare_tolerance_by_phase"] = {
+                key: dict(payload["prepare_tolerance"])
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        if "correction" in payload and "correction_by_phase" not in payload:
+            payload["correction_by_phase"] = {
+                key: dict(payload["correction"])
+                for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
+            }
+        self.runtime = make_runtime_plan(**payload)
         self.named_plans = {"irr_state_probe": ("probe_cmd",)}
 
 
@@ -243,12 +255,12 @@ async def test_tank_full_targets_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tank_full_soft_tolerance_without_explicit_ready_band_routes_to_prepare() -> None:
+async def test_tank_full_explicit_prepare_ready_band_routes_to_prepare() -> None:
     runtime = dict(_RUNTIME)
     runtime["target_ph_min"] = 5.6
     runtime["target_ph_max"] = 6.0
-    runtime["target_ec_min"] = 1.2
-    runtime["target_ec_max"] = 1.45
+    runtime["target_ec_prepare_min"] = 1.2
+    runtime["target_ec_prepare_max"] = 1.45
     m = _Monitor(max_triggered=True, min_triggered=True, ph=5.8, ec=1.5)
 
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
@@ -311,7 +323,7 @@ async def test_filling_targets_not_reached_uses_stage_def_on_corr_fail() -> None
 
 
 @pytest.mark.asyncio
-async def test_filling_targets_not_reached_fails_closed_when_correction_runtime_missing_stabilization() -> None:
+async def test_filling_targets_not_reached_sparse_correction_override_uses_typed_defaults() -> None:
     runtime = {
         **_RUNTIME,
         "correction": {
@@ -321,10 +333,16 @@ async def test_filling_targets_not_reached_fails_closed_when_correction_runtime_
     }
     m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
 
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+    outcome = await _handler(m).run(
+        task=_make_task(),
+        plan=_Plan(runtime=runtime),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
 
-    assert exc_info.value.code == "zone_correction_config_missing_critical"
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.stabilization_sec > 0
 
 
 @pytest.mark.asyncio

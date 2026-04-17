@@ -18,10 +18,10 @@ from typing import Any
 import pytest
 
 from ae3lite.application.dto.startup_recovery_result import StartupRecoveryResult
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.startup_recovery import StartupRecoveryUseCase
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
-from ae3lite.domain.services.topology_registry import TopologyRegistry
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)

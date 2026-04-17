@@ -1,9 +1,9 @@
 # План рефакторинга: каноническая система конфигурирования AE3
 
-**Версия:** 3.4 (audit follow-ups 2026-04-17: R12 metric, dead-code cleanup, doc sync)
+**Версия:** 3.6 (merge: Phase 4/6.2 hardening + 2026-04-17 audit follow-ups: R12 metric, dead-code cleanup, phase_overrides partial validation, doc sync)
 **Дата:** 2026-04-17
 **Автор:** инженерный план, executor-first
-**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; Phase 4 (shim removal) отложен и не блокирует фичу; Phase 6.2 (full correction fine-tuning live edit) реализован в backend + UI + docs; R12 mitigation (`ae3_zone_config_auto_reverts_total` + liveness panel) закрыт в v3.4
+**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; legacy/shim слой Phase 4 удалён; Phase 6.2 (full correction fine-tuning live edit) закрыт вместе с hardening: AE3 `_checkpoint()` integration coverage + browser E2E live-edit flow; R12 mitigation (`ae3_zone_config_auto_reverts_total` + liveness panel) закрыт; phase_overrides теперь валидируется как partial diff (fix Phase 6.2 regression)
 
 ## Статус фаз
 
@@ -19,7 +19,7 @@
 | 3.1 B-5a–d (Variant 3 + transition shim) | ✅ completed 2026-04-15 | `_DictShim` mixin, CommandPlan typed runtime |
 | 3.1 B-5e/B-6 (hardcoded defaults removal) | ✅ completed 2026-04-15 | correction.py retry defaults + base.py `_OBSERVE_DEFAULT_*` |
 | 3.1 B-7 (strict-required runtime reads) | ✅ completed 2026-04-15 | 5 handlers migrated (clean_fill, solution_fill, prepare_recirc, irrigation_check, startup); `_DEFAULT_PREPARE_RECIRCULATION_MAX_ATTEMPTS` deleted |
-| 4: shim removal | ⏸ **deferred** (не блокирует) | partial — factory `_test_support_runtime_plan.py` + clean_fill attr-style POC. Остальное — 2-4 сессии |
+| 4: shim removal | ✅ completed 2026-04-16 | [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py), [workflow_topology.py](../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py), [env.py](../../backend/services/automation-engine/ae3lite/runtime/env.py), [ae3_config_lint.py](../../tools/ae3_config_lint.py), renamed tests [test_ae3lite_runtime_plan_builder.py](../../backend/services/automation-engine/test_ae3lite_runtime_plan_builder.py) and [test_ae3lite_workflow_topology.py](../../backend/services/automation-engine/test_ae3lite_workflow_topology.py) |
 | 5: Config modes backend (locked/live) | ✅ completed 2026-04-15 | migration + ZoneConfigModeController + ZonePolicy::setLive + RevertExpiredLiveModesCommand + AE3 `config/modes.py`/`live_reload.py` + `BaseStageHandler._checkpoint()` |
 | 5 audit + fixes | ✅ completed 2026-04-15 | [AE3_CONFIG_REFACTORING_AUDIT_PHASE_5.md](AE3_CONFIG_REFACTORING_AUDIT_PHASE_5.md) — 3 CRITICAL + 2 MAJOR fixes |
 | 5.1 (revision bump в unified API) | ✅ completed 2026-04-15 | `ZoneConfigRevisionService::bumpAndAudit` + wiring в `AutomationConfigController::update` |
@@ -28,9 +28,9 @@
 | 6: Config modes UI | ✅ completed 2026-04-15 | `ConfigModeCard.vue` + `ConfigChangesTimeline.vue` + integration в ZoneAutomationTab |
 | 6.1: Recipe phase inline editor | ✅ completed 2026-04-15 | `RecipePhaseLiveEditCard.vue` — compact pH/EC targets editor в live mode |
 | 7: Observability + doc gen | ✅ completed 2026-04-15 | Prometheus metrics `ae3_zone_config_mode` gauge + `ae3_zone_config_live_edits_total` + `ae3_zone_config_invalid_total` counters в `infrastructure/metrics.py`; Grafana dashboard `backend/configs/prod/grafana/dashboards/zone-configs.json`; `tools/generate_authority.py` + `make generate-authority`/`make authority-check` (CI guard); `AUTOMATION_CONFIG_AUTHORITY.md` автогенерируемая секция §«Автогенерируемые таблицы параметров» (6.3KB) |
-| 6.2: full fine-tuning live edit correction/PID/calibration | ✅ shipped 2026-04-15 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
+| 6.2: full fine-tuning live edit correction/PID/calibration | ✅ fully closed 2026-04-16 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, AE3 integration test `test_ae3lite_checkpoint_hot_swap_integration.py`, browser E2E `13-correction-authority-flows.spec.ts`, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
 
-**Tests state (2026-04-15):** ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для Phase 6.2 в репозиторий добавлены UI component tests и интеграция; повторный полный Laravel/Docker прогон в этой сессии зависит от окружения.
+**Tests state (2026-04-16):** исторический snapshot на 2026-04-15/16: ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для полного закрытия Phase 6.2 добавлены AE3 integration test на `_checkpoint()` live hot-reload и browser E2E live-edit flow; дополнительно после runtime typed cutover подтверждён расширенный AE rerun: `226 passed` по 12 профильным pytest-файлам (`await_ready`, `irrigation_runtime_integration`, `irrigation_check_correction`, `cycle_start_planner`, `workflow_router`, `irrigation_recovery`, `probe_backoff`, `correction_handler_multi_dose`, `irrigation_decision_controller`, `solution_fill`, `prepare_recirc_check`, `correction_handler`).
 
 ## Audit follow-ups shipped 2026-04-17
 
@@ -89,9 +89,9 @@
 4. **Integration**: card встроен в `ZoneAutomationTab` и показывается только в `config_mode=live`; timeline теперь умеет фильтровать `zone.correction.live`.
 5. **Docs**: синхронизированы `ae3lite.md` §7.5 и `ERROR_CODE_CATALOG.md`.
 
-**Остаётся полезным future hardening (не блокирует shipped Phase 6.2):**
-1. Добавить отдельный AE3 integration test, который проверяет реальный hot-reload nested correction/process calibration через `_checkpoint`.
-2. Повторить полный Laravel/Docker прогон в полноценном окружении CI или на машине с рабочими контейнерами.
+**Hardening closed 2026-04-16:**
+1. Добавлен отдельный AE3 integration test `test_ae3lite_checkpoint_hot_swap_integration.py`, который проверяет реальный hot-reload nested correction/process calibration через `_checkpoint`.
+2. Добавлен browser E2E сценарий `13-correction-authority-flows.spec.ts` для `CorrectionLiveEditCard`: live-mode preconditions, combined correction + calibration submit, persistence и timeline.
 
 **Bug fix shipped the same session 2026-04-15 (не связан с Phase 6.2, но обнаружен при тестировании live edit):**
 - [automation_task_repository.py:632](../../backend/services/automation-engine/ae3lite/infrastructure/repositories/automation_task_repository.py#L632) — `update_control_mode_snapshot_for_zone` вызывал `asyncpg.exceptions.AmbiguousParameterError: inconsistent types deduced for parameter $2 (text vs character varying)` → Laravel proxy 503. Fix: explicit casts `$2::varchar` для SET + `$2::text = 'auto'` для CASE. 1273 AE tests зелёные после fix'а.
@@ -235,12 +235,13 @@ audit M-5 (incomplete Phase 2 DoD). Phase 2 acceptance валиден.
 | **Total AE pytest** | **1218** | **green** |
 | Laravel `ValidateZoneConfigsCommandTest` | 4 | green |
 
-**MINOR (отложено до Phase 7):**
-- `m-1` — добавить `ec_dosing_mode` в `ZoneCorrectionConfigCatalog::fieldCatalog()` (UI editor)
-- `m-2` — `.env.example` запись для `AUTOMATION_SCHEMAS_ROOT`
-- `m-3` — rate-limiting WARNING логов shadow validation
-- `m-4` — комментарий о scope shadow (только two_tank сейчас)
-- `m-5` — README заметка про `$defs/PhaseOverride`
+**MINOR status after full cutover:**
+- `m-1` — закрыто: `ec_dosing_mode` добавлен в `ZoneCorrectionConfigCatalog::fieldCatalog()` (UI editor)
+- `m-2` — закрыто: `.env.example` содержит `AUTOMATION_SCHEMAS_ROOT`
+- `m-3` — закрыто: WARNING логи shadow validation rate-limited (не чаще 1 раза на зону в 60 сек)
+- `m-4` — закрыто: runtime-side mapping compat удалён; `RuntimePlan` больше не использует `_DictShim`, runtime readers/tests переведены на attribute/typed access, `CommandPlan.runtime` narrowed до `RuntimePlan | None`. Оставшийся `_DictShim` в `zone_correction.py` — это raw authority-schema compat-слой, не runtime path и не часть этого хвоста.
+- `m-5` — закрыто: `$defs/PhaseOverride` и sparse override semantics зафиксированы в authority/data-model docs
+- Residual builder fallbacks — закрыто: `runtime_plan_builder.py` больше не подставляет silent defaults для `retry.prepare_recirculation_correction_slack_sec`, `diagnostics_execution.startup.irr_state_wait_timeout_sec` и `dosing.ec_dosing_mode`; runtime fail-closed читает schema-required поля из bundle.
 
 ---
 
@@ -264,7 +265,7 @@ AE3 — **pure consumer** `automation_effective_bundles`:
 
 | Компонент | Файл | LoC |
 |---|---|---|
-| Runtime spec resolver | [two_tank_runtime_spec.py](../../backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) | 1157 |
+| Runtime plan builder | [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py) | 1227 |
 | Correction handler (biggest) | [correction.py](../../backend/services/automation-engine/ae3lite/application/handlers/correction.py) | 2359 |
 | Остальные handlers | `clean_fill`, `solution_fill`, `prepare_recirc`, `irrigation_check`, `startup`, `base` | ~2500 |
 | Tests | `test_*.py` | 93 файла |
@@ -282,7 +283,7 @@ Laravel:
   → grow_cycles.settings.bundle_revision    ← immutable snapshot at cycle start
 
 AE3 (Python):
-  → two_tank_runtime_spec.resolve_*()       ← ВТОРОЙ уровень resolve
+  → runtime_plan_builder.resolve_*()        ← ВТОРОЙ уровень resolve
       + _DEFAULT_PREPARE_RECIRC_*          ← Python hardcoded defaults
       + cfg.get(key, default)               ← silent fallbacks
   → plan.runtime dict
@@ -356,12 +357,11 @@ backend/services/automation-engine/ae3lite/
 │   ├── loader.py                            # единственная точка: bundle → typed model
 │   ├── modes.py                             # ConfigMode enum + rules
 │   ├── live_reload.py                       # hot-reload on checkpoints
+│   ├── runtime_plan_builder.py              # канонический builder runtime/command plan
 │   └── errors.py
-├── domain/
-│   └── services/
-│       ├── two_tank_runtime_spec.py         # сокращается до pure adapter dict→Pydantic
-│       └── ...
-├── application/
+│   ├── services/
+│   │   ├── workflow_topology.py             # канонический topology graph
+│   │   └── ...
 │   └── handlers/                            # читают только typed spec
 └── runtime/
 
@@ -407,7 +407,7 @@ Executor: я. Ожидаемый темп: 1 фаза = 2-4 дня работы.
 1. Прочитать полностью все три критических файла:
    - [AutomationConfigRegistry.php](../../backend/laravel/app/Services/AutomationConfigRegistry.php) (669 строк)
    - [AutomationConfigCompiler.php](../../backend/laravel/app/Services/AutomationConfigCompiler.php) (425 строк)
-   - [two_tank_runtime_spec.py](../../backend/services/automation-engine/ae3lite/domain/services/two_tank_runtime_spec.py) (1157 строк)
+   - [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py) (канонический runtime builder после Phase 4)
 2. Собрать полный inventory параметров в таблицу `doc_ai/04_BACKEND_CORE/AE3_CONFIG_PARAMETER_INVENTORY.md`:
    - Для каждого параметра: namespace, path, текущий default (PHP), текущий default (Python), где читается (handler:line), required или optional
    - ~100-150 строк таблицы, 2-3 часа работы
@@ -587,6 +587,16 @@ make test-ae PYTEST_ARGS="-q test_${handler}"
 
 **Цель:** удалить `two_tank_runtime_spec.py` (1157 строк) и `topology_registry.py`; оставить только новые файлы под `config/`.
 
+**Status:** ✅ completed 2026-04-16
+
+**Shipped artifacts:**
+- runtime payload builder moved to [runtime_plan_builder.py](../../backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py)
+- workflow topology graph moved to [workflow_topology.py](../../backend/services/automation-engine/ae3lite/application/services/workflow_topology.py)
+- legacy test name replaced with [test_ae3lite_workflow_topology.py](../../backend/services/automation-engine/test_ae3lite_workflow_topology.py)
+- runtime env moved to [env.py](../../backend/services/automation-engine/ae3lite/runtime/env.py) with `http_client_timeout_sec`
+- legacy tests renamed to [test_ae3lite_runtime_plan_builder.py](../../backend/services/automation-engine/test_ae3lite_runtime_plan_builder.py)
+- CI gate added in [ae3_config_lint.py](../../tools/ae3_config_lint.py) and wired into `make protocol-check`
+
 **Pre-req:** Phase 3 полностью завершена, handler-ы работают на typed spec.
 
 **Actions:**
@@ -615,6 +625,7 @@ test ! -f backend/services/automation-engine/ae3lite/domain/services/topology_re
 test ! -f backend/services/automation-engine/ae3lite/runtime/config.py
 test -f backend/services/automation-engine/ae3lite/runtime/env.py
 make test-ae
+make protocol-check
 ```
 
 **Rollback:** revert PR. Поскольку Phase 3 уже на typed spec, legacy-файлы просто возвращаются но не вызываются. Сломаются только тесты, которые к ним обращались.

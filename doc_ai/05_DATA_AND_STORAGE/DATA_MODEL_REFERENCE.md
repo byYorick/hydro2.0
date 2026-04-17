@@ -602,6 +602,11 @@ Cycle-level overrides теперь хранятся в `automation_config_docume
 
 `cycle.phase_overrides`:
 - объект с phase snapshot override-полями (`ph_target`, `ec_target`, `irrigation_interval_sec`, ...).
+- Семантика — **sparse diff**, а не полный snapshot фазы: хранятся только override-поля,
+  которые compiler накладывает поверх phase snapshot / zone authority.
+- Для `zone.correction.payload.phase_overrides` используется тот же подход:
+  outer document schema `schemas/zone_correction_document.v1.json` ссылается на
+  `schemas/zone_correction.v1.json#/$defs/PhaseOverride`.
 
 `cycle.manual_overrides`:
 - массив объектов:

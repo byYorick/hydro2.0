@@ -1,6 +1,6 @@
 """Точки входа runtime для AE3-Lite v2."""
 
-from .config import Ae3RuntimeConfig
+from .env import Ae3RuntimeConfig
 from .worker import Ae3RuntimeWorker
 
 

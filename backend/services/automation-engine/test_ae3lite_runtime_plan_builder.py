@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.services.two_tank_runtime_spec import (
+from ae3lite.config.runtime_plan_builder import (
     default_two_tank_command_plan,
     resolve_two_tank_runtime,
 )
@@ -36,6 +36,7 @@ def _minimal_zone_correction_config() -> dict[str, object]:
                 "max_ec_correction_attempts": 5,
                 "max_ph_correction_attempts": 5,
                 "prepare_recirculation_timeout_sec": 1200,
+                "prepare_recirculation_correction_slack_sec": 0,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
                 "telemetry_stale_retry_sec": 30,
@@ -49,6 +50,7 @@ def _minimal_zone_correction_config() -> dict[str, object]:
                 "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
+                "ec_dosing_mode": "single",
             },
             "tolerance": {
                 "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
@@ -233,7 +235,7 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "target_ec": 2.2,
             "ec_min": 0.0,
             "ph_min": 0.0,
-            "startup": {},
+            "startup": {"irr_state_wait_timeout_sec": 4.5},
             "correction": {},
         },
         targets={},
@@ -388,15 +390,15 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_s
     """timeout == observe_window + stabilization is the exact minimum — should pass."""
     import types
     snap = types.SimpleNamespace(
-        diagnostics_execution={
-            "workflow": "cycle_start",
-            "topology": "two_tank_drip_substrate_trays",
-            "required_node_types": ["irrig"],
-            "target_ph": 5.8,
-            "target_ec": 2.2,
-            "startup": {},
-            "correction": {},
-        },
+            diagnostics_execution={
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "target_ph": 5.8,
+                "target_ec": 2.2,
+                "startup": {"irr_state_wait_timeout_sec": 4.5},
+                "correction": {},
+            },
         targets={},
         phase_targets={
             "ph": {"target": 5.8},
@@ -424,15 +426,15 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_p
     """timeout < observe_window + stabilization is provably impossible — must raise PlannerConfigurationError."""
     import types
     snap = types.SimpleNamespace(
-        diagnostics_execution={
-            "workflow": "cycle_start",
-            "topology": "two_tank_drip_substrate_trays",
-            "required_node_types": ["irrig"],
-            "target_ph": 5.8,
-            "target_ec": 2.2,
-            "startup": {},
-            "correction": {},
-        },
+            diagnostics_execution={
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "target_ph": 5.8,
+                "target_ec": 2.2,
+                "startup": {"irr_state_wait_timeout_sec": 4.5},
+                "correction": {},
+            },
         targets={},
         phase_targets={
             "ph": {"target": 5.8},
@@ -477,9 +479,17 @@ def test_resolve_two_tank_runtime_prefers_process_hold_window_for_prepare_recirc
     assert runtime["prepare_recirculation_timeout_sec"] == 55
 
 
-def test_resolve_two_tank_runtime_prepare_recirculation_slack_defaults_to_900() -> None:
-    runtime = resolve_two_tank_runtime(_snapshot(correction={}))
-    assert runtime["prepare_recirculation_correction_slack_sec"] == 900
+def test_resolve_two_tank_runtime_raises_when_prepare_recirculation_slack_missing() -> None:
+    snap = _snapshot(correction={})
+    snap.correction_config = _merge_recursive(
+        _minimal_zone_correction_config(),
+        {"phases": {"tank_recirc": {"retry": {"prepare_recirculation_correction_slack_sec": None}}}},
+    )
+    with pytest.raises(
+        PlannerConfigurationError,
+        match="prepare_recirculation_correction_slack_sec",
+    ):
+        resolve_two_tank_runtime(snap)
 
 
 def test_resolve_two_tank_runtime_prepare_recirculation_slack_from_tank_recirc_retry() -> None:
@@ -490,6 +500,27 @@ def test_resolve_two_tank_runtime_prepare_recirculation_slack_from_tank_recirc_r
     )
     runtime = resolve_two_tank_runtime(snap)
     assert runtime["prepare_recirculation_correction_slack_sec"] == 0
+
+
+def test_resolve_two_tank_runtime_raises_when_startup_wait_timeout_missing() -> None:
+    snap = _snapshot(correction={})
+    snap.diagnostics_execution["startup"] = {}
+    with pytest.raises(
+        PlannerConfigurationError,
+        match="diagnostics_execution.startup.irr_state_wait_timeout_sec",
+    ):
+        resolve_two_tank_runtime(snap)
+
+
+def test_resolve_two_tank_runtime_raises_when_ec_dosing_mode_missing() -> None:
+    snap = _snapshot(correction={})
+    dosing = snap.correction_config["base"]["dosing"]
+    dosing.pop("ec_dosing_mode", None)
+    with pytest.raises(
+        PlannerConfigurationError,
+        match="ec_dosing_mode",
+    ):
+        resolve_two_tank_runtime(snap)
 
 
 def test_resolve_two_tank_runtime_raises_when_timeout_less_than_process_hold_window() -> None:

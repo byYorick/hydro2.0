@@ -1,4 +1,4 @@
-"""Нативный resolver runtime-spec для two-tank `cycle_start` в AE3-Lite."""
+"""Canonical runtime payload builder for two-tank AE3 workflows."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 
 # ── Значения по умолчанию для лимитов retry/attempt ─────────────────────────
 
-#: Максимальное число попыток коррекции в `prepare_recirculation` перед эскалацией.
-_DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
 _MAX_CORRECTION_ATTEMPTS: int = 500
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
@@ -83,17 +81,7 @@ _STAGE_TIMEOUT_GUARDS: dict[str, tuple[str, str]] = {
 
 
 def resolve_two_tank_runtime_plan(snapshot: Any) -> Any:
-    """Phase 3.1 / Option B typed wrapper.
-
-    Calls legacy `resolve_two_tank_runtime()` and validates its dict output
-    against the canonical `RuntimePlan` Pydantic model. Raises
-    `ConfigValidationError` if drift between resolver and model is detected
-    (which is itself a bug — discovery in B-3 confirmed parity).
-
-    Handlers migrated in B-5/B-6 read fields via the typed `RuntimePlan`
-    instance returned here. The legacy dict-version remains unchanged
-    until Phase 4 deletes it.
-    """
+    """Build and validate the typed `RuntimePlan` for a snapshot."""
     # Local import avoids a circular import at module load time
     # (config.loader → ae3lite.config → metrics → various domain services).
     from ae3lite.config.loader import load_runtime_plan
@@ -216,11 +204,9 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_timeout_sec",
             minimum=30,
         ),
-        # Совпадает с дедлайном workflow_router.prepare_recirculation_check:
-        # базовое окно + slack, по умолчанию 900 с, если параметр не задан.
-        "prepare_recirculation_correction_slack_sec": _resolve_bounded_int(
+        "prepare_recirculation_correction_slack_sec": _require_int(
             recirc_retry_cfg.get("prepare_recirculation_correction_slack_sec"),
-            default=900,
+            path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_correction_slack_sec",
             minimum=0,
             maximum=7200,
         ),
@@ -250,7 +236,12 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.solution_fill.timing.irr_state_max_age_sec",
             minimum=5,
         ),
-        "irr_state_wait_timeout_sec": _resolve_float(execution.get("startup", {}).get("irr_state_wait_timeout_sec"), 5.0, 0.0, 30.0),
+        "irr_state_wait_timeout_sec": _require_float(
+            _to_mapping(execution.get("startup")).get("irr_state_wait_timeout_sec"),
+            path="diagnostics_execution.startup.irr_state_wait_timeout_sec",
+            minimum=0.0,
+            maximum=30.0,
+        ),
         "sensor_mode_stabilization_time_sec": _require_int(
             fill_timing_cfg.get("sensor_mode_stabilization_time_sec"),
             path="correction_config.base/phases.solution_fill.timing.sensor_mode_stabilization_time_sec",
@@ -346,6 +337,13 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
         _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
+
+
+__all__ = [
+    "default_two_tank_command_plan",
+    "resolve_two_tank_runtime",
+    "resolve_two_tank_runtime_plan",
+]
 
 
 def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
@@ -616,15 +614,6 @@ def _require_str(raw_value: Any, *, path: str) -> str:
     if value:
         return value
     raise PlannerConfigurationError(f"Отсутствует обязательное поле correction_config: {path}")
-
-
-def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
-    return _resolve_bounded_int(
-        raw_value,
-        _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS,
-        1,
-        _MAX_CORRECTION_ATTEMPTS,
-    )
 
 
 def _compute_prepare_ec_share(
@@ -1151,7 +1140,12 @@ def _build_correction_cfg(
         "controllers": controllers_cfg,
         "pump_calibration": dict(pump_calibration_cfg),
         "ec_component_policy": _normalize_component_policy(phase_cfg.get("ec_component_policy")),
-        "ec_dosing_mode": str(phase_cfg.get("ec_dosing_mode") or "single").strip().lower() or "single",
+        "ec_dosing_mode": _require_str(
+            phase_cfg.get("ec_dosing_mode")
+            if phase_cfg.get("ec_dosing_mode") is not None
+            else dosing_cfg.get("ec_dosing_mode"),
+            path="dosing.ec_dosing_mode",
+        ),
         "ec_component_ratios": _to_mapping(phase_cfg.get("ec_component_ratios")),
         "ec_excluded_components": tuple(
             str(x).strip().lower()

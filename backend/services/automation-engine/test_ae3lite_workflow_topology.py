@@ -1,22 +1,18 @@
-"""Tests for TopologyRegistry and TWO_TANK topology graph."""
+"""Tests for workflow_topology: TopologyRegistry and TWO_TANK graph."""
 
 import pytest
 
-from ae3lite.domain.services.topology_registry import (
+from ae3lite.application.services.workflow_topology import (
     StageDef,
     TopologyRegistry,
     TWO_TANK,
 )
 
 
-# ─── Fixtures ───────────────────────────────────────────────────────
-
 @pytest.fixture
 def registry() -> TopologyRegistry:
     return TopologyRegistry()
 
-
-# ─── TWO_TANK graph integrity ──────────────────────────────────────
 
 class TestTwoTankGraphIntegrity:
     """Validates that the TWO_TANK graph has no broken links."""
@@ -81,8 +77,6 @@ class TestTwoTankGraphIntegrity:
             f"Expected 33 stages, got {len(TWO_TANK)}"
         )
 
-
-# ─── TopologyRegistry lookup ───────────────────────────────────────
 
 class TestTopologyRegistryLookup:
     """Tests for get/stages/has_topology methods."""
@@ -149,8 +143,6 @@ class TestTopologyRegistryLookup:
         assert registry.has_topology("nonexistent") is False
 
 
-# ─── TopologyRegistry.validate ──────────────────────────────────────
-
 class TestTopologyRegistryValidate:
     """Tests for validate() error detection."""
 
@@ -215,8 +207,6 @@ class TestTopologyRegistryValidate:
         assert any("on_corr_fail" in e for e in errors)
 
 
-# ─── StageDef frozen ────────────────────────────────────────────────
-
 class TestStageDefImmutability:
     """StageDef is a frozen dataclass — no mutation allowed."""
 
@@ -236,8 +226,6 @@ class TestStageDefImmutability:
         assert hash(a) == hash(b)
         assert len({a, b}) == 1
 
-
-# ─── Workflow phase coverage ────────────────────────────────────────
 
 class TestWorkflowPhases:
     """Validates that workflow_phase values in TWO_TANK are consistent."""
@@ -259,5 +247,26 @@ class TestWorkflowPhases:
         for name, sdef in TWO_TANK.items():
             if name.startswith("clean_fill"):
                 assert sdef.workflow_phase == "tank_filling", (
-                    f"Stage {name} should be tank_filling"
+                    f"{name} should be tank_filling"
+                )
+
+    def test_solution_fill_stages_are_filling_or_ready(self):
+        for name, sdef in TWO_TANK.items():
+            if name.startswith("solution_fill"):
+                assert sdef.workflow_phase in {"tank_filling", "tank_recirc", "ready"}, (
+                    f"{name} has unexpected phase {sdef.workflow_phase}"
+                )
+
+    def test_prepare_recirculation_stages_are_tank_recirc_or_ready(self):
+        for name, sdef in TWO_TANK.items():
+            if name.startswith("prepare_recirculation"):
+                assert sdef.workflow_phase in {"tank_recirc", "ready"}, (
+                    f"{name} should be tank_recirc"
+                )
+
+    def test_irrigation_stages_use_expected_transition_phases(self):
+        for name, sdef in TWO_TANK.items():
+            if name.startswith("irrigation_"):
+                assert sdef.workflow_phase in {"tank_filling", "irrigating", "irrig_recirc", "ready"}, (
+                    f"{name} has unexpected phase {sdef.workflow_phase}"
                 )

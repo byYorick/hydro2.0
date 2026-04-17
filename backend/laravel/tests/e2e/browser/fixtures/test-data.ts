@@ -10,15 +10,22 @@ type TestDataFixtures = {
 
 export const test = base.extend<TestDataFixtures>({
   apiHelper: async ({ context }, use) => {
+    const authEmail = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
+    const authRole = process.env.E2E_AUTH_ROLE || 'agronomist';
+
     // Получаем storageState из контекста браузера
     const storageState = await context.storageState();
     
-    // Создаем новый APIRequestContext с storageState для передачи cookies
+    // Создаем APIRequestContext с browser cookies и отдельным Sanctum token.
+    // Это делает fixture устойчивой к дрейфу session/csrf в testing/e2e окружениях.
     const apiRequest = await playwrightRequest.newContext({
       storageState: storageState,
     });
     
-    const helper = new APITestHelper(apiRequest);
+    const helper = new APITestHelper(
+      apiRequest,
+      APITestHelper.bootstrapToken(authEmail, authRole),
+    );
     await use(helper);
     
     // Закрываем request context после использования

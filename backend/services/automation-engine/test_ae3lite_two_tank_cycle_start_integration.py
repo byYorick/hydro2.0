@@ -7,8 +7,9 @@ from uuid import uuid4
 
 import pytest
 
+from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases import ClaimNextTaskUseCase, ExecuteTaskUseCase, StartupRecoveryUseCase, WorkflowRouter
-from ae3lite.domain.services import CycleStartPlanner, TopologyRegistry
+from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.read_models import PgZoneRuntimeMonitor, PgZoneSnapshotReadModel
 from ae3lite.infrastructure.repositories import (

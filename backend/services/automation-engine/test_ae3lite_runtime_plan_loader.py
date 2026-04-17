@@ -278,16 +278,9 @@ def test_independent_copies_dont_cross_contaminate() -> None:
 # ─── Integration: real resolve_two_tank_runtime → load_runtime_plan ───────
 
 def test_resolve_two_tank_runtime_output_validates_as_runtime_plan() -> None:
-    """B-3 integration check: the dict produced by `resolve_two_tank_runtime`
-    on a canonical fixture snapshot must validate as `RuntimePlan` without
-    any field drift.
-
-    Imports from the existing `test_ae3lite_two_tank_runtime_spec.py` to
-    reuse its private `_snapshot()` helper — that file is the established
-    fixture source for two_tank_runtime tests.
-    """
-    from test_ae3lite_two_tank_runtime_spec import _snapshot
-    from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
+    """Builder output must validate as `RuntimePlan` without field drift."""
+    from test_ae3lite_runtime_plan_builder import _snapshot
+    from ae3lite.config.runtime_plan_builder import resolve_two_tank_runtime
 
     snapshot = _snapshot(correction={})
     runtime_dict = resolve_two_tank_runtime(snapshot)

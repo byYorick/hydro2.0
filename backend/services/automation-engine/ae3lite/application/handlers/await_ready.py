@@ -9,6 +9,7 @@ from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import (
     IRRIGATION_WAIT_READY_DURATION_SECONDS,
@@ -20,7 +21,7 @@ from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 
 
-_WAIT_READY_TIMEOUT_SEC = max(30, int(os.getenv("AE_IRRIGATION_WAIT_READY_SEC", "1800")))
+_WAIT_READY_TIMEOUT_SEC = max(30, int(os.getenv("AE_IRRIGATION_WAIT_READY_SEC", "1800")))  # config-literal: operator env floor for await-ready timeout
 _WAIT_READY_POLL_SEC = max(1, int(os.getenv("AE_IRRIGATION_WAIT_READY_POLL_SEC", "10")))
 
 _logger = logging.getLogger(__name__)
@@ -58,10 +59,10 @@ class AwaitReadyHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        runtime = plan.runtime if hasattr(plan, "runtime") else {}
-        workflow_phase = str(runtime.get("zone_workflow_phase") or "").strip().lower()
+        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), RuntimePlan) else None
+        workflow_phase = str(getattr(runtime, "zone_workflow_phase", "") or "").strip().lower()
         topo = _topology_label(task)
-        grow_cycle_id = runtime.get("grow_cycle_id")
+        grow_cycle_id = getattr(runtime, "grow_cycle_id", None)
         if grow_cycle_id is not None:
             try:
                 grow_cycle_id = int(grow_cycle_id)

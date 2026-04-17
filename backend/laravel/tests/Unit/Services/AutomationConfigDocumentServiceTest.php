@@ -174,6 +174,45 @@ class AutomationConfigDocumentServiceTest extends TestCase
         $this->assertSame('Correction preset', data_get($payload, 'resolved_config.meta.preset_name'));
     }
 
+    public function test_zone_correction_normalizer_accepts_sparse_phase_overrides(): void
+    {
+        $documents = app(AutomationConfigDocumentService::class);
+        $zone = Zone::factory()->create();
+
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            [
+                'preset_id' => null,
+                'base_config' => ZoneCorrectionConfigCatalog::defaults(),
+                'phase_overrides' => [
+                    'tank_recirc' => [
+                        'timing' => [
+                            'stabilization_sec' => 150,
+                        ],
+                        'controllers' => [
+                            'ph' => [
+                                'kp' => 0.35,
+                            ],
+                        ],
+                    ],
+                ],
+            ]
+        );
+
+        $payload = $documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id
+        );
+
+        $this->assertSame(150, data_get($payload, 'phase_overrides.tank_recirc.timing.stabilization_sec'));
+        $this->assertSame(0.35, data_get($payload, 'phase_overrides.tank_recirc.controllers.ph.kp'));
+        $this->assertSame(150, data_get($payload, 'resolved_config.phases.tank_recirc.timing.stabilization_sec'));
+        $this->assertSame(0.35, data_get($payload, 'resolved_config.phases.tank_recirc.controllers.ph.kp'));
+    }
+
     public function test_zone_correction_bundle_uses_current_document_revision_in_meta_version(): void
     {
         $documents = app(AutomationConfigDocumentService::class);

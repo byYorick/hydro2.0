@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
@@ -15,6 +16,13 @@ from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.infrastructure.repositories import PgAutomationTaskRepository
 from common.db import execute, fetch
 from test_ae3lite_create_task_from_intent_integration import _cleanup, _insert_zone
+
+
+def _plan(*, named_plans=None, **runtime_overrides):
+    return SimpleNamespace(
+        runtime=make_runtime_plan(**runtime_overrides),
+        named_plans=named_plans or {},
+    )
 
 
 class _DecisionControllerStub:
@@ -132,7 +140,7 @@ async def test_decision_gate_persists_irrigation_decision_columns() -> None:
 
         outcome = await handler.run(
             task=task,
-            plan=SimpleNamespace(runtime={"irrigation_decision": {"strategy": "smart_soil_v1"}}),
+            plan=_plan(irrigation_decision={"strategy": "smart_soil_v1"}),
             stage_def=SimpleNamespace(),
             now=now,
         )
@@ -216,16 +224,14 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
         )
         outcome = await handler.run(
             task=task,
-            plan=SimpleNamespace(
-                runtime={
-                    "irrigation_safety": {"stop_on_solution_min": True},
-                    "irrigation_recovery": {"max_setup_replays": 1},
-                    "solution_min_sensor_labels": ["level_solution_min"],
-                    "level_switch_on_threshold": 0.5,
-                    "telemetry_max_age_sec": 60,
-                    "level_poll_interval_sec": 10,
-                },
+            plan=_plan(
                 named_plans={"irr_state_probe": probe},
+                irrigation_safety={"stop_on_solution_min": True},
+                irrigation_recovery={"max_setup_replays": 1},
+                solution_min_sensor_labels=["level_solution_min"],
+                level_switch_on_threshold=0.5,
+                telemetry_max_age_sec=60,
+                level_poll_interval_sec=10,
             ),
             stage_def=SimpleNamespace(),
             now=now,
@@ -297,7 +303,7 @@ async def test_router_persists_enter_correction_for_irrigation_check() -> None:
         )
         updated = await router._apply_outcome(
             task=task,
-            plan=SimpleNamespace(runtime={"level_poll_interval_sec": 5}),
+            plan=_plan(level_poll_interval_sec=5),
             outcome=StageOutcome(kind="enter_correction", correction=corr),
             now=now,
         )

@@ -9,8 +9,8 @@ Drift between this file and `recipe_phase.v1.json` is caught by
 `test_ae3lite_pydantic_jsonschema_parity.py` (extend EXPECTED_FIELDS as
 new fields are added).
 
-Phase 4-prep: needed by Phase 5 live-mode hot-reload of recipe phase
-(see Q4 in AE3_CONFIG_REFACTORING_PLAN.md).
+Used by live-mode hot-reload of recipe phase and by schema/runtime parity
+checks.
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ class CommandStep(BaseModel):
 
 class TwoTankCommands(BaseModel):
     """Per-plan relay command overrides. Plan names are fixed by the AE3
-    two-tank topology (see two_tank_runtime_spec._REQUIRED_TWO_TANK_PLAN_CHANNELS).
+    two-tank topology (see runtime_plan_builder._REQUIRED_TWO_TANK_PLAN_CHANNELS).
     All plans optional at this schema level — runtime decides which are needed."""
     model_config = ConfigDict(extra="forbid", frozen=True)
 
