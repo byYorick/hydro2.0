@@ -210,6 +210,7 @@ def _snapshot(
         },
         targets={},
         phase_targets=phase_targets,
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},

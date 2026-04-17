@@ -19,7 +19,6 @@ from typing import Any, Mapping
 from pydantic import ValidationError
 
 from ae3lite.config.errors import ConfigValidationError
-from ae3lite.config.schema.recipe_phase import RecipePhase
 from ae3lite.config.schema.runtime_plan import RuntimePlan
 from ae3lite.config.schema.zone_correction import ZoneCorrection
 
@@ -52,42 +51,6 @@ def load_zone_correction(
 
     try:
         return ZoneCorrection.model_validate(dict(payload))
-    except ValidationError as exc:
-        raise ConfigValidationError(
-            zone_id=zone_id,
-            namespace=namespace,
-            errors=[_clean_error(e) for e in exc.errors(include_url=False)],
-        ) from exc
-
-
-def load_recipe_phase(
-    payload: Mapping[str, Any],
-    *,
-    zone_id: int | None = None,
-    cycle_id: int | None = None,
-    namespace: str = "recipe.phase",
-) -> RecipePhase:
-    """Validate and parse a recipe phase runtime payload.
-
-    `payload` corresponds to the merged shape of `grow_cycles.currentPhase`
-    + zone target overrides that AE3 reads as `snapshot.phase_targets`,
-    `snapshot.targets`, and `snapshot.diagnostics_execution`.
-
-    Used by live-mode hot-reload of recipe phase and by config parity tests.
-
-    `cycle_id` is included in the error context but not (yet) stored on
-    `ConfigValidationError` — refine when Phase 5 wires the call site.
-    """
-    if not isinstance(payload, Mapping):
-        raise ConfigValidationError(
-            zone_id=zone_id,
-            namespace=namespace,
-            errors=[{"loc": (), "type": "type_error",
-                     "msg": f"payload must be a mapping, got {type(payload).__name__}"}],
-        )
-
-    try:
-        return RecipePhase.model_validate(dict(payload))
     except ValidationError as exc:
         raise ConfigValidationError(
             zone_id=zone_id,

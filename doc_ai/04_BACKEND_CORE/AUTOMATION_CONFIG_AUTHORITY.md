@@ -1,8 +1,8 @@
 # AUTOMATION_CONFIG_AUTHORITY.md
 # Единый authority automation/runtime-конфигов
 
-**Версия:** 1.1  
-**Дата обновления:** 2026-04-15  
+**Версия:** 1.3  
+**Дата обновления:** 2026-04-17  
 **Статус:** Канонично для Laravel runtime, AE3 read-model и web-admin (+ §6.4 config modes Phase 5; автогенерируемые таблицы обновляются `python3 tools/generate_authority.py`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -327,6 +327,36 @@ Config modes (Phase 5):
 
 ---
 
+## 8.1 Legacy mappings (system namespaces → SystemAutomationSettingsCatalog)
+
+Пять system-namespaces имеют legacy-маппинг на `SystemAutomationSettingsCatalog`:
+
+| Authority namespace | Legacy key | Callers |
+|---------------------|------------|---------|
+| `system.automation_defaults` | `automation_defaults` | `AutomationConfigRegistry::validate()`, `AutomationConfigController::serializeDocument()` |
+| `system.command_templates` | `automation_command_templates` | то же |
+| `system.process_calibration_defaults` | `process_calibration_defaults` | то же |
+| `system.pump_calibration_policy` | `pump_calibration` | то же |
+| `system.sensor_calibration_policy` | `sensor_calibration` | то же |
+
+**Почему не удалено:** `SystemAutomationSettingsCatalog` остаётся единственным source of truth для:
+- `defaults()` — дефолтные значения полей этих конфигов (в т.ч. `quality_score_legacy`);
+- `fieldCatalog()` — метаданные полей для UI-редактора;
+- `validate()` — валидация payload для этих namespaces.
+
+`quality_score_legacy` — активное поле в `system.pump_calibration_policy`, используется в frontend TypeScript (`SystemSettings.ts`, `usePumpCalibrationSettings.ts`) и тестах. Это **не deprecated поле**, несмотря на слово "legacy" в имени — это legacy-score для backfill логики.
+
+**Когда retirement:** retirement маппинга возможен после Phase 5 плана `AE_LEGACY_CLEANUP_PLAN.md` — когда генератор `tools/generate_zone_correction_catalog.py` будет расширен на system-namespaces и `SystemAutomationSettingsCatalog` будет полностью автогенерируемым. До тех пор маппинг — необходимый glue-layer.
+
+**Методы:**
+- `AutomationConfigRegistry::authorityToLegacySystemNamespace(string $namespace): ?string` — маппинг authority→legacy; `null` если не legacy-mapped.
+- `AutomationConfigRegistry::legacySystemNamespaceToAuthority(string $namespace): ?string` — обратный маппинг.
+- `AutomationConfigController::serializeLegacySystemDocument(string $legacyNamespace): array` — сериализует `defaults` + `field_catalog` из `SystemAutomationSettingsCatalog` для UI.
+
+Эти методы **не удалять** без одновременного переноса `SystemAutomationSettingsCatalog` на autogeneration (Phase 5+).
+
+---
+
 ## 9. Связанные документы
 
 - `BACKEND_ARCH_FULL.md`
@@ -335,30 +365,27 @@ Config modes (Phase 5):
 - `../ARCHITECTURE_FLOWS.md`
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 
+### 9.1 Single source of truth: zone_correction default-значения
+
+Файл **`schemas/zone_correction_defaults.json`** — единственный источник правды для default-значений конфига `zone_correction`.
+
+| Слой | Файл / класс | Роль |
+|------|--------------|------|
+| JSON defaults | `schemas/zone_correction_defaults.json` | **Single source** — редактировать здесь |
+| JSON Schema (constraints) | `schemas/zone_correction.v1.json` | Ограничения типов/диапазонов |
+| PHP defaults | `ZoneCorrectionConfigCatalog::defaults()` | Должен совпадать с JSON-файлом — проверяется тестом |
+| CI gate | `tools/generate_zone_correction_catalog.py --check` | Валидирует defaults против schema |
+| Make target | `make check-config-catalog` | Запускает CI gate; включён в `make protocol-check` |
+| PHP unit test | `tests/Unit/ZoneCorrectionCatalogDefaultsTest.php` | Проверяет совпадение PHP `defaults()` с JSON-файлом |
+
+**Правило:** при изменении default-значения — обновить `zone_correction_defaults.json` **и** `ZoneCorrectionConfigCatalog::defaults()` одновременно. Тест не пройдёт при рассинхронизации.
+
 <!-- BEGIN:generated-parameters -->
 
 ## Автогенерируемые таблицы параметров
 
 > Секция генерируется `python3 tools/generate_authority.py` из `schemas/*.v1.json`.
 > НЕ редактируй вручную — изменения будут перезаписаны.
-
-### `recipe_phase`
-
-| Path | Type | Constraints | Required |
-| --- | --- | --- | --- |
-| `diagnostics_execution` | object | — | ✓ |
-| `diagnostics_execution.fail_safe_guards` | — | — | ✓ |
-| `diagnostics_execution.startup` | — | — | ✓ |
-| `diagnostics_execution.two_tank_commands` | — | — | ✓ |
-| `phase_targets` | object | — | ✓ |
-| `phase_targets.day_night_enabled` | boolean | — |  |
-| `phase_targets.ec` | — | — | ✓ |
-| `phase_targets.ec_component_ratios` | — | — |  |
-| `phase_targets.extensions` | — | — |  |
-| `phase_targets.ph` | — | — | ✓ |
-| `targets` | object | — | ✓ |
-| `targets.extensions` | — | — |  |
-| `targets.irrigation` | — | — |  |
 
 ### `system_automation_defaults`
 

@@ -213,6 +213,7 @@ def _snapshot(
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         process_calibrations=process_calibrations if process_calibrations is not None else default_process_calibrations,
         correction_config=effective_correction_config,
@@ -243,6 +244,7 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "ph": {"target": 5.8, "min": 0.0},
             "ec": {"target": 2.2, "min": 0.0},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "tank_recirc": {
@@ -404,6 +406,7 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_s
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         correction_config=_with_legacy_runtime_overrides(
             correction_config={},
@@ -440,6 +443,7 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_p
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         correction_config=_with_legacy_runtime_overrides(
             correction_config={},
@@ -561,6 +565,7 @@ def test_resolve_two_tank_runtime_raises_when_zone_correction_config_missing() -
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         correction_config=None,
     )
@@ -650,6 +655,7 @@ def test_resolve_two_tank_runtime_raises_when_pid_authority_documents_missing() 
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs={},
         process_calibrations={
             "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
@@ -686,6 +692,7 @@ def test_resolve_two_tank_runtime_raises_when_zone_correction_field_missing() ->
             "ph": {"target": 5.8},
             "ec": {"target": 2.2},
         },
+        pid_state={},
         pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},

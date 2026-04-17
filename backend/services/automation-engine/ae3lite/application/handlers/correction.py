@@ -96,6 +96,18 @@ class _ObservationWindow:
 _STALE_RECHECK_DELAY_SEC = 0.25
 
 
+def _pid_entry_or_none(pid_state: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
+    """Return pid_state[key] if it is a Mapping, otherwise None.
+
+    Avoids double-call `x.get(k) if isinstance(x.get(k), Mapping) else None`
+    that would call .get() twice and confuse static analysers.
+    pid_state is always a runtime-dict from PostgreSQL; individual keys are
+    optional because AE3 may not have written a PID entry yet.
+    """
+    value = pid_state.get(key)
+    return value if isinstance(value, Mapping) else None
+
+
 class CorrectionHandler(BaseStageHandler):
     """Handles all ``corr_*`` steps within the correction state machine."""
 
@@ -686,13 +698,13 @@ class CorrectionHandler(BaseStageHandler):
             kind="ph",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
-            pid_entry=pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else None,
+            pid_entry=_pid_entry_or_none(pid_state, "ph"),
         )
         ec_cfg = self._observation_config(
             kind="ec",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
-            pid_entry=pid_state.get("ec") if isinstance(pid_state.get("ec"), Mapping) else None,
+            pid_entry=_pid_entry_or_none(pid_state, "ec"),
         )
         try:
             ph = await self._decision_window_reader.read(
@@ -1332,7 +1344,7 @@ class CorrectionHandler(BaseStageHandler):
             kind="ec",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
-            pid_entry=runtime.pid_state.get("ec") if isinstance(runtime.pid_state.get("ec"), Mapping) else None,
+            pid_entry=_pid_entry_or_none(runtime.pid_state, "ec"),
         )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
         await self._persist_pid_state_updates(
@@ -1457,7 +1469,7 @@ class CorrectionHandler(BaseStageHandler):
             kind="ph",
             correction_cfg=correction_cfg,
             process_cfg=process_cfg,
-            pid_entry=runtime.pid_state.get("ph") if isinstance(runtime.pid_state.get("ph"), Mapping) else None,
+            pid_entry=_pid_entry_or_none(runtime.pid_state, "ph"),
         )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
         # Audit B5 fix: explicitly zero out the cross-coupling feedforward_bias
@@ -1788,7 +1800,7 @@ class CorrectionHandler(BaseStageHandler):
             return None
 
         for pid_type in ("ph", "ec"):
-            entry = pid_state.get(pid_type) if isinstance(pid_state.get(pid_type), Mapping) else None
+            entry = _pid_entry_or_none(pid_state, pid_type)
             if not entry:
                 continue
             count = int(entry.get("no_effect_count") or 0)
@@ -1938,7 +1950,7 @@ class CorrectionHandler(BaseStageHandler):
         correction_cfg = self._correction_config(plan=plan, task=task)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.pid_state if isinstance(runtime.pid_state, Mapping) else {}
-        pid_entry = pid_state.get(pid_type) if isinstance(pid_state.get(pid_type), Mapping) else {}
+        pid_entry = _pid_entry_or_none(pid_state, pid_type) or {}
         observe_cfg = self._observation_config(
             kind=pid_type,
             correction_cfg=correction_cfg,

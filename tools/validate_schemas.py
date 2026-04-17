@@ -31,7 +31,9 @@ except ImportError as exc:  # pragma: no cover — environment sanity
 
 
 def iter_schema_files(schemas_dir: Path) -> list[Path]:
-    return sorted(schemas_dir.glob("*.json"))
+    # Only validate files that follow the versioned schema naming convention (*.v1.json etc).
+    # Plain *.json files (e.g. zone_correction_defaults.json) are data files, not schemas.
+    return sorted(schemas_dir.glob("*.v*.json"))
 
 
 def validate_one(path: Path) -> list[str]:

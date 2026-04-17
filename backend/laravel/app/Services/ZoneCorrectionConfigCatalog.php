@@ -222,9 +222,9 @@ class ZoneCorrectionConfigCatalog
                     self::field(
                         'dosing.ec_dosing_mode',
                         'EC dosing mode',
-                        'Single = одна общая EC-помпа. Multi-parallel = параллельные помпы на компоненты (NPK/A/B). См. recipe ec_component_ratios.',
+                        'Single = одна общая EC-помпа. Multi-parallel = параллельные помпы на компоненты (NPK/A/B). Multi-sequential = sequential multi-pump (legacy). См. recipe ec_component_ratios.',
                         'enum',
-                        ['options' => ['single', 'multi_parallel'], 'advanced_only' => true]
+                        ['options' => ['single', 'multi_parallel', 'multi_sequential'], 'advanced_only' => true]
                     ),
                 ],
             ],

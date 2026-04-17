@@ -1,9 +1,9 @@
 # План рефакторинга: каноническая система конфигурирования AE3
 
-**Версия:** 3.6 (merge: Phase 4/6.2 hardening + 2026-04-17 audit follow-ups: R12 metric, dead-code cleanup, phase_overrides partial validation, doc sync)
+**Версия:** 3.7 (2026-04-17 legacy-cleanup pass: AE_LEGACY_CLEANUP_PLAN phases 1–6 завершены — dead-code `load_recipe_phase`/`RecipePhase`/`recipe_phase.v1.json` удалён, `isinstance(Mapping)` shims ≤15, backfill-команда, `ZoneCorrectionConfigCatalog` синхронизирован с JSON Schema, `zone_correction_defaults.json` как single source of truth)
 **Дата:** 2026-04-17
 **Автор:** инженерный план, executor-first
-**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; legacy/shim слой Phase 4 удалён; Phase 6.2 (full correction fine-tuning live edit) закрыт вместе с hardening: AE3 `_checkpoint()` integration coverage + browser E2E live-edit flow; R12 mitigation (`ae3_zone_config_auto_reverts_total` + liveness panel) закрыт; phase_overrides теперь валидируется как partial diff (fix Phase 6.2 regression)
+**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; legacy/shim слой Phase 4 удалён; Phase 6.2 (full correction fine-tuning live edit) закрыт вместе с hardening: AE3 `_checkpoint()` integration coverage + browser E2E live-edit flow; R12 mitigation закрыт; legacy-cleanup pass (AE_LEGACY_CLEANUP_PLAN) завершён 2026-04-17
 
 ## Статус фаз
 
@@ -29,6 +29,7 @@
 | 6.1: Recipe phase inline editor | ✅ completed 2026-04-15 | `RecipePhaseLiveEditCard.vue` — compact pH/EC targets editor в live mode |
 | 7: Observability + doc gen | ✅ completed 2026-04-15 | Prometheus metrics `ae3_zone_config_mode` gauge + `ae3_zone_config_live_edits_total` + `ae3_zone_config_invalid_total` counters в `infrastructure/metrics.py`; Grafana dashboard `backend/configs/prod/grafana/dashboards/zone-configs.json`; `tools/generate_authority.py` + `make generate-authority`/`make authority-check` (CI guard); `AUTOMATION_CONFIG_AUTHORITY.md` автогенерируемая секция §«Автогенерируемые таблицы параметров» (6.3KB) |
 | 6.2: full fine-tuning live edit correction/PID/calibration | ✅ fully closed 2026-04-16 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, AE3 integration test `test_ae3lite_checkpoint_hot_swap_integration.py`, browser E2E `13-correction-authority-flows.spec.ts`, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
+| **AE_LEGACY_CLEANUP_PLAN Phases 1–6** | ✅ completed 2026-04-17 | [AE_LEGACY_CLEANUP_PLAN.md](AE_LEGACY_CLEANUP_PLAN.md) — dead-code `load_recipe_phase`/`RecipePhase` + `recipe_phase.v1.json` удалён; `isinstance(Mapping)` guards ≤15; `BackfillEffectiveBundlesCommand`; `ZoneCorrectionConfigCatalog` + `zone_correction_defaults.json` синхронизированы; CI gate `make check-config-catalog` добавлен. |
 
 **Tests state (2026-04-16):** исторический snapshot на 2026-04-15/16: ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для полного закрытия Phase 6.2 добавлены AE3 integration test на `_checkpoint()` live hot-reload и browser E2E live-edit flow; дополнительно после runtime typed cutover подтверждён расширенный AE rerun: `226 passed` по 12 профильным pytest-файлам (`await_ready`, `irrigation_runtime_integration`, `irrigation_check_correction`, `cycle_start_planner`, `workflow_router`, `irrigation_recovery`, `probe_backoff`, `correction_handler_multi_dose`, `irrigation_decision_controller`, `solution_fill`, `prepare_recirc_check`, `correction_handler`).
 
@@ -52,9 +53,10 @@
    [base.py._checkpoint](../../backend/services/automation-engine/ae3lite/application/handlers/base.py#L83);
    параллельный `refresh_if_changed` был написан в Phase 5, но никогда не
    включался в production path после Phase 5.5 переписывания. Убран dead import.
-   `load_recipe_phase` + `RecipePhase` сохранены в
-   [loader.py](../../backend/services/automation-engine/ae3lite/config/loader.py)
-   + `config/__init__.py` как публичный canonical API (под тестами).
+   **Дополнение (AE_LEGACY_CLEANUP_PLAN Phase 1, 2026-04-17):** `load_recipe_phase` + `RecipePhase`
+   **удалены** из [loader.py](../../backend/services/automation-engine/ae3lite/config/loader.py)
+   и `config/__init__.py`; `schemas/recipe_phase.v1.json` и
+   `test_ae3lite_recipe_phase_loader.py` также удалены (dead code после Phase 5.5).
 
 3. **Doc sync §2.2** — пути Vue-компонентов актуализированы: фактически
    компоненты лежат в `resources/js/Components/ZoneAutomation/`, имена —
@@ -144,7 +146,7 @@
 - Laravel command: `RevertExpiredLiveModesCommand.php`
 - Laravel model: `ZoneConfigChange.php`; `Zone.php` расширен
 - Laravel policy: `ZonePolicy::setLive`
-- AE3 Python: `ae3lite/config/modes.py`, `ae3lite/config/live_reload.py`, `BaseStageHandler._checkpoint()`
+- AE3 Python: `ae3lite/config/modes.py`, `BaseStageHandler._checkpoint()` (live_reload.py удалён)
 - Vue: `ConfigModeCard.vue`, `ConfigChangesTimeline.vue`, `RecipePhaseLiveEditCard.vue`
 - API client: `services/api/zoneConfigMode.ts`
 
@@ -152,9 +154,10 @@
 
 **Shipped:**
 - 7 JSON Schemas in `schemas/` (draft 2020-12, all validated by `make schemas-validate`):
-  `zone_correction.v1.json`, `zone_correction_document.v1.json`, `recipe_phase.v1.json`,
+  `zone_correction.v1.json`, `zone_correction_document.v1.json`, `recipe_phase.v1.json` (**удалён** в AE_LEGACY_CLEANUP_PLAN Phase 1),
   `zone_pid.v1.json`, `zone_process_calibration.v1.json`, `zone_logic_profile.v1.json`,
-  `system_automation_defaults.v1.json`
+  `system_automation_defaults.v1.json`;
+  добавлен `zone_correction_defaults.json` (AE_LEGACY_CLEANUP_PLAN Phase 5)
 - Python validator: `tools/validate_schemas.py` + `make schemas-validate` + wired into `make protocol-check`
 - Laravel `JsonSchemaValidator` service (opis/json-schema 2.x, supports Draft 2020-12)
 - `php artisan zones:validate-configs [--scope] [--namespace] [--json]` command
@@ -213,10 +216,11 @@ zone.correction documents. Decided in Phase 3 Sprint 3.x as acceptance gate.
   (68 параметризованных проверок: type, bounds, enum). Тест skip-ит себя если schemas/ не
   доступен (graceful — для CI с отдельными compose).
 - **B4** — добавлен Pydantic `RecipePhase`
-  ([recipe_phase.py](../../backend/services/automation-engine/ae3lite/config/schema/recipe_phase.py))
-  + `load_recipe_phase()` в loader. Это разблокирует Phase 5 live-mode hot-reload recipe
-  (Q4-coverage). 11 unit-тестов в
-  [test_ae3lite_recipe_phase_loader.py](../../backend/services/automation-engine/test_ae3lite_recipe_phase_loader.py).
+  (`recipe_phase.py`) + `load_recipe_phase()` в loader (Phase 2 audit fix).
+  **Закрыт как reverted (AE_LEGACY_CLEANUP_PLAN Phase 1, 2026-04-17):**
+  `recipe_phase.py`, `loader.py::load_recipe_phase`, `schemas/recipe_phase.v1.json` и
+  `test_ae3lite_recipe_phase_loader.py` **удалены** — код стал dead code после Phase 5.5,
+  live hot-reload recipe не используется в production path.
 - **B5** — этот раздел плана.
 
 **Retroactive Phase 2 confirmation:**

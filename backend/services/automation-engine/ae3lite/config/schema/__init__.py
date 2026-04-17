@@ -6,8 +6,7 @@ Constraints (min/max/required/enum) must stay in sync with the JSON Schema
 catch drift.
 """
 
-from ae3lite.config.schema.recipe_phase import RecipePhase
 from ae3lite.config.schema.runtime_plan import RuntimePlan
 from ae3lite.config.schema.zone_correction import ZoneCorrection
 
-__all__ = ["RecipePhase", "RuntimePlan", "ZoneCorrection"]
+__all__ = ["RuntimePlan", "ZoneCorrection"]

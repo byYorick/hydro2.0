@@ -242,7 +242,7 @@ Env-переменная объявлена в `JsonSchemaValidator::defaultSche
 | B1 | Add CI workflow paths-trigger `schemas/**` + step `python3 tools/validate_schemas.py schemas` | 15 min |
 | B2 | Add 5 tests for `_shadow_validate_correction` in `test_ae3lite_cycle_start_planner.py` | 30 min |
 | B3 | Add `tests/test_pydantic_jsonschema_parity.py` — 1 test, parses both, diffs constraints | 1-2h |
-| B4 | Create `ae3lite/config/schema/recipe_phase.py` Pydantic + loader function (Q4 prep) | 1-2h |
+| B4 | ~~Create `ae3lite/config/schema/recipe_phase.py` Pydantic + loader function (Q4 prep)~~ **closed-as-reverted** (2026-04-17): `recipe_phase.py`, `load_recipe_phase` и `schemas/recipe_phase.v1.json` удалены — `live_reload.py` был удалён ранее, функция стала dead code, файл тестов `test_ae3lite_recipe_phase_loader.py` удалён вместе с ней. | — |
 | B5 | Update plan.md changelog: Phase 2 retroactive `make test-ae` confirmation | 5 min |
 
 **Можно отложить до Phase 7:**

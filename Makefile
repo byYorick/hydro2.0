@@ -166,8 +166,26 @@ authority-check:
 	@echo "Checking AUTOMATION_CONFIG_AUTHORITY.md is regenerated (CI guard)..."
 	@python3 tools/generate_authority.py --check
 
+.PHONY: generate-config-catalog
+generate-config-catalog:
+	@echo "Validating zone_correction_defaults.json against zone_correction.v1.json..."
+	@if [ -x venv/bin/python3 ]; then \
+		venv/bin/python3 tools/generate_zone_correction_catalog.py; \
+	else \
+		python3 tools/generate_zone_correction_catalog.py; \
+	fi
+
+.PHONY: check-config-catalog
+check-config-catalog:
+	@echo "CI guard: zone_correction_defaults.json vs zone_correction.v1.json..."
+	@if [ -x venv/bin/python3 ]; then \
+		venv/bin/python3 tools/generate_zone_correction_catalog.py --check; \
+	else \
+		python3 tools/generate_zone_correction_catalog.py --check; \
+	fi
+
 .PHONY: protocol-check
-protocol-check: schemas-validate authority-check ae3-config-lint
+protocol-check: schemas-validate authority-check ae3-config-lint check-config-catalog
 	@echo "Running protocol contract tests..."
 	@./tools/check_runtime_schema_parity.sh
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short

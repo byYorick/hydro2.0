@@ -96,8 +96,8 @@ def resolve_two_tank_runtime_plan(snapshot: Any) -> Any:
 
 
 def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
-    execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
-    commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), Mapping) else {}
+    execution = _to_mapping(snapshot.diagnostics_execution)
+    commands_cfg = _to_mapping(execution.get("two_tank_commands"))
     zone_id = int(getattr(snapshot, "zone_id", 0) or 0)
     resolved_cfg = getattr(snapshot, "correction_config", None)
     if not isinstance(resolved_cfg, Mapping) or not resolved_cfg:
@@ -296,13 +296,9 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "day_night_config": day_night_cfg,
         "prepare_tolerance": dict(default_prepare_tolerance),
         "prepare_tolerance_by_phase": prepare_tolerance_by_phase,
-        "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
-        "pid_configs": dict(snapshot.pid_configs) if isinstance(getattr(snapshot, "pid_configs", None), Mapping) else {},
-        "process_calibrations": (
-            dict(snapshot.process_calibrations)
-            if isinstance(getattr(snapshot, "process_calibrations", None), Mapping)
-            else {}
-        ),
+        "pid_state": _to_mapping(snapshot.pid_state),
+        "pid_configs": _to_mapping(snapshot.pid_configs),
+        "process_calibrations": _to_mapping(snapshot.process_calibrations),
         # Конфиг коррекции: каналы дозирования, тайминги, чувствительность.
         # Ключ `actuators` заполняется позже в CycleStartPlanner после resolve actuator'ов.
         "correction": dict(default_correction_cfg),
@@ -496,17 +492,12 @@ def _collect_missing_paths(*, config: Mapping[str, Any], template: Mapping[str, 
 def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
     """Выбрасывает `PlannerConfigurationError`, если окно `prepare_recirculation` слишком короткое для одного цикла коррекции."""
     timeout_sec = runtime["prepare_recirculation_timeout_sec"]
-    correction_by_phase = runtime.get("correction_by_phase")
-    correction = correction_by_phase.get("tank_recirc") if isinstance(correction_by_phase, Mapping) else None
-    if not isinstance(correction, Mapping):
+    correction_by_phase = _to_mapping(runtime.get("correction_by_phase"))
+    correction = correction_by_phase.get("tank_recirc")
+    if not isinstance(correction, dict):
         correction = runtime.get("correction", {})
     stabilization_sec = correction.get("stabilization_sec", 0)
-    process_calibrations = runtime.get("process_calibrations")
-    tank_recirc_process_cfg = (
-        process_calibrations.get("tank_recirc")
-        if isinstance(process_calibrations, Mapping) and isinstance(process_calibrations.get("tank_recirc"), Mapping)
-        else {}
-    )
+    tank_recirc_process_cfg = _to_mapping(_to_mapping(runtime.get("process_calibrations")).get("tank_recirc"))
     observe_window_sec = _tank_recirc_observe_window_sec(correction=correction, process_cfg=tank_recirc_process_cfg)
     minimum_needed = stabilization_sec + observe_window_sec
     if timeout_sec < minimum_needed:
@@ -665,26 +656,25 @@ def _build_day_night_config(snapshot: Any) -> dict[str, Any]:
     Поля lighting fallback'ятся на фазу (`lighting.start_time` / `lighting.photoperiod_hours`),
     если `day_night.lighting.*` пусто.
     """
-    phase_targets = getattr(snapshot, "phase_targets", None)
-    phase_targets = phase_targets if isinstance(phase_targets, Mapping) else {}
+    phase_targets = _to_mapping(getattr(snapshot, "phase_targets", None))
 
     enabled = bool(phase_targets.get("day_night_enabled") or False)
-    extensions = phase_targets.get("extensions") if isinstance(phase_targets.get("extensions"), Mapping) else {}
-    day_night = extensions.get("day_night") if isinstance(extensions.get("day_night"), Mapping) else {}
-    lighting_ext = day_night.get("lighting") if isinstance(day_night.get("lighting"), Mapping) else {}
+    extensions = _to_mapping(phase_targets.get("extensions"))
+    day_night = _to_mapping(extensions.get("day_night"))
+    lighting_ext = _to_mapping(day_night.get("lighting"))
 
     # Fallback lighting на фазовые поля
     day_start_time = lighting_ext.get("day_start_time")
     if not day_start_time:
-        lighting_base = phase_targets.get("lighting") if isinstance(phase_targets.get("lighting"), Mapping) else {}
+        lighting_base = _to_mapping(phase_targets.get("lighting"))
         day_start_time = lighting_base.get("start_time")
     day_hours = lighting_ext.get("day_hours")
     if day_hours is None:
-        lighting_base = phase_targets.get("lighting") if isinstance(phase_targets.get("lighting"), Mapping) else {}
+        lighting_base = _to_mapping(phase_targets.get("lighting"))
         day_hours = lighting_base.get("photoperiod_hours")
 
     def _section(key: str) -> dict[str, Any]:
-        section = day_night.get(key) if isinstance(day_night.get(key), Mapping) else {}
+        section = _to_mapping(day_night.get(key))
         return {
             "day": _optional_float(section.get("day")),
             "night": _optional_float(section.get("night")),
@@ -715,8 +705,7 @@ def _build_day_night_config(snapshot: Any) -> dict[str, Any]:
 
 def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:
     upper = 20.0 if key == "ec" else 14.0
-    phase_targets = getattr(snapshot, "phase_targets", None)
-    section = phase_targets.get(key) if isinstance(phase_targets, Mapping) and isinstance(phase_targets.get(key), Mapping) else {}
+    section = _to_mapping(_to_mapping(getattr(snapshot, "phase_targets", None)).get(key))
     candidate = section.get("target")
     if candidate is None:
         raise PlannerConfigurationError(
@@ -735,8 +724,7 @@ def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:
 
 def _resolve_phase_target_bound(*, snapshot: Any, key: str, bound: str, fallback: float) -> float:
     upper = 20.0 if key == "ec" else 14.0
-    phase_targets = getattr(snapshot, "phase_targets", None)
-    section = phase_targets.get(key) if isinstance(phase_targets, Mapping) and isinstance(phase_targets.get(key), Mapping) else {}
+    section = _to_mapping(_to_mapping(getattr(snapshot, "phase_targets", None)).get(key))
     candidate = section.get(bound)
     if candidate is None:
         return float(fallback)
@@ -869,8 +857,7 @@ def _optional_float(raw_value: Any) -> float | None:
 
 
 def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
-    irrigation = snapshot.targets.get("irrigation") if isinstance(getattr(snapshot, "targets", None), Mapping) else {}
-    irrigation = irrigation if isinstance(irrigation, Mapping) else {}
+    irrigation = _to_mapping(_to_mapping(getattr(snapshot, "targets", None)).get("irrigation"))
     corr_during = bool(irrigation.get("correction_during_irrigation", True))
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
         # Для путей планирования `cycle_start` irrigation-target'ы могут отсутствовать.
@@ -1005,28 +992,23 @@ def _build_irrigation_safety(snapshot: Any, execution: Mapping[str, Any] | None 
 
 
 def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
-    targets = getattr(snapshot, "targets", None)
-    extensions = targets.get("extensions") if isinstance(targets, Mapping) else {}
-    extensions = extensions if isinstance(extensions, Mapping) else {}
-    subsystems = extensions.get("subsystems") if isinstance(extensions.get("subsystems"), Mapping) else {}
-    irrigation = subsystems.get("irrigation") if isinstance(subsystems.get("irrigation"), Mapping) else {}
-    target = irrigation.get("targets") if isinstance(irrigation.get("targets"), Mapping) else {}
-    soil = target.get("soil_moisture") if isinstance(target.get("soil_moisture"), Mapping) else {}
+    targets = _to_mapping(getattr(snapshot, "targets", None))
+    extensions = _to_mapping(targets.get("extensions"))
+    subsystems = _to_mapping(extensions.get("subsystems"))
+    irrigation = _to_mapping(subsystems.get("irrigation"))
+    target = _to_mapping(irrigation.get("targets"))
+    soil = _to_mapping(target.get("soil_moisture"))
     if not soil:
         # Fallback: day/night-кривая хранится в recipe phase extensions.
-        day_night = extensions.get("day_night") if isinstance(extensions.get("day_night"), Mapping) else {}
-        day_night = day_night if isinstance(day_night, Mapping) else {}
-        soil_curve = day_night.get("soil_moisture") if isinstance(day_night.get("soil_moisture"), Mapping) else {}
-        soil_curve = soil_curve if isinstance(soil_curve, Mapping) else {}
+        day_night = _to_mapping(extensions.get("day_night"))
+        soil_curve = _to_mapping(day_night.get("soil_moisture"))
         day = _optional_float(soil_curve.get("day"))
         night = _optional_float(soil_curve.get("night"))
         if day is None and night is None:
             return None
 
-        lighting = day_night.get("lighting") if isinstance(day_night.get("lighting"), Mapping) else {}
-        lighting = lighting if isinstance(lighting, Mapping) else {}
-        lighting_targets = targets.get("lighting") if isinstance(targets, Mapping) else {}
-        lighting_targets = lighting_targets if isinstance(lighting_targets, Mapping) else {}
+        lighting = _to_mapping(day_night.get("lighting"))
+        lighting_targets = _to_mapping(targets.get("lighting"))
         day_start_time = str(
             (lighting.get("day_start_time") or lighting_targets.get("start_time") or "")
         ).strip() or None
@@ -1050,12 +1032,10 @@ def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
 
 
 def _irrigation_subsystem(snapshot: Any) -> dict[str, Any]:
-    targets = getattr(snapshot, "targets", None)
-    extensions = targets.get("extensions") if isinstance(targets, Mapping) else {}
-    extensions = extensions if isinstance(extensions, Mapping) else {}
-    subsystems = extensions.get("subsystems") if isinstance(extensions.get("subsystems"), Mapping) else {}
-    irrigation = subsystems.get("irrigation")
-    return dict(irrigation) if isinstance(irrigation, Mapping) else {}
+    targets = _to_mapping(getattr(snapshot, "targets", None))
+    extensions = _to_mapping(targets.get("extensions"))
+    subsystems = _to_mapping(extensions.get("subsystems"))
+    return _to_mapping(subsystems.get("irrigation"))
 
 
 def _build_correction_cfg(
