@@ -199,158 +199,54 @@
 
         <div
           v-if="ctx.isZoneBlockLayout.value"
-          class="rounded-xl border border-[color:var(--border-muted)] p-3"
+          class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3"
         >
           <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
-            Полив
+            Полив и коррекция
           </h5>
-          <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-            Основной цикл полива, окна приготовления и рабочие объёмы контура.
-          </p>
 
-          <IrrigationModeSelector
-            v-model:water-form="waterForm"
-            :recipe-irrigation-summary="recipeIrrigationSummary"
-            class="mt-3"
-          />
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+              <div class="text-[10px] font-medium uppercase tracking-wide text-[color:var(--text-dim)]">Режим полива</div>
+              <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">{{ irrigationModeLabel }}</div>
+              <div class="mt-0.5 text-[10px] text-[color:var(--text-dim)]">{{ irrigationModeDescription }}</div>
+            </div>
 
-          <IrrigationBasicFieldsGrid
-            v-model:water-form="waterForm"
-            class="mt-3"
-          />
-
-          <SmartIrrigationControlsGroup
-            v-model:water-form="waterForm"
-            v-model:assignments="assignments"
-            class="mt-3"
-            :recipe-soil-moisture-targets="recipeSoilMoistureTargets"
-            :soil-moisture-candidates="soilMoistureCandidates"
-            :collapsible="true"
-            :show-soil-moisture-binding="true"
-            :show-stop-on-solution-min="true"
-          />
-        </div>
-
-        <div
-          v-if="ctx.isZoneBlockLayout.value"
-          class="rounded-xl border border-[color:var(--border-muted)] p-3"
-        >
-          <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
-            Раствор и коррекция
-          </h5>
-          <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-            Целевые параметры раствора и ограничения correction runtime.
-          </p>
-
-          <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label
-              class="text-xs text-[color:var(--text-muted)]"
-              :title="zoneAutomationFieldHelp('water.targetPh')"
-            >
-              Целевой pH (из рецепта)
-              <input
-                v-model.number="waterForm.targetPh"
-                type="number"
-                min="4"
-                max="9"
-                step="0.1"
-                class="input-field mt-1 w-full"
-                disabled
-              />
-            </label>
-            <label
-              class="text-xs text-[color:var(--text-muted)]"
-              :title="zoneAutomationFieldHelp('water.targetEc')"
-            >
-              Целевой EC (из рецепта)
-              <input
-                v-model.number="waterForm.targetEc"
-                type="number"
-                min="0.1"
-                max="10"
-                step="0.1"
-                class="input-field mt-1 w-full"
-                disabled
-              />
-            </label>
-            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs text-[color:var(--text-muted)] md:col-span-2">
-              <div class="font-semibold text-[color:var(--text-primary)]">
-                Recipe-derived chemistry summary
-              </div>
-              <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                <div>pH window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }}</span></div>
-                <div>EC window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}</span></div>
-                <div class="md:col-span-2">
-                  EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span>
-                </div>
+            <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+              <div class="text-[10px] font-medium uppercase tracking-wide text-[color:var(--text-dim)]">Цели из рецепта</div>
+              <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">pH {{ waterForm.targetPh }} · EC {{ waterForm.targetEc }}</div>
+              <div class="mt-0.5 text-[10px] text-[color:var(--text-dim)]">
+                pH {{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }} · EC {{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}
               </div>
             </div>
           </div>
 
-          <details class="mt-3 rounded-xl border border-[color:var(--border-muted)] p-3">
-            <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
-              Расширенные настройки коррекции
-            </summary>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs">
+            <div class="text-[color:var(--text-muted)]">Расписание полива</div>
+            <div class="text-[color:var(--text-primary)]">каждые {{ waterForm.intervalMinutes }} мин на {{ waterForm.durationSeconds }} сек</div>
 
-            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="zoneAutomationFieldHelp('water.correctionMaxEcCorrectionAttempts')"
-              >
-                Лимит попыток EC-коррекции
-                <input
-                  v-model.number="waterForm.correctionMaxEcCorrectionAttempts"
-                  type="number"
-                  min="1"
-                  max="50"
-                  class="input-field mt-1 w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="zoneAutomationFieldHelp('water.correctionMaxPhCorrectionAttempts')"
-              >
-                Лимит попыток pH-коррекции
-                <input
-                  v-model.number="waterForm.correctionMaxPhCorrectionAttempts"
-                  type="number"
-                  min="1"
-                  max="50"
-                  class="input-field mt-1 w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="zoneAutomationFieldHelp('water.correctionPrepareRecirculationMaxAttempts')"
-              >
-                Лимит окон рециркуляции
-                <input
-                  v-model.number="waterForm.correctionPrepareRecirculationMaxAttempts"
-                  type="number"
-                  min="1"
-                  max="50"
-                  class="input-field mt-1 w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="zoneAutomationFieldHelp('water.correctionPrepareRecirculationMaxCorrectionAttempts')"
-              >
-                Лимит correction-шагов
-                <input
-                  v-model.number="waterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
-                  type="number"
-                  min="1"
-                  max="500"
-                  class="input-field mt-1 w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-              </label>
-            </div>
-          </details>
+            <div class="text-[color:var(--text-muted)]">Порция полива</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.irrigationBatchL }} л</div>
+
+            <div class="text-[color:var(--text-muted)]">Объём чистого бака</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.cleanTankFillL }} л</div>
+
+            <div class="text-[color:var(--text-muted)]">Объём бака раствора</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.nutrientTankTargetL }} л</div>
+
+            <div class="text-[color:var(--text-muted)]">Температура набора</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.fillTemperatureC }} °C</div>
+
+            <div class="text-[color:var(--text-muted)]">Окно набора воды</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.fillWindowStart }} — {{ waterForm.fillWindowEnd }}</div>
+
+            <div class="text-[color:var(--text-muted)]">Коррекция при поливе</div>
+            <div class="text-[color:var(--text-primary)]">{{ waterForm.correctionDuringIrrigation ? 'Да' : 'Нет' }}</div>
+          </div>
+
+          <div class="text-[11px] text-[color:var(--text-dim)]">
+            Параметры полива и коррекции задаются через профиль автоматики. Цели pH/EC берутся из рецепта.
+          </div>
         </div>
 
         <div
@@ -379,9 +275,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
-import IrrigationBasicFieldsGrid from '@/Components/ZoneAutomation/IrrigationBasicFieldsGrid.vue'
-import IrrigationModeSelector from '@/Components/ZoneAutomation/IrrigationModeSelector.vue'
-import SmartIrrigationControlsGroup from '@/Components/ZoneAutomation/SmartIrrigationControlsGroup.vue'
 import type { Node as SetupWizardNode } from '@/types/SetupWizard'
 import type {
   WaterFormState,
@@ -391,10 +284,6 @@ import { nodeLabel } from '@/composables/zoneAutomationNodeMatching'
 import { useZoneAutomationSectionContext } from '@/composables/useZoneAutomationSectionContext'
 import { zoneAutomationFieldHelp } from '@/constants/zoneAutomationFieldHelp'
 import type { RecipeChemistrySummary } from '@/Components/ZoneAutomation/SolutionCorrectionSection.vue'
-import type {
-  RecipeIrrigationSummary,
-  RecipeSoilMoistureTargets,
-} from '@/Components/ZoneAutomation/IrrigationSection.vue'
 
 defineProps<{
   irrigationCandidates: SetupWizardNode[]
@@ -402,8 +291,6 @@ defineProps<{
   ecCandidates: SetupWizardNode[]
   soilMoistureCandidates: SetupWizardNode[]
   requiredDevicesSelectedCount: number
-  recipeIrrigationSummary: RecipeIrrigationSummary
-  recipeSoilMoistureTargets: RecipeSoilMoistureTargets
   recipeChemistrySummary: RecipeChemistrySummary
   saveAllowed: boolean
   isSystemTypeLocked?: boolean
@@ -422,4 +309,16 @@ const systemTypeLabel = computed(() => {
   }
   return labels[waterForm.value.systemType] ?? waterForm.value.systemType
 })
+
+const irrigationModeLabel = computed(() =>
+  waterForm.value.irrigationDecisionStrategy === 'smart_soil_v1'
+    ? 'Умный полив по SOIL_MOISTURE'
+    : 'Полив по расписанию',
+)
+
+const irrigationModeDescription = computed(() =>
+  waterForm.value.irrigationDecisionStrategy === 'smart_soil_v1'
+    ? 'Оценивает влажность субстрата перед стартом'
+    : 'Запуск по временным окнам цикла',
+)
 </script>
