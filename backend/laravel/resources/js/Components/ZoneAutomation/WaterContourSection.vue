@@ -228,6 +228,89 @@
             </div>
           </div>
 
+          <div
+            v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1'"
+            class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-3"
+          >
+            <div class="text-xs font-medium text-[color:var(--text-primary)]">Настройки умного полива</div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Lookback (сек)
+                <input
+                  v-model.number="waterForm.irrigationDecisionLookbackSeconds"
+                  type="number"
+                  min="60"
+                  max="86400"
+                  class="input-field mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Глубина анализа телеметрии</span>
+              </label>
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Мин. сэмплов
+                <input
+                  v-model.number="waterForm.irrigationDecisionMinSamples"
+                  type="number"
+                  min="1"
+                  max="100"
+                  class="input-field mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Минимум точек для решения</span>
+              </label>
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Устаревание (сек)
+                <input
+                  v-model.number="waterForm.irrigationDecisionStaleAfterSeconds"
+                  type="number"
+                  min="30"
+                  max="86400"
+                  class="input-field mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Через сколько данные считаются устаревшими</span>
+              </label>
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Гистерезис (%)
+                <input
+                  v-model.number="waterForm.irrigationDecisionHysteresisPct"
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="0.1"
+                  class="input-field mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Зона нечувствительности</span>
+              </label>
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Порог алерта разброса (%)
+                <input
+                  v-model.number="waterForm.irrigationDecisionSpreadAlertThresholdPct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  class="input-field mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Алерт при большом разбросе показаний</span>
+              </label>
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Стоп по solution_min
+                <select
+                  v-model="waterForm.stopOnSolutionMin"
+                  class="input-select mt-1 w-full"
+                  :disabled="!ctx.canConfigure.value"
+                >
+                  <option :value="true">Да</option>
+                  <option :value="false">Нет</option>
+                </select>
+                <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">Остановить полив при низком уровне раствора</span>
+              </label>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label class="text-xs text-[color:var(--text-muted)]">
               Интервал полива (мин)
