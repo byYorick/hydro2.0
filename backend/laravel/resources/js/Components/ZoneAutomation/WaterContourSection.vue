@@ -206,11 +206,18 @@
           </h5>
 
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
-              <div class="text-[10px] font-medium uppercase tracking-wide text-[color:var(--text-dim)]">Режим полива</div>
-              <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">{{ irrigationModeLabel }}</div>
-              <div class="mt-0.5 text-[10px] text-[color:var(--text-dim)]">{{ irrigationModeDescription }}</div>
-            </div>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Режим полива
+              <select
+                v-model="waterForm.irrigationDecisionStrategy"
+                class="input-select mt-1 w-full"
+                :disabled="!ctx.canConfigure.value"
+              >
+                <option value="task">По расписанию</option>
+                <option value="smart_soil_v1">Умный полив (SOIL_MOISTURE)</option>
+              </select>
+              <span class="mt-0.5 block text-[10px] text-[color:var(--text-dim)]">{{ irrigationModeDescription }}</span>
+            </label>
 
             <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
               <div class="text-[10px] font-medium uppercase tracking-wide text-[color:var(--text-dim)]">Цели из рецепта</div>
