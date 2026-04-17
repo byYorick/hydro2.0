@@ -444,7 +444,12 @@ class AutomationConfigRegistry
             if (! is_array($phaseConfig) || array_is_list($phaseConfig)) {
                 throw new InvalidArgumentException("Correction phase {$phase} must be an object.");
             }
-            ZoneCorrectionConfigCatalog::validateFragment($phaseConfig, false);
+            // phase_overrides — это partial diff поверх base_config (по определению
+            // override-семантики): UI шлёт только те поля, которые оператор реально
+            // меняет. Полноценный merge производит resolver при pull. Требование
+            // full payload здесь ломает Phase 6.2 live-edit (patch timing.* без
+            // остальных timing-полей валидируется как "Поле … обязательно").
+            ZoneCorrectionConfigCatalog::validateFragment($phaseConfig, true);
         }
     }
 

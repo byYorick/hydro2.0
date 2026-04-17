@@ -20,6 +20,8 @@ class SchedulerPrometheusMetricsExporter
             '',
             ...$this->renderActiveTasksGauge(),
             '',
+            ...$this->renderZoneConfigAutoRevertsCounter(),
+            '',
         ];
 
         return implode("\n", $lines);
@@ -155,6 +157,49 @@ class SchedulerPrometheusMetricsExporter
             '# TYPE '.$metricName.' gauge',
             $this->renderMetricLine($metricName, [], $activeTasks),
         ];
+    }
+
+    /**
+     * Phase 5 / R12 mitigation: публикует per-zone счётчик auto-revert событий
+     * TTL-крона. Вычисляется из audit trail `zone_config_changes` —
+     * `RevertExpiredLiveModesCommand` пишет туда строку с
+     * `diff_json->auto_reverted = true`, так что отдельная counter-таблица не
+     * нужна: audit — само монотонное хранилище событий.
+     *
+     * Используется Alertmanager rule: `rate(...[24h]) == 0 AND sum(ae3_zone_config_mode == 1) > 0`
+     * — длинная live-сессия без auto-revert'ов сигнализирует о залипшем кроне.
+     *
+     * @return list<string>
+     */
+    private function renderZoneConfigAutoRevertsCounter(): array
+    {
+        $metricName = SchedulerConstants::METRIC_ZONE_CONFIG_AUTO_REVERTS_TOTAL;
+        $lines = [
+            '# HELP '.$metricName.' Total zones auto-reverted from live to locked by TTL cron, per zone.',
+            '# TYPE '.$metricName.' counter',
+        ];
+
+        if (! Schema::hasTable('zone_config_changes')) {
+            return $lines;
+        }
+
+        $rows = DB::table('zone_config_changes')
+            ->selectRaw('zone_id, COUNT(*) AS total')
+            ->where('namespace', 'zone.config_mode')
+            ->whereRaw("diff_json ->> 'auto_reverted' = 'true'")
+            ->groupBy('zone_id')
+            ->orderBy('zone_id')
+            ->get();
+
+        foreach ($rows as $row) {
+            $lines[] = $this->renderMetricLine(
+                $metricName,
+                ['zone_id' => (string) ($row->zone_id ?? '')],
+                (float) ($row->total ?? 0),
+            );
+        }
+
+        return $lines;
     }
 
     /**

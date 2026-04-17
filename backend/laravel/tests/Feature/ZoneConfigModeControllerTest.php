@@ -204,6 +204,57 @@ class ZoneConfigModeControllerTest extends TestCase
         $this->assertTrue($zone->live_started_at->equalTo($startedAt));
     }
 
+    public function test_live_started_at_resets_after_locked_revert(): void
+    {
+        // Phase 5 / Q3 semantic lock-in: 7-day total cap применяется ПО СЕССИЯМ.
+        // При переходе live → locked `live_started_at` сбрасывается; следующая
+        // активация live начинает новый отсчёт. Это документированное поведение
+        // (не bug): оператор, явно закрывший сессию, получает чистый TTL cap;
+        // защита от "вечного live" остаётся через непрерывность (см. тест
+        // test_update_live_rejects_total_ttl_above_cap_when_zone_is_already_live).
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $firstStart = Carbon::now()->subDays(6);
+        $zone = Zone::factory()->create([
+            'control_mode' => 'manual',
+            'config_mode' => 'live',
+            'live_started_at' => $firstStart,
+            'live_until' => Carbon::now()->addHour(),
+        ]);
+
+        // 1. Явный revert в locked — сбрасывает live_started_at.
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/zones/{$zone->id}/config-mode", [
+                'mode' => 'locked',
+                'reason' => 'finish session',
+            ])
+            ->assertOk();
+
+        $zone->refresh();
+        $this->assertNull($zone->live_started_at);
+
+        // 2. Новая активация live с 4-дневным TTL — должна пройти, потому что
+        //    суммарный cap считается от нового `live_started_at`, не от первого
+        //    (6 дней назад) включения.
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/zones/{$zone->id}/config-mode", [
+                'mode' => 'live',
+                'reason' => 'new tuning session after finish',
+                'live_until' => Carbon::now()->addDays(4)->toIso8601String(),
+            ]);
+
+        $response->assertOk()->assertJsonPath('config_mode', 'live');
+
+        $zone->refresh();
+        $this->assertNotNull($zone->live_started_at);
+        $this->assertTrue(
+            $zone->live_started_at->greaterThan($firstStart),
+            'live_started_at должен обновиться при новой live-сессии',
+        );
+    }
+
     public function test_extend_requires_live_mode(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);

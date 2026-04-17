@@ -1,9 +1,9 @@
 # План рефакторинга: каноническая система конфигурирования AE3
 
-**Версия:** 3.3 (core Phases 0–7 shipped; Phase 4 deferred; Phase 6.2 shipped)
-**Дата:** 2026-04-15
+**Версия:** 3.4 (audit follow-ups 2026-04-17: R12 metric, dead-code cleanup, doc sync)
+**Дата:** 2026-04-17
 **Автор:** инженерный план, executor-first
-**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; Phase 4 (shim removal) отложен и не блокирует фичу; Phase 6.2 (full correction fine-tuning live edit) реализован в backend + UI + docs
+**Статус:** end-to-end config modes (locked/live) работают в backend + AE3 + UI; Phase 4 (shim removal) отложен и не блокирует фичу; Phase 6.2 (full correction fine-tuning live edit) реализован в backend + UI + docs; R12 mitigation (`ae3_zone_config_auto_reverts_total` + liveness panel) закрыт в v3.4
 
 ## Статус фаз
 
@@ -31,6 +31,42 @@
 | 6.2: full fine-tuning live edit correction/PID/calibration | ✅ shipped 2026-04-15 | Backend `ZoneCorrectionLiveEditController` + `PUT /api/zones/{zone}/correction/live-edit`, UI `CorrectionLiveEditCard.vue`, Vitest component tests, timeline wiring `zone.correction.live`, docs sync (`ae3lite.md`, `ERROR_CODE_CATALOG.md`). |
 
 **Tests state (2026-04-15):** ранее зелёными были 1273 AE (automation-engine) + 19 Laravel feature (Phase 5/5.1/5.6) + 1262 Vitest (145 files, incl. 14 Phase 6/6.1 unit tests). Для Phase 6.2 в репозиторий добавлены UI component tests и интеграция; повторный полный Laravel/Docker прогон в этой сессии зависит от окружения.
+
+## Audit follow-ups shipped 2026-04-17
+
+Аудит плана выявил 4 оперативных хвоста; все закрыты в одной итерации:
+
+1. **R12 metric gap closed** — декларированная в Phase 5 / Risk R12 метрика
+   `ae3_zone_config_auto_reverts_total` теперь реально экспортируется
+   Laravel-ом ([SchedulerPrometheusMetricsExporter::renderZoneConfigAutoRevertsCounter](../../backend/laravel/app/Services/AutomationScheduler/SchedulerPrometheusMetricsExporter.php)),
+   через audit trail `zone_config_changes` (без отдельной counter-таблицы).
+   В [zone-configs.json](../../backend/configs/prod/grafana/dashboards/zone-configs.json)
+   добавлены 3 панели: cumulative per zone, 24h rate stat, liveness indicator
+   (`STUCK` если live-зоны есть, но rate=0 за 24ч). Feature test
+   `SchedulerMetricsControllerTest::test_metrics_endpoint_renders_zone_config_auto_reverts_counter`.
+
+2. **`live_reload.py` dead-code removed** — модуль `ae3lite/config/live_reload.py`
+   и соответствующий `test_ae3lite_live_reload.py` удалены. Phase 5.5
+   canonical hot-swap path — напрямую через
+   `PgZoneSnapshotReadModel().load()` + `resolve_two_tank_runtime_plan()` в
+   [base.py._checkpoint](../../backend/services/automation-engine/ae3lite/application/handlers/base.py#L83);
+   параллельный `refresh_if_changed` был написан в Phase 5, но никогда не
+   включался в production path после Phase 5.5 переписывания. Убран dead import.
+   `load_recipe_phase` + `RecipePhase` сохранены в
+   [loader.py](../../backend/services/automation-engine/ae3lite/config/loader.py)
+   + `config/__init__.py` как публичный canonical API (под тестами).
+
+3. **Doc sync §2.2** — пути Vue-компонентов актуализированы: фактически
+   компоненты лежат в `resources/js/Components/ZoneAutomation/`, имена —
+   `ConfigModeCard.vue`, `ConfigChangesTimeline.vue`, `RecipePhaseLiveEditCard.vue`,
+   `CorrectionLiveEditCard.vue` (не `ConfigModeSwitch.vue`/`ChangesTimeline.vue`
+   как планировалось).
+
+4. **7-day cap semantics locked in** — §9 Q3.1 фиксирует поведение "per
+   непрерывная live-сессия": `live_started_at` сбрасывается при любом
+   live→locked (ручной или auto). Документированное поведение покрыто двумя
+   тестами: сохранение при повторном PATCH внутри сессии + reset после locked.
+   Alternative (persistent `first_live_started_at`) отвергнут.
 
 ## Phase 6.2 Delivered (2026-04-15)
 
@@ -335,9 +371,11 @@ backend/laravel/app/Services/
 └── JsonSchemaValidator.php                  # NEW — один валидатор для всех namespaces
 
 backend/laravel/resources/js/
-├── Components/ZoneConfig/
-│   ├── ConfigModeSwitch.vue                 # NEW
-│   └── ChangesTimeline.vue                  # NEW
+├── Components/ZoneAutomation/               # shipped в Components/ZoneAutomation/, не ZoneConfig/
+│   ├── ConfigModeCard.vue                   # Phase 6 (shipped)
+│   ├── ConfigChangesTimeline.vue            # Phase 6 (shipped)
+│   ├── RecipePhaseLiveEditCard.vue          # Phase 6.1 (shipped)
+│   └── CorrectionLiveEditCard.vue           # Phase 6.2 (shipped)
 └── schemas/                                 # NEW — JSON Schema копия для frontend
 ```
 
@@ -936,6 +974,10 @@ Scope увеличился vs v2 из-за Q4 (recipe coverage) и Q3 (TTL infra
 
 **Q3: TTL auto-revert — да, обязательно.**
 Колонка `zones.live_until TIMESTAMPTZ NULL`. При `PATCH /config-mode body.mode=live` обязателен `live_until` (диапазон 5 мин — 7 дней, default 1 час). Фоновая Laravel-команда `automation:revert-expired-live-modes` раз в минуту находит `config_mode='live' AND live_until < NOW()`, переключает в locked, пишет событие `config_mode_auto_reverted`. UI показывает countdown до auto-revert, разрешает extend (но не более 7 дней суммарно от момента включения).
+
+**Q3.1 (уточнено 2026-04-17): семантика 7-дневного cap — per непрерывная live-сессия.**
+`live_started_at` сбрасывается при **любом** переходе `live → locked` (ручной revert или auto-revert TTL). Следующая активация `locked → live` начинает новый отсчёт суммарного cap. Мотив: оператор, явно закрывший сессию, получает чистое окно без накопленного долга; защита от "вечного live" обеспечивается непрерывностью проверки + alert-правилом на `ae3_zone_config_auto_reverts_total` (R12). Альтернатива с persistent `first_live_started_at` отвергнута — сложнее UX, нет операционной ценности при наличии R12-мониторинга.
+Tests: [ZoneConfigModeControllerTest::test_update_live_keeps_original_live_started_at_when_zone_is_already_live](../../backend/laravel/tests/Feature/ZoneConfigModeControllerTest.php) (continuity) + `test_live_started_at_resets_after_locked_revert` (reset).
 
 **Q4: Live mode покрывает и recipe phase — да.**
 Расширяет scope: hot-reload читает не только `zone.correction`, но и effective recipe phase payload для активного цикла. Это влияет на Phase 3/5:

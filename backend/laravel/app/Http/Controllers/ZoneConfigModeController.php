@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Zone;
 use App\Models\ZoneConfigChange;
+use App\Services\ZoneConfigRevisionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -15,6 +16,10 @@ class ZoneConfigModeController extends Controller
 {
     public const MIN_TTL_SECONDS = 5 * 60;
     public const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+    public function __construct(
+        private readonly ZoneConfigRevisionService $revisionService,
+    ) {}
 
     public function show(Request $request, Zone $zone): JsonResponse
     {
@@ -152,24 +157,31 @@ class ZoneConfigModeController extends Controller
 
             $locked->forceFill($updates)->save();
 
-            ZoneConfigChange::create([
-                'zone_id' => $locked->id,
-                'revision' => (int) ($locked->config_revision ?? 1),
-                'namespace' => 'zone.config_mode',
-                'diff_json' => [
+            // Phase 5 / audit 2026-04-17: каждая смена config_mode инкрементирует
+            // `zones.config_revision` через `bumpAndAudit`. Без bump-а повторное
+            // переключение (например live→locked→live в пределах одной сессии
+            // tuning) ловилось unique constraint `zone_config_changes (zone_id,
+            // revision)`. Дополнительный бонус: AE3 `_checkpoint` видит revision++
+            // и корректно обновляет `ae3_zone_config_mode` gauge при любой смене.
+            $revision = $this->revisionService->bumpAndAudit(
+                scopeType: 'zone',
+                scopeId: $locked->id,
+                namespace: 'zone.config_mode',
+                diff: [
                     'from' => $currentMode,
                     'to' => $targetMode,
                     'live_until' => optional($locked->live_until)->toIso8601String(),
                 ],
-                'user_id' => $user->id,
-                'reason' => $validated['reason'],
-            ]);
+                userId: $user->id,
+                reason: $validated['reason'],
+            );
+            $locked->refresh();
 
             return response()->json([
                 'status' => 'ok',
                 'zone_id' => $locked->id,
                 'config_mode' => $locked->config_mode,
-                'config_revision' => (int) $locked->config_revision,
+                'config_revision' => (int) ($revision ?? $locked->config_revision),
                 'live_until' => optional($locked->live_until)->toIso8601String(),
             ]);
         });

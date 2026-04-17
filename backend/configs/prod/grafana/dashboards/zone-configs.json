@@ -155,6 +155,77 @@
           "legendFormat": "zone {{zone_id}}"
         }
       ]
+    },
+    {
+      "id": 400,
+      "type": "text",
+      "title": "TTL auto-revert (cron liveness)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "options": {
+        "mode": "markdown",
+        "content": "## TTL auto-revert (R12 mitigation)\n\n`automation:revert-expired-live-modes` должен инкрементировать `ae3_zone_config_auto_reverts_total` каждый раз, когда TTL истекает для live-зоны. Если live-зоны есть, но rate=0 за 24ч — крон завис."
+      }
+    },
+    {
+      "id": 8,
+      "title": "Auto-reverts (cumulative per zone)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "ae3_zone_config_auto_reverts_total{zone_id=~\"$zone\"}",
+          "refId": "A",
+          "legendFormat": "zone {{zone_id}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Auto-reverts rate (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(ae3_zone_config_auto_reverts_total[24h]))",
+          "refId": "A",
+          "legendFormat": "rate/sec"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Cron liveness (0 = залип, 1 = ok)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "description": "Возвращает 1, если либо нет live-зон, либо TTL cron фиксирует auto-reverts. Возвращает 0 когда есть live-зоны, но auto-reverts не растут 24ч — сигнал о залипшем кроне.",
+      "targets": [
+        {
+          "expr": "(sum(ae3_zone_config_mode == 1) == 0) or (sum(increase(ae3_zone_config_auto_reverts_total[24h])) > 0)",
+          "refId": "A",
+          "legendFormat": "liveness"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "STUCK" }, "1": { "text": "OK" } } }
+          ]
+        }
+      }
     }
   ]
 }
