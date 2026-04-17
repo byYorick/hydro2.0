@@ -355,7 +355,11 @@ class ZoneAutomationPresetControllerTest extends TestCase
             'dwc-safe',
             'dwc-aggressive',
             'drip-tape-balanced',
+            'drip-tape-safe',
+            'drip-tape-aggressive',
             'nft-balanced',
+            'nft-safe',
+            'nft-aggressive',
             'test-node-automation',
         ];
 
