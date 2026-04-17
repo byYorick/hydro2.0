@@ -1,132 +1,93 @@
 <template>
-  <div class="space-y-3">
-    <div class="flex items-center justify-between">
-      <h4 class="text-sm font-medium text-[color:var(--text-primary)]">
-        Профиль автоматики
-      </h4>
+  <div class="space-y-2">
+    <div class="flex items-center gap-3">
+      <label class="flex-1">
+        <span class="text-xs font-medium text-[color:var(--text-primary)]">Профиль автоматики</span>
+        <select
+          v-if="!loading"
+          class="input-select mt-1 w-full"
+          :value="selectedPreset?.id ?? ''"
+          :disabled="!canConfigure"
+          @change="onSelectChange"
+        >
+          <option value="">Настроить с нуля</option>
+          <optgroup v-if="systemPresets.length > 0" label="Системные">
+            <option
+              v-for="preset in systemPresets"
+              :key="preset.id"
+              :value="preset.id"
+            >
+              {{ preset.name }} — {{ correctionProfileLabel(preset.correction_profile) }} · {{ preset.irrigation_system_type }} · {{ Math.round(preset.config.irrigation.interval_sec / 60) }} мин
+            </option>
+          </optgroup>
+          <optgroup v-if="customPresets.length > 0" label="Мои профили">
+            <option
+              v-for="preset in customPresets"
+              :key="preset.id"
+              :value="preset.id"
+            >
+              {{ preset.name }}
+            </option>
+          </optgroup>
+        </select>
+        <div v-else class="mt-1 flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
+          <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[color:var(--accent-cyan)] border-t-transparent"></span>
+          Загрузка профилей...
+        </div>
+      </label>
+
       <span
         v-if="selectedPreset && isModified"
-        class="rounded-full bg-[color:var(--badge-warning-bg)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--badge-warning-text)]"
+        class="mt-5 shrink-0 rounded-full bg-[color:var(--badge-warning-bg)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--badge-warning-text)]"
       >
         Изменено
       </span>
-      <span
-        v-else-if="selectedPreset"
-        class="rounded-full bg-[color:var(--badge-success-bg)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--badge-success-text)]"
+    </div>
+
+    <!-- Описание и параметры выбранного пресета -->
+    <div
+      v-if="selectedPreset"
+      class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-2"
+    >
+      <p
+        v-if="selectedPreset.description"
+        class="text-[11px] leading-relaxed text-[color:var(--text-muted)] whitespace-pre-line"
       >
-        {{ selectedPreset.name }}
-      </span>
-    </div>
+        {{ selectedPreset.description }}
+      </p>
 
-    <p class="text-xs text-[color:var(--text-muted)]">
-      Выберите готовый профиль для быстрой настройки или начните с нуля.
-      После выбора профиля все параметры ниже будут заполнены — вы можете подкрутить их под свои нужды.
-    </p>
-
-    <div v-if="loading" class="flex items-center gap-2 py-4 text-xs text-[color:var(--text-muted)]">
-      <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[color:var(--accent-cyan)] border-t-transparent"></span>
-      Загрузка профилей...
-    </div>
-
-    <div v-else-if="filteredPresets.length === 0" class="rounded-lg border border-dashed border-[color:var(--border-muted)] p-4 text-center text-xs text-[color:var(--text-muted)]">
-      Нет доступных профилей для выбранной конфигурации системы.
-    </div>
-
-    <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <button
-        v-for="preset in filteredPresets"
-        :key="preset.id"
-        type="button"
-        class="group relative rounded-xl border p-3 text-left transition-all duration-150"
-        :class="[
-          selectedPreset?.id === preset.id
-            ? 'border-[color:var(--accent-cyan)] bg-[color:var(--accent-cyan)]/5 ring-1 ring-[color:var(--accent-cyan)]/30'
-            : 'border-[color:var(--border-muted)] hover:border-[color:var(--accent-cyan)]/50 hover:bg-[color:var(--bg-surface-strong)]',
-        ]"
-        :disabled="!canConfigure"
-        @click="selectPreset(preset)"
-      >
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <span class="text-sm font-medium text-[color:var(--text-primary)]">
-                {{ preset.name }}
-              </span>
-              <span
-                v-if="preset.scope === 'system'"
-                class="rounded bg-[color:var(--badge-info-bg)] px-1 py-px text-[9px] font-medium text-[color:var(--badge-info-text)]"
-              >
-                Системный
-              </span>
-            </div>
-
-            <span
-              v-if="preset.correction_profile"
-              class="mt-1 inline-block rounded-full px-1.5 py-px text-[10px] font-medium"
-              :class="correctionProfileClass(preset.correction_profile)"
-            >
-              {{ correctionProfileLabel(preset.correction_profile) }}
-            </span>
-          </div>
-
-          <div
-            v-if="selectedPreset?.id === preset.id"
-            class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color:var(--accent-cyan)] text-white"
-          >
-            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-        </div>
-
-        <p
-          v-if="preset.description"
-          class="mt-2 line-clamp-3 text-[11px] leading-relaxed text-[color:var(--text-muted)]"
+      <div class="flex flex-wrap gap-1.5">
+        <span
+          v-if="selectedPreset.correction_profile"
+          class="rounded-full px-1.5 py-px text-[10px] font-medium"
+          :class="correctionProfileClass(selectedPreset.correction_profile)"
         >
-          {{ preset.description }}
-        </p>
-
-        <div class="mt-2 flex flex-wrap gap-1">
-          <span class="rounded bg-[color:var(--bg-surface-strong)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-            {{ preset.irrigation_system_type }}
-          </span>
-          <span class="rounded bg-[color:var(--bg-surface-strong)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-            {{ preset.tanks_count }} бака
-          </span>
-          <span class="rounded bg-[color:var(--bg-surface-strong)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-            Полив: {{ Math.round(preset.config.irrigation.interval_sec / 60) }} мин
-          </span>
-        </div>
-      </button>
-
-      <button
-        type="button"
-        class="group rounded-xl border border-dashed p-3 text-left transition-all duration-150"
-        :class="[
-          selectedPreset === null
-            ? 'border-[color:var(--accent-cyan)] bg-[color:var(--accent-cyan)]/5'
-            : 'border-[color:var(--border-muted)] hover:border-[color:var(--accent-cyan)]/50',
-        ]"
-        :disabled="!canConfigure"
-        @click="clearPreset"
-      >
-        <div class="flex items-center gap-2">
-          <svg class="h-5 w-5 text-[color:var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          <span class="text-sm font-medium text-[color:var(--text-primary)]">Настроить с нуля</span>
-        </div>
-        <p class="mt-1 text-[11px] text-[color:var(--text-muted)]">
-          Ручная настройка всех параметров автоматики без шаблона.
-        </p>
-      </button>
+          {{ correctionProfileLabel(selectedPreset.correction_profile) }}
+        </span>
+        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
+          {{ selectedPreset.irrigation_system_type }}
+        </span>
+        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
+          {{ selectedPreset.tanks_count }} бака
+        </span>
+        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
+          Полив: {{ Math.round(selectedPreset.config.irrigation.interval_sec / 60) }} мин / {{ selectedPreset.config.irrigation.duration_sec }} сек
+        </span>
+        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
+          Коррекция при поливе: {{ selectedPreset.config.irrigation.correction_during_irrigation ? 'да' : 'нет' }}
+        </span>
+      </div>
     </div>
+
+    <p v-else-if="!loading" class="text-[11px] text-[color:var(--text-dim)]">
+      Ручная настройка — заполните параметры ниже вручную.
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
-import type { ZoneAutomationPreset, IrrigationSystemType, CorrectionProfile } from '@/types/ZoneAutomationPreset'
+import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
 import { useZoneAutomationPresets, applyPresetToWaterForm, isPresetModified } from '@/composables/useZoneAutomationPresets'
 
@@ -154,24 +115,32 @@ const filteredPresets = computed(() => {
   })
 })
 
+const systemPresets = computed(() => filteredPresets.value.filter(p => p.scope === 'system'))
+const customPresets = computed(() => filteredPresets.value.filter(p => p.scope === 'custom'))
+
 const isModified = computed(() => {
   if (!selectedPreset.value) return false
   return isPresetModified(selectedPreset.value, props.waterForm)
 })
 
-function selectPreset(preset: ZoneAutomationPreset) {
-  selectedPreset.value = preset
-  const updated = applyPresetToWaterForm(preset, props.waterForm)
-  emit('update:waterForm', updated)
-  emit('presetApplied', preset)
+function onSelectChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (!value) {
+    selectedPreset.value = null
+    emit('presetCleared')
+    return
+  }
+  const preset = filteredPresets.value.find(p => p.id === Number(value))
+  if (preset) {
+    selectedPreset.value = preset
+    const updated = applyPresetToWaterForm(preset, props.waterForm)
+    emit('update:waterForm', updated)
+    emit('presetApplied', preset)
+  }
 }
 
-function clearPreset() {
-  selectedPreset.value = null
-  emit('presetCleared')
-}
-
-function correctionProfileLabel(profile: string): string {
+function correctionProfileLabel(profile: string | null): string {
+  if (!profile) return ''
   const labels: Record<string, string> = {
     safe: 'Мягкий',
     balanced: 'Оптимальный',
