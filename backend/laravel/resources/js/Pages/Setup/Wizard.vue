@@ -398,6 +398,7 @@
             v-model:assignments="deviceAssignments"
             :layout-mode="'zone_blocks'"
             :can-configure="canConfigure"
+            :is-system-type-locked="!!selectedRecipe"
             :show-node-bindings="true"
             :show-bind-buttons="true"
             :show-refresh-buttons="true"

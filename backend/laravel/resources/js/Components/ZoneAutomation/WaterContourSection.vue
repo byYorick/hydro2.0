@@ -192,17 +192,15 @@
             :title="zoneAutomationFieldHelp('water.systemType')"
           >
             Тип системы
+            <span v-if="isSystemTypeLocked" class="ml-1 text-[10px] text-[color:var(--text-dim)]">(из рецепта)</span>
             <select
               v-model="waterForm.systemType"
               class="input-select mt-1 w-full"
               :disabled="!ctx.canConfigure.value || isSystemTypeLocked"
             >
-              <option value="drip">drip</option>
-              <option value="substrate_trays">substrate_trays</option>
-              <option
-                disabled
-                value="nft"
-              >nft (скоро)</option>
+              <option value="drip">Капельный полив (Drip)</option>
+              <option value="substrate_trays">DWC / Субстрат</option>
+              <option value="nft">NFT (Nutrient Film)</option>
             </select>
           </label>
 

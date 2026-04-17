@@ -197,17 +197,13 @@
           </div>
 
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <div class="text-xs text-[color:var(--text-muted)]">
               Тип системы
-              <select
-                v-model="waterForm.systemType"
-                class="input-select mt-1 w-full"
-              >
-                <option value="drip">drip</option>
-                <option value="substrate_trays">substrate_trays</option>
-                <option value="nft">nft</option>
-              </select>
-            </label>
+              <div class="mt-1 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-3 py-2 text-sm text-[color:var(--text-primary)]">
+                {{ systemTypeLabel }}
+                <span class="ml-1 text-[10px] text-[color:var(--text-dim)]">(из рецепта)</span>
+              </div>
+            </div>
             <label class="text-xs text-[color:var(--text-muted)]">
               Интервал полива (мин)
               <input
@@ -765,6 +761,15 @@ const automationTabs = [
   { id: 2 as const, label: 'Водный узел' },
   { id: 3 as const, label: 'Досветка' },
 ]
+
+const systemTypeLabel = computed(() => {
+  const labels: Record<string, string> = {
+    drip: 'Капельный полив (Drip)',
+    substrate_trays: 'DWC / Субстрат',
+    nft: 'NFT (Nutrient Film)',
+  }
+  return labels[waterForm.value.systemType] ?? waterForm.value.systemType
+})
 
 const isTimedIrrigation = computed(() => waterForm.value.irrigationDecisionStrategy !== 'smart_soil_v1')
 const isSmartIrrigation = computed(() => waterForm.value.irrigationDecisionStrategy === 'smart_soil_v1')
