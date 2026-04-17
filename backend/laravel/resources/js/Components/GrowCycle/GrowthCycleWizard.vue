@@ -116,6 +116,7 @@
         :validation-errors="validationErrors"
         :format-date-time="formatDateTime"
         :format-date="formatDate"
+        @save-as-preset="showSavePresetModal = true"
       />
 
       <div
@@ -187,6 +188,14 @@
     </template>
   </Modal>
 
+  <SavePresetWizard
+    :show="showSavePresetModal"
+    :water-form="waterForm"
+    :irrigation-system-type="cyclePresetIrrigationSystemType"
+    @close="showSavePresetModal = false"
+    @saved="handleCyclePresetSaved"
+  />
+
   <PumpCalibrationModal
     v-if="showPumpCalibrationModal"
     :show="showPumpCalibrationModal"
@@ -211,6 +220,7 @@ import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import ErrorBoundary from "@/Components/ErrorBoundary.vue";
 import PumpCalibrationModal from "@/Components/PumpCalibrationModal.vue";
+import SavePresetWizard from "@/Components/AutomationForms/SavePresetWizard.vue";
 import WizardAutomationStep from "@/Components/GrowCycle/steps/WizardAutomationStep.vue";
 import WizardCalibrationStep from "@/Components/GrowCycle/steps/WizardCalibrationStep.vue";
 import WizardConfirmStep from "@/Components/GrowCycle/steps/WizardConfirmStep.vue";
@@ -310,6 +320,23 @@ const {
 });
 
 const automationTab = ref<1 | 2 | 3>(1);
+
+const showSavePresetModal = ref(false);
+
+const cyclePresetIrrigationSystemType = computed(() => {
+  const systemType = waterForm.value.systemType;
+  const map: Record<string, string> = {
+    drip: 'drip_tape',
+    substrate_trays: 'dwc',
+    nft: 'nft',
+  };
+  return (map[systemType] ?? 'dwc') as import('@/types/ZoneAutomationPreset').IrrigationSystemType;
+});
+
+function handleCyclePresetSaved(preset: { name: string }): void {
+  showSavePresetModal.value = false;
+  showToast(`Профиль «${preset.name}» сохранён.`, 'success');
+}
 
 const showPumpCalibrationModal = ref(false);
 const pumpCalibrationActions = usePumpCalibrationActions({

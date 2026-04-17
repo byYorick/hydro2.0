@@ -128,6 +128,11 @@ class AutomationConfigCompiler
             $this->growCycleNutritionPayload($cycle)
         );
 
+        $configOverrides = $this->optionalPayload(AutomationConfigRegistry::NAMESPACE_CYCLE_CONFIG_OVERRIDES, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId);
+        if ($configOverrides !== []) {
+            $zoneConfig = $this->deepMerge($zoneConfig, $configOverrides);
+        }
+
         $bundle = $this->storeBundle(AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId, [
             'schema_version' => 1,
             'system' => $zoneBundle['system'] ?? [],
@@ -136,6 +141,7 @@ class AutomationConfigCompiler
                 'start_snapshot' => $this->payload(AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId),
                 'phase_overrides' => $this->payload(AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId),
                 'manual_overrides' => $this->listPayload(AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId),
+                'config_overrides' => $configOverrides,
             ],
         ]);
 
@@ -389,6 +395,24 @@ class AutomationConfigCompiler
             : app(AutomationConfigDocumentService::class)->getPayload($namespace, $scopeType, $scopeId, true);
     }
 
+    /**
+     * Read payload without materializing the document if absent.
+     * Returns empty array if document does not exist.
+     *
+     * @return array<string, mixed>
+     */
+    private function optionalPayload(string $namespace, string $scopeType, int $scopeId): array
+    {
+        $document = AutomationConfigDocument::query()
+            ->where('namespace', $namespace)
+            ->where('scope_type', $scopeType)
+            ->where('scope_id', $scopeId)
+            ->first();
+        $payload = $document?->payload;
+
+        return is_array($payload) && ! array_is_list($payload) ? $payload : [];
+    }
+
     private function zonePidPayload(string $namespace, int $zoneId): array
     {
         return $this->payload($namespace, AutomationConfigRegistry::SCOPE_ZONE, $zoneId);
@@ -407,6 +431,33 @@ class AutomationConfigCompiler
         $payload = $document?->payload;
 
         return is_array($payload) && array_is_list($payload) ? $payload : [];
+    }
+
+    /**
+     * Рекурсивный deep merge: $override перезаписывает matching ключи в $base.
+     * Массивы-списки (indexed arrays) заменяются целиком, не мержатся поэлементно.
+     *
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $override
+     * @return array<string, mixed>
+     */
+    private function deepMerge(array $base, array $override): array
+    {
+        foreach ($override as $key => $value) {
+            if (
+                is_array($value)
+                && ! array_is_list($value)
+                && isset($base[$key])
+                && is_array($base[$key])
+                && ! array_is_list($base[$key])
+            ) {
+                $base[$key] = $this->deepMerge($base[$key], $value);
+            } else {
+                $base[$key] = $value;
+            }
+        }
+
+        return $base;
     }
 
     /**

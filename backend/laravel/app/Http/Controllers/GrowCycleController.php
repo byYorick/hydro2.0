@@ -408,6 +408,7 @@ class GrowCycleController extends Controller
             'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.irrigation_batch_l' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
+            'config_overrides' => ['nullable', 'array'],
             'phase_overrides' => ['prohibited'],
         ]);
 

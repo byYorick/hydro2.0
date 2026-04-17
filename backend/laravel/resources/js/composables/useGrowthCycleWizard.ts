@@ -1116,7 +1116,11 @@ export function useGrowthCycleWizard({
     await automationConfig.updateDocument("zone", zoneId, "zone.logic_profile", nextPayload as unknown as Record<string, unknown>);
   }
 
-  async function persistLaunchPrerequisites(zoneId: number): Promise<void> {
+  /**
+   * Формирует config_overrides из текущих форм wizard'а.
+   * НЕ перезаписывает zone.logic_profile — override хранится на уровне цикла.
+   */
+  function buildCycleConfigOverrides(): Record<string, unknown> | null {
     const configPayload = buildGrowthCycleConfigPayload({
       climateForm: climateForm.value,
       waterForm: waterForm.value,
@@ -1126,7 +1130,23 @@ export function useGrowthCycleWizard({
       automationCommandTemplates: automationCommandTemplates.value,
     });
 
-    await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
+    const subsystems = (configPayload.subsystems || {}) as Record<string, unknown>;
+    if (Object.keys(subsystems).length === 0) return null;
+
+    return {
+      logic_profile: {
+        profiles: {
+          setup: {
+            subsystems,
+          },
+        },
+      },
+    };
+  }
+
+  async function persistLaunchPrerequisites(_zoneId: number): Promise<void> {
+    // config_overrides передаются через payload создания цикла,
+    // zone.logic_profile больше не перезаписывается из Start Cycle.
   }
 
   async function onSubmit(): Promise<void> {
@@ -1167,6 +1187,7 @@ export function useGrowthCycleWizard({
       }
 
       const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined;
+      const configOverrides = buildCycleConfigOverrides();
       const payload = buildCreateGrowCyclePayload({
         waterForm: waterForm.value,
         recipeRevisionId: selectedRevisionId.value,
@@ -1174,6 +1195,7 @@ export function useGrowthCycleWizard({
         plantingAt,
         expectedHarvestAt: form.value.expectedHarvestAt,
         startImmediately: true,
+        configOverrides,
       });
       const cycleResponse = await api.zones.createGrowCycle<{ id?: number } & Record<string, unknown>>(
         zoneId,

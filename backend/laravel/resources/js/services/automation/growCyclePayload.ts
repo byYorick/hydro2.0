@@ -14,6 +14,7 @@ export interface CreateGrowCyclePayloadInput {
   plantingAt?: string
   expectedHarvestAt?: string
   startImmediately: boolean
+  configOverrides?: Record<string, unknown> | null
 }
 
 export interface CreateGrowCyclePayload {
@@ -32,6 +33,7 @@ export interface CreateGrowCyclePayload {
   settings: {
     expected_harvest_at?: string
   }
+  config_overrides?: Record<string, unknown>
 }
 
 export function buildCreateGrowCyclePayload(
@@ -56,5 +58,6 @@ export function buildCreateGrowCyclePayload(
     settings: {
       expected_harvest_at: input.expectedHarvestAt || undefined,
     },
+    ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),
   }
 }

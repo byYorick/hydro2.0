@@ -41,6 +41,7 @@ use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneConfigModeController;
+use App\Http\Controllers\ZoneAutomationPresetController;
 use App\Http\Controllers\ZoneCorrectionLiveEditController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
@@ -149,6 +150,8 @@ Route::middleware([
     Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'show']);
     Route::get('automation-bundles/{scopeType}/{scopeId}', [AutomationBundleController::class, 'show']);
     Route::get('automation-presets/{namespace}', [AutomationPresetController::class, 'index']);
+    Route::get('zone-automation-presets', [ZoneAutomationPresetController::class, 'index']);
+    Route::get('zone-automation-presets/{preset}', [ZoneAutomationPresetController::class, 'show']);
     Route::get('zones/{zone}/sensor-calibrations', [SensorCalibrationController::class, 'index']);
     Route::get('zones/{zone}/sensor-calibrations/status', [SensorCalibrationController::class, 'status']);
     Route::get('zones/{zone}/sensor-calibrations/{calibration}', [SensorCalibrationController::class, 'show']);
@@ -220,6 +223,12 @@ Route::middleware([
         Route::patch('automation-presets/{preset}', [AutomationPresetController::class, 'update']);
         Route::delete('automation-presets/{preset}', [AutomationPresetController::class, 'destroy']);
         Route::post('automation-presets/{preset}/duplicate', [AutomationPresetController::class, 'duplicate']);
+
+        Route::post('zone-automation-presets', [ZoneAutomationPresetController::class, 'store']);
+        Route::put('zone-automation-presets/{preset}', [ZoneAutomationPresetController::class, 'update']);
+        Route::patch('zone-automation-presets/{preset}', [ZoneAutomationPresetController::class, 'update']);
+        Route::delete('zone-automation-presets/{preset}', [ZoneAutomationPresetController::class, 'destroy']);
+        Route::post('zone-automation-presets/{preset}/duplicate', [ZoneAutomationPresetController::class, 'duplicate']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);

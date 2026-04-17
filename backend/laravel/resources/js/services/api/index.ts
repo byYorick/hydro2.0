@@ -35,6 +35,7 @@ import { substratesApi } from './substrates'
 import { systemApi } from './system'
 import { telemetryApi } from './telemetry'
 import { usersApi } from './users'
+import { zoneAutomationPresetsApi } from './zoneAutomationPresets'
 import { zonesApi } from './zones'
 
 export type { ToastHandler } from './_client'
@@ -62,6 +63,7 @@ export const api = {
   system: systemApi,
   telemetry: telemetryApi,
   users: usersApi,
+  zoneAutomationPresets: zoneAutomationPresetsApi,
   zones: zonesApi,
 }
 

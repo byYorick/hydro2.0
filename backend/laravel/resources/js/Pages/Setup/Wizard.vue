@@ -378,6 +378,15 @@
         </div>
 
         <template v-else>
+          <PresetSelector
+            :water-form="automationWaterForm"
+            :can-configure="canConfigure"
+            :tanks-count="automationWaterForm.tanksCount"
+            @update:water-form="Object.assign(automationWaterForm, $event)"
+            @preset-applied="handlePresetApplied"
+            @preset-cleared="handlePresetCleared"
+          />
+
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
             Автоматика зоны собрана в три блока. `Водный контур` включает обязательные ноды и water runtime, `Климат зоны` и `Освещение` включаются switch-ом и раскрывают привязку нод вместе с логикой подсистемы.
           </div>
@@ -529,6 +538,16 @@
             {{ loading.stepLaunch ? 'Открытие...' : 'Открыть мастер запуска цикла' }}
           </Button>
 
+          <Button
+            v-if="stepZoneAutomationDone"
+            size="sm"
+            variant="secondary"
+            data-testid="setup-wizard-save-preset"
+            @click="showSavePresetModal = true"
+          >
+            Сохранить как профиль
+          </Button>
+
           <Link
             v-if="selectedZone"
             :href="`/zones/${selectedZone.id}`"
@@ -568,6 +587,15 @@
       </section>
     </div>
 
+    <SavePresetWizard
+      :show="showSavePresetModal"
+      :water-form="automationWaterForm"
+      :irrigation-system-type="presetIrrigationSystemType"
+      :correction-profile="presetCorrectionProfile"
+      @close="showSavePresetModal = false"
+      @saved="handlePresetSaved"
+    />
+
     <PlantCreateModal
       :show="showPlantCreateWizard"
       @close="handlePlantCreateClose"
@@ -602,6 +630,8 @@ import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfig
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
+import PresetSelector from '@/Components/AutomationForms/PresetSelector.vue'
+import SavePresetWizard from '@/Components/AutomationForms/SavePresetWizard.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { usePumpCalibrationActions } from '@/composables/usePumpCalibrationActions'
@@ -1036,6 +1066,39 @@ async function handleZoneCorrectionCalibrationUpdated(): Promise<void> {
 
   zoneCorrectionAuthoritySeq.value += 1
   await refreshZoneLaunchReadiness(selectedZone.value.id)
+}
+
+const appliedPresetId = ref<number | null>(null)
+const showSavePresetModal = ref(false)
+
+const presetIrrigationSystemType = computed(() => {
+  const systemType = automationWaterForm.systemType
+  const map: Record<string, string> = {
+    drip: 'drip_tape',
+    substrate_trays: 'dwc',
+    nft: 'nft',
+  }
+  return (map[systemType] ?? 'dwc') as import('@/types/ZoneAutomationPreset').IrrigationSystemType
+})
+
+const presetCorrectionProfile = computed(() => {
+  // Если пресет был применён, используем его correction_profile
+  // Иначе — null
+  return null as import('@/types/ZoneAutomationPreset').CorrectionProfile | null
+})
+
+function handlePresetApplied(preset: { id: number; name: string }): void {
+  appliedPresetId.value = preset.id
+  showToast(`Профиль «${preset.name}» применён. Параметры ниже обновлены.`, 'success')
+}
+
+function handlePresetCleared(): void {
+  appliedPresetId.value = null
+}
+
+function handlePresetSaved(preset: { name: string }): void {
+  showSavePresetModal.value = false
+  showToast(`Профиль «${preset.name}» сохранён.`, 'success')
 }
 
 function handlePlantCreated(plant: { id?: number; name?: string } | null): void {

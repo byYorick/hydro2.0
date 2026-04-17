@@ -282,7 +282,7 @@ class GrowCycleService
             'extensions' => is_array($firstPhase->extensions) ? $firstPhase->extensions : [],
         ] : [];
 
-        $this->documents->upsertCycleDocuments((int) $cycle->id, [
+        $documents = [
             AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT => [
                 'cycle_id' => (int) $cycle->id,
                 'zone_id' => (int) $cycle->zone_id,
@@ -290,7 +290,14 @@ class GrowCycleService
                 'phase' => $phasePayload,
             ],
             AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES => [],
-        ], $userId);
+        ];
+
+        $configOverrides = $data['config_overrides'] ?? null;
+        if (is_array($configOverrides) && $configOverrides !== []) {
+            $documents[AutomationConfigRegistry::NAMESPACE_CYCLE_CONFIG_OVERRIDES] = $configOverrides;
+        }
+
+        $this->documents->upsertCycleDocuments((int) $cycle->id, $documents, $userId);
     }
 
     protected function dispatchAutomationStartCycle(GrowCycle $cycle): void

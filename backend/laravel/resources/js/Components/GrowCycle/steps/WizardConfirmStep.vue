@@ -112,6 +112,20 @@
       </div>
     </div>
 
+    <div class="flex items-center gap-2">
+      <Button
+        size="sm"
+        variant="secondary"
+        data-testid="growth-wizard-save-preset"
+        @click="$emit('save-as-preset')"
+      >
+        Сохранить как профиль
+      </Button>
+      <span class="text-[10px] text-[color:var(--text-dim)]">
+        Сохранить текущие настройки для повторного использования
+      </span>
+    </div>
+
     <div
       v-if="validationErrors.length > 0"
       class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
@@ -132,6 +146,7 @@
 </template>
 
 <script setup lang="ts">
+import Button from "@/Components/Button.vue";
 import ReadinessChecklist from "@/Components/GrowCycle/ReadinessChecklist.vue";
 import type { WaterFormState } from "@/composables/zoneAutomationTypes";
 import type { ZoneLaunchReadiness } from "@/composables/useZoneReadiness";
@@ -166,6 +181,7 @@ interface Props {
 }
 
 defineProps<Props>();
+defineEmits<{ 'save-as-preset': [] }>();
 
 function phaseDurationLabel(phase: RecipePhase): string | number {
   if (phase.duration_days != null) {

@@ -33,6 +33,7 @@ class AutomationConfigRegistry
     public const NAMESPACE_CYCLE_START_SNAPSHOT = 'cycle.start_snapshot';
     public const NAMESPACE_CYCLE_PHASE_OVERRIDES = 'cycle.phase_overrides';
     public const NAMESPACE_CYCLE_MANUAL_OVERRIDES = 'cycle.manual_overrides';
+    public const NAMESPACE_CYCLE_CONFIG_OVERRIDES = 'cycle.config_overrides';
 
     /**
      * @return list<string>
@@ -118,6 +119,12 @@ class AutomationConfigRegistry
                 'required' => false,
             ],
             self::NAMESPACE_CYCLE_MANUAL_OVERRIDES => [
+                'scope_type' => self::SCOPE_GROW_CYCLE,
+                'schema_version' => 1,
+                'default_payload' => [],
+                'required' => false,
+            ],
+            self::NAMESPACE_CYCLE_CONFIG_OVERRIDES => [
                 'scope_type' => self::SCOPE_GROW_CYCLE,
                 'schema_version' => 1,
                 'default_payload' => [],
@@ -239,6 +246,7 @@ class AutomationConfigRegistry
 
             case self::NAMESPACE_CYCLE_START_SNAPSHOT:
             case self::NAMESPACE_CYCLE_PHASE_OVERRIDES:
+            case self::NAMESPACE_CYCLE_CONFIG_OVERRIDES:
                 if ($payload !== [] && array_is_list($payload)) {
                     throw new InvalidArgumentException("Payload for {$namespace} must be an object.");
                 }

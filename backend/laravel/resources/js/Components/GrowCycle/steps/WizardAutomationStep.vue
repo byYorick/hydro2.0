@@ -1,5 +1,14 @@
 <template>
   <div class="space-y-4">
+    <PresetSelector
+      :water-form="waterForm"
+      :can-configure="true"
+      :tanks-count="tanksCount"
+      @update:water-form="Object.assign(waterForm, $event)"
+      @preset-applied="$emit('preset-applied', $event)"
+      @preset-cleared="$emit('preset-cleared')"
+    />
+
     <div class="flex flex-wrap items-center gap-2">
       <button
         v-for="item in automationTabs"
@@ -717,6 +726,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
+import PresetSelector from '@/Components/AutomationForms/PresetSelector.vue'
 import type {
   ClimateFormState,
   LightingFormState,
@@ -740,6 +750,8 @@ defineProps<{
 
 const emit = defineEmits<{
   'save-soil-moisture-binding': []
+  'preset-applied': [preset: { id: number; name: string }]
+  'preset-cleared': []
 }>()
 
 const climateForm = defineModel<ClimateFormState>('climateForm', { required: true })
