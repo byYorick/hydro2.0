@@ -186,108 +186,22 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.systemType')"
-          >
-            Тип системы
-            <span v-if="isSystemTypeLocked" class="ml-1 text-[10px] text-[color:var(--text-dim)]">(из рецепта)</span>
-            <select
-              v-model="waterForm.systemType"
-              class="input-select mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || isSystemTypeLocked"
-            >
-              <option value="drip">Капельный полив (Drip)</option>
-              <option value="substrate_trays">DWC / Субстрат</option>
-              <option value="nft">NFT (Nutrient Film)</option>
-            </select>
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.tanksCount')"
-          >
-            Количество баков
-            <input
-              v-model.number="waterForm.tanksCount"
-              type="number"
-              min="2"
-              max="3"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || isSystemTypeLocked || waterForm.systemType === 'drip'"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.enableDrainControl')"
-          >
-            Контроль дренажа
-            <select
-              v-model="waterForm.enableDrainControl"
-              class="input-select mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || waterForm.tanksCount !== 3"
-            >
-              <option :value="true">Включен</option>
-              <option :value="false">Выключен</option>
-            </select>
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="zoneAutomationFieldHelp('water.drainTargetPercent')"
-          >
-            Цель по дренажу (%)
-            <input
-              v-model.number="waterForm.drainTargetPercent"
-              type="number"
-              min="0"
-              max="100"
-              class="input-field mt-1 w-full"
-              :disabled="!ctx.canConfigure.value || waterForm.tanksCount !== 3 || !waterForm.enableDrainControl"
-            />
-          </label>
-        </div>
-
-        <div
-          v-if="waterForm.systemType === 'nft'"
-          class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]"
-        >
-          NFT пока не включен в основной сценарий мастера. Для агронома доступны drip и substrate_trays.
-        </div>
-
-        <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
-          <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
-            Расширенные настройки
-          </summary>
-
-          <div class="mt-3 space-y-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="zoneAutomationFieldHelp('water.valveSwitching')"
-              >
-                Переключение клапанов
-                <select
-                  v-model="waterForm.valveSwitching"
-                  class="input-select mt-1 w-full"
-                  :disabled="!ctx.canConfigure.value"
-                >
-                  <option :value="true">Включено</option>
-                  <option :value="false">Выключено</option>
-                </select>
-              </label>
-            </div>
-
-            <div
-              v-if="waterForm.tanksCount === 2"
-              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-dim)]"
-            >
-              Low-level relay plans 2-баковой топологии больше не редактируются на фронте. Командные шаги собираются backend/compiler из authority templates или уже сохранённого custom plan зоны.
-            </div>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs">
+          <div class="text-[color:var(--text-muted)]">Тип системы</div>
+          <div class="text-[color:var(--text-primary)] font-medium">
+            {{ systemTypeLabel }}
+            <span v-if="isSystemTypeLocked" class="ml-1 text-[10px] font-normal text-[color:var(--text-dim)]">(из рецепта)</span>
           </div>
-        </details>
+
+          <div class="text-[color:var(--text-muted)]">Количество баков</div>
+          <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount }}</div>
+
+          <div class="text-[color:var(--text-muted)]">Контроль дренажа</div>
+          <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount === 3 && waterForm.enableDrainControl ? `Включен (${waterForm.drainTargetPercent}%)` : 'Выключен' }}</div>
+
+          <div class="text-[color:var(--text-muted)]">Переключение клапанов</div>
+          <div class="text-[color:var(--text-primary)]">{{ waterForm.valveSwitching ? 'Включено' : 'Выключено' }}</div>
+        </div>
 
         <div
           v-if="ctx.isZoneBlockLayout.value"
@@ -469,6 +383,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
 import IrrigationBasicFieldsGrid from '@/Components/ZoneAutomation/IrrigationBasicFieldsGrid.vue'
 import IrrigationModeSelector from '@/Components/ZoneAutomation/IrrigationModeSelector.vue'
@@ -504,4 +419,13 @@ const waterForm = defineModel<WaterFormState>('waterForm', { required: true })
 const assignments = defineModel<ZoneAutomationSectionAssignments | null>('assignments', { default: null })
 
 const ctx = useZoneAutomationSectionContext()
+
+const systemTypeLabel = computed(() => {
+  const labels: Record<string, string> = {
+    drip: 'Капельный полив (Drip)',
+    substrate_trays: 'DWC / Субстрат',
+    nft: 'NFT (Nutrient Film)',
+  }
+  return labels[waterForm.value.systemType] ?? waterForm.value.systemType
+})
 </script>
