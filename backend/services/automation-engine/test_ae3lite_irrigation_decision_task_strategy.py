@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecisionController
+from _test_support_runtime_plan import make_runtime_plan
 
 
 class _RuntimeMonitor:
@@ -16,7 +17,7 @@ class _RuntimeMonitor:
 async def test_task_strategy_always_returns_run() -> None:
     controller = IrrigationDecisionController()
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
-    runtime = {"irrigation_decision": {"strategy": "task"}}
+    runtime = make_runtime_plan(irrigation_decision={"strategy": "task"})
     result = await controller.evaluate(
         zone_id=7,
         runtime_monitor=_RuntimeMonitor(),

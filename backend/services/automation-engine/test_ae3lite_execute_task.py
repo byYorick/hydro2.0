@@ -110,6 +110,14 @@ class _TaskRepoRunning:
         )
         return self._running_task
 
+    async def mark_start_event_emitted(self, *, task_id):
+        # Post-merge contract: AE3 помечает задачу как start_event_emitted
+        # после успешной эмиссии start-события. Для тестовых сценариев —
+        # фиксируем флаг в in-memory копии task (ровно тот же state transition,
+        # что и реальный repo).
+        self._running_task = replace(self._running_task, start_event_emitted=True)
+        return self._running_task
+
 
 class _TaskRepoRequeue(_TaskRepoRunning):
     def __init__(self, *, running_task: AutomationTask | None = None):
@@ -226,9 +234,12 @@ class _PlannerIrrigationLockSnapshot:
     def build(self, *, task, snapshot):
         plan = _PlanWithSteps(steps=())
         plan.topology = "two_tank"
-        plan.runtime = {
-            "zone_workflow_phase": "tank_filling",
-            "irrigation_decision": {
+        # Post-merge: execute_task берёт irrigation_decision только если
+        # plan.runtime — typed RuntimePlan (не dict); иначе snapshot-lock
+        # пропускается без ошибки (см. `_lock_irrigation_decision_snapshot_if_needed`).
+        from _test_support_runtime_plan import make_runtime_plan
+        plan.runtime = make_runtime_plan(
+            irrigation_decision={
                 "strategy": "smart_soil_v1",
                 "config": {
                     "lookback_sec": 1800,
@@ -236,8 +247,7 @@ class _PlannerIrrigationLockSnapshot:
                     "stale_after_sec": 600,
                 },
             },
-            "bundle_revision": getattr(snapshot, "bundle_revision", None),
-        }
+        )
         return plan
 
 
@@ -703,11 +713,11 @@ async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emi
     result = await use_case.run(task=claimed_task, now=NOW)
 
     assert result.irrigation_decision_strategy == "smart_soil_v1"
-    assert result.irrigation_decision_config == {
-        "lookback_sec": 1800,
-        "min_samples": 3,
-        "stale_after_sec": 600,
-    }
+    # Post-merge IrrigationDecisionConfig Pydantic включает все 5 обязательных
+    # полей; snapshot lock сериализует весь config через model_dump().
+    assert result.irrigation_decision_config["lookback_sec"] == 1800
+    assert result.irrigation_decision_config["min_samples"] == 3
+    assert result.irrigation_decision_config["stale_after_sec"] == 600
     assert result.irrigation_bundle_revision == "bundle-live-1234567890"
     assert any(event_type == "IRRIGATION_DECISION_SNAPSHOT_LOCKED" for _, event_type, _ in recorded_events)
     assert task_repo.update_irrigation_runtime_calls[0]["irrigation_decision_strategy"] == "smart_soil_v1"
@@ -718,11 +728,11 @@ async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emi
     assert snapshot_payload["strategy"] == "smart_soil_v1"
     assert snapshot_payload["bundle_revision"] == "bundle-live-1234567890"
     assert snapshot_payload["event_schema_version"] == 2
-    assert snapshot_payload["config"] == {
-        "lookback_sec": 1800,
-        "min_samples": 3,
-        "stale_after_sec": 600,
-    }
+    # Post-merge: config.model_dump() сериализует все обязательные поля
+    # IrrigationDecisionConfig, включая hysteresis_pct/spread_alert_threshold_pct.
+    assert snapshot_payload["config"]["lookback_sec"] == 1800
+    assert snapshot_payload["config"]["min_samples"] == 3
+    assert snapshot_payload["config"]["stale_after_sec"] == 600
 
 
 @pytest.mark.asyncio

@@ -19,14 +19,35 @@ import pytest
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import TaskExecutionError
+from _test_support_runtime_plan import make_runtime_plan
 
 NOW = datetime(2026, 3, 12, 10, 0, 0, tzinfo=timezone.utc)
 
 _CMD = object()  # placeholder command
 
-_RUNTIME = {
-    "correction": {"prepare_recirculation_max_attempts": 3},
-}
+
+def _runtime_with_attempt_limit(limit: int):
+    return make_runtime_plan(
+        correction={"prepare_recirculation_max_attempts": limit},
+        correction_by_phase={
+            "tank_recirc": {"prepare_recirculation_max_attempts": limit},
+        },
+    )
+
+
+def _runtime_with_nested_retry_limit(limit: int):
+    """Per-phase limit via flat `correction_by_phase.tank_recirc.prepare_recirculation_max_attempts`.
+
+    Merge ae3/8bbca59 унифицировал shape — nested `retry` сняли в пользу
+    плоских полей в CorrectionPhaseRuntime. Тест сохраняется как контракт
+    "per-phase limit должен перекрывать global correction".
+    """
+    return make_runtime_plan(
+        correction={"prepare_recirculation_max_attempts": 100},
+        correction_by_phase={
+            "tank_recirc": {"prepare_recirculation_max_attempts": limit},
+        },
+    )
 
 
 def _make_task(*, retry_count: int = 0) -> AutomationTask:
@@ -60,7 +81,7 @@ class _Gateway:
 
 class _Plan:
     def __init__(self, *, attempt_limit: int = 3) -> None:
-        self.runtime = {"correction": {"prepare_recirculation_max_attempts": attempt_limit}}
+        self.runtime = _runtime_with_attempt_limit(attempt_limit)
         self.named_plans = {
             "prepare_recirculation_stop": (_CMD,),
             "sensor_mode_deactivate": (_CMD,),
@@ -232,13 +253,7 @@ class _PlanNestedRetry:
     """Bundle shape from effective targets: phase has nested ``retry``."""
 
     def __init__(self, *, limit: int) -> None:
-        self.runtime = {
-            "correction_by_phase": {
-                "tank_recirc": {
-                    "retry": {"prepare_recirculation_max_attempts": limit},
-                },
-            },
-        }
+        self.runtime = _runtime_with_nested_retry_limit(limit)
         self.named_plans = {
             "prepare_recirculation_stop": (_CMD,),
             "sensor_mode_deactivate": (_CMD,),
@@ -272,7 +287,7 @@ async def test_attempt_limit_read_from_nested_retry_mapping() -> None:
 async def test_empty_named_plans_raises() -> None:
     """If no commands are in named_plans, handler should raise ae3_empty_command_plan."""
     class _EmptyPlan:
-        runtime = {"correction": {"prepare_recirculation_max_attempts": 3}}
+        runtime = _runtime_with_attempt_limit(3)
         named_plans: dict = {}
 
     with pytest.raises(TaskExecutionError) as exc_info:

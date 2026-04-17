@@ -115,6 +115,7 @@ def _minimal_zone_correction_config(
             "prepare_recirculation_timeout_sec": 1200,
             "prepare_recirculation_max_attempts": 3,
             "prepare_recirculation_max_correction_attempts": 20,
+            "prepare_recirculation_correction_slack_sec": 0,
             "telemetry_stale_retry_sec": 30,
             "decision_window_retry_sec": 30,
             "low_water_retry_sec": 60,
@@ -126,6 +127,7 @@ def _minimal_zone_correction_config(
             "dose_ph_down_channel": "pump_acid",
             "max_ec_dose_ml": 50.0,
             "max_ph_dose_ml": 20.0,
+            "ec_dosing_mode": "single",
         },
         "tolerance": {
             "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},

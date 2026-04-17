@@ -1900,9 +1900,20 @@ class BaseStageHandler:
         например "Europe/Moscow") из config. Если timezone не задан — fallback
         на UTC. Если day_start_time/day_hours невалидны — возвращает True.
         """
-        lighting = getattr(day_night_config, "lighting", None)
-        raw_start = getattr(lighting, "day_start_time", None)
-        day_hours = getattr(lighting, "day_hours", None)
+        # Поддерживаем и Pydantic-like объекты (runtime plan), и dict-конфиги
+        # (тесты, legacy call sites). Без dual-access тесты,
+        # собирающие `{"lighting": {...}}` литерально, получают `lighting=None`
+        # и проваливаются в fail-safe ветку `return True`.
+        def _pick(obj: Any, key: str) -> Any:
+            if obj is None:
+                return None
+            if isinstance(obj, Mapping):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        lighting = _pick(day_night_config, "lighting")
+        raw_start = _pick(lighting, "day_start_time")
+        day_hours = _pick(lighting, "day_hours")
         if not isinstance(raw_start, str) or not raw_start.strip() or day_hours is None:
             return True
         parts = raw_start.strip().split(":")
@@ -1925,7 +1936,8 @@ class BaseStageHandler:
         # HH:MM в локальном времени teplicy, поэтому сравнение должно идти в
         # том же TZ. Иначе при UTC-контейнере и TZ=МСК night-targets смещаются
         # на часы разницы.
-        tz_name = getattr(lighting, "timezone", None) if isinstance(getattr(lighting, "timezone", None), str) else None
+        tz_raw = _pick(lighting, "timezone")
+        tz_name = tz_raw if isinstance(tz_raw, str) else None
         tz: Any = timezone.utc
         if tz_name:
             try:

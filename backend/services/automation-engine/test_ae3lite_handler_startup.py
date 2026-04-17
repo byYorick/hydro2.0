@@ -20,19 +20,20 @@ from unittest.mock import AsyncMock
 from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import TaskExecutionError
+from _test_support_runtime_plan import make_runtime_plan
 
 NOW = datetime(2026, 3, 12, 10, 0, 0, tzinfo=timezone.utc)
 
-_RUNTIME = {
-    "clean_max_sensor_labels": ["clean_max"],
-    "clean_min_sensor_labels": ["clean_min"],
-    "level_switch_on_threshold": 0.5,
-    "telemetry_max_age_sec": 300,
-    "irr_state_max_age_sec": 60,
-    "irr_state_wait_timeout_sec": 0.0,
-    "irr_state_wait_poll_interval_sec": 0.05,
-    "level_poll_interval_sec": 5,
-}
+_RUNTIME = make_runtime_plan(
+    clean_max_sensor_labels=["clean_max"],
+    clean_min_sensor_labels=["clean_min"],
+    level_switch_on_threshold=0.5,
+    telemetry_max_age_sec=300,
+    irr_state_max_age_sec=60,
+    irr_state_wait_timeout_sec=0.0,
+    irr_state_wait_poll_interval_sec=0.05,
+    level_poll_interval_sec=5,
+)
 
 
 def _make_task(

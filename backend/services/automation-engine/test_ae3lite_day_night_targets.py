@@ -17,6 +17,7 @@ import pytest
 
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.config.runtime_plan_builder import _build_day_night_config
+from _test_support_runtime_plan import make_runtime_plan
 
 
 # ── _build_day_night_config ───────────────────────────────────────────────────
@@ -151,24 +152,26 @@ def _handler() -> BaseStageHandler:
 
 
 def _runtime(*, day_night_enabled: bool, ph_section: dict | None = None, ec_section: dict | None = None,
-             lighting: dict | None = None, **runtime_overrides) -> dict:
-    base = {
-        "target_ph": 5.8, "target_ph_min": 5.6, "target_ph_max": 6.0,
-        "target_ec": 1.6, "target_ec_min": 1.5, "target_ec_max": 1.7,
-        "target_ec_prepare": 0.7, "target_ec_prepare_min": 0.65, "target_ec_prepare_max": 0.75,
-        "npk_ec_share": 0.44,
-        "day_night_enabled": day_night_enabled,
-        "day_night_config": {
+             lighting: dict | None = None, **runtime_overrides):
+    default_ph = {
+        "day": None, "night": None, "day_min": None, "day_max": None,
+        "night_min": None, "night_max": None,
+    }
+    default_ec = dict(default_ph)
+    return make_runtime_plan(
+        target_ph=5.8, target_ph_min=5.6, target_ph_max=6.0,
+        target_ec=1.6, target_ec_min=1.5, target_ec_max=1.7,
+        target_ec_prepare=0.7, target_ec_prepare_min=0.65, target_ec_prepare_max=0.75,
+        npk_ec_share=0.44,
+        day_night_enabled=day_night_enabled,
+        day_night_config={
             "enabled": day_night_enabled,
             "lighting": lighting or {"day_start_time": "06:00", "day_hours": 16},
-            "ph": ph_section or {"day": None, "night": None, "day_min": None, "day_max": None,
-                                  "night_min": None, "night_max": None},
-            "ec": ec_section or {"day": None, "night": None, "day_min": None, "day_max": None,
-                                  "night_min": None, "night_max": None},
+            "ph": ph_section or default_ph,
+            "ec": ec_section or default_ec,
         },
-    }
-    base.update(runtime_overrides)
-    return base
+        **runtime_overrides,
+    )
 
 
 def _task(workflow_phase: str = "irrigation"):

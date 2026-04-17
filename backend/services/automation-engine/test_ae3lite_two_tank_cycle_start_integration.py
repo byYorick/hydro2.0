@@ -256,6 +256,7 @@ async def _insert_correction_config(zone_id: int) -> None:
                 "prepare_recirculation_timeout_sec": 1200,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
+                "prepare_recirculation_correction_slack_sec": 0,
                 "telemetry_stale_retry_sec": 15,
                 "decision_window_retry_sec": 20,
                 "low_water_retry_sec": 30,
@@ -267,6 +268,7 @@ async def _insert_correction_config(zone_id: int) -> None:
                 "dose_ph_down_channel": "pump_acid",
                 "max_ec_dose_ml": 50.0,
                 "max_ph_dose_ml": 20.0,
+                "ec_dosing_mode": "single",
             },
             "tolerance": {
                 "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
