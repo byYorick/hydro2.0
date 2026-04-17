@@ -195,12 +195,6 @@
 
           <div class="text-[color:var(--text-muted)]">Количество баков</div>
           <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount }}</div>
-
-          <div class="text-[color:var(--text-muted)]">Контроль дренажа</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount === 3 && waterForm.enableDrainControl ? `Включен (${waterForm.drainTargetPercent}%)` : 'Выключен' }}</div>
-
-          <div class="text-[color:var(--text-muted)]">Переключение клапанов</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.valveSwitching ? 'Включено' : 'Выключено' }}</div>
         </div>
 
         <div
