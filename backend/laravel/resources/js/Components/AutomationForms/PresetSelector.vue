@@ -108,9 +108,26 @@ const { presets, loading, loadPresets } = useZoneAutomationPresets()
 
 const selectedPreset = ref<ZoneAutomationPreset | null>(null)
 
+/**
+ * Маппинг waterForm.systemType → совместимые preset irrigation_system_type.
+ * drip → drip_tape, drip_emitter
+ * substrate_trays → dwc, ebb_flow, aeroponics
+ * nft → nft
+ */
+const compatibleIrrigationTypes = computed<string[]>(() => {
+  const st = props.waterForm.systemType
+  const map: Record<string, string[]> = {
+    drip: ['drip_tape', 'drip_emitter'],
+    substrate_trays: ['dwc', 'ebb_flow', 'aeroponics'],
+    nft: ['nft'],
+  }
+  return map[st] ?? []
+})
+
 const filteredPresets = computed(() => {
   return presets.value.filter(p => {
     if (props.tanksCount !== undefined && p.tanks_count !== props.tanksCount) return false
+    if (compatibleIrrigationTypes.value.length > 0 && !compatibleIrrigationTypes.value.includes(p.irrigation_system_type)) return false
     return true
   })
 })
@@ -166,5 +183,13 @@ onMounted(() => {
 
 watch(() => props.tanksCount, () => {
   loadPresets()
+})
+
+watch(() => props.waterForm.systemType, () => {
+  // Сбросить выбранный пресет если он больше не совместим
+  if (selectedPreset.value && !filteredPresets.value.some(p => p.id === selectedPreset.value!.id)) {
+    selectedPreset.value = null
+    emit('presetCleared')
+  }
 })
 </script>
