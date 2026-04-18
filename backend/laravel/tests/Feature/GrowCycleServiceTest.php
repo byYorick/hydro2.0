@@ -15,6 +15,7 @@ use App\Services\AutomationConfigCompiler;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
+use App\Services\GrowCycle\GrowCycleAutomationDispatcher;
 use App\Services\GrowCycleService;
 use App\Services\ZoneService;
 use Carbon\Carbon;
@@ -279,9 +280,10 @@ class GrowCycleServiceTest extends TestCase
         $cycleId = 345;
         $idempotencyKey = sprintf('gcs:z%d:c%d:test', $zone->id, $cycleId);
 
-        $method = new \ReflectionMethod($this->service, 'upsertGrowCycleStartIntent');
+        $dispatcher = app(GrowCycleAutomationDispatcher::class);
+        $method = new \ReflectionMethod($dispatcher, 'upsertStartIntent');
         $method->setAccessible(true);
-        $method->invoke($this->service, $zone->id, $cycleId, $idempotencyKey);
+        $method->invoke($dispatcher, $zone->id, $cycleId, $idempotencyKey);
 
         $intentRow = DB::table('zone_automation_intents')
             ->where('idempotency_key', $idempotencyKey)
@@ -362,21 +364,21 @@ class GrowCycleServiceTest extends TestCase
             'token' => 'test-token',
         ]);
 
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
             /** @var array<string, mixed> */
             public array $dispatchState = [];
 
-            protected function isGrowCycleStartDispatchEnabled(): bool
+            protected function isEnabled(): bool
             {
                 return true;
             }
 
-            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
+            protected function shouldDispatchForZone(int $zoneId): bool
             {
                 return true;
             }
 
-            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            protected function postStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
             {
                 preg_match('/^gcs:z(?P<zone>\d+):c(?P<cycle>\d+):/', $idempotencyKey, $matches);
                 $cycleId = (int) ($matches['cycle'] ?? 0);
@@ -414,6 +416,9 @@ class GrowCycleServiceTest extends TestCase
                 ];
             }
         };
+
+        $this->app->instance(GrowCycleAutomationDispatcher::class, $dispatcher);
+        $service = app(GrowCycleService::class);
 
         $cycle = $service->createCycle($zone, $revision, $plant->id, [
             'start_immediately' => false,
@@ -458,15 +463,15 @@ class GrowCycleServiceTest extends TestCase
         $startedCycle = $service->startCycle($cycle->fresh(), Carbon::now());
 
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
-        $this->assertTrue($service->dispatchState['start_snapshot_exists']);
-        $this->assertTrue($service->dispatchState['bundle_exists']);
-        $this->assertSame('RUNNING', $service->dispatchState['cycle_status']);
-        $this->assertNotSame('', (string) $service->dispatchState['bundle_revision']);
-        $this->assertSame($phase->id, $service->dispatchState['start_snapshot_phase_id']);
-        $this->assertSame($phase->id, $service->dispatchState['bundle_phase_id']);
+        $this->assertTrue($dispatcher->dispatchState['start_snapshot_exists']);
+        $this->assertTrue($dispatcher->dispatchState['bundle_exists']);
+        $this->assertSame('RUNNING', $dispatcher->dispatchState['cycle_status']);
+        $this->assertNotSame('', (string) $dispatcher->dispatchState['bundle_revision']);
+        $this->assertSame($phase->id, $dispatcher->dispatchState['start_snapshot_phase_id']);
+        $this->assertSame($phase->id, $dispatcher->dispatchState['bundle_phase_id']);
         $this->assertSame(
-            $service->dispatchState['bundle_revision'],
-            $service->dispatchState['cycle_settings_bundle_revision']
+            $dispatcher->dispatchState['bundle_revision'],
+            $dispatcher->dispatchState['cycle_settings_bundle_revision']
         );
     }
 
@@ -486,15 +491,15 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
             public int $dispatchAttempts = 0;
 
-            protected function isGrowCycleStartDispatchEnabled(): bool
+            protected function isEnabled(): bool
             {
                 return true;
             }
 
-            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
+            protected function shouldDispatchForZone(int $zoneId): bool
             {
                 return true;
             }
@@ -509,7 +514,7 @@ class GrowCycleServiceTest extends TestCase
                 ];
             }
 
-            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            protected function postStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
             {
                 $this->dispatchAttempts++;
 
@@ -517,10 +522,13 @@ class GrowCycleServiceTest extends TestCase
             }
         };
 
+        $this->app->instance(GrowCycleAutomationDispatcher::class, $dispatcher);
+        $service = app(GrowCycleService::class);
+
         $cycle = $service->createCycle($zone, $revision, $plant->id);
         $startedCycle = $service->startCycle($cycle, Carbon::now());
 
-        $this->assertSame(1, $service->dispatchAttempts);
+        $this->assertSame(1, $dispatcher->dispatchAttempts);
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertSame('RUNNING', $zone->fresh()->status);
         $this->assertDatabaseHas('grow_cycles', [
@@ -550,15 +558,15 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
             public int $dispatchAttempts = 0;
 
-            protected function isGrowCycleStartDispatchEnabled(): bool
+            protected function isEnabled(): bool
             {
                 return true;
             }
 
-            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
+            protected function shouldDispatchForZone(int $zoneId): bool
             {
                 return true;
             }
@@ -573,12 +581,12 @@ class GrowCycleServiceTest extends TestCase
                 ];
             }
 
-            protected function growCycleStartDispatchRetryDelayMs(int $attempt): int
+            protected function retryDelayMs(int $attempt): int
             {
                 return 1;
             }
 
-            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            protected function postStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
             {
                 $this->dispatchAttempts++;
 
@@ -599,10 +607,13 @@ class GrowCycleServiceTest extends TestCase
             }
         };
 
+        $this->app->instance(GrowCycleAutomationDispatcher::class, $dispatcher);
+        $service = app(GrowCycleService::class);
+
         $cycle = $service->createCycle($zone, $revision, $plant->id);
         $startedCycle = $service->startCycle($cycle, Carbon::now());
 
-        $this->assertSame(3, $service->dispatchAttempts);
+        $this->assertSame(3, $dispatcher->dispatchAttempts);
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertDatabaseHas('zone_automation_intents', [
             'zone_id' => $zone->id,
@@ -628,15 +639,15 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
             public int $dispatchAttempts = 0;
 
-            protected function isGrowCycleStartDispatchEnabled(): bool
+            protected function isEnabled(): bool
             {
                 return true;
             }
 
-            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            protected function postStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
             {
                 $this->dispatchAttempts++;
 
@@ -650,10 +661,13 @@ class GrowCycleServiceTest extends TestCase
             }
         };
 
+        $this->app->instance(GrowCycleAutomationDispatcher::class, $dispatcher);
+        $service = app(GrowCycleService::class);
+
         $cycle = $service->createCycle($zone, $revision, $plant->id);
         $startedCycle = $service->startCycle($cycle, Carbon::now());
 
-        $this->assertSame(0, $service->dispatchAttempts);
+        $this->assertSame(0, $dispatcher->dispatchAttempts);
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertDatabaseMissing('zone_automation_intents', [
             'zone_id' => $zone->id,

@@ -1,0 +1,2293 @@
+{
+    "version": 1,
+    "generated_at": "2026-04-18T06:23:50+00:00",
+    "tracked_tables_count": 24,
+    "tables": {
+        "ae_commands": {
+            "columns": {
+                "ack_received_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "channel": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "external_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "last_error": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "node_uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "publish_status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "stage_name": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "step_no": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "task_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "terminal_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "terminal_status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "ae_stage_transitions": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "from_stage": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "metadata": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "task_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "to_stage": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "triggered_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "workflow_phase": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "ae_tasks": {
+            "columns": {
+                "claimed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "claimed_by": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "clean_fill_cycle": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "completed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "control_mode_snapshot": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_activated_here": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_attempt": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_amount_ml": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_attempt": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_channel": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_component": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_current_seq_index": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "corr_ec_dose_sequence_json": {
+                    "data_type": "json",
+                    "udt_name": "json",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_duration_ms": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_max_attempts": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_ec_node_uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_limit_policy_logged": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "corr_max_attempts": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_needs_ec": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_needs_ph_down": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_needs_ph_up": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_outcome_success": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_amount_ml": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_attempt": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_channel": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_duration_ms": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_max_attempts": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_ph_node_uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_return_stage_fail": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_return_stage_success": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_snapshot_cmd_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_snapshot_created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "corr_snapshot_event_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "corr_snapshot_source_event_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_stabilization_sec": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "corr_step": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "corr_wait_until": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "current_stage": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "due_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "idempotency_key": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "intent_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "intent_meta": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "intent_source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "intent_trigger": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irr_probe_failure_streak": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "irrigation_bundle_revision": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_decision_config": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "irrigation_decision_degraded": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "irrigation_decision_outcome": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_decision_reason_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_decision_strategy": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_replay_count": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "irrigation_requested_duration_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "irrigation_setup_deadline_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "irrigation_wait_ready_deadline_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "pending_manual_step": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "scheduled_for": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "stage_deadline_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "stage_entered_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "stage_retry_count": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "start_event_emitted": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "task_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "topology": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "workflow_phase": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "ae_zone_leases": {
+            "columns": {
+                "leased_until": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "owner": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "alerts": {
+            "columns": {
+                "category": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "details": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "error_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "first_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "hardware_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "last_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "node_uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "resolved_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "severity": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "automation_config_documents": {
+            "columns": {
+                "checksum": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "namespace": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "schema_version": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "scope_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "scope_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "updated_by": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "automation_effective_bundles": {
+            "columns": {
+                "bundle_revision": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "compiled_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "config": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "inputs_checksum": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "schema_revision": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "scope_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "scope_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "violations": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "channel_bindings": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "direction": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "infrastructure_instance_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "node_channel_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "role": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "commands": {
+            "columns": {
+                "ack_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "channel": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "cmd": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "cmd_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "command_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "context_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "cycle_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "duration_ms": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "failed_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "node_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "params": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "request_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "result_code": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "sent_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "greenhouses": {
+            "columns": {
+                "coordinates": {
+                    "data_type": "json",
+                    "udt_name": "json",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "description": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_type_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "name": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "provisioning_token": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "timezone": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "grow_cycle_phases": {
+            "columns": {
+                "base_temp_c": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "co2_target": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "day_night_enabled": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "YES"
+                },
+                "dli_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "duration_days": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "duration_hours": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "ec_max": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ec_min": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ec_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ended_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "extensions": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "grow_cycle_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "humidity_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "irrigation_duration_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "irrigation_interval_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "irrigation_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_system_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "lighting_photoperiod_hours": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "lighting_start_time": {
+                    "data_type": "time without time zone",
+                    "udt_name": "time",
+                    "is_nullable": "YES"
+                },
+                "mist_duration_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "mist_interval_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "mist_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "name": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "nutrient_calcium_dose_ml_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_calcium_product_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "nutrient_calcium_ratio_pct": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_dose_delay_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "nutrient_ec_dosing_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "nutrient_ec_stop_tolerance": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_magnesium_dose_ml_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_magnesium_product_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "nutrient_magnesium_ratio_pct": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_micro_dose_ml_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_micro_product_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "nutrient_micro_ratio_pct": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "nutrient_npk_dose_ml_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_npk_product_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "nutrient_npk_ratio_pct": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "nutrient_program_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "nutrient_solution_volume_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ph_max": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ph_min": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ph_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "phase_advance_strategy": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "phase_index": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "progress_model": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "recipe_revision_phase_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "substrate_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "target_gdd": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "temp_air_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "grow_cycles": {
+            "columns": {
+                "actual_harvest_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "batch_label": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "current_phase_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "current_stage_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "current_stage_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "current_step_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "expected_harvest_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "notes": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "phase_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "plant_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "planting_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "progress_meta": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "recipe_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "recipe_revision_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "recipe_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "settings": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "step_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "node_channels": {
+            "columns": {
+                "channel": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "config": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "is_active": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "last_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "metric": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "node_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "unit": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "nodes": {
+            "columns": {
+                "config": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "critical_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "error_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "first_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "free_heap_bytes": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "fw_version": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "hardware_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "hardware_revision": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "last_heartbeat_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "last_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "lifecycle_state": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "name": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "pending_zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "rssi": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "uptime_seconds": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "validated": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "warning_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "pid_state": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "current_zone": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "feedforward_bias": {
+                    "data_type": "double precision",
+                    "udt_name": "float8",
+                    "is_nullable": "NO"
+                },
+                "hold_until": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "integral": {
+                    "data_type": "double precision",
+                    "udt_name": "float8",
+                    "is_nullable": "NO"
+                },
+                "last_correction_kind": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "last_dose_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "last_measured_value": {
+                    "data_type": "double precision",
+                    "udt_name": "float8",
+                    "is_nullable": "YES"
+                },
+                "last_measurement_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "last_output_ms": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "no_effect_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "pid_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "prev_derivative": {
+                    "data_type": "double precision",
+                    "udt_name": "float8",
+                    "is_nullable": "NO"
+                },
+                "prev_error": {
+                    "data_type": "double precision",
+                    "udt_name": "float8",
+                    "is_nullable": "YES"
+                },
+                "stats": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "pump_calibrations": {
+            "columns": {
+                "actual_ml": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "component": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "curve_points": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "deadtime_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "delta_ec_ms": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "duration_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "ec_after_ms": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ec_before_ms": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "is_active": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "k_ms_per_ml_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "meta": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "min_effective_ml": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "ml_per_sec": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "NO"
+                },
+                "mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "node_channel_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "quality_score": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "sample_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "temperature_c": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "test_volume_l": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "transport_delay_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "valid_from": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "valid_to": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "sensors": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "is_active": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "label": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "last_read_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "node_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "scope": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "specs": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "unit": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "telemetry_last": {
+            "columns": {
+                "last_quality": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "last_ts": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "last_value": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "NO"
+                },
+                "sensor_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "telemetry_samples": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "cycle_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "metadata": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "quality": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "sensor_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "ts": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "value": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "unassigned_node_errors": {
+            "columns": {
+                "count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "NO"
+                },
+                "first_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "hardware_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "last_payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "last_seen_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "node_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "severity": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "topic": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "zone_automation_intents": {
+            "columns": {
+                "claimed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "completed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "idempotency_key": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "intent_source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "intent_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "irrigation_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "irrigation_requested_duration_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "YES"
+                },
+                "max_retries": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "not_before": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "retry_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "task_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "topology": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "zone_events": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "NO"
+                },
+                "details": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "entity_id": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "entity_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "payload_json": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "processed_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "server_ts": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "zone_workflow_state": {
+            "columns": {
+                "payload": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "NO"
+                },
+                "scheduler_task_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "started_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "version": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "workflow_phase": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "zone_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "zones": {
+            "columns": {
+                "automation_runtime": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "capabilities": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "config_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "config_mode_changed_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "config_mode_changed_by": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "config_revision": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "control_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "description": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "hardware_profile": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "health_score": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "health_status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "live_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "live_until": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "name": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "preset_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "settings": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "solution_started_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "uid": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
+                    "is_nullable": "YES"
+                },
+                "water_state": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                }
+            }
+        }
+    }
+}

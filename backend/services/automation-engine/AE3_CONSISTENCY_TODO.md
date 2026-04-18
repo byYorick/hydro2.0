@@ -1,6 +1,7 @@
 # AE3 Consistency — что сделано, что осталось
 
 **Ветка:** `ae3`
+**Статус:** Завершён (2026-04-18). Batch A + Batch F (Gap 7 cleanup) выполнены.
 **Цель сессии:** довести автоматику AE3 до консистентного состояния после аудита.
 
 ---
@@ -45,55 +46,30 @@
 
 ---
 
-## 🔄 В процессе (Batch F / Gap 7 cleanup) — начато, не доделано
+## ✅ Сделано (Batch F / Gap 7 cleanup — удалён dead ReconcileCommandUseCase fallback)
 
-**Задача:** удалить мёртвый fallback-путь в `StartupRecoveryUseCase._recover_task`, который идёт через `ReconcileCommandUseCase`. Этот путь срабатывает только если `command_gateway is None` ИЛИ `task.topology` не входит в `{"two_tank", "two_tank_drip_substrate_trays"}`. В реальности:
+**Задача (закрыта):** удалён мёртвый fallback-путь в `StartupRecoveryUseCase._recover_task` через `ReconcileCommandUseCase`. Путь был недостижим в production:
 - bootstrap всегда передаёт `command_gateway`
 - `TopologyRegistry` содержит только two_tank топологии
 
-→ fallback путь никогда не исполняется в production.
+→ fallback никогда не исполнялся. Сейчас `_recover_task` напрямую вызывает `_recover_native_two_tank_task`.
 
-### Что надо удалить
+### Что удалено
 
-**`ae3lite/application/use_cases/startup_recovery.py`:**
-- Импорт `CommandReconcileError` (строка 12)
-- Параметр `reconcile_command_use_case` в `__init__` (строки 30, 37)
-- Fallback блок в `_recover_task` (строки 104–144):
-  - `try: result = await self._reconcile_command_use_case.run(...)` + except
-  - `if result.is_terminal: ...`
-  - `if result.legacy_status is None: ...`
-  - `if task.status in {"claimed", "running"}: ...`
-- Helper методы (становятся dead code):
-  - `_missing_command_error_code` (426–429)
-  - `_reconcile_error_code` (431–434)
-  - `_missing_command_error_message` (436–439)
-- После удаления: проверка `if self._command_gateway is not None and self._is_two_tank_task(task):` становится безусловной. Рассмотреть: убрать guard или оставить как защитный.
+**Код:**
+- `ae3lite/application/use_cases/reconcile_command.py` — файл удалён
+- `ae3lite/application/dto/command_reconcile_result.py` — файл удалён
+- `ae3lite/application/use_cases/__init__.py` — импорт/экспорт `ReconcileCommandUseCase`
+- `ae3lite/application/dto/__init__.py` — экспорт `CommandReconcileResult`
+- `ae3lite/application/use_cases/startup_recovery.py` — параметр `reconcile_command_use_case`, импорт `CommandReconcileError`, fallback блок в `_recover_task`, helper'ы `_missing_command_error_code`/`_reconcile_error_code`/`_missing_command_error_message`
+- `ae3lite/runtime/bootstrap.py` — импорт `ReconcileCommandUseCase`, создание `reconcile_command_use_case`, аргумент в `StartupRecoveryUseCase(...)`
+- `ae3lite/domain/errors.py` — класс `CommandReconcileError`
 
-**`ae3lite/runtime/bootstrap.py`:**
-- Импорт `ReconcileCommandUseCase` (строка 20)
-- Блок создания `reconcile_command_use_case = ReconcileCommandUseCase(...)` (строки 89–92)
-- Аргумент `reconcile_command_use_case=reconcile_command_use_case` в конструкторе `StartupRecoveryUseCase` (строка 140)
+**Тесты:**
+- `test_ae3lite_reconcile_command_integration.py` — файл удалён
+- `test_ae3lite_startup_recovery_integration.py`, `test_ae3lite_recovery_topology.py`, `test_ae3lite_startup_recovery_metrics.py`, `test_ae3lite_runtime_worker_integration.py`, `test_ae3lite_two_tank_cycle_start_integration.py` — убраны все упоминания `reconcile_command_use_case` и `_MockReconcileUseCase`
 
-**`ae3lite/application/use_cases/__init__.py`:**
-- Импорт `ReconcileCommandUseCase` (строка 12)
-- Экспорт `"ReconcileCommandUseCase"` (строка 27)
-
-**`ae3lite/application/use_cases/reconcile_command.py`:** полностью удалить файл (после удаления всех ссылок).
-
-**`ae3lite/domain/errors.py`:** удалить класс `CommandReconcileError` (строка 190).
-
-**`ae3lite/application/dto/command_reconcile_result.py`:** удалить файл (DTO используется только в `reconcile_command.py` и его тестах).
-
-**`ae3lite/application/dto/__init__.py`:** удалить экспорт `CommandReconcileResult`.
-
-### Тесты — обновить или удалить
-
-- **`test_ae3lite_reconcile_command_integration.py`** — удалить файл полностью (тестирует только удаляемый `ReconcileCommandUseCase`).
-- **`test_ae3lite_startup_recovery_integration.py`** — убрать конструкцию `ReconcileCommandUseCase` и аргумент из `StartupRecoveryUseCase(...)` (строки 259, 263, 379, 383, 564). Проверить, что тесты всё ещё валидны (они должны тестировать только native two_tank путь).
-- **`test_ae3lite_recovery_topology.py`** — удалить класс `_MockReconcileUseCase` и убрать аргумент `reconcile_command_use_case=...` из всех вызовов `_make_use_case`/`StartupRecoveryUseCase` (строки 235, 296, 344, 364). Убрать импорт `CommandReconcileResult` если есть.
-- **`test_ae3lite_startup_recovery_metrics.py`** — убрать аргумент `reconcile_command_use_case=object()` (строка 31).
-- **`test_ae3lite_runtime_worker_integration.py`** — убрать `reconcile_command_use_case=type("ReconcileNoop", ...)()` (строка 353).
-- **`test_ae3lite_two_tank_cycle_start_integration.py`** — убрать `reconcile_command_use_case=type("ReconcileNoop", ...)()` (строка 435).
+**Верификация (2026-04-18):** `grep -r "CommandReconcileError\|CommandReconcileResult\|ReconcileCommandUseCase\|reconcile_command_use_case" backend/services/automation-engine/` → только упоминания в этом TODO-документе.
 
 ### Как проверять после cleanup
 
@@ -169,7 +145,7 @@ docker compose -f backend/docker-compose.dev.yml logs automation-engine | tail -
 | 3 | `prepare_recirc_window` stale | critical | ✅ исправлен | Batch A |
 | 5 | `AwaitReadyHandler` stale phase | major | ❌ ложный | snapshot перезагружается на каждом вызове `execute_task.run()` через worker loop |
 | 6 | task_override тесты неполные | minor | ✅ исправлен | Batch A (5 новых тестов) |
-| 7 | `StartupRecovery` не покрывает все topology | major | ⚠️ dead code | Только two_tank существует; fallback путь не исполняется. В процессе удаления. |
+| 7 | `StartupRecovery` не покрывает все topology | major | ✅ исправлен | Batch F: dead fallback удалён, `_recover_task` прямо делегирует в `_recover_native_two_tank_task`. |
 | 8 | `exit_correction` пересчитывает deadline | major | ❌ ложный | `solution_fill_check` и `irrigation_check` имеют `on_corr_success=self`, значит `same_stage=True` в `_apply_transition` → deadline preserved |
 | 9 | Lease heartbeat отсутствует | major | ❌ ложный | `worker.py:123` уже стартует `_lease_heartbeat` background task с `lease_lost_event` |
 | 10 | Snapshot stale между poll | major | ❌ ложный | Worker loop — единственный механизм итерации; каждый `execute_task.run()` строит snapshot заново |
@@ -183,15 +159,13 @@ docker compose -f backend/docker-compose.dev.yml logs automation-engine | tail -
 
 ---
 
-## 🚀 Рекомендуемый порядок действий
+## 🚀 Итог
 
-1. **Завершить Gap 7 cleanup** (см. раздел "В процессе") — ~15 файлов под правку/удаление, но механические изменения.
-2. **Прогнать unit-тесты** → ожидать ~880 passed минус удалённые интеграционные тесты.
-3. **Прогнать integration-тесты** startup_recovery.
-4. **Коммит** с разделением на две группы (если нужна аккуратная история):
-   - `refactor: propagate task_override from all command-publishing handlers (AE3 consistency Batch A)`
-   - `refactor: remove dead ReconcileCommandUseCase fallback from startup recovery (Gap 7 cleanup)`
-5. Опционально: E2E smoke (E83/E86/E109).
+Batch A + Batch F полностью выполнены. Все 15 gap'ов из аудита закрыты: 4 реальных исправлены, 10 отфильтрованы как false positive, 1 (Gap 7) удалён как dead code.
+
+Коммиты:
+- `refactor: propagate task_override from all command-publishing handlers (AE3 consistency Batch A)`
+- `refactor: remove dead ReconcileCommandUseCase fallback from startup recovery (Gap 7 cleanup)`
 
 ---
 

@@ -1,7 +1,8 @@
 # AE3 Canonicalization Plan
 
 **Ветка:** `ae3`  
-**Статус:** Завершён  
+**Статус:** Завершён (2026-04-18)
+**См. также:** [`backend/services/automation-engine/AE3_CONSISTENCY_TODO.md`](../../backend/services/automation-engine/AE3_CONSISTENCY_TODO.md) — post-canonicalization consistency audit (Batch A + Batch F, тоже завершён)
 **Цель:** Убрать технический долг: мёртвый код, дублирование тестов, устаревший адаптер перевода JSONB-payload в типизированные данные.
 
 ---

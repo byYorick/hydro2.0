@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MAX_LINES="${MAX_FILE_LINES:-900}"
+MAX_LINES="${MAX_FILE_LINES:-500}"
 MAX_INCREASE="${MAX_FILE_LINES_INCREASE:-30}"
 EXCEPTIONS_FILE="${FILE_SIZE_GUARD_EXCEPTIONS_FILE:-backend/laravel/scripts/file-size-guard-exceptions.txt}"
 

@@ -31,6 +31,31 @@ from metrics import (
     TELEMETRY_QUEUE_AGE,
 )
 from models import TelemetryPayloadModel, TelemetrySampleModel
+from telemetry.anomaly_alerts import (
+    emit_telemetry_anomaly_alert as _emit_telemetry_anomaly_alert,
+    emit_telemetry_anomaly_resolved_alert as _emit_telemetry_anomaly_resolved_alert,
+)
+from telemetry.ingress import (
+    REDIS_PUSH_MAX_RETRIES,
+    REDIS_PUSH_RETRY_BACKOFF_BASE,
+    handle_telemetry,
+    push_with_retry as _push_with_retry,
+)
+from telemetry.helpers import (
+    build_anomaly_throttle_key as _build_anomaly_throttle_key,
+    build_realtime_key as _build_realtime_key,
+    build_realtime_key_from_update as _build_realtime_key_from_update,
+    build_sensor_label as _build_sensor_label,
+    effective_anomaly_throttle_sec as _effective_anomaly_throttle_sec,
+    filter_existing_sensor_ids as _filter_existing_sensor_ids,
+    infer_sensor_type as _infer_sensor_type,
+    is_sensor_fk_error as _is_sensor_fk_error,
+    is_temp_namespace as _is_temp_namespace,
+    normalize_metric_type as _normalize_metric_type,
+    normalize_ts_for_db as _normalize_ts_for_db,
+    parse_node_info as _parse_node_info,
+    to_timestamp_ms as _to_timestamp_ms,
+)
 from utils import (
     MAX_PAYLOAD_SIZE,
     _calculate_broadcast_backoff,
@@ -47,10 +72,6 @@ logger = logging.getLogger(__name__)
 SIMULATION_TELEMETRY_EVENTS_ENABLED = os.getenv("SIMULATION_TELEMETRY_EVENTS", "0") in ("1", "true", "True", "yes", "Yes")
 SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC = float(os.getenv("SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC", "10"))
 
-# Конфигурация retry логики для Redis
-REDIS_PUSH_MAX_RETRIES = 3
-REDIS_PUSH_RETRY_BACKOFF_BASE = 2
-
 # Глобальный кеш для резолва zone_id и node_id (с TTL refresh)
 _zone_cache: dict[tuple[str, Optional[str]], int] = {}
 _node_cache: dict[
@@ -62,34 +83,7 @@ _sensor_cache: "OrderedDict[tuple[int, Optional[int], str, str], int]" = Ordered
 _sensor_cache_max_size = int(os.getenv("SENSOR_CACHE_MAX_SIZE", "5000"))
 _cache_last_update = 0.0
 _cache_ttl = 60.0
-_anomaly_alert_last_sent: dict[str, float] = {}
 
-# «Шумные» infra-коды: в dev/e2e (APP_ENV=local|testing) увеличиваем интервал,
-# либо задаётся TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC (секунды).
-_INFRA_TELEMETRY_LONG_THROTTLE_CODES = frozenset(
-    {
-        "infra_telemetry_node_not_found",
-        "infra_telemetry_sample_dropped_node_not_found",
-        "infra_telemetry_invalid_timestamp",
-    }
-)
-
-
-def _effective_anomaly_throttle_sec(code: str) -> float:
-    base = float(os.getenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "300"))
-    if code not in _INFRA_TELEMETRY_LONG_THROTTLE_CODES:
-        return base
-    override = float(os.getenv("TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC", "0") or 0)
-    if override > 0:
-        return override
-    app_env = (os.getenv("APP_ENV", "") or "").strip().lower()
-    if app_env in ("testing", "local"):
-        return max(base, 86400.0)
-    return base
-_anomaly_resolved_last_sent: dict[str, float] = {}
-_anomaly_resolved_throttle_sec = float(
-    os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300")
-)
 _node_unassigned_last_seen: dict[tuple[int, str], float] = {}
 _node_unassigned_recovery_grace_sec = float(
     os.getenv("TELEMETRY_NODE_UNASSIGNED_RECOVERY_GRACE_SEC", "5")
@@ -106,80 +100,6 @@ _broadcast_backoff_until: Optional[float] = None
 
 _realtime_updates: "OrderedDict[tuple, dict]" = OrderedDict()
 _realtime_lock = asyncio.Lock()
-
-
-def _is_sensor_fk_error(error: Exception) -> bool:
-    message = str(error)
-    return (
-        "telemetry_last_sensor_id_foreign" in message
-        or "telemetry_samples_sensor_id_foreign" in message
-        or "sensors_greenhouse_id_foreign" in message
-        or "sensors_zone_id_foreign" in message
-        or "sensors_node_id_foreign" in message
-        or ("foreign key" in message and "sensors" in message and "sensor_id" in message)
-        or ('foreign key' in message and 'table "sensors"' in message)
-    )
-
-
-async def _filter_existing_sensor_ids(sensor_ids: list[int]) -> set[int]:
-    if not sensor_ids:
-        return set()
-    rows = await fetch(
-        """
-        SELECT id
-        FROM sensors
-        WHERE id = ANY($1::bigint[])
-        """,
-        sensor_ids,
-    )
-    return {int(row["id"]) for row in rows if row.get("id") is not None}
-
-
-def _normalize_metric_type(metric_type: str) -> str:
-    return (metric_type or "").strip().upper()
-
-
-def _infer_sensor_type(metric_type: str) -> str:
-    normalized = _normalize_metric_type(metric_type)
-    # Дискретные датчики уровня приводим к каноническому типу WATER_LEVEL.
-    if normalized == "WATER_LEVEL_SWITCH":
-        return "WATER_LEVEL"
-    valid_types = {
-        "PH",
-        "EC",
-        "TEMPERATURE",
-        "HUMIDITY",
-        "CO2",
-        "LIGHT_INTENSITY",
-        "WATER_LEVEL",
-        "FLOW_RATE",
-        "PUMP_CURRENT",
-        "SOIL_MOISTURE",
-        "SOIL_TEMP",
-        "PRESSURE",
-        "WIND_SPEED",
-        "OUTSIDE_TEMP",
-        "WIND_DIRECTION",
-        "OTHER",
-    }
-    if normalized in valid_types:
-        return normalized
-    return "OTHER"
-
-
-def _build_sensor_label(metric_type: str, channel: Optional[str], sensor_type: str) -> str:
-    if channel:
-        return channel
-    if metric_type:
-        return metric_type
-    return sensor_type
-
-
-def _normalize_ts_for_db(sample_ts: Optional[datetime]) -> datetime:
-    ts_value = sample_ts or utcnow()
-    if getattr(ts_value, "tzinfo", None):
-        return ts_value.astimezone(timezone.utc).replace(tzinfo=None)
-    return ts_value.replace(tzinfo=None)
 
 
 def _sensor_cache_touch(key: tuple[int, Optional[int], str, str]) -> None:
@@ -224,65 +144,6 @@ def _shutdown_event():
     return state.shutdown_event
 
 
-def _to_timestamp_ms(timestamp: Optional[datetime]) -> int:
-    if timestamp is None:
-        return int(time.time() * 1000)
-
-    if isinstance(timestamp, datetime):
-        if timestamp.tzinfo is None:
-            timestamp_utc = timestamp.replace(tzinfo=timezone.utc)
-        else:
-            timestamp_utc = timestamp
-        return int(timestamp_utc.timestamp() * 1000)
-
-    return int(timestamp * 1000)
-
-
-def _build_realtime_key(
-    sensor_id: Optional[int],
-    zone_id: int,
-    node_id: Optional[int],
-    metric_type: str,
-    channel: Optional[str],
-) -> tuple:
-    if sensor_id is not None:
-        return ("sensor", sensor_id)
-    return ("legacy", zone_id, node_id or 0, metric_type or "", channel or "")
-
-
-def _build_realtime_key_from_update(update: dict) -> tuple:
-    return (
-        "legacy",
-        int(update.get("zone_id") or 0),
-        int(update.get("node_id") or 0),
-        str(update.get("metric_type") or ""),
-        str(update.get("channel") or ""),
-    )
-
-
-def _build_anomaly_throttle_key(
-    *,
-    code: str,
-    gh_uid: Optional[str],
-    zone_uid: Optional[str],
-    node_uid: Optional[str],
-    channel: Optional[str],
-) -> str:
-    return "|".join(
-        [
-            code,
-            gh_uid or "-",
-            zone_uid or "-",
-            node_uid or "-",
-            channel or "-",
-        ]
-    )
-
-
-def _is_temp_namespace(gh_uid: Optional[str], zone_uid: Optional[str]) -> bool:
-    return (gh_uid or "").startswith("gh-temp") or (zone_uid or "").startswith("zn-temp")
-
-
 def _should_emit_warning(
     key: tuple[str, str, str, str],
     now_ts: Optional[float] = None,
@@ -305,131 +166,6 @@ def _log_warning_throttled(
         logger.warning(message, extra=extra)
     else:
         logger.debug(message, extra=extra)
-
-
-def _parse_node_info(
-    node_info: object,
-) -> tuple[Optional[int], Optional[int], Optional[int]]:
-    if not isinstance(node_info, tuple) or len(node_info) < 2:
-        return None, None, None
-    node_id_raw = node_info[0]
-    node_zone_id_raw = node_info[1]
-    pending_zone_id_raw = node_info[2] if len(node_info) >= 3 else None
-    node_id = int(node_id_raw) if isinstance(node_id_raw, int) else None
-    node_zone_id = (
-        int(node_zone_id_raw) if isinstance(node_zone_id_raw, int) else None
-    )
-    pending_zone_id = (
-        int(pending_zone_id_raw)
-        if isinstance(pending_zone_id_raw, int)
-        else None
-    )
-    return node_id, node_zone_id, pending_zone_id
-
-
-async def _emit_telemetry_anomaly_alert(
-    *,
-    code: str,
-    message: str,
-    zone_id: Optional[int] = None,
-    gh_uid: Optional[str] = None,
-    zone_uid: Optional[str] = None,
-    node_uid: Optional[str] = None,
-    channel: Optional[str] = None,
-    metric_type: Optional[str] = None,
-    details: Optional[dict] = None,
-) -> None:
-    throttle_key = _build_anomaly_throttle_key(
-        code=code,
-        gh_uid=gh_uid,
-        zone_uid=zone_uid,
-        node_uid=node_uid,
-        channel=channel,
-    )
-    throttle_sec = _effective_anomaly_throttle_sec(code)
-    now = time.time()
-    last_sent = _anomaly_alert_last_sent.get(throttle_key)
-    if last_sent and (now - last_sent) < throttle_sec:
-        return
-
-    payload_details = dict(details) if isinstance(details, dict) else {}
-    payload_details.update(
-        {
-            "gh_uid": gh_uid,
-            "zone_uid": zone_uid,
-            "node_uid": node_uid,
-            "channel": channel,
-            "metric_type": metric_type,
-            "throttle_key": throttle_key,
-            "throttle_sec": throttle_sec,
-        }
-    )
-    payload_details = {k: v for k, v in payload_details.items() if v is not None}
-
-    sent = await send_infra_alert(
-        code=code,
-        alert_type="Telemetry Anomaly",
-        message=message,
-        severity="warning",
-        zone_id=zone_id,
-        service="history-logger",
-        component="telemetry_processing",
-        node_uid=node_uid,
-        channel=channel,
-        details=payload_details,
-    )
-    if sent:
-        _anomaly_alert_last_sent[throttle_key] = now
-
-
-async def _emit_telemetry_anomaly_resolved_alert(
-    *,
-    code: str,
-    message: str,
-    zone_id: int,
-    gh_uid: Optional[str] = None,
-    zone_uid: Optional[str] = None,
-    node_uid: Optional[str] = None,
-    channel: Optional[str] = None,
-    metric_type: Optional[str] = None,
-) -> None:
-    throttle_key = "|".join(
-        [
-            "resolved",
-            code,
-            str(zone_id),
-            node_uid or "-",
-        ]
-    )
-    now = time.time()
-    last_sent = _anomaly_resolved_last_sent.get(throttle_key)
-    if last_sent and (now - last_sent) < _anomaly_resolved_throttle_sec:
-        return
-
-    details = {
-        "gh_uid": gh_uid,
-        "zone_uid": zone_uid,
-        "node_uid": node_uid,
-        "channel": channel,
-        "metric_type": metric_type,
-        "throttle_key": throttle_key,
-        "throttle_sec": _anomaly_resolved_throttle_sec,
-    }
-    details = {k: v for k, v in details.items() if v is not None}
-
-    sent = await send_infra_resolved_alert(
-        code=code,
-        alert_type="Telemetry Anomaly",
-        message=message,
-        zone_id=zone_id,
-        service="history-logger",
-        component="telemetry_processing",
-        node_uid=node_uid,
-        channel=channel,
-        details=details,
-    )
-    if sent:
-        _anomaly_resolved_last_sent[throttle_key] = now
 
 
 async def _enqueue_realtime_update(key: tuple, update: dict) -> None:
@@ -647,365 +383,6 @@ async def process_realtime_queue() -> None:
     await _flush_realtime_updates(force=True)
     logger.info("Realtime telemetry broadcaster stopped")
 
-async def _push_with_retry(
-    queue_item: TelemetryQueueItem, max_retries: int = REDIS_PUSH_MAX_RETRIES
-) -> bool:
-    """
-    Добавить элемент в Redis queue с retry логикой и exponential backoff.
-    """
-    if not _get_telemetry_queue():
-        return False
-
-    for attempt in range(max_retries):
-        try:
-            success = await _get_telemetry_queue().push(queue_item)
-            if success:
-                if attempt > 0:
-                    logger.info(
-                        f"Successfully pushed to Redis queue after {attempt + 1} attempts"
-                    )
-                return True
-
-            if attempt == 0:
-                logger.warning(
-                    "Redis queue full, cannot push telemetry: "
-                    f"node_uid={queue_item.node_uid}, metric_type={queue_item.metric_type}"
-                )
-            return False
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                backoff_seconds = REDIS_PUSH_RETRY_BACKOFF_BASE**attempt
-                logger.warning(
-                    "Failed to push to Redis queue "
-                    f"(attempt {attempt + 1}/{max_retries}), retrying in {backoff_seconds}s: {e}"
-                )
-                await asyncio.sleep(backoff_seconds)
-            else:
-                logger.error(
-                    f"Failed to push to Redis queue after {max_retries} attempts: {e}",
-                    exc_info=True,
-                )
-                return False
-
-    return False
-
-
-async def handle_telemetry(topic: str, payload: bytes) -> None:
-    """
-    Обработчик телеметрии из MQTT.
-    Добавляет данные в Redis queue для последующей обработки.
-    """
-    try:
-        data = _parse_json(payload)
-        if not data:
-            logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
-            return
-
-        if isinstance(data, dict):
-            set_trace_id_from_payload(data, fallback_generate=False)
-
-        if isinstance(data, dict) and "timestamp" in data and "ts" not in data:
-            logger.warning(
-                "Legacy telemetry format without ts field, dropping message",
-                extra={
-                    "topic": topic,
-                    "payload_keys": list(data.keys()),
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="legacy_timestamp").inc()
-            return
-
-        try:
-            validated_data = TelemetryPayloadModel(**data)
-        except Exception as e:
-            logger.warning(
-                "Invalid telemetry payload",
-                extra={
-                    "error": str(e),
-                    "topic": topic,
-                    "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
-                    "payload_size": len(payload),
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
-            return
-
-        TELEM_RECEIVED.inc()
-
-        gh_uid = _extract_gh_uid(topic)
-        zone_uid = _extract_zone_uid(topic)
-        node_uid = _extract_node_uid(topic)
-        channel = _extract_channel_from_topic(topic)
-
-        if not zone_uid and validated_data.zone_uid:
-            zone_uid = validated_data.zone_uid
-        if not node_uid and validated_data.node_uid:
-            node_uid = validated_data.node_uid
-
-        MIN_VALID_TIMESTAMP = 1_000_000_000
-        MAX_TIMESTAMP_DRIFT_SEC = 300
-        server_timestamp = time.time()
-        server_time = datetime.fromtimestamp(server_timestamp, timezone.utc)
-
-        raw_ts = validated_data.ts
-        if isinstance(raw_ts, str):
-            stripped_ts = raw_ts.strip()
-            try:
-                if stripped_ts.replace(".", "", 1).isdigit():
-                    raw_ts = float(stripped_ts)
-            except Exception:
-                pass
-
-        ts = None
-        if raw_ts:
-            try:
-                if isinstance(raw_ts, (int, float)):
-                    ts_value = float(raw_ts)
-                    if ts_value > 1_000_000_000_000:
-                        ts_value = ts_value / 1000.0
-                    if ts_value >= MIN_VALID_TIMESTAMP:
-                        drift = ts_value - server_timestamp
-                        if drift > MAX_TIMESTAMP_DRIFT_SEC:
-                            logger.warning(
-                                "Timestamp from device is skewed (drift too large), using server time",
-                                extra={
-                                    "device_ts": ts_value,
-                                    "server_ts": server_timestamp,
-                                    "drift_sec": drift,
-                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                    "topic": topic,
-                                    "node_uid": node_uid,
-                                    "zone_uid": zone_uid,
-                                },
-                            )
-                            await _emit_telemetry_anomaly_alert(
-                                code="infra_telemetry_timestamp_skew",
-                                message="Telemetry timestamp is too far in the future, fallback to server time",
-                                gh_uid=gh_uid,
-                                zone_uid=zone_uid,
-                                node_uid=node_uid,
-                                channel=None,
-                                metric_type=validated_data.metric_type,
-                                details={
-                                    "device_ts": ts_value,
-                                    "server_ts": server_timestamp,
-                                    "drift_sec": drift,
-                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                    "topic": topic,
-                                },
-                            )
-                            ts = server_time
-                        else:
-                            if drift < -MAX_TIMESTAMP_DRIFT_SEC:
-                                logger.warning(
-                                    "Timestamp from device is older than expected, preserving for freshness checks",
-                                    extra={
-                                        "device_ts": ts_value,
-                                        "server_ts": server_timestamp,
-                                        "drift_sec": drift,
-                                        "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                        "topic": topic,
-                                        "node_uid": node_uid,
-                                        "zone_uid": zone_uid,
-                                    },
-                                )
-                            ts = datetime.fromtimestamp(ts_value)
-                    else:
-                        logger.warning(
-                            "Invalid timestamp from firmware (likely uptime), using server time",
-                            extra={
-                                "ts": ts_value,
-                                "topic": topic,
-                                "node_uid": node_uid,
-                                "zone_uid": zone_uid,
-                            },
-                        )
-                        await _emit_telemetry_anomaly_alert(
-                            code="infra_telemetry_invalid_timestamp",
-                            message="Telemetry timestamp from device is invalid, fallback to server time",
-                            gh_uid=gh_uid,
-                            zone_uid=zone_uid,
-                            node_uid=node_uid,
-                            channel=None,
-                            metric_type=validated_data.metric_type,
-                            details={
-                                "device_ts": ts_value,
-                                "topic": topic,
-                                "reason": "numeric_timestamp_below_min_valid",
-                            },
-                        )
-                elif isinstance(raw_ts, str):
-                    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                    ts_timestamp = ts.timestamp()
-                    if ts_timestamp < MIN_VALID_TIMESTAMP:
-                        logger.warning(
-                            "Invalid timestamp from firmware (likely uptime), using server time",
-                            extra={
-                                "ts": ts_timestamp,
-                                "topic": topic,
-                                "node_uid": node_uid,
-                                "zone_uid": zone_uid,
-                            },
-                        )
-                        await _emit_telemetry_anomaly_alert(
-                            code="infra_telemetry_invalid_timestamp",
-                            message="Telemetry timestamp from device is invalid, fallback to server time",
-                            gh_uid=gh_uid,
-                            zone_uid=zone_uid,
-                            node_uid=node_uid,
-                            channel=None,
-                            metric_type=validated_data.metric_type,
-                            details={
-                                "device_ts": ts_timestamp,
-                                "topic": topic,
-                                "reason": "iso_timestamp_below_min_valid",
-                            },
-                        )
-                        ts = None
-                    else:
-                        drift = ts_timestamp - server_timestamp
-                        if drift > MAX_TIMESTAMP_DRIFT_SEC:
-                            logger.warning(
-                                "Timestamp from device is skewed (drift too large), using server time",
-                                extra={
-                                    "device_ts": ts_timestamp,
-                                    "server_ts": server_timestamp,
-                                    "drift_sec": drift,
-                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                    "topic": topic,
-                                    "node_uid": node_uid,
-                                    "zone_uid": zone_uid,
-                                },
-                            )
-                            await _emit_telemetry_anomaly_alert(
-                                code="infra_telemetry_timestamp_skew",
-                                message="Telemetry timestamp is too far in the future, fallback to server time",
-                                gh_uid=gh_uid,
-                                zone_uid=zone_uid,
-                                node_uid=node_uid,
-                                channel=None,
-                                metric_type=validated_data.metric_type,
-                                details={
-                                    "device_ts": ts_timestamp,
-                                    "server_ts": server_timestamp,
-                                    "drift_sec": drift,
-                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                    "topic": topic,
-                                },
-                            )
-                            ts = None
-                        elif drift < -MAX_TIMESTAMP_DRIFT_SEC:
-                            logger.warning(
-                                "Timestamp from device is older than expected (string), preserving for freshness checks",
-                                extra={
-                                    "device_ts": ts_timestamp,
-                                    "server_ts": server_timestamp,
-                                    "drift_sec": drift,
-                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                    "topic": topic,
-                                    "node_uid": node_uid,
-                                    "zone_uid": zone_uid,
-                                },
-                            )
-            except Exception as e:
-                logger.warning(
-                    "Failed to parse timestamp, using server time",
-                    extra={
-                        "ts": validated_data.ts,
-                        "error": str(e),
-                        "topic": topic,
-                        "node_uid": node_uid,
-                        "zone_uid": zone_uid,
-                    },
-                )
-                await _emit_telemetry_anomaly_alert(
-                    code="infra_telemetry_timestamp_parse_failed",
-                    message="Failed to parse telemetry timestamp, fallback to server time",
-                    gh_uid=gh_uid,
-                    zone_uid=zone_uid,
-                    node_uid=node_uid,
-                    channel=None,
-                    metric_type=validated_data.metric_type,
-                    details={
-                        "topic": topic,
-                        "raw_ts": validated_data.ts,
-                        "error": str(e),
-                    },
-                )
-
-        if ts is None:
-            ts = server_time
-
-        metric_type = validated_data.metric_type
-        if not metric_type:
-            logger.warning(
-                "Missing metric_type in telemetry payload",
-                extra={
-                    "topic": topic,
-                    "node_uid": node_uid,
-                    "zone_uid": zone_uid,
-                    "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
-                },
-            )
-            TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
-            return
-
-        channel_name = validated_data.channel or channel
-        filtered_raw = _filter_raw_data(data)
-
-        queue_item = TelemetryQueueItem(
-            node_uid=node_uid or "",
-            zone_uid=zone_uid,
-            gh_uid=gh_uid,
-            metric_type=metric_type,
-            value=validated_data.value,
-            ts=ts,
-            raw=filtered_raw,
-            channel=channel_name,
-            enqueued_at=utcnow(),
-        )
-
-        logger.info(
-            f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}"
-        )
-
-        if _get_telemetry_queue():
-            start_time = time.time()
-            success = await _push_with_retry(queue_item)
-            redis_duration = time.time() - start_time
-            REDIS_OPERATION_DURATION.observe(redis_duration)
-
-            if not success:
-                logger.warning(
-                    f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}"
-                )
-                TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
-                logger.error(
-                    "Failed to push telemetry to queue after retries, dropping message",
-                    extra={
-                        "node_uid": node_uid,
-                        "zone_uid": zone_uid,
-                        "metric_type": queue_item.metric_type,
-                        "topic": topic,
-                    },
-                )
-        else:
-            logger.error(
-                f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}"
-            )
-            TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
-            logger.error(
-                "Telemetry queue not initialized, dropping message",
-                extra={
-                    "node_uid": node_uid,
-                    "zone_uid": zone_uid,
-                    "metric_type": metric_type,
-                    "topic": topic,
-                },
-            )
-    finally:
-        clear_trace_id()
 
 
 async def refresh_caches() -> None:

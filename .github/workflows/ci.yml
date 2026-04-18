@@ -426,3 +426,58 @@ jobs:
           name: laravel-scheduler-smoke-junit
           path: backend/laravel/test-results/laravel-scheduler-smoke.xml
           retention-days: 7
+
+  read-model-contract:
+    name: Laravel-AE3 Read-Model Contract
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:2.13.0-pg15
+        env:
+          POSTGRES_DB: hydro_test
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hydro -d hydro_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PHP deps
+        working-directory: backend/laravel
+        run: composer install --no-interaction --prefer-dist
+      - name: Prepare Laravel env
+        working-directory: backend/laravel
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Install Python deps
+        run: pip install -r backend/services/automation-engine/requirements.txt
+      - name: Laravel schema snapshot (validate against committed)
+        working-directory: backend/laravel
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro_test
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: php artisan test --filter=AutomationReadModelSchemaTest --no-coverage
+      - name: Python contract validator (AE3 read-model vs committed snapshot)
+        env:
+          PYTHONPATH: backend/services:backend/services/automation-engine
+          AE_READ_MODEL_SNAPSHOT_PATH: ${{ github.workspace }}/schemas/automation_read_model_schema.json
+        run: pytest -q backend/services/automation-engine/test_read_model_contract.py

@@ -1,0 +1,17 @@
+# file-size-guard exceptions
+# Формат: <path>|<max_lines>
+# Пустые строки и ленты, начинающиеся с #, игнорируются.
+#
+# Guard применяется к backend/laravel (PHP в app/config/routes/tests,
+# TS/Vue в resources/js, bash в scripts/) — см. check-file-size-guard.sh.
+# Python-код под guard не попадает.
+#
+# Default MAX_LINES=500. Legacy-файлы >500 продолжают работать в режиме
+# "не расти" (рост ≤ MAX_FILE_LINES_INCREASE=30 строк за PR). Для явного
+# разрешения большей отметки добавь запись сюда.
+#
+# ---------------------------------------------------------------
+# Активных исключений пока нет. По мере нужды добавляй сюда файлы,
+# декомпозиция которых признана неактуальной, с явным явным лимитом.
+# Пример:
+#   backend/laravel/app/Services/SomeLegacyService.php|900
