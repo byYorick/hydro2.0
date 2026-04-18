@@ -9,8 +9,7 @@ use Tests\TestCase;
  * Verifies that ZoneCorrectionConfigCatalog::defaults() matches the
  * canonical schemas/zone_correction_defaults.json file.
  *
- * This is the PHP-side CI gate for Phase 5 (AE_LEGACY_CLEANUP_PLAN.md):
- * if defaults() drifts from the JSON file, this test fails.
+ * PHP-side CI gate: if defaults() drifts from the JSON file, this test fails.
  */
 class ZoneCorrectionCatalogDefaultsTest extends TestCase
 {

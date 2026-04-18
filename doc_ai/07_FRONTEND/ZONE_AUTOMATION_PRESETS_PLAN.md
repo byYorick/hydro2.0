@@ -477,6 +477,5 @@ system defaults         →  fallback
 ## 8. Связанные документы
 
 - [AUTOMATION_WIZARD_UNIFICATION_PLAN.md](AUTOMATION_WIZARD_UNIFICATION_PLAN.md) — параллельный план унификации форм (shared components, dead fields cleanup)
-- [AE3_CONFIG_REFACTORING_PLAN.md](../04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md) — backend config authority
-- [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config namespaces
+- [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config namespaces / authority / live-edit
 - [ZONES_AND_PRESETS.md](../06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md) — общая архитектура пресетов

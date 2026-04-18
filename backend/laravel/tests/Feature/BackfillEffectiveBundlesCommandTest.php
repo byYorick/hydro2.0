@@ -14,8 +14,7 @@ use Tests\TestCase;
 /**
  * Feature tests for automation:backfill-effective-bundles Artisan command.
  *
- * Covers Phase 4.1 of AE_LEGACY_CLEANUP_PLAN.md:
- * verifies that the backfill command correctly detects and repairs
+ * Verifies that the backfill command correctly detects and repairs
  * automation_effective_bundles records with missing required sections.
  */
 class BackfillEffectiveBundlesCommandTest extends TestCase

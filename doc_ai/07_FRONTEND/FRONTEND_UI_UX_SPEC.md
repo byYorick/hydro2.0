@@ -434,7 +434,7 @@ End-to-end UX (Phase 5 + 6/6.1):
 6. AE3 hot-swap на следующем handler checkpoint
 7. TTL cron auto-revert в locked при expire
 
-См. также: [AE3_CONFIG_REFACTORING_PLAN.md](../04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md) § Shipped feature summary.
+См. также: [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) § 6.2 config modes и hot-swap.
 
 ---
 

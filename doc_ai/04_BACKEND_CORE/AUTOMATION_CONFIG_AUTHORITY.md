@@ -284,7 +284,7 @@ Revision-bump invariant:
 Cross-mode constraint:
 - `control_mode='auto' + config_mode='live'` запрещён — блокируется в `ZoneConfigModeController::update` (409 `CONFIG_MODE_CONFLICT_WITH_AUTO`) и также в UI (disabled state)
 
-Спецификация полная: см. `AE3_CONFIG_REFACTORING_PLAN.md` § Shipped feature summary и `ae3lite.md` § 6.6/7.5.
+Спецификация полная: см. `ae3lite.md` § 6.6/7.5.
 
 ### 6.3 history-logger/common
 
@@ -346,7 +346,7 @@ Config modes (Phase 5):
 
 `quality_score_legacy` — активное поле в `system.pump_calibration_policy`, используется в frontend TypeScript (`SystemSettings.ts`, `usePumpCalibrationSettings.ts`) и тестах. Это **не deprecated поле**, несмотря на слово "legacy" в имени — это legacy-score для backfill логики.
 
-**Когда retirement:** retirement маппинга возможен после Phase 5 плана `AE_LEGACY_CLEANUP_PLAN.md` — когда генератор `tools/generate_zone_correction_catalog.py` будет расширен на system-namespaces и `SystemAutomationSettingsCatalog` будет полностью автогенерируемым. До тех пор маппинг — необходимый glue-layer.
+**Когда retirement:** retirement маппинга возможен когда генератор `tools/generate_zone_correction_catalog.py` будет расширен на system-namespaces и `SystemAutomationSettingsCatalog` будет полностью автогенерируемым. До тех пор маппинг — необходимый glue-layer.
 
 **Методы:**
 - `AutomationConfigRegistry::authorityToLegacySystemNamespace(string $namespace): ?string` — маппинг authority→legacy; `null` если не legacy-mapped.

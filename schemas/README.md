@@ -35,9 +35,7 @@ make schemas-validate
 
 Runs each schema through JSON Schema Draft 2020-12 meta-schema to confirm it is itself valid JSON Schema.
 
-## Refactoring context
+## Related specs
 
-These schemas are the artifact of Phase 1 of the AE3 config refactoring. Full plan and parameter inventory:
-
-- [doc_ai/04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md](../doc_ai/04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md)
-- [doc_ai/04_BACKEND_CORE/AE3_CONFIG_PARAMETER_INVENTORY.md](../doc_ai/04_BACKEND_CORE/AE3_CONFIG_PARAMETER_INVENTORY.md)
+- [doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md](../doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config authority: namespaces, documents, bundles, live-edit
+- [doc_ai/04_BACKEND_CORE/ae3lite.md](../doc_ai/04_BACKEND_CORE/ae3lite.md) — AE3 runtime canonical spec

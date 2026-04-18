@@ -21,20 +21,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 `pid_state` в PostgreSQL — это обеспечивает сохранность integral/derivative
 при перезапуске процесса.
 
-> **Примечание:** файл `utils/adaptive_pid.py` содержит класс `AdaptivePid` и
-> `RelayAutotuner`, которые **не используются в production-потоке коррекции**.
-> Они являются standalone-утилитами для relay autotune и офлайн-симуляций.
-> Не подключай `AdaptivePid.compute()` к handler'у без решения проблемы
-> персистентности состояния.
-
 ### 1.2. Источник конфигурации
 
 Параметры zoned PID tuning (dead/close/far zones, `zone_coeffs`, `max_integral`)
 читаются из authority-документов
 `zone.pid.ph` и `zone.pid.ec`, а в AE3 runtime попадают через compiled
-bundle `automation_effective_bundles.config.zone.pid.*`. Класс
-`AutomationSettings` в `config/settings.py` **не является** источником
-PID-параметров — те поля были удалены как dead code.
+bundle `automation_effective_bundles.config.zone.pid.*`.
 
 Каноническое разделение source of truth:
 - `zone.pid.*` хранит только tuning PID-контура;
@@ -468,20 +460,7 @@ WHERE zone_id = $1;
 
 ---
 
-## 9. Relay Autotune (экспериментально)
-
-`utils/adaptive_pid.py` содержит `RelayAutotuner` (Astrom-Hagglund, 1984):
-- Подаёт relay output ±`relay_amplitude_ml`
-- Фиксирует extrema при пересечении нуля ошибки
-- После `min_cycles` колебаний вычисляет Ku, Tu
-- Применяет SIMC: `Kp = 0.45 * Ku`, `Ki = Kp / (0.83 * Tu)`
-
-**Статус:** Не интегрировано в correction handler. Требует разработки
-endpoint'а запуска и механизма записи результатов в `correction_config`.
-
----
-
-## 10. Связанные файлы
+## 9. Связанные файлы
 
 | Файл | Назначение |
 |------|-----------|
@@ -489,6 +468,4 @@ endpoint'а запуска и механизма записи результат
 | `ae3lite/domain/services/phase_utils.py` | `normalize_phase_key` |
 | `ae3lite/infrastructure/repositories/pid_state_repository.py` | Персистентность |
 | `ae3lite/application/handlers/correction.py` | Orchestration (8-шаговая FSM) |
-| `utils/adaptive_pid.py` | Standalone PID (не production) |
-| `config/settings.py` | Системные параметры (НЕ PID-коэффициенты) |
 | `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` | State machine коррекции |

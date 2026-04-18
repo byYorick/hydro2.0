@@ -125,7 +125,7 @@ npm run test -- --run runtimePlanPayload
 
 **Вариант B — начать отправлять (для полноценной UI):**
 1. Добавить эти поля в payload → `subsystems.irrigation.decision.config` / `recovery` + `subsystems.irrigation.safety.prepare_tolerance`.
-2. Обновить backend `SetupController::storeZoneLogicProfile` / `GrowCycleController::store` чтобы принимать эти поля (см. Phase 5 плана AE3_CONFIG_REFACTORING).
+2. Обновить backend `SetupController::storeZoneLogicProfile` / `GrowCycleController::store` чтобы принимать эти поля (см. [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — live-edit authority).
 3. Сохранение → recompile bundle → AE3 подхватит.
 
 **Рекомендация:** Вариант A сейчас (быстро), Вариант B вынесено в **Phase 3** (Advanced UI).
@@ -233,7 +233,7 @@ npm run test -- --run runtimePlanPayload
 
 **Цель:** разрешить оператору override pH/EC/irrigation targets из рецепта **при запуске конкретного цикла**, не меняя сам рецепт.
 
-**Контекст:** сейчас recipe phase targets readonly в UI обоих flow. [AE3_CONFIG_REFACTORING_PLAN Phase 5.6](../04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md) реализовал backend endpoint `PUT /api/grow-cycles/{id}/phase-config` для live-edit, но UI не использует его для **запуска**.
+**Контекст:** сейчас recipe phase targets readonly в UI обоих flow. Backend endpoint `PUT /api/grow-cycles/{id}/phase-config` реализован для live-edit (см. [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md)), но UI не использует его для **запуска**.
 
 **Actions:**
 1. В [WizardAutomationStep.vue](../../backend/laravel/resources/js/Components/GrowCycle/WizardAutomationStep.vue) добавить toggle «Override recipe targets for this cycle».
@@ -409,9 +409,8 @@ npm run test -- --run runtimePlanPayload
 
 ## 10. Связанные документы
 
-- [AE3_CONFIG_REFACTORING_PLAN.md](../04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md) — base backend refactoring (Phase 5-7 — live edit infrastructure, которую переиспользует Phase 6 здесь)
-- [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config authority
-- [AE_LEGACY_CLEANUP_PLAN.md](../04_BACKEND_CORE/AE_LEGACY_CLEANUP_PLAN.md) — backend cleanup (Phase 3 correction.py `.get()` затрагивает те же секции)
+- [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config authority (live-edit infrastructure)
+- [ae3lite.md](../04_BACKEND_CORE/ae3lite.md) — AE3 runtime spec
 - [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md) — frontend архитектура
 - [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md) — UI/UX guidelines
 - [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md) — role gates для advanced forms

@@ -25,7 +25,7 @@ use RuntimeException;
  *   1 — хотя бы один document имеет violations
  *   2 — некорректные аргументы / схема не найдена
  *
- * См. doc_ai/04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md §Q5.
+ * См. doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md
  */
 class ValidateZoneConfigsCommand extends Command
 {

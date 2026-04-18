@@ -25,7 +25,7 @@ use Throwable;
  *  - --dry-run: выводит, что будет изменено, без записи.
  *  - --recompile: сразу триггерит compileZoneBundle для каждого затронутого scope.
  *
- * См. doc_ai/04_BACKEND_CORE/AE3_CONFIG_REFACTORING_PLAN.md §«Audit fixes / Pre-flight»
+ * См. doc_ai/04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md
  */
 class ResyncAutomationConfigDefaultsCommand extends Command
 {
