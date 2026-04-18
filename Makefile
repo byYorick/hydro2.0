@@ -41,6 +41,8 @@ help:
 	@echo "  logs-redis     - stream Redis logs"
 	@echo "  logs-mqtt      - stream MQTT broker logs"
 	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
+	@echo "  dev-tools-check   - check host CLI tools (rg, psql, mosquitto_pub, gh, ...)"
+	@echo "  dev-tools-install - install missing host CLI tools (apt + uv)"
 
 .PHONY: up
 up:
@@ -237,3 +239,81 @@ logs-mqtt:
 .PHONY: erd
 erd:
 	@bash backend/laravel/generate-erd.sh
+
+# ---------------------------------------------------------------------------
+# Host CLI tools (полезны для работы agent-а и ручной отладки).
+# Не требуются для dev-стека (он в Docker), но ускоряют work-flow.
+# Описание — в CLAUDE.md → "Локально доступные CLI-инструменты".
+# ---------------------------------------------------------------------------
+
+# Формат: "binary:apt-package" (binary совпадает с apt-package — указать один раз)
+DEV_TOOLS_APT := \
+	rg:ripgrep \
+	jq:jq \
+	yq:yq \
+	fzf:fzf \
+	tree:tree \
+	htop:htop \
+	btop:btop \
+	tig:tig \
+	gh:gh \
+	http:httpie \
+	delta:git-delta \
+	psql:postgresql-client \
+	mosquitto_pub:mosquitto-clients \
+	fdfind:fd-find \
+	batcat:bat
+
+.PHONY: dev-tools-check
+dev-tools-check:
+	@missing_apt=""; missing_uv=""; ok=""; \
+	for pair in $(DEV_TOOLS_APT); do \
+		bin="$${pair%%:*}"; pkg="$${pair##*:}"; \
+		if command -v "$$bin" >/dev/null 2>&1; then \
+			ok="$$ok $$bin"; \
+		else \
+			missing_apt="$$missing_apt $$pkg"; \
+		fi; \
+	done; \
+	if ! command -v uv >/dev/null 2>&1; then missing_uv="uv $$missing_uv"; fi; \
+	if ! command -v pgcli >/dev/null 2>&1; then missing_uv="pgcli $$missing_uv"; fi; \
+	echo "OK:$$ok"; \
+	if [ -n "$$missing_apt" ]; then echo "MISS (apt):$$missing_apt"; fi; \
+	if [ -n "$$missing_uv" ]; then echo "MISS (uv):$$missing_uv"; fi; \
+	if [ -z "$$missing_apt$$missing_uv" ]; then \
+		echo "Все инструменты установлены."; \
+	else \
+		echo ""; echo "Запусти: make dev-tools-install"; exit 1; \
+	fi
+
+.PHONY: dev-tools-install
+dev-tools-install:
+	@missing_apt=""; need_uv=0; need_pgcli=0; \
+	for pair in $(DEV_TOOLS_APT); do \
+		bin="$${pair%%:*}"; pkg="$${pair##*:}"; \
+		if ! command -v "$$bin" >/dev/null 2>&1; then missing_apt="$$missing_apt $$pkg"; fi; \
+	done; \
+	if ! command -v uv >/dev/null 2>&1; then need_uv=1; fi; \
+	if ! command -v pgcli >/dev/null 2>&1; then need_pgcli=1; fi; \
+	if [ -n "$$missing_apt" ]; then \
+		echo "==> apt install:$$missing_apt"; \
+		sudo apt update && sudo apt install -y $$missing_apt; \
+	fi; \
+	mkdir -p "$$HOME/.local/bin"; \
+	if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then \
+		ln -sf "$$(command -v fdfind)" "$$HOME/.local/bin/fd"; \
+		echo "==> symlink: ~/.local/bin/fd -> fdfind"; \
+	fi; \
+	if command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then \
+		ln -sf "$$(command -v batcat)" "$$HOME/.local/bin/bat"; \
+		echo "==> symlink: ~/.local/bin/bat -> batcat"; \
+	fi; \
+	if [ "$$need_uv" = "1" ]; then \
+		echo "==> install uv (Astral installer)"; \
+		curl -LsSf https://astral.sh/uv/install.sh | sh; \
+	fi; \
+	if [ "$$need_pgcli" = "1" ]; then \
+		echo "==> install pgcli via uv"; \
+		PATH="$$HOME/.local/bin:$$PATH" uv tool install pgcli; \
+	fi; \
+	echo ""; $(MAKE) --no-print-directory dev-tools-check

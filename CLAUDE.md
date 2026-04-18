@@ -573,6 +573,31 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 | Безопасность | `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md`, `AUTH_SYSTEM.md` |
 | AI-гайды (чек-листы) | `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md`, `BACKEND_LARAVEL_PG_AI_GUIDE.md`, `DATABASE_SCHEMA_AI_GUIDE.md` |
 
+## Локально доступные CLI-инструменты
+
+На хосте установлены (в `PATH`, можно вызывать напрямую без `docker exec`):
+
+| Категория | Инструмент | Назначение в проекте |
+| --------- | ---------- | -------------------- |
+| Поиск | `rg` (ripgrep), `fd`, `fzf`, `jq`, `yq` | поиск по коду, JSON/YAML из MQTT payload, docker-compose |
+| MQTT | `mosquitto_pub`, `mosquitto_sub` | отладка топиков `hydro/#` без захода в контейнер |
+| PostgreSQL | `psql`, `pgcli` | прямые запросы к `hydro_dev`/`hydro_test` (host=localhost:5432, user=hydro) |
+| HTTP | `http` (httpie) | тесты Laravel/AE/history-logger REST endpoints |
+| Git/GitHub | `gh`, `delta`, `tig` | PR/CI через CLI, красивые diff-ы |
+| Просмотр | `bat`, `tree` | подсветка, структура каталогов |
+| TUI-мониторинг | `htop`, `btop` | процессы хоста |
+| Python tooling | `uv`, `uvx` | быстрый pip/venv, запуск Python CLI без установки |
+| Node | `fnm` | переключение версий Node (для frontend Laravel) |
+| ESP32 | `idf.py` (после `source /home/georgiy/esp/esp-idf/export.sh`) | сборка/прошивка узлов |
+
+**Следствия для AI-агента:**
+
+- Для чтения БД предпочитай `psql` на хосте, а не `docker exec laravel php artisan tinker`.
+- Для отладки MQTT используй `mosquitto_sub -h localhost -t 'hydro/#' -v` без дополнительных контейнеров.
+- Для REST-проверок — `http` с URL из раздела "Доступ к dev сервисам".
+- Для установки Python-утилит используй `uv tool install <pkg>` (системный `pip` заблокирован PEP 668).
+- Правило остаётся: **команды самих backend-сервисов (artisan, pytest, composer, npm)** выполняются внутри Docker-контейнеров.
+
 ## Разработка прошивок ESP-IDF
 
 ### Настройка окружения ESP-IDF

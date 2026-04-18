@@ -41,3 +41,7 @@ CMakeBuilds.json
 
 # Environment
 .env
+
+# Claude Code
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
