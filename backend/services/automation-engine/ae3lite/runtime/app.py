@@ -30,6 +30,8 @@ from ae3lite.infrastructure.metrics import NODE_RUNTIME_EVENT_KICK
 from ae3lite.infrastructure.zone_event_listener import ZoneEventListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
 from ae3lite.runtime.env import Ae3RuntimeConfig
+import asyncpg
+
 from common.db import fetch, get_pool
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log
@@ -357,7 +359,32 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
 
     @asynccontextmanager
     async def _app_lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await get_pool()
+        # Retry get_pool на случай race condition при старте контейнера:
+        # PostgreSQL может быть healthy, но docker-network DNS / TLS handshake
+        # успевает дать transient connect error до того, как сеть стабилизируется.
+        # Без retry FastAPI lifespan сразу падает и контейнер уходит в unhealthy.
+        pool_attempts = 30
+        pool_backoff_sec = 2.0
+        for attempt in range(1, pool_attempts + 1):
+            try:
+                await get_pool()
+                break
+            except (OSError, ConnectionError, asyncpg.exceptions.PostgresConnectionError) as exc:
+                if attempt >= pool_attempts:
+                    logger.error(
+                        "AE3 lifespan: PostgreSQL pool init failed after %d attempts: %s",
+                        attempt,
+                        exc,
+                    )
+                    raise
+                logger.warning(
+                    "AE3 lifespan: PostgreSQL pool init transient error (attempt %d/%d): %s — retry in %.1fs",
+                    attempt,
+                    pool_attempts,
+                    exc,
+                    pool_backoff_sec,
+                )
+                await asyncio.sleep(pool_backoff_sec)
         await bundle.worker.recover_on_startup()
         bundle.worker.kick()
         app.state.ae3_runtime_bundle = bundle
