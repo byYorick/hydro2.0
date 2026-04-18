@@ -132,9 +132,11 @@ telemetry_daily  (= telemetry_agg_daily — зависит от схемы)
 Сроки:
 
 ```
-commands: 90 дней hot
+commands: 365 дней hot (retention_policy_commands функция + pg_cron job `retention-commands` @ 02:00 ежедневно)
 commands_archive: 3 года
 ```
+
+Источник: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php`.
 
 Команды включают:
 
@@ -153,9 +155,11 @@ Events имеют ключевое значение для анализа про
 Сроки:
 
 ```
-zone_events: 180 дней hot
+zone_events: 365 дней hot (retention_policy_zone_events функция + pg_cron job `retention-zone_events` @ 02:00 ежедневно)
 zone_events_archive: 5 лет
 ```
+
+Источник: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php`.
 
 Типы:
 

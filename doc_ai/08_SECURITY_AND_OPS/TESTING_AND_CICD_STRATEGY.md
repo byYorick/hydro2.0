@@ -156,3 +156,36 @@ Breaking-change: обратная совместимость со старыми
 2. Нельзя добавлять сложные фичи без минимального набора тестов.
 3. Любое изменение контрактов (MQTT/REST/WebSocket) должно сопровождаться
  обновлением соответствующих тестов.
+
+---
+
+## 8. Текущие CI workflows
+
+Источник: `.github/workflows/`.
+
+### 8.1 `ci.yml` — на каждый PR/push
+
+- **python-lint** (ruff F+E9 с per-file-ignores для тестов)
+- **automation-engine-smoke-all** / **automation-engine-smoke** — pytest смоук-набор AE3
+- **build-and-test** — Laravel PHPUnit + Playwright E2E + Vitest + vue-tsc + ESLint + npm audit
+- **laravel-scheduler-smoke** — Laravel scheduler dispatch integration tests
+- **read-model-contract** — Laravel-AE3 read-model schema snapshot contract
+- **firmware-build-ph-node** — ESP-IDF release-v5.5 сборка `ph_node`, артефакт `.bin` на 7 дней
+- **file-size-guard** (внутри build-and-test) — MAX_LINES=500, MAX_INCREASE=30
+
+### 8.2 `protocol-check.yml` — на каждый PR/push (paths-filter убран)
+
+- Canonical JSON Schemas validation (`tools/validate_schemas.py`)
+- Runtime schema parity (`tools/check_runtime_schema_parity.sh`)
+- Protocol contract tests (common/schemas)
+- WebSocket events validation
+
+### 8.3 `nightly.yml` — cron `0 2 * * *` + workflow_dispatch
+
+- **chaos-tests** — strict protocol chaos (blocking, без continue-on-error)
+- **trivy-docker-images** — security scan (fs + config, non-blocking)
+- **pip-audit** — Python CVE-аудит трёх сервисов
+
+### 8.4 Firmware versioning
+
+Automated firmware versioning **не реализован**. Сборка ph_node в CI генерирует артефакт, но не увеличивает версию и не публикует OTA. Release workflow для firmware — будущая работа.

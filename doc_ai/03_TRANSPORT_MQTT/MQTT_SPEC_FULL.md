@@ -813,7 +813,7 @@ Backend никогда не остаётся "в неизвестности": п
 {
   "cmd_id": "cmd-591",
   "status": "ERROR",
-  "ts": 1710003399,
+  "ts": 1710003399123,
   "error_code": "timestamp_expired",
   "error_message": "Command timestamp is outside acceptable range"
 }

@@ -272,11 +272,13 @@ USER_ACTION
 
 # 13. Лимитирование запросов (Rate Limiting)
 
-Laravel throttle:
+Laravel throttle (источник: `backend/laravel/routes/api.php`):
 
-```
-60 запросов в минуту / IP
-```
+- **Auth endpoints** (`POST /api/auth/login`, `/logout`, `/me`): **10 запросов/мин по IP** (защита от брутфорса).
+- **LoginRequest**: дополнительно **5 неудачных попыток** per `email|IP`, затем lockout.
+- **Стандартные API endpoints**: **120 запросов/мин** (production); 1000 (testing/e2e); 2000 (local).
+- **System endpoints** (`GET /api/system/health`, `/api/system/scheduler/metrics`): **300 запросов/мин** — выше для polling мониторинга.
+- **Регистрация узлов** (`/api/nodes/register`): 10 req/min per `node_uid` + burst 120/min/IP.
 
 ---
 

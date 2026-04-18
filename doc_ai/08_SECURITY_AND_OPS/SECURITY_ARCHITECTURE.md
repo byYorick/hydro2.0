@@ -160,11 +160,14 @@ node_secret = random(32 bytes)
 
 ## 4.3. Ограничения API
 
-- Максимум 120 запросов/минуту по IP для стандартных API (Rate Limiting)
-- Для `node_register`: максимум 10 запросов/минуту на один `node_uid`/`hardware_id`
-  и дополнительный burst-лимит 120 запросов/минуту по IP bridge
-- IP whitelist для регистрации узлов (настраивается через `services.node_registration.allowed_ips`)
-- Все изменения рецептов/зон логируются в zone_events.
+Источник: `backend/laravel/routes/api.php`.
+
+- **Стандартные API**: 120 запросов/мин/IP (production); 1000 (testing/e2e); 2000 (local). Переопределяется через `API_THROTTLE` env.
+- **System endpoints** (`/api/system/health`, `/api/system/scheduler/metrics`): 300 запросов/мин/IP — выше для polling мониторинга.
+- **Auth endpoints** (`/api/auth/login|logout|me`): 10 запросов/мин/IP + 5 неудачных попыток per `email|IP` (защита от брутфорса).
+- **Node register** (`/api/nodes/register`): 10 запросов/мин на `node_uid`/`hardware_id` + burst 120/мин/IP bridge.
+- **IP whitelist** для регистрации узлов: `services.node_registration.allowed_ips`.
+- Все изменения рецептов/зон логируются в `zone_events`.
 
 ## 4.4. Блокировки и дедупликация
 
