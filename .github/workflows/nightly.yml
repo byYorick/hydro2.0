@@ -1,0 +1,93 @@
+name: nightly
+
+# Nightly-only проверки: chaos tests (требуют running services), security scans
+# (trivy на Docker-образы), full protocol-check с strict chaos. Запускается
+# автоматически в 02:00 UTC, либо руками через workflow_dispatch.
+
+on:
+  schedule:
+    # 02:00 UTC ежедневно.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  chaos-tests:
+    name: Protocol chaos tests (blocking)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:2.13.0-pg15
+        env:
+          POSTGRES_DB: hydro_test
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hydro -d hydro_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        working-directory: backend/services
+        run: |
+          pip install --upgrade pip
+          pip install 'jsonschema>=4.23' pytest pydantic httpx asyncpg
+      - name: Chaos tests (strict — no continue-on-error)
+        working-directory: backend/services
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
+          PG_DB: hydro_test
+          PG_USER: hydro
+          PG_PASSWORD: hydro
+          PG_HOST: 127.0.0.1
+          PG_PORT: 5432
+        run: |
+          pytest common/schemas/test_chaos.py -v --tb=short -m "not slow"
+
+  trivy-docker-images:
+    name: Trivy security scan (dev stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan (repository)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: 'true'
+          format: 'table'
+          exit-code: '0'  # non-blocking, чтобы CVE-шум не блокировал release
+      - name: Trivy config scan (docker-compose / Dockerfile)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+          exit-code: '0'
+
+  pip-audit:
+    name: Python dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit automation-engine
+        run: pip-audit -r backend/services/automation-engine/requirements.txt || true
+      - name: Audit history-logger
+        run: pip-audit -r backend/services/history-logger/requirements.txt || true
+      - name: Audit mqtt-bridge
+        run: pip-audit -r backend/services/mqtt-bridge/requirements.txt || true

@@ -169,6 +169,7 @@ Breaking-change: обратная совместимость со старыми
 - `08_SECURITY_AND_OPS/OPERATIONS_GUIDE.md` — руководство по эксплуатации
 - `08_SECURITY_AND_OPS/RUNBOOKS.md` — процедуры восстановления
 - `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` — стратегия тестирования и CI/CD
+- `08_SECURITY_AND_OPS/MIGRATION_SQUASH_PROCEDURE.md` — процедура squash миграций (отложена из-за TimescaleDB)
 
 **См. также:** [README](08_SECURITY_AND_OPS/README.md)
 

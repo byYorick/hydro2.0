@@ -1,0 +1,37 @@
+# Консервативный ruff-конфиг для всех Python-сервисов.
+# Включены только high-signal rules — чтобы legacy code не упал на стилевых
+# замечаниях. Расширять список по мере декомпозиции hot paths.
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+# Rule groups:
+#   F      — Pyflakes (undefined names, unused imports/variables)
+#   E9     — syntax errors
+#   F401   — unused imports (subset of F)
+#   F811   — redefinition of unused name
+#   F841   — local var assigned but unused
+select = ["F", "E9"]
+
+# Legacy false-positives и специально unused imports (re-export в фасадах).
+ignore = [
+    "F401",  # unused imports — много re-export facades (mqtt_handlers.py, telemetry_processing.py)
+    "F811",  # redefinition — re-imports через `as _X` pattern
+    "F541",  # f-string без placeholders — легаси log-строки, косметика
+    "F841",  # unused local var — 9 мест в legacy production-коде; ввести позже targeted ignores
+]
+
+[lint.per-file-ignores]
+# Тесты часто содержат unused imports/vars (fixtures / pytest markers /
+# arrange-часть с pre-computed values). F601 — в тестах часто intentional
+# (проверка detection дубликатов ключей).
+"**/test_*.py" = ["F401", "F811", "F841", "F601"]
+"**/tests/**" = ["F401", "F811", "F841", "F601"]
+# Facades re-export many symbols.
+"backend/services/history-logger/mqtt_handlers.py" = ["F401"]
+"backend/services/history-logger/telemetry_processing.py" = ["F401"]
+
+[format]
+# format pass не включаем — слишком много legacy. Только lint.
+quote-style = "preserve"
