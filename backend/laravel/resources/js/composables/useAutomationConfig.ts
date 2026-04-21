@@ -245,6 +245,56 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     }
   }
 
+  async function getRevision<TPayload = Record<string, unknown>, TMeta = Record<string, unknown>>(
+    scopeType: AutomationScopeType,
+    scopeId: number,
+    namespace: string,
+    version: number,
+  ): Promise<AutomationDocument<TPayload, TMeta>> {
+    loading.value = true
+    error.value = null
+
+    try {
+      return await api.automationConfigs.getRevision<AutomationDocument<TPayload, TMeta>>(
+        scopeType,
+        scopeId,
+        namespace,
+        version,
+      )
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function restoreRevision<TPayload = Record<string, unknown>, TMeta = Record<string, unknown>>(
+    scopeType: AutomationScopeType,
+    scopeId: number,
+    namespace: string,
+    version: number,
+  ): Promise<AutomationDocument<TPayload, TMeta>> {
+    loading.value = true
+    error.value = null
+
+    try {
+      return await api.automationConfigs.restoreRevision<AutomationDocument<TPayload, TMeta>>(
+        scopeType,
+        scopeId,
+        namespace,
+        version,
+      )
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function resetDocument<TPayload = Record<string, unknown>, TMeta = Record<string, unknown>>(
     scopeType: AutomationScopeType,
     scopeId: number,
@@ -274,6 +324,8 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     getDocument,
     updateDocument,
     getHistory,
+    getRevision,
+    restoreRevision,
     resetDocument,
     getBundle,
     validateBundle,

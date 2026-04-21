@@ -8,6 +8,7 @@ export interface CorrectionCatalogField {
   min?: number
   max?: number
   step?: number
+  unit?: string
   options?: string[]
   readonly?: boolean
   advanced_only?: boolean
@@ -76,6 +77,7 @@ export interface ZoneCorrectionConfigHistoryItem {
   change_type: string
   preset: CorrectionPreset | null
   changed_by?: number | null
+  changed_by_name?: string | null
   changed_at?: string | null
   base_config: Record<string, unknown>
   phase_overrides: Partial<Record<CorrectionPhase, Record<string, unknown>>>

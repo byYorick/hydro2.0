@@ -26,7 +26,7 @@
             <Button
               v-if="canManageCycle"
               size="sm"
-              @click="router.visit('/grow-cycle-wizard')"
+              @click="router.visit('/launch')"
             >
               Запустить цикл
             </Button>
@@ -363,7 +363,7 @@
             <template v-else-if="canManageCycle && !zone.cycle">
               <Button
                 size="sm"
-                @click="router.visit('/grow-cycle-wizard')"
+                @click="router.visit('/launch')"
               >
                 Запустить цикл
               </Button>

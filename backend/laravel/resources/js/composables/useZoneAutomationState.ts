@@ -147,6 +147,9 @@ function sanitizeWaterForm(
     cleanTankFullThreshold: clamp(toNumber(raw?.cleanTankFullThreshold, fallback.cleanTankFullThreshold), 0.05, 1),
     refillDurationSeconds: clamp(toRoundedNumber(raw?.refillDurationSeconds, fallback.refillDurationSeconds), 1, 3600),
     refillTimeoutSeconds: clamp(toRoundedNumber(raw?.refillTimeoutSeconds, fallback.refillTimeoutSeconds), 30, 86400),
+    mainPumpFlowLpm: clamp(toNumber(raw?.mainPumpFlowLpm, fallback.mainPumpFlowLpm), 0.1, 500),
+    cleanWaterFlowLpm: clamp(toNumber(raw?.cleanWaterFlowLpm, fallback.cleanWaterFlowLpm), 0.1, 500),
+    workingTankL: clamp(toNumber(raw?.workingTankL, fallback.workingTankL), 0, 5000),
     startupCleanFillTimeoutSeconds: clamp(
       toRoundedNumber(
         raw?.startupCleanFillTimeoutSeconds,

@@ -11,11 +11,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 export function normalizeIrrigationSystem(value: unknown): IrrigationSystem | null {
   const raw = String(value ?? '').trim().toLowerCase()
 
-  if (raw === 'drip') {
+  if (raw === 'drip' || raw === 'drip_tape' || raw === 'drip_emitter') {
     return 'drip'
   }
 
-  if (raw === 'substrate' || raw === 'substrate_trays') {
+  if (
+    raw === 'substrate'
+    || raw === 'substrate_trays'
+    || raw === 'ebb_flow'
+    || raw === 'dwc'
+    || raw === 'aeroponics'
+  ) {
     return 'substrate_trays'
   }
 
@@ -27,8 +33,11 @@ export function normalizeIrrigationSystem(value: unknown): IrrigationSystem | nu
 }
 
 export function resolveRecipePhaseSystemType(
-  phase: { irrigation_mode?: unknown; extensions?: unknown } | null | undefined,
-  fallback: IrrigationSystem
+  phase:
+    | { irrigation_mode?: unknown; irrigation_system_type?: unknown; extensions?: unknown }
+    | null
+    | undefined,
+  fallback: IrrigationSystem,
 ): IrrigationSystem {
   const extensions = asRecord(phase?.extensions)
   const subsystems = asRecord(extensions?.subsystems)
@@ -37,7 +46,9 @@ export function resolveRecipePhaseSystemType(
   const irrigationTargets = asRecord(irrigationSubsystem?.targets)
 
   const explicitSystemType = normalizeIrrigationSystem(
-    irrigationExecution?.system_type ?? irrigationTargets?.system_type
+    phase?.irrigation_system_type
+      ?? irrigationExecution?.system_type
+      ?? irrigationTargets?.system_type,
   )
   if (explicitSystemType) {
     return explicitSystemType

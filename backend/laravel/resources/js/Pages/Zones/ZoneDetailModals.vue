@@ -46,17 +46,6 @@
       @close="$emit('close-node-config')"
     />
 
-    <!-- Модальное окно запуска/корректировки цикла выращивания -->
-    <GrowthCycleWizard
-      v-if="showGrowthCycleModal && zoneId"
-      :show="showGrowthCycleModal"
-      :zone-id="zoneId"
-      :zone-name="zoneName"
-      :active-cycle="activeCycle"
-      :initial-data="growthCycleInitialData"
-      @close="$emit('close-growth-cycle')"
-      @submit="$emit('submit-growth-cycle', $event)"
-    />
 
     <ConfirmModal
       :open="harvestModal.open"
@@ -151,7 +140,6 @@ import { computed } from 'vue'
 import type { CommandType, Device, IrrigationCorrectionSummary } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
-import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
@@ -188,18 +176,10 @@ interface Props {
   devices: Device[]
   currentPhaseTargets: any | null
   activeCycle: any | null
-  growthCycleInitialData?: {
-    recipeId?: number | null
-    recipeRevisionId?: number | null
-    plantId?: number | null
-    startedAt?: string | null
-    expectedHarvestAt?: string | null
-  } | null
   selectedNodeId: number | null
   selectedNode: any | null
   currentActionType: CommandType
   showActionModal: boolean
-  showGrowthCycleModal: boolean
   showPumpCalibrationModal: boolean
   showAttachNodesModal: boolean
   showNodeConfigModal: boolean

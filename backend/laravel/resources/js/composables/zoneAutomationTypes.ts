@@ -44,6 +44,9 @@ export interface WaterFormState {
   cleanTankFullThreshold: number
   refillDurationSeconds: number
   refillTimeoutSeconds: number
+  mainPumpFlowLpm: number
+  cleanWaterFlowLpm: number
+  workingTankL: number
   startupCleanFillTimeoutSeconds?: number
   startupSolutionFillTimeoutSeconds?: number
   startupPrepareRecirculationTimeoutSeconds?: number

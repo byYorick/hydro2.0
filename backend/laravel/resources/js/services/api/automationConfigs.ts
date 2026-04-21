@@ -61,4 +61,25 @@ export const automationConfigsApi = {
   ): Promise<T[]> {
     return apiGet<T[]>(`/automation-configs/${scope}/${id}/${namespace}/history`)
   },
+
+  getRevision<T = AutomationConfigDocument>(
+    scope: AutomationConfigScope,
+    id: number,
+    namespace: string,
+    version: number,
+  ): Promise<T> {
+    return apiGet<T>(`/automation-configs/${scope}/${id}/${namespace}/history/${version}`)
+  },
+
+  restoreRevision<T = AutomationConfigDocument>(
+    scope: AutomationConfigScope,
+    id: number,
+    namespace: string,
+    version: number,
+  ): Promise<T> {
+    return apiPost<T>(
+      `/automation-configs/${scope}/${id}/${namespace}/history/${version}/restore`,
+      {},
+    )
+  },
 }

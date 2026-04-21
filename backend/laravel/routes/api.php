@@ -12,6 +12,7 @@ use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
+use App\Http\Controllers\LaunchFlow\LaunchFlowManifestController;
 use App\Http\Controllers\InfrastructureInstanceController;
 use App\Http\Controllers\NodeChannelController;
 use App\Http\Controllers\NodeCommandController;
@@ -146,7 +147,9 @@ Route::middleware([
     Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
+    Route::get('launch-flow/manifest', [LaunchFlowManifestController::class, 'show']);
     Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}/history', [AutomationConfigController::class, 'history']);
+    Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}/history/{version}', [AutomationConfigController::class, 'showRevision'])->where('version', '[0-9]+');
     Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'show']);
     Route::get('automation-bundles/{scopeType}/{scopeId}', [AutomationBundleController::class, 'show']);
     Route::get('automation-presets/{namespace}', [AutomationPresetController::class, 'index']);
@@ -216,6 +219,7 @@ Route::middleware([
 
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
         Route::put('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'update']);
+        Route::post('automation-configs/{scopeType}/{scopeId}/{namespace}/history/{version}/restore', [AutomationConfigController::class, 'restoreRevision'])->where('version', '[0-9]+');
         Route::delete('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'destroy']);
         Route::post('automation-bundles/{scopeType}/{scopeId}/validate', [AutomationBundleController::class, 'validate']);
         Route::post('automation-presets/{namespace}', [AutomationPresetController::class, 'store']);

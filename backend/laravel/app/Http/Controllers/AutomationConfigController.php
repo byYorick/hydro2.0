@@ -181,6 +181,144 @@ class AutomationConfigController extends Controller
         }
     }
 
+    public function showRevision(
+        Request $request,
+        string $scopeType,
+        int $scopeId,
+        string $namespace,
+        int $version,
+    ): JsonResponse {
+        try {
+            $this->assertScopeMatchesNamespace($scopeType, $namespace);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, false);
+
+            $row = $this->findRevisionBySequence($scopeType, $scopeId, $namespace, $version);
+            if ($row === null) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'REVISION_NOT_FOUND',
+                    'message' => "Revision {$version} not found",
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $this->serializeVersion($namespace, $row['version'], $row['sequence']),
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function restoreRevision(
+        Request $request,
+        string $scopeType,
+        int $scopeId,
+        string $namespace,
+        int $version,
+    ): JsonResponse {
+        try {
+            $this->assertScopeMatchesNamespace($scopeType, $namespace);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, true);
+
+            $row = $this->findRevisionBySequence($scopeType, $scopeId, $namespace, $version);
+            if ($row === null) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'REVISION_NOT_FOUND',
+                    'message' => "Revision {$version} not found",
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $snapshotPayload = is_array($row['version']->payload) ? $row['version']->payload : [];
+            $previousDocument = $this->documents->getDocument($namespace, $scopeType, $scopeId, false);
+            $previousPayload = is_array($previousDocument?->payload) ? $previousDocument->payload : [];
+
+            $document = $this->documents->upsertDocument(
+                $namespace,
+                $scopeType,
+                $scopeId,
+                $snapshotPayload,
+                $request->user()?->id,
+                'authority_restore',
+            );
+            $this->emitZoneScopedEvent(
+                $namespace,
+                $scopeType,
+                $scopeId,
+                $previousPayload,
+                is_array($document->payload) ? $document->payload : [],
+                $request->user()?->id,
+            );
+            $this->republishAffectedNodeConfigs($namespace, $scopeType, $scopeId);
+
+            if ($scopeType === 'zone') {
+                app(ZoneConfigRevisionService::class)->bumpAndAudit(
+                    scopeType: $scopeType,
+                    scopeId: $scopeId,
+                    namespace: $namespace,
+                    diff: ['restored_from_version' => $version],
+                    userId: $request->user()?->id,
+                    reason: "restored revision v{$version}",
+                );
+            }
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $this->serializeDocument(
+                    $namespace,
+                    $scopeType,
+                    $scopeId,
+                    $document->id,
+                    is_array($document->payload) ? $document->payload : [],
+                    (string) ($document->status ?? 'valid'),
+                    $document->updated_at?->toIso8601String(),
+                    $document->updated_by,
+                ),
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * @return array{version: AutomationConfigVersion, sequence: int}|null
+     */
+    private function findRevisionBySequence(
+        string $scopeType,
+        int $scopeId,
+        string $namespace,
+        int $sequence,
+    ): ?array {
+        $versions = AutomationConfigVersion::query()
+            ->where('scope_type', $scopeType)
+            ->where('scope_id', $scopeId)
+            ->where('namespace', $namespace)
+            ->orderByDesc('id')
+            ->get()
+            ->values();
+
+        $total = $versions->count();
+        if ($sequence < 1 || $sequence > $total) {
+            return null;
+        }
+
+        // sequenceVersion = total - index (0-based desc listing → oldest = 1, newest = total)
+        $index = $total - $sequence;
+        $row = $versions->get($index);
+        if (! $row) {
+            return null;
+        }
+
+        return ['version' => $row, 'sequence' => $sequence];
+    }
+
     public function destroy(Request $request, string $scopeType, int $scopeId, string $namespace): JsonResponse
     {
         try {

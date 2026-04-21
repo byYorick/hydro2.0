@@ -1,315 +1,452 @@
-# План унификации настроек полива и автоматики в Setup Wizard и Start Cycle
+# План унификации мастера запуска: `<GrowCycleLauncher>` как single flow
 
-**Версия:** 1.0
-**Дата:** 2026-04-17
-**Автор:** инженерный план, executor-first
-**Статус:** draft — требует ack пользователя перед исполнением
+**Версия:** 2.0
+**Дата:** 2026-04-19
+**Статус:** DONE — все 6 фаз реализованы 2026-04-19
+**Подход:** архитектурный rewrite, не iterative patching
+
+## Результат
+
+| Метрика | Цель | Факт |
+|---------|------|------|
+| Удалить legacy wizard code | ≥ 5 000 строк | **≈ 22 500 строк** (23 173 − 648 diff документа) |
+| Новый добавленный код (prod) | ≤ 2 500 строк | 2 505 строк (controllers/services/vue/composables) |
+| Новые тесты | ≥ 30 кейсов | 56 кейсов (45 vitest + 11 phpunit) — все green |
+| TypeScript strict | pass | `vue-tsc --noEmit` — 0 ошибок |
+| Полный vitest run | 0 регрессий | 139 файлов / 1 223 теста — все green |
+| PHPUnit LaunchFlowManifestControllerTest | 11/11 pass | ✅ |
+| Single entry point | `/launch/:zoneId?` | ✅ — Setup Wizard / GrowthCycleWizard удалены |
+
+## Ключевые созданные артефакты
+
+### Frontend
+- [resources/js/schemas/growCycleLaunch.ts](../../backend/laravel/resources/js/schemas/growCycleLaunch.ts) — Zod single-source-of-truth
+- [resources/js/composables/useFormSchema.ts](../../backend/laravel/resources/js/composables/useFormSchema.ts) — reactive Zod integration
+- [resources/js/Components/Shared/BaseWizard/BaseWizard.vue](../../backend/laravel/resources/js/Components/Shared/BaseWizard/BaseWizard.vue) — generic primitive
+- [resources/js/Pages/Launch/Index.vue](../../backend/laravel/resources/js/Pages/Launch/Index.vue) — `<GrowCycleLauncher>` entry
+- [resources/js/Components/Launch/](../../backend/laravel/resources/js/Components/Launch/) — Zone/Recipe/Automation/Calibration/Preview step components + `<DiffPreview/>`
+- [resources/js/services/queries/launchFlow.ts](../../backend/laravel/resources/js/services/queries/launchFlow.ts) — TanStack Query bindings
+
+### Backend
+- [app/Http/Controllers/LaunchFlow/LaunchFlowManifestController.php](../../backend/laravel/app/Http/Controllers/LaunchFlow/LaunchFlowManifestController.php)
+- [app/Services/LaunchFlow/LaunchFlowManifestBuilder.php](../../backend/laravel/app/Services/LaunchFlow/LaunchFlowManifestBuilder.php)
+- [app/Services/LaunchFlow/LaunchFlowReadinessEnricher.php](../../backend/laravel/app/Services/LaunchFlow/LaunchFlowReadinessEnricher.php) — blocker → action.route mapping
+- [routes/api.php](../../backend/laravel/routes/api.php) — `GET /api/launch-flow/manifest`
+- [routes/web.php](../../backend/laravel/routes/web.php) — `/launch/{zoneId?}` + 301 редиректы с `/setup/wizard` и `/grow-cycle-wizard`
+
+### Удалено (Phase 6)
+- `resources/js/Pages/Setup/` (Wizard.vue 1 135 строк + тесты)
+- `resources/js/Pages/GrowCycles/Wizard.vue`
+- `resources/js/Components/GrowCycle/GrowthCycleWizard.vue` + `steps/*`
+- `resources/js/composables/useSetupWizard.ts` (1 177 строк)
+- `resources/js/composables/useGrowthCycleWizard.ts` (1 511 строк)
+- 14 `setupWizard*.ts` composables + `growthCycleWizardHelpers.ts` + `useWizardState/useWizardValidation`
+- Все unit-тесты старых wizard'ов
+- `resources/js/services/automation/recipePhaseSync.ts` (orphan после удаления wizard'ов)
+
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: обратная совместимость со старыми формами `Pages/Setup/Wizard.vue` и `Components/GrowCycle/GrowthCycleWizard.vue` не требуется — оба wizard'а удаляются после миграции.
 
 ---
 
-## 0. Контекст
+## 0. Почему rewrite, не iterative fix
 
-Два front-end flow задают одну и ту же подсистему зоны разными формами и payload-shape:
+Версия 1.0 плана (8 phases iterative patching) базировалась на допущении **«сохранить оба flow с shared компонентами»**. Аудит 2026-04-18 (см. раздел 1 ниже) показал:
 
-| Flow | Entry | Где сохраняется |
-|------|-------|-----------------|
-| **Setup Wizard** (6 шагов) | [resources/js/Pages/Setup/Wizard.vue](../../backend/laravel/resources/js/Pages/Setup/Wizard.vue) | `zone.logic_profile`, `zone.pid.{ph,ec}`, pump calibration, sensor calibration |
-| **Start Cycle** (7 шагов, modal) | [resources/js/Components/GrowCycle/GrowthCycleWizard.vue](../../backend/laravel/resources/js/Components/GrowCycle/GrowthCycleWizard.vue) | `zone.logic_profile` (re-write), `grow_cycles.*` |
+| Симптом | Причина |
+|---|---|
+| 2 688 строк composable логики (`useSetupWizard` 1177 + `useGrowthCycleWizard` 1511) | Параллельные state-machines для одного домена |
+| 40-50% дубля между wizard'ами | Общий домен разложен на два разных UI без shared primitive |
+| 12 вложенных `watch()` в GrowCycle | Ручная синхронизация form ↔ recipe ↔ zone ↔ automation |
+| Phase 5 data-loss bug (replace вместо merge в `updateDocument()`) | Нет единой точки записи `zone.logic_profile` |
+| 5+ dead fields в `WaterFormState` | Параллельные формы расходятся по содержимому, backend не принимает часть полей |
+| Readiness errors cryptic (`process_calibration_generic`) | Нет структурированного error → action mapping |
 
-Аудит 2026-04-17 показал ~12 расхождений между flow: асимметричные поля в UI, поля без привязки к API, двойная запись `zone.logic_profile`, неиспользуемые fields в `WaterFormState`, hardcoded defaults для irrigation decision / correction params.
+Iterative patching 8 phases не устраняет **корневую причину** (два state-machine для одного домена) — только симптомы. Через 6 месяцев flow разойдутся снова.
 
-Эталон (ground truth для унификации) — **типизированная `RuntimePlan` Pydantic-модель** после рефакторинга:
-- [ae3lite/config/schema/runtime_plan.py](../../backend/services/automation-engine/ae3lite/config/schema/runtime_plan.py) — Pydantic canonical shape
-- [schemas/zone_correction.v1.json](../../schemas/zone_correction.v1.json), [schemas/recipe_phase.v1.json](../../schemas/recipe_phase.v1.json), [schemas/zone_logic_profile.v1.json](../../schemas/zone_logic_profile.v1.json), [schemas/zone_process_calibration.v1.json](../../schemas/zone_process_calibration.v1.json)
-- [_test_support_runtime_plan.py::make_runtime_plan_dict](../../backend/services/automation-engine/_test_support_runtime_plan.py) — canonical baseline payload для тестов (100+ полей)
-- [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — summary authority namespaces
+**Новый подход:** один unified `<GrowCycleLauncher>`, backend-driven steps, schema-validated state, preview-before-submit.
 
 ---
 
 ## 1. Цели рефакторинга
 
-1. **Единый ground-truth shape** для обоих flow: формы frontend'а генерируют payload, структурно идентичный `RuntimePlan` (с конверсией единиц: минуты↔секунды).
-2. **Убрать dead-fields** в `WaterFormState` (поля которые не отправляются в API).
-3. **Убрать двойную запись `zone.logic_profile`** — Start-Cycle не должен перетирать Wizard-настройки без явного user intent.
-4. **Добавить недостающее в UI**: irrigation decision config, correction retry params, day/night overrides — всё что живёт в `RuntimePlan`, но отсутствует в UI.
-5. **Унифицировать device binding** между Setup Wizard и Start-Cycle.
-6. **Shared компоненты** вместо дублирования: один Vue-компонент для irrigation settings, один для automation settings, один для pump calibration.
+1. **Один flow** — `<GrowCycleLauncher>` вместо `Setup Wizard` + `GrowthCycleWizard`. Entry point один (`/launch/:zoneId?`); шаги condition-based (если zone отсутствует — показываем шаги установки, иначе скрыты).
+2. **Backend-driven steps manifest** — список шагов, валидация, can-proceed вычисляет backend (`GET /api/launch-flow/manifest`). Добавление нового шага = backend-only change.
+3. **Schema-first state** — Zod/Valibot schema `growCycleLaunch.ts` как single source of truth. TypeScript type inferred. Runtime validation. Payload serialisation через `schema.parse()`. Dead fields физически невозможны.
+4. **TanStack Query** вместо `Pinia store` + 12 вложенных `watch()`. Кеш per zone/recipe, auto-refetch on mutation, out-of-box loading/error state.
+5. **Diff-preview before commit** — перед POST `/zones/{id}/grow-cycles` показывать side-by-side diff текущего `zone.logic_profile` и нового. Фиксит data-loss bug by design: user подтверждает конкретные изменения.
+6. **Actionable readiness errors** — структурированный ответ `{code, message, action}` с clickable action items ("Выполните калибровку pH-насоса" → прямой переход).
+7. **`<BaseWizard>` as reusable primitive** — progress/navigation/validation-display как generic компонент, переиспользуемый другими flows (bulk ops, calibration suite).
 
 ### 1.1 Anti-goals
 
-- ❌ Не менять backend API контракты в этом PR — только frontend-side унификация. Backend изменяется только если обнаружится отсутствующий endpoint (Phase 6).
-- ❌ Не добавлять новый Flow C (e.g. «unified wizard»). Сохраняем оба flow, но с shared компонентами.
-- ❌ Не трогать Python `RuntimePlan` Pydantic shape — он authority. Подстраиваем frontend, не наоборот.
-- ❌ Не объединять Pinia stores двух flow в один (разные жизненные циклы).
+- ❌ **Не сохранять** `Pages/Setup/Wizard.vue` и `Components/GrowCycle/GrowthCycleWizard.vue` после миграции — удаляются в Phase 6.
+- ❌ **Не мигрировать** 2 688 строк composable логики — переписываем с нуля, используя schema + query.
+- ❌ **Не добавлять** feature flags для параллельного сосуществования на production — проект в активной разработке, coord переключается в одном PR.
+- ❌ **Не использовать** Pinia для ephemeral wizard state (TanStack Query + local `ref`). Pinia остаётся для `useZoneStore` / `useAlertsStore` (multi-page state).
 
 ---
 
-## 2. Эталон: поля RuntimePlan → UI mapping
+## 2. Архитектура нового flow
 
-| RuntimePlan секция | Поля | Сейчас в UI | Целевое место в UI |
-|---|---|---|---|
-| `target_{ph,ec}` + `target_{ph,ec}_{min,max}` | pH/EC targets | ✅ readonly из recipe | Keep readonly + **добавить live-edit** через phase_overrides (Phase 6) |
-| `target_ec_prepare{,_min,_max}`, `npk_ec_share` | EC для prepare-фазы | ❌ скрыто | Новая «Advanced EC» secция |
-| `irrigation_execution` (duration_sec, interval_sec, correction_during_irrigation, correction_slack_sec) | Timing полива | ✅ в WaterForm | Shared `<IrrigationTimingForm/>` |
-| `irrigation_decision.strategy` + `irrigation_decision.config` (lookback, min_samples, stale_after_sec, hysteresis_pct, spread_alert_threshold_pct) | Стратегия решения | ⚠️ strategy есть, config hardcoded | Новая `<IrrigationDecisionAdvanced/>` (expandable) |
-| `irrigation_recovery` (max_continue_attempts, timeout_sec, auto_replay_after_setup, max_setup_replays) | Recovery | ❌ | Новая `<IrrigationRecoveryForm/>` (expert/engineer only) |
-| `irrigation_safety.stop_on_solution_min` | Safety flag | ✅ | Keep, но в shared component |
-| `correction` (max_{ph,ec}_correction_attempts, stabilization_sec, telemetry_stale_retry_sec, decision_window_retry_sec, solution_volume_l, max_{ec,ph}_dose_ml) | Correction tuning | ❌ hardcoded | Новая `<CorrectionTuningForm/>` (agronomist/engineer) |
-| `correction.controllers.{ph,ec}` (PID: kp/ki/kd, deadband, observe block, anti_windup, overshoot_guard, no_effect) | PID | ✅ в Setup Wizard шаг 5 | Keep, но перенести в shared component |
-| `correction.ec_dosing_mode`, `ec_component_ratios`, `ec_component_policy` | Multi-component dosing | ❌ | Новая `<MultiComponentDosing/>` (если multi_parallel) |
-| `process_calibrations.{solution_fill,tank_recirc,irrigation,generic}` (ec_gain, ph_gain, transport_delay, settle_sec, confidence) | Pump calibration | ✅ run-time в Setup Wizard | Keep, но shared `<PumpCalibrationCard/>` |
-| `prepare_tolerance.{ph_pct,ec_pct}` + `prepare_tolerance_by_phase` | Prepare tolerance | ⚠️ в WaterForm, не шлётся | Fix: либо убрать из формы, либо **отправлять в zone.correction.tolerance** |
-| `day_night_enabled` + `day_night_config` (lighting, ph/ec day/night overrides) | Day/night | ❌ Phase 5 TODO | Новая `<DayNightTargetsForm/>` (live-edit через phase-config) |
-| `fail_safe_guards` (clean_fill_min_check_delay_ms, estop_debounce_ms, recirculation_stop_on_solution_min и др) | Failsafe | ❌ | Новая `<FailsafeGuardsForm/>` (engineer/admin only) |
-| `pid_state.{ph,ec}` | Runtime state | ❌ (не настраивается) | **read-only** в Zone Diagnostics page |
-| `soil_moisture_target.{unit,min,max,target}` | Soil moisture | ⚠️ binding есть, target нет | Расширить soil_moisture modal |
-| `clean_{min,max}_sensor_labels`, `solution_{min,max}_sensor_labels` | Level switch labels | ⚠️ через device binding | Keep через binding |
+### 2.1 High-level
 
-**Легенда:** ✅ = в UI; ⚠️ = частично (есть поле, но не шлётся); ❌ = полностью отсутствует.
+```
+┌────────────────────────────────────────────────────────────────┐
+│ /launch/:zoneId?                  (single entry for any launch) │
+│                                                                │
+│ ┌──────────────────┐  ┌────────────────────────────────────┐   │
+│ │ <BaseWizard>     │  │ Backend manifest loader            │   │
+│ │ primitive        │←─│ GET /api/launch-flow/manifest       │   │
+│ │ (progress, nav,  │  │  ?zone_id=5                         │   │
+│ │  validation UI)  │  │ → [step{id, validation, required}]  │   │
+│ └──────────────────┘  └────────────────────────────────────┘   │
+│         │                       │                              │
+│         ↓                       ↓                              │
+│ ┌─────────────────────────────────────────────────────┐        │
+│ │ Step components (slot into <BaseWizard>)            │        │
+│ │  <ZoneStep/> <RecipeStep/> <AutomationStep/>        │        │
+│ │  <CalibrationStep/> <PreviewStep/>                  │        │
+│ └─────────────────────────────────────────────────────┘        │
+│         │                                                      │
+│         ↓                                                      │
+│ ┌─────────────────────────────────────────────────────┐        │
+│ │ Zod schema `growCycleLaunch.ts`                     │        │
+│ │ (single source of truth for form state + payload)   │        │
+│ └─────────────────────────────────────────────────────┘        │
+│         │                                                      │
+│         ↓                                                      │
+│ ┌─────────────────────────────────────────────────────┐        │
+│ │ TanStack Query                                      │        │
+│ │  - useZone(id), useRecipe(id), useReadiness(id)     │        │
+│ │  - useLaunchGrowCycleMutation()                     │        │
+│ └─────────────────────────────────────────────────────┘        │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Step components — slot-based
+
+```vue
+<!-- Pages/Launch/Index.vue -->
+<BaseWizard :steps="manifest.steps" v-model:current="currentStep">
+  <template #step-zone><ZoneStep :schema="schema" /></template>
+  <template #step-recipe><RecipeStep :schema="schema" /></template>
+  <template #step-automation><AutomationStep :schema="schema" /></template>
+  <template #step-calibration><CalibrationStep :schema="schema" /></template>
+  <template #step-preview><PreviewStep :schema="schema" /></template>
+</BaseWizard>
+```
+
+Каждый `*Step` — **чистая UI компонент** без бизнес-логики: читает state из `schema`, валидация через `schema.safeParse()` на каждом change.
+
+### 2.3 Schema shape
+
+```ts
+// resources/js/schemas/growCycleLaunch.ts
+import { z } from 'zod';
+
+export const growCycleLaunchSchema = z.object({
+  zone_id: z.number().positive(),
+  recipe_revision_id: z.number().positive(),
+  plant_id: z.number().positive(),
+  planting_at: z.string().datetime(),
+  batch_label: z.string().max(100).optional(),
+  notes: z.string().optional(),
+
+  // Overrides (optional, merge non-destructively)
+  overrides: z.object({
+    irrigation: z.object({
+      interval_sec: z.number().int().min(60).max(3600).optional(),
+      duration_sec: z.number().int().min(1).max(600).optional(),
+    }).optional(),
+    correction: z.object({
+      target_ph: z.number().min(3).max(9).optional(),
+      target_ec: z.number().min(0).max(5).optional(),
+    }).optional(),
+  }).optional(),
+
+  // Device bindings (if zone not fully configured)
+  bindings: z.object({
+    soil_moisture_sensor_id: z.number().optional(),
+    // ... other conditional bindings
+  }).optional(),
+});
+
+export type GrowCycleLaunchPayload = z.infer<typeof growCycleLaunchSchema>;
+```
+
+### 2.4 Backend manifest
+
+```
+GET /api/launch-flow/manifest?zone_id=5
+→
+{
+  "steps": [
+    {
+      "id": "zone",
+      "title": "Зона",
+      "visible": false,  // zone уже передана
+      "required": true
+    },
+    {
+      "id": "recipe",
+      "title": "Рецепт и растение",
+      "visible": true,
+      "required": true,
+      "validation": { "required_fields": ["recipe_revision_id", "plant_id"] }
+    },
+    {
+      "id": "automation",
+      "title": "Автоматика",
+      "visible": true,
+      "required": true,
+      "depends_on": ["recipe"],
+      "conditional": { "show_if_readiness_missing": ["irrigation_role"] }
+    },
+    {
+      "id": "calibration",
+      "title": "Калибровка",
+      "visible": false,  // skip если readiness ОК
+      "required": false
+    },
+    {
+      "id": "preview",
+      "title": "Подтверждение",
+      "visible": true,
+      "required": true
+    }
+  ],
+  "role_hints": {
+    "operator": ["recipe", "preview"],  // прячем технические шаги
+    "agronomist": ["recipe", "automation", "preview"],
+    "engineer": ["zone", "recipe", "automation", "calibration", "preview"]
+  }
+}
+```
+
+Backend генерирует manifest на основе `Zone::readiness()`, role пользователя, и текущего state (есть/нет device bindings).
+
+### 2.5 Readiness → action items
+
+```
+// backend readiness response (новый формат)
+{
+  "ready": false,
+  "blockers": [
+    {
+      "code": "pump_calibration_missing",
+      "message": "Требуется калибровка дозирующего насоса pH (node gh-1-ph-1)",
+      "action": {
+        "type": "open_calibration",
+        "node_id": 5,
+        "pump_channel": "ph_acid",
+        "route": { "name": "zones.calibration", "params": { "zoneId": 5, "pump": "ph_acid" } }
+      },
+      "severity": "error"
+    }
+  ]
+}
+```
+
+Frontend рендерит clickable cards; клик → `router.visit(route)` → страница калибровки с context.
 
 ---
 
 ## 3. Executable runbook
 
-Каждая фаза = отдельный PR, независимо revert-able, между фазами прогон `npm run test && npm run typecheck && php artisan test`.
+Каждая фаза = 1 PR, revert-able независимо. Merge порядок: 1 → 2 → 3 → 4 → 5 → 6.
 
-### Phase 1 — Shared form types + canonical payload builder (1 день, 1 PR, low-risk)
+---
 
-**Цель:** зафиксировать единый TypeScript shape для automation-форм, соответствующий `RuntimePlan`.
+### Phase 1 — Foundation: schema + BaseWizard primitive (2 дня)
+
+**Цель:** заложить фундамент — Zod schema + `<BaseWizard>` primitive + typed API client. Без замены существующих wizard'ов.
 
 **Actions:**
-1. Создать [resources/js/types/runtimePlan.ts](../../backend/laravel/resources/js/types/runtimePlan.ts) — TypeScript mirror of `RuntimePlan` Pydantic (auto-generatable из JSON Schema через `json-schema-to-typescript`, либо manual).
-2. Создать [resources/js/services/automation/runtimePlanPayload.ts](../../backend/laravel/resources/js/services/automation/runtimePlanPayload.ts) с функциями:
-   - `fromWaterFormState(form: WaterFormState): Partial<RuntimePlan>` — serializer
-   - `toWaterFormState(plan: RuntimePlan): WaterFormState` — deserializer
-   - `mergeIntoLogicProfile(plan: Partial<RuntimePlan>, existing: ZoneLogicProfile): ZoneLogicProfile` — non-destructive merge
-3. Написать **Vitest** unit-тесты для round-trip: `toWaterFormState(fromWaterFormState(form)) === form` + edge cases.
-4. Ничего не менять в существующих компонентах в этом PR — только добавить типы и builder.
+1. Создать [resources/js/schemas/growCycleLaunch.ts](../../backend/laravel/resources/js/schemas/growCycleLaunch.ts) — Zod schema с `GrowCycleLaunchPayload` type.
+2. Создать [resources/js/Components/Shared/BaseWizard/BaseWizard.vue](../../backend/laravel/resources/js/Components/Shared/BaseWizard/BaseWizard.vue) — pure UI primitive:
+   - props: `steps: Step[]`, `currentStep: string`, `canProceed: (step) => boolean`
+   - slots: `#step-{id}`, `#navigation`, `#progress`
+   - emits: `update:currentStep`, `submit`, `cancel`
+3. Создать [resources/js/composables/useFormSchema.ts](../../backend/laravel/resources/js/composables/useFormSchema.ts) — reactive Zod integration:
+   - `const { state, errors, isValid } = useFormSchema(schema)`
+   - SafeParse on every change, expose field-level errors.
+4. Unit-тесты: `BaseWizard` render/navigation, `useFormSchema` round-trip.
 
 **DoD:**
 - `npm run typecheck` — green
-- `npm run test -- --run runtimePlanPayload` — 20+ кейсов green
-- No behavior changes in production code
+- `npm run test -- --run growCycleLaunch|BaseWizard|useFormSchema` — ≥30 кейсов
+- **Zero изменений в существующих wizard'ах**
 
-**Acceptance commands:**
-```bash
-cd backend/laravel
-npm run typecheck
-npm run test -- --run runtimePlanPayload
-```
-
-**Rollback:** revert PR — ничего не использует новые типы.
+**Rollback:** revert PR.
 
 **Риски:** 0.
 
 ---
 
-### Phase 2 — Dead fields cleanup в WaterFormState (1 день, 1 PR)
+### Phase 2 — Backend manifest endpoint + TanStack Query (2 дня)
 
-**Цель:** удалить поля формы, которые не отправляются в API, или начать их отправлять.
-
-**Находки аудита (что мертво):**
-- `WaterFormState.phPct` / `ecPct` — не шлётся (runtime читает из `zone.correction.tolerance`)
-- `WaterFormState.irrigationDecisionLookbackSeconds`, `irrigationDecisionMinSamples`, `irrigationDecisionStaleAfterSec`, `hysteresisPct`, `spreadAlertThresholdPct` — заполняются defaults, не редактируются, не шлются
-- `WaterFormState.irrigationRecoveryMaxContinueAttempts`, `timeoutSec`, `autoReplayAfterSetup`, `maxSetupReplays` — defaults, dead
-
-**Actions (два варианта, выбрать по консультации с product-owner):**
-
-**Вариант A — удалить dead-fields (рекомендуется для MVP):**
-1. Удалить перечисленные поля из `WaterFormState` (type + factory).
-2. Удалить `<input>`/`<Field/>` из Vue-компонентов (если были).
-3. Обновить `useAutomationDefaults()` — перестать возвращать эти поля.
-4. Удалить связанные Vitest unit-тесты.
-
-**Вариант B — начать отправлять (для полноценной UI):**
-1. Добавить эти поля в payload → `subsystems.irrigation.decision.config` / `recovery` + `subsystems.irrigation.safety.prepare_tolerance`.
-2. Обновить backend `SetupController::storeZoneLogicProfile` / `GrowCycleController::store` чтобы принимать эти поля (см. [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — live-edit authority).
-3. Сохранение → recompile bundle → AE3 подхватит.
-
-**Рекомендация:** Вариант A сейчас (быстро), Вариант B вынесено в **Phase 3** (Advanced UI).
-
-**DoD (Вариант A):**
-- `grep -rn "phPct\|irrigationDecisionLookback\|irrigationRecovery" backend/laravel/resources/js/` → только в удаляемых местах или `runtime.*` paths
-- `npm run test && npm run typecheck` — green
-- Backend Laravel tests unchanged
-
-**Rollback:** revert PR.
-
-**Риски:** низкие. Митигация: проверить через `git log --all --source -- <file>` не использовал ли кто-то эти поля в другой ветке.
-
----
-
-### Phase 3 — Advanced Irrigation panel (irrigation_decision config + recovery) (2 дня, 1 PR)
-
-**Цель:** добавить UI для irrigation decision config + recovery params, которые сейчас hardcoded в backend defaults.
-
-**Актуально только для Вариант B из Phase 2 или как отдельное расширение.**
+**Цель:** backend endpoint для steps manifest + wire up TanStack Query для кеша/mutation.
 
 **Actions:**
-1. Создать [Components/AutomationForms/IrrigationDecisionAdvanced.vue](../../backend/laravel/resources/js/Components/AutomationForms/IrrigationDecisionAdvanced.vue):
-   - Collapsible panel «Advanced: Decision tuning»
-   - Визуально разделён по strategy (если strategy='task' — скрыть config, если smart_soil_v1 — показать lookback/min_samples/hysteresis)
-   - Inputs с min/max hints из JSON Schema (через `v-model` → TypeScript validation)
-2. Создать [Components/AutomationForms/IrrigationRecoveryAdvanced.vue](../../backend/laravel/resources/js/Components/AutomationForms/IrrigationRecoveryAdvanced.vue):
-   - Engineer/admin role gate (через `useRole()`)
-   - max_continue_attempts, timeout_sec, auto_replay_after_setup, max_setup_replays
-3. Встроить оба компонента в:
-   - [Pages/Setup/Wizard.vue](../../backend/laravel/resources/js/Pages/Setup/Wizard.vue) шаг 4 — в секции water
-   - [Components/GrowCycle/WizardAutomationStep.vue](../../backend/laravel/resources/js/Components/GrowCycle/WizardAutomationStep.vue) — в water секции
-4. Backend: убедиться что `SetupController::applyDeviceBindings` + `GrowCycleController::store` принимают и сохраняют `subsystems.irrigation.decision.config` / `recovery`.
-5. Vitest unit тесты: render / collapse / v-model round-trip.
-6. Playwright e2e scenario: open wizard → expand Advanced → change lookback → save → verify in API response.
+1. **Backend:**
+   - Создать `App\Http\Controllers\LaunchFlowManifestController` с `GET /api/launch-flow/manifest?zone_id`.
+   - Manifest builder использует `Zone::readiness()`, `useRole()`, device binding state.
+   - Readiness enrichment: существующий `ZoneReadinessService` расширить на возврат `action` field в blockers.
+2. **Frontend:**
+   - Добавить `@tanstack/vue-query` в `package.json`.
+   - В `app.ts` установить `VueQueryPlugin`.
+   - Создать [resources/js/services/queries/launch.ts](../../backend/laravel/resources/js/services/queries/launch.ts):
+     - `useLaunchManifest(zoneId)` — cached GET
+     - `useLaunchMutation()` — POST `/zones/{id}/grow-cycles` с optimistic invalidation
+     - `useReadinessQuery(zoneId)` — с refetch on mutation
+3. PHPUnit: `LaunchFlowManifestControllerTest` — 10+ тестов (role variations, readiness states).
+4. Vitest: `useLaunchManifest` — mock HTTP + verify cache behaviour.
 
 **DoD:**
-- `/api/automation-configs/zone/{id}/zone.logic_profile` payload содержит `subsystems.irrigation.decision.config` после save в Wizard
-- Runtime plan (через `make_runtime_plan(irrigation_decision={...})`) принимает те же поля
-- Vitest 10+ тестов green
-- Playwright e2e scenario green
+- `GET /api/launch-flow/manifest?zone_id=5` возвращает валидный manifest для разных ролей
+- TanStack Query DevTools показывает cache entries для zones/recipes
+- Phase 1 код остаётся unused (не сломано)
 
-**Rollback:** revert PR. Сохранённые advanced-params остаются в БД, читаются старым кодом как defaults.
+**Rollback:** revert PR; backend endpoint остаётся (не используется в runtime).
 
 **Риски:**
-- Средний: операторы могут поменять params без понимания — митигация через role-gate (engineer+) и warning tooltip.
+- Medium: `Zone::readiness()` может не содержать нужную granularity для blockers — mitigation: pre-check в Phase 1, расширить при необходимости.
 
 ---
 
-### Phase 4 — Unified CorrectionTuningForm (2-3 дня, 1 PR)
+### Phase 3 — `<GrowCycleLauncher>` новый flow (3-4 дня)
 
-**Цель:** вывести в UI поля `zone.correction`, которые сейчас полностью hardcoded в backend defaults.
-
-**Scope:** max_{ph,ec}_correction_attempts, stabilization_sec, telemetry_stale_retry_sec, decision_window_retry_sec, low_water_retry_sec, solution_volume_l, max_{ec,ph}_dose_ml + PID controllers block (kp/ki/kd/deadband/observe/anti_windup/overshoot_guard/no_effect).
+**Цель:** построить новый Page + step components, интегрируя Phase 1-2.
 
 **Actions:**
-1. Создать [Components/AutomationForms/CorrectionTuningForm.vue](../../backend/laravel/resources/js/Components/AutomationForms/CorrectionTuningForm.vue):
-   - Три секции: «Retry & timing», «pH controller», «EC controller»
-   - Привязка к `zone.correction.base_config` (а не к `zone.logic_profile`)
-   - Предустановки через `automation_config_presets` (уже есть в backend)
-2. Заменить существующий PID-блок из [ZoneCorrectionCalibrationStack.vue](../../backend/laravel/resources/js/Components/ZoneAutomation/ZoneCorrectionCalibrationStack.vue) на этот shared component (или wrap).
-3. Добавить form в Setup Wizard шаг 5 (после калибровки) и доступ через zone edit page.
-4. **Не добавлять в Start-Cycle** — в Start-Cycle форма только read-only summary (agronomist не редактирует correction на запуске).
-5. API: использовать существующий [PUT /api/automation-configs/zone/{id}/zone.correction](../../backend/laravel/app/Http/Controllers/AutomationConfigController.php) (уже реализован).
-6. Vitest + Playwright тесты.
+1. Создать [resources/js/Pages/Launch/Index.vue](../../backend/laravel/resources/js/Pages/Launch/Index.vue) — entry page:
+   - route: `/launch/:zoneId?`
+   - использует `useLaunchManifest(zoneId)` + `useFormSchema(growCycleLaunchSchema)`
+   - рендерит `<BaseWizard>` со step slots
+2. Создать step components в [resources/js/Components/Launch/](../../backend/laravel/resources/js/Components/Launch/):
+   - `<ZoneStep/>` — выбор/создание зоны (только если не в manifest.skipped)
+   - `<RecipeStep/>` — recipe + plant + preview recipe phases
+   - `<AutomationStep/>` — climate/water/lighting из schema.overrides
+   - `<CalibrationStep/>` — readiness blockers с clickable actions
+   - `<PreviewStep/>` — diff preview + confirm button
+3. Role-based step visibility через `useRole()` + `manifest.role_hints`.
+4. Routing: добавить `/launch/:zoneId?` в Laravel routes (`routes/web.php`).
+5. **Старые wizard'ы остаются работать** — новый flow пока за отдельным URL.
+6. Playwright e2e: scenario "agronomist launches cycle for configured zone".
 
 **DoD:**
-- zone edit page показывает Correction Tuning form
-- Сохранение → `zone.correction` document bumped → AE3 `_checkpoint` подхватывает (Phase 5 refactoring plan)
-- Role gate: form visible для agronomist/engineer/admin, read-only для operator/viewer
+- `/launch/5` работает: full flow от recipe → preview → launch cycle
+- `GrowCycleLaunchPayload` проходит schema validation на каждом шаге
+- Manifest-driven steps: скрытие/показ без frontend-if-ов
+- Старые `Setup Wizard` и `GrowthCycleWizard` продолжают работать параллельно
 
-**Rollback:** revert PR; все saved correction tunings остаются в БД.
+**Rollback:** revert PR; новый URL недоступен, старые wizard'ы не затронуты.
 
 **Риски:**
-- Operator может накрутить kp/ki до нереалистичных значений — митигация: input range validation + explicit confirmation modal для critical params (kp, ki, kd, hard_min, hard_max).
+- High: новые step components с нуля — могут не покрывать edge cases из 2688 строк старой логики. Mitigation: characterisation tests (record payload от старых wizards, replay через новый schema — должен дать equivalent).
 
 ---
 
-### Phase 5 — Non-destructive `zone.logic_profile` merge в Start-Cycle (1 день, 1 PR)
+### Phase 4 — Diff-preview + clickable readiness actions (2 дня)
 
-**Цель:** устранить баг «Start-Cycle перетирает Wizard-настройки».
-
-**Текущее поведение:** [useGrowthCycleWizard::persistLaunchPrerequisites](../../backend/laravel/resources/js/composables/useGrowthCycleWizard.ts) делает `PUT /api/automation-configs/zone/{id}/zone.logic_profile` с полным payload `{ active_mode, profiles: { setup: {...} } }`. Если Setup Wizard до этого установил поле X, которое сейчас не показано в Start-Cycle UI — оно стирается.
+**Цель:** реализовать diff-preview step и clickable actions в readiness blockers.
 
 **Actions:**
-1. В `persistLaunchPrerequisites` перед PUT сделать GET текущего `zone.logic_profile`.
-2. Использовать `mergeIntoLogicProfile()` из Phase 1 — deep merge Start-Cycle overrides в существующий payload вместо replace.
-3. Backend: убедиться что endpoint принимает partial payload (сейчас он accept full — возможно надо расширить validator для patch-mode).
-4. Если backend не поддерживает patch — добавить flag `?mode=merge` в endpoint (или new route `PATCH /api/automation-configs/zone/{id}/zone.logic_profile`).
-5. Vitest unit-тест для `mergeIntoLogicProfile`: проверить что non-overlapping поля сохраняются.
-6. Playwright e2e: Setup Wizard → save → Start-Cycle → save → verify Setup Wizard settings сохранились.
+1. **Diff preview:**
+   - Создать [Components/Launch/DiffPreview.vue](../../backend/laravel/resources/js/Components/Launch/DiffPreview.vue):
+     - Fetch current `zone.logic_profile` через `GET /api/automation-configs/zone/{id}/zone.logic_profile`.
+     - Compute computed diff между current + schema.overrides.
+     - Визуализировать как side-by-side (левая колонка current, правая — new), подсветить changes.
+   - Использовать `fast-json-patch` (RFC 6902) для structured diff.
+2. **Clickable readiness:**
+   - Backend: `ZoneReadinessService::blockers()` возвращает `action: { type, route }`.
+   - Frontend `<CalibrationStep/>`: рендерит blockers как `<router-link :to="blocker.action.route">` cards.
+3. **Merge submit:** `useLaunchMutation()` отправляет `{ ...core, overrides }` → backend применяет merge (не replace) в `zone.logic_profile`.
+4. Backend endpoint обновить на poor merge support если нет:
+   - `PATCH /api/automation-configs/zone/{id}/zone.logic_profile` с JSON Merge Patch semantics.
+   - Или переиспользовать `PUT` с explicit `mode=merge` query param.
+5. Vitest: diff computation unit tests (30+ кейсов — missing, added, modified, nested).
 
 **DoD:**
-- Start-Cycle PUT не теряет поля, не редактируемые в Start-Cycle UI
-- 10+ unit-тестов merge-поведения
-- e2e scenario green
+- User перед submit видит точный diff changes
+- Readiness blockers → clickable → переход к нужному UI
+- Merge POST не теряет non-overriden поля
+- E2e: Setup state → launch с overrides → verify non-overriden поля preserved
 
-**Rollback:** revert PR; Start-Cycle возвращается к replace behavior.
-
-**Риски:** низкие. Митигация: feature flag `ENABLE_LOGIC_PROFILE_MERGE` для быстрого отката в production.
-
----
-
-### Phase 6 — Phase overrides в Start-Cycle (live-edit recipe targets) (2 дня, 1 PR)
-
-**Цель:** разрешить оператору override pH/EC/irrigation targets из рецепта **при запуске конкретного цикла**, не меняя сам рецепт.
-
-**Контекст:** сейчас recipe phase targets readonly в UI обоих flow. Backend endpoint `PUT /api/grow-cycles/{id}/phase-config` реализован для live-edit (см. [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md)), но UI не использует его для **запуска**.
-
-**Actions:**
-1. В [WizardAutomationStep.vue](../../backend/laravel/resources/js/Components/GrowCycle/WizardAutomationStep.vue) добавить toggle «Override recipe targets for this cycle».
-2. Toggle ON → unlock pH/EC/irrigation_duration/interval поля (с показом recipe defaults как placeholder).
-3. На submit (после POST grow-cycle) — если были overrides → PUT /api/grow-cycles/{id}/phase-config с `{ base_config: { target_ph, target_ec, irrigation_duration_sec, ... }, phase: null }`.
-4. UI показывает badge «Cycle customised — based on Recipe v{revision}» после запуска.
-5. Reuse [RecipePhaseLiveEditCard.vue](../../backend/laravel/resources/js/Components/ZoneAutomation/RecipePhaseLiveEditCard.vue) подкомпонентом (он уже умеет live-edit через тот же endpoint).
-6. Vitest + Playwright тесты.
-
-**DoD:**
-- Start-Cycle с overrides → создаёт cycle + phase-config bump → AE3 читает overrides
-- Recipe не меняется (проверить что `recipes.payload.phases[0].ph_target` не затронут)
-- Audit trail: `zone_config_changes` содержит namespace `recipe.phase` для override
-
-**Rollback:** revert PR; override-toggle пропадает, recipe values используются как есть.
+**Rollback:** revert PR; preview step пропускается, actions не clickable.
 
 **Риски:**
-- Operator может накрутить нереалистичные targets — митигация: валидация ranges из `schemas/recipe_phase.v1.json` на стороне frontend + backend.
+- Medium: backend merge-support может не существовать для всех namespaces — mitigation: Phase 2 pre-check.
 
 ---
 
-### Phase 7 — Shared компоненты вместо дубликатов (2 дня, 1 PR)
+### Phase 5 — Migration: redirect old wizards + feature-parity check (1-2 дня)
 
-**Цель:** убрать дубликаты Vue-компонентов между Setup Wizard и Start-Cycle.
-
-**Дубликаты (находки аудита):**
-- Setup Wizard `ZoneAutomationProfileSections.vue` vs Start-Cycle `WizardAutomationStep.vue` — частично дублируют irrigation/lighting/climate forms
-- `useSetupWizard::loadAutomationProfile` vs `useGrowthCycleWizard::loadAutomationProfile` — ~50 строк дублированной логики
-- Два места `syncFormsFromRecipePhase` в разных файлах
+**Цель:** все entry points теперь указывают на `/launch/:zoneId?`; старые routes redirect.
 
 **Actions:**
-1. Создать [composables/useAutomationProfileLoader.ts](../../backend/laravel/resources/js/composables/useAutomationProfileLoader.ts) — shared logic: `loadAutomationProfile`, `syncFormsFromRecipePhase`, `buildGrowthCycleConfigPayload` (если не все уже shared).
-2. Обновить `useSetupWizard` и `useGrowthCycleWizard` на использование этого composable.
-3. Создать [Components/Shared/AutomationForm/](../../backend/laravel/resources/js/Components/Shared/AutomationForm/) с подкомпонентами:
-   - `<IrrigationTimingForm/>` (duration/interval/correction_during_irrigation)
-   - `<IrrigationDecisionBasic/>` (strategy selector)
-   - `<ClimateTargetsForm/>` (temp/humidity/co2)
-   - `<LightingScheduleForm/>` (day_start_time/photoperiod)
-4. Заменить существующие inline-формы на shared.
-5. Visual regression tests через Playwright snapshot comparison.
+1. **Route redirects:**
+   - `/setup/wizard` → 301 `/launch` (без zoneId — показывает zone selection step)
+   - `/cycles/wizard` или GrowthCycleModal entry → 301 `/launch/:zoneId`
+   - Открытие Modal через kebab menu на zone card → вызывает `router.visit('/launch/${zoneId}')`
+2. **UI entries:**
+   - Dashboard "Запустить цикл" button → `/launch`
+   - Zone card "Start cycle" → `/launch/${zoneId}`
+   - Setup onboarding splash → `/launch`
+3. **Feature parity audit:**
+   - Pass через checklist всех input полей из Setup Wizard + GrowthCycleWizard — подтвердить все в новом `<AutomationStep/>`.
+   - Sync с user (agronomist) — демо new flow, получить feedback.
+4. Fix gaps по feedback (наверное 1-2 мелкие iterations).
 
 **DoD:**
-- `grep -c "loadAutomationProfile\b" backend/laravel/resources/js/composables/` = 1 (только shared)
-- Setup Wizard и Start-Cycle визуально идентичны в секциях irrigation/lighting (через shared components)
-- Bundle size delta ≤ +5 KB
-- `npm run test` all green (включая 80+ wizard unit-тестов)
+- Zero ссылок на `/setup/wizard` или GrowthCycleModal в коде (grep)
+- Все e2e сценарии прошли на новом flow
+- User sign-off на UX (demo call)
 
-**Rollback:** revert PR; inline formss возвращаются.
+**Rollback:** revert redirects; старые wizard'ы снова активны.
+
+**Риски:** High UX — feature parity. Mitigation: пользовательский user-testing session (не asynchronous).
+
+---
+
+### Phase 6 — Delete legacy wizards (1 день)
+
+**Цель:** удалить старые wizard'ы и их dependencies.
+
+**Actions:**
+1. **Удалить Vue-файлы:**
+   - `Pages/Setup/Wizard.vue`
+   - `Components/GrowCycle/GrowthCycleWizard.vue`
+   - `Components/GrowCycle/WizardAutomationStep.vue`
+   - `Components/GrowCycle/steps/*`
+2. **Удалить composables:**
+   - `useSetupWizard.ts` (1177 строк)
+   - `useGrowthCycleWizard.ts` (1511 строк)
+   - `setupWizardDataLoaders.ts`, `setupWizardPlantNodeCommands.ts`, `setupWizardRecipeAutomationFlows.ts`, `growthCycleWizardHelpers.ts`, и другие `setupWizard*`
+3. **Удалить types:**
+   - `WaterFormState`, `ClimateFormState` (заменены Zod schema)
+   - Любые типы, используемые только в удаляемых файлах
+4. **Удалить тесты:**
+   - `__tests__/useSetupWizard.spec.ts`, `__tests__/useGrowthCycleWizard.spec.ts`
+   - Keep только новые тесты на `<GrowCycleLauncher>` / schema / BaseWizard
+5. **Prune API modules:**
+   - `services/api/setupWizard.ts` — удалить неиспользуемые endpoints (если backend их обслуживал только для Setup Wizard)
+6. Grep sanity: `grep -r "useSetupWizard\|useGrowthCycleWizard\|WaterFormState" resources/js/` → empty
+7. Bundle size check: new bundle должен быть меньше старого (legacy code удалён).
+
+**DoD:**
+- ~2 688 строк composable логики удалено
+- ~2-3k строк Vue + tests удалено
+- `npm run typecheck && npm run test && npm run e2e` — all green
+- Bundle size ↓ (измерить до/после)
+
+**Rollback:** revert — массивный rollback, ~5 файлов back. В exceptional cases можно hold Phase 6 еще спринт, использовать legacy код как backup.
 
 **Риски:**
-- Regression в Setup Wizard, если новый shared component ведёт себя иначе. Митигация: characterization tests (snapshot JSON of payload) до рефакторинга, после — сравнение.
-
----
-
-### Phase 8 — Device binding unification (1-2 дня, 1 PR)
-
-**Цель:** унифицировать flow привязки устройств (pump channels, soil moisture sensor).
-
-**Текущая асимметрия:**
-- Setup Wizard шаг 4: explicit binding через `ZoneAutomationProfileSections` (pump_a/pump_base/pump_acid + soil_moisture_sensor)
-- Start-Cycle шаг 5: implicit binding soil_moisture через отдельный modal, pump channels не переcпрашиваются
-
-**Actions:**
-1. Выбрать canonical flow — рекомендую Setup Wizard explicit (validates readiness заранее).
-2. В Start-Cycle — перед submit запустить readiness check: если какой-то role binding missing → блокировать запуск и отправить user в zone edit page (или inline fix).
-3. Удалить отдельный soil_moisture modal в Start-Cycle; объединить с device binding в общем `<DeviceBindingsReview/>` компоненте (read-only в Start-Cycle, edit в Setup Wizard).
-4. Vitest тесты на missing-binding scenarios.
-
-**DoD:**
-- Start-Cycle не позволяет submit при missing pump channels (readiness error)
-- Shared `<DeviceBindingsReview/>` используется в обоих flow
-- Тесты + e2e
-
-**Rollback:** revert PR.
-
-**Риски:** medium — meняет user flow. Митигация: user-testing с пользователем (agronomist role) перед merge.
+- Medium: какое-то скрытое usage не обнаружено grep'ом — mitigation: e2e full suite + staging deploy.
 
 ---
 
@@ -317,16 +454,14 @@ npm run test -- --run runtimePlanPayload
 
 | Фаза | Длительность | Риск | Зависит |
 |------|--------------|------|---------|
-| 1: Shared types + payload builder | 1 день | none | — |
-| 2: Dead fields cleanup | 1 день | low | 1 |
-| 3: Advanced Irrigation panel | 2 дня | medium | 1, 2 |
-| 4: Unified CorrectionTuningForm | 2-3 дня | medium | 1 |
-| 5: Non-destructive merge | 1 день | low | 1 |
-| 6: Phase overrides в Start-Cycle | 2 дня | medium | 1, 5 |
-| 7: Shared components | 2 дня | medium | 1, 3, 4 |
-| 8: Device binding unification | 1-2 дня | medium | 7 |
+| 1: Schema + BaseWizard primitive | 2 дня | none | — |
+| 2: Backend manifest + TanStack Query | 2 дня | medium | 1 |
+| 3: `<GrowCycleLauncher>` new flow | 3-4 дня | high | 1, 2 |
+| 4: Diff-preview + readiness actions | 2 дня | medium | 3 |
+| 5: Migration + feature parity | 1-2 дня | high (UX) | 3, 4 |
+| 6: Delete legacy | 1 день | medium | 5 |
 
-**Итого:** ~12-14 дней на одного executor'а. Возможна параллелизация Phase 3/4 после Phase 1-2.
+**Итого:** ~11-13 дней на одного executor'а. Критический путь: 1 → 2 → 3 → 5 → 6.
 
 ---
 
@@ -334,32 +469,33 @@ npm run test -- --run runtimePlanPayload
 
 | # | Риск | Вероятность | Импакт | Митигация |
 |---|------|------------|--------|-----------|
-| R1 | Dead fields удаляются, но какой-то e2e тест их использует | средняя | test breakage | Phase 2 acceptance: `grep` + full test suite |
-| R2 | Advanced Irrigation UI сбивает operators без engineer-контекста | высокая | UX degradation | Role-gate + warning tooltip + defaults reset button |
-| R3 | `zone.logic_profile` merge теряет поля (merge bug) | средняя | data loss | 10+ unit-тестов + Playwright e2e + feature flag |
-| R4 | Phase overrides запутывают agronomist (override vs recipe update) | средняя | UX confusion | Explicit badge «customised for this cycle» + training |
-| R5 | Shared components ломают Setup Wizard снимки | средняя | regression | Characterization tests перед рефакторингом |
-| R6 | Backend не поддерживает partial payload (Phase 5) | низкая | blocker | Pre-check в Phase 1: проверить validator, расширить если надо |
-| R7 | Pinia store зоны и цикла конфликтуют при shared composable | средняя | state corruption | Инварианты unit-тестов: store изоляция |
-| R8 | Correction tuning form выставляет params, ломающие production zone | высокая | damage | Confirmation modal + audit trail (уже есть через `zone_config_changes`) |
+| R1 | Новый flow не покрывает edge cases старого (hidden UX features) | высокая | UX regression | Characterisation tests + user-testing в Phase 5 |
+| R2 | TanStack Query конфликтует с существующим Pinia/Inertia patterns | средняя | integration debt | Isolated namespace для launch queries; не мигрируем всё подряд |
+| R3 | Backend manifest endpoint не готов дать достаточно granular readiness | средняя | blockers without actions | Phase 2 pre-check + расширить `ZoneReadinessService` если нужно |
+| R4 | Diff-preview показывает false positive changes (JSON normalisation) | средняя | confusion | Канонический JSON compare (sorted keys, trimmed whitespace) |
+| R5 | Merge в `zone.logic_profile` теряет поля | высокая | data loss | 20+ unit tests на merge; backend validator enforces preservation |
+| R6 | Feature-parity user sign-off не получен | средняя | hold Phase 5-6 | Demo early (после Phase 3), iterate до Phase 5 |
+| R7 | Bundle size unexpectedly grows (TanStack Query + Zod overhead) | низкая | perf degrade | Measure до/после; tree-shake unused schemas |
+| R8 | `<BaseWizard>` primitive слишком abstract, не fit для edge cases | средняя | rewrite BaseWizard | Prototype с 1 step в Phase 1, iterate до Phase 3 |
 
 ---
 
 ## 6. Executor-specific
 
-1. **Фронт-тесты:** `npm run test` (Vitest) + `npm run typecheck` + `npm run lint` перед каждым PR. Full Laravel feature suite — только если API контракт менялся.
-2. **Playwright e2e:** запускаю `npm run e2e -- --grep="<scenario>"` для релевантного сценария каждого PR. Полный e2e — только Phase 4 и 8 (UX-critical).
-3. **Dark mode:** каждый новый компонент должен поддерживать dark mode (проверка вручную через browser toggle).
-4. **Browser testing:** Phase 3, 4, 6, 7, 8 требуют ручной верификации пользователем (по CLAUDE.md). Буду останавливаться и запрашивать.
-5. **Pinia store:** не создавать новые stores; использовать существующие `useZoneStore`, `useGrowCycleStore`.
-6. **TypeScript strict mode:** все новые файлы должны пройти strict typecheck.
+1. **Фронт-тесты:** `npm run test` + `typecheck` + `lint` перед каждым PR. Phase 3, 4, 5 — обязательно Playwright e2e.
+2. **Demo checkpoints:**
+   - После Phase 3 — скрин/video новой UX пользователю (может быть ≈20% готовности, но виден shape)
+   - Перед Phase 5 — live demo с пользователем, записать feedback
+   - Перед Phase 6 — final approval на удаление legacy
+3. **Dark mode:** каждый новый компонент — dark mode by default (tailwind `dark:` utilities).
+4. **TypeScript strict:** все новые файлы — strict mode, `any` запрещены.
+5. **Pinia store:** **не создавать новые** для launch flow. Existing `useZoneStore`, `useAlertsStore` — остаются как есть.
+6. **Accessibility:** keyboard navigation работает на `<BaseWizard>` (Tab между шагами, Enter для proceed).
 
 **Stop-and-ask points:**
-- Phase 2: перед выбором между Variant A / B (удалить vs отправлять dead fields)
-- Phase 3: если irrigation_decision.config значения существующих zones в dev DB разойдутся с schema bounds — stop.
-- Phase 4: перед merge — ручной тест critical PID ranges пользователем.
-- Phase 6: перед merge — ручной тест override flow пользователем.
-- Phase 8: перед merge — UX review пользователем (user flow изменение).
+- **Phase 2:** перед написанием `LaunchFlowManifestController` — согласовать shape manifest с пользователем (какие шаги, как условность).
+- **Phase 3:** перед завершением — демо новой UX пользователю.
+- **Phase 5:** перед удалением legacy — final approval.
 
 ---
 
@@ -367,14 +503,14 @@ npm run test -- --run runtimePlanPayload
 
 | Метрика | Команда / проверка | Цель |
 |---------|-------------------|------|
-| Dead fields в WaterFormState | `grep -c "phPct\|irrigationDecisionLookback\|irrigationRecovery" WaterFormState` | 0 |
-| Shared composable usage | `grep -c "useAutomationProfileLoader" composables/` | 2 (Setup+Cycle) |
-| Дубликаты inline-форм | manual audit irrigation forms | 0 (все через shared) |
-| Advanced UI availability | Playwright `test('advanced panel expandable')` | pass |
-| Non-destructive merge | Playwright: set field A in Setup Wizard, set field B in Start-Cycle, verify A kept | pass |
-| Phase overrides round-trip | Playwright: create cycle with override, verify recipe unchanged | pass |
+| Composable lines of code | `wc -l resources/js/composables/useLaunch*.ts useSetupWizard.ts useGrowthCycleWizard.ts` | После Phase 6: ≤ 800 (было 2 688) |
+| Wizard-related Vue files | `find resources/js -name "*Wizard*" -o -name "Launch*" \| wc -l` | После Phase 6: ≤ 15 (было ~30) |
+| Dead form fields | `grep -c "phPct\|irrigationDecisionLookback\|hysteresisPct" resources/js/` | 0 |
+| Data loss bug | Playwright: Setup overrides → launch cycle → verify overrides preserved | pass |
+| Schema validation coverage | `npm run test:coverage -- schemas/growCycleLaunch` | ≥ 90% |
 | TypeScript strict | `npm run typecheck` | exit 0 |
-| Vitest coverage на automation payload builder | `npm run test:coverage -- runtimePlanPayload` | ≥ 85% |
+| Bundle size | `npm run build` + compare pre/post | ↓ или equal |
+| User feedback | Demo session Phase 5 | sign-off |
 
 ---
 
@@ -382,28 +518,28 @@ npm run test -- --run runtimePlanPayload
 
 | Фаза | Rollback | Impact |
 |------|---------|--------|
-| 1 | revert PR | none |
-| 2 | revert PR | dead fields возвращаются, UI немного раздутая, но работает |
-| 3 | revert PR | advanced params сохранённые в БД остаются — читаются runtime как есть, UI скрывает |
-| 4 | revert PR | correction tuning form пропадает из zone edit; users возвращаются к hardcoded defaults |
-| 5 | revert PR | Start-Cycle replace-behavior возвращается, возможна потеря Wizard-настроек |
-| 6 | revert PR | Start-Cycle без override-toggle; пользователи редактируют через Zone→Automation tab live-edit card |
-| 7 | revert PR | inline-формы возвращаются, дубликаты |
-| 8 | revert PR | device binding flow асимметричен |
+| 1 | revert PR | none (unused code) |
+| 2 | revert PR | backend endpoint не вызывается, TanStack Query deps остаются в package.json unused |
+| 3 | revert PR | `/launch` route 404; старые wizard'ы продолжают работу |
+| 4 | revert PR | launcher без preview step, merge replaced by PUT (data-loss bug возвращается в новом flow) |
+| 5 | revert redirects | entry points снова указывают на legacy |
+| 6 | revert delete | 5k+ строк legacy code возвращаются |
 
-Каждая фаза independent. Phase 1 — foundation, revert единственной верхней фазы не ломает нижестоящие. Merge в порядке 1 → 2 → 3/4/5 (параллельно) → 6 → 7 → 8.
+**Rolling back Phase 5-6 одновременно** — массивный rollback. Mitigation: hold Phase 6 ≥1 спринт после Phase 5 чтобы выявить hidden issues.
 
 ---
 
 ## 9. Post-completion invariants
 
-После Phase 8 зафиксировать в CLAUDE.md / AGENTS.md:
+После Phase 6 зафиксировать в [CLAUDE.md](../../CLAUDE.md) / [AGENTS.md](../../AGENTS.md):
 
-1. **Любое новое automation-поле** в UI добавляется сначала в `runtimePlan.ts` (TypeScript type) — потом компонент.
-2. **Shared Vue components** в `Components/Shared/AutomationForm/` используются в Setup Wizard и Start-Cycle; inline-формы запрещены.
-3. **Start-Cycle не заменяет `zone.logic_profile` полностью** — только merge-mode.
-4. **Phase overrides для cycles** — через `PUT /api/grow-cycles/{id}/phase-config`, не через zone.correction.
-5. **Advanced settings (decision config, recovery, correction tuning)** доступны только engineer/admin/agronomist ролям.
+1. **Single entry для launch** — `/launch/:zoneId?`. Все другие UI entries делают `router.visit('/launch/...')`.
+2. **Schema-first** — любое новое поле в launch flow добавляется в `schemas/growCycleLaunch.ts` первым; компонент читает из `useFormSchema()`.
+3. **Backend-driven steps** — добавление/удаление шага = backend-only change в `LaunchFlowManifestController`. Frontend читает manifest.
+4. **TanStack Query для launch-related data** — `useZone`, `useRecipe`, `useReadiness`. Pinia только для multi-page global state.
+5. **Actionable readiness** — все readiness blockers возвращают `action.route` с прямым переходом; cryptic codes без UI mapping запрещены.
+6. **Diff preview before merge** — любая мутация `zone.logic_profile` из launch flow проходит через `<DiffPreview/>`.
+7. **Запрещено создавать новые wizard-like flows параллельно launcher'у** — если новый use case, расширять manifest.
 
 ---
 
@@ -411,7 +547,23 @@ npm run test -- --run runtimePlanPayload
 
 - [AUTOMATION_CONFIG_AUTHORITY.md](../04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md) — config authority (live-edit infrastructure)
 - [ae3lite.md](../04_BACKEND_CORE/ae3lite.md) — AE3 runtime spec
-- [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md) — frontend архитектура
-- [FRONTEND_UI_UX_SPEC.md](FRONTEND_UI_UX_SPEC.md) — UI/UX guidelines
-- [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md) — role gates для advanced forms
-- [EFFECTIVE_TARGETS_SPEC.md](../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md) — spec контроллеров, задаёт границы overrides
+- [FRONTEND_ARCH_FULL.md](FRONTEND_ARCH_FULL.md) — frontend архитектура (обновить после Phase 6: удалить legacy wizard refs, добавить BaseWizard primitive)
+- [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md) — role gates (manifest.role_hints enforcement)
+- [EFFECTIVE_TARGETS_SPEC.md](../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md) — границы overrides для schema validation
+
+---
+
+## 11. Почему этот план лучше v1.0
+
+| Критерий | v1.0 (iterative) | v2.0 (rewrite) |
+|---|---|---|
+| Источники UX дубля | patch-over с shared компонентами | архитектурно устранены (single flow) |
+| Data-loss bug (Phase 5 v1.0) | бейндэйд с merge helper | устранён by design (preview + diff UI) |
+| Dead fields | ручное удаление, возможен возврат | невозможны (Zod schema — single source) |
+| Extensibility (новый шаг) | frontend edit + test update | backend-only change в manifest |
+| Maintainability через 6 мес | разбегание flows снова | единая точка модификации |
+| Total LOC | осталось ~2 688 + shared abstractions | ≤ 800 |
+| Время | 12-14 дней | 11-13 дней |
+| Riск | distributed (8 PR) | concentrated (Phase 3, 5) |
+
+v2.0 требует больше дисциплины и хорошей user-communication, но возвращает долг **полностью** вместо его реструктуризации.

@@ -5,12 +5,14 @@ import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { createPinia } from 'pinia';
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query';
 import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import { setupRouterGuards } from './utils/routerGuards';
 import { installZiggy } from './utils/ziggy';
 import { setupVueErrorHandlers } from './utils/vueErrorHandlers';
 import { setToastHandler } from './utils/apiClient';
 import { useToast } from './composables/useToast';
+import { clickOutside } from './directives/clickOutside';
 
 // Подключаем единый global-показ Toast для axios-interceptor'а.
 // Ранее это делал `useApi(showToast)` как side-effect первой инициализации;
@@ -39,10 +41,26 @@ createInertiaApp({
         vueApp.component('RecycleScroller', RecycleScroller);
         vueApp.component('DynamicScroller', DynamicScroller);
         vueApp.component('DynamicScrollerItem', DynamicScrollerItem);
+
+        vueApp.directive('click-outside', clickOutside);
         
         vueApp.use(plugin);
         vueApp.use(pinia);
-        
+
+        const queryClient = new QueryClient({
+            defaultOptions: {
+                queries: {
+                    staleTime: 30_000,
+                    retry: 1,
+                    refetchOnWindowFocus: false,
+                },
+                mutations: {
+                    retry: 0,
+                },
+            },
+        });
+        vueApp.use(VueQueryPlugin, { queryClient });
+
         // Безопасная установка ZiggyVue
         installZiggy(vueApp);
         

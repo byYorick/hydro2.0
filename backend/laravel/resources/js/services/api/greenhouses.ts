@@ -17,8 +17,12 @@ export interface GreenhouseType {
 }
 
 export interface GreenhouseCreatePayload {
+  uid: string
   name: string
   type?: string | null
+  greenhouse_type_id?: number | null
+  timezone?: string | null
+  description?: string | null
   [key: string]: unknown
 }
 

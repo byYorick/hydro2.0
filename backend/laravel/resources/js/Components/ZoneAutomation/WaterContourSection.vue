@@ -186,15 +186,149 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs">
-          <div class="text-[color:var(--text-muted)]">Тип системы</div>
-          <div class="text-[color:var(--text-primary)] font-medium">
-            {{ systemTypeLabel }}
-            <span v-if="isSystemTypeLocked" class="ml-1 text-[10px] font-normal text-[color:var(--text-dim)]">(из рецепта)</span>
+        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-3">
+          <!-- ── Header + топология ── -->
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--border-muted)] pb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-base">💧</span>
+              <span class="text-sm font-semibold text-[color:var(--text-primary)]">Водный контур</span>
+            </div>
+            <div class="flex items-center gap-3 text-[11px] text-[color:var(--text-muted)]">
+              <span>
+                <span class="text-[color:var(--text-dim)]">Топология:</span>
+                <span class="ml-1 font-medium text-[color:var(--text-primary)]">{{ systemTypeLabel }}</span>
+                <span v-if="isSystemTypeLocked" class="ml-1 text-[10px] text-[color:var(--text-dim)]">(из рецепта)</span>
+              </span>
+              <span>
+                <span class="text-[color:var(--text-dim)]">Баков:</span>
+                <span class="ml-1 font-medium text-[color:var(--text-primary)]">{{ waterForm.tanksCount }}</span>
+              </span>
+            </div>
           </div>
 
-          <div class="text-[color:var(--text-muted)]">Количество баков</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount }}</div>
+          <!-- ── Баки ── -->
+          <div
+            class="grid gap-2"
+            :class="waterForm.tanksCount >= 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'"
+          >
+            <label class="flex flex-col gap-1 text-xs">
+              <span class="flex items-center gap-1.5 text-[color:var(--text-dim)]">
+                <span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-sky-600/20 text-[9px] font-semibold text-sky-400">1</span>
+                Чистый бак (л)
+              </span>
+              <input
+                v-model.number="waterForm.cleanTankFillL"
+                type="number"
+                min="10"
+                max="5000"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-xs">
+              <span class="flex items-center gap-1.5 text-[color:var(--text-dim)]">
+                <span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600/20 text-[9px] font-semibold text-emerald-400">2</span>
+                Бак раствора (л)
+              </span>
+              <input
+                v-model.number="waterForm.nutrientTankTargetL"
+                type="number"
+                min="10"
+                max="5000"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label v-if="waterForm.tanksCount >= 3" class="flex flex-col gap-1 text-xs">
+              <span class="flex items-center gap-1.5 text-[color:var(--text-dim)]">
+                <span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-purple-600/20 text-[9px] font-semibold text-purple-400">3</span>
+                Рабочий бак (л)
+              </span>
+              <input
+                v-model.number="waterForm.workingTankL"
+                type="number"
+                min="0"
+                max="5000"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+          </div>
+
+          <!-- ── Параметры набора + насосы ── -->
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <label class="flex flex-col gap-1 text-xs">
+              <span class="text-[color:var(--text-dim)]">Темп-ра (°C)</span>
+              <input
+                v-model.number="waterForm.fillTemperatureC"
+                type="number"
+                min="5"
+                max="35"
+                step="0.1"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="col-span-2 flex flex-col gap-1 text-xs">
+              <span class="text-[color:var(--text-dim)]">Окно набора воды</span>
+              <div class="flex items-center gap-1">
+                <input
+                  v-model="waterForm.fillWindowStart"
+                  type="time"
+                  class="water-input flex-1"
+                  :disabled="!ctx.canConfigure.value"
+                />
+                <span class="text-[color:var(--text-dim)]">—</span>
+                <input
+                  v-model="waterForm.fillWindowEnd"
+                  type="time"
+                  class="water-input flex-1"
+                  :disabled="!ctx.canConfigure.value"
+                />
+              </div>
+            </label>
+            <label class="flex flex-col gap-1 text-xs">
+              <span class="text-[color:var(--text-dim)]" title="Производительность основного насоса">Основной (л/мин)</span>
+              <input
+                v-model.number="waterForm.mainPumpFlowLpm"
+                type="number"
+                min="0.1"
+                max="500"
+                step="0.1"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-xs">
+              <span class="text-[color:var(--text-dim)]" title="Поток чистой воды">Чистая (л/мин)</span>
+              <input
+                v-model.number="waterForm.cleanWaterFlowLpm"
+                type="number"
+                min="0.1"
+                max="500"
+                step="0.1"
+                class="water-input"
+                :disabled="!ctx.canConfigure.value"
+              />
+            </label>
+          </div>
+
+          <!-- ── Расчётные таймауты (компактная строка) ── -->
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-dashed border-[color:var(--border-muted)] px-3 py-1.5 text-[11px]">
+            <span class="text-[color:var(--text-dim)]">⏱ Таймауты наполнения (+30%):</span>
+            <span>
+              <span class="text-[color:var(--text-muted)]">Чистый</span>
+              <span class="ml-1 font-medium text-[color:var(--text-primary)]">{{ formatDuration(cleanTankFillTimeoutWithMargin) }}</span>
+            </span>
+            <span>
+              <span class="text-[color:var(--text-muted)]">Раствор</span>
+              <span class="ml-1 font-medium text-[color:var(--text-primary)]">{{ formatDuration(nutrientTankFillTimeoutWithMargin) }}</span>
+            </span>
+            <span v-if="waterForm.tanksCount >= 3">
+              <span class="text-[color:var(--text-muted)]">Рабочий</span>
+              <span class="ml-1 font-medium text-[color:var(--text-primary)]">{{ formatDuration(workingTankFillTimeoutWithMargin) }}</span>
+            </span>
+          </div>
         </div>
 
         <div
@@ -221,9 +355,9 @@
 
             <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
               <div class="text-[10px] font-medium uppercase tracking-wide text-[color:var(--text-dim)]">Цели из рецепта</div>
-              <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">pH {{ waterForm.targetPh }} · EC {{ waterForm.targetEc }}</div>
+              <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">pH {{ formatNum(waterForm.targetPh) }} · EC {{ formatNum(waterForm.targetEc) }}</div>
               <div class="mt-0.5 text-[10px] text-[color:var(--text-dim)]">
-                pH {{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }} · EC {{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}
+                pH {{ formatNum(recipeChemistrySummary.phMin) }} – {{ formatNum(recipeChemistrySummary.phMax) }} · EC {{ formatNum(recipeChemistrySummary.ecMin) }} – {{ formatNum(recipeChemistrySummary.ecMax) }}
               </div>
             </div>
           </div>
@@ -356,59 +490,8 @@
                 <option :value="false">Нет</option>
               </select>
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Объём чистого бака (л)
-              <input
-                v-model.number="waterForm.cleanTankFillL"
-                type="number"
-                min="10"
-                max="5000"
-                class="input-field mt-1 w-full"
-                :disabled="!ctx.canConfigure.value"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Объём бака раствора (л)
-              <input
-                v-model.number="waterForm.nutrientTankTargetL"
-                type="number"
-                min="10"
-                max="5000"
-                class="input-field mt-1 w-full"
-                :disabled="!ctx.canConfigure.value"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Температура набора (°C)
-              <input
-                v-model.number="waterForm.fillTemperatureC"
-                type="number"
-                min="5"
-                max="35"
-                step="0.1"
-                class="input-field mt-1 w-full"
-                :disabled="!ctx.canConfigure.value"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Окно набора воды
-              <div class="mt-1 flex gap-1">
-                <input
-                  v-model="waterForm.fillWindowStart"
-                  type="time"
-                  class="input-field w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-                <span class="self-center text-[color:var(--text-dim)]">—</span>
-                <input
-                  v-model="waterForm.fillWindowEnd"
-                  type="time"
-                  class="input-field w-full"
-                  :disabled="!ctx.canConfigure.value"
-                />
-              </div>
-            </label>
           </div>
+
         </div>
 
         <div
@@ -483,4 +566,83 @@ const irrigationModeDescription = computed(() =>
     ? 'Оценивает влажность субстрата перед стартом'
     : 'Запуск по временным окнам цикла',
 )
+
+const cleanTankFillTimeoutSec = computed(() => {
+  const flow = Math.max(0, waterForm.value.cleanWaterFlowLpm || 0)
+  const volume = Math.max(0, waterForm.value.cleanTankFillL || 0)
+  if (flow <= 0 || volume <= 0) return 0
+  return Math.round((volume / flow) * 60)
+})
+
+const nutrientTankFillTimeoutSec = computed(() => {
+  const flow = Math.max(0, waterForm.value.mainPumpFlowLpm || 0)
+  const volume = Math.max(0, waterForm.value.nutrientTankTargetL || 0)
+  if (flow <= 0 || volume <= 0) return 0
+  return Math.round((volume / flow) * 60)
+})
+
+const workingTankFillTimeoutSec = computed(() => {
+  const flow = Math.max(0, waterForm.value.mainPumpFlowLpm || 0)
+  const volume = Math.max(0, waterForm.value.workingTankL || 0)
+  if (flow <= 0 || volume <= 0) return 0
+  return Math.round((volume / flow) * 60)
+})
+
+const cleanTankFillTimeoutWithMargin = computed(() =>
+  Math.round(cleanTankFillTimeoutSec.value * 1.3),
+)
+const nutrientTankFillTimeoutWithMargin = computed(() =>
+  Math.round(nutrientTankFillTimeoutSec.value * 1.3),
+)
+const workingTankFillTimeoutWithMargin = computed(() =>
+  Math.round(workingTankFillTimeoutSec.value * 1.3),
+)
+
+function formatDuration(totalSec: number): string {
+  if (!Number.isFinite(totalSec) || totalSec <= 0) return '—'
+  const min = Math.floor(totalSec / 60)
+  const sec = totalSec % 60
+  if (min === 0) return `${sec} с`
+  if (sec === 0) return `${min} мин`
+  return `${min} мин ${sec} с`
+}
+
+function formatNum(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded)
+}
 </script>
+
+<style scoped>
+.water-input {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  border-radius: 0.425rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: var(--bg-elevated, rgba(15, 23, 42, 0.4));
+  color: var(--text-primary, inherit);
+  min-width: 0;
+  -moz-appearance: textfield;
+}
+
+.water-input::-webkit-outer-spin-button,
+.water-input::-webkit-inner-spin-button {
+  appearance: auto;
+  opacity: 1;
+  margin-left: 0.2rem;
+}
+
+.water-input:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.75);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+}
+
+.water-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+</style>

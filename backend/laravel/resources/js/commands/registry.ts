@@ -225,11 +225,11 @@ const staticCommandDefinitions: CommandDefinition[] = [
   },
   {
     id: 'agro-setup-wizard',
-    label: 'Мастер настройки',
+    label: 'Мастер запуска',
     icon: '🧭',
     groupId: 'management',
-    route: '/setup/wizard',
-    roles: ['agronomist', 'admin'],
+    route: '/launch',
+    roles: ['agronomist', 'admin', 'engineer'],
   },
   {
     id: 'engineer-system',

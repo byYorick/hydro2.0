@@ -30,15 +30,24 @@ class RecipePageController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(\Illuminate\Http\Request $request): Response
     {
+        $plants = [];
+        $plantIdParam = $request->query('plant_id');
+        if ($plantIdParam !== null && ctype_digit((string) $plantIdParam)) {
+            $plant = \App\Models\Plant::query()->find((int) $plantIdParam);
+            if ($plant) {
+                $plants[] = ['id' => $plant->id, 'name' => $plant->name];
+            }
+        }
+
         return Inertia::render('Recipes/Edit', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             'recipe' => [
                 'id' => null,
                 'name' => '',
                 'description' => '',
-                'plants' => [],
+                'plants' => $plants,
                 'phases' => [],
                 'latest_published_revision_id' => null,
                 'latest_draft_revision_id' => null,

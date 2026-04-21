@@ -27,7 +27,7 @@
               <Button
                 v-if="canManageCycle"
                 size="sm"
-                @click="router.visit('/grow-cycle-wizard')"
+                @click="router.visit('/launch')"
               >
                 Запустить цикл
               </Button>

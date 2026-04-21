@@ -76,7 +76,6 @@ export function useZoneShowPage() {
   })
 
   const showActionModal = computed(() => modals.isModalOpen('action'))
-  const showGrowthCycleModal = computed(() => modals.isModalOpen('growthCycle'))
   const showPumpCalibrationModal = computed(() => modals.isModalOpen('pumpCalibration'))
   const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
   const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
@@ -84,13 +83,6 @@ export function useZoneShowPage() {
   const currentActionType = ref<CommandType>('START_IRRIGATION')
   const selectedNodeId = ref<number | null>(null)
   const selectedNode = ref<any>(null)
-  const growthCycleInitialData = ref<{
-    recipeId?: number | null
-    recipeRevisionId?: number | null
-    plantId?: number | null
-    startedAt?: string | null
-      expectedHarvestAt?: string | null
-  } | null>(null)
 
   const { loading, setLoading } = useLoading<LoadingState>({
     actionSubmit: false,
@@ -221,7 +213,7 @@ export function useZoneShowPage() {
       showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
       return
     }
-    modals.open('growthCycle')
+    router.visit(`/launch/${zoneId.value}`)
   }
 
   const startZoneIrrigation = async ({
@@ -303,20 +295,6 @@ export function useZoneShowPage() {
     setLoading('pumpCalibrationSave', false)
   }
 
-  const onGrowthCycleWizardSubmit = async ({
-    zoneId: emittedZoneId,
-  }: {
-    zoneId: number
-    recipeId?: number
-    startedAt: string
-    expectedHarvestAt?: string
-  }): Promise<void> => {
-    if (emittedZoneId) {
-      reloadZoneAfterCommand(emittedZoneId, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
-      reloadZonePageProps()
-    }
-  }
-
   const refreshZoneState = (): void => {
     if (!zoneId.value) return
     reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
@@ -365,24 +343,11 @@ export function useZoneShowPage() {
 
   onMounted(async () => {
     const params = new URLSearchParams(window.location.search)
-    const parseQueryNumber = (key: string): number | null => {
-      const value = params.get(key)
-      if (!value) return null
-      const parsed = Number(value)
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-    }
 
-    const startedAt = params.get('started_at')
-    const expectedHarvestAt = params.get('expected_harvest_at')
-    growthCycleInitialData.value = {
-      recipeId: parseQueryNumber('recipe_id'),
-      recipeRevisionId: parseQueryNumber('recipe_revision_id'),
-      plantId: parseQueryNumber('plant_id'),
-      startedAt: startedAt || null,
-      expectedHarvestAt: expectedHarvestAt || null,
+    if (params.get('start_cycle') === '1' && zoneId.value) {
+      router.visit(`/launch/${zoneId.value}`)
+      return
     }
-
-    if (params.get('start_cycle') === '1') modals.open('growthCycle')
 
     chart.initStoredRange()
     await chart.refreshChartData(chart.chartTimeRange.value)
@@ -420,14 +385,12 @@ export function useZoneShowPage() {
     activeTab,
     modals,
     showActionModal,
-    showGrowthCycleModal,
     showPumpCalibrationModal,
     showAttachNodesModal,
     showNodeConfigModal,
     currentActionType,
     selectedNodeId,
     selectedNode,
-    growthCycleInitialData,
     pumpCalibrationSaveSeq,
     pumpCalibrationRunSeq,
     pumpCalibrationLastRunToken,
@@ -439,7 +402,6 @@ export function useZoneShowPage() {
     onActionSubmit,
     onPumpCalibrationRun,
     onPumpCalibrationSave,
-    onGrowthCycleWizardSubmit,
     refreshZoneState,
     openNodeConfig,
     onNodesAttached,

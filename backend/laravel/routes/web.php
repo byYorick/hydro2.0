@@ -324,16 +324,8 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,engineer'])->group(function () {
     Route::get('/', [UnifiedDashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('/setup/wizard', function () {
-        $user = auth()->user();
-        if (! $user || (! $user->isAdmin() && ! $user->isAgronomist())) {
-            abort(403, 'Only agronomists and administrators can access the setup wizard');
-        }
-
-        return Inertia::render('Setup/Wizard', [
-            'auth' => ['user' => ['role' => $user->role ?? 'admin']],
-        ]);
-    })->name('setup.wizard')->middleware('role:admin,agronomist');
+    Route::redirect('/setup/wizard', '/launch', 301)
+        ->name('setup.wizard');
 
     Route::get('/greenhouses', function () {
         $user = auth()->user();
@@ -462,11 +454,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
     Route::redirect('/cycles', '/')->name('cycles.center');
 
-    Route::get('/grow-cycle-wizard', function () {
-        return Inertia::render('GrowCycles/Wizard', [
-            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+    Route::redirect('/grow-cycle-wizard', '/launch', 301)
+        ->name('grow-cycle-wizard');
+
+    Route::get('/launch/{zoneId?}', function (?int $zoneId = null) {
+        $user = auth()->user();
+
+        return Inertia::render('Launch/Index', [
+            'auth' => ['user' => ['role' => $user->role ?? 'viewer']],
+            'zoneId' => $zoneId,
         ]);
-    })->name('grow-cycle-wizard');
+    })->where('zoneId', '[0-9]+')->name('launch');
 
     Route::get('/analytics', function () {
         return Inertia::render('Analytics/Index', [

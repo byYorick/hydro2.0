@@ -102,7 +102,6 @@
     </div>
     <ZoneDetailModals
       :show-action-modal="showActionModal"
-      :show-growth-cycle-modal="showGrowthCycleModal"
       :show-pump-calibration-modal="showPumpCalibrationModal"
       :show-attach-nodes-modal="showAttachNodesModal"
       :show-node-config-modal="showNodeConfigModal"
@@ -111,7 +110,6 @@
       :devices="devices"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
-      :growth-cycle-initial-data="growthCycleInitialData"
       :selected-node-id="selectedNodeId"
       :selected-node="selectedNode"
       :current-action-type="currentActionType"
@@ -131,8 +129,6 @@
       @close-attach-nodes="modals.close('attachNodes')"
       @nodes-attached="onNodesAttached"
       @close-node-config="modals.close('nodeConfig')"
-      @close-growth-cycle="modals.close('growthCycle')"
-      @submit-growth-cycle="onGrowthCycleWizardSubmit"
       @close-harvest="closeHarvestModal"
       @confirm-harvest="confirmHarvest"
       @close-abort="closeAbortModal"
@@ -166,14 +162,12 @@ const {
     activeTab,
     modals,
     showActionModal,
-    showGrowthCycleModal,
     showPumpCalibrationModal,
     showAttachNodesModal,
     showNodeConfigModal,
     currentActionType,
     selectedNodeId,
     selectedNode,
-    growthCycleInitialData,
     pumpCalibrationSaveSeq,
     pumpCalibrationRunSeq,
     pumpCalibrationLastRunToken,
@@ -213,7 +207,6 @@ const {
     onActionSubmit,
     onPumpCalibrationRun,
     onPumpCalibrationSave,
-    onGrowthCycleWizardSubmit,
     openNodeConfig,
     onNodesAttached,
     harvestModal,
