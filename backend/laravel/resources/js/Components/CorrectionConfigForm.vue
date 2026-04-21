@@ -1543,15 +1543,17 @@ onMounted(() => window.addEventListener('keydown', onEsc))
 /* ========== PHASE TABS ========== */
 .cc-phase-tabs {
   display: flex; align-items: stretch;
+  width: 100%;
   padding: 0 16px; border-bottom: 1px solid var(--border-muted);
-  background: var(--bg-surface, #fff); overflow: auto;
+  background: var(--bg-surface, #fff);
 }
 .cc-phase-tab {
+  flex: 1 1 0;
   display: flex; flex-direction: column; gap: 3px;
   padding: 12px 16px; cursor: pointer; border: none;
   border-bottom: 2px solid transparent; background: transparent;
   font-size: 13px; font-weight: 500; color: var(--text-muted);
-  white-space: nowrap; min-width: 170px; text-align: left;
+  white-space: nowrap; min-width: 0; text-align: left;
   transition: color .15s ease, border-color .15s ease;
 }
 .cc-phase-tab:hover { color: var(--text-primary); }
@@ -1574,6 +1576,7 @@ onMounted(() => window.addEventListener('keydown', onEsc))
   background: var(--accent-violet-soft, #efeafe); border-color: #d9cffa; color: var(--accent-violet, #6e3bd9);
 }
 .cc-phase-tabs__right {
+  flex: 0 0 auto;
   margin-left: auto; display: flex; align-items: center;
   padding: 0 6px; gap: 8px;
 }

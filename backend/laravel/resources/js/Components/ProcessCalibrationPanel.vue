@@ -991,14 +991,16 @@ onMounted(() => {
 .pc__tabs {
     display: flex;
     gap: 0.3rem;
-    flex-wrap: wrap;
+    width: 100%;
     border-bottom: 1px solid rgba(148, 163, 184, 0.15);
     padding-bottom: 0.1rem;
 }
 
 .pc__tab {
+    flex: 1 1 0;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
     padding: 0.45rem 0.8rem;
     border: 1px solid transparent;
