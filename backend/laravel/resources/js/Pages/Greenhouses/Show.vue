@@ -89,8 +89,8 @@
 
         <GreenhouseClimateConfiguration
           v-model:enabled="greenhouseClimateEnabled"
-          v-model:climate-form="climateForm"
-          v-model:bindings="greenhouseClimateBindings"
+          :climate-form="climateForm"
+          :bindings="greenhouseClimateBindings"
           :available-nodes="availableNodes"
           :can-configure="canOperateGreenhouse"
           :applying="climateSubmitting"
