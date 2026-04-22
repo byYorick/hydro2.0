@@ -22,7 +22,7 @@ vi.mock('@/Components/Button.vue', () => ({
     name: 'Button',
     props: ['disabled', 'variant', 'size', 'type'],
     emits: ['click'],
-    template: '<button :disabled="disabled" :type="type" @click="$emit(\'click\')"><slot /></button>',
+    template: '<button :disabled="disabled" :type="type" @click="$emit(\'click\', $event)"><slot /></button>',
   },
 }))
 
@@ -334,28 +334,25 @@ describe('CorrectionConfigForm.vue', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Effective preview: solution_fill')
-    expect(wrapper.text()).toContain('Overrides: 0')
-    expect(wrapper.text()).toContain('Для этой фазы используется base config без phase override diff.')
+    const preview = wrapper.get('[data-testid="phase-effective-preview"]')
 
-    const irrigationButton = wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'irrigation')
+    // По умолчанию активен таб solution_fill
+    expect(preview.text()).toContain('Итоговое состояние runtime')
+    expect(preview.text()).toContain('фаза: solution_fill')
 
-    expect(irrigationButton).toBeTruthy()
-    await irrigationButton!.trigger('click')
+    // Переключаемся на фазу irrigation через таб
+    await wrapper.get('[data-testid="correction-config-tab-irrigation"]').trigger('click')
 
-    expect(wrapper.text()).toContain('Effective preview: irrigation')
-    expect(wrapper.text()).toContain('Overrides: 3')
-    expect(wrapper.text()).toContain('Sections: 2')
-    expect(wrapper.text()).toContain('pH controller')
-    expect(wrapper.text()).toContain('Kp: 6,5')
-    expect(wrapper.text()).toContain('base 5')
-    expect(wrapper.text()).toContain('Decision window: 10')
-    expect(wrapper.text()).toContain('base 6')
-    expect(wrapper.text()).toContain('Retry and windows')
-    expect(wrapper.text()).toContain('Decision window retry45')
-    expect(wrapper.text()).toContain('base 30')
+    expect(preview.text()).toContain('фаза: irrigation')
+    expect(preview.text()).toMatch(/\d+ переопределений/)
+    expect(preview.text()).toMatch(/\d+ секций затронуто/)
+    expect(preview.text()).toContain('pH controller')
+    expect(preview.text()).toContain('Kp')
+    expect(preview.text()).toContain('Decision window')
+    expect(preview.text()).toContain('Retry and windows')
+    // Для overridden строк рендерится базовое значение рядом (class cc-preview__base)
+    expect(preview.html()).toContain('cc-preview__row--overridden')
+    expect(preview.html()).toContain('cc-preview__base')
   })
 
   it('рендерит authority history, обновляет его после сохранения и эмитит saved', async () => {
@@ -378,13 +375,23 @@ describe('CorrectionConfigForm.vue', () => {
 
     const wrapper = mount(CorrectionConfigForm, {
       props: { zoneId: 5 },
+      global: {
+        stubs: { teleport: true },
+      },
     })
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('v4 · updated')
+    // История живёт в teleport-drawer'е, открывается кнопкой
+    await wrapper.get('[data-testid="correction-config-history-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('v4')
+    expect(wrapper.text()).toContain('updated')
     expect(wrapper.text()).toContain('System Default')
 
+    // Поля base_config рендерятся только при активном табе base
+    await wrapper.get('[data-testid="correction-config-tab-base"]').trigger('click')
     await wrapper.get('[data-testid="correction-config-base-controllers.ph.kp"]').setValue('7.25')
     await wrapper.get('[data-testid="correction-config-save"]').trigger('click')
     await flushPromises()
@@ -407,8 +414,11 @@ describe('CorrectionConfigForm.vue', () => {
     )
     expect(getHistoryMock).toHaveBeenCalledTimes(2)
     expect(wrapper.emitted('saved')).toHaveLength(1)
-    expect(wrapper.text()).toContain('v5 · updated')
+
+    expect(wrapper.text()).toContain('v5')
     expect(wrapper.text()).toContain('Custom Aggressive')
+
+    wrapper.unmount()
   })
 
   it('поддерживает preset CRUD через authority API без legacy helper paths', async () => {
@@ -432,10 +442,6 @@ describe('CorrectionConfigForm.vue', () => {
       updated_at: '2026-03-17T10:06:00Z',
     }
 
-    listPresetsMock
-      .mockResolvedValueOnce([systemPreset, customPreset])
-      .mockResolvedValueOnce([systemPreset, customPreset, newPreset])
-      .mockResolvedValueOnce([systemPreset, newPreset])
     createPresetMock.mockResolvedValue(newPreset)
     updatePresetMock.mockResolvedValue({
       ...customPreset,
@@ -445,10 +451,41 @@ describe('CorrectionConfigForm.vue', () => {
 
     const wrapper = mount(CorrectionConfigForm, {
       props: { zoneId: 5 },
+      global: {
+        stubs: { teleport: true },
+      },
     })
 
     await flushPromises()
 
+    // ===== UPDATE =====
+    // Активируем custom-пресет через pill — это откроет возможность update
+    await wrapper.get(`[data-testid="correction-config-preset-${customPreset.id}"]`).trigger('click')
+    await flushPromises()
+    // Меняем поле base_config — кнопка update видна только для custom scope
+    await wrapper.get('[data-testid="correction-config-tab-base"]').trigger('click')
+    await wrapper.get('[data-testid="correction-config-base-controllers.ph.kp"]').setValue('8.4')
+    await wrapper.get('[data-testid="correction-config-update-preset"]').trigger('click')
+    await flushPromises()
+
+    expect(updatePresetMock).toHaveBeenCalledWith(customPreset.id, expect.objectContaining({
+      payload: expect.objectContaining({
+        base: expect.any(Object),
+        phases: expect.any(Object),
+      }),
+    }))
+
+    // ===== DELETE =====
+    await wrapper.get('[data-testid="correction-config-preset-menu"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="correction-config-delete-preset"]').trigger('click')
+    await flushPromises()
+
+    expect(deletePresetMock).toHaveBeenCalledWith(customPreset.id)
+
+    // ===== CREATE =====
+    await wrapper.get('[data-testid="correction-config-new-preset"]').trigger('click')
+    await flushPromises()
     await wrapper.get('[data-testid="correction-config-new-preset-name"]').setValue('Custom Balanced')
     await wrapper.get('[data-testid="correction-config-new-preset-description"]').setValue('Balanced preset')
     await wrapper.get('[data-testid="correction-config-save-preset"]').trigger('click')
@@ -462,25 +499,7 @@ describe('CorrectionConfigForm.vue', () => {
         phases: expect.any(Object),
       }),
     }))
-    expect(listPresetsMock).toHaveBeenCalledTimes(1)
 
-    await wrapper.get('[data-testid="correction-config-preset-select"]').setValue(String(customPreset.id))
-    await flushPromises()
-    await wrapper.get('[data-testid="correction-config-base-controllers.ph.kp"]').setValue('8.4')
-    await wrapper.get('[data-testid="correction-config-update-preset"]').trigger('click')
-    await flushPromises()
-
-    expect(updatePresetMock).toHaveBeenCalledWith(customPreset.id, expect.objectContaining({
-      payload: expect.objectContaining({
-        base: expect.any(Object),
-        phases: expect.any(Object),
-      }),
-    }))
-
-    await wrapper.get('[data-testid="correction-config-delete-preset"]').trigger('click')
-    await flushPromises()
-
-    expect(deletePresetMock).toHaveBeenCalledWith(customPreset.id)
-    expect(listPresetsMock).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
   })
 })

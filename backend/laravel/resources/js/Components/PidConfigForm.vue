@@ -1,5 +1,5 @@
 <template>
-    <div class="pid" data-testid="pid-config-form">
+    <form class="pid" data-testid="pid-config-form" @submit.prevent="onSubmit">
         <!-- ================== ACTION BAR ================== -->
         <div class="pid__actionbar">
             <div class="pid__actionbar-lhs">
@@ -40,11 +40,10 @@
                     Откатить изменения
                 </button>
                 <button
-                    type="button"
+                    type="submit"
                     class="pid__btn pid__btn--primary"
                     data-testid="pid-config-save"
                     :disabled="loading || !phaseTargetAvailable || !isDirty"
-                    @click="onSubmit"
                 >
                     {{
                         loading
@@ -103,7 +102,11 @@
             </button>
         </div>
 
-        <div v-if="!phaseTargetAvailable" class="pid__banner pid__banner--danger">
+        <div
+            v-if="!phaseTargetAvailable"
+            class="pid__banner pid__banner--danger"
+            data-testid="pid-config-phase-target-missing"
+        >
             В активной фазе рецепта нет целевого значения <strong>{{ selectedType.toUpperCase() }}</strong>.
             PID-конфиг не может быть сохранён — runtime перейдёт в fail-closed.
         </div>
@@ -356,7 +359,7 @@
                 <strong>{{ form.max_integral }}</strong>
             </div>
         </div>
-    </div>
+    </form>
 </template>
 
 <script setup lang="ts">

@@ -218,9 +218,10 @@ describe('ProcessCalibrationPanel.vue', () => {
     await flushPromises()
 
     expect(getDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.process_calibration.solution_fill')
-    expect(wrapper.text()).toContain('Режим: Наполнение')
-    expect(wrapper.text()).toContain('transport_delay_sec + settle_sec = 65 сек')
-    expect(wrapper.text()).toContain('Доверие: 0.75')
+    // Action-bar: режим + доверие; preview: окно наблюдения
+    expect(wrapper.text()).toContain('режим: Наполнение')
+    expect(wrapper.text()).toContain('20 + 45 = 65 сек')
+    expect(wrapper.text()).toContain('0.75')
   })
 
   it('подставляет системные дефолты в пустую форму, если сохранённой калибровки ещё нет', async () => {
@@ -231,16 +232,15 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
-    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
-    const inputs = wrapper.findAll('input')
-    expect(inputs[0]?.element).toHaveProperty('value', '20')
-    expect(inputs[1]?.element).toHaveProperty('value', '45')
-    expect(inputs[2]?.element).toHaveProperty('value', '0.11')
-    expect(inputs[7]?.element).toHaveProperty('value', '0.75')
-    expect(wrapper.text()).toContain('Материализованные bootstrap defaults уже считаются валидной стартовой калибровкой.')
-    expect(wrapper.text()).toContain('Источник: системные значения по умолчанию')
-    expect(wrapper.text()).toContain('Доверие: 0.75')
+    // В новом UI все поля видны сразу (advanced-toggle удалён), проверяем дефолтные значения через testid
+    expect((wrapper.get('[data-testid="process-calibration-input-transport_delay_sec"]').element as HTMLInputElement).value).toBe('20')
+    expect((wrapper.get('[data-testid="process-calibration-input-settle_sec"]').element as HTMLInputElement).value).toBe('45')
+    expect((wrapper.get('[data-testid="process-calibration-input-ec_gain_per_ml"]').element as HTMLInputElement).value).toBe('0.11')
+    expect((wrapper.get('[data-testid="process-calibration-input-confidence"]').element as HTMLInputElement).value).toBe('0.75')
+    // Источник — system_default; в preview видим его как моноширинный токен
+    expect(wrapper.text()).toContain('system_default')
+    expect(wrapper.text()).toContain('0.75')
   })
 
   it('не отправляет save при выходе за диапазон и показывает warning toast', async () => {
@@ -249,19 +249,17 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
-    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
-    const confidenceInput = wrapper.find('input[min="0"][max="1"]')
-    await confidenceInput.setValue('2')
+    // Выводим поле confidence за диапазон 0..1 — это же делает форму dirty, чтобы кнопка save стала активной
+    await wrapper.get('[data-testid="process-calibration-input-confidence"]').setValue('2')
 
-    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Сохранить'))
-    expect(saveButton).toBeTruthy()
-    await saveButton!.trigger('click')
+    await wrapper.get('[data-testid="process-calibration-save"]').trigger('click')
     await flushPromises()
 
     expect(updateDocumentMock).not.toHaveBeenCalled()
-    expect(showToastMock).toHaveBeenCalledWith('Проверь диапазоны process calibration.', 'warning')
-    expect(wrapper.text()).toContain('Доверие к калибровке: диапазон 0..1')
+    expect(showToastMock).toHaveBeenCalledWith('Проверьте диапазоны калибровки процесса.', 'warning')
+    // validationErrors.confidence === 'диапазон 0..1'
+    expect(wrapper.text()).toContain('диапазон 0..1')
   })
 
   it('сохраняет текущий режим и перезагружает calibrations', async () => {
@@ -295,15 +293,12 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
-    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
-    await wrapper.find('input[min="0"][max="120"]').setValue('30')
-    await wrapper.find('input[min="0"][max="1"]').setValue('0.5')
+    await wrapper.get('[data-testid="process-calibration-input-transport_delay_sec"]').setValue('30')
+    await wrapper.get('[data-testid="process-calibration-input-confidence"]').setValue('0.5')
     currentSolutionFill = calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 })
 
-    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Сохранить'))
-    expect(saveButton).toBeTruthy()
-    await saveButton!.trigger('click')
+    await wrapper.get('[data-testid="process-calibration-save"]').trigger('click')
     await flushPromises()
 
     expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.runtime_tuning_bundle', expect.objectContaining({
@@ -318,8 +313,8 @@ describe('ProcessCalibrationPanel.vue', () => {
         }),
       }),
     }))
-    expect(showToastMock).toHaveBeenCalledWith('Калибровка процесса для режима "Наполнение" сохранена.', 'success')
-    expect(wrapper.text()).toContain('transport_delay_sec + settle_sec = 75 сек')
+    expect(showToastMock).toHaveBeenCalledWith('Калибровка «Наполнение» сохранена.', 'success')
+    expect(wrapper.text()).toContain('30 + 45 = 75 сек')
   })
 
   it('показывает историю сохранений для активного режима', async () => {
@@ -357,17 +352,25 @@ describe('ProcessCalibrationPanel.vue', () => {
 
     const wrapper = mount(ProcessCalibrationPanel, {
       props: { zoneId: 7 },
+      global: {
+        stubs: { Teleport: true, transition: true },
+      },
     })
 
     await flushPromises()
 
-    await wrapper.get('[data-testid="process-calibration-mode-tank_recirc"]').trigger('click')
+    // Табы переименованы: process-calibration-tab-<mode>
+    await wrapper.get('[data-testid="process-calibration-tab-tank_recirc"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('История calibration')
+    // История живёт в teleport-drawer'е, открываем её кнопкой
+    await wrapper.get('[data-testid="process-calibration-history-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('История калибровок')
     expect(wrapper.text()).toContain('Process calibration обновлена (tank_recirc): окно 20+45 сек, confidence 0.91, EC=0.110')
-    expect(wrapper.text()).toContain('Источник: hil_manual')
-    expect(wrapper.text()).toContain('Окно: 20+45 сек')
+    expect(wrapper.text()).toContain('hil_manual')
+    expect(wrapper.text()).toContain('окно 20+45 сек')
     expect(wrapper.text()).not.toContain('Process calibration обновлена (generic): окно 18+30 сек, confidence 0.75, EC=0.090')
   })
 })

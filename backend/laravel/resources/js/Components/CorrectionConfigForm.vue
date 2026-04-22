@@ -1033,7 +1033,7 @@ function sectionRuntimeNote(sectionKey: string, target: Record<string, unknown>)
   const op = formatInteger(getByPath(target, `${prefix}.observe_poll_sec`))
   const mef = formatPercent(getByPath(target, `${prefix}.min_effect_fraction`))
   const nel = formatInteger(getByPath(target, `${prefix}.no_effect_consecutive_limit`))
-  return `${controller} observe-loop: после дозы runtime ждёт окно из Process Calibration (transport_delay_sec + settle_sec), затем набирает decision window ${dw} сек и повторяет observe-check каждые ${op} сек. Эффект ниже ${mef} считается no-effect; после ${nel} подряд correction идёт в fail-closed при включённом safety guard.`
+  return `${controller} observe-loop: после дозы runtime ждёт окно из Process Calibration (transport_delay_sec + settle_sec), затем набирает decision window ${dw} сек и повторяет observe-check каждые ${op} сек. Эффект ниже ${mef} считается no-effect; после ${nel} подряд no-effect correction идёт в fail-closed при включённом safety guard.`
 }
 function splitPresetConfig(raw: Record<string, unknown> | undefined) {
   if (raw && typeof raw === 'object' && 'base' in raw) {
@@ -1391,9 +1391,15 @@ function jsonToYaml(obj: unknown, indent = 0): string {
 onMounted(() => { void reload() })
 watch(() => props.zoneId, () => { void reload() })
 watch(sections, (s) => {
-  // при первой загрузке — раскрыть первую секцию
+  // при первой загрузке — раскрыть первую секцию и контроллеры (там лежат runtime-подсказки observe-loop)
   if (s.length && openSections.value.size === 0) {
-    openSections.value = new Set([s[0].key])
+    const initial = new Set<string>([s[0].key])
+    for (const section of s) {
+      if (section.key === 'controllers.ph' || section.key === 'controllers.ec') {
+        initial.add(section.key)
+      }
+    }
+    openSections.value = initial
   }
 })
 
