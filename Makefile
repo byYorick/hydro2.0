@@ -128,7 +128,12 @@ test-mqttb: test-db-init
 		-e DB_DATABASE=$(LARAVEL_TEST_DB) \
 		mqtt-bridge pytest $(PYTEST_ARGS)
 
-test: test-laravel test-ae test-hl test-mqttb
+.PHONY: test-agg
+test-agg: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		telemetry-aggregator pytest $(PYTEST_ARGS)
+
+test: test-laravel test-ae test-hl test-mqttb test-agg
 
 .PHONY: lint
 lint: up

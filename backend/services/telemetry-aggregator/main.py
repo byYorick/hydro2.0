@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from common.utils.time import utcnow
+from common.utils.time import utcnow, utcnow_naive
 from common.env import get_settings
 from common.db import fetch, execute
 from common.simulation_events import record_simulation_event
@@ -174,10 +174,131 @@ async def _record_success() -> None:
         _backoff_until = None
 
 
+# ML Phase 1: текущая версия агрегатной формулы.
+# Меняется при изменении формулы std/slope/p10/p90 или quality-фильтра.
+# См. doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 + Приложение C.
+AGG_VERSION_CURRENT = 2
+
+
+def _build_agg_1m_query(*, bucket_expr: str) -> str:
+    """
+    SQL-шаблон для агрегации telemetry_samples → telemetry_agg_1m.
+
+    ML-поля (value_std, value_p10, value_p90, slope_per_min) считаются только
+    по quality='GOOD' через FILTER. Классические value_avg/min/max/median —
+    по всем записям (backward compat с UI и графами).
+    sample_count — все записи, valid_count — только GOOD.
+    """
+    return f"""
+    INSERT INTO telemetry_agg_1m (
+        zone_id, node_id, channel, metric_type,
+        value_avg, value_min, value_max, value_median, sample_count,
+        value_std, value_p10, value_p90, slope_per_min, valid_count, agg_version,
+        ts
+    )
+    SELECT
+        ts.zone_id,
+        s.node_id,
+        ts.metadata->>'channel' AS channel,
+        s.type::text AS metric_type,
+        AVG(ts.value)::float AS value_avg,
+        MIN(ts.value)::float AS value_min,
+        MAX(ts.value)::float AS value_max,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float AS value_median,
+        COUNT(*)::int AS sample_count,
+        STDDEV_SAMP(ts.value) FILTER (WHERE ts.quality = 'GOOD')::float AS value_std,
+        PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY ts.value)
+            FILTER (WHERE ts.quality = 'GOOD')::float AS value_p10,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ts.value)
+            FILTER (WHERE ts.quality = 'GOOD')::float AS value_p90,
+        REGR_SLOPE(ts.value, EXTRACT(EPOCH FROM ts.ts) / 60.0)
+            FILTER (WHERE ts.quality = 'GOOD')::float AS slope_per_min,
+        COUNT(*) FILTER (WHERE ts.quality = 'GOOD')::int AS valid_count,
+        {AGG_VERSION_CURRENT} AS agg_version,
+        {bucket_expr} AS ts
+    FROM telemetry_samples ts
+    LEFT JOIN sensors s ON s.id = ts.sensor_id
+    WHERE ts.ts > $1 AND ts.ts <= NOW()
+    GROUP BY
+        ts.zone_id,
+        s.node_id,
+        ts.metadata->>'channel',
+        s.type::text,
+        {bucket_expr}
+    ON CONFLICT (zone_id, node_id, channel, metric_type, ts)
+    DO UPDATE SET
+        value_avg     = EXCLUDED.value_avg,
+        value_min     = EXCLUDED.value_min,
+        value_max     = EXCLUDED.value_max,
+        value_median  = EXCLUDED.value_median,
+        sample_count  = EXCLUDED.sample_count,
+        value_std     = EXCLUDED.value_std,
+        value_p10     = EXCLUDED.value_p10,
+        value_p90     = EXCLUDED.value_p90,
+        slope_per_min = EXCLUDED.slope_per_min,
+        valid_count   = EXCLUDED.valid_count,
+        agg_version   = EXCLUDED.agg_version
+    RETURNING zone_id, ts
+    """
+
+
+def _build_agg_1h_query(*, bucket_expr: str) -> str:
+    """
+    SQL-шаблон для агрегации telemetry_agg_1m → telemetry_agg_1h.
+
+    Внимание: 1h-агрегаты строятся из уже усреднённых 1m-значений, поэтому
+    value_std/p10/p90 здесь — это статистики distribution минутных средних
+    за час, а не raw-семплов. Для чистых raw-статистик используйте 1m-витрину.
+    valid_count — SUM(1m.valid_count), slope_per_min — AVG(1m.slope_per_min).
+    """
+    return f"""
+    INSERT INTO telemetry_agg_1h (
+        zone_id, node_id, channel, metric_type,
+        value_avg, value_min, value_max, value_median, sample_count,
+        value_std, value_p10, value_p90, slope_per_min, valid_count, agg_version,
+        ts
+    )
+    SELECT
+        zone_id,
+        node_id,
+        channel,
+        metric_type,
+        AVG(value_avg)::float AS value_avg,
+        MIN(value_min)::float AS value_min,
+        MAX(value_max)::float AS value_max,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value_avg)::float AS value_median,
+        SUM(sample_count)::int AS sample_count,
+        STDDEV_SAMP(value_avg)::float AS value_std,
+        PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY value_avg)::float AS value_p10,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY value_avg)::float AS value_p90,
+        AVG(slope_per_min)::float AS slope_per_min,
+        COALESCE(SUM(valid_count), 0)::int AS valid_count,
+        {AGG_VERSION_CURRENT} AS agg_version,
+        {bucket_expr} AS ts
+    FROM telemetry_agg_1m
+    WHERE ts > $1 AND ts <= NOW()
+    GROUP BY zone_id, node_id, channel, metric_type, {bucket_expr}
+    ON CONFLICT (zone_id, node_id, channel, metric_type, ts)
+    DO UPDATE SET
+        value_avg     = EXCLUDED.value_avg,
+        value_min     = EXCLUDED.value_min,
+        value_max     = EXCLUDED.value_max,
+        value_median  = EXCLUDED.value_median,
+        sample_count  = EXCLUDED.sample_count,
+        value_std     = EXCLUDED.value_std,
+        value_p10     = EXCLUDED.value_p10,
+        value_p90     = EXCLUDED.value_p90,
+        slope_per_min = EXCLUDED.slope_per_min,
+        valid_count   = EXCLUDED.valid_count,
+        agg_version   = EXCLUDED.agg_version
+    RETURNING zone_id, ts
+    """
+
+
 async def aggregate_1m() -> int:
     """
     Агрегировать телеметрию по 1 минуте.
-    
+
     Returns:
         Количество созданных записей
     """
@@ -188,88 +309,26 @@ async def aggregate_1m() -> int:
     with AGGREGATION_LAT.labels(type="1m").time():
         try:
             last_ts = await get_last_ts("1m")
-            
-            # Если нет последней метки, берём последний час
+
+            # Если нет последней метки, берём последний час.
+            # utcnow_naive(), потому что telemetry_samples.ts — TIMESTAMP WITHOUT TIME ZONE;
+            # asyncpg не кодирует aware datetime для naive колонки.
             if last_ts is None:
-                last_ts = utcnow() - timedelta(hours=1)
-            
-            # Агрегируем данные из telemetry_samples
-            # Пробуем использовать time_bucket (TimescaleDB), если не работает - используем date_trunc
+                last_ts = utcnow_naive() - timedelta(hours=1)
+
+            # Агрегируем данные из telemetry_samples.
+            # ML-поля (value_std, p10, p90, slope_per_min) считаются только по GOOD-записям
+            # через FILTER, классические avg/min/max/median — по всем (backward compat).
+            # Подробности: doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §5.1 + Приложение C.
             try:
                 rows = await fetch(
-                    """
-                    INSERT INTO telemetry_agg_1m (
-                        zone_id, node_id, channel, metric_type,
-                        value_avg, value_min, value_max, value_median, sample_count, ts
-                    )
-                    SELECT 
-                        ts.zone_id,
-                        s.node_id,
-                        ts.metadata->>'channel' as channel,
-                        s.type::text as metric_type,
-                        AVG(ts.value)::float as value_avg,
-                        MIN(ts.value)::float as value_min,
-                        MAX(ts.value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
-                        COUNT(*)::int as sample_count,
-                        time_bucket('1 minute', ts.ts) as ts
-                    FROM telemetry_samples ts
-                    LEFT JOIN sensors s ON s.id = ts.sensor_id
-                    WHERE ts.ts > $1 AND ts.ts <= NOW()
-                    GROUP BY
-                        ts.zone_id,
-                        s.node_id,
-                        ts.metadata->>'channel',
-                        s.type::text,
-                        time_bucket('1 minute', ts.ts)
-                    ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
-                    DO UPDATE SET
-                        value_avg = EXCLUDED.value_avg,
-                        value_min = EXCLUDED.value_min,
-                        value_max = EXCLUDED.value_max,
-                        value_median = EXCLUDED.value_median,
-                        sample_count = EXCLUDED.sample_count
-                    RETURNING zone_id, ts
-                    """,
+                    _build_agg_1m_query(bucket_expr="time_bucket('1 minute', ts.ts)"),
                     last_ts,
                 )
             except Exception:
                 # Если time_bucket не доступен, используем date_trunc
                 rows = await fetch(
-                    """
-                    INSERT INTO telemetry_agg_1m (
-                        zone_id, node_id, channel, metric_type,
-                        value_avg, value_min, value_max, value_median, sample_count, ts
-                    )
-                    SELECT 
-                        ts.zone_id,
-                        s.node_id,
-                        ts.metadata->>'channel' as channel,
-                        s.type::text as metric_type,
-                        AVG(ts.value)::float as value_avg,
-                        MIN(ts.value)::float as value_min,
-                        MAX(ts.value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
-                        COUNT(*)::int as sample_count,
-                        date_trunc('minute', ts.ts) as ts
-                    FROM telemetry_samples ts
-                    LEFT JOIN sensors s ON s.id = ts.sensor_id
-                    WHERE ts.ts > $1 AND ts.ts <= NOW()
-                    GROUP BY
-                        ts.zone_id,
-                        s.node_id,
-                        ts.metadata->>'channel',
-                        s.type::text,
-                        date_trunc('minute', ts.ts)
-                    ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
-                    DO UPDATE SET
-                        value_avg = EXCLUDED.value_avg,
-                        value_min = EXCLUDED.value_min,
-                        value_max = EXCLUDED.value_max,
-                        value_median = EXCLUDED.value_median,
-                        sample_count = EXCLUDED.sample_count
-                    RETURNING zone_id, ts
-                    """,
+                    _build_agg_1m_query(bucket_expr="date_trunc('minute', ts.ts)"),
                     last_ts,
                 )
             
@@ -332,75 +391,22 @@ async def aggregate_1h() -> int:
     with AGGREGATION_LAT.labels(type="1h").time():
         try:
             last_ts = await get_last_ts("1h")
-            
-            # Если нет последней метки, берём последние 24 часа
+
+            # Если нет последней метки, берём последние 24 часа.
+            # utcnow_naive() — см. комментарий в aggregate_1m.
             if last_ts is None:
-                last_ts = utcnow() - timedelta(hours=24)
-            
-            # Агрегируем данные из telemetry_agg_1m
+                last_ts = utcnow_naive() - timedelta(hours=24)
+
+            # Агрегируем из telemetry_agg_1m (не из raw).
+            # ML-поля берём с оговорками — см. _build_agg_1h_query.
             try:
                 rows = await fetch(
-                    """
-                    INSERT INTO telemetry_agg_1h (
-                        zone_id, node_id, channel, metric_type,
-                        value_avg, value_min, value_max, value_median, sample_count, ts
-                    )
-                    SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value_avg)::float as value_avg,
-                        MIN(value_min)::float as value_min,
-                        MAX(value_max)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value_avg)::float as value_median,
-                        SUM(sample_count)::int as sample_count,
-                        time_bucket('1 hour', ts) as ts
-                    FROM telemetry_agg_1m
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, time_bucket('1 hour', ts)
-                    ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
-                    DO UPDATE SET
-                        value_avg = EXCLUDED.value_avg,
-                        value_min = EXCLUDED.value_min,
-                        value_max = EXCLUDED.value_max,
-                        value_median = EXCLUDED.value_median,
-                        sample_count = EXCLUDED.sample_count
-                    RETURNING zone_id, ts
-                    """,
+                    _build_agg_1h_query(bucket_expr="time_bucket('1 hour', ts)"),
                     last_ts,
                 )
             except Exception:
-                # Если time_bucket не доступен, используем date_trunc
                 rows = await fetch(
-                    """
-                    INSERT INTO telemetry_agg_1h (
-                        zone_id, node_id, channel, metric_type,
-                        value_avg, value_min, value_max, value_median, sample_count, ts
-                    )
-                    SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value_avg)::float as value_avg,
-                        MIN(value_min)::float as value_min,
-                        MAX(value_max)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value_avg)::float as value_median,
-                        SUM(sample_count)::int as sample_count,
-                        date_trunc('hour', ts) as ts
-                    FROM telemetry_agg_1m
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, date_trunc('hour', ts)
-                    ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
-                    DO UPDATE SET
-                        value_avg = EXCLUDED.value_avg,
-                        value_min = EXCLUDED.value_min,
-                        value_max = EXCLUDED.value_max,
-                        value_median = EXCLUDED.value_median,
-                        sample_count = EXCLUDED.sample_count
-                    RETURNING zone_id, ts
-                    """,
+                    _build_agg_1h_query(bucket_expr="date_trunc('hour', ts)"),
                     last_ts,
                 )
             
@@ -462,11 +468,12 @@ async def aggregate_daily() -> int:
     with AGGREGATION_LAT.labels(type="daily").time():
         try:
             last_ts = await get_last_ts("daily")
-            
-            # Если нет последней метки, берём последние 7 дней
+
+            # Если нет последней метки, берём последние 7 дней.
+            # utcnow_naive() — см. комментарий в aggregate_1m.
             if last_ts is None:
-                last_ts = utcnow() - timedelta(days=7)
-            
+                last_ts = utcnow_naive() - timedelta(days=7)
+
             # Агрегируем данные из telemetry_agg_1h
             rows = await fetch(
                 """

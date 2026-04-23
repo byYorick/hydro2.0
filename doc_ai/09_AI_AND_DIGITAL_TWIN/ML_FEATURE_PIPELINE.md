@@ -887,4 +887,140 @@ Ground truth backfill + error метрики | `ml_predictions.error` запол
 
 ---
 
+## Приложение C. Addendum 2026-04-23 — решения по §18 и верификация состояния
+
+> Раздел фиксирует решения, принятые после верификации реального состояния
+> репо и dev-БД в ветке `ae3` на 2026-04-23. Закрывает открытые вопросы §18
+> и корректирует §5.3, §7, §10, §15 под фактическую архитектуру.
+
+### C.1. Верификация текущего состояния (факты, не намерения)
+
+| Объект | Статус в dev | Комментарий |
+|---|---|---|
+| `timescaledb` extension | ✅ v2.26.0 установлен | `shared_preload_libraries=timescaledb,pg_cron` в `backend/docker-compose.dev.yml:28` |
+| `telemetry_agg_1m` | ✅ hypertable (chunk 7d, без compression) | `primary_dimension_type = timestamp without time zone` — см. ниже |
+| `telemetry_agg_1h` | ✅ hypertable (chunk 30d, без compression) | То же |
+| `telemetry_samples` | ❌ НЕ hypertable | PG-таблица с PG RANGE-партиционированием по месяцам (наследие, трогать не будем) |
+| `.ts` колонки в существующих агрегатах | `timestamp(0) without time zone` | Наследие, **не повторять** в новых таблицах: использовать `timestamptz` |
+| Compression policy | не настроена ни на одной таблице | В Phase 1 добавим `add_compression_policy` для `telemetry_agg_1m` |
+| `grow_cycles` | ✅ богатая модель | `current_phase_id` → `grow_cycle_phases`, `current_stage_code`, `phase_started_at`, `recipe_revision_id` |
+| `commands` | ✅ **живой источник** истины | 359 записей в dev, partitioned по `created_at`, есть 15 реальных `cmd='dose'` от AE3 |
+| `command_audit` | ❌ **мёртвая таблица** | Создана миграцией `2026_01_23_000003`, но пишущий код ни в AE3, ни в Laravel **не найден** (grep в `backend/**`) |
+| `command_tracking` | ❌ мёртвая | 0 записей, пишущего кода нет |
+| Prod-данные | нет | Только dev-синтетика на 1 зоне |
+
+### C.2. Решения по вопросам §18 и разведке
+
+| # | Вопрос | Решение |
+|---|---|---|
+| §18.1 | Timescale в проде? | ✅ Есть (v2.26). Новые ML-таблицы делаем Timescale hypertable сразу. Существующие `telemetry_*` на hypertable **не переводим** — это вне скоупа Phase 1–3. |
+| §18.2 | Scope моделей | Одна **глобальная** модель + `zone_id` как фича. Per-zone — только если понадобится (≥ 5 зон и явная разница в динамике). |
+| §18.3 | Storage артефактов | Отложено до Phase 5. Для Phase 1–3 не нужно. |
+| §18.4 | ml-inference отдельный сервис? | Да, отдельный — **но это Phase 5, вне текущего скоупа**. |
+| §18.5 | Training runtime | Notebooks в `tools/ml/` на dev-машине. Phase 4+. |
+| §18.6 | Единицы `dose_*_ml` | Хранить как есть (мл) + `water_volume_l_before` рядом. Модель сама выучит отношение. |
+| A | Где `command_audit`? | **Мёртвая, игнорируем.** `dose_response_events` строим из `commands WHERE cmd='dose' AND status='DONE'`, snapshot реконструируем из `telemetry_samples` (см. C.3). Оживление `command_audit` — отдельная задача вне ML-скоупа. |
+| B | Backfill prod-данных | Не нужен, prod-данных нет. Начинаем с чистого листа. |
+| C | Ветка | Работаем прямо в `ae3`. Отдельной `feature/ml-feature-pipeline` не создаём. |
+| SENSOR_HEALTH | Перед FEATURE? | Минимум в Phase 1: `valid_count` + `valid_ratio` через `FILTER (WHERE quality='GOOD')`. Полный SENSOR_HEALTH charter — позже. |
+| `cycle_id` | какая модель? | FK `cycle_id` + **денормализованные** `phase_code varchar(32)` и `stage_code varchar(32)` в строке фичи (snapshot на момент окна). Защищает от изменений `grow_cycle_phases` при AE3 config refactoring. |
+
+### C.3. Корректировка §5.3 — `dose_response_events` без `command_audit`
+
+**Было (§5.3):** `feature-builder` читает `command_audit.telemetry_snapshot` и join'ит с откликом.
+
+**Стало:** `feature-builder` читает `commands`, реконструирует snapshot из raw телеметрии.
+
+**Источник доз:**
+```sql
+SELECT c.id          AS command_id,
+       c.zone_id,
+       c.cycle_id,                    -- см. C.4 про NULL
+       c.node_id, c.channel,
+       c.cmd, c.params,               -- params->>'ml' → volume_ml
+       c.sent_at      AS dose_ts,
+       c.ack_at       AS dose_end_ts, -- fallback: sent_at + (params->>'duration_ms')
+       c.source
+  FROM commands c
+ WHERE c.cmd = 'dose'
+   AND c.status = 'DONE'
+   AND c.sent_at IS NOT NULL;
+```
+
+**Резолв `reagent`:** `commands.node_id + channel` → таблица `sensors`/`node_channels` (или конфиг узла)
+→ `ph_down` | `ph_up` | `npk` | `ca` | `mg` | `micro`. Маппинг хранится в
+`feature-builder` и инкрементирует `feature_schema_version` при изменении.
+
+**Snapshot до (`ph_before`, `ec_before`, `water_temp_before`, `water_volume_l_before`):**
+```
+avg(telemetry_samples.value)
+  WHERE sensor_id IN (<sensors of zone>)
+    AND quality = 'GOOD'
+    AND ts BETWEEN dose_ts - INTERVAL '60 seconds' AND dose_ts
+  GROUP BY metric_type
+```
+
+**Snapshot через +5m/+15m/+60m:** аналогично, окно `[dose_ts + h - 30s, dose_ts + h + 30s]`.
+
+**`is_clean`:** в окне `[dose_ts - 60 мин, dose_ts + 60 мин]` нет других `commands` с `cmd IN ('dose','run_pump')` или `WATER_CHANGE_*` в `zone_events`.
+
+**`is_settled`:** `|ph_slope_before|` и `|ec_slope_before|` < порог (берётся из `telemetry_agg_1m.slope_per_min`, введённого в Phase 1).
+
+### C.4. Известные баги AE3, не блокирующие ML
+
+Зарепортить в AE3 отдельными тикетами, но Phase 1–3 их **обходит**:
+
+1. **`commands.cycle_id = NULL` в dose-командах от AE3.**
+   - Обход: в feature-builder резолвим через `grow_cycles.zone_id = c.zone_id AND grow_cycles.status='RUNNING' AND started_at <= dose_ts` (сейчас уникален per `zone_active_unique`).
+2. **`commands.context_type = 'manual'` для автоматических dose-команд.**
+   - Обход: отличаем AE3-источник по `source = 'automation-engine'`, не по `context_type`.
+
+### C.5. Таблицы-призраки: политика
+
+- `command_audit`, `command_tracking` — в дальнейшем **не используются ML-слоем**.
+- **Не удаляем** их миграцией в рамках Phase 1–3 (минимизируем риск конфликтов с AE3-работой).
+- Решение об удалении / оживлении — отдельным тикетом вне ML-скоупа.
+
+### C.6. Уточнения для `zone_features_5m` (§5.2) под реальную модель цикла
+
+Заменить:
+```sql
+  recipe_phase          varchar(32),
+```
+на:
+```sql
+  cycle_id              bigint REFERENCES grow_cycles(id),
+  phase_code            varchar(32),   -- снимок grow_cycles.current_stage_code
+  phase_id              bigint,        -- снимок grow_cycles.current_phase_id (без FK — денормализация)
+  hours_since_phase_start double precision,
+```
+Значения берутся на **момент начала окна** `ts`. FK оставляем только на `cycle_id`; `phase_id` хранится без FK, чтобы удаление фазы при AE3-рефакторинге не ломало исторические фичи.
+
+### C.7. Обновлённый план фаз
+
+| Phase | Было | Стало | Изменения |
+|---|---|---|---|
+| 0 | 1 неделя | **пропускаем** | Ветка уже `ae3`, документ утверждён этим addendum'ом |
+| 1 | агрегаты +std/slope | **без изменений** | Добавляем FILTER quality='GOOD' + поля |
+| 2 | feature-builder MVP | **без изменений** | `zone_features_5m` с правками C.6 |
+| 3 | dose_response из `command_audit` | **из `commands`** | См. C.3 |
+| 4 | Training notebooks | отложено | Запускается ≥ 1 мес накопления реальных данных |
+| 5 | Registry + inference | отложено | Отдельное решение |
+| 6 | Canary → Active | отложено | Отдельный runbook |
+
+### C.8. Граница текущего скоупа
+
+**В скоупе:** Phase 1 + Phase 2 + Phase 3 (миграции, feature-builder, наполнение витрин).
+**Вне скоупа:** `ml_models`, `ml_predictions`, `ml-inference` сервис, training notebooks, calibration UI, promotion моделей, изменения AE3 / digital-twin.
+
+После завершения Phase 3 репо содержит **рабочую систему накопления ML-ready данных**. Следующее решение (начинать ли Phase 4) принимается отдельно, когда наберётся достаточный объём реальных данных (ориентир: ≥ 1 месяц prod-телеметрии, ≥ 200 чистых `dose_response_events` per zone).
+
+### C.9. Changelog
+
+| Дата | Изменение | Автор |
+|---|---|---|
+| 2026-04-23 | Addendum C: верификация состояния, решения по §18, перевод `dose_response_events` с `command_audit` на `commands` | claude (ae3) |
+
+---
+
 # Конец файла ML_FEATURE_PIPELINE.md
