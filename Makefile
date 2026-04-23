@@ -133,7 +133,12 @@ test-agg: up
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		telemetry-aggregator pytest $(PYTEST_ARGS)
 
-test: test-laravel test-ae test-hl test-mqttb test-agg
+.PHONY: test-fb
+test-fb: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		feature-builder pytest $(PYTEST_ARGS)
+
+test: test-laravel test-ae test-hl test-mqttb test-agg test-fb
 
 .PHONY: lint
 lint: up

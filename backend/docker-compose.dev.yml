@@ -489,6 +489,42 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ML Phase 2 — единственный writer в zone_features_5m / ml_labels /
+  # dose_response_events. Подробности: doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md §6.
+  feature-builder:
+    build:
+      context: ./services
+      dockerfile: feature-builder/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro_dev
+      - PG_USER=hydro
+      - PG_PASS=hydro
+      - PYTHONPATH=/app
+      - FEATURE_BUILDER_POLL_INTERVAL_SEC=60
+      - FEATURE_BUILDER_LOOKBACK_HOURS=24
+      - FEATURE_BUILDER_HORIZONS=5,15,60
+      - FEATURE_BUILDER_SCHEMA_VERSION=1
+      - FEATURE_BUILDER_PORT=9410
+    depends_on:
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+    ports:
+      - "9410:9410"  # HTTP (healthz + metrics mount)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9410)); s.close()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
   python-tests:
     build:
       context: ./services
