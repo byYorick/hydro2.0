@@ -21,11 +21,11 @@
 
 ### Ядро (уже покрыто полными планами)
 
-| # | Pipeline | Статус | Что делает |
-|---|---|---|---|
-| 1 | `ML_FEATURE_PIPELINE` | 🟢 | Witness для pH/EC/телеметрии: прогноз дрейфа, детекция аномалий, модель дозирования |
-| 2 | `VISION_PIPELINE` | 🟢 | CV: рост, цвет/дефициты, болезни, плоды. Клубника + top-down камера |
-| 3 | `IRRIGATION_ML_PIPELINE` | 🟢 | Умный полив: VPD/ET baseline + learned Kc + weather forecast |
+| # | Pipeline | Статус | Фаза | Что делает |
+|---|---|---|---|---|
+| 1 | `ML_FEATURE_PIPELINE` | 🟢 | **Phase 1 + 2A DONE** · 2B/3 TODO | Witness для pH/EC/телеметрии: прогноз дрейфа, детекция аномалий, модель дозирования |
+| 2 | `VISION_PIPELINE` | 🟢 | ⬜ не начат | CV: рост, цвет/дефициты, болезни, плоды. Клубника + top-down камера |
+| 3 | `IRRIGATION_ML_PIPELINE` | 🟢 | ⬜ не начат | Умный полив: VPD/ET baseline + learned Kc + weather forecast |
 
 ### Tier 1 — синергичные расширения (внедрять в первую очередь)
 
@@ -241,6 +241,7 @@
 | Дата | Изменение | Автор |
 |---|---|---|
 | 2026-04-22 | Первая версия, 3 FULL + 14 CHARTER | claude |
+| 2026-04-23 | `ML_FEATURE_PIPELINE` Phase 1 (расширение агрегатов) + Phase 2A (миграции ML-витрин + skeleton feature-builder) выполнены в ветке `ae3`. Детали в [`ML_FEATURE_PIPELINE.md` §15 и Приложение C](ML_FEATURE_PIPELINE.md). | claude |
 
 ---
 
