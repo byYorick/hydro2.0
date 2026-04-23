@@ -161,3 +161,38 @@ WS_AUTH_TOTAL = Counter(
     "Total WebSocket channel auth attempts",
     ["channel_type", "result"],
 )
+
+
+def initialize_counter_series() -> None:
+    """Pre-register counter series for known static label combinations.
+
+    Creates child counters with value 0 so Grafana rate()/timeseries queries
+    render baseline "0" instead of "No data" before the first real increment.
+    Covers only labels with a known static set (explicit string literals in
+    handlers). Fully dynamic labels (node_uid, http_<status>, arbitrary
+    exception class names) stay lazy.
+    """
+    for error_type in (
+        "invalid_json",
+        "missing_hardware_id",
+        "parse_error",
+        "config_missing",
+        "token_missing",
+        "exception",
+        "unauthorized",
+        "timeout",
+        "request_error",
+        "max_retries_exceeded",
+    ):
+        NODE_HELLO_ERRORS.labels(error_type=error_type)
+
+    for error_type in (
+        "IntegrityError",
+        "OperationalError",
+        "DataError",
+        "ProgrammingError",
+        "ForeignKeyViolation",
+        "UniqueViolation",
+        "DatabaseError",
+    ):
+        DATABASE_ERRORS.labels(error_type=error_type)

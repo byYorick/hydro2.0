@@ -1823,7 +1823,12 @@ static esp_err_t storage_irrigation_node_publish_level_switch_telemetry_snapshot
             s_sensor_logged_state[sensor->gpio] = active;
         }
 
-        node_telemetry_publish_custom(sensor->name, sensor->metric, value, raw, false, true);
+        esp_err_t pub_err = node_telemetry_publish_custom(sensor->name, sensor->metric,
+                                                          value, raw, false, true);
+        if (pub_err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to publish level-switch telemetry %s: %s",
+                     sensor->name, esp_err_to_name(pub_err));
+        }
     }
 
     return ESP_OK;

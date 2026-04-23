@@ -294,7 +294,14 @@ static esp_err_t flush_batch_internal(void) {
             memory_pool_free_json_string(NULL);
         }
 
-        mqtt_manager_publish_telemetry(item->channel, json_buf);
+        esp_err_t pub_err = mqtt_manager_publish_telemetry(item->channel, json_buf);
+        if (pub_err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to publish telemetry channel=%s metric=%s: %s",
+                     item->channel, item->metric_type,
+                     esp_err_to_name(pub_err));
+            // Не прерываем обработку батча: публикация других каналов должна
+            // продолжаться, а потерю инкрементно фиксирует MQTT-метрика.
+        }
         oled_ui_notify_telemetry();
     }
 

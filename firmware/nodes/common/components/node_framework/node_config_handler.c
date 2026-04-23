@@ -4,6 +4,7 @@
  */
 
 #include "node_config_handler.h"
+#include "node_command_handler.h"
 #include "node_framework.h"
 #include "node_utils.h"
 #include "config_storage.h"
@@ -631,6 +632,10 @@ esp_err_t node_config_handler_apply_with_result(
         ESP_LOGE(TAG, "Failed to save config to NVS: %s", esp_err_to_name(err));
         return err;
     }
+
+    // Новый конфиг сохранён в NVS — инвалидируем кэш node_secret/allow_legacy_hmac
+    // в command_handler, иначе следующая команда будет проверяться по старому секрету.
+    node_command_handler_invalidate_secret_cache();
 
     // Применение через config_apply
     config_apply_result_t local_result;

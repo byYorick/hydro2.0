@@ -20,6 +20,7 @@ from common.redis_queue import TelemetryQueue, close_redis_client
 from common.service_logs import send_service_log
 from common.trace_context import clear_trace_id, set_trace_id_from_headers
 from ingest_routes import router as ingest_router
+from metrics import initialize_counter_series
 from mqtt_handlers import (
     handle_command_response,
     handle_config_report,
@@ -49,6 +50,8 @@ async def lifespan(app: FastAPI):
         message="History Logger service starting",
         context={"stage": "startup"},
     )
+
+    initialize_counter_series()
 
     # Reset runtime state on each startup (important for tests/restarts).
     state.shutdown_event.clear()

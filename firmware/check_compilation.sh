@@ -2,6 +2,9 @@
 # Скрипт для проверки компиляции прошивок после синхронизации с эталоном node-sim
 
 set -e
+# pipefail: без него `idf.py build | tee log` возвращает exit code от tee (всегда 0)
+# и failed-сборка ошибочно рапортуется как успешная.
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NODES_DIR="$SCRIPT_DIR/nodes"

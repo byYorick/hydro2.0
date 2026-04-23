@@ -333,3 +333,33 @@ STARTUP_RECOVERY_TASK = Counter(
     "Tasks processed during startup recovery grouped by recovery outcome",
     ["outcome"],  # completed | failed | waiting_command | recovered_waiting_command
 )
+
+
+def initialize_counter_series() -> None:
+    """Pre-register counter series for known static label combinations.
+
+    Creates child counters with value 0 so Grafana timeseries / rate() queries
+    render baseline "0" instead of "No data" before the first real increment.
+    Covers only enum-style labels (topology, stage, component, known
+    error_type). Dynamic labels (zone_id, error_code, exception class names)
+    remain lazy; dashboard queries fall back via `or vector(0)` where needed.
+    """
+    from ae3lite.application.services.workflow_topology import TopologyRegistry
+
+    registry = TopologyRegistry()
+
+    for error_type in ("LeaseLost", "TimeoutError"):
+        TICK_ERRORS.labels(error_type=error_type)
+
+    for topology in ("two_tank_drip_substrate_trays", "two_tank", "generic_cycle_start"):
+        IRRIGATION_SOLUTION_MIN.labels(topology=topology)
+        for component in ("A", "B", "micro"):
+            IRRIGATION_EC_COMPONENT_DOSE.labels(topology=topology, component=component)
+        try:
+            stages = registry.stages(topology)
+        except KeyError:
+            continue
+        for stage in stages.keys():
+            STAGE_RETRY.labels(topology=topology, stage=stage)
+            STAGE_DEADLINE_EXCEEDED.labels(topology=topology, stage=stage)
+            CORRECTION_EXHAUSTED.labels(topology=topology, stage=stage)

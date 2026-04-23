@@ -2,6 +2,9 @@
 # Скрипт для компиляции всех нод
 
 set -e
+# pipefail: без него `idf.py build | tee log | tail -30` возвращает exit code
+# от tail (всегда 0), и failed-сборка ошибочно считается успешной.
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NODES_DIR="$SCRIPT_DIR/nodes"

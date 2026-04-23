@@ -26,7 +26,7 @@ from ae3lite.api.security import validate_scheduler_security_baseline
 from ae3lite.api.validation import validate_scheduler_zone
 from ae3lite.domain.errors import ManualControlError
 from ae3lite.infrastructure.intent_status_listener import IntentStatusListener
-from ae3lite.infrastructure.metrics import NODE_RUNTIME_EVENT_KICK
+from ae3lite.infrastructure.metrics import NODE_RUNTIME_EVENT_KICK, initialize_counter_series
 from ae3lite.infrastructure.zone_event_listener import ZoneEventListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
 from ae3lite.runtime.env import Ae3RuntimeConfig
@@ -385,6 +385,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                     pool_backoff_sec,
                 )
                 await asyncio.sleep(pool_backoff_sec)
+        initialize_counter_series()
         await bundle.worker.recover_on_startup()
         bundle.worker.kick()
         app.state.ae3_runtime_bundle = bundle

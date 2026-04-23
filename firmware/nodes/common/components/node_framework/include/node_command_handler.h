@@ -155,10 +155,20 @@ void node_command_handler_cache_final_status(const char *cmd_id, const char *cha
 
 /**
  * @brief Инициализация встроенных обработчиков команд
- * 
+ *
  * Регистрирует системные команды, такие как set_time
  */
 void node_command_handler_init_builtin_handlers(void);
+
+/**
+ * @brief Инвалидация кэша node_secret/allow_legacy_hmac.
+ *
+ * Вызывается из node_config_handler после применения нового конфига,
+ * чтобы следующая обработка команды перечитала секрет из NVS.
+ * Сам перечитанный секрет кэшируется в RAM, чтобы malloc() на 4 КБ
+ * не происходил в горячем пути обработки каждой входящей команды.
+ */
+void node_command_handler_invalidate_secret_cache(void);
 
 #ifdef __cplusplus
 }

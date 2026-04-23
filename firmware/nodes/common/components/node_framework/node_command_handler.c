@@ -68,6 +68,19 @@ static struct {
     SemaphoreHandle_t mutex;
 } s_command_handler = {0};
 
+// Кэш node_secret и allow_legacy_hmac. Загружается лениво при первом обращении
+// или после инвалидации через node_command_handler_invalidate_secret_cache().
+// Без кэша каждая входящая команда выделяла CONFIG_STORAGE_MAX_JSON_SIZE (4 КБ)
+// в куче для повторного чтения NodeConfig из NVS при HMAC-проверке.
+#define NODE_SECRET_MAX_LEN 128
+static struct {
+    char secret[NODE_SECRET_MAX_LEN];
+    bool allow_legacy;
+    bool secret_loaded;
+    bool flags_loaded;
+    SemaphoreHandle_t mutex;
+} s_secret_cache = {0};
+
 static void init_mutexes(void) {
     if (s_command_handler.mutex == NULL) {
         s_command_handler.mutex = xSemaphoreCreateMutex();
@@ -75,6 +88,66 @@ static void init_mutexes(void) {
     if (s_global_cmd_cache.cache_mutex == NULL) {
         s_global_cmd_cache.cache_mutex = xSemaphoreCreateMutex();
     }
+    if (s_secret_cache.mutex == NULL) {
+        s_secret_cache.mutex = xSemaphoreCreateMutex();
+    }
+}
+
+// Перечитать конфиг из NVS и обновить кэш секрета и флага legacy HMAC.
+// Единственное место, где аллоцируется CONFIG_STORAGE_MAX_JSON_SIZE; вызывается
+// из инициализации фреймворка и после применения нового NodeConfig.
+static esp_err_t reload_secret_cache_locked(void) {
+    char *json_buf = (char *)malloc(CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (!json_buf) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = config_storage_get_json(json_buf, CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (err != ESP_OK) {
+        free(json_buf);
+        return err;
+    }
+
+    cJSON *config = cJSON_Parse(json_buf);
+    free(json_buf);
+    if (!config) {
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    s_secret_cache.secret[0] = '\0';
+    s_secret_cache.secret_loaded = false;
+    cJSON *secret_item = cJSON_GetObjectItem(config, "node_secret");
+    if (cJSON_IsString(secret_item) && secret_item->valuestring) {
+        strncpy(s_secret_cache.secret,
+                secret_item->valuestring,
+                sizeof(s_secret_cache.secret) - 1);
+        s_secret_cache.secret[sizeof(s_secret_cache.secret) - 1] = '\0';
+        s_secret_cache.secret_loaded = true;
+    }
+
+    cJSON *flag = cJSON_GetObjectItem(config, "allow_legacy_hmac");
+    s_secret_cache.allow_legacy =
+        (flag != NULL && cJSON_IsBool(flag) && cJSON_IsTrue(flag));
+    s_secret_cache.flags_loaded = true;
+
+    cJSON_Delete(config);
+    return ESP_OK;
+}
+
+void node_command_handler_invalidate_secret_cache(void) {
+    init_mutexes();
+    if (s_secret_cache.mutex == NULL) {
+        return;
+    }
+    if (xSemaphoreTake(s_secret_cache.mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return;
+    }
+    // Затираем секрет, чтобы не оставался в RAM после ротации.
+    memset(s_secret_cache.secret, 0, sizeof(s_secret_cache.secret));
+    s_secret_cache.secret_loaded = false;
+    s_secret_cache.flags_loaded = false;
+    s_secret_cache.allow_legacy = false;
+    xSemaphoreGive(s_secret_cache.mutex);
 }
 
 static const char *normalize_response_status(const char *status) {
@@ -258,63 +331,63 @@ static esp_err_t publish_command_response_json(
 }
 
 /**
- * @brief Получить node_secret из конфигурации
+ * @brief Получить node_secret из кэша (загружается лениво из NVS).
  *
  * @param secret_out Буфер для секрета
  * @param secret_size Размер буфера
- * @return esp_err_t ESP_OK при успехе
+ * @return esp_err_t ESP_OK при успехе, ESP_ERR_NOT_FOUND если секрет отсутствует
  */
 static esp_err_t get_node_secret(char *secret_out, size_t secret_size) {
     if (!secret_out || secret_size == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    
-    // Пытаемся получить секрет из конфигурации
-    char *json_buf = (char *)malloc(CONFIG_STORAGE_MAX_JSON_SIZE);
-    if (!json_buf) {
-        return ESP_ERR_NO_MEM;
+
+    init_mutexes();
+    if (s_secret_cache.mutex == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_secret_cache.mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (!s_secret_cache.secret_loaded) {
+        // Лениво перечитываем NVS. Попытка делается один раз на инвалидацию:
+        // если секрета нет в конфиге, дальнейшие вызовы не будут снова
+        // аллоцировать 4 КБ в куче, а просто вернут NOT_FOUND.
+        (void)reload_secret_cache_locked();
     }
 
     esp_err_t result = ESP_ERR_NOT_FOUND;
-    if (config_storage_get_json(json_buf, CONFIG_STORAGE_MAX_JSON_SIZE) == ESP_OK) {
-        cJSON *config = cJSON_Parse(json_buf);
-        if (config) {
-            cJSON *secret_item = cJSON_GetObjectItem(config, "node_secret");
-            if (cJSON_IsString(secret_item) && secret_item->valuestring) {
-                strncpy(secret_out, secret_item->valuestring, secret_size - 1);
-                secret_out[secret_size - 1] = '\0';
-                cJSON_Delete(config);
-                result = ESP_OK;
-                free(json_buf);
-                return result;
-            }
-            cJSON_Delete(config);
-        }
+    if (s_secret_cache.secret_loaded) {
+        strncpy(secret_out, s_secret_cache.secret, secret_size - 1);
+        secret_out[secret_size - 1] = '\0';
+        result = ESP_OK;
     }
 
-    free(json_buf);
+    xSemaphoreGive(s_secret_cache.mutex);
     return result;
 }
 
 /**
- * @brief Проверить, разрешен ли legacy режим без HMAC
+ * @brief Проверить, разрешен ли legacy режим без HMAC (через кэш).
  */
 static bool get_allow_legacy_hmac(void) {
-    char *json_buf = (char *)malloc(CONFIG_STORAGE_MAX_JSON_SIZE);
-    if (!json_buf) {
+    init_mutexes();
+    if (s_secret_cache.mutex == NULL) {
         return false;
     }
 
-    bool allow = false;
-    if (config_storage_get_json(json_buf, CONFIG_STORAGE_MAX_JSON_SIZE) == ESP_OK) {
-        cJSON *config = cJSON_Parse(json_buf);
-        if (config) {
-            cJSON *flag = cJSON_GetObjectItem(config, "allow_legacy_hmac");
-            allow = (flag != NULL && cJSON_IsBool(flag) && cJSON_IsTrue(flag));
-            cJSON_Delete(config);
-        }
+    if (xSemaphoreTake(s_secret_cache.mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return false;
     }
-    free(json_buf);
+
+    if (!s_secret_cache.flags_loaded) {
+        (void)reload_secret_cache_locked();
+    }
+
+    bool allow = s_secret_cache.flags_loaded ? s_secret_cache.allow_legacy : false;
+    xSemaphoreGive(s_secret_cache.mutex);
     return allow;
 }
 
@@ -408,8 +481,19 @@ static int compare_json_kv(const void *a, const void *b) {
     return strcmp(item_a->key, item_b->key);
 }
 
-static cJSON *canonicalize_json(const cJSON *input) {
+// Максимальная глубина вложенности JSON при canonicalization.
+// Без ограничения злоумышленник может отправить глубоко вложенный JSON и
+// вызвать stack overflow в FreeRTOS-задаче (стек обычно 4–8 КБ).
+#define NODE_COMMAND_CANONICAL_MAX_DEPTH 16
+
+static cJSON *canonicalize_json_depth(const cJSON *input, int depth) {
     if (input == NULL) {
+        return NULL;
+    }
+
+    if (depth > NODE_COMMAND_CANONICAL_MAX_DEPTH) {
+        ESP_LOGW(TAG, "canonicalize_json: max depth %d exceeded, rejecting",
+                 NODE_COMMAND_CANONICAL_MAX_DEPTH);
         return NULL;
     }
 
@@ -444,7 +528,7 @@ static cJSON *canonicalize_json(const cJSON *input) {
         qsort(items, count, sizeof(json_kv_t), compare_json_kv);
 
         for (size_t i = 0; i < count; i++) {
-            cJSON *child_value = canonicalize_json(items[i].value);
+            cJSON *child_value = canonicalize_json_depth(items[i].value, depth + 1);
             if (!child_value) {
                 free(items);
                 cJSON_Delete(out);
@@ -464,7 +548,7 @@ static cJSON *canonicalize_json(const cJSON *input) {
         }
 
         for (const cJSON *child = input->child; child; child = child->next) {
-            cJSON *child_value = canonicalize_json(child);
+            cJSON *child_value = canonicalize_json_depth(child, depth + 1);
             if (!child_value) {
                 cJSON_Delete(out);
                 return NULL;
@@ -476,6 +560,10 @@ static cJSON *canonicalize_json(const cJSON *input) {
     }
 
     return cJSON_Duplicate(input, 1);
+}
+
+static cJSON *canonicalize_json(const cJSON *input) {
+    return canonicalize_json_depth(input, 0);
 }
 
 static esp_err_t compute_command_signature(const cJSON *json, char *signature_out, size_t signature_size) {
@@ -1411,6 +1499,17 @@ static esp_err_t handle_publish_config_report(
  * Регистрирует системные команды, такие как set_time
  */
 void node_command_handler_init_builtin_handlers(void) {
+    init_mutexes();
+
+    // Прогреваем кэш секрета один раз при инициализации, чтобы при обработке
+    // первой команды не делать malloc(CONFIG_STORAGE_MAX_JSON_SIZE) в hot path.
+    // Результат игнорируем: конфига может ещё не быть (первичный provisioning).
+    if (s_secret_cache.mutex != NULL &&
+        xSemaphoreTake(s_secret_cache.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        (void)reload_secret_cache_locked();
+        xSemaphoreGive(s_secret_cache.mutex);
+    }
+
     node_command_handler_register("set_time", handle_set_time, NULL);
     node_command_handler_register("restart", handle_restart, NULL);
     node_command_handler_register("reboot", handle_restart, NULL);
