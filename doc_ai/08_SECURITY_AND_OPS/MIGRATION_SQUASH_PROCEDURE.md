@@ -1,7 +1,7 @@
 # Migration Squash Procedure
 
-**Версия:** 1.0
-**Дата:** 2026-04-18
+**Версия:** 1.1
+**Дата:** 2026-04-23
 **Статус:** НЕ ВЫПОЛНЕН — отложено из-за TimescaleDB incompat с `pg_dump`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0.
@@ -28,9 +28,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0.
 
 ---
 
-## Что уже сделано (2026-04-18)
+## Что уже сделано (2026-04-18, обновлено 2026-04-23)
 
-- [`backend/laravel/database/schema/pgsql-schema.sql`](../../backend/laravel/database/schema/pgsql-schema.sql) — 10 527 строк,
+- [`backend/laravel/database/schema/pgsql-schema.reference.sql`](../../backend/laravel/database/schema/pgsql-schema.reference.sql) — 10 527 строк,
   dump схемы hydro_test через `pg_dump --schema-only --no-owner --no-acl
   --no-comments`. Содержит все 199 миграций консолидированно, **кроме**
   `create_hypertable()` вызовов.
@@ -39,6 +39,26 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0.
 посмотреть финальную структуру без перечитывания 199 миграций.
 
 Миграции **не удалены** (safe).
+
+> ⚠️ **Важно: суффикс `.reference.sql`, а не `.sql`.**
+>
+> Laravel `MigrateCommand::loadSchemaState()` автоматически подхватывает любой
+> файл по пути `database/schema/{connection}-schema.{sql,dump}` и пытается
+> загрузить его как squashed baseline. Наш dump сделан через `pg_dump
+> --schema-only` (без `--data-only` на `migrations`), поэтому в нём **нет**
+> записей `INSERT INTO migrations`. Laravel после load'а не знает какие
+> миграции считать применёнными и перезапускает их все → падение на
+> `relation "users" already exists`. Плюс контейнер laravel падает ещё
+> раньше: base-образ `webdevops/php-nginx:8.2` не содержит `psql`, а
+> `PostgresSchemaState::load()` вызывает `psql --file=...`.
+>
+> Суффикс `.reference` выводит файл из-под auto-detect, сохраняя его как
+> справочник. **Не переименовывай обратно в `pgsql-schema.sql`** до
+> выполнения полноценного squash (раздел "Процедура post-dump patching").
+>
+> Для справки: `backend/laravel/Dockerfile` содержит `postgresql-client`
+> в apt-install — когда squash будет выполнен корректно, `psql --file`
+> уже будет доступен.
 
 ---
 
@@ -90,9 +110,14 @@ docker compose -f backend/docker-compose.dev.yml exec -T db psql -U hydro hydro_
   -c "SELECT hypertable_name, num_dimensions FROM timescaledb_information.hypertables;"
 
 # 3. Снять schema dump
+# ВАЖНО: --data-only на migrations таблице, иначе после load'а Laravel
+# не будет знать какие миграции считать применёнными и перезапустит их все.
 docker compose -f backend/docker-compose.dev.yml exec -T db \
   pg_dump --schema-only --no-owner --no-acl --no-comments -U hydro hydro_test \
   > backend/laravel/database/schema/pgsql-schema.sql
+docker compose -f backend/docker-compose.dev.yml exec -T db \
+  pg_dump -t public.migrations --data-only --no-owner --no-acl -U hydro hydro_test \
+  >> backend/laravel/database/schema/pgsql-schema.sql
 
 # 4. PATCH: добавить в конец pgsql-schema.sql TimescaleDB setup
 cat <<'TSDB_PATCH' >> backend/laravel/database/schema/pgsql-schema.sql
@@ -176,6 +201,17 @@ docker compose -f backend/docker-compose.dev.yml exec -T db psql -U hydro hydro_
    Добавление baseline schema.sql **не заменяет** историю в
    `migrations` таблице. Нужно вручную prepopulate `migrations` записями
    удалённых файлов, либо очистить таблицу и передоверить записям из schema.
+
+6. **Laravel auto-loadSchemaState ловушка** (обнаружено 2026-04-23) —
+   Laravel при `php artisan migrate` автоматически проверяет путь
+   `database/schema/{connection}-schema.{sql,dump}` и, если файл есть,
+   вызывает `psql --file=...`. Если dump не содержит `INSERT INTO
+   migrations` (как у нас — только `--schema-only`), Laravel после load'а
+   запускает ВСЕ файлы миграций заново → `relation "users" already exists`.
+   Поэтому справочный dump храним под именем
+   `pgsql-schema.reference.sql` (суффикс `.reference` выводит из-под
+   auto-detect). При реальном squash dump переименовывается в `pgsql-schema.sql`
+   и обязательно дополняется `pg_dump -t migrations --data-only`.
 
 ---
 

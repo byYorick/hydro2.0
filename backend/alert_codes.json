@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-02-09T00:00:00Z",
+  "updated_at": "2026-04-23T11:55:00Z",
   "codes": [
     {
       "code": "biz_no_flow",
@@ -152,7 +152,6 @@
       "recommendation": "Проверьте bindings, targets и активный цикл выращивания.",
       "node_related": false
     },
-
     {
       "code": "infra_mqtt_down",
       "source": "infra",
@@ -453,7 +452,6 @@
       "recommendation": "Проверьте детали алерта и stack trace в логах.",
       "node_related": false
     },
-
     {
       "code": "node_error",
       "source": "node",
@@ -473,6 +471,76 @@
       "description": "Задача automation-engine завершилась с ошибкой.",
       "recommendation": "Проверьте логи automation-engine, состояние зоны и наличие активного цикла.",
       "node_related": false
+    },
+    {
+      "code": "biz_irrigation_decision_skip",
+      "source": "biz",
+      "category": "operations",
+      "severity": "info",
+      "title": "Полив пропущен решением контроллера",
+      "description": "Decision-controller полива решил пропустить текущий запуск.",
+      "recommendation": "Проверьте reason_code в деталях алерта и входную телеметрию стратегии полива.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_decision_degraded",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Разрешён деградированный полив",
+      "description": "Decision-controller полива разрешил запуск в деградированном режиме.",
+      "recommendation": "Проверьте reason_code в деталях алерта и состояние входных датчиков.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_decision_fail",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Decision-controller полива отклонил запуск",
+      "description": "AE3 остановил запуск полива на этапе принятия решения.",
+      "recommendation": "Проверьте strategy/reason_code в деталях алерта и конфигурацию automation profile зоны.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_solution_min",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Сработал нижний уровень раствора",
+      "description": "Во время полива датчик нижнего уровня раствора сообщил о нехватке раствора.",
+      "recommendation": "Проверьте уровень раствора, датчик и причину просадки уровня в контуре.",
+      "node_related": true
+    },
+    {
+      "code": "biz_irrigation_replay_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Исчерпаны повторы полива",
+      "description": "AE3 исчерпал бюджет повторов после повторных срабатываний нижнего уровня раствора.",
+      "recommendation": "Проверьте наличие раствора, работу насосов и повторные срабатывания solution_min.",
+      "node_related": true
+    },
+    {
+      "code": "biz_irrigation_wait_ready_timeout",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Таймаут ожидания READY перед поливом",
+      "description": "Полив не дождался перехода зоны в состояние READY в допустимое время.",
+      "recommendation": "Проверьте workflow_phase зоны, активный цикл и логи automation-engine.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_correction_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Коррекция во время полива исчерпана",
+      "description": "Попытки коррекции во время полива исчерпаны, полив продолжается без новых коррекций.",
+      "recommendation": "Проверьте дозирующие каналы, калибровки и текущие pH/EC target.",
+      "node_related": true
     },
     {
       "code": "biz_prepare_recirculation_retry_exhausted",
@@ -793,6 +861,156 @@
       "description": "Зона в telemetry topic не совпадает с backend-привязкой ноды.",
       "recommendation": "Проверьте MQTT namespace, zone_id ноды и конфигурацию маршрутизации.",
       "node_related": true
+    },
+    {
+      "code": "ae3_task_failure_spike",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Всплеск упавших AE3-задач",
+      "description": "Growth-rate падающих задач AE3 превышает порог за окно наблюдения.",
+      "recommendation": "Проверьте логи automation-engine, error_code у последних failed задач и состояние зависимостей.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_worker_tick_errors",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Ошибки цикла AE3 worker",
+      "description": "Цикл worker AE3 завершается с ошибкой чаще нормы.",
+      "recommendation": "Посмотрите логи automation-engine и traceback ae3_background_task_crashed.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_command_dispatch_latency_high",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Высокая задержка диспетча команд AE3",
+      "description": "Время от enqueue до MQTT publish выросло.",
+      "recommendation": "Проверьте очередь команд, history-logger, загрузку MQTT-брокера.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_command_failure_rate_high",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Высокая доля упавших команд AE3",
+      "description": "Команды узлам возвращают ERROR/TIMEOUT чаще обычного.",
+      "recommendation": "Посмотрите последние command_response, состояние нод и сетевую связность.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_stuck_task",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Застрявшая AE3-задача",
+      "description": "Задача не меняет состояние дольше stage_deadline.",
+      "recommendation": "Проверьте event log задачи, heartbeat нод и целостность runtime_plan.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_correction_exhausted",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Correction window исчерпан",
+      "description": "AE3 исчерпал лимит dose-попыток в окне коррекции (pH/EC).",
+      "recommendation": "Проверьте dosing calibration, концентрацию растворов и свежесть сенсоров.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_stage_deadline_exceeded",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Стадия AE3 превысила дедлайн",
+      "description": "Стадия workflow не завершилась в отведённое время.",
+      "recommendation": "Проверьте логи стадии, состояние связанных нод и реле.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_irr_probe_streak_exhausted",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Исчерпана серия probe irr_state",
+      "description": "AE3 не может получить свежий snapshot irrigation state после серии попыток.",
+      "recommendation": "Проверьте irrig-ноду, её heartbeat и publishing level_switches.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_node_reboot_detected_frequent",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Частые перезагрузки ноды",
+      "description": "Узел перезагружается слишком часто за окно.",
+      "recommendation": "Проверьте питание, логи узла, supervisor, брутовый reset.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_irr_probe_deferred_high_rate",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Частые отложенные probe irr_state",
+      "description": "AE3 часто откладывает probe из-за отсутствия свежих данных.",
+      "recommendation": "Проверьте связь с irrig-нодой и настройки irr_state_max_age_sec.",
+      "node_related": false
+    },
+    {
+      "code": "automation_command_effect_confirm_rate_low",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Низкий процент подтверждения эффекта команд",
+      "description": "Доля команд с подтверждённым effect ниже нормы.",
+      "recommendation": "Проверьте command_response и связь между planner и history-logger.",
+      "node_related": false
+    },
+    {
+      "code": "automation_task_recovery_success_rate_low",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Низкий процент восстановления AE3-задач",
+      "description": "Recovery задач AE3 завершается неуспешно чаще нормы.",
+      "recommendation": "Проверьте handlers recovery, logs и целостность snapshot данных.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_irrigation_solution_min_frequent",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Частые срабатывания solution_min в irrigation",
+      "description": "В процессе irrigation уровень раствора проседает ниже min чаще нормы.",
+      "recommendation": "Проверьте ёмкость бака, объём подачи, скорость возврата и герметичность магистрали.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_irrigation_replay_frequent",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Частые replay irrigation setup",
+      "description": "Setup irrigation пересобирается чаще нормы.",
+      "recommendation": "Проверьте стабильность level-switches, подачи воды и setup commands.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_irrigation_inline_correction_excessive",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Избыточные inline-коррекции в irrigation",
+      "description": "В процессе полива AE3 слишком часто заходит в inline correction pH/EC.",
+      "recommendation": "Проверьте pump calibration, стабильность pH/EC сенсоров и пороги dead/close/far zones PID.",
+      "node_related": false
     }
   ]
 }

@@ -118,7 +118,24 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
             sleep 2
         fi
     done
-    
+
+    # Ensure pg_cron extension exists BEFORE running migrations.
+    # Required because migration 2025_12_25_152231 creates cron.schedule jobs for
+    # retention. If DB was recreated without running Postgres init-scripts (e.g.
+    # manual DROP/CREATE DATABASE), pg_cron extension is missing and the migration
+    # aborts mid-transaction. Idempotent + non-fatal: no-op when extension is
+    # already present or when psql/superuser is unavailable.
+    if [ "${DB_CONNECTION:-pgsql}" = "pgsql" ] && command -v psql >/dev/null 2>&1; then
+        if PGPASSWORD="${DB_PASSWORD}" psql \
+            -h "${DB_HOST}" -p "${DB_PORT:-5432}" \
+            -U "${DB_USERNAME}" -d "${DB_DATABASE}" \
+            -tAc "CREATE EXTENSION IF NOT EXISTS pg_cron;" >/dev/null 2>&1; then
+            echo "✓ pg_cron extension ensured"
+        else
+            echo "⚠ Could not ensure pg_cron extension (non-fatal — retention jobs may be skipped)"
+        fi
+    fi
+
     echo "Running database migrations (with retry)..."
     migrate_attempts=30
     migrate_try=0

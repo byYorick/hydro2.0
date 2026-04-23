@@ -58,6 +58,7 @@ refresh:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) pull --ignore-pull-failures
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) build --pull --no-cache
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --force-recreate --renew-anon-volumes
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d hydro_dev -c "CREATE EXTENSION IF NOT EXISTS pg_cron;" >/dev/null
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate --force
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed --class=$(REFRESH_SEEDER_CLASS) --force
 
@@ -72,6 +73,7 @@ seed: up
 
 .PHONY: reset-db
 reset-db: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d $(RESET_DB_DATABASE) -c "CREATE EXTENSION IF NOT EXISTS pg_cron;" >/dev/null
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		-e APP_ENV=$(RESET_DB_APP_ENV) \
 		-e DB_DATABASE=$(RESET_DB_DATABASE) \

@@ -64,6 +64,7 @@ class AlertWebhookController extends Controller
 
         $alertName = $labels['alertname'] ?? 'Unknown';
         $severity = $labels['severity'] ?? 'warning';
+        $code = self::alertNameToCode($alertName);
 
         // Определяем zone_id из labels, если есть
         $zoneId = null;
@@ -95,6 +96,9 @@ class AlertWebhookController extends Controller
             $this->alertService->create([
                 'zone_id' => $zoneId,
                 'type' => $alertName,
+                'code' => $code,
+                'source' => 'infra',
+                'severity' => $severity,
                 'status' => 'ACTIVE',
                 'details' => [
                     'severity' => $severity,
@@ -104,5 +108,17 @@ class AlertWebhookController extends Controller
                 ],
             ]);
         }
+    }
+
+    /**
+     * PrometheusCamelCase alertname → snake_case code for catalog lookup.
+     * Handles acronyms like "AE3" so "AE3IrrigationInlineCorrectionExcessive" →
+     * "ae3_irrigation_inline_correction_excessive" (not "a_e3_...").
+     */
+    private static function alertNameToCode(string $alertName): string
+    {
+        $step = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $alertName);
+        $step = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $step);
+        return strtolower($step);
     }
 }

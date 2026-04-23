@@ -82,6 +82,7 @@ services:
       - APP_EVENTS_CACHE=/tmp/laravel-events-local.php
       - SESSION_DRIVER=file
       - CACHE_DRIVER=file
+      - CACHE_STORE=file
       - SESSION_SAME_SITE=lax
       - SESSION_SECURE_COOKIE=false
       - LOG_CHANNEL=stderr

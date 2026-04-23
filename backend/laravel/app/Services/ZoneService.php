@@ -181,6 +181,24 @@ class ZoneService
                 'execution' => [
                     'workflow' => 'cycle_start',
                     'topology' => 'two_tank_drip_substrate_trays',
+                    'required_node_types' => ['irrig'],
+                    'startup' => [
+                        'telemetry_max_age_sec' => 60,
+                        'irr_state_max_age_sec' => 30,
+                        'irr_state_wait_timeout_sec' => 5.0,
+                        'sensor_mode_stabilization_time_sec' => 10,
+                        'level_poll_interval_sec' => 10,
+                        'clean_fill_timeout_sec' => 300,
+                        'solution_fill_timeout_sec' => 600,
+                        'prepare_recirculation_timeout_sec' => 300,
+                        'clean_max_sensor_labels' => ['level_clean_max'],
+                        'clean_min_sensor_labels' => ['level_clean_min'],
+                        'solution_max_sensor_labels' => ['level_solution_max'],
+                        'solution_min_sensor_labels' => ['level_solution_min'],
+                    ],
+                    'steps' => [
+                        ['channel' => 'storage_state', 'cmd' => 'state', 'params' => []],
+                    ],
                 ],
             ],
         ];
