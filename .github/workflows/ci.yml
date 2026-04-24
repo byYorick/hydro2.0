@@ -105,12 +105,12 @@ jobs:
       - name: Alert lifecycle SQL guard
         working-directory: backend/services/automation-engine
         env:
-          PYTHONPATH: backend/services
+          PYTHONPATH: ${{ github.workspace }}/backend/services
         run: pytest -q ../common/test_alert_lifecycle_sql_guard.py
       - name: Run automation-engine smoke tests (full suite)
         working-directory: backend/services/automation-engine
         env:
-          PYTHONPATH: backend/services
+          PYTHONPATH: ${{ github.workspace }}/backend/services
           AE3_PYTEST_DB: hydro_test
           PG_HOST: 127.0.0.1
           PG_PORT: '5432'
