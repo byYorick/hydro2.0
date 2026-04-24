@@ -146,11 +146,26 @@ export interface ScheduleWorkspacePlan {
   }
 }
 
+export type LaneHistoryStatus = 'ok' | 'err' | 'skip' | 'run' | 'warn'
+
+export interface LaneHistoryPoint {
+  /** Позиция метки на оси времени в процентах (0 — начало горизонта, 100 — его конец). */
+  t: number
+  s: LaneHistoryStatus
+}
+
+export interface LaneHistory {
+  lane: string
+  runs: LaneHistoryPoint[]
+}
+
 export interface ScheduleWorkspace {
   control: ScheduleWorkspaceControl
   capabilities: ScheduleWorkspaceCapabilities
   plan: ScheduleWorkspacePlan
   execution: ScheduleWorkspaceExecution
+  /** Бакеты для swimlane-ленты. Бэк начнёт отдавать в Фазе 2; пока считается на фронте. */
+  lanes_history?: LaneHistory[]
 }
 
 export interface ScheduleWorkspaceResponse {

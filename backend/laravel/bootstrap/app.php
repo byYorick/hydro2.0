@@ -32,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
             'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
             'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
+            'verify.history-logger.webhook' => \App\Http\Middleware\VerifyHistoryLoggerWebhook::class,
             'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
             'ae.legacy.sql.guard' => \App\Http\Middleware\AutomationEngineLegacySqlGuard::class,
         ]);
@@ -57,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/python/*', // Python service token-based endpoints
             'api/nodes/register', // Node registration (token-based or public)
             'api/alerts/webhook', // Alertmanager webhook (protected by secret)
+            'api/internal/webhooks/*', // Internal webhooks (HMAC-signed)
             'broadcasting/auth',
             '_boost/browser-logs',
         ]);
