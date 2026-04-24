@@ -14,11 +14,15 @@
           · #{{ run.execution_id }}
         </span>
       </div>
-      <div class="mt-1.5 tabular-nums text-[44px] font-bold leading-none text-[color:var(--text-primary)]">
-        {{ etaLabel }}
+      <div
+        class="mt-1.5 tabular-nums text-[44px] font-bold leading-none"
+        :class="isExpired ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
+        data-testid="scheduler-hero-countdown-value"
+      >
+        {{ displayLabel }}
       </div>
       <div class="mt-1 text-[11px] text-[color:var(--text-dim)]">
-        {{ etaHint }}
+        {{ isExpired ? 'таймер истёк — ожидаем завершение' : etaHint }}
       </div>
 
       <div class="mt-3 flex flex-col gap-1.5">
@@ -85,16 +89,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import type { ExecutionRun } from '@/composables/zoneScheduleWorkspaceTypes'
+import { useRafCountdown } from '@/composables/useRafCountdown'
 
 interface Props {
   run: ExecutionRun | null
   laneLabel?: string | null
   stageLabel?: string | null
+  /** Static fallback label, если `endAt` не задан. */
   etaLabel?: string
   etaHint?: string
+  /**
+   * Конечный момент, до которого идёт countdown. Если задан — компонент
+   * обновляет таймер в реальном времени через `useRafCountdown`,
+   * игнорируя `etaLabel`.
+   */
+  endAt?: string | Date | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -102,6 +114,20 @@ const props = withDefaults(defineProps<Props>(), {
   stageLabel: null,
   etaLabel: '—',
   etaHint: 'осталось до завершения',
+  endAt: null,
+})
+
+const endAtRef = toRef(props, 'endAt')
+const { label: liveLabel, remainingSeconds } = useRafCountdown(endAtRef)
+
+const displayLabel = computed<string>(() => {
+  if (props.endAt) return liveLabel.value
+  return props.etaLabel
+})
+
+const isExpired = computed<boolean>(() => {
+  const remaining = remainingSeconds.value
+  return remaining !== null && remaining <= 0
 })
 
 const progressSteps = computed<string[]>(() => {

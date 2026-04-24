@@ -26,6 +26,7 @@
           :stage-label="activeStageLabel"
           :eta-label="etaLabel"
           :eta-hint="etaHint"
+          :end-at="activeEndAt"
         />
         <NextUpCard
           :windows="nextExecutableWindows"
@@ -98,6 +99,7 @@ import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 import type { ChainStep, ExecutionRun, LaneHistory } from '@/composables/zoneScheduleWorkspaceTypes'
 import { deriveLaneHistory } from '@/composables/deriveLaneHistory'
+import { useSchedulerHotkeys } from '@/composables/useSchedulerHotkeys'
 import { subscribeToExecutionChain, type SchedulerChainSubscription } from '@/ws/schedulerChainChannel'
 import SchedulerHeader from '@/Components/Scheduler/SchedulerHeader.vue'
 import SchedulerAttentionPanel from '@/Components/Scheduler/SchedulerAttentionPanel.vue'
@@ -198,6 +200,12 @@ const etaLabel = computed<string>(() => {
   return '—'
 })
 
+const activeEndAt = computed<string | null>(() => {
+  const run = activeRun.value
+  if (!run) return null
+  return run.due_at ?? run.expires_at ?? null
+})
+
 const etaHint = computed<string>(() => {
   const run = activeRun.value
   if (!run?.due_at && !run?.expires_at) return 'длительность не задана'
@@ -244,6 +252,45 @@ function applyChainStep(executionId: string, step: ChainStep): void {
     activeRun.value.chain = [...current, step]
   }
 }
+
+function moveSelection(delta: 1 | -1): void {
+  const runs = recentRuns.value
+  if (runs.length === 0) return
+
+  const currentId = selectedExecution.value?.execution_id ?? null
+  const currentIndex = currentId
+    ? runs.findIndex((run) => run.execution_id === currentId)
+    : -1
+
+  let nextIndex: number
+  if (currentIndex === -1) {
+    nextIndex = delta === 1 ? 0 : runs.length - 1
+  } else {
+    nextIndex = Math.min(runs.length - 1, Math.max(0, currentIndex + delta))
+  }
+
+  const next = runs[nextIndex]
+  if (next) {
+    void fetchExecution(next.execution_id)
+  }
+}
+
+useSchedulerHotkeys({
+  onNext: () => moveSelection(1),
+  onPrev: () => moveSelection(-1),
+  onOpen: () => {
+    const first = selectedExecution.value ?? recentRuns.value[0]
+    if (first) {
+      void fetchExecution(first.execution_id)
+    }
+  },
+  onRefresh: () => {
+    void refreshWorkspace()
+  },
+  onClose: () => {
+    if (selectedExecution.value) clearSelectedExecution()
+  },
+})
 
 let chainSubscription: SchedulerChainSubscription | null = null
 
