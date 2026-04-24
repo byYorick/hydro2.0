@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '../fixtures/test-data';
+import type { Page } from '@playwright/test';
+import { test, expect } from '../fixtures/test-data';
 
 /**
  * E2E-сценарии Cockpit-UI планировщика (Фазы 1–3 редизайна).

@@ -72,30 +72,37 @@ os.environ.setdefault("AE_API_TOKEN", "pytest-ae-api-token")
 # Локально в docker-dev это не проявляется, т.к. там max_connections=200 и
 # тесты идут с одним процессом, но CI-runner стартует postgres с дефолтом,
 # поэтому fixture-уровневая очистка нужна всегда.
+#
+# Используем sync fixture + pool.terminate() (sync-вызов asyncpg), чтобы
+# teardown сработал корректно независимо от fixture/test loop scope. Если
+# делать async fixture с autouse, она живёт в session event loop, а pool
+# создаётся в function loop — finalizer не находит его через
+# get_running_loop() и ничего не закрывает.
 # ---------------------------------------------------------------------------
 
-import asyncio  # noqa: E402
-
-import pytest_asyncio  # noqa: E402
+import pytest  # noqa: E402
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def _close_ae3_db_pool_after_test():
+@pytest.fixture(autouse=True)
+def _terminate_ae3_db_pools_after_test():
     yield
     try:
         import common.db as _db
     except Exception:
         return
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+    # Захватываем state lock, чтобы не бороться за словарь с одновременно
+    # создающимся pool (edge case, в тестах обычно однопоточно).
+    state_lock = getattr(_db, "_state_lock", None)
+    pools_dict = getattr(_db, "_pools", None)
+    if state_lock is None or pools_dict is None:
         return
-    pool = _db._get_pool_for_loop(loop)
-    if pool is None:
-        return
-    if not _db._drop_pool_for_loop(loop, pool):
-        return
-    try:
-        await pool.close()
-    except Exception:
-        pass
+    with state_lock:
+        drained = list(pools_dict.items())
+        pools_dict.clear()
+    for _loop, pool in drained:
+        try:
+            # terminate() — синхронный вызов asyncpg.Pool, немедленно
+            # закрывает все коннекшены пула без участия event loop.
+            pool.terminate()
+        except Exception:
+            pass

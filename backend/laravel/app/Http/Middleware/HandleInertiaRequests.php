@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\FeatureFlags;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,7 +36,10 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'features' => [
-                'scheduler_cockpit_ui' => (bool) config('features.scheduler_cockpit_ui'),
+                'scheduler_cockpit_ui' => FeatureFlags::isEnabled(
+                    FeatureFlags::SCHEDULER_COCKPIT_UI,
+                    $request->user(),
+                ),
             ],
         ];
     }

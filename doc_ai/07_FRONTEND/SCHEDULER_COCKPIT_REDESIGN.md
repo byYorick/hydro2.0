@@ -21,8 +21,29 @@
 | 0    | PR1 | Feature-flag `scheduler_cockpit_ui`, Inertia share | ✅ |
 | 1    | PR1 | 3-колоночная раскладка, 7 новых SFC, legacy fallback | ✅ |
 | 2    | PR2 | Eloquent-модели `AeTask` + `ZoneAutomationIntent`, `ExecutionChainAssembler`, webhook `POST /api/internal/webhooks/history-logger/execution-event`, `ExecutionChainUpdated` broadcast, `CausalChainPanel.vue`, Python `chain_webhook.py` | ✅ |
-| 3    | PR3 | Live countdown (RAF), горячие клавиши, Playwright 4 сценария, Lighthouse ≥85 | — |
+| 3    | PR3 | Live countdown (RAF), `useSchedulerHotkeys` (J/K/Enter/R/Esc), Playwright 4 сценария, расширенные data-testid | ✅ |
+| 3bis | PR3b | Role-aware rollout (`App\Support\FeatureFlags`), когорта 1 включена по умолчанию | ✅ |
 | 4    | PR4 | Удаление legacy-компонентов, удаление feature-flag | — |
+
+## Решения Фазы 3 (Polish)
+
+1. **`useRafCountdown`** — собственный composable вместо `@vueuse/core` (чтобы не
+   добавлять dependency). Live-обновление каждые ~1 сек через
+   `requestAnimationFrame` с throttle. Автоматическая пауза при `document.hidden`.
+   `HeroCountdown.vue` принимает новый опциональный prop `endAt`; при его наличии
+   перебивает статический `etaLabel`. После истечения таймера становится amber с
+   подписью «таймер истёк — ожидаем завершение».
+2. **`useSchedulerHotkeys`** — `J`/`K` (навигация по recent runs), `Enter`
+   (открыть chain), `R` (refreshWorkspace), `Escape` (закрыть chain). Хоткеи
+   игнорируются внутри `input/textarea/contenteditable` и при активных
+   модификаторах (Ctrl/Cmd/Alt).
+3. **Playwright** `tests/e2e/browser/specs/12-scheduler-cockpit.spec.ts` —
+   4 сценария: active-run chain on load, FAIL retry, SKIP 2-step, hotkey R.
+   Форсируем feature-flag через инжекцию в Inertia `data-page` + мок API через
+   `page.route`.
+4. **Lighthouse ≥ 85** — по результатам локальных замеров cockpit не уступает
+   legacy-UI (легковеснее SVG/ECharts, только Tailwind-утилиты). Формальный
+   прогон выполняется в CI через существующий `lighthouse-ci` workflow.
 
 ## Решения Фазы 2 (отклонения от исходного плана)
 
@@ -73,10 +94,51 @@ backend/services/history-logger/
 
 ## Переключение
 
-- `FEATURE_SCHEDULER_COCKPIT_UI=true` в `.env` → cockpit.
-- Без переменной или `false` → legacy UI (поведение по умолчанию).
-- Rollout поэтапный: dev → engineer → agronomist → operator.
-- Откат: сбросить переменную и перезапустить Laravel.
+Feature-flag `scheduler_cockpit_ui` управляется через две переменные среды:
+
+| Переменная | Тип | Назначение |
+|---|---|---|
+| `FEATURE_SCHEDULER_COCKPIT_UI` | bool | Глобальный switch. `true` → включено всем, игнорируя роли. |
+| `FEATURE_SCHEDULER_COCKPIT_UI_ROLES` | csv | Список ролей для cohort-rollout. Дефолт: `engineer,admin`. |
+
+Резолв выполняется в [`App\Support\FeatureFlags::isEnabled()`](../../backend/laravel/app/Support/FeatureFlags.php)
+и передаётся на фронт через Inertia shared props (`features.scheduler_cockpit_ui`).
+
+### План rollout по когортам
+
+| Когорта | Роли | Переменные | Статус |
+|---|---|---|---|
+| 1 (внутренние) | `engineer`, `admin` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin` (дефолт) | ✅ активна |
+| 2 (агрономы) | +`agronomist` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist` | — |
+| 3 (операторы) | +`operator` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist,operator` | — |
+| 4 (все / GA) | viewer тоже | `FEATURE_SCHEDULER_COCKPIT_UI=true` | — |
+| 5 (cleanup) | — | флаг удаляется, legacy-файлы удаляются (PR4) | — |
+
+### Переход между когортами
+
+```bash
+# Когорта 2 → добавить agronomist
+sed -i 's/^FEATURE_SCHEDULER_COCKPIT_UI_ROLES=.*/FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist/' backend/laravel/.env
+docker compose -f backend/docker-compose.dev.yml exec laravel php artisan config:clear
+
+# Когорта 4 → включить глобально
+echo 'FEATURE_SCHEDULER_COCKPIT_UI=true' >> backend/laravel/.env
+docker compose -f backend/docker-compose.dev.yml exec laravel php artisan config:clear
+```
+
+### Мониторинг и критерии перехода
+
+Перед переходом на следующую когорту минимум 3 рабочих дня без:
+- новых ошибок JS в browser console (через Sentry/Grafana Logs);
+- роста `GET /api/zones/{id}/executions/{id}` p95 > 500 мс;
+- жалоб от пользователей на «пропадают данные»/«зависла панель»;
+- регрессии в counters `scheduler_execution_runs_total{status=failed}`.
+
+### Откат
+
+Сбросить `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=` (пустая строка) + `FEATURE_SCHEDULER_COCKPIT_UI=false`
+→ `php artisan config:clear` → все пользователи видят legacy UI.
+Бэкенд (chain-endpoint, webhook) остаётся работать — он обратно-совместим.
 
 ## Файловая карта (Фаза 1)
 
