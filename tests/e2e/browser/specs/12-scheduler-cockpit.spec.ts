@@ -2,32 +2,11 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/test-data';
 
 /**
- * E2E-сценарии Cockpit-UI планировщика (Фазы 1–3 редизайна).
+ * E2E-сценарии Scheduler UI планировщика (Cockpit-раскладка).
  *
- * Флаг `scheduler_cockpit_ui` форсируется через инжекцию в Inertia
- * `data-page` до гидрации. API-ответы для workspace/executions мокаем через
- * `page.route`, чтобы не зависеть от реального состояния БД.
+ * API-ответы для workspace/executions мокаем через `page.route`, чтобы не
+ * зависеть от реального состояния БД.
  */
-
-function enableCockpitFlag(page: Page): Promise<void> {
-  return page.addInitScript(() => {
-    const apply = () => {
-      const el = document.getElementById('app') as HTMLElement | null;
-      if (!el) return;
-      const raw = el.getAttribute('data-page');
-      if (!raw) return;
-      try {
-        const parsed = JSON.parse(raw);
-        parsed.props = parsed.props ?? {};
-        parsed.props.features = { ...(parsed.props.features ?? {}), scheduler_cockpit_ui: true };
-        el.setAttribute('data-page', JSON.stringify(parsed));
-      } catch {
-        /* ignore */
-      }
-    };
-    document.addEventListener('DOMContentLoaded', apply);
-  });
-}
 
 interface WorkspaceFixtureOptions {
   activeRun?: Record<string, unknown> | null;
@@ -153,7 +132,7 @@ test.describe('Scheduler cockpit UI (Phase 3)', () => {
       chain: activeChain,
     });
 
-    await enableCockpitFlag(page);
+    
     await installApiMocks(page, testZone.id, {
       workspace: workspacePayload(testZone.id, { activeRun, recentRuns: [activeRun] }),
       executions: { 401: activeRun },
@@ -161,7 +140,7 @@ test.describe('Scheduler cockpit UI (Phase 3)', () => {
 
     await page.goto(`/zones/${testZone.id}?tab=scheduler`, { waitUntil: 'networkidle' });
 
-    await expect(page.locator('[data-testid="scheduler-cockpit-root"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="scheduler-root"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="scheduler-causal-chain"]')).toBeVisible({ timeout: 10000 });
     await expect(page.locator('[data-testid="scheduler-chain-step-SNAPSHOT"]')).toBeVisible();
     await expect(page.locator('[data-testid="scheduler-chain-step-RUNNING"]')).toBeVisible();
@@ -185,7 +164,7 @@ test.describe('Scheduler cockpit UI (Phase 3)', () => {
       ],
     });
 
-    await enableCockpitFlag(page);
+    
     await installApiMocks(page, testZone.id, {
       workspace: workspacePayload(testZone.id, { recentRuns: [failRun] }),
       executions: { 402: failRun },
@@ -214,7 +193,7 @@ test.describe('Scheduler cockpit UI (Phase 3)', () => {
       ],
     });
 
-    await enableCockpitFlag(page);
+    
     await installApiMocks(page, testZone.id, {
       workspace: workspacePayload(testZone.id, { recentRuns: [skipRun] }),
       executions: { 403: skipRun },
@@ -238,14 +217,14 @@ test.describe('Scheduler cockpit UI (Phase 3)', () => {
       chain: [chainStep('SNAPSHOT', 'ok', 'pH=6.4', 'ev-1')],
     });
 
-    await enableCockpitFlag(page);
+    
     const mocks = await installApiMocks(page, testZone.id, {
       workspace: workspacePayload(testZone.id, { recentRuns: [run] }),
       executions: { 404: run },
     });
 
     await page.goto(`/zones/${testZone.id}?tab=scheduler`, { waitUntil: 'networkidle' });
-    await expect(page.locator('[data-testid="scheduler-cockpit-root"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="scheduler-root"]')).toBeVisible({ timeout: 15000 });
 
     const initialCalls = mocks.workspaceCalls();
     await page.locator('body').focus();

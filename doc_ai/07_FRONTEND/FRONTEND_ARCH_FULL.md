@@ -503,8 +503,8 @@ COMPLETE|FAIL|SKIP` с live-обновлением через Reverb.
 - `В Events →` — переход на `/zones/{id}?tab=events&execution_id=...`.
 - `⎘ copy` — копирование `correlation_id` через `navigator.clipboard`.
 
-**Feature flag:** `scheduler_cockpit_ui` (см. `config/features.php`). При
-`false` — пользователь видит `LegacySchedulerTab.vue` без этой панели.
+Cockpit-UI — единственный рабочий UI планировщика (с PR4 редизайна
+2026-04-24 флаг `scheduler_cockpit_ui` и legacy-компоненты удалены).
 
 ---
 

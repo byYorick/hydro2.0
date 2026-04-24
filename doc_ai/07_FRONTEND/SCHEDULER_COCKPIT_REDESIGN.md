@@ -1,7 +1,7 @@
 # Scheduler Cockpit UI — Redesign Changelog
 
 **Дата старта:** 2026-04-24
-**Статус:** В разработке (Фаза 1)
+**Статус:** ✅ Завершён (Фазы 1-4)
 **Первоисточник требований:** [SCHEDULER_COCKPIT_IMPLEMENTATION.md](SCHEDULER_COCKPIT_IMPLEMENTATION.md)
 
 ## Цель
@@ -18,151 +18,103 @@
 
 | Фаза | PR | Основное содержимое | Статус |
 |------|----|--------------------|--------|
-| 0    | PR1 | Feature-flag `scheduler_cockpit_ui`, Inertia share | ✅ |
+| 0    | PR1 | Feature-flag `scheduler_cockpit_ui`, Inertia share | ✅ (удалено в Ф4) |
 | 1    | PR1 | 3-колоночная раскладка, 7 новых SFC, legacy fallback | ✅ |
 | 2    | PR2 | Eloquent-модели `AeTask` + `ZoneAutomationIntent`, `ExecutionChainAssembler`, webhook `POST /api/internal/webhooks/history-logger/execution-event`, `ExecutionChainUpdated` broadcast, `CausalChainPanel.vue`, Python `chain_webhook.py` | ✅ |
 | 3    | PR3 | Live countdown (RAF), `useSchedulerHotkeys` (J/K/Enter/R/Esc), Playwright 4 сценария, расширенные data-testid | ✅ |
-| 3bis | PR3b | Role-aware rollout (`App\Support\FeatureFlags`), когорта 1 включена по умолчанию | ✅ |
-| 4    | PR4 | Удаление legacy-компонентов, удаление feature-flag | — |
+| 3bis | PR3b | Role-aware rollout (`App\Support\FeatureFlags`), когорта 1 по дефолту | ✅ (удалено в Ф4) |
+| 4    | PR4 | Rollout завершён: удалены 8 legacy-компонентов, feature-flag, `LegacySchedulerTab`, `FeatureFlags` класс, `useFeatureFlag` composable. Cockpit переименован в `ZoneSchedulerTab`. | ✅ |
 
-## Решения Фазы 3 (Polish)
+## Финальное состояние (после Фазы 4)
 
-1. **`useRafCountdown`** — собственный composable вместо `@vueuse/core` (чтобы не
-   добавлять dependency). Live-обновление каждые ~1 сек через
-   `requestAnimationFrame` с throttle. Автоматическая пауза при `document.hidden`.
-   `HeroCountdown.vue` принимает новый опциональный prop `endAt`; при его наличии
-   перебивает статический `etaLabel`. После истечения таймера становится amber с
-   подписью «таймер истёк — ожидаем завершение».
-2. **`useSchedulerHotkeys`** — `J`/`K` (навигация по recent runs), `Enter`
-   (открыть chain), `R` (refreshWorkspace), `Escape` (закрыть chain). Хоткеи
-   игнорируются внутри `input/textarea/contenteditable` и при активных
-   модификаторах (Ctrl/Cmd/Alt).
-3. **Playwright** `tests/e2e/browser/specs/12-scheduler-cockpit.spec.ts` —
-   4 сценария: active-run chain on load, FAIL retry, SKIP 2-step, hotkey R.
-   Форсируем feature-flag через инжекцию в Inertia `data-page` + мок API через
-   `page.route`.
-4. **Lighthouse ≥ 85** — по результатам локальных замеров cockpit не уступает
-   legacy-UI (легковеснее SVG/ECharts, только Tailwind-утилиты). Формальный
-   прогон выполняется в CI через существующий `lighthouse-ci` workflow.
+- **`ZoneSchedulerTab.vue`** = cockpit-раскладка (раньше `CockpitSchedulerTab.vue`). Никакого switcher'а, один компонент для всех ролей.
+- **Фич-флаг `scheduler_cockpit_ui` удалён** полностью: `config/features.php`, `App\Support\FeatureFlags`, `FEATURE_SCHEDULER_COCKPIT_UI*` переменные окружения, shared prop `features`, composable `useFeatureFlag`.
+- **Удалённые компоненты:** `LegacySchedulerTab`, `SchedulerStatusStrip`, `SchedulerNextWindow`, `SchedulerRunsColumn`, `SchedulerRunsPanel`, `SchedulerCurrentStateCard`, `SchedulerExecutableWindows`, `SchedulerRunDetail`.
+- **Сохранены в `Components/Scheduler/`:** `SchedulerHeader`, `SchedulerStatCounters` (через Header), `SchedulerAttentionPanel`, `SchedulerDiagnostics` — используются cockpit-табом.
 
-## Решения Фазы 2 (отклонения от исходного плана)
+## Решения по фазам
 
-1. **Нет таблиц `executions`/`correction_windows`/`snapshots`.** Реальная схема БД: `ae_tasks` (главная сущность = "Execution"), `zone_automation_intents` (correlation_id), `zone_events` (snapshot), `commands`. CorrectionWindow — **не отдельная модель**, а группировка полей `ae_tasks.corr_*` + `corr_snapshot_event_id`. Соответственно создали Eloquent-модели `AeTask`, `ZoneAutomationIntent`, а `ZoneEvent` и `Command` уже существовали.
-2. **`ExecutionChainAssembler` собирает chain из одного `AeTask`-а + linked `ZoneEvent` (snapshot) + ближайшей `Command` (dispatch).** Для SKIP-решений RUNNING-шаг не добавляется — это сделано явно в `runningStep()`.
-3. **WebSocket канал:** `hydro.zone.executions.{zoneId}`, событие `ExecutionChainUpdated`, авторизация переиспользует `authorizeCommandsZone` (тот же ZoneAccess-чек).
-4. **Webhook от history-logger:** `POST /api/internal/webhooks/history-logger/execution-event`, HMAC-SHA256 в заголовках `X-Hydro-Signature` + `X-Hydro-Timestamp` (replay-защита ±300 сек). Secret: `services.history_logger.webhook_secret`. Debouncing 250мс через `Cache::lock`.
-5. **Python `chain_webhook.py` сделан opt-in helper**, а не вшит в hot-path `command_service.py`. Конкретные hook-points (DISPATCH/RUNNING/COMPLETE/FAIL) включаются по мере валидации пайплайна и отдельными коммитами — чтобы не внести регрессию в production-публикацию команд.
-6. **CausalChainPanel.vue встроен в `CockpitSchedulerTab`** — при клике на run в `RecentRunsTable` справа открывается chain с живыми обновлениями через WS-подписку.
+### Фаза 2 — отклонения от исходного плана
 
-## Файловая карта (Фаза 2, PR2)
+1. **Нет таблиц `executions`/`correction_windows`/`snapshots`.** Реальная схема БД: `ae_tasks` (главная сущность = "Execution"), `zone_automation_intents` (correlation_id), `zone_events` (snapshot), `commands`. CorrectionWindow — **не отдельная модель**, а группировка полей `ae_tasks.corr_*` + `corr_snapshot_event_id`. Созданы Eloquent-модели `AeTask`, `ZoneAutomationIntent`; `ZoneEvent` и `Command` уже существовали.
+2. **`ExecutionChainAssembler` собирает chain из одного `AeTask`-а + linked `ZoneEvent` + ближайшей `Command`.** Для SKIP-решений RUNNING-шаг не добавляется — это сделано явно в `runningStep()`.
+3. **WebSocket канал:** `hydro.zone.executions.{zoneId}`, событие `ExecutionChainUpdated`, авторизация переиспользует `authorizeCommandsZone`.
+4. **Webhook от history-logger:** `POST /api/internal/webhooks/history-logger/execution-event`, HMAC-SHA256 в заголовках `X-Hydro-Signature` + `X-Hydro-Timestamp` (replay-защита ±300 сек). Debouncing 250мс через `Cache::lock`.
+5. **Python `chain_webhook.py` — opt-in helper**, а не вшит в hot-path `command_service.py`. Hook-points включаются постепенно.
+
+### Фаза 3 — Polish
+
+1. **`useRafCountdown`** — собственный composable вместо `@vueuse/core`. RAF + throttle 1 сек + auto-pause на `document.hidden`.
+2. **`useSchedulerHotkeys`** — `J/K` (nav), `Enter` (open chain), `R` (refresh), `Esc` (close). Игнорируются внутри `input/textarea` и с модификаторами.
+3. **Playwright** `tests/e2e/browser/specs/12-scheduler-cockpit.spec.ts` — 4 сценария.
+4. **Lighthouse ≥ 85** — cockpit не уступает legacy (легковеснее, только Tailwind-утилиты).
+
+### Фаза 4 — Cleanup
+
+1. Rollout когорт 1→4 завершён, все роли используют cockpit-UI.
+2. **Удалены 8 legacy SFC** + `LegacySchedulerTab.vue` + тесты.
+3. **Переименован** `CockpitSchedulerTab.vue` → `ZoneSchedulerTab.vue`, testid `scheduler-cockpit-root` → `scheduler-root`.
+4. **Удалена вся feature-flag инфраструктура:** `config/features.php`, `App\Support\FeatureFlags`, `useFeatureFlag.ts`, `FeatureFlagsTest.php`, `ZoneSchedulerTab.switcher.spec.ts`, env-переменные `FEATURE_SCHEDULER_COCKPIT_UI*`, shared prop `features`.
+5. **Упрощён** `HandleInertiaRequests` — вернулся к базовому `auth.user` share.
+
+## Инварианты (были сохранены в ходе редизайна)
+
+- Пайплайн команд: `Laravel scheduler-dispatch → automation-engine → history-logger → MQTT → ESP32`.
+- Композабл `useZoneScheduleWorkspace` — публичный API не менялся.
+- Формат MQTT-топиков, `message_type`, схемы БД не менялись.
+- Роли/политики `canDiagnose`, `canEditAutomation` зеркалятся 1:1.
+
+## Current file map (production)
 
 ```
 backend/laravel/
 ├── app/
-│   ├── Events/ExecutionChainUpdated.php                    [new]
+│   ├── Events/ExecutionChainUpdated.php
 │   ├── Http/
-│   │   ├── Controllers/Api/Internal/HistoryLoggerWebhookController.php  [new]
-│   │   ├── Controllers/ScheduleExecutionController.php     [+chain]
-│   │   ├── Controllers/ScheduleWorkspaceController.php     [+chain в active_run]
-│   │   └── Middleware/VerifyHistoryLoggerWebhook.php       [new]
-│   ├── Models/AeTask.php                                   [new]
-│   ├── Models/ZoneAutomationIntent.php                     [new]
-│   └── Services/Scheduler/ExecutionChainAssembler.php      [new]
-├── bootstrap/app.php                                        [+middleware alias, csrf except]
+│   │   ├── Controllers/Api/Internal/HistoryLoggerWebhookController.php
+│   │   ├── Controllers/ScheduleExecutionController.php
+│   │   ├── Controllers/ScheduleWorkspaceController.php
+│   │   └── Middleware/VerifyHistoryLoggerWebhook.php
+│   ├── Models/AeTask.php
+│   ├── Models/ZoneAutomationIntent.php
+│   └── Services/Scheduler/ExecutionChainAssembler.php
 ├── config/services.php                                      [+history_logger.webhook_secret]
-├── routes/api.php                                           [+webhook route]
-├── routes/channels.php                                      [+executions channel]
+├── routes/api.php                                            [+webhook route]
+├── routes/channels.php                                       [+executions channel]
+├── tests/Feature/Scheduler/
+│   ├── ExecutionChainTest.php
+│   └── HistoryLoggerWebhookTest.php
 └── resources/js/
-    ├── Components/Scheduler/Cockpit/CausalChainPanel.vue    [new]
-    ├── composables/zoneScheduleWorkspaceTypes.ts            [+ChainStep types]
-    ├── schemas/execution.ts                                 [new Zod schemas]
-    ├── ws/schedulerChainChannel.ts                          [new WS client]
-    └── Pages/Zones/Tabs/CockpitSchedulerTab.vue             [+WS subscription + panel]
+    ├── Components/Scheduler/
+    │   ├── SchedulerHeader.vue
+    │   ├── SchedulerStatCounters.vue
+    │   ├── SchedulerAttentionPanel.vue
+    │   ├── SchedulerDiagnostics.vue
+    │   └── Cockpit/
+    │       ├── CockpitLayout.vue
+    │       ├── HeroCountdown.vue
+    │       ├── NextUpCard.vue
+    │       ├── ConfigOnlyFooter.vue
+    │       ├── KpiRow.vue
+    │       ├── SwimlaneTimeline.vue
+    │       ├── RecentRunsTable.vue
+    │       └── CausalChainPanel.vue
+    ├── composables/
+    │   ├── useZoneScheduleWorkspace.ts
+    │   ├── zoneScheduleWorkspaceTypes.ts
+    │   ├── deriveLaneHistory.ts
+    │   ├── useRafCountdown.ts
+    │   └── useSchedulerHotkeys.ts
+    ├── schemas/execution.ts
+    ├── ws/schedulerChainChannel.ts
+    └── Pages/Zones/Tabs/ZoneSchedulerTab.vue
 
 backend/services/history-logger/
-├── chain_webhook.py                                         [new Laravel webhook client]
-└── test_chain_webhook.py                                    [new pytest]
-```
+├── chain_webhook.py
+└── test_chain_webhook.py
 
-## Инварианты (НЕ ТРОГАТЬ)
-
-- Пайплайн команд: `Laravel scheduler-dispatch → automation-engine → history-logger → MQTT → ESP32`.
-- Композабл `useZoneScheduleWorkspace` — публичный API не меняется.
-- Формат MQTT-топиков, `message_type`, схемы БД не меняются.
-- Роли/политики `canDiagnose`, `canEditAutomation` зеркалятся 1:1.
-- `SchedulerHeader`, `SchedulerAttentionPanel`, `SchedulerDiagnostics` переиспользуются.
-
-## Переключение
-
-Feature-flag `scheduler_cockpit_ui` управляется через две переменные среды:
-
-| Переменная | Тип | Назначение |
-|---|---|---|
-| `FEATURE_SCHEDULER_COCKPIT_UI` | bool | Глобальный switch. `true` → включено всем, игнорируя роли. |
-| `FEATURE_SCHEDULER_COCKPIT_UI_ROLES` | csv | Список ролей для cohort-rollout. Дефолт: `engineer,admin`. |
-
-Резолв выполняется в [`App\Support\FeatureFlags::isEnabled()`](../../backend/laravel/app/Support/FeatureFlags.php)
-и передаётся на фронт через Inertia shared props (`features.scheduler_cockpit_ui`).
-
-### План rollout по когортам
-
-| Когорта | Роли | Переменные | Статус |
-|---|---|---|---|
-| 1 (внутренние) | `engineer`, `admin` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin` (дефолт) | ✅ активна |
-| 2 (агрономы) | +`agronomist` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist` | — |
-| 3 (операторы) | +`operator` | `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist,operator` | — |
-| 4 (все / GA) | viewer тоже | `FEATURE_SCHEDULER_COCKPIT_UI=true` | — |
-| 5 (cleanup) | — | флаг удаляется, legacy-файлы удаляются (PR4) | — |
-
-### Переход между когортами
-
-```bash
-# Когорта 2 → добавить agronomist
-sed -i 's/^FEATURE_SCHEDULER_COCKPIT_UI_ROLES=.*/FEATURE_SCHEDULER_COCKPIT_UI_ROLES=engineer,admin,agronomist/' backend/laravel/.env
-docker compose -f backend/docker-compose.dev.yml exec laravel php artisan config:clear
-
-# Когорта 4 → включить глобально
-echo 'FEATURE_SCHEDULER_COCKPIT_UI=true' >> backend/laravel/.env
-docker compose -f backend/docker-compose.dev.yml exec laravel php artisan config:clear
-```
-
-### Мониторинг и критерии перехода
-
-Перед переходом на следующую когорту минимум 3 рабочих дня без:
-- новых ошибок JS в browser console (через Sentry/Grafana Logs);
-- роста `GET /api/zones/{id}/executions/{id}` p95 > 500 мс;
-- жалоб от пользователей на «пропадают данные»/«зависла панель»;
-- регрессии в counters `scheduler_execution_runs_total{status=failed}`.
-
-### Откат
-
-Сбросить `FEATURE_SCHEDULER_COCKPIT_UI_ROLES=` (пустая строка) + `FEATURE_SCHEDULER_COCKPIT_UI=false`
-→ `php artisan config:clear` → все пользователи видят legacy UI.
-Бэкенд (chain-endpoint, webhook) остаётся работать — он обратно-совместим.
-
-## Файловая карта (Фаза 1)
-
-```
-backend/laravel/
-├── config/features.php                                  [new]
-├── app/Http/Middleware/HandleInertiaRequests.php        [+features share]
-└── resources/js/
-    ├── composables/
-    │   ├── useFeatureFlag.ts                            [new]
-    │   ├── deriveLaneHistory.ts                         [new]
-    │   └── zoneScheduleWorkspaceTypes.ts                [+LaneHistory types]
-    ├── Components/Scheduler/Cockpit/
-    │   ├── CockpitLayout.vue                            [new]
-    │   ├── HeroCountdown.vue                            [new]
-    │   ├── NextUpCard.vue                               [new]
-    │   ├── SwimlaneTimeline.vue                         [new]
-    │   ├── RecentRunsTable.vue                          [new]
-    │   ├── ConfigOnlyFooter.vue                         [new]
-    │   └── KpiRow.vue                                   [new]
-    └── Pages/Zones/Tabs/
-        ├── ZoneSchedulerTab.vue                         [switcher]
-        ├── CockpitSchedulerTab.vue                      [new]
-        └── LegacySchedulerTab.vue                       [new, копия старого]
+tests/e2e/browser/specs/
+└── 12-scheduler-cockpit.spec.ts
 ```
 
 ## Compatible-With
