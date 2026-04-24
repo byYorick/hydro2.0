@@ -58,3 +58,44 @@ os.environ.setdefault(
 # значения приходят из env и перекрывают дефолты через setdefault.
 os.environ.setdefault("HISTORY_LOGGER_API_TOKEN", "pytest-history-logger-token")
 os.environ.setdefault("AE_API_TOKEN", "pytest-ae-api-token")
+
+
+# ---------------------------------------------------------------------------
+# asyncpg pool cleanup между тестами.
+#
+# `common.db.get_pool()` кеширует asyncpg pool per event loop. pytest-asyncio
+# (в режиме asyncio_mode=auto) по умолчанию даёт каждому async-тесту свой
+# event loop. Если pool не закрывать, каждый тест оставляет висящие
+# connections в PostgreSQL — в CI это быстро упирается в стандартный
+# max_connections=100 и даёт TooManyConnectionsError.
+#
+# Локально в docker-dev это не проявляется, т.к. там max_connections=200 и
+# тесты идут с одним процессом, но CI-runner стартует postgres с дефолтом,
+# поэтому fixture-уровневая очистка нужна всегда.
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+import pytest_asyncio  # noqa: E402
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _close_ae3_db_pool_after_test():
+    yield
+    try:
+        import common.db as _db
+    except Exception:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    pool = _db._get_pool_for_loop(loop)
+    if pool is None:
+        return
+    if not _db._drop_pool_for_loop(loop, pool):
+        return
+    try:
+        await pool.close()
+    except Exception:
+        pass
