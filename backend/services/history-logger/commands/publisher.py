@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+import chain_webhook
 from command_service import publish_command_mqtt
 from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
@@ -168,6 +169,22 @@ async def _on_publish_success(
         )
 
     COMMANDS_SENT.labels(zone_id=str(zone_id), metric=cmd_name).inc()
+
+    # Causal chain webhook (Scheduler Cockpit UI) — шаг DISPATCH. Laravel
+    # резолвит execution_id из cmd_id. Fire-and-forget: всё что может упасть
+    # глушится внутри chain_webhook.
+    try:
+        await chain_webhook.emit_execution_step(
+            zone_id=zone_id,
+            cmd_id=cmd_id,
+            step="DISPATCH",
+            ref=f"cmd-{cmd_id}",
+            status="ok",
+            detail=f"history-logger → mqtt {node_uid}/{channel} · {cmd_name}",
+            at_iso=utcnow().isoformat(),
+        )
+    except Exception as webhook_exc:  # pragma: no cover — defensive
+        logger.debug("chain_webhook DISPATCH emit failed: %s", webhook_exc)
 
     return {
         "status": "ok",

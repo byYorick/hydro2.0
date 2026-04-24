@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
+import chain_webhook
 from common.command_status_queue import deliver_status_to_laravel, normalize_status
+from common.utils.time import utcnow
 from common.db import create_zone_event, execute, fetch
 from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id
@@ -155,6 +157,15 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 raw_status=raw_status,
                 normalized_status=normalized_status,
                 delivery_result=delivery_result,
+            )
+
+            await _emit_chain_webhook_for_response(
+                zone_id=zone_id,
+                cmd_id=cmd_id,
+                normalized_status=normalized_status,
+                node_uid=node_uid,
+                channel=channel,
+                details=details,
             )
 
     except Exception as e:
@@ -384,3 +395,54 @@ async def _record_simulation_event_for_response(
             "delivery_reason": delivery_result.reason,
         },
     )
+
+
+# Mapping command-response normalized_status → causal chain step/status для
+# Scheduler Cockpit UI. ACK → RUNNING (live), DONE/NO_EFFECT → COMPLETE,
+# всё остальное терминальное (ERROR/TIMEOUT/INVALID/BUSY/SEND_FAILED) → FAIL.
+_CHAIN_STEP_BY_STATUS = {
+    "ACK": ("RUNNING", "run", True),
+    "DONE": ("COMPLETE", "ok", False),
+    "NO_EFFECT": ("COMPLETE", "warn", False),
+    "ERROR": ("FAIL", "err", False),
+    "TIMEOUT": ("FAIL", "err", False),
+    "INVALID": ("FAIL", "err", False),
+    "BUSY": ("FAIL", "err", False),
+    "SEND_FAILED": ("FAIL", "err", False),
+}
+
+
+async def _emit_chain_webhook_for_response(
+    *,
+    zone_id: int,
+    cmd_id: str,
+    normalized_status: str,
+    node_uid: str,
+    channel: str,
+    details: dict,
+) -> None:
+    """Fire-and-forget webhook в Laravel для обновления causal chain cockpit-UI."""
+    mapping = _CHAIN_STEP_BY_STATUS.get(str(normalized_status).upper())
+    if mapping is None:
+        return
+
+    step, chain_status, live = mapping
+    detail_parts = [f"{node_uid}/{channel}", f"status={normalized_status}"]
+    error_code = details.get("error_code") if isinstance(details, dict) else None
+    if error_code:
+        detail_parts.append(str(error_code))
+
+    try:
+        await chain_webhook.emit_execution_step(
+            zone_id=int(zone_id),
+            cmd_id=str(cmd_id),
+            step=step,
+            ref=f"cmd-{cmd_id}",
+            status=chain_status,
+            detail=" · ".join(detail_parts),
+            at_iso=utcnow().isoformat(),
+            live=live,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("chain_webhook emit failed for cmd_id=%s: %s", cmd_id, exc)
+

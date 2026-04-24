@@ -117,6 +117,72 @@ class HistoryLoggerWebhookTest extends TestCase
         $response->assertStatus(422);
     }
 
+    public function test_validation_rejects_payload_without_execution_id_or_cmd_id(): void
+    {
+        $response = $this->signedJson(
+            '/api/internal/webhooks/history-logger/execution-event',
+            [
+                'zone_id' => 1,
+                'step' => 'DISPATCH',
+                'ref' => 'cmd-1',
+                'status' => 'ok',
+            ],
+            secret: self::SECRET,
+        );
+
+        $response->assertStatus(422);
+    }
+
+    public function test_resolves_execution_id_from_cmd_id_via_corr_snapshot(): void
+    {
+        Event::fake([ExecutionChainUpdated::class]);
+        $zone = Zone::factory()->create();
+        $cmdId = 'cmd-corr-'.uniqid('', true);
+
+        $taskId = DB::table('ae_tasks')->insertGetId(array_merge(
+            $this->aeTaskRow($zone->id),
+            ['corr_snapshot_cmd_id' => $cmdId],
+        ));
+
+        $response = $this->signedJson(
+            '/api/internal/webhooks/history-logger/execution-event',
+            [
+                'zone_id' => $zone->id,
+                'cmd_id' => $cmdId,
+                'step' => 'DISPATCH',
+                'ref' => 'cmd-'.$cmdId,
+                'status' => 'ok',
+            ],
+            secret: self::SECRET,
+        );
+
+        $response->assertOk();
+        $response->assertJson(['status' => 'ok', 'execution_id' => (string) $taskId]);
+        Event::assertDispatched(ExecutionChainUpdated::class, fn (ExecutionChainUpdated $event): bool => $event->executionId === (string) $taskId);
+    }
+
+    public function test_unresolvable_cmd_id_returns_ok_with_unresolved_flag(): void
+    {
+        Event::fake([ExecutionChainUpdated::class]);
+        $zone = Zone::factory()->create();
+
+        $response = $this->signedJson(
+            '/api/internal/webhooks/history-logger/execution-event',
+            [
+                'zone_id' => $zone->id,
+                'cmd_id' => 'cmd-orphan-'.uniqid('', true),
+                'step' => 'DISPATCH',
+                'ref' => 'cmd-orphan',
+                'status' => 'ok',
+            ],
+            secret: self::SECRET,
+        );
+
+        $response->assertOk();
+        $response->assertJson(['status' => 'ok', 'unresolved' => true]);
+        Event::assertNotDispatched(ExecutionChainUpdated::class);
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */

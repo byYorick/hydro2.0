@@ -97,32 +97,44 @@ def _sign(secret: str, timestamp: str, body: str) -> str:
 async def emit_execution_step(
     *,
     zone_id: int,
-    execution_id: str,
     step: ChainStep,
     ref: str,
     status: ChainStatus,
+    execution_id: Optional[str] = None,
+    cmd_id: Optional[str] = None,
     detail: str = "",
     at_iso: Optional[str] = None,
     live: Optional[bool] = None,
 ) -> bool:
     """Отправляет один шаг causal chain в Laravel.
 
+    Обязательно передать **либо** ``execution_id`` (= ``ae_tasks.id``),
+    **либо** ``cmd_id`` — Laravel сам резолвит execution_id из cmd_id через
+    связи таблиц ``commands`` + ``ae_tasks``.
+
     Возвращает True при успехе (HTTP 2xx), иначе False. Исключения не
     пробрасываются — они логируются и поглощаются, чтобы не ломать основной
     поток публикации команды.
     """
+    if execution_id is None and cmd_id is None:
+        logger.warning("chain_webhook: both execution_id and cmd_id are empty, skipping")
+        return False
+
     config = get_config()
     if not config.enabled:
         return False
 
-    payload = {
+    payload: dict = {
         "zone_id": int(zone_id),
-        "execution_id": str(execution_id),
         "step": step,
         "ref": ref,
         "status": status,
         "detail": detail,
     }
+    if execution_id is not None:
+        payload["execution_id"] = str(execution_id)
+    if cmd_id is not None:
+        payload["cmd_id"] = str(cmd_id)
     if at_iso:
         payload["at"] = at_iso
     if live is not None:
