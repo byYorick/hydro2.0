@@ -61,35 +61,16 @@
           v-if="attentionItems.length > 0"
           :items="attentionItems"
         />
-        <section
+        <CausalChainPanel
           v-if="selectedExecution"
-          class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 p-3.5"
-          data-testid="scheduler-chain-placeholder"
-        >
-          <header class="flex items-start justify-between gap-2">
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="font-mono text-[13px] font-bold text-[color:var(--text-primary)]">
-                  #{{ selectedExecution.execution_id }}
-                </span>
-                <span class="text-[11px] text-[color:var(--text-dim)]">
-                  {{ laneLabel(selectedExecution.schedule_task_type ?? selectedExecution.task_type) }}
-                </span>
-              </div>
-              <p class="mt-1 text-[11px] text-[color:var(--text-muted)]">
-                Причинно-следственная цепочка будет доступна в Фазе 2 redesign.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="rounded-md border border-[color:var(--border-muted)] px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]"
-              data-testid="scheduler-chain-close"
-              @click="clearSelectedExecution"
-            >
-              ✕
-            </button>
-          </header>
-        </section>
+          :run="selectedExecution"
+          :error-text="selectedExecutionErrorMessage"
+          :format-date-time="formatDateTime"
+          :lane-label="laneLabel"
+          @close="clearSelectedExecution"
+          @retry="handleRetry"
+          @open-events="handleOpenEvents"
+        />
       </template>
     </CockpitLayout>
 
@@ -109,12 +90,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { router } from '@inertiajs/vue3'
 import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { useZoneScheduleWorkspace } from '@/composables/useZoneScheduleWorkspace'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
-import type { ExecutionRun, LaneHistory } from '@/composables/zoneScheduleWorkspaceTypes'
+import type { ChainStep, ExecutionRun, LaneHistory } from '@/composables/zoneScheduleWorkspaceTypes'
 import { deriveLaneHistory } from '@/composables/deriveLaneHistory'
+import { subscribeToExecutionChain, type SchedulerChainSubscription } from '@/ws/schedulerChainChannel'
 import SchedulerHeader from '@/Components/Scheduler/SchedulerHeader.vue'
 import SchedulerAttentionPanel from '@/Components/Scheduler/SchedulerAttentionPanel.vue'
 import SchedulerDiagnostics from '@/Components/Scheduler/SchedulerDiagnostics.vue'
@@ -125,6 +109,7 @@ import ConfigOnlyFooter from '@/Components/Scheduler/Cockpit/ConfigOnlyFooter.vu
 import KpiRow from '@/Components/Scheduler/Cockpit/KpiRow.vue'
 import SwimlaneTimeline from '@/Components/Scheduler/Cockpit/SwimlaneTimeline.vue'
 import RecentRunsTable from '@/Components/Scheduler/Cockpit/RecentRunsTable.vue'
+import CausalChainPanel from '@/Components/Scheduler/Cockpit/CausalChainPanel.vue'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -219,6 +204,14 @@ const etaHint = computed<string>(() => {
   return 'осталось до завершения'
 })
 
+const selectedExecutionErrorMessage = computed<string | null>(() =>
+  resolveHumanErrorMessage({
+    code: selectedExecution.value?.error_code,
+    message: selectedExecution.value?.error_message,
+    humanMessage: selectedExecution.value?.human_error_message,
+  }),
+)
+
 function decisionLabelForRun(run: ExecutionRun): string {
   const outcome = decisionLabel(run.decision_outcome, run.decision_degraded)
   const reason = run.decision_reason_code ? ` · ${run.decision_reason_code}` : ''
@@ -227,6 +220,41 @@ function decisionLabelForRun(run: ExecutionRun): string {
 
 function clearSelectedExecution(): void {
   selectedExecution.value = null
+}
+
+function handleRetry(executionId: string): void {
+  showToast(`Повтор исполнения #${executionId} пока не реализован.`, 'info')
+}
+
+function handleOpenEvents(executionId: string): void {
+  if (typeof window === 'undefined') return
+  router.visit(`/zones/${props.zoneId}?tab=events&execution_id=${executionId}`)
+}
+
+function applyChainStep(executionId: string, step: ChainStep): void {
+  if (selectedExecution.value?.execution_id === executionId) {
+    const current = selectedExecution.value.chain ?? []
+    selectedExecution.value = {
+      ...selectedExecution.value,
+      chain: [...current, step],
+    }
+  }
+  if (activeRun.value?.execution_id === executionId) {
+    const current = activeRun.value.chain ?? []
+    activeRun.value.chain = [...current, step]
+  }
+}
+
+let chainSubscription: SchedulerChainSubscription | null = null
+
+function resubscribeChain(): void {
+  chainSubscription?.unsubscribe()
+  chainSubscription = null
+  const zoneId = props.zoneId
+  if (zoneId === null || zoneId === undefined) return
+  chainSubscription = subscribeToExecutionChain(zoneId, {
+    onStep: (executionId, step) => applyChainStep(executionId, step),
+  })
 }
 
 function changeHorizon(nextHorizon: '24h' | '7d'): void {
@@ -252,6 +280,7 @@ async function refreshWorkspace(): Promise<void> {
 
 onMounted(() => {
   void refreshWorkspace()
+  resubscribeChain()
   if (import.meta.env.MODE !== 'test' && typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange)
   }
@@ -259,6 +288,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearPollTimer()
+  chainSubscription?.unsubscribe()
+  chainSubscription = null
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
   }
@@ -268,6 +299,7 @@ watch(
   () => props.zoneId,
   () => {
     void refreshWorkspace()
+    resubscribeChain()
   },
 )
 </script>

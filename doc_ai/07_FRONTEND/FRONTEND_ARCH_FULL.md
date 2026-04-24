@@ -477,4 +477,35 @@ rootStore
 
 ---
 
+## Scheduler Cockpit — causal chain panel (Phase 2)
+
+`CausalChainPanel.vue` (в [`Components/Scheduler/Cockpit/`](../../backend/laravel/resources/js/Components/Scheduler/Cockpit/))
+отображает «цепочку решений» для выбранного исполнения зоны — вертикальная
+timeline из шагов `SNAPSHOT → DECISION → TASK → DISPATCH → RUNNING →
+COMPLETE|FAIL|SKIP` с live-обновлением через Reverb.
+
+Открывается из `CockpitSchedulerTab.vue` при клике на строку в
+`RecentRunsTable` или автоматически — если на загрузке есть активный run.
+
+**Данные:**
+
+- Источник — `workspace.execution.active_run.chain[]` и
+  `GET /api/zones/{id}/executions/{executionId}` (поле `chain`).
+- Live-дельты — событие `ExecutionChainUpdated` на приватном канале
+  `hydro.zone.executions.{zoneId}`; клиент — `ws/schedulerChainChannel.ts`.
+  Zod-валидация payload — `schemas/execution.ts`.
+
+**Действия:**
+
+- `× Закрыть` — очищает `selectedExecution`.
+- `Повторить` — только для FAIL-run; в v1 показывает toast (ре-trigger
+  execution в backend — отдельный ticket).
+- `В Events →` — переход на `/zones/{id}?tab=events&execution_id=...`.
+- `⎘ copy` — копирование `correlation_id` через `navigator.clipboard`.
+
+**Feature flag:** `scheduler_cockpit_ui` (см. `config/features.php`). При
+`false` — пользователь видит `LegacySchedulerTab.vue` без этой панели.
+
+---
+
 # Конец файла

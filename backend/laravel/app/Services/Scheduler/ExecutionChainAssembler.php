@@ -8,7 +8,6 @@ use App\Models\AeTask;
 use App\Models\Command;
 use App\Models\ZoneEvent;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -212,22 +211,38 @@ class ExecutionChainAssembler
     {
         $statuses = ['running', 'claimed', 'waiting_command'];
         $isActive = in_array((string) $task->status, $statuses, true);
-        $ranAt = $task->claimed_at ?? $task->updated_at;
         $command = $this->firstCommandForTask($task);
 
+        // SKIP-решение никогда не выходило в исполнение — RUNNING-шаг не нужен.
+        $decisionOutcome = strtolower((string) ($task->irrigation_decision_outcome ?? ''));
+        if (! $isActive && $decisionOutcome === 'skip') {
+            return null;
+        }
+
+        // Для pending-задачи без ACK команд тоже не показываем RUNNING — она
+        // ещё не стартовала.
         if (! $isActive && $command?->ack_at === null && $task->status === 'pending') {
+            return null;
+        }
+
+        // Cancelled задача, которая не успела запуститься, тоже без RUNNING.
+        if (! $isActive && $task->status === 'cancelled' && $task->claimed_at === null) {
+            return null;
+        }
+
+        $ranAt = $command?->ack_at ?? $task->claimed_at;
+        if ($ranAt === null && ! $isActive) {
+            return null;
+        }
+        $ranAt ??= $task->updated_at;
+
+        if ($ranAt === null) {
             return null;
         }
 
         $detail = $isActive
             ? "Активно: {$task->current_stage}"
             : 'Запуск исполнения на узле';
-
-        $ranAt = $command?->ack_at ?? $ranAt;
-
-        if ($ranAt === null) {
-            return null;
-        }
 
         return [
             'step' => 'RUNNING',

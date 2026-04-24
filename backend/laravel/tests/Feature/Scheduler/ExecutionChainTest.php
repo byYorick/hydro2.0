@@ -168,7 +168,7 @@ class ExecutionChainTest extends TestCase
         $now = now();
         $base = [
             'zone_id' => $this->zone->id,
-            'task_type' => 'irrigation',
+            'task_type' => 'irrigation_start',
             'status' => 'pending',
             'idempotency_key' => 'test-'.uniqid('', true),
             'scheduled_for' => $now->toDateTimeString(),
@@ -183,7 +183,7 @@ class ExecutionChainTest extends TestCase
             'corr_ec_current_seq_index' => 0,
             'start_event_emitted' => false,
             'irr_probe_failure_streak' => 0,
-            'intent_meta' => json_encode(new \stdClass()),
+            'intent_meta' => json_encode(new \stdClass),
             'created_at' => $now->toDateTimeString(),
             'updated_at' => $now->toDateTimeString(),
         ];

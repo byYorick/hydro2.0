@@ -149,7 +149,23 @@ Breaking-change: обратная совместимость со старыми
 - `lifecycle[]` нормализуется из canonical runtime state;
 - `timeline[]` строится из `zone_events` по `task_id` и/или `correlation_id`;
 - `timeline[].stage` передаётся для AE stage-hop событий, чтобы UI не терял смысл `AE_TASK_STARTED`;
-- `scheduler_logs` в ответах не участвуют.
+- `scheduler_logs` в ответах не участвуют;
+- `chain[]` (Phase 2 Cockpit-UI) — компактная причинно-следственная цепочка от
+  `ExecutionChainAssembler`: `SNAPSHOT → DECISION → TASK → DISPATCH → RUNNING → COMPLETE|FAIL|SKIP`.
+  Для SKIP-решений цепочка ограничена `SNAPSHOT + DECISION + TASK + SKIP`.
+  `schedule-workspace.active_run` также содержит `chain[]`.
+
+Пример `chain` в ответе:
+
+```json
+"chain": [
+  { "step": "SNAPSHOT", "at": "2026-02-10T12:33:52Z", "ref": "8821", "detail": "PH=6.4 · EC=1.52 · tank_temp_c=22.1", "status": "ok" },
+  { "step": "DECISION", "at": "2026-02-10T12:33:55Z", "ref": "cw-8821", "detail": "RUN · strategy=smart_v1 · bundle 3.1.7", "status": "ok" },
+  { "step": "TASK",     "at": "2026-02-10T12:33:56Z", "ref": "T-551",   "detail": "ae_task #551 · irrigation_start · стадия startup", "status": "ok" },
+  { "step": "DISPATCH", "at": "2026-02-10T12:34:07Z", "ref": "cmd-9931","detail": "history-logger → node#12 pump_acid · dose", "status": "ok" },
+  { "step": "RUNNING",  "at": "2026-02-10T12:34:08Z", "ref": "ex-551",  "detail": "Активно: dosing_acid", "status": "run", "live": true }
+]
+```
 
 Контракт `GET /api/zones/{id}/scheduler-diagnostics`:
 - доступен только `admin|engineer`;
@@ -436,6 +452,68 @@ Preset rules:
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/alerts/webhook | public | Webhook от Alertmanager для создания алертов |
+| POST | /api/internal/webhooks/history-logger/execution-event | HMAC-SHA256 | Live-обновления Scheduler Cockpit causal chain от history-logger |
+
+### 16.1 Webhook history-logger → Laravel (Scheduler Cockpit causal chain)
+
+**Назначение:** history-logger нотифицирует Laravel о добавлении нового шага
+в causal chain исполнения (`DISPATCH/RUNNING/COMPLETE/FAIL/SKIP`) для
+real-time обновления Cockpit-UI через Reverb (канал `hydro.zone.executions.{zoneId}`).
+
+**Аутентификация:**
+
+- Заголовок `X-Hydro-Timestamp: <unix_time>` (допустимый skew ±300 сек).
+- Заголовок `X-Hydro-Signature: <hex>` — HMAC-SHA256 по строке
+  `"{timestamp}.{raw_body}"`, ключ `services.history_logger.webhook_secret`
+  (env `HISTORY_LOGGER_WEBHOOK_SECRET`).
+
+**Request body:**
+
+```json
+{
+  "zone_id": 42,
+  "execution_id": "401",
+  "step": "DISPATCH",
+  "ref": "cmd-9931",
+  "status": "ok",
+  "detail": "history-logger → mqtt hydro/gh-1/z-12/nd-ph-1/pump_acid/cmd",
+  "at": "2026-02-10T12:34:07Z",
+  "live": false
+}
+```
+
+Поля:
+
+- `step`: `SNAPSHOT | DECISION | TASK | DISPATCH | RUNNING | COMPLETE | FAIL | SKIP`.
+- `status`: `ok | err | skip | run | warn`.
+- `ref`: строковый идентификатор (например `cmd-9931`, `ex-2042`, `ev-8821`).
+- `detail`: читаемое описание для UI (≤512 символов).
+- `at` (optional): ISO 8601 timestamp момента события.
+- `live` (optional): true если шаг считается активным (обычно `RUNNING`).
+
+**Ответы:**
+
+- `200 OK` `{"status":"ok"}` — событие зарегистрировано, broadcast будет
+  отправлен (или `{"status":"ok","debounced":true}` если попало в
+  debounce-окно `HISTORY_LOGGER_WEBHOOK_DEBOUNCE_MS`).
+- `401` — отсутствует/неверная подпись или stale timestamp.
+- `422` — невалидные поля payload-а.
+- `500` — в production, если `HISTORY_LOGGER_WEBHOOK_SECRET` не настроен.
+
+**Broadcast:**
+
+Laravel публикует `ExecutionChainUpdated` на приватный канал
+`hydro.zone.executions.{zoneId}` с payload-ом:
+
+```json
+{
+  "zone_id": 42,
+  "execution_id": "401",
+  "step": { "step": "DISPATCH", "at": "...", "ref": "cmd-9931", ... },
+  "event_id": 12345,
+  "server_ts": 1707560000
+}
+```
 
 ---
 

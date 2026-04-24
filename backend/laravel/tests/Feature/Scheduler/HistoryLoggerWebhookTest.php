@@ -123,18 +123,15 @@ class HistoryLoggerWebhookTest extends TestCase
     private function signedJson(string $uri, array $payload, string $secret, ?int $timestamp = null): \Illuminate\Testing\TestResponse
     {
         $timestamp ??= time();
-        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        // Laravel postJson сам сформирует тело через json_encode($payload) без
+        // спец-флагов. Используем точно такую же кодировку для HMAC.
+        $body = json_encode($payload);
         $signature = hash_hmac('sha256', $timestamp.'.'.$body, $secret);
 
         return $this->withHeaders([
-            'Content-Type' => 'application/json',
             'X-Hydro-Timestamp' => (string) $timestamp,
             'X-Hydro-Signature' => $signature,
-            'Accept' => 'application/json',
-        ])->call('POST', $uri, [], [], [], [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/json',
-        ], $body);
+        ])->postJson($uri, $payload);
     }
 
     /**
@@ -144,7 +141,7 @@ class HistoryLoggerWebhookTest extends TestCase
     {
         return [
             'zone_id' => $zoneId,
-            'task_type' => 'irrigation',
+            'task_type' => 'irrigation_start',
             'status' => 'running',
             'idempotency_key' => 'wh-'.uniqid('', true),
             'scheduled_for' => now()->toDateTimeString(),
@@ -159,7 +156,7 @@ class HistoryLoggerWebhookTest extends TestCase
             'corr_ec_current_seq_index' => 0,
             'start_event_emitted' => false,
             'irr_probe_failure_streak' => 0,
-            'intent_meta' => json_encode(new \stdClass()),
+            'intent_meta' => json_encode(new \stdClass),
             'created_at' => now()->toDateTimeString(),
             'updated_at' => now()->toDateTimeString(),
         ];

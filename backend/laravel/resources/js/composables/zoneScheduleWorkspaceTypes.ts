@@ -71,6 +71,27 @@ export interface ExecutionTimelineItem {
   source?: string | null
 }
 
+export type ChainStepType =
+  | 'SNAPSHOT'
+  | 'DECISION'
+  | 'TASK'
+  | 'DISPATCH'
+  | 'RUNNING'
+  | 'COMPLETE'
+  | 'FAIL'
+  | 'SKIP'
+
+export type ChainStepStatus = 'ok' | 'err' | 'skip' | 'run' | 'warn'
+
+export interface ChainStep {
+  step: ChainStepType
+  at?: string | null
+  ref: string
+  detail: string
+  status: ChainStepStatus
+  live?: boolean
+}
+
 export interface ExecutionRun {
   execution_id: string
   task_id: string
@@ -78,6 +99,7 @@ export interface ExecutionRun {
   task_type: string
   schedule_task_type?: string | null
   status: string
+  chain?: ChainStep[]
   runtime_status?: string | null
   intent_status?: string | null
   intent_type?: string | null

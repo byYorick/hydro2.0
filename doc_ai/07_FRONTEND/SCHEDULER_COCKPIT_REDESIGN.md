@@ -19,10 +19,49 @@
 | Фаза | PR | Основное содержимое | Статус |
 |------|----|--------------------|--------|
 | 0    | PR1 | Feature-flag `scheduler_cockpit_ui`, Inertia share | ✅ |
-| 1    | PR1 | 3-колоночная раскладка, 7 новых SFC, legacy fallback | 🚧 |
-| 2    | PR2 | Eloquent-модели (`Execution`, `CorrectionWindow`, `AeTask`, `Snapshot`), `ExecutionChainAssembler`, webhook `POST /internal/webhooks/history-logger/execution-event`, `ExecutionChainUpdated` broadcast, `CausalChainPanel.vue` | — |
+| 1    | PR1 | 3-колоночная раскладка, 7 новых SFC, legacy fallback | ✅ |
+| 2    | PR2 | Eloquent-модели `AeTask` + `ZoneAutomationIntent`, `ExecutionChainAssembler`, webhook `POST /api/internal/webhooks/history-logger/execution-event`, `ExecutionChainUpdated` broadcast, `CausalChainPanel.vue`, Python `chain_webhook.py` | ✅ |
 | 3    | PR3 | Live countdown (RAF), горячие клавиши, Playwright 4 сценария, Lighthouse ≥85 | — |
 | 4    | PR4 | Удаление legacy-компонентов, удаление feature-flag | — |
+
+## Решения Фазы 2 (отклонения от исходного плана)
+
+1. **Нет таблиц `executions`/`correction_windows`/`snapshots`.** Реальная схема БД: `ae_tasks` (главная сущность = "Execution"), `zone_automation_intents` (correlation_id), `zone_events` (snapshot), `commands`. CorrectionWindow — **не отдельная модель**, а группировка полей `ae_tasks.corr_*` + `corr_snapshot_event_id`. Соответственно создали Eloquent-модели `AeTask`, `ZoneAutomationIntent`, а `ZoneEvent` и `Command` уже существовали.
+2. **`ExecutionChainAssembler` собирает chain из одного `AeTask`-а + linked `ZoneEvent` (snapshot) + ближайшей `Command` (dispatch).** Для SKIP-решений RUNNING-шаг не добавляется — это сделано явно в `runningStep()`.
+3. **WebSocket канал:** `hydro.zone.executions.{zoneId}`, событие `ExecutionChainUpdated`, авторизация переиспользует `authorizeCommandsZone` (тот же ZoneAccess-чек).
+4. **Webhook от history-logger:** `POST /api/internal/webhooks/history-logger/execution-event`, HMAC-SHA256 в заголовках `X-Hydro-Signature` + `X-Hydro-Timestamp` (replay-защита ±300 сек). Secret: `services.history_logger.webhook_secret`. Debouncing 250мс через `Cache::lock`.
+5. **Python `chain_webhook.py` сделан opt-in helper**, а не вшит в hot-path `command_service.py`. Конкретные hook-points (DISPATCH/RUNNING/COMPLETE/FAIL) включаются по мере валидации пайплайна и отдельными коммитами — чтобы не внести регрессию в production-публикацию команд.
+6. **CausalChainPanel.vue встроен в `CockpitSchedulerTab`** — при клике на run в `RecentRunsTable` справа открывается chain с живыми обновлениями через WS-подписку.
+
+## Файловая карта (Фаза 2, PR2)
+
+```
+backend/laravel/
+├── app/
+│   ├── Events/ExecutionChainUpdated.php                    [new]
+│   ├── Http/
+│   │   ├── Controllers/Api/Internal/HistoryLoggerWebhookController.php  [new]
+│   │   ├── Controllers/ScheduleExecutionController.php     [+chain]
+│   │   ├── Controllers/ScheduleWorkspaceController.php     [+chain в active_run]
+│   │   └── Middleware/VerifyHistoryLoggerWebhook.php       [new]
+│   ├── Models/AeTask.php                                   [new]
+│   ├── Models/ZoneAutomationIntent.php                     [new]
+│   └── Services/Scheduler/ExecutionChainAssembler.php      [new]
+├── bootstrap/app.php                                        [+middleware alias, csrf except]
+├── config/services.php                                      [+history_logger.webhook_secret]
+├── routes/api.php                                           [+webhook route]
+├── routes/channels.php                                      [+executions channel]
+└── resources/js/
+    ├── Components/Scheduler/Cockpit/CausalChainPanel.vue    [new]
+    ├── composables/zoneScheduleWorkspaceTypes.ts            [+ChainStep types]
+    ├── schemas/execution.ts                                 [new Zod schemas]
+    ├── ws/schedulerChainChannel.ts                          [new WS client]
+    └── Pages/Zones/Tabs/CockpitSchedulerTab.vue             [+WS subscription + panel]
+
+backend/services/history-logger/
+├── chain_webhook.py                                         [new Laravel webhook client]
+└── test_chain_webhook.py                                    [new pytest]
+```
 
 ## Инварианты (НЕ ТРОГАТЬ)
 
