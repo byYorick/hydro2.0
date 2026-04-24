@@ -66,6 +66,58 @@ async def test_emit_noop_when_disabled(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_emit_rejects_payload_without_any_id(monkeypatch):
+    monkeypatch.setenv("HISTORY_LOGGER_WEBHOOK_SECRET", "s3cret")
+    result = await chain_webhook.emit_execution_step(
+        zone_id=42,
+        step="DISPATCH",
+        ref="cmd-9931",
+        status="ok",
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_emit_sends_cmd_id_when_execution_id_not_provided(monkeypatch):
+    monkeypatch.setenv("HISTORY_LOGGER_WEBHOOK_SECRET", "s3cret")
+    monkeypatch.setenv("LARAVEL_URL", "http://laravel:8080")
+    monkeypatch.setenv("HISTORY_LOGGER_WEBHOOK_ENABLED", "1")
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        text = "{\"status\":\"ok\"}"
+
+    class _FakeClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def post(self, url, content, headers):
+            captured["body"] = content
+            return _FakeResponse()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(chain_webhook.httpx, "AsyncClient", _FakeClient)
+
+    ok = await chain_webhook.emit_execution_step(
+        zone_id=42,
+        cmd_id="cmd-9931",
+        step="RUNNING",
+        ref="cmd-9931",
+        status="run",
+        live=True,
+    )
+    assert ok is True
+    payload = json.loads(captured["body"])
+    assert payload["cmd_id"] == "cmd-9931"
+    assert "execution_id" not in payload
+    assert payload["live"] is True
+
+
+@pytest.mark.asyncio
 async def test_emit_sends_signed_request(monkeypatch):
     monkeypatch.setenv("HISTORY_LOGGER_WEBHOOK_SECRET", "s3cret")
     monkeypatch.setenv("LARAVEL_URL", "http://laravel:8080")

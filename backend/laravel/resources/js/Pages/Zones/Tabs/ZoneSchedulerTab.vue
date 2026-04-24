@@ -112,6 +112,7 @@ import KpiRow from '@/Components/Scheduler/Cockpit/KpiRow.vue'
 import SwimlaneTimeline from '@/Components/Scheduler/Cockpit/SwimlaneTimeline.vue'
 import RecentRunsTable from '@/Components/Scheduler/Cockpit/RecentRunsTable.vue'
 import CausalChainPanel from '@/Components/Scheduler/Cockpit/CausalChainPanel.vue'
+import { api } from '@/services/api'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -230,8 +231,28 @@ function clearSelectedExecution(): void {
   selectedExecution.value = null
 }
 
-function handleRetry(executionId: string): void {
-  showToast(`Повтор исполнения #${executionId} пока не реализован.`, 'info')
+async function handleRetry(executionId: string): Promise<void> {
+  try {
+    const response = await api.zones.retryExecution<{ data?: { intent_id?: number } }>(
+      Number(props.zoneId),
+      executionId,
+    )
+    const intentId = response?.data?.intent_id
+    showToast(
+      intentId
+        ? `Повтор исполнения #${executionId} создан (intent #${intentId}).`
+        : `Повтор исполнения #${executionId} принят.`,
+      'success',
+    )
+    await refreshWorkspace()
+  } catch (error) {
+    const message = resolveHumanErrorMessage({
+      code: (error as { code?: string })?.code,
+      message: (error as { message?: string })?.message,
+      humanMessage: null,
+    }) ?? 'Не удалось запустить повтор исполнения.'
+    showToast(message, 'error')
+  }
 }
 
 function handleOpenEvents(executionId: string): void {

@@ -166,6 +166,10 @@ export const zonesApi = {
     return apiGet<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}`)
   },
 
+  retryExecution<T = unknown>(zoneId: number, executionId: string): Promise<T> {
+    return apiPost<T>(`/zones/${zoneId}/executions/${encodeURIComponent(executionId)}/retry`, {})
+  },
+
   schedulerDiagnostics<T = unknown>(zoneId: number): Promise<T> {
     return apiGet<T>(`/zones/${zoneId}/scheduler-diagnostics`)
   },
