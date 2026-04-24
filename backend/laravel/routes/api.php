@@ -428,6 +428,17 @@ Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$int
     Route::post('realtime/telemetry-batch', [\App\Http\Controllers\InternalRealtimeController::class, 'telemetryBatch']);
 });
 
+// Internal webhook от history-logger для live-обновлений cockpit causal chain.
+// Защищён HMAC-SHA256 (см. VerifyHistoryLoggerWebhook middleware).
+Route::prefix('internal/webhooks')
+    ->middleware(['verify.history-logger.webhook', 'throttle:'.$internalApiThrottle])
+    ->group(function () {
+        Route::post(
+            'history-logger/execution-event',
+            [\App\Http\Controllers\Api\Internal\HistoryLoggerWebhookController::class, 'executionEvent'],
+        );
+    });
+
 Route::patch('node-channels/{nodeChannel}', [NodeChannelController::class, 'serviceUpdateConfig'])
     ->middleware(['verify.python.service', 'throttle:'.$internalApiThrottle]);
 

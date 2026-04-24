@@ -34,6 +34,9 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'features' => [
+                'scheduler_cockpit_ui' => (bool) config('features.scheduler_cockpit_ui'),
+            ],
         ];
     }
 }

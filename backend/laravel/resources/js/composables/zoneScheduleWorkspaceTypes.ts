@@ -71,6 +71,27 @@ export interface ExecutionTimelineItem {
   source?: string | null
 }
 
+export type ChainStepType =
+  | 'SNAPSHOT'
+  | 'DECISION'
+  | 'TASK'
+  | 'DISPATCH'
+  | 'RUNNING'
+  | 'COMPLETE'
+  | 'FAIL'
+  | 'SKIP'
+
+export type ChainStepStatus = 'ok' | 'err' | 'skip' | 'run' | 'warn'
+
+export interface ChainStep {
+  step: ChainStepType
+  at?: string | null
+  ref: string
+  detail: string
+  status: ChainStepStatus
+  live?: boolean
+}
+
 export interface ExecutionRun {
   execution_id: string
   task_id: string
@@ -78,6 +99,7 @@ export interface ExecutionRun {
   task_type: string
   schedule_task_type?: string | null
   status: string
+  chain?: ChainStep[]
   runtime_status?: string | null
   intent_status?: string | null
   intent_type?: string | null
@@ -146,11 +168,26 @@ export interface ScheduleWorkspacePlan {
   }
 }
 
+export type LaneHistoryStatus = 'ok' | 'err' | 'skip' | 'run' | 'warn'
+
+export interface LaneHistoryPoint {
+  /** Позиция метки на оси времени в процентах (0 — начало горизонта, 100 — его конец). */
+  t: number
+  s: LaneHistoryStatus
+}
+
+export interface LaneHistory {
+  lane: string
+  runs: LaneHistoryPoint[]
+}
+
 export interface ScheduleWorkspace {
   control: ScheduleWorkspaceControl
   capabilities: ScheduleWorkspaceCapabilities
   plan: ScheduleWorkspacePlan
   execution: ScheduleWorkspaceExecution
+  /** Бакеты для swimlane-ленты. Бэк начнёт отдавать в Фазе 2; пока считается на фронте. */
+  lanes_history?: LaneHistory[]
 }
 
 export interface ScheduleWorkspaceResponse {

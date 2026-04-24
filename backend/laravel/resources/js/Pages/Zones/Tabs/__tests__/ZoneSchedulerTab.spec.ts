@@ -68,7 +68,11 @@ vi.mock('@/Components/Button.vue', () => ({
   },
 }))
 
-import ZoneSchedulerTab from '../ZoneSchedulerTab.vue'
+// Тест исторически покрывает legacy-поведение scheduler-таба.
+// `ZoneSchedulerTab.vue` теперь — feature-flag свитчер, который по умолчанию
+// монтирует `LegacySchedulerTab`. Импортируем его напрямую, чтобы не зависеть
+// от Inertia-контекста (флаги) в unit-тесте.
+import ZoneSchedulerTab from '../LegacySchedulerTab.vue'
 
 function buildStateResponse(overrides: Record<string, unknown> = {}) {
   return {

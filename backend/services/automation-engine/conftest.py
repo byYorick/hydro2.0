@@ -50,3 +50,11 @@ os.environ.setdefault(
     "PG_APP_NAME",
     f"hydro:ae3-pytest-{uuid.uuid4().hex[:8]}",
 )
+
+# AE3 runtime валидирует токены при module-level импорте ae3lite.runtime.app
+# (там `app = create_app()`). Collection упадёт, если токены отсутствуют.
+# Ставим безопасные дефолты только для pytest, чтобы CI-шаги без отдельного
+# секрет-ввода (smoke, contract) могли собрать тесты. Реальные прод/docker
+# значения приходят из env и перекрывают дефолты через setdefault.
+os.environ.setdefault("HISTORY_LOGGER_API_TOKEN", "pytest-history-logger-token")
+os.environ.setdefault("AE_API_TOKEN", "pytest-ae-api-token")

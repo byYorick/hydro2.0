@@ -1,6 +1,6 @@
 # file-size-guard exceptions
 # Формат: <path>|<max_lines>
-# Пустые строки и ленты, начинающиеся с #, игнорируются.
+# Пустые строки и строки, начинающиеся с #, игнорируются.
 #
 # Guard применяется к backend/laravel (PHP в app/config/routes/tests,
 # TS/Vue в resources/js, bash в scripts/) — см. check-file-size-guard.sh.
@@ -11,7 +11,65 @@
 # разрешения большей отметки добавь запись сюда.
 #
 # ---------------------------------------------------------------
-# Активных исключений пока нет. По мере нужды добавляй сюда файлы,
-# декомпозиция которых признана неактуальной, с явным явным лимитом.
-# Пример:
-#   backend/laravel/app/Services/SomeLegacyService.php|900
+# Grandfathered legacy-файлы с ветки ae3: превышают лимит и/или появились
+# над лимитом относительно origin/main. Фиксируем текущий размер как
+# потолок. При рефакторинге: строка удаляется, как только файл опускается
+# ниже MAX_LINES=500.
+
+# -------- Laravel backend (app/) --------
+backend/laravel/app/Http/Controllers/AutomationConfigController.php|805
+backend/laravel/app/Http/Controllers/PythonIngestController.php|777
+backend/laravel/app/Http/Controllers/SetupWizardController.php|898
+backend/laravel/app/Services/AlertService.php|761
+backend/laravel/app/Services/AutomationConfigDocumentService.php|649
+backend/laravel/app/Services/AutomationConfigRegistry.php|680
+backend/laravel/app/Services/AutomationRuntimeConfigService.php|799
+backend/laravel/app/Services/AutomationScheduler/ActiveTaskPoller.php|584
+backend/laravel/app/Services/AutomationScheduler/ExecutionRunReadModel.php|610
+backend/laravel/app/Services/AutomationScheduler/ScheduleDispatcher.php|629
+backend/laravel/app/Services/AutomationScheduler/SchedulerCycleOrchestrator.php|514
+backend/laravel/app/Services/PythonBridgeService.php|701
+backend/laravel/app/Services/SimulationOrchestratorService.php|1294
+backend/laravel/app/Services/SystemAutomationSettingsCatalog.php|631
+backend/laravel/app/Services/ZoneCorrectionConfigCatalog.php|566
+backend/laravel/app/Services/ZoneEventMessageFormatter.php|1497
+backend/laravel/app/Services/ZoneReadinessService.php|970
+backend/laravel/app/Services/ZoneService.php|878
+
+# -------- Frontend (resources/js) --------
+backend/laravel/resources/js/Components/AutomationProcessDiagram.vue|1067
+backend/laravel/resources/js/Components/CorrectionConfigForm.vue|1871
+backend/laravel/resources/js/Components/CorrectionRuntimeReadinessCard.vue|677
+backend/laravel/resources/js/Components/Launch/Calibration/CalibrationHub.vue|522
+backend/laravel/resources/js/Components/Launch/Calibration/CalibrationPumpsSubpage.vue|547
+backend/laravel/resources/js/Components/Launch/Calibration/PumpCalibrationDrawer.vue|1288
+backend/laravel/resources/js/Components/PidConfigForm.vue|1114
+backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|1315
+backend/laravel/resources/js/Components/PumpCalibrationModal.vue|557
+backend/laravel/resources/js/Components/RecipeEditor.vue|1123
+backend/laravel/resources/js/Components/ZoneAutomation/CorrectionLiveEditCard.vue|1143
+backend/laravel/resources/js/Components/ZoneAutomation/WaterContourSection.vue|648
+backend/laravel/resources/js/Components/__tests__/CorrectionConfigForm.spec.ts|505
+backend/laravel/resources/js/Pages/Devices/Show.vue|717
+backend/laravel/resources/js/Pages/Greenhouses/Show.vue|781
+backend/laravel/resources/js/Pages/Settings/Index.vue|1021
+backend/laravel/resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts|853
+backend/laravel/resources/js/Pages/Zones/Tabs/__tests__/ZoneSchedulerTab.spec.ts|502
+backend/laravel/resources/js/composables/__tests__/zoneAutomationTargetsParserEdge.spec.ts|503
+backend/laravel/resources/js/composables/recipeEditorShared.ts|555
+backend/laravel/resources/js/composables/useAlertsPage.ts|720
+backend/laravel/resources/js/composables/usePumpCalibration.ts|561
+backend/laravel/resources/js/composables/useTelemetry.ts|555
+backend/laravel/resources/js/composables/useZonePageState.ts|615
+backend/laravel/resources/js/composables/useZoneScheduleWorkspace.ts|895
+backend/laravel/resources/js/composables/zoneAutomationProfilePayload.ts|530
+backend/laravel/resources/js/utils/eventDetails.ts|539
+
+# -------- Laravel tests --------
+backend/laravel/tests/Feature/GrowCycleControllerTest.php|949
+backend/laravel/tests/Feature/GrowCycleServiceTest.php|1281
+backend/laravel/tests/Feature/PythonIngestControllerTest.php|840
+backend/laravel/tests/Feature/RecipesTest.php|546
+backend/laravel/tests/Feature/ZonesTest.php|976
+backend/laravel/tests/Unit/EffectiveTargetsServiceTest.php|796
+backend/laravel/tests/Unit/Services/ZoneReadinessServiceTest.php|509

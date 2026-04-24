@@ -359,3 +359,7 @@ Broadcast::channel('hydro.alerts', function ($user) use ($trackWsAuth) {
     $trackWsAuth('alerts', 'success');
     return ['id' => $user->id, 'name' => $user->name];
 });
+
+// Приватный канал для causal chain cockpit-UI (Фаза 2 редизайна планировщика).
+// Broadcastит `ExecutionChainUpdated` события при добавлении шагов в chain.
+Broadcast::channel('hydro.zone.executions.{zoneId}', $authorizeCommandsZone);

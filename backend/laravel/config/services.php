@@ -49,6 +49,8 @@ return [
     'history_logger' => [
         'url' => env('HISTORY_LOGGER_URL', 'http://history-logger:9300'),
         'token' => env('HISTORY_LOGGER_API_TOKEN') ?? env('PY_INGEST_TOKEN'), // Токен для аутентификации
+        'webhook_secret' => env('HISTORY_LOGGER_WEBHOOK_SECRET'),
+        'webhook_debounce_ms' => (int) env('HISTORY_LOGGER_WEBHOOK_DEBOUNCE_MS', 250),
     ],
 
     'automation_engine' => [

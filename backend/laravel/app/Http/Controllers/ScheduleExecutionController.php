@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\AutomationScheduler\ExecutionRunReadModel;
+use App\Services\Scheduler\ExecutionChainAssembler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -12,6 +13,7 @@ class ScheduleExecutionController extends Controller
 {
     public function __construct(
         private readonly ExecutionRunReadModel $executionRunReadModel,
+        private readonly ExecutionChainAssembler $chainAssembler,
     ) {}
 
     public function show(Request $request, Zone $zone, string $executionId): JsonResponse
@@ -34,6 +36,8 @@ class ScheduleExecutionController extends Controller
                 'message' => 'Execution not found',
             ], 404);
         }
+
+        $payload['chain'] = $this->chainAssembler->assemble($zone->id, $executionId);
 
         return response()->json([
             'status' => 'ok',
