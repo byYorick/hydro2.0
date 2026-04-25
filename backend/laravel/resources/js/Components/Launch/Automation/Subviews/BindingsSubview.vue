@@ -125,12 +125,21 @@
     </section>
 
     <Hint :show="showHints">
-      Привязки идентичны схеме <span class="font-mono">assignmentsSchema</span>.
-      ESP32 узлы публикуют список ролей в bridge — выбор канала фиксируется
-      в <span class="font-mono">zone.assignments</span>. Нода считается
-      привязанной после получения <span class="font-mono">config_report</span>
-      (промоут <span class="font-mono">pending_zone_id → zone_id</span>,
-      <span class="font-mono">lifecycle_state := ASSIGNED_TO_ZONE</span>).
+      В выпадающем списке доступны только узлы, привязанные к этой зоне
+      (<span class="font-mono">✓</span> bound, <span class="font-mono">⏳</span>
+      pending). Нода считается привязанной после получения
+      <span class="font-mono">config_report</span> от железа: backend промоутит
+      <span class="font-mono">pending_zone_id → zone_id</span> и переводит
+      <span class="font-mono">lifecycle_state := ASSIGNED_TO_ZONE</span>.
+      <template v-if="unboundCount > 0">
+        Доступно ещё {{ unboundCount }} непривязанных узлов —
+        <a
+          class="underline text-brand"
+          href="/devices/add"
+          target="_blank"
+          rel="noopener"
+        >зарегистрировать</a>.
+      </template>
     </Hint>
   </div>
 </template>
@@ -188,13 +197,57 @@ const OPTIONAL: RoleDef[] = [
 
 const GRID_STYLE = 'grid-template-columns: 170px 200px 1fr 220px'
 
+const ASSIGNED_ROLE_KEYS: ZoneAutomationBindRole[] = [
+  'irrigation',
+  'ph_correction',
+  'ec_correction',
+  'light',
+  'soil_moisture_sensor',
+  'co2_sensor',
+  'co2_actuator',
+  'root_vent_actuator',
+]
+
+const assignedIds = computed(() => {
+  const ids = new Set<number>()
+  for (const key of ASSIGNED_ROLE_KEYS) {
+    const v = props.assignments[key]
+    if (typeof v === 'number' && v > 0) ids.add(v)
+  }
+  return ids
+})
+
+const visibleNodes = computed(() =>
+  props.availableNodes.filter(
+    (n) =>
+      n.zone_id === props.zoneId
+      || n.pending_zone_id === props.zoneId
+      || assignedIds.value.has(n.id),
+  ),
+)
+
+const unboundCount = computed(() => {
+  let count = 0
+  for (const n of props.availableNodes) {
+    if (n.zone_id !== props.zoneId && n.pending_zone_id !== props.zoneId) count++
+  }
+  return count
+})
+
 const nodeOptions = computed(() => [
   { value: '', label: '— не задано —' },
-  ...props.availableNodes.map((n) => ({
+  ...visibleNodes.value.map((n) => ({
     value: String(n.id),
-    label: nodeLabel(n),
+    label: nodeOptionLabel(n),
   })),
 ])
+
+function nodeOptionLabel(n: SetupWizardNode): string {
+  const base = nodeLabel(n)
+  if (n.zone_id === props.zoneId) return `✓ ${base}`
+  if (n.pending_zone_id === props.zoneId && !n.zone_id) return `⏳ ${base}`
+  return `○ ${base}`
+}
 
 const bindingNodeIds = computed<ReadonlySet<number>>(
   () => props.bindingNodeIds ?? new Set<number>(),
