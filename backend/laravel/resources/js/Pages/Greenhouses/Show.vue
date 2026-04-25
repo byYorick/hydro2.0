@@ -487,11 +487,11 @@ function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
 
 async function loadAvailableNodes(): Promise<void> {
   try {
-    const list = await api.nodes.list({
+    const response = await api.nodes.list({
       greenhouse_id: props.greenhouse.id,
       include_unassigned: true,
     })
-    availableNodes.value = list as GreenhouseNodeOption[]
+    availableNodes.value = unwrapNodesList(response)
   } catch {
     showToast('Не удалось загрузить список нод теплицы.', 'warning', TOAST_TIMEOUT.NORMAL)
   }
@@ -499,13 +499,19 @@ async function loadAvailableNodes(): Promise<void> {
 
 async function loadManagedGreenhouseNodes(): Promise<void> {
   try {
-    const list = await api.nodes.list({
+    const response = await api.nodes.list({
       greenhouse_id: props.greenhouse.id,
     })
-    managedGreenhouseNodes.value = list as GreenhouseNodeOption[]
+    managedGreenhouseNodes.value = unwrapNodesList(response)
   } catch {
     showToast('Не удалось загрузить управляемые greenhouse climate ноды.', 'warning', TOAST_TIMEOUT.NORMAL)
   }
+}
+
+function unwrapNodesList(response: unknown): GreenhouseNodeOption[] {
+  if (Array.isArray(response)) return response as GreenhouseNodeOption[]
+  const inner = (response as { data?: unknown })?.data
+  return Array.isArray(inner) ? (inner as GreenhouseNodeOption[]) : []
 }
 
 async function loadGreenhouseClimate(): Promise<void> {

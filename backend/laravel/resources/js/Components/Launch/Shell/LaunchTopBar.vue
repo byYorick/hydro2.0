@@ -38,7 +38,7 @@
       <nav class="flex items-center gap-1.5 text-xs">
         <slot name="breadcrumbs">
           <Link
-            :href="route('dashboard')"
+            :href="dashboardHref"
             class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             Dashboard
@@ -112,14 +112,21 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import LaunchSettingsPopover from './LaunchSettingsPopover.vue'
 import { useServiceHealth, type ServiceStatus } from '@/composables/useServiceHealth'
-
-declare function route(name: string, params?: Record<string, unknown>): string
+import { route } from '@/utils/route'
 
 import type { LaunchStep } from './types'
+
+const dashboardHref = computed(() => {
+  try {
+    return route('dashboard')
+  } catch {
+    return '/dashboard'
+  }
+})
 
 defineProps<{
   userEmail?: string | null
