@@ -13,7 +13,27 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Figtree', ...defaultTheme.fontFamily.sans],
+                sans: ['"IBM Plex Sans"', 'Figtree', ...defaultTheme.fontFamily.sans],
+                mono: ['"JetBrains Mono"', ...defaultTheme.fontFamily.mono],
+            },
+            colors: {
+                brand: {
+                    DEFAULT: 'var(--brand)',
+                    soft: 'var(--brand-soft)',
+                    ink: 'var(--brand-ink)',
+                },
+                growth: {
+                    DEFAULT: 'var(--growth)',
+                    soft: 'var(--growth-soft)',
+                },
+                warn: {
+                    DEFAULT: 'var(--warn)',
+                    soft: 'var(--warn-soft)',
+                },
+                alert: {
+                    DEFAULT: 'var(--alert)',
+                    soft: 'var(--alert-soft)',
+                },
             },
         },
     },
