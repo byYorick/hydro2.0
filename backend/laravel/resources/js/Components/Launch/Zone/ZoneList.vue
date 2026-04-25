@@ -2,11 +2,12 @@
   <div class="border border-[var(--border-muted)] rounded-md overflow-hidden">
     <div
       class="grid items-center px-3 py-2 bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--text-dim)]"
-      style="grid-template-columns: 24px 1.4fr 1fr 100px"
+      style="grid-template-columns: 24px 1.4fr 1fr 1fr 90px"
     >
-      <span aria-hidden="true"></span>
+      <span aria-hidden="true" />
       <span>Имя</span>
-      <span>Описание</span>
+      <span>Культура</span>
+      <span>Стадия</span>
       <span>Статус</span>
     </div>
 
@@ -17,17 +18,18 @@
       :aria-current="activeId === zone.id ? 'true' : undefined"
       class="grid w-full items-center px-3 py-2.5 text-left border-t border-[var(--border-muted)] cursor-pointer transition-colors"
       :class="activeId === zone.id ? 'bg-brand-soft' : 'bg-transparent hover:bg-[var(--bg-elevated)]'"
-      style="grid-template-columns: 24px 1.4fr 1fr 100px"
+      style="grid-template-columns: 24px 1.4fr 1fr 1fr 90px"
       @click="$emit('pick', zone.id)"
     >
       <span class="flex items-center">
         <span
           class="inline-block w-2.5 h-2.5 rounded-full"
           :class="activeId === zone.id ? 'bg-brand' : 'bg-[var(--border-strong)]'"
-        ></span>
+        />
       </span>
       <span class="text-sm font-medium text-[var(--text-primary)] truncate">{{ zone.name }}</span>
-      <span class="text-xs text-[var(--text-muted)] truncate">{{ zone.description ?? '—' }}</span>
+      <span class="text-xs text-[var(--text-muted)] truncate">{{ zone.plant ?? '—' }}</span>
+      <span class="font-mono text-[11px] text-[var(--text-muted)] truncate">{{ zone.stage ?? '—' }}</span>
       <span>
         <Chip :tone="statusTone(zone.status)">{{ statusLabel(zone.status) }}</Chip>
       </span>
@@ -51,6 +53,10 @@ export interface ZoneListItem {
   name: string
   description?: string | null
   status?: string | null
+  /** Имя культуры (zone.activeGrowCycle.plant.name). */
+  plant?: string | null
+  /** Текущая стадия (например «Vegetation d42»). */
+  stage?: string | null
 }
 
 defineProps<{

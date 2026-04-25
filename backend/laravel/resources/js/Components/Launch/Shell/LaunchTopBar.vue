@@ -59,8 +59,16 @@
         ]"
         :title="`${pill.label}: ${pill.status}`"
       >
-        <span :class="['inline-block w-1.5 h-1.5 rounded-full', dotClass(pill.status)]"></span>
+        <span :class="['inline-block w-1.5 h-1.5 rounded-full', dotClass(pill.status)]" />
         <span class="font-mono">{{ pill.label }}</span>
+      </span>
+
+      <span
+        v-if="userEmail"
+        class="hidden md:inline-flex items-center px-2.5 py-1 rounded-full text-[11px] border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] font-mono"
+        :title="userEmail"
+      >
+        {{ userEmail }}
       </span>
 
       <button
@@ -95,7 +103,11 @@
       </button>
     </div>
 
-    <LaunchSettingsPopover v-if="open" />
+    <LaunchSettingsPopover
+      v-if="open"
+      :quick-jump-steps="quickJumpSteps"
+      @jump="onPopoverJump"
+    />
   </header>
 </template>
 
@@ -107,7 +119,21 @@ import { useServiceHealth, type ServiceStatus } from '@/composables/useServiceHe
 
 declare function route(name: string, params?: Record<string, unknown>): string
 
+import type { LaunchStep } from './types'
+
+defineProps<{
+  userEmail?: string | null
+  quickJumpSteps?: readonly LaunchStep[]
+}>()
+
+const emit = defineEmits<{ (e: 'jump', index: number): void }>()
+
 const { pills } = useServiceHealth()
+
+function onPopoverJump(i: number) {
+  emit('jump', i)
+  open.value = false
+}
 
 const open = ref(false)
 const settingsBtn = ref<HTMLButtonElement | null>(null)

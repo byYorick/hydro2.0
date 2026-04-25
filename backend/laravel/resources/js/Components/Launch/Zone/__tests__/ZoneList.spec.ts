@@ -4,16 +4,17 @@ import ZoneList from '../ZoneList.vue'
 import type { ZoneListItem } from '../ZoneList.vue'
 
 const zones: ZoneListItem[] = [
-  { id: 1, name: 'Zone A', status: 'RUNNING', description: 'tomato' },
+  { id: 1, name: 'Zone A', status: 'RUNNING', plant: 'Tomato', stage: 'Vegetation d12' },
   { id: 2, name: 'Zone B', status: 'DRAFT' },
   { id: 3, name: 'Zone C', status: null },
 ]
 
 describe('ZoneList', () => {
-  it('renders all zones with names and descriptions', () => {
+  it('renders all zones with names + plant + stage', () => {
     const w = mount(ZoneList, { props: { zones } })
     expect(w.text()).toContain('Zone A')
-    expect(w.text()).toContain('tomato')
+    expect(w.text()).toContain('Tomato')
+    expect(w.text()).toContain('Vegetation d12')
     expect(w.text()).toContain('Zone B')
     expect(w.text()).toContain('Zone C')
   })

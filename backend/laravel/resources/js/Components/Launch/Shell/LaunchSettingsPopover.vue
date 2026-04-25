@@ -47,8 +47,39 @@
         :checked="state.showHints"
         class="w-4 h-4 accent-brand"
         @change="setShowHints(($event.target as HTMLInputElement).checked)"
-      />
+      >
     </label>
+
+    <label class="flex items-center justify-between gap-2 text-sm cursor-pointer">
+      <span>Тёмная тема</span>
+      <input
+        type="checkbox"
+        :checked="theme.isDark.value"
+        class="w-4 h-4 accent-brand"
+        @change="theme.toggleTheme()"
+      >
+    </label>
+
+    <div
+      v-if="quickJumpSteps && quickJumpSteps.length > 0"
+      class="flex flex-col gap-1 mt-1 pt-2 border-t border-[var(--border-muted)]"
+    >
+      <div
+        class="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-dim)]"
+      >
+        Быстрый переход
+      </div>
+      <button
+        v-for="(step, i) in quickJumpSteps"
+        :key="step.id"
+        type="button"
+        class="text-left px-2 py-1.5 rounded-md bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-muted)] text-xs flex justify-between items-center"
+        @click="$emit('jump', i)"
+      >
+        <span>{{ i + 1 }}. {{ step.label }}</span>
+        <span class="font-mono text-[10px] text-[var(--text-dim)]">{{ step.sub }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -58,8 +89,17 @@ import {
   type LaunchDensity,
   type LaunchStepper,
 } from '@/composables/useLaunchPreferences'
+import { useTheme } from '@/composables/useTheme'
+import type { LaunchStep } from './types'
+
+defineProps<{
+  quickJumpSteps?: readonly LaunchStep[]
+}>()
+
+defineEmits<{ (e: 'jump', index: number): void }>()
 
 const { state, setDensity, setStepper, setShowHints } = useLaunchPreferences()
+const theme = useTheme()
 
 const densityOptions: Array<{ value: LaunchDensity; label: string }> = [
   { value: 'compact', label: 'Компактная' },

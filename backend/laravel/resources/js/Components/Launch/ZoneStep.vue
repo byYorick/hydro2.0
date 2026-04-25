@@ -201,12 +201,20 @@ interface GreenhouseRecord {
   name: string
   type?: string | null
 }
+interface ActiveGrowCyclePreview {
+  plant?: { name?: string | null } | null
+  currentPhase?: { name?: string | null } | null
+  active_grow_day?: number | null
+}
+
 interface ZoneRecord {
   id: number
   name: string
   description?: string | null
   status?: string | null
   greenhouse_id?: number | null
+  active_grow_cycle?: ActiveGrowCyclePreview | null
+  activeGrowCycle?: ActiveGrowCyclePreview | null
 }
 
 const props = defineProps<{ modelValue?: number | null }>()
@@ -237,12 +245,20 @@ const selectedGreenhouse = computed<GreenhouseRecord | null>(
 const zonesInSelectedGh = computed<ZoneListItem[]>(() =>
   zones.value
     .filter((z) => z.greenhouse_id === selectedGreenhouseId.value)
-    .map((z) => ({
-      id: z.id,
-      name: z.name,
-      description: z.description ?? null,
-      status: z.status ?? null,
-    })),
+    .map((z) => {
+      const cycle = z.active_grow_cycle ?? z.activeGrowCycle ?? null
+      const phaseName = cycle?.currentPhase?.name ?? null
+      const day = cycle?.active_grow_day != null ? `d${cycle.active_grow_day}` : null
+      const stage = phaseName && day ? `${phaseName} ${day}` : (phaseName ?? day)
+      return {
+        id: z.id,
+        name: z.name,
+        description: z.description ?? null,
+        status: z.status ?? null,
+        plant: cycle?.plant?.name ?? null,
+        stage,
+      }
+    }),
 )
 
 const typeOptions = computed(() =>

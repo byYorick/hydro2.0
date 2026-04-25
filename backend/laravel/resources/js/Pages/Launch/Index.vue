@@ -1,6 +1,37 @@
 <template>
   <Head title="Запуск цикла" />
   <LaunchShell>
+    <template #topbar>
+      <LaunchTopBar
+        :user-email="userEmail"
+        :quick-jump-steps="stepperSteps"
+        @jump="onStepSelect"
+      >
+        <template
+          v-if="breadcrumbZoneName"
+          #breadcrumbs
+        >
+          <Link
+            :href="dashboardHref"
+            class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          >
+            Dashboard
+          </Link>
+          <span class="text-[var(--text-dim)]">/</span>
+          <Link
+            :href="zonesHref"
+            class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          >
+            Зоны
+          </Link>
+          <span class="text-[var(--text-dim)]">/</span>
+          <span class="text-[var(--text-primary)] font-mono">{{ breadcrumbZoneName }}</span>
+          <span class="text-[var(--text-dim)]">/</span>
+          <span class="text-[var(--text-primary)]">Мастер запуска</span>
+        </template>
+      </LaunchTopBar>
+    </template>
+
     <template #stepper>
       <LaunchStepper
         v-if="stepperSteps.length > 0"
@@ -123,9 +154,10 @@
 </template>
 
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import { computed, onMounted, ref, watch } from 'vue'
 import LaunchShell from '@/Components/Launch/Shell/LaunchShell.vue'
+import LaunchTopBar from '@/Components/Launch/Shell/LaunchTopBar.vue'
 import LaunchStepper from '@/Components/Launch/Shell/LaunchStepper.vue'
 import LaunchFooterNav from '@/Components/Launch/Shell/LaunchFooterNav.vue'
 import StepHeader from '@/Components/Launch/Shell/StepHeader.vue'
@@ -159,10 +191,11 @@ import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useLaunchSteps } from '@/composables/useLaunchSteps'
 import { useLaunchPreviewContext } from '@/composables/useLaunchPreviewContext'
+import { useLaunchTopBarContext } from '@/composables/useLaunchTopBarContext'
 
 const props = defineProps<{
   zoneId: number | null
-  auth: { user: { role: string } }
+  auth: { user: { role: string; email?: string | null; name?: string | null } }
 }>()
 
 const { showToast } = useToast()
@@ -235,6 +268,13 @@ function onAutomationProfileUpdate(next: AutomationProfile) {
 
 const { availableNodes: availableNodesForPreview, ae3Online } =
   useLaunchPreviewContext(zoneIdRef)
+
+const { userEmail, breadcrumbZoneName, dashboardHref, zonesHref } =
+  useLaunchTopBarContext({
+    auth: props.auth,
+    zoneId: zoneIdRef,
+    zoneNameById: computed(() => zoneNameById.value),
+  })
 
 const phaseTargetsForPid = computed(() =>
   resolveRecipePhasePidTargets(currentRecipePhase.value ?? null),
