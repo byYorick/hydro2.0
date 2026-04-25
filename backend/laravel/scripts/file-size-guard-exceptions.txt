@@ -38,7 +38,7 @@ backend/laravel/app/Services/ZoneService.php|878
 
 # -------- Frontend (resources/js) --------
 backend/laravel/resources/js/Components/AutomationProcessDiagram.vue|1067
-backend/laravel/resources/js/Components/CorrectionConfigForm.vue|1871
+backend/laravel/resources/js/Components/CorrectionConfigForm.vue|1463
 backend/laravel/resources/js/Components/CorrectionRuntimeReadinessCard.vue|677
 backend/laravel/resources/js/Components/Launch/Calibration/CalibrationHub.vue|522
 backend/laravel/resources/js/Components/Launch/Calibration/PumpCalibrationDrawer.vue|1370
