@@ -59,7 +59,15 @@
           :enabled="profile.lightingForm.enabled"
         />
 
+        <BindingsSubview
+          v-if="currentSub === 'bindings'"
+          :assignments="profile.assignments"
+          :available-nodes="availableNodes"
+          @update:assignments="onAssignmentsUpdate"
+        />
+
         <ZoneAutomationProfileSections
+          v-if="currentSub !== 'bindings'"
           :water-form="profile.waterForm"
           :lighting-form="profile.lightingForm"
           :zone-climate-form="profile.zoneClimateForm"
@@ -69,7 +77,7 @@
           :available-nodes="availableNodes"
           layout-mode="legacy"
           :is-system-type-locked="systemTypeLocked"
-          :show-required-devices-section="currentSub === 'bindings'"
+          :show-required-devices-section="false"
           :show-water-contour-section="currentSub === 'contour'"
           :show-irrigation-section="currentSub === 'irrigation'"
           :show-solution-correction-section="currentSub === 'correction'"
@@ -158,6 +166,7 @@ import RecipeBadge from './RecipeBadge.vue'
 import CorrectionProfileChooser from './CorrectionProfileChooser.vue'
 import type { CorrectionProfileKey } from './correctionPresets'
 import DayNightStrip from './DayNightStrip.vue'
+import BindingsSubview from './Subviews/BindingsSubview.vue'
 import Button from '@/Components/Button.vue'
 import Hint from '@/Components/Shared/Primitives/Hint.vue'
 import {

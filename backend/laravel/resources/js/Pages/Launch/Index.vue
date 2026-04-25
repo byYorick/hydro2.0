@@ -1,6 +1,7 @@
 <template>
   <Head title="Запуск цикла" />
-  <LaunchShell>
+  <AppLayout>
+    <LaunchShell>
     <template #topbar>
       <LaunchTopBar
         :user-email="userEmail"
@@ -150,12 +151,14 @@
         @launch="handleSubmit"
       />
     </template>
-  </LaunchShell>
+    </LaunchShell>
+  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3'
 import { computed, onMounted, ref, watch } from 'vue'
+import AppLayout from '@/Layouts/AppLayout.vue'
 import LaunchShell from '@/Components/Launch/Shell/LaunchShell.vue'
 import LaunchTopBar from '@/Components/Launch/Shell/LaunchTopBar.vue'
 import LaunchStepper from '@/Components/Launch/Shell/LaunchStepper.vue'
