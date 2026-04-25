@@ -107,11 +107,8 @@
 
       <CalibrationStep
         v-else-if="currentStep === 'calibration'"
-        :blockers="manifest.readiness.blockers"
-        :warnings="manifest.readiness.warnings"
         :zone-id="state.zone_id"
         :phase-targets="phaseTargetsForPid"
-        @navigate="openBlockerAction"
         @calibration-updated="onCalibrationUpdated"
       />
 
@@ -125,6 +122,8 @@
         :current-recipe-phase="currentRecipePhase"
         :recipe-name="recipeSummary?.name ?? null"
         :recipe-revision-label="recipeSummary?.revisionLabel ?? null"
+        :zone-name="zoneNameById[state.zone_id ?? 0] ?? null"
+        :plant-name="plantNameById[state.plant_id ?? 0] ?? null"
         :readiness-blockers="manifest.readiness.blockers"
         :readiness-warnings="manifest.readiness.warnings"
         :ae3-online="ae3Online"
@@ -146,6 +145,7 @@
         :total="stepperSteps.length"
         :completion="completion"
         :can-launch="canLaunch"
+        :submitting="submitting"
         @back="goBack"
         @next="goNext"
         @launch="handleSubmit"
@@ -195,6 +195,7 @@ import { useToast } from '@/composables/useToast'
 import { useLaunchSteps } from '@/composables/useLaunchSteps'
 import { useLaunchPreviewContext } from '@/composables/useLaunchPreviewContext'
 import { useLaunchTopBarContext } from '@/composables/useLaunchTopBarContext'
+import { route } from '@/utils/route'
 
 const props = defineProps<{
   zoneId: number | null
@@ -263,7 +264,12 @@ interface RecipeOption {
 const recipeOptions = ref<RecipeOption[]>([])
 const plantOptions = ref<Array<{ id: number; name: string }>>([])
 const zoneNameById = ref<Record<number, string>>({})
-void zoneNameById.value
+
+const plantNameById = computed<Record<number, string>>(() => {
+  const map: Record<number, string> = {}
+  for (const p of plantOptions.value) map[p.id] = p.name
+  return map
+})
 
 function onAutomationProfileUpdate(next: AutomationProfile) {
   automationProfile.value = next
@@ -473,16 +479,20 @@ function goBack(): void {
 }
 
 function openBlockerAction(blocker: LaunchFlowReadinessBlocker): void {
-  if (!blocker.action?.route?.name) return
+  const name = blocker.action?.route?.name
+  if (!name) return
   try {
-    const url = route(blocker.action.route.name, blocker.action.route.params ?? {})
+    const url = route(name, blocker.action?.route?.params ?? {})
     router.visit(url)
   } catch {
-    showToast(`Маршрут ${blocker.action.route.name} не найден`, 'warning')
+    showToast(`Маршрут ${name} не найден`, 'warning')
   }
 }
 
+const submitting = ref(false)
+
 async function handleSubmit(): Promise<void> {
+  if (submitting.value) return
   const payload = form.toPayload()
   if (!payload) {
     showToast('Форма содержит ошибки — исправьте и повторите', 'error')
@@ -495,31 +505,49 @@ async function handleSubmit(): Promise<void> {
     return
   }
 
+  submitting.value = true
   try {
-    await api.automationConfigs.update('zone', payload.zone_id, 'zone.logic_profile', {
-      payload: profileToZoneLogicProfile(automationProfile.value),
-    })
-  } catch (error) {
-    showToast((error as Error).message || 'Ошибка сохранения zone.logic_profile', 'error')
-    return
-  }
+    try {
+      await api.automationConfigs.update('zone', payload.zone_id, 'zone.logic_profile', {
+        payload: profileToZoneLogicProfile(automationProfile.value),
+      })
+    } catch (error) {
+      showToast(
+        `Ошибка сохранения zone.logic_profile: ${(error as Error).message || 'неизвестная'}`,
+        'error',
+      )
+      return
+    }
 
-  try {
-    const bindings = assignmentsToApplyPayload(payload.zone_id, automationProfile.value.assignments)
-    await api.setupWizard.applyDeviceBindings(bindings)
-  } catch (error) {
-    showToast((error as Error).message || 'Ошибка применения привязок узлов', 'error')
-    return
-  }
+    try {
+      const bindings = assignmentsToApplyPayload(payload.zone_id, automationProfile.value.assignments)
+      await api.setupWizard.applyDeviceBindings(bindings)
+    } catch (error) {
+      showToast(
+        `Ошибка применения привязок узлов: ${(error as Error).message || 'неизвестная'}. ` +
+          'logic_profile сохранён — попробуйте «Запустить» ещё раз.',
+        'error',
+      )
+      return
+    }
 
-  try {
-    await launchMutation.mutateAsync(payload)
-    showToast('Цикл запущен', 'success')
-    router.visit(route('zones.show', { zone: payload.zone_id }))
-  } catch (error) {
-    showToast((error as Error).message || 'Ошибка запуска цикла', 'error')
+    try {
+      await launchMutation.mutateAsync(payload)
+      showToast('Цикл запущен', 'success')
+      try {
+        router.visit(route('zones.show', { zone: payload.zone_id }))
+      } catch {
+        router.visit(`/zones/${payload.zone_id}`)
+      }
+    } catch (error) {
+      showToast(
+        `Ошибка запуска цикла: ${(error as Error).message || 'неизвестная'}. ` +
+          'Конфиг и привязки уже сохранены — повторите «Запустить» после устранения причины.',
+        'error',
+      )
+    }
+  } finally {
+    submitting.value = false
   }
 }
-
-declare function route(name: string, params?: Record<string, unknown>): string
 </script>

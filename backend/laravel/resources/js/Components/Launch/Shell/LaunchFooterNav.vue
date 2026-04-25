@@ -30,10 +30,10 @@
         v-else
         variant="success"
         size="sm"
-        :disabled="!canLaunch"
+        :disabled="!canLaunch || submitting"
         @click="$emit('launch')"
       >
-        Запустить цикл
+        {{ submitting ? 'Запуск…' : 'Запустить цикл' }}
       </Button>
     </div>
   </footer>
@@ -49,6 +49,7 @@ const props = defineProps<{
   total: number
   completion: readonly StepCompletion[]
   canLaunch?: boolean
+  submitting?: boolean
 }>()
 
 defineEmits<{

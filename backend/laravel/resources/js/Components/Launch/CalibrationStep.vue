@@ -4,7 +4,7 @@
       v-if="zoneId"
       :zone-id="zoneId"
       :phase-targets="phaseTargets"
-      @updated="onAuthorityUpdated"
+      @updated="$emit('calibration-updated')"
     />
     <div
       v-else
@@ -17,30 +17,14 @@
 
 <script setup lang="ts">
 import CalibrationHub from '@/Components/Launch/Calibration/CalibrationHub.vue'
-import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 import type { RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 
-withDefaults(
-  defineProps<{
-    blockers?: LaunchFlowReadinessBlocker[]
-    warnings?: string[]
-    zoneId?: number
-    phaseTargets?: RecipePhasePidTargets | null
-  }>(),
-  {
-    blockers: () => [],
-    warnings: () => [],
-    zoneId: undefined,
-    phaseTargets: null,
-  },
-)
-
-const emit = defineEmits<{
-  (event: 'navigate', blocker: LaunchFlowReadinessBlocker): void
-  (event: 'calibration-updated'): void
+defineProps<{
+  zoneId?: number
+  phaseTargets?: RecipePhasePidTargets | null
 }>()
 
-function onAuthorityUpdated() {
-  emit('calibration-updated')
-}
+defineEmits<{
+  (event: 'calibration-updated'): void
+}>()
 </script>

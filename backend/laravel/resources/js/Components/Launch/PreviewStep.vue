@@ -206,6 +206,9 @@ interface Props {
   /** Имя/ревизия рецепта для Stat. */
   recipeName?: string | null
   recipeRevisionLabel?: string | null
+  /** Имя зоны и растения — чтобы не показывать «id 5». */
+  zoneName?: string | null
+  plantName?: string | null
   /** Manifest readiness — для показа blocker'ов из backend. */
   readinessBlockers?: readonly LaunchFlowReadinessBlocker[]
   readinessWarnings?: readonly string[]
@@ -221,6 +224,8 @@ const props = withDefaults(defineProps<Props>(), {
   currentRecipePhase: null,
   recipeName: null,
   recipeRevisionLabel: null,
+  zoneName: null,
+  plantName: null,
   readinessBlockers: () => [],
   readinessWarnings: () => [],
   ae3Online: false,
@@ -234,12 +239,14 @@ defineEmits<{
 
 const { showHints } = useLaunchPreferences()
 
-const zoneLabel = computed(
-  () => (props.payloadPreview.zone_id ? `id ${props.payloadPreview.zone_id}` : '—'),
-)
-const plantLabel = computed(
-  () => (props.payloadPreview.plant_id ? `id ${props.payloadPreview.plant_id}` : '—'),
-)
+const zoneLabel = computed(() => {
+  if (props.zoneName) return props.zoneName
+  return props.payloadPreview.zone_id ? `id ${props.payloadPreview.zone_id}` : '—'
+})
+const plantLabel = computed(() => {
+  if (props.plantName) return props.plantName
+  return props.payloadPreview.plant_id ? `id ${props.payloadPreview.plant_id}` : '—'
+})
 const recipeLabel = computed(() => {
   const name = props.recipeName
   const rev = props.recipeRevisionLabel
