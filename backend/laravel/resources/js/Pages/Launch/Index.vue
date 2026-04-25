@@ -88,6 +88,15 @@
         :payload-preview="state"
         :errors="errorList"
         :recipe-phases="recipePhases"
+        :automation-profile="automationProfile"
+        :available-nodes="availableNodesForPreview"
+        :current-recipe-phase="currentRecipePhase"
+        :recipe-name="recipeSummary?.name ?? null"
+        :recipe-revision-label="recipeSummary?.revisionLabel ?? null"
+        :readiness-blockers="manifest.readiness.blockers"
+        :readiness-warnings="manifest.readiness.warnings"
+        :ae3-online="ae3Online"
+        @launch="handleSubmit"
       >
         <template #diff-preview>
           <DiffPreview
@@ -149,6 +158,7 @@ import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useLaunchSteps } from '@/composables/useLaunchSteps'
+import { useLaunchPreviewContext } from '@/composables/useLaunchPreviewContext'
 
 const props = defineProps<{
   zoneId: number | null
@@ -222,6 +232,9 @@ void zoneNameById.value
 function onAutomationProfileUpdate(next: AutomationProfile) {
   automationProfile.value = next
 }
+
+const { availableNodes: availableNodesForPreview, ae3Online } =
+  useLaunchPreviewContext(zoneIdRef)
 
 const phaseTargetsForPid = computed(() =>
   resolveRecipePhasePidTargets(currentRecipePhase.value ?? null),
