@@ -1,95 +1,119 @@
 <template>
-  <div class="space-y-2">
-    <div class="flex items-center gap-3">
-      <label class="flex-1">
-        <span class="text-xs font-medium text-[color:var(--text-primary)]">Профиль автоматики</span>
-        <select
-          v-if="!loading"
-          class="input-select mt-1 w-full"
-          :value="selectedPreset?.id ?? ''"
-          :disabled="!canConfigure"
-          @change="onSelectChange"
-        >
-          <option value="">Настроить с нуля</option>
-          <optgroup v-if="systemPresets.length > 0" label="Системные">
-            <option
-              v-for="preset in systemPresets"
-              :key="preset.id"
-              :value="preset.id"
-            >
-              {{ preset.name }} — {{ correctionProfileLabel(preset.correction_profile) }} · {{ preset.irrigation_system_type }} · {{ Math.round(preset.config.irrigation.interval_sec / 60) }} мин
-            </option>
-          </optgroup>
-          <optgroup v-if="customPresets.length > 0" label="Мои профили">
-            <option
-              v-for="preset in customPresets"
-              :key="preset.id"
-              :value="preset.id"
-            >
-              {{ preset.name }}
-            </option>
-          </optgroup>
-        </select>
-        <div v-else class="mt-1 flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
-          <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[color:var(--accent-cyan)] border-t-transparent"></span>
-          Загрузка профилей...
-        </div>
-      </label>
-
-      <span
+  <div class="p-3 border border-brand bg-brand-soft rounded-md flex flex-col gap-2.5">
+    <div class="flex items-center gap-2.5 flex-wrap">
+      <Ic
+        name="bookmark"
+        class="text-brand shrink-0"
+      />
+      <span class="text-xs font-semibold text-brand-ink">Профиль автоматики</span>
+      <Chip
         v-if="selectedPreset && isModified"
-        class="mt-5 shrink-0 rounded-full bg-[color:var(--badge-warning-bg)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--badge-warning-text)]"
+        tone="warn"
       >
-        Изменено
-      </span>
+        изменено
+      </Chip>
     </div>
 
-    <!-- Описание и параметры выбранного пресета -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <select
+        v-if="!loading"
+        class="block min-w-[300px] flex-1 h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        :value="selectedPreset?.id ?? ''"
+        :disabled="!canConfigure"
+        @change="onSelectChange"
+      >
+        <option value="">— Настроить с нуля —</option>
+        <optgroup
+          v-if="systemPresets.length > 0"
+          label="Системные"
+        >
+          <option
+            v-for="preset in systemPresets"
+            :key="preset.id"
+            :value="preset.id"
+          >
+            {{ preset.name }} · {{ correctionProfileLabel(preset.correction_profile) }} · {{ Math.round(preset.config.irrigation.interval_sec / 60) }}мин
+          </option>
+        </optgroup>
+        <optgroup
+          v-if="customPresets.length > 0"
+          label="Мои профили"
+        >
+          <option
+            v-for="preset in customPresets"
+            :key="preset.id"
+            :value="preset.id"
+          >
+            {{ preset.name }}
+          </option>
+        </optgroup>
+      </select>
+      <div
+        v-else
+        class="flex items-center gap-2 text-xs text-[var(--text-muted)]"
+      >
+        <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+        Загрузка профилей...
+      </div>
+    </div>
+
     <div
       v-if="selectedPreset"
-      class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-2"
+      class="flex flex-col gap-2 px-2.5 py-2 bg-[var(--bg-surface)] border border-[var(--border-muted)] rounded-sm"
     >
       <p
         v-if="selectedPreset.description"
-        class="text-[11px] leading-relaxed text-[color:var(--text-muted)] whitespace-pre-line"
+        class="text-[11px] leading-relaxed text-[var(--text-muted)] whitespace-pre-line"
       >
         {{ selectedPreset.description }}
       </p>
 
       <div class="flex flex-wrap gap-1.5">
-        <span
+        <Chip
           v-if="selectedPreset.correction_profile"
-          class="rounded-full px-1.5 py-px text-[10px] font-medium"
-          :class="correctionProfileClass(selectedPreset.correction_profile)"
+          :tone="correctionProfileTone(selectedPreset.correction_profile)"
         >
           {{ correctionProfileLabel(selectedPreset.correction_profile) }}
-        </span>
-        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-          {{ selectedPreset.irrigation_system_type }}
-        </span>
-        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
+        </Chip>
+        <Chip tone="neutral">
+          <span class="font-mono">{{ selectedPreset.irrigation_system_type }}</span>
+        </Chip>
+        <Chip tone="neutral">
           {{ selectedPreset.tanks_count }} бака
-        </span>
-        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-          Полив: {{ Math.round(selectedPreset.config.irrigation.interval_sec / 60) }} мин / {{ selectedPreset.config.irrigation.duration_sec }} сек
-        </span>
-        <span class="rounded bg-[color:var(--bg-main)] px-1.5 py-px text-[10px] text-[color:var(--text-dim)]">
-          Коррекция при поливе: {{ selectedPreset.config.irrigation.correction_during_irrigation ? 'да' : 'нет' }}
-        </span>
+        </Chip>
+        <Chip tone="neutral">
+          Полив:
+          <span class="font-mono ml-1">
+            {{ Math.round(selectedPreset.config.irrigation.interval_sec / 60) }}м/{{ selectedPreset.config.irrigation.duration_sec }}с
+          </span>
+        </Chip>
+        <Chip tone="neutral">
+          Корр. при поливе: {{ selectedPreset.config.irrigation.correction_during_irrigation ? 'да' : 'нет' }}
+        </Chip>
       </div>
     </div>
 
-    <p v-else-if="!loading" class="text-[11px] text-[color:var(--text-dim)]">
+    <p
+      v-else-if="!loading"
+      class="text-[11px] text-[var(--text-dim)]"
+    >
       Ручная настройка — заполните параметры ниже вручную.
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Chip } from '@/Components/Shared/Primitives'
+import type { ChipTone } from '@/Components/Shared/Primitives/Chip.vue'
+import Ic from '@/Components/Icons/Ic.vue'
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
-import { useZoneAutomationPresets, applyPresetToWaterForm, isPresetModified } from '@/composables/useZoneAutomationPresets'
+import {
+  useZoneAutomationPresets,
+  applyPresetToWaterForm,
+  isPresetModified,
+} from '@/composables/useZoneAutomationPresets'
 
 const props = defineProps<{
   waterForm: WaterFormState
@@ -108,12 +132,6 @@ const { presets, loading, loadPresets } = useZoneAutomationPresets()
 
 const selectedPreset = ref<ZoneAutomationPreset | null>(null)
 
-/**
- * Маппинг waterForm.systemType → совместимые preset irrigation_system_type.
- * drip → drip_tape, drip_emitter
- * substrate_trays → dwc, ebb_flow, aeroponics
- * nft → nft
- */
 const compatibleIrrigationTypes = computed<string[]>(() => {
   const st = props.waterForm.systemType
   const map: Record<string, string[]> = {
@@ -124,16 +142,20 @@ const compatibleIrrigationTypes = computed<string[]>(() => {
   return map[st] ?? []
 })
 
-const filteredPresets = computed(() => {
-  return presets.value.filter(p => {
+const filteredPresets = computed(() =>
+  presets.value.filter((p) => {
     if (props.tanksCount !== undefined && p.tanks_count !== props.tanksCount) return false
-    if (compatibleIrrigationTypes.value.length > 0 && !compatibleIrrigationTypes.value.includes(p.irrigation_system_type)) return false
+    if (
+      compatibleIrrigationTypes.value.length > 0 &&
+      !compatibleIrrigationTypes.value.includes(p.irrigation_system_type)
+    )
+      return false
     return true
-  })
-})
+  }),
+)
 
-const systemPresets = computed(() => filteredPresets.value.filter(p => p.scope === 'system'))
-const customPresets = computed(() => filteredPresets.value.filter(p => p.scope === 'custom'))
+const systemPresets = computed(() => filteredPresets.value.filter((p) => p.scope === 'system'))
+const customPresets = computed(() => filteredPresets.value.filter((p) => p.scope === 'custom'))
 
 const isModified = computed(() => {
   if (!selectedPreset.value) return false
@@ -147,7 +169,7 @@ function onSelectChange(event: Event) {
     emit('presetCleared')
     return
   }
-  const preset = filteredPresets.value.find(p => p.id === Number(value))
+  const preset = filteredPresets.value.find((p) => p.id === Number(value))
   if (preset) {
     selectedPreset.value = preset
     const updated = applyPresetToWaterForm(preset, props.waterForm)
@@ -167,29 +189,37 @@ function correctionProfileLabel(profile: string | null): string {
   return labels[profile] ?? profile
 }
 
-function correctionProfileClass(profile: string): string {
-  const classes: Record<string, string> = {
-    safe: 'bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]',
-    balanced: 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]',
-    aggressive: 'bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]',
-    test: 'bg-[color:var(--badge-neutral-bg)] text-[color:var(--badge-neutral-text)]',
+function correctionProfileTone(profile: string): ChipTone {
+  const map: Record<string, ChipTone> = {
+    safe: 'growth',
+    balanced: 'brand',
+    aggressive: 'warn',
+    test: 'neutral',
   }
-  return classes[profile] ?? 'bg-[color:var(--badge-neutral-bg)] text-[color:var(--badge-neutral-text)]'
+  return map[profile] ?? 'neutral'
 }
 
 onMounted(() => {
   loadPresets()
 })
 
-watch(() => props.tanksCount, () => {
-  loadPresets()
-})
+watch(
+  () => props.tanksCount,
+  () => {
+    loadPresets()
+  },
+)
 
-watch(() => props.waterForm.systemType, () => {
-  // Сбросить выбранный пресет если он больше не совместим
-  if (selectedPreset.value && !filteredPresets.value.some(p => p.id === selectedPreset.value!.id)) {
-    selectedPreset.value = null
-    emit('presetCleared')
-  }
-})
+watch(
+  () => props.waterForm.systemType,
+  () => {
+    if (
+      selectedPreset.value &&
+      !filteredPresets.value.some((p) => p.id === selectedPreset.value!.id)
+    ) {
+      selectedPreset.value = null
+      emit('presetCleared')
+    }
+  },
+)
 </script>
