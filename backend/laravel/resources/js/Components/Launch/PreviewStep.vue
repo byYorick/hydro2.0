@@ -63,7 +63,7 @@
       </ShellCard>
     </div>
 
-    <aside class="flex flex-col gap-3">
+    <aside class="flex flex-col gap-3 lg:sticky lg:top-[108px] lg:self-start">
       <ShellCard title="Readiness">
         <div
           v-if="errors.length === 0"

@@ -43,6 +43,22 @@
           @preset-cleared="$emit('preset-cleared')"
         />
 
+        <CorrectionProfileChooser
+          v-if="currentSub === 'correction'"
+          v-model="correctionProfile"
+          :water-form="profile.waterForm"
+          @apply="onCorrectionPresetApply"
+        />
+
+        <DayNightStrip
+          v-if="currentSub === 'lighting'"
+          :schedule-start="profile.lightingForm.scheduleStart"
+          :schedule-end="profile.lightingForm.scheduleEnd"
+          :lux-day="profile.lightingForm.luxDay"
+          :lux-night="profile.lightingForm.luxNight"
+          :enabled="profile.lightingForm.enabled"
+        />
+
         <ZoneAutomationProfileSections
           :water-form="profile.waterForm"
           :lighting-form="profile.lightingForm"
@@ -139,6 +155,9 @@ import AutomationSidebar, {
 } from './AutomationSidebar.vue'
 import AutomationBreadcrumb from './AutomationBreadcrumb.vue'
 import RecipeBadge from './RecipeBadge.vue'
+import CorrectionProfileChooser from './CorrectionProfileChooser.vue'
+import type { CorrectionProfileKey } from './correctionPresets'
+import DayNightStrip from './DayNightStrip.vue'
 import Button from '@/Components/Button.vue'
 import Hint from '@/Components/Shared/Primitives/Hint.vue'
 import {
@@ -196,6 +215,11 @@ const emit = defineEmits<{
 
 const currentSub = ref<AutomationSubKey>('bindings')
 const blockersOpen = ref(false)
+const correctionProfile = ref<CorrectionProfileKey | null>(null)
+
+function onCorrectionPresetApply(patch: Partial<WaterFormState>): void {
+  emit('update:water-form', { ...props.profile.waterForm, ...patch })
+}
 
 const profileRef = computed(() => props.profile)
 const systemTypeLockedRef = computed(() => props.systemTypeLocked)

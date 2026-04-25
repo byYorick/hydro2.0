@@ -179,7 +179,7 @@
       </ShellCard>
     </div>
 
-    <aside class="flex flex-col gap-3">
+    <aside class="flex flex-col gap-3 lg:sticky lg:top-[108px] lg:self-start">
       <Hint :show="showHints">
         Целевые pH/EC, система выращивания и расписание берутся из <b>рецепта</b>.
         На шаге «Автоматика» они read-only — чтобы изменить, отредактируйте
