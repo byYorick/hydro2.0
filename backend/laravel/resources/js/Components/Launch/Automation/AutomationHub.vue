@@ -33,32 +33,6 @@
           :description="currentSubMeta.desc"
         />
 
-        <PresetSelector
-          v-if="currentSub === 'contour'"
-          :water-form="profile.waterForm"
-          :can-configure="true"
-          :tanks-count="profile.waterForm.tanksCount"
-          @update:water-form="onWaterFormUpdate"
-          @preset-applied="$emit('preset-applied', $event)"
-          @preset-cleared="$emit('preset-cleared')"
-        />
-
-        <CorrectionProfileChooser
-          v-if="currentSub === 'correction'"
-          v-model="correctionProfile"
-          :water-form="profile.waterForm"
-          @apply="onCorrectionPresetApply"
-        />
-
-        <DayNightStrip
-          v-if="currentSub === 'lighting'"
-          :schedule-start="profile.lightingForm.scheduleStart"
-          :schedule-end="profile.lightingForm.scheduleEnd"
-          :lux-day="profile.lightingForm.luxDay"
-          :lux-night="profile.lightingForm.luxNight"
-          :enabled="profile.lightingForm.enabled"
-        />
-
         <BindingsSubview
           v-if="currentSub === 'bindings'"
           :assignments="profile.assignments"
@@ -66,50 +40,38 @@
           @update:assignments="onAssignmentsUpdate"
         />
 
-        <ZoneAutomationProfileSections
-          v-if="currentSub !== 'bindings'"
+        <ContourSubview
+          v-else-if="currentSub === 'contour'"
           :water-form="profile.waterForm"
-          :lighting-form="profile.lightingForm"
-          :zone-climate-form="profile.zoneClimateForm"
-          :assignments="profile.assignments"
-          :current-recipe-phase="currentRecipePhase"
-          :zone-id="zoneId"
-          :available-nodes="availableNodes"
-          layout-mode="legacy"
-          :is-system-type-locked="systemTypeLocked"
-          :show-required-devices-section="false"
-          :show-water-contour-section="currentSub === 'contour'"
-          :show-irrigation-section="currentSub === 'irrigation'"
-          :show-solution-correction-section="currentSub === 'correction'"
-          :show-lighting-section="currentSub === 'lighting'"
-          :show-zone-climate-section="currentSub === 'climate'"
-          :show-lighting-enable-toggle="true"
-          :show-lighting-config-fields="true"
-          :show-zone-climate-enable-toggle="true"
-          :show-zone-climate-config-fields="true"
-          :show-node-bindings="true"
-          :show-bind-buttons="true"
-          :show-refresh-buttons="true"
-          :show-correction-calibration-stack="false"
-          :bind-disabled="bindingInProgress"
-          :binding-in-progress="bindingInProgress"
-          :refresh-disabled="refreshingNodes"
-          :refreshing-nodes="refreshingNodes"
-          :can-configure="true"
           @update:water-form="onWaterFormUpdate"
-          @update:lighting-form="onLightingFormUpdate"
-          @update:zone-climate-form="onZoneClimateFormUpdate"
-          @update:assignments="onAssignmentsUpdate"
-          @bind-devices="(r) => $emit('bind-devices', r)"
-          @refresh-nodes="$emit('refresh-nodes')"
+          @preset-applied="$emit('preset-applied', $event)"
+          @preset-cleared="$emit('preset-cleared')"
         />
 
-        <Hint
-          v-if="currentSub === 'correction' && showHints"
-        >
-          Полный стек калибровки (насосы / процесс / PID / автонастройка) — на следующем шаге
-          «Калибровка». Здесь только целевые значения и конфигурация коррекции.
-        </Hint>
+        <IrrigationSubview
+          v-else-if="currentSub === 'irrigation'"
+          :water-form="profile.waterForm"
+          @update:water-form="onWaterFormUpdate"
+        />
+
+        <CorrectionTargetsSubview
+          v-else-if="currentSub === 'correction'"
+          :water-form="profile.waterForm"
+          @update:water-form="onWaterFormUpdate"
+        />
+
+        <LightingSubview
+          v-else-if="currentSub === 'lighting'"
+          :lighting-form="profile.lightingForm"
+          @update:lighting-form="onLightingFormUpdate"
+        />
+
+        <ClimateSubview
+          v-else-if="currentSub === 'climate'"
+          :zone-climate-form="profile.zoneClimateForm"
+          :assignments="profile.assignments"
+          @update:zone-climate-form="onZoneClimateFormUpdate"
+        />
 
         <div
           class="flex gap-1.5 flex-wrap pt-2.5 border-t border-[var(--border-muted)]"
@@ -152,8 +114,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import PresetSelector from '@/Components/AutomationForms/PresetSelector.vue'
-import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import AutomationReadinessBar from './AutomationReadinessBar.vue'
 import AutomationBlockersDrawer from './AutomationBlockersDrawer.vue'
 import AutomationSidebar, {
@@ -163,17 +123,17 @@ import AutomationSidebar, {
 } from './AutomationSidebar.vue'
 import AutomationBreadcrumb from './AutomationBreadcrumb.vue'
 import RecipeBadge from './RecipeBadge.vue'
-import CorrectionProfileChooser from './CorrectionProfileChooser.vue'
-import type { CorrectionProfileKey } from './correctionPresets'
-import DayNightStrip from './DayNightStrip.vue'
 import BindingsSubview from './Subviews/BindingsSubview.vue'
+import ContourSubview from './Subviews/ContourSubview.vue'
+import IrrigationSubview from './Subviews/IrrigationSubview.vue'
+import CorrectionTargetsSubview from './Subviews/CorrectionTargetsSubview.vue'
+import LightingSubview from './Subviews/LightingSubview.vue'
+import ClimateSubview from './Subviews/ClimateSubview.vue'
 import Button from '@/Components/Button.vue'
-import Hint from '@/Components/Shared/Primitives/Hint.vue'
 import {
   useAutomationContracts,
   type AutomationContract,
 } from '@/composables/useAutomationContracts'
-import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { AutomationProfile } from '@/schemas/automationProfile'
 import type {
   LightingFormState,
@@ -224,11 +184,6 @@ const emit = defineEmits<{
 
 const currentSub = ref<AutomationSubKey>('bindings')
 const blockersOpen = ref(false)
-const correctionProfile = ref<CorrectionProfileKey | null>(null)
-
-function onCorrectionPresetApply(patch: Partial<WaterFormState>): void {
-  emit('update:water-form', { ...props.profile.waterForm, ...patch })
-}
 
 const profileRef = computed(() => props.profile)
 const systemTypeLockedRef = computed(() => props.systemTypeLocked)
@@ -237,8 +192,6 @@ const { contracts, summary, blockers } = useAutomationContracts({
   profile: profileRef,
   systemTypeLocked: systemTypeLockedRef,
 })
-
-const { showHints } = useLaunchPreferences()
 
 const navMap = computed<AutomationNavMap>(() => {
   const aggregate = (sub: AutomationSubKey): AutomationNavInfo => {

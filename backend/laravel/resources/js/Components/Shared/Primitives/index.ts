@@ -13,6 +13,7 @@ export { default as Chip } from './Chip.vue'
 export { default as Stat } from './Stat.vue'
 export { default as Hint } from './Hint.vue'
 export { default as KV } from './KV.vue'
+export { default as ToggleField } from './ToggleField.vue'
 
 export type { SelectOption } from './Select.vue'
 export type { ChipTone } from './Chip.vue'
