@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex items-center gap-0 px-5 py-3 border-b border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-x-auto"
+    class="flex items-center gap-0 px-5 py-3 border-b border-[var(--border-muted)] bg-[var(--bg-surface-strong)] overflow-x-auto"
   >
     <template
       v-for="(step, i) in steps"

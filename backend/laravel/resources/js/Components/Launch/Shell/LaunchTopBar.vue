@@ -1,6 +1,6 @@
 <template>
   <header
-    class="relative flex items-center justify-between gap-5 px-5 h-12 border-b border-[var(--border-muted)] bg-[var(--bg-surface)] sticky top-0 z-20"
+    class="relative flex items-center justify-between gap-5 px-5 h-12 border-b border-[var(--border-muted)] bg-[var(--bg-surface-strong)] backdrop-blur-sm sticky top-0 z-20"
   >
     <div class="flex items-center gap-5">
       <div class="flex items-center gap-2 text-sm">

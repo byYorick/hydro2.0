@@ -203,7 +203,7 @@
       </ShellCard>
     </div>
 
-    <aside class="flex flex-col gap-3 lg:sticky lg:top-[108px] lg:self-start">
+    <aside class="flex flex-col gap-3 lg:sticky lg:top-[108px] lg:self-start lg:z-10 lg:max-h-[calc(100vh-148px)] lg:overflow-y-auto">
       <Hint :show="showHints">
         Теплица — физическая группа зон с общим MQTT-бриджем и пулом ESP32-узлов.
         Зона — минимальная единица автоматизации: свой grow-cycle, рецепт, контуры

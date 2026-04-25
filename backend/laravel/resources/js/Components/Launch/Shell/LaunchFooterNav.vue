@@ -1,6 +1,6 @@
 <template>
   <footer
-    class="sticky bottom-0 flex items-center justify-between gap-3 px-5 py-2.5 border-t border-[var(--border-muted)] bg-[var(--bg-surface)] z-10"
+    class="sticky bottom-0 flex items-center justify-between gap-3 px-5 py-2.5 border-t border-[var(--border-muted)] bg-[var(--bg-surface-strong)] backdrop-blur-sm z-10"
   >
     <div class="flex items-center gap-1.5">
       <Button

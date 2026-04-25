@@ -1,6 +1,6 @@
 <template>
   <aside
-    class="flex flex-col gap-3.5 p-2.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] w-full lg:w-60 lg:min-w-[240px] shrink-0 lg:sticky lg:top-[108px] lg:self-start lg:max-h-[calc(100vh-148px)] lg:overflow-y-auto"
+    class="flex flex-col gap-3.5 p-2.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] w-full lg:w-60 lg:min-w-[240px] shrink-0 lg:sticky lg:top-[108px] lg:self-start lg:max-h-[calc(100vh-148px)] lg:overflow-y-auto lg:z-10"
   >
     <div
       v-for="group in groups"

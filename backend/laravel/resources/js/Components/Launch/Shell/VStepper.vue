@@ -1,6 +1,6 @@
 <template>
   <aside
-    class="w-60 min-w-[240px] border-r border-[var(--border-muted)] bg-[var(--bg-surface)] p-3 flex flex-col gap-2.5"
+    class="w-60 min-w-[240px] border-r border-[var(--border-muted)] bg-[var(--bg-surface-strong)] p-3 flex flex-col gap-2.5"
   >
     <div
       class="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-dim)] px-1.5"
