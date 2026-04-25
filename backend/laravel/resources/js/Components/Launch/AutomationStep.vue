@@ -1,43 +1,52 @@
 <template>
-    <section class="launch-step">
-        <header class="launch-step__header">
-            <h3 class="launch-step__title">Автоматика зоны</h3>
-            <p class="launch-step__desc">
-                Конфигурация зоны, привязки узлов к ролям и параметры подсистем. При запуске цикла
-                эти настройки будут сохранены как <code>zone.logic_profile</code> + channel bindings.
-            </p>
-        </header>
+  <section class="launch-step">
+    <header class="launch-step__header">
+      <h3 class="launch-step__title">
+        Автоматика зоны
+      </h3>
+      <p class="launch-step__desc">
+        Конфигурация зоны, привязки узлов к ролям и параметры подсистем. При запуске цикла
+        эти настройки будут сохранены как <code>zone.logic_profile</code> + channel bindings.
+      </p>
+    </header>
 
-        <div v-if="!zoneId" class="launch-step__empty">
-            Автоматика становится доступна после выбора зоны.
-        </div>
+    <div
+      v-if="!zoneId"
+      class="launch-step__empty"
+    >
+      Автоматика становится доступна после выбора зоны.
+    </div>
 
-        <template v-else>
-            <div v-if="loading" class="launch-step__skeleton">
-                Загрузка конфигурации зоны…
-            </div>
+    <template v-else>
+      <div
+        v-if="loading"
+        class="launch-step__skeleton"
+      >
+        Загрузка конфигурации зоны…
+      </div>
 
-            <AutomationHub
-                v-else
-                :zone-id="zoneId"
-                :profile="state"
-                :current-recipe-phase="currentRecipePhase"
-                :system-type-locked="isSystemTypeLocked"
-                :available-nodes="availableNodes"
-                :refreshing-nodes="refreshingNodes"
-                :binding-in-progress="bindingInProgress"
-                @update:water-form="(v) => (state.waterForm = v)"
-                @update:lighting-form="(v) => (state.lightingForm = v)"
-                @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
-                @update:assignments="(v) => (state.assignments = v)"
-                @bind-devices="onBindDevices"
-                @refresh-nodes="onRefreshNodes"
-                @refresh="reloadAll"
-                @preset-applied="onPresetApplied"
-                @preset-cleared="onPresetCleared"
-            />
-        </template>
-    </section>
+      <AutomationHub
+        v-else
+        :zone-id="zoneId"
+        :profile="state"
+        :current-recipe-phase="currentRecipePhase"
+        :system-type-locked="isSystemTypeLocked"
+        :available-nodes="availableNodes"
+        :refreshing-nodes="refreshingNodes"
+        :binding-in-progress="bindingInProgress"
+        :recipe-summary="recipeSummary"
+        @update:water-form="(v) => (state.waterForm = v)"
+        @update:lighting-form="(v) => (state.lightingForm = v)"
+        @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
+        @update:assignments="(v) => (state.assignments = v)"
+        @bind-devices="onBindDevices"
+        @refresh-nodes="onRefreshNodes"
+        @refresh="reloadAll"
+        @preset-applied="onPresetApplied"
+        @preset-cleared="onPresetCleared"
+      />
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -58,14 +67,24 @@ import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 
+interface RecipeSummary {
+    name?: string | null;
+    revisionLabel?: string | null;
+    systemType?: string | null;
+    targetPh?: number | null;
+    targetEc?: number | null;
+}
+
 interface Props {
     zoneId?: number;
     currentRecipePhase?: unknown;
+    recipeSummary?: RecipeSummary | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
     zoneId: undefined,
     currentRecipePhase: null,
+    recipeSummary: null,
 });
 
 const emit = defineEmits<{
