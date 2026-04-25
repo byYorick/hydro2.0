@@ -1,50 +1,81 @@
 <template>
-    <Teleport to="body">
-        <transition name="cal-drawer">
-            <div v-if="open" class="cal-drawer-overlay" @click.self="$emit('close')">
-                <aside class="cal-drawer" role="dialog" aria-modal="true">
-                    <header class="cal-drawer__header">
-                        <div>
-                            <div class="cal-drawer__title">Детали блокеров</div>
-                            <div class="cal-drawer__subtitle">
-                                {{ blockers.length }} контрактов требуют действия
-                            </div>
-                        </div>
-                        <button type="button" class="cal-drawer__close" @click="$emit('close')">×</button>
-                    </header>
-
-                    <div class="cal-drawer__body">
-                        <div v-if="blockers.length === 0" class="cal-drawer__empty">
-                            Активных блокеров нет — все обязательные контракты закрыты.
-                        </div>
-
-                        <ul v-else class="cal-drawer__list">
-                            <li v-for="contract in blockers" :key="contract.id" class="cal-drawer__item">
-                                <div class="cal-drawer__item-head">
-                                    <span class="cal-drawer__item-tag">
-                                        {{ contract.subsystem }} · {{ contract.component }}
-                                    </span>
-                                    <span class="cal-drawer__item-status">блокер</span>
-                                </div>
-                                <div class="cal-drawer__item-title">{{ contract.title }}</div>
-                                <div v-if="contract.description" class="cal-drawer__item-desc">
-                                    {{ contract.description }}
-                                </div>
-                                <button
-                                    v-if="contract.action"
-                                    type="button"
-                                    class="cal-drawer__item-btn"
-                                    @click="$emit('navigate', contract)"
-                                >
-                                    {{ contract.action.label }} →
-                                </button>
-                            </li>
-                        </ul>
-                    </div>
-                </aside>
+  <Teleport to="body">
+    <transition name="cal-drawer">
+      <div
+        v-if="open"
+        class="cal-drawer-overlay"
+        @click.self="$emit('close')"
+      >
+        <aside
+          class="cal-drawer"
+          role="dialog"
+          aria-modal="true"
+        >
+          <header class="cal-drawer__header">
+            <div>
+              <div class="cal-drawer__title">
+                Детали блокеров
+              </div>
+              <div class="cal-drawer__subtitle">
+                {{ blockers.length }} контрактов требуют действия
+              </div>
             </div>
-        </transition>
-    </Teleport>
+            <button
+              type="button"
+              class="cal-drawer__close"
+              @click="$emit('close')"
+            >
+              ×
+            </button>
+          </header>
+
+          <div class="cal-drawer__body">
+            <div
+              v-if="blockers.length === 0"
+              class="cal-drawer__empty"
+            >
+              Активных блокеров нет — все обязательные контракты закрыты.
+            </div>
+
+            <ul
+              v-else
+              class="cal-drawer__list"
+            >
+              <li
+                v-for="contract in blockers"
+                :key="contract.id"
+                class="cal-drawer__item"
+              >
+                <div class="cal-drawer__item-head">
+                  <span class="cal-drawer__item-tag">
+                    {{ contract.subsystem }} · {{ contract.component }}
+                  </span>
+                  <span class="cal-drawer__item-status">блокер</span>
+                </div>
+                <div class="cal-drawer__item-title">
+                  {{ contract.title }}
+                </div>
+                <div
+                  v-if="contract.description"
+                  class="cal-drawer__item-desc"
+                >
+                  {{ contract.description }}
+                </div>
+                <button
+                  v-if="contract.action"
+                  type="button"
+                  class="cal-drawer__item-btn"
+                  @click="$emit('navigate', contract)"
+                >
+                  {{ contract.action.label }} →
+                </button>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

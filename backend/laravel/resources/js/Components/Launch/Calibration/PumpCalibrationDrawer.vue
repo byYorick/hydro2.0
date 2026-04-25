@@ -1,366 +1,443 @@
 <template>
-    <Teleport to="body">
-        <transition name="cal-drawer">
-            <div v-if="show" class="pcd-overlay" @click.self="onClose">
-                <aside class="pcd" role="dialog" aria-modal="true">
-                    <header class="pcd__header">
-                        <div>
-                            <div class="pcd__title">Калибровка насоса</div>
-                            <div class="pcd__breadcrumb">
-                                / зона#{{ zoneId }} / насос / {{ currentComponent }}
-                            </div>
-                        </div>
-                        <div class="pcd__header-badges">
-                            <span v-if="dirtyBadge" class="pcd__badge">{{ dirtyBadge }}</span>
-                            <button type="button" class="pcd__close" @click="onClose">×</button>
-                        </div>
-                    </header>
-
-                    <div class="pcd__content">
-                        <aside class="pcd__nav">
-                            <div class="pcd__nav-label">этапы</div>
-                            <ol class="pcd__steps">
-                                <li
-                                    v-for="(step, idx) in steps"
-                                    :key="step.id"
-                                    class="pcd__step"
-                                    :class="{
-                                        'pcd__step--active': currentStep === step.id,
-                                        'pcd__step--done': isStepDone(step.id),
-                                    }"
-                                >
-                                    <span class="pcd__step-icon">
-                                        {{ isStepDone(step.id) ? '✓' : idx + 1 }}
-                                    </span>
-                                    <span class="pcd__step-body">
-                                        <span class="pcd__step-title">{{ step.title }}</span>
-                                        <span class="pcd__step-desc">{{ step.desc }}</span>
-                                    </span>
-                                </li>
-                            </ol>
-
-                            <div class="pcd__nav-label">контекст</div>
-                            <div class="pcd__context">
-                                <div class="pcd__context-title">
-                                    {{ isPhComponent ? 'Контур дозирования pH' : 'Контур дозирования EC' }}
-                                    <span class="pcd__context-meta">
-                                        {{ contextDone }} / {{ contextTotal }}
-                                    </span>
-                                </div>
-                                <div class="pcd__context-pills">
-                                    <span
-                                        v-for="p in contextPills"
-                                        :key="p.component"
-                                        class="pcd__pill"
-                                        :class="{
-                                            'pcd__pill--done': p.done,
-                                            'pcd__pill--current': p.component === form.component,
-                                        }"
-                                    >
-                                        <span class="pcd__pill-dot" />
-                                        {{ p.label }}<span v-if="p.component === form.component"> · текущий</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </aside>
-
-                        <section class="pcd__main">
-                            <!-- STEP 1: SELECT -->
-                            <div v-if="currentStep === 'select'" class="pcd__step-panel">
-                                <div class="pcd__panel-header">
-                                    <div>
-                                        <div class="pcd__panel-num">1.</div>
-                                        <div class="pcd__panel-title">Выбор насоса</div>
-                                        <div class="pcd__panel-desc">
-                                            Компонент, канал и длительность тестового запуска.
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="pcd__grid">
-                                    <label class="pcd__field">
-                                        <span>Компонент</span>
-                                        <select v-model="form.component" class="pcd__input">
-                                            <option
-                                                v-for="opt in componentOptions"
-                                                :key="opt.value"
-                                                :value="opt.value"
-                                            >
-                                                {{ opt.label }}
-                                            </option>
-                                        </select>
-                                    </label>
-                                    <label class="pcd__field">
-                                        <span>Канал насоса</span>
-                                        <select v-model.number="form.node_channel_id" class="pcd__input">
-                                            <option :value="null" disabled>Выберите канал…</option>
-                                            <option
-                                                v-for="ch in pumpChannels"
-                                                :key="ch.id"
-                                                :value="ch.id"
-                                            >
-                                                {{ ch.label }}
-                                            </option>
-                                        </select>
-                                    </label>
-                                    <label class="pcd__field">
-                                        <span>Длительность (сек)</span>
-                                        <input
-                                            v-model.number="form.duration_sec"
-                                            type="number"
-                                            min="1"
-                                            max="60"
-                                            class="pcd__input"
-                                        />
-                                    </label>
-                                </div>
-
-                                <div class="pcd__panel-footer">
-                                    <button type="button" class="pcd__btn pcd__btn--ghost" @click="onClose">
-                                        Отмена
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="pcd__btn pcd__btn--primary"
-                                        :disabled="!canRun"
-                                        @click="goToRun"
-                                    >
-                                        Далее →
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- STEP 2: RUN + MEASURE -->
-                            <div v-if="currentStep === 'measure'" class="pcd__step-panel">
-                                <div class="pcd__panel-header">
-                                    <div>
-                                        <div class="pcd__panel-num">2.</div>
-                                        <div class="pcd__panel-title">Запуск и замер</div>
-                                    </div>
-                                    <div v-if="runToken" class="pcd__panel-badge">
-                                        токен запуска {{ runToken.slice(0, 8) }}
-                                    </div>
-                                </div>
-
-                                <div class="pcd__run-block">
-                                    <div class="pcd__run-head">Тестовый запуск</div>
-                                    <div class="pcd__run-actions">
-                                        <button
-                                            type="button"
-                                            class="pcd__btn pcd__btn--primary"
-                                            :disabled="loadingRun"
-                                            @click="runCalibration"
-                                        >
-                                            {{ loadingRun ? '▶ Запуск…' : '▶ Запустить калибровку' }}
-                                        </button>
-                                        <span v-if="runRecentAgo" class="pcd__run-ago">
-                                            завершён {{ runRecentAgo }} назад
-                                        </span>
-                                    </div>
-                                    <div class="pcd__run-params">
-                                        {{ form.duration_sec }} сек · {{ form.component.toUpperCase() }} · ch{{ form.node_channel_id }}
-                                    </div>
-                                </div>
-
-                                <div class="pcd__measure-block">
-                                    <div class="pcd__measure-head">
-                                        <span>Результат замера</span>
-                                        <span v-if="!form.actual_ml" class="pcd__measure-hint">
-                                            фактический объём обязателен
-                                        </span>
-                                    </div>
-                                    <div class="pcd__grid pcd__grid--compact">
-                                        <label class="pcd__field">
-                                            <span>Фактический объём *</span>
-                                            <div class="pcd__input-with-suffix">
-                                                <input
-                                                    v-model.number="form.actual_ml"
-                                                    type="number"
-                                                    step="0.1"
-                                                    min="0"
-                                                    class="pcd__input"
-                                                />
-                                                <span class="pcd__input-suffix">мл</span>
-                                            </div>
-                                        </label>
-                                        <label class="pcd__field">
-                                            <span>Температура (опц.)</span>
-                                            <div class="pcd__input-with-suffix">
-                                                <input
-                                                    v-model.number="form.temperature_c"
-                                                    type="number"
-                                                    step="0.1"
-                                                    class="pcd__input"
-                                                />
-                                                <span class="pcd__input-suffix">°C</span>
-                                            </div>
-                                        </label>
-                                        <label class="pcd__field">
-                                            <span>Объём теста (для k)</span>
-                                            <div class="pcd__input-with-suffix">
-                                                <input
-                                                    v-model.number="form.test_volume_l"
-                                                    type="number"
-                                                    step="0.1"
-                                                    min="0"
-                                                    class="pcd__input"
-                                                />
-                                                <span class="pcd__input-suffix">л</span>
-                                            </div>
-                                        </label>
-                                        <label class="pcd__field">
-                                            <span>EC до дозы</span>
-                                            <div class="pcd__input-with-suffix">
-                                                <input
-                                                    v-model.number="form.ec_before_ms"
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    class="pcd__input"
-                                                />
-                                                <span class="pcd__input-suffix">mS/cm</span>
-                                            </div>
-                                        </label>
-                                        <label class="pcd__field">
-                                            <span>EC после дозы</span>
-                                            <div class="pcd__input-with-suffix">
-                                                <input
-                                                    v-model.number="form.ec_after_ms"
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    class="pcd__input"
-                                                />
-                                                <span class="pcd__input-suffix">mS/cm</span>
-                                            </div>
-                                        </label>
-                                    </div>
-
-                                    <div v-if="previewVisible" class="pcd__preview">
-                                        <div>
-                                            <span>мл/сек</span>
-                                            <strong>{{ formatFloat(previewMlPerSec, 3) }}</strong>
-                                        </div>
-                                        <div v-if="previewDeltaEc !== null">
-                                            <span>ΔEC</span>
-                                            <strong>{{ (previewDeltaEc >= 0 ? '+' : '') + formatFloat(previewDeltaEc, 3) }}</strong>
-                                        </div>
-                                        <div v-if="previewK !== null">
-                                            <span>оценка K</span>
-                                            <strong>{{ formatFloat(previewK, 6) }}</strong>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Индикатор режима сохранения (до save) -->
-                                <div
-                                    v-if="canSave && !savedForCurrent"
-                                    class="pcd__save-mode"
-                                    :class="{ 'pcd__save-mode--manual': !runToken }"
-                                >
-                                    <span v-if="runToken">
-                                        ✓ Готов к сохранению · токен запуска {{ runToken.slice(0, 8) }}
-                                    </span>
-                                    <span v-else>
-                                        ⚠ Запуск не выполнен — калибровка сохранится в режиме <strong>ручного переопределения</strong>.
-                                    </span>
-                                </div>
-
-                                <!-- После сохранения: карточка «следующий» -->
-                                <div
-                                    v-if="savedForCurrent && nextUncalibrated"
-                                    class="pcd__next-card"
-                                >
-                                    <div class="pcd__next-card__label">
-                                        ✓ {{ form.component.toUpperCase() }} сохранён · следующий некалиброванный
-                                    </div>
-                                    <div class="pcd__next-card__body">
-                                        <div>
-                                            <div class="pcd__next-card__title">{{ nextUncalibrated.label }}</div>
-                                            <div class="pcd__next-card__sub">
-                                                {{ nextUncalibrated.required ? 'обязательный' : 'опциональный' }}
-                                                · {{ nextUncalibrated.doneInPath }}/{{ nextUncalibrated.pathTotal }} в контуре {{ nextUncalibrated.group === 'ec' ? 'EC' : 'pH' }}
-                                            </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="pcd__btn pcd__btn--primary"
-                                            @click="goToNext"
-                                        >
-                                            Продолжить с {{ nextUncalibrated.label }} →
-                                        </button>
-                                    </div>
-                                </div>
-                                <div
-                                    v-else-if="savedForCurrent && !nextUncalibrated"
-                                    class="pcd__next-card pcd__next-card--done"
-                                >
-                                    <div class="pcd__next-card__label">✓ готово</div>
-                                    <div class="pcd__next-card__body">
-                                        <div>
-                                            <div class="pcd__next-card__title">Все доступные насосы откалиброваны</div>
-                                            <div class="pcd__next-card__sub">
-                                                Остались только узлы без привязанного канала или опциональные.
-                                            </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="pcd__btn pcd__btn--ghost"
-                                            @click="onClose"
-                                        >
-                                            Закрыть
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Footer (common for measure step) -->
-                            <div v-if="currentStep === 'measure'" class="pcd__panel-footer">
-                                <button type="button" class="pcd__btn pcd__btn--ghost" @click="currentStep = 'select'">
-                                    ← к выбору
-                                </button>
-                                <div class="pcd__panel-footer-right">
-                                    <button
-                                        type="button"
-                                        class="pcd__btn pcd__btn--ghost"
-                                        :disabled="loadingRun"
-                                        @click="runCalibration"
-                                    >
-                                        {{ runToken ? 'повторить запуск' : '▶ запустить' }}
-                                    </button>
-                                    <button
-                                        v-if="!savedForCurrent"
-                                        type="button"
-                                        class="pcd__btn pcd__btn--primary"
-                                        :disabled="loadingSave || !canSave"
-                                        @click="saveCalibration"
-                                    >
-                                        {{ loadingSave ? 'Сохранение…' : 'Сохранить' }}
-                                    </button>
-                                    <button
-                                        v-else-if="nextUncalibrated"
-                                        type="button"
-                                        class="pcd__btn pcd__btn--primary"
-                                        @click="goToNext"
-                                    >
-                                        К {{ nextUncalibrated.label }} →
-                                    </button>
-                                    <button
-                                        v-else
-                                        type="button"
-                                        class="pcd__btn pcd__btn--primary"
-                                        @click="onClose"
-                                    >
-                                        Закрыть
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
-                    </div>
-                </aside>
+  <Teleport to="body">
+    <transition name="cal-drawer">
+      <div
+        v-if="show"
+        class="pcd-overlay"
+        @click.self="onClose"
+      >
+        <aside
+          class="pcd"
+          role="dialog"
+          aria-modal="true"
+        >
+          <header class="pcd__header">
+            <div>
+              <div class="pcd__title">
+                Калибровка насоса
+              </div>
+              <div class="pcd__breadcrumb">
+                / зона#{{ zoneId }} / насос / {{ currentComponent }}
+              </div>
             </div>
-        </transition>
-    </Teleport>
+            <div class="pcd__header-badges">
+              <span
+                v-if="dirtyBadge"
+                class="pcd__badge"
+              >{{ dirtyBadge }}</span>
+              <button
+                type="button"
+                class="pcd__close"
+                @click="onClose"
+              >
+                ×
+              </button>
+            </div>
+          </header>
+
+          <div class="pcd__content">
+            <aside class="pcd__nav">
+              <div class="pcd__nav-label">
+                этапы
+              </div>
+              <ol class="pcd__steps">
+                <li
+                  v-for="(step, idx) in steps"
+                  :key="step.id"
+                  class="pcd__step"
+                  :class="{
+                    'pcd__step--active': currentStep === step.id,
+                    'pcd__step--done': isStepDone(step.id),
+                  }"
+                >
+                  <span class="pcd__step-icon">
+                    {{ isStepDone(step.id) ? '✓' : idx + 1 }}
+                  </span>
+                  <span class="pcd__step-body">
+                    <span class="pcd__step-title">{{ step.title }}</span>
+                    <span class="pcd__step-desc">{{ step.desc }}</span>
+                  </span>
+                </li>
+              </ol>
+
+              <div class="pcd__nav-label">
+                контекст
+              </div>
+              <div class="pcd__context">
+                <div class="pcd__context-title">
+                  {{ isPhComponent ? 'Контур дозирования pH' : 'Контур дозирования EC' }}
+                  <span class="pcd__context-meta">
+                    {{ contextDone }} / {{ contextTotal }}
+                  </span>
+                </div>
+                <div class="pcd__context-pills">
+                  <span
+                    v-for="p in contextPills"
+                    :key="p.component"
+                    class="pcd__pill"
+                    :class="{
+                      'pcd__pill--done': p.done,
+                      'pcd__pill--current': p.component === form.component,
+                    }"
+                  >
+                    <span class="pcd__pill-dot"></span>
+                    {{ p.label }}<span v-if="p.component === form.component"> · текущий</span>
+                  </span>
+                </div>
+              </div>
+            </aside>
+
+            <section class="pcd__main">
+              <!-- STEP 1: SELECT -->
+              <div
+                v-if="currentStep === 'select'"
+                class="pcd__step-panel"
+              >
+                <div class="pcd__panel-header">
+                  <div>
+                    <div class="pcd__panel-num">
+                      1.
+                    </div>
+                    <div class="pcd__panel-title">
+                      Выбор насоса
+                    </div>
+                    <div class="pcd__panel-desc">
+                      Компонент, канал и длительность тестового запуска.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pcd__grid">
+                  <label class="pcd__field">
+                    <span>Компонент</span>
+                    <select
+                      v-model="form.component"
+                      class="pcd__input"
+                    >
+                      <option
+                        v-for="opt in componentOptions"
+                        :key="opt.value"
+                        :value="opt.value"
+                      >
+                        {{ opt.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="pcd__field">
+                    <span>Канал насоса</span>
+                    <select
+                      v-model.number="form.node_channel_id"
+                      class="pcd__input"
+                    >
+                      <option
+                        :value="null"
+                        disabled
+                      >Выберите канал…</option>
+                      <option
+                        v-for="ch in pumpChannels"
+                        :key="ch.id"
+                        :value="ch.id"
+                      >
+                        {{ ch.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="pcd__field">
+                    <span>Длительность (сек)</span>
+                    <input
+                      v-model.number="form.duration_sec"
+                      type="number"
+                      min="1"
+                      max="60"
+                      class="pcd__input"
+                    />
+                  </label>
+                </div>
+
+                <div class="pcd__panel-footer">
+                  <button
+                    type="button"
+                    class="pcd__btn pcd__btn--ghost"
+                    @click="onClose"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    class="pcd__btn pcd__btn--primary"
+                    :disabled="!canRun"
+                    @click="goToRun"
+                  >
+                    Далее →
+                  </button>
+                </div>
+              </div>
+
+              <!-- STEP 2: RUN + MEASURE -->
+              <div
+                v-if="currentStep === 'measure'"
+                class="pcd__step-panel"
+              >
+                <div class="pcd__panel-header">
+                  <div>
+                    <div class="pcd__panel-num">
+                      2.
+                    </div>
+                    <div class="pcd__panel-title">
+                      Запуск и замер
+                    </div>
+                  </div>
+                  <div
+                    v-if="runToken"
+                    class="pcd__panel-badge"
+                  >
+                    токен запуска {{ runToken.slice(0, 8) }}
+                  </div>
+                </div>
+
+                <div class="pcd__run-block">
+                  <div class="pcd__run-head">
+                    Тестовый запуск
+                  </div>
+                  <div class="pcd__run-actions">
+                    <button
+                      type="button"
+                      class="pcd__btn pcd__btn--primary"
+                      :disabled="loadingRun"
+                      @click="runCalibration"
+                    >
+                      {{ loadingRun ? '▶ Запуск…' : '▶ Запустить калибровку' }}
+                    </button>
+                    <span
+                      v-if="runRecentAgo"
+                      class="pcd__run-ago"
+                    >
+                      завершён {{ runRecentAgo }} назад
+                    </span>
+                  </div>
+                  <div class="pcd__run-params">
+                    {{ form.duration_sec }} сек · {{ form.component.toUpperCase() }} · ch{{ form.node_channel_id }}
+                  </div>
+                </div>
+
+                <div class="pcd__measure-block">
+                  <div class="pcd__measure-head">
+                    <span>Результат замера</span>
+                    <span
+                      v-if="!form.actual_ml"
+                      class="pcd__measure-hint"
+                    >
+                      фактический объём обязателен
+                    </span>
+                  </div>
+                  <div class="pcd__grid pcd__grid--compact">
+                    <label class="pcd__field">
+                      <span>Фактический объём *</span>
+                      <div class="pcd__input-with-suffix">
+                        <input
+                          v-model.number="form.actual_ml"
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          class="pcd__input"
+                        />
+                        <span class="pcd__input-suffix">мл</span>
+                      </div>
+                    </label>
+                    <label class="pcd__field">
+                      <span>Температура (опц.)</span>
+                      <div class="pcd__input-with-suffix">
+                        <input
+                          v-model.number="form.temperature_c"
+                          type="number"
+                          step="0.1"
+                          class="pcd__input"
+                        />
+                        <span class="pcd__input-suffix">°C</span>
+                      </div>
+                    </label>
+                    <label class="pcd__field">
+                      <span>Объём теста (для k)</span>
+                      <div class="pcd__input-with-suffix">
+                        <input
+                          v-model.number="form.test_volume_l"
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          class="pcd__input"
+                        />
+                        <span class="pcd__input-suffix">л</span>
+                      </div>
+                    </label>
+                    <label class="pcd__field">
+                      <span>EC до дозы</span>
+                      <div class="pcd__input-with-suffix">
+                        <input
+                          v-model.number="form.ec_before_ms"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          class="pcd__input"
+                        />
+                        <span class="pcd__input-suffix">mS/cm</span>
+                      </div>
+                    </label>
+                    <label class="pcd__field">
+                      <span>EC после дозы</span>
+                      <div class="pcd__input-with-suffix">
+                        <input
+                          v-model.number="form.ec_after_ms"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          class="pcd__input"
+                        />
+                        <span class="pcd__input-suffix">mS/cm</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div
+                    v-if="previewVisible"
+                    class="pcd__preview"
+                  >
+                    <div>
+                      <span>мл/сек</span>
+                      <strong>{{ formatFloat(previewMlPerSec, 3) }}</strong>
+                    </div>
+                    <div v-if="previewDeltaEc !== null">
+                      <span>ΔEC</span>
+                      <strong>{{ (previewDeltaEc >= 0 ? '+' : '') + formatFloat(previewDeltaEc, 3) }}</strong>
+                    </div>
+                    <div v-if="previewK !== null">
+                      <span>оценка K</span>
+                      <strong>{{ formatFloat(previewK, 6) }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Индикатор режима сохранения (до save) -->
+                <div
+                  v-if="canSave && !savedForCurrent"
+                  class="pcd__save-mode"
+                  :class="{ 'pcd__save-mode--manual': !runToken }"
+                >
+                  <span v-if="runToken">
+                    ✓ Готов к сохранению · токен запуска {{ runToken.slice(0, 8) }}
+                  </span>
+                  <span v-else>
+                    ⚠ Запуск не выполнен — калибровка сохранится в режиме <strong>ручного переопределения</strong>.
+                  </span>
+                </div>
+
+                <!-- После сохранения: карточка «следующий» -->
+                <div
+                  v-if="savedForCurrent && nextUncalibrated"
+                  class="pcd__next-card"
+                >
+                  <div class="pcd__next-card__label">
+                    ✓ {{ form.component.toUpperCase() }} сохранён · следующий некалиброванный
+                  </div>
+                  <div class="pcd__next-card__body">
+                    <div>
+                      <div class="pcd__next-card__title">
+                        {{ nextUncalibrated.label }}
+                      </div>
+                      <div class="pcd__next-card__sub">
+                        {{ nextUncalibrated.required ? 'обязательный' : 'опциональный' }}
+                        · {{ nextUncalibrated.doneInPath }}/{{ nextUncalibrated.pathTotal }} в контуре {{ nextUncalibrated.group === 'ec' ? 'EC' : 'pH' }}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="pcd__btn pcd__btn--primary"
+                      @click="goToNext"
+                    >
+                      Продолжить с {{ nextUncalibrated.label }} →
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-else-if="savedForCurrent && !nextUncalibrated"
+                  class="pcd__next-card pcd__next-card--done"
+                >
+                  <div class="pcd__next-card__label">
+                    ✓ готово
+                  </div>
+                  <div class="pcd__next-card__body">
+                    <div>
+                      <div class="pcd__next-card__title">
+                        Все доступные насосы откалиброваны
+                      </div>
+                      <div class="pcd__next-card__sub">
+                        Остались только узлы без привязанного канала или опциональные.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="pcd__btn pcd__btn--ghost"
+                      @click="onClose"
+                    >
+                      Закрыть
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer (common for measure step) -->
+              <div
+                v-if="currentStep === 'measure'"
+                class="pcd__panel-footer"
+              >
+                <button
+                  type="button"
+                  class="pcd__btn pcd__btn--ghost"
+                  @click="currentStep = 'select'"
+                >
+                  ← к выбору
+                </button>
+                <div class="pcd__panel-footer-right">
+                  <button
+                    type="button"
+                    class="pcd__btn pcd__btn--ghost"
+                    :disabled="loadingRun"
+                    @click="runCalibration"
+                  >
+                    {{ runToken ? 'повторить запуск' : '▶ запустить' }}
+                  </button>
+                  <button
+                    v-if="!savedForCurrent"
+                    type="button"
+                    class="pcd__btn pcd__btn--primary"
+                    :disabled="loadingSave || !canSave"
+                    @click="saveCalibration"
+                  >
+                    {{ loadingSave ? 'Сохранение…' : 'Сохранить' }}
+                  </button>
+                  <button
+                    v-else-if="nextUncalibrated"
+                    type="button"
+                    class="pcd__btn pcd__btn--primary"
+                    @click="goToNext"
+                  >
+                    К {{ nextUncalibrated.label }} →
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="pcd__btn pcd__btn--primary"
+                    @click="onClose"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

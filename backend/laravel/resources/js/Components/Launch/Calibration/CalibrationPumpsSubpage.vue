@@ -1,149 +1,168 @@
 <template>
-    <section class="cal-sub">
-        <header class="cal-sub__header">
-            <div>
-                <div class="cal-sub__breadcrumb">/ зона / калибровка / насосы</div>
-                <h3 class="cal-sub__title">Калибровка дозирующих насосов</h3>
-                <p class="cal-sub__desc">
-                    Статус и история калибровки насосов, участвующих в коррекции на потоке.
-                    Предельные значения времени работы — в расширенных настройках ниже.
-                </p>
-            </div>
-            <span class="cal-sub__progress">
-                <span class="cal-sub__progress-dot" />
-                {{ calibratedCount }} / {{ pumpRows.length }}
-            </span>
-        </header>
-
-        <div class="cal-paths">
-            <div class="cal-path">
-                <div class="cal-path__head">
-                    <div class="cal-path__title">Контур дозирования EC</div>
-                    <div class="cal-path__meta">
-                        {{ ecComponents.length }} компонента · {{ ecDone }} готово
-                    </div>
-                </div>
-                <div class="cal-path__pills">
-                    <span
-                        v-for="p in ecComponents"
-                        :key="p.role"
-                        class="cal-pill"
-                        :class="pillClass(p)"
-                    >
-                        <span class="cal-pill__dot" />
-                        {{ p.shortLabel }}
-                    </span>
-                </div>
-            </div>
-            <div class="cal-path">
-                <div class="cal-path__head">
-                    <div class="cal-path__title">Контур дозирования pH</div>
-                    <div class="cal-path__meta">
-                        {{ phComponents.length }} компонента · {{ phDone }} готово
-                    </div>
-                </div>
-                <div class="cal-path__pills">
-                    <span
-                        v-for="p in phComponents"
-                        :key="p.role"
-                        class="cal-pill"
-                        :class="pillClass(p)"
-                    >
-                        <span class="cal-pill__dot" />
-                        {{ p.shortLabel }}
-                    </span>
-                </div>
-            </div>
+  <section class="cal-sub">
+    <header class="cal-sub__header">
+      <div>
+        <div class="cal-sub__breadcrumb">
+          / зона / калибровка / насосы
         </div>
+        <h3 class="cal-sub__title">
+          Калибровка дозирующих насосов
+        </h3>
+        <p class="cal-sub__desc">
+          Статус и история калибровки насосов, участвующих в коррекции на потоке.
+          Предельные значения времени работы — в расширенных настройках ниже.
+        </p>
+      </div>
+      <span class="cal-sub__progress">
+        <span class="cal-sub__progress-dot"></span>
+        {{ calibratedCount }} / {{ pumpRows.length }}
+      </span>
+    </header>
 
-        <div class="cal-channels">
-            <div class="cal-channels__head">
-                <span>Каналы зоны</span>
-                <span class="cal-channels__count">{{ pumpRows.length }} каналов</span>
-            </div>
-            <table class="cal-channels__table">
-                <thead>
-                    <tr>
-                        <th>Компонент</th>
-                        <th>Канал</th>
-                        <th>мл/сек</th>
-                        <th>k · мс/(мл/л)</th>
-                        <th>Обновлено</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="p in pumpRows" :key="p.role" :class="`cal-channels__row--${p.state}`">
-                        <td>{{ p.shortLabel }}</td>
-                        <td>
-                            <code v-if="p.channel">{{ p.nodeUid }} · {{ p.channel }}</code>
-                            <span v-else class="cal-channels__muted">— не привязан</span>
-                        </td>
-                        <td>{{ formatFloat(p.mlPerSec, 2) }}</td>
-                        <td>{{ formatFloat(p.kFactor, 6) }}</td>
-                        <td>{{ p.updatedText }}</td>
-                        <td class="cal-channels__action">
-                            <button
-                                v-if="!p.canCalibrate"
-                                type="button"
-                                class="cal-btn cal-btn--ghost"
-                                :title="'Канал не привязан — привяжите на шаге «Автоматика»'"
-                                disabled
-                            >
-                                привязать канал
-                            </button>
-                            <button
-                                v-else-if="p.state === 'done'"
-                                type="button"
-                                class="cal-btn cal-btn--ghost"
-                                @click="$emit('calibrate', p)"
-                            >
-                                перекалибровать
-                            </button>
-                            <button
-                                v-else
-                                type="button"
-                                class="cal-btn cal-btn--primary"
-                                @click="$emit('calibrate', p)"
-                            >
-                                откалибровать
-                            </button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+    <div class="cal-paths">
+      <div class="cal-path">
+        <div class="cal-path__head">
+          <div class="cal-path__title">
+            Контур дозирования EC
+          </div>
+          <div class="cal-path__meta">
+            {{ ecComponents.length }} компонента · {{ ecDone }} готово
+          </div>
         </div>
+        <div class="cal-path__pills">
+          <span
+            v-for="p in ecComponents"
+            :key="p.role"
+            class="cal-pill"
+            :class="pillClass(p)"
+          >
+            <span class="cal-pill__dot"></span>
+            {{ p.shortLabel }}
+          </span>
+        </div>
+      </div>
+      <div class="cal-path">
+        <div class="cal-path__head">
+          <div class="cal-path__title">
+            Контур дозирования pH
+          </div>
+          <div class="cal-path__meta">
+            {{ phComponents.length }} компонента · {{ phDone }} готово
+          </div>
+        </div>
+        <div class="cal-path__pills">
+          <span
+            v-for="p in phComponents"
+            :key="p.role"
+            class="cal-pill"
+            :class="pillClass(p)"
+          >
+            <span class="cal-pill__dot"></span>
+            {{ p.shortLabel }}
+          </span>
+        </div>
+      </div>
+    </div>
 
-        <footer class="cal-sub__footer">
-            <span class="cal-sub__hint">
-                После калибровки всех обязательных компонентов подсистема разблокирует <strong>Процесс</strong>.
-            </span>
-            <div class="cal-sub__actions">
-                <button
-                    type="button"
-                    class="cal-btn cal-btn--ghost"
-                    @click="$emit('export-csv')"
-                >
-                    Экспорт CSV
-                </button>
-                <button
-                    type="button"
-                    class="cal-btn cal-btn--primary"
-                    @click="$emit('open-pump-wizard')"
-                >
-                    Открыть калибровку насосов
-                </button>
-            </div>
-        </footer>
+    <div class="cal-channels">
+      <div class="cal-channels__head">
+        <span>Каналы зоны</span>
+        <span class="cal-channels__count">{{ pumpRows.length }} каналов</span>
+      </div>
+      <table class="cal-channels__table">
+        <thead>
+          <tr>
+            <th>Компонент</th>
+            <th>Канал</th>
+            <th>мл/сек</th>
+            <th>k · мс/(мл/л)</th>
+            <th>Обновлено</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="p in pumpRows"
+            :key="p.role"
+            :class="`cal-channels__row--${p.state}`"
+          >
+            <td>{{ p.shortLabel }}</td>
+            <td>
+              <code v-if="p.channel">{{ p.nodeUid }} · {{ p.channel }}</code>
+              <span
+                v-else
+                class="cal-channels__muted"
+              >— не привязан</span>
+            </td>
+            <td>{{ formatFloat(p.mlPerSec, 2) }}</td>
+            <td>{{ formatFloat(p.kFactor, 6) }}</td>
+            <td>{{ p.updatedText }}</td>
+            <td class="cal-channels__action">
+              <button
+                v-if="!p.canCalibrate"
+                type="button"
+                class="cal-btn cal-btn--ghost"
+                :title="'Канал не привязан — привяжите на шаге «Автоматика»'"
+                disabled
+              >
+                привязать канал
+              </button>
+              <button
+                v-else-if="p.state === 'done'"
+                type="button"
+                class="cal-btn cal-btn--ghost"
+                @click="$emit('calibrate', p)"
+              >
+                перекалибровать
+              </button>
+              <button
+                v-else
+                type="button"
+                class="cal-btn cal-btn--primary"
+                @click="$emit('calibrate', p)"
+              >
+                откалибровать
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-        <details class="cal-sub__advanced">
-            <summary>Пределы runtime (переопределение зоны) · min_dose_ms · диапазон мл/сек</summary>
-            <div class="cal-sub__advanced-body">
-                Расширенные границы runtime применяются только в переопределении зоны.
-                Настройка доступна на странице <a :href="`/zones/${zoneId}/edit#pump-calibration`" target="_blank" rel="noopener">/zones/{{ zoneId }}/edit</a>.
-            </div>
-        </details>
-    </section>
+    <footer class="cal-sub__footer">
+      <span class="cal-sub__hint">
+        После калибровки всех обязательных компонентов подсистема разблокирует <strong>Процесс</strong>.
+      </span>
+      <div class="cal-sub__actions">
+        <button
+          type="button"
+          class="cal-btn cal-btn--ghost"
+          @click="$emit('export-csv')"
+        >
+          Экспорт CSV
+        </button>
+        <button
+          type="button"
+          class="cal-btn cal-btn--primary"
+          @click="$emit('open-pump-wizard')"
+        >
+          Открыть калибровку насосов
+        </button>
+      </div>
+    </footer>
+
+    <details class="cal-sub__advanced">
+      <summary>Пределы runtime (переопределение зоны) · min_dose_ms · диапазон мл/сек</summary>
+      <div class="cal-sub__advanced-body">
+        Расширенные границы runtime применяются только в переопределении зоны.
+        Настройка доступна на странице <a
+          :href="`/zones/${zoneId}/edit#pump-calibration`"
+          target="_blank"
+          rel="noopener"
+        >/zones/{{ zoneId }}/edit</a>.
+      </div>
+    </details>
+  </section>
 </template>
 
 <script setup lang="ts">
