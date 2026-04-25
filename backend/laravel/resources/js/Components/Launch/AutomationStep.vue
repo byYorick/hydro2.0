@@ -266,6 +266,15 @@ async function onBindDevices(roles: string[]) {
 
 async function onBindNode(nodeId: number) {
     if (!props.zoneId || bindingNodeIds.value.has(nodeId)) return;
+    const node = availableNodes.find((n) => n.id === nodeId);
+    if (
+        node
+        && node.zone_id === props.zoneId
+        && (node.pending_zone_id == null || node.pending_zone_id === props.zoneId)
+    ) {
+        showToast('Нода уже привязана к этой зоне', 'info');
+        return;
+    }
     bindingNodeIds.value = new Set([...bindingNodeIds.value, nodeId]);
     try {
         await api.nodes.update(nodeId, { zone_id: props.zoneId });

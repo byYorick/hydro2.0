@@ -224,13 +224,13 @@ function rowStatus(role: ZoneAutomationBindRole, required: boolean): RowStatus {
   }
   const node = nodeById.value.get(Number(id))
   if (!node) {
-    return { label: 'нода недоступна', tone: 'alert', canBind: false, pending: false }
-  }
-  if (node.zone_id === props.zoneId) {
-    return { label: 'привязано', tone: 'growth', canBind: false, pending: false }
+    return { label: 'нода недоступна', tone: 'alert', canBind: true, pending: false }
   }
   if (node.pending_zone_id === props.zoneId && !node.zone_id) {
     return { label: 'привязка…', tone: 'warn', canBind: false, pending: true }
+  }
+  if (node.zone_id === props.zoneId) {
+    return { label: 'привязано', tone: 'growth', canBind: true, pending: false }
   }
   return { label: 'не привязано', tone: 'alert', canBind: true, pending: false }
 }
