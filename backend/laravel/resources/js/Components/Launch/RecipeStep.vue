@@ -124,6 +124,34 @@
           >
             <span></span>
           </Field>
+
+          <div
+            v-if="selectedRecipeId"
+            class="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-[var(--border-muted)]"
+          >
+            <Stat
+              label="Система"
+              :value="phaseSystemLabel"
+              mono
+            />
+            <Stat
+              label="targetPh"
+              :value="phasePhTarget"
+              mono
+              tone="brand"
+            />
+            <Stat
+              label="targetEc"
+              :value="phaseEcTarget"
+              mono
+              tone="brand"
+            />
+            <Stat
+              label="Фаз"
+              :value="recipePhases.length || '—'"
+              mono
+            />
+          </div>
         </div>
       </ShellCard>
 
@@ -192,6 +220,7 @@
           :rows="[
             ['recipe id', selectedRecipe?.id ?? '—'],
             ['ревизия', recipeRevisionId ? `r${recipeRevisionId}` : '—'],
+            ['статус', revisionStatusLabel],
             ['всего фаз', recipePhases.length || '—'],
           ]"
         />
@@ -323,6 +352,26 @@ const selectedRecipeRevisionLabel = computed(() => {
   return selectedRecipe.value.latest_published_revision_id
     ? `r${selectedRecipe.value.latest_published_revision_id}`
     : 'нет published'
+})
+
+const revisionStatusLabel = computed(() => {
+  if (!selectedRecipe.value) return '—'
+  return selectedRecipe.value.latest_published_revision_id ? 'PUBLISHED' : 'DRAFT'
+})
+
+const phaseSystemLabel = computed(() => {
+  const p = props.recipePhases?.[0] as { irrigation_mode?: string | null } | undefined
+  return p?.irrigation_mode ?? '—'
+})
+
+const phasePhTarget = computed(() => {
+  const p = props.recipePhases?.[0] as { ph_target?: number | null } | undefined
+  return p?.ph_target != null ? String(p.ph_target) : '—'
+})
+
+const phaseEcTarget = computed(() => {
+  const p = props.recipePhases?.[0] as { ec_target?: number | null } | undefined
+  return p?.ec_target != null ? `${p.ec_target}` : '—'
 })
 
 const phasePreviews = computed<PhasePreview[]>(() =>

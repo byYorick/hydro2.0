@@ -210,6 +210,18 @@
         и PID. Здесь выбирается контейнер для запуска.
       </Hint>
 
+      <ShellCard
+        title="Позиция в теплице"
+        :pad="false"
+      >
+        <div
+          class="flex items-center justify-center text-[var(--text-dim)] font-mono text-[11px] py-8"
+          style="background: repeating-linear-gradient(135deg, var(--bg-elevated) 0 6px, var(--bg-surface) 6px 12px); border-top: 1px solid var(--border-muted);"
+        >
+          GH floor plan
+        </div>
+      </ShellCard>
+
       <ShellCard title="MQTT / Bridge">
         <KV
           :rows="[
