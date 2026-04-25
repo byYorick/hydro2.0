@@ -1,18 +1,8 @@
 <template>
-  <section class="launch-step">
-    <header class="launch-step__header">
-      <h3 class="launch-step__title">
-        Автоматика зоны
-      </h3>
-      <p class="launch-step__desc">
-        Конфигурация зоны, привязки узлов к ролям и параметры подсистем. При запуске цикла
-        эти настройки будут сохранены как <code>zone.logic_profile</code> + channel bindings.
-      </p>
-    </header>
-
+  <section class="flex flex-col gap-3">
     <div
       v-if="!zoneId"
-      class="launch-step__empty"
+      class="px-3 py-2.5 rounded-md border border-warn-soft bg-warn-soft text-warn text-sm"
     >
       Автоматика становится доступна после выбора зоны.
     </div>
@@ -20,7 +10,7 @@
     <template v-else>
       <div
         v-if="loading"
-        class="launch-step__skeleton"
+        class="px-3 py-2.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] text-sm"
       >
         Загрузка конфигурации зоны…
       </div>
@@ -309,33 +299,3 @@ function onPresetCleared() {
 }
 </script>
 
-<style scoped>
-.launch-step { display: flex; flex-direction: column; gap: 1rem; }
-.launch-step__title { font-size: 1rem; font-weight: 600; margin: 0 0 0.25rem; }
-.launch-step__desc { margin: 0; opacity: 0.75; font-size: 0.875rem; }
-.launch-step__skeleton,
-.launch-step__empty {
-    padding: 0.75rem;
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 0.5rem;
-    background: rgba(148, 163, 184, 0.06);
-    font-size: 0.875rem;
-}
-.launch-step__empty {
-    background: rgba(251, 191, 36, 0.08);
-    border-color: rgba(251, 191, 36, 0.35);
-}
-.launch-step__form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.launch-step__add-btn {
-    padding: 0.4rem 0.8rem;
-    background: transparent;
-    border: 1px dashed rgba(148, 163, 184, 0.45);
-    border-radius: 0.375rem;
-    color: inherit;
-    cursor: pointer;
-    font-size: 0.85rem;
-    text-decoration: none;
-    display: inline-block;
-}
-.launch-step__add-btn:hover { background: rgba(148, 163, 184, 0.08); }
-</style>
