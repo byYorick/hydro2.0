@@ -1,35 +1,27 @@
 <template>
-  <Card>
-    <div class="space-y-4">
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <div class="text-sm font-semibold">
-            Калибровка сенсоров
-          </div>
-          <div class="text-xs text-[color:var(--text-dim)] mt-1">
-            pH/EC calibration tracking и запуск калибровки через backend.
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          :disabled="loading"
-          @click="loadStatus"
-        >
-          Обновить
-        </Button>
-      </div>
+  <ShellCard title="Калибровка сенсоров">
+    <template #actions>
+      <Button
+        size="sm"
+        variant="secondary"
+        :disabled="loading"
+        @click="loadStatus"
+      >
+        ↻ Обновить
+      </Button>
+    </template>
 
+    <div class="flex flex-col gap-3.5">
       <div
         v-if="loading"
-        class="text-sm text-[color:var(--text-dim)]"
+        class="text-sm text-[var(--text-dim)]"
       >
         Загрузка...
       </div>
 
       <div
         v-else-if="items.length === 0"
-        class="text-sm text-[color:var(--text-dim)]"
+        class="text-sm text-[var(--text-dim)]"
       >
         В зоне не найдены pH/EC sensor channels.
       </div>
@@ -41,35 +33,45 @@
         <div
           v-for="item in items"
           :key="item.node_channel_id"
-          class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3"
+          class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] p-3 flex flex-col gap-2.5"
         >
           <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="text-sm font-medium">
-                {{ item.sensor_type.toUpperCase() }} · {{ item.channel_uid }}
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 text-sm font-medium">
+                <Ic
+                  :name="item.sensor_type === 'ph' ? 'beaker' : 'wave'"
+                  class="text-brand"
+                />
+                <span class="font-mono">{{ item.sensor_type.toUpperCase() }}</span>
+                <span class="text-[var(--text-dim)]">·</span>
+                <span class="font-mono text-[var(--text-muted)]">{{ item.channel_uid }}</span>
               </div>
-              <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              <div class="text-[11px] text-[var(--text-dim)] mt-1 truncate font-mono">
                 {{ item.node_uid || 'unknown node' }}
               </div>
             </div>
-            <Badge :variant="badgeVariant(item.calibration_status)">
+            <Chip :tone="statusTone(item.calibration_status)">
+              <template #icon>
+                <span class="font-mono text-[11px]">{{ statusIcon(item.calibration_status) }}</span>
+              </template>
               {{ item.calibration_status }}
-            </Badge>
+            </Chip>
           </div>
 
-          <div class="text-xs text-[color:var(--text-dim)]">
+          <div class="text-[11px] text-[var(--text-dim)] font-mono">
             <span v-if="item.last_calibrated_at">
               Последняя калибровка: {{ formatDate(item.last_calibrated_at) }}
             </span>
             <span v-else>Калибровка ещё не выполнялась</span>
           </div>
 
-          <div class="flex gap-2">
+          <div class="flex gap-1.5 flex-wrap">
             <Button
               size="sm"
+              variant="primary"
               @click="openWizard(item)"
             >
-              Калибровать
+              ▶ Калибровать
             </Button>
             <Button
               size="sm"
@@ -89,29 +91,31 @@
       size="large"
       @close="historyOpen = false"
     >
-      <div class="space-y-3">
+      <div class="flex flex-col gap-2.5">
         <div
           v-if="historyLoading"
-          class="text-sm text-[color:var(--text-dim)]"
+          class="text-sm text-[var(--text-dim)]"
         >
           Загрузка...
         </div>
         <div
           v-else-if="history.length === 0"
-          class="text-sm text-[color:var(--text-dim)]"
+          class="text-sm text-[var(--text-dim)]"
         >
           История пуста.
         </div>
         <div
-          v-for="item in history"
-          :key="item.id"
-          class="rounded-lg border border-[color:var(--border-muted)] p-3 text-sm"
+          v-for="record in history"
+          :key="record.id"
+          class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] p-3 text-sm"
         >
-          <div class="font-medium">
-            {{ item.status }} · {{ formatDate(item.created_at) }}
+          <div class="flex items-center gap-2 font-medium">
+            <Chip :tone="recordTone(record.status)">{{ record.status }}</Chip>
+            <span class="font-mono text-[var(--text-dim)] text-[11px]">{{ formatDate(record.created_at) }}</span>
           </div>
-          <div class="text-xs text-[color:var(--text-dim)] mt-1">
-            point1={{ item.point_1_reference ?? 'n/a' }} · point2={{ item.point_2_reference ?? 'n/a' }}
+          <div class="text-[11px] text-[var(--text-dim)] mt-1.5 font-mono">
+            point1={{ record.point_1_reference ?? 'n/a' }} ·
+            point2={{ record.point_2_reference ?? 'n/a' }}
           </div>
         </div>
       </div>
@@ -126,18 +130,23 @@
       @close="wizardOpen = false"
       @completed="onWizardCompleted"
     />
-  </Card>
+  </ShellCard>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import Card from '@/Components/Card.vue'
 import Modal from '@/Components/Modal.vue'
 import SensorCalibrationWizard from '@/Components/SensorCalibrationWizard.vue'
+import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
+import { Chip } from '@/Components/Shared/Primitives'
+import type { ChipTone } from '@/Components/Shared/Primitives/Chip.vue'
+import Ic from '@/Components/Icons/Ic.vue'
 import { useSensorCalibration } from '@/composables/useSensorCalibration'
-import type { SensorCalibration, SensorCalibrationOverview } from '@/types/SensorCalibration'
+import type {
+  SensorCalibration,
+  SensorCalibrationOverview,
+} from '@/types/SensorCalibration'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 const props = defineProps<{
@@ -155,10 +164,23 @@ const history = ref<SensorCalibration[]>([])
 const wizardOpen = ref(false)
 const wizardItem = ref<SensorCalibrationOverview | null>(null)
 
-function badgeVariant(status: SensorCalibrationOverview['calibration_status']): 'success' | 'warning' | 'danger' | 'neutral' {
-  if (status === 'ok') return 'success'
-  if (status === 'warning') return 'warning'
-  if (status === 'critical') return 'danger'
+function statusTone(status: SensorCalibrationOverview['calibration_status']): ChipTone {
+  if (status === 'ok') return 'growth'
+  if (status === 'warning') return 'warn'
+  if (status === 'critical') return 'alert'
+  return 'neutral'
+}
+
+function statusIcon(status: SensorCalibrationOverview['calibration_status']): string {
+  if (status === 'ok') return '✓'
+  if (status === 'critical') return '!'
+  return '·'
+}
+
+function recordTone(status: string): ChipTone {
+  if (status === 'completed' || status === 'ok') return 'growth'
+  if (status === 'failed' || status === 'critical') return 'alert'
+  if (status === 'in_progress') return 'brand'
   return 'neutral'
 }
 
