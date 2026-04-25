@@ -44,7 +44,7 @@ backend/laravel/resources/js/Components/Launch/Calibration/CalibrationHub.vue|52
 backend/laravel/resources/js/Components/Launch/Calibration/PumpCalibrationDrawer.vue|1370
 backend/laravel/resources/js/Pages/Launch/Index.vue|535
 backend/laravel/resources/js/Components/PidConfigForm.vue|840
-backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|1315
+backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|935
 backend/laravel/resources/js/Components/PumpCalibrationModal.vue|557
 backend/laravel/resources/js/Components/RecipeEditor.vue|1123
 backend/laravel/resources/js/Components/ZoneAutomation/CorrectionLiveEditCard.vue|1143
