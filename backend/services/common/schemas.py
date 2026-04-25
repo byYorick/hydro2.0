@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 import time
@@ -240,3 +240,11 @@ class SimulationRequest(BaseModel):
     duration_hours: int = Field(72, ge=1, le=720, description="Simulation duration in hours")
     step_minutes: int = Field(5, ge=1, le=60, description="Simulation step in minutes")
     scenario: SimulationScenario = Field(default_factory=SimulationScenario, description="Simulation scenario")
+    inputs_schedule: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Список планируемых cmd-событий для DT (Phase B). "
+            "Формат: [{t_min, cmd, channel, params, node_uid?}]. "
+            "Используется только сервисом digital-twin."
+        ),
+    )
