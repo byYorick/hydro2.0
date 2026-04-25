@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Zone extends Model
@@ -84,7 +85,7 @@ class Zone extends Model
     /**
      * Привязки каналов через инфраструктуру зоны
      */
-    public function channelBindings(): HasMany
+    public function channelBindings(): HasManyThrough
     {
         return $this->hasManyThrough(
             ChannelBinding::class,

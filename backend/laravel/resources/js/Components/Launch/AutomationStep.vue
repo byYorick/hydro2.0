@@ -54,6 +54,7 @@ import {
     bindingsResponseToAssignments,
     zoneLogicProfileToProfile,
 } from '@/composables/automationProfileConverters';
+import type { ZoneAutomationBindRole } from '@/composables/zoneAutomationTypes';
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode';
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
@@ -150,16 +151,73 @@ async function loadLogicProfile(zoneId: number) {
     }
 }
 
-async function loadBindings(zoneId: number) {
+/**
+ * Подгружает channel_bindings из ZoneController::show — теперь backend
+ * возвращает их вместе с node_id, что является source-of-truth для assignments.
+ */
+async function loadBindings(zoneId: number): Promise<void> {
     try {
         const resp = await api.zones.getById(zoneId);
         const data = resp as unknown as { channel_bindings?: unknown };
         if (data.channel_bindings) {
-            state.assignments = bindingsResponseToAssignments(data.channel_bindings);
+            const fromApi = bindingsResponseToAssignments(data.channel_bindings);
+            // Применяем поверх defaults, но не затираем уже выставленные пользователем.
+            const next = { ...state.assignments };
+            let changed = false;
+            for (const [role, id] of Object.entries(fromApi)) {
+                if (next[role as ZoneAutomationBindRole] == null && id != null) {
+                    next[role as ZoneAutomationBindRole] = id;
+                    changed = true;
+                }
+            }
+            if (changed) state.assignments = next;
         }
     } catch {
         // keep defaults
     }
+}
+
+/**
+ * Маппинг assignment_role → binding_role[] (зеркало SetupWizardController::bindingSpecs()).
+ * Один assignment_role в UI может покрывать несколько binding_role на железе
+ * (например, irrigation = pump_main + drain).
+ */
+const ROLE_BINDING_ROLES: Record<ZoneAutomationBindRole, string[]> = {
+    irrigation: ['pump_main', 'drain'],
+    ph_correction: ['pump_acid', 'pump_base'],
+    ec_correction: ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
+    light: ['light_actuator'],
+    soil_moisture_sensor: ['soil_moisture_sensor'],
+    co2_sensor: ['co2_sensor'],
+    co2_actuator: ['co2_actuator'],
+    root_vent_actuator: ['root_vent_actuator'],
+};
+
+/**
+ * Подтягивает assignments из реальных channel_bindings зоны.
+ * Backend в NodeController отдаёт `binding_role` per channel — этого достаточно,
+ * чтобы определить, какой узел уже играет роль pump_main / ph_dose / и т.д.
+ */
+function deriveBindingsFromNodes(zoneId: number): void {
+    const next = { ...state.assignments };
+    let changed = false;
+    for (const role of Object.keys(ROLE_BINDING_ROLES) as ZoneAutomationBindRole[]) {
+        if (next[role] != null) continue;
+        const bindingRoles = ROLE_BINDING_ROLES[role];
+        for (const node of availableNodes) {
+            if (node.zone_id !== zoneId) continue;
+            const channels = node.channels ?? [];
+            const matched = channels.some(
+                (ch) => typeof ch.binding_role === 'string' && bindingRoles.includes(ch.binding_role),
+            );
+            if (matched) {
+                next[role] = node.id;
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) state.assignments = next;
 }
 
 async function loadNodes(zoneId: number) {
@@ -189,6 +247,9 @@ async function reloadAll() {
             loadBindings(props.zoneId),
             loadNodes(props.zoneId),
         ]);
+        // Fallback: если в channel_bindings нет записи, но узел в зоне
+        // имеет канал с подходящим binding_role — подставим его.
+        deriveBindingsFromNodes(props.zoneId);
     } finally {
         loading.value = false;
     }
@@ -199,6 +260,7 @@ async function onRefreshNodes() {
     refreshingNodes.value = true;
     try {
         await loadNodes(props.zoneId);
+        deriveBindingsFromNodes(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
         showToast((error as Error).message || 'Ошибка обновления списка нод', 'error');
@@ -256,7 +318,7 @@ async function onBindDevices(roles: string[]) {
 
         showToast(`Привязка выполнена (${roles.join(', ')})`, 'success');
         await loadNodes(props.zoneId);
-        await loadBindings(props.zoneId);
+        deriveBindingsFromNodes(props.zoneId);
     } catch (error) {
         showToast((error as Error).message || 'Ошибка привязки', 'error');
     } finally {

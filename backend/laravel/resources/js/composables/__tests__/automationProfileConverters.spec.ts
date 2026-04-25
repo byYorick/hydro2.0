@@ -73,10 +73,10 @@ describe('profileToZoneLogicProfile', () => {
 });
 
 describe('bindingsResponseToAssignments', () => {
-    it('reads plain array of {role, node_channel_id}', () => {
+    it('maps binding_role → assignment_role using node_id', () => {
         const a = bindingsResponseToAssignments([
-            { role: 'irrigation', node_channel_id: 10 },
-            { role: 'ph_correction', node_channel_id: 20 },
+            { role: 'pump_main', node_id: 10, node_channel_id: 100 },
+            { role: 'pump_acid', node_id: 20, node_channel_id: 200 },
         ]);
         expect(a.irrigation).toBe(10);
         expect(a.ph_correction).toBe(20);
@@ -84,13 +84,26 @@ describe('bindingsResponseToAssignments', () => {
     });
 
     it('accepts {data: [...]} envelope', () => {
-        const a = bindingsResponseToAssignments({ data: [{ role: 'light', channel_id: 99 }] });
+        const a = bindingsResponseToAssignments({
+            data: [{ role: 'light_actuator', node_id: 99 }],
+        });
         expect(a.light).toBe(99);
     });
 
-    it('ignores unknown roles', () => {
-        const a = bindingsResponseToAssignments([{ role: 'unknown_role', channel_id: 7 }]);
+    it('ignores unknown binding_roles', () => {
+        const a = bindingsResponseToAssignments([
+            { role: 'unknown_role', node_id: 7 },
+        ]);
         expect(a.irrigation).toBeNull();
+    });
+
+    it('does not overwrite already-set assignment when same role appears twice', () => {
+        const a = bindingsResponseToAssignments([
+            { role: 'pump_a', node_id: 11, node_channel_id: 110 },
+            { role: 'pump_b', node_id: 22, node_channel_id: 220 },
+        ]);
+        // Both pump_a и pump_b мапятся в ec_correction — берётся первый встреченный.
+        expect(a.ec_correction).toBe(11);
     });
 });
 
