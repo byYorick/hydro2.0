@@ -148,6 +148,7 @@ import { useLaunchGrowCycleMutation, useLaunchManifest } from '@/services/querie
 import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
+import { useLaunchSteps } from '@/composables/useLaunchSteps'
 
 const props = defineProps<{
   zoneId: number | null
@@ -172,53 +173,24 @@ const launchMutation = useLaunchGrowCycleMutation()
 const manifest = computed(() => manifestQuery.data.value ?? null)
 
 const currentStep = ref<string>('')
-const visibleSteps = computed(
-  () => (manifest.value?.steps ?? []).filter((s) => s.visible),
+
+const automationProfile = ref<AutomationProfile>(
+  structuredClone(automationProfileDefaults),
 )
 
-const STEP_DEFS: Record<string, { label: string; sub: string }> = {
-  zone: { label: 'Зона', sub: 'теплица + зона' },
-  recipe: { label: 'Рецепт', sub: 'культура + фазы' },
-  automation: { label: 'Автоматика', sub: 'узлы и роли' },
-  calibration: { label: 'Калибровка', sub: '5 подсистем' },
-  preview: { label: 'Подтверждение', sub: 'diff + запуск' },
-}
-
-const stepperSteps = computed<LaunchStep[]>(() =>
-  visibleSteps.value.map((s) => ({
-    id: s.id,
-    label: STEP_DEFS[s.id]?.label ?? s.title ?? s.id,
-    sub: STEP_DEFS[s.id]?.sub ?? s.description ?? '',
-  })),
-)
-
-const activeIndex = computed(() => {
-  const idx = stepperSteps.value.findIndex((s) => s.id === currentStep.value)
-  return idx >= 0 ? idx : 0
-})
-
-const completion = computed<StepCompletion[]>(() =>
-  stepperSteps.value.map((s, i) => {
-    if (i === activeIndex.value) return 'current'
-    if (i < activeIndex.value) {
-      return canProceedStep(s.id) === true ? 'done' : 'warn'
-    }
-    return 'todo'
-  }),
-)
-
-const currentStepDef = computed<LaunchStep>(
-  () =>
-    stepperSteps.value[activeIndex.value] ?? {
-      id: '',
-      label: '',
-      sub: '',
-    },
-)
-
-const canLaunch = computed(() => {
-  if (currentStep.value !== 'preview') return false
-  return canProceedStep('preview') === true
+const {
+  stepperSteps,
+  activeIndex,
+  completion,
+  currentStepDef,
+  canLaunch,
+  canProceedStep,
+} = useLaunchSteps({
+  state,
+  manifest,
+  automationProfile,
+  isFormValid: form.isValid,
+  currentStep,
 })
 
 watch(
@@ -246,10 +218,6 @@ const recipeOptions = ref<RecipeOption[]>([])
 const plantOptions = ref<Array<{ id: number; name: string }>>([])
 const zoneNameById = ref<Record<number, string>>({})
 void zoneNameById.value
-
-const automationProfile = ref<AutomationProfile>(
-  structuredClone(automationProfileDefaults),
-)
 
 function onAutomationProfileUpdate(next: AutomationProfile) {
   automationProfile.value = next
@@ -391,49 +359,6 @@ async function loadReferenceData() {
 }
 
 onMounted(loadReferenceData)
-
-function canProceedStep(stepId: string): boolean | { ok: false; reason: string } {
-  if (stepId === 'zone') {
-    return state.zone_id != null ? true : { ok: false, reason: 'Выберите зону' }
-  }
-  if (stepId === 'recipe') {
-    if (!state.recipe_revision_id) return { ok: false, reason: 'Выберите ревизию рецепта' }
-    if (!state.plant_id) return { ok: false, reason: 'Выберите растение' }
-    if (!state.planting_at) return { ok: false, reason: 'Укажите дату посадки' }
-    return true
-  }
-  if (stepId === 'automation') {
-    const a = automationProfile.value.assignments
-    if (!a.irrigation) return { ok: false, reason: 'Не привязан irrigation канал' }
-    if (!a.ph_correction) return { ok: false, reason: 'Не привязан pH-корректор' }
-    if (!a.ec_correction) return { ok: false, reason: 'Не привязан EC-корректор' }
-    if (automationProfile.value.lightingForm.enabled && !a.light) {
-      return { ok: false, reason: 'Свет включён — нужна привязка светового канала' }
-    }
-    if (automationProfile.value.zoneClimateForm.enabled) {
-      const hasClimateBinding = a.co2_sensor || a.co2_actuator || a.root_vent_actuator
-      if (!hasClimateBinding) {
-        return { ok: false, reason: 'Climate включён — нужна привязка CO₂/вентиляции' }
-      }
-    }
-    return true
-  }
-  if (stepId === 'calibration') {
-    const blockers = manifest.value?.readiness.blockers ?? []
-    return blockers.length === 0
-      ? true
-      : { ok: false, reason: `Осталось ${blockers.length} blocker(ов)` }
-  }
-  if (stepId === 'preview') {
-    if (!form.isValid.value) return { ok: false, reason: 'Payload не валиден' }
-    const blockers = manifest.value?.readiness.blockers ?? []
-    if (blockers.length > 0) {
-      return { ok: false, reason: `Readiness blockers: ${blockers.length} — запуск заблокирован` }
-    }
-    return true
-  }
-  return true
-}
 
 function updateField<K extends keyof GrowCycleLaunchPayload>(
   key: K,
