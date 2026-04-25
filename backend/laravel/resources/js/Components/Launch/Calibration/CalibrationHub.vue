@@ -24,7 +24,7 @@
           :description="currentSubMeta.desc"
         />
 
-        <CalibrationPumpsSubpage
+        <PumpsSubview
           v-if="currentSub === 'pumps'"
           :zone-id="zoneId"
           :pumps="pumps"
@@ -33,56 +33,31 @@
           @export-csv="onExportCsv"
         />
 
-        <SensorCalibrationStatus
+        <SensorsSubview
           v-else-if="currentSub === 'sensors'"
           :zone-id="zoneId"
           :settings="sensorCalibrationSettings"
         />
 
-        <ProcessCalibrationPanel
+        <ProcessSubview
           v-else-if="currentSub === 'process'"
           :zone-id="zoneId"
           @saved="$emit('updated')"
         />
 
-        <CorrectionConfigForm
+        <CorrectionSubview
           v-else-if="currentSub === 'correction'"
           :zone-id="zoneId"
           @saved="$emit('updated')"
         />
 
-        <div
+        <PidSubview
           v-else-if="currentSub === 'pid'"
-          class="grid gap-3 lg:[grid-template-columns:1fr_320px] items-start"
-        >
-          <div class="flex flex-col gap-3">
-            <PidConfigForm
-              :zone-id="zoneId"
-              :phase-targets="phaseTargets"
-              @saved="$emit('updated')"
-            />
-            <RelayAutotuneTrigger :zone-id="zoneId" />
-          </div>
-          <ShellCard
-            title="Зона регулирования"
-            :pad="false"
-          >
-            <PidChart
-              v-if="pidChartParams"
-              :target="pidChartParams.target"
-              :dead="pidChartParams.dead"
-              :close="pidChartParams.close"
-              :far="pidChartParams.far"
-              axis-label="pH"
-            />
-            <div
-              v-else
-              class="px-3 py-3 text-xs text-[var(--text-dim)] text-center"
-            >
-              График появится после сохранения PID-конфигурации
-            </div>
-          </ShellCard>
-        </div>
+          :zone-id="zoneId"
+          :phase-targets="phaseTargets"
+          :pid-chart-params="pidChartParams"
+          @saved="$emit('updated')"
+        />
       </section>
     </div>
 
@@ -121,18 +96,14 @@ import CalibrationSidebar, {
   type CalibrationNavInfo,
 } from './CalibrationSidebar.vue'
 import CalibrationBreadcrumb from './CalibrationBreadcrumb.vue'
-import CalibrationPumpsSubpage, {
-  type PumpRow,
-} from './CalibrationPumpsSubpage.vue'
+import { type PumpRow } from './CalibrationPumpsSubpage.vue'
 import CalibrationBlockersDrawer from './CalibrationBlockersDrawer.vue'
 import PumpCalibrationDrawer from './PumpCalibrationDrawer.vue'
-import PidChart from './PidChart.vue'
-import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
-import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
-import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
-import CorrectionConfigForm from '@/Components/CorrectionConfigForm.vue'
-import PidConfigForm from '@/Components/PidConfigForm.vue'
-import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
+import SensorsSubview from './Subviews/SensorsSubview.vue'
+import PumpsSubview from './Subviews/PumpsSubview.vue'
+import ProcessSubview from './Subviews/ProcessSubview.vue'
+import CorrectionSubview from './Subviews/CorrectionSubview.vue'
+import PidSubview from './Subviews/PidSubview.vue'
 import {
   useCalibrationContracts,
   type CalibrationContract,
