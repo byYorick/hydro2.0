@@ -61,11 +61,12 @@
       </section>
     </div>
 
-    <CalibrationBlockersDrawer
+    <BlockersDrawer
       :open="blockersOpen"
       :blockers="blockers"
+      title="Calibration blockers"
       @close="blockersOpen = false"
-      @navigate="onBlockerNavigate"
+      @navigate="(b) => onBlockerNavigate(b as CalibrationContract)"
     />
 
     <PumpCalibrationDrawer
@@ -97,7 +98,7 @@ import CalibrationSidebar, {
 } from './CalibrationSidebar.vue'
 import CalibrationBreadcrumb from './CalibrationBreadcrumb.vue'
 import { type PumpRow } from './CalibrationPumpsSubpage.vue'
-import CalibrationBlockersDrawer from './CalibrationBlockersDrawer.vue'
+import BlockersDrawer from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import PumpCalibrationDrawer from './PumpCalibrationDrawer.vue'
 import SensorsSubview from './Subviews/SensorsSubview.vue'
 import PumpsSubview from './Subviews/PumpsSubview.vue'

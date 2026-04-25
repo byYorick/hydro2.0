@@ -103,11 +103,12 @@
       </section>
     </div>
 
-    <AutomationBlockersDrawer
+    <BlockersDrawer
       :open="blockersOpen"
       :blockers="blockers"
+      title="Automation blockers"
       @close="blockersOpen = false"
-      @navigate="onBlockerNavigate"
+      @navigate="(b) => onBlockerNavigate(b as AutomationContract)"
     />
   </div>
 </template>
@@ -115,7 +116,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import AutomationReadinessBar from './AutomationReadinessBar.vue'
-import AutomationBlockersDrawer from './AutomationBlockersDrawer.vue'
+import BlockersDrawer from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import AutomationSidebar, {
   type AutomationSubKey,
   type AutomationNavMap,
