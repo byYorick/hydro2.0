@@ -42,19 +42,25 @@
           <span class="font-mono text-[11px] text-[var(--text-dim)] truncate">
             role: {{ row.role }}
           </span>
-          <span>
-            <Chip
-              v-if="assignments[row.key]"
-              tone="growth"
-            >
-              привязано
+          <span class="flex items-center gap-1.5 flex-wrap">
+            <Chip :tone="rowStatus(row.key, true).tone">
+              <template
+                v-if="rowStatus(row.key, true).pending"
+                #icon
+              >
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+              </template>
+              {{ rowStatus(row.key, true).label }}
             </Chip>
-            <Chip
-              v-else
-              tone="alert"
+            <Button
+              v-if="rowStatus(row.key, true).canBind"
+              size="sm"
+              variant="secondary"
+              :disabled="bindingNodeIds.has(Number(assignments[row.key]))"
+              @click="onBindClick(row.key)"
             >
-              не задано
-            </Chip>
+              {{ bindingNodeIds.has(Number(assignments[row.key])) ? '…' : 'Привязать' }}
+            </Button>
           </span>
         </div>
       </div>
@@ -94,19 +100,25 @@
           <span class="font-mono text-[11px] text-[var(--text-dim)] truncate">
             role: {{ row.role }}
           </span>
-          <span>
-            <Chip
-              v-if="assignments[row.key]"
-              tone="growth"
-            >
-              привязано
+          <span class="flex items-center gap-1.5 flex-wrap">
+            <Chip :tone="rowStatus(row.key, false).tone">
+              <template
+                v-if="rowStatus(row.key, false).pending"
+                #icon
+              >
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+              </template>
+              {{ rowStatus(row.key, false).label }}
             </Chip>
-            <Chip
-              v-else
-              tone="neutral"
+            <Button
+              v-if="rowStatus(row.key, false).canBind"
+              size="sm"
+              variant="secondary"
+              :disabled="bindingNodeIds.has(Number(assignments[row.key]))"
+              @click="onBindClick(row.key)"
             >
-              опц.
-            </Chip>
+              {{ bindingNodeIds.has(Number(assignments[row.key])) ? '…' : 'Привязать' }}
+            </Button>
           </span>
         </div>
       </div>
@@ -115,7 +127,10 @@
     <Hint :show="showHints">
       Привязки идентичны схеме <span class="font-mono">assignmentsSchema</span>.
       ESP32 узлы публикуют список ролей в bridge — выбор канала фиксируется
-      в <span class="font-mono">zone.assignments</span>.
+      в <span class="font-mono">zone.assignments</span>. Нода считается
+      привязанной после получения <span class="font-mono">config_report</span>
+      (промоут <span class="font-mono">pending_zone_id → zone_id</span>,
+      <span class="font-mono">lifecycle_state := ASSIGNED_TO_ZONE</span>).
     </Hint>
   </div>
 </template>
@@ -124,7 +139,9 @@
 import { computed } from 'vue'
 import Select from '@/Components/Shared/Primitives/Select.vue'
 import Chip from '@/Components/Shared/Primitives/Chip.vue'
+import type { ChipTone } from '@/Components/Shared/Primitives/Chip.vue'
 import Hint from '@/Components/Shared/Primitives/Hint.vue'
+import Button from '@/Components/Button.vue'
 import Ic from '@/Components/Icons/Ic.vue'
 import type { IcName } from '@/Components/Icons/Ic.vue'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
@@ -135,12 +152,15 @@ import type {
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 
 const props = defineProps<{
+  zoneId: number
   assignments: ZoneAutomationSectionAssignments
   availableNodes: readonly SetupWizardNode[]
+  bindingNodeIds?: ReadonlySet<number>
 }>()
 
 const emit = defineEmits<{
   (e: 'update:assignments', next: ZoneAutomationSectionAssignments): void
+  (e: 'bind-node', nodeId: number): void
 }>()
 
 const { showHints } = useLaunchPreferences()
@@ -166,7 +186,7 @@ const OPTIONAL: RoleDef[] = [
   { key: 'root_vent_actuator', label: 'Корневая вентиляция', role: 'root_vent_actuator' },
 ]
 
-const GRID_STYLE = 'grid-template-columns: 170px 200px 1fr 130px'
+const GRID_STYLE = 'grid-template-columns: 170px 200px 1fr 220px'
 
 const nodeOptions = computed(() => [
   { value: '', label: '— не задано —' },
@@ -175,6 +195,45 @@ const nodeOptions = computed(() => [
     label: nodeLabel(n),
   })),
 ])
+
+const bindingNodeIds = computed<ReadonlySet<number>>(
+  () => props.bindingNodeIds ?? new Set<number>(),
+)
+
+const nodeById = computed<Map<number, SetupWizardNode>>(() => {
+  const map = new Map<number, SetupWizardNode>()
+  for (const n of props.availableNodes) {
+    map.set(n.id, n)
+  }
+  return map
+})
+
+interface RowStatus {
+  label: string
+  tone: ChipTone
+  canBind: boolean
+  pending: boolean
+}
+
+function rowStatus(role: ZoneAutomationBindRole, required: boolean): RowStatus {
+  const id = props.assignments[role]
+  if (id == null) {
+    return required
+      ? { label: 'не задано', tone: 'alert', canBind: false, pending: false }
+      : { label: 'опц.', tone: 'neutral', canBind: false, pending: false }
+  }
+  const node = nodeById.value.get(Number(id))
+  if (!node) {
+    return { label: 'нода недоступна', tone: 'alert', canBind: false, pending: false }
+  }
+  if (node.zone_id === props.zoneId) {
+    return { label: 'привязано', tone: 'growth', canBind: false, pending: false }
+  }
+  if (node.pending_zone_id === props.zoneId && !node.zone_id) {
+    return { label: 'привязка…', tone: 'warn', canBind: false, pending: true }
+  }
+  return { label: 'не привязано', tone: 'alert', canBind: true, pending: false }
+}
 
 function nodeLabel(n: SetupWizardNode): string {
   const id = n.uid ?? n.name ?? `Node #${n.id}`
@@ -187,5 +246,11 @@ function onUpdate(role: ZoneAutomationBindRole, raw: string): void {
   const id = raw === '' ? null : Number(raw)
   next[role] = id != null && Number.isFinite(id) ? id : null
   emit('update:assignments', next)
+}
+
+function onBindClick(role: ZoneAutomationBindRole): void {
+  const id = props.assignments[role]
+  if (typeof id !== 'number' || id <= 0) return
+  emit('bind-node', id)
 }
 </script>

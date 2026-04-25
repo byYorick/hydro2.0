@@ -24,12 +24,14 @@
         :available-nodes="availableNodes"
         :refreshing-nodes="refreshingNodes"
         :binding-in-progress="bindingInProgress"
+        :binding-node-ids="bindingNodeIds"
         :recipe-summary="recipeSummary"
         @update:water-form="(v) => (state.waterForm = v)"
         @update:lighting-form="(v) => (state.lightingForm = v)"
         @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
         @update:assignments="(v) => (state.assignments = v)"
         @bind-devices="onBindDevices"
+        @bind-node="onBindNode"
         @refresh-nodes="onRefreshNodes"
         @refresh="reloadAll"
         @preset-applied="onPresetApplied"
@@ -40,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import AutomationHub from '@/Components/Launch/Automation/AutomationHub.vue';
 import { api } from '@/services/api';
 import { useToast } from '@/composables/useToast';
@@ -89,6 +91,11 @@ const availableNodes: SetupWizardNode[] = reactive([]);
 const loading = ref(false);
 const refreshingNodes = ref(false);
 const bindingInProgress = ref(false);
+const bindingNodeIds = ref<Set<number>>(new Set());
+let pendingPollHandle: ReturnType<typeof setInterval> | null = null;
+let pendingPollDeadline = 0;
+const PENDING_POLL_INTERVAL_MS = 2500;
+const PENDING_POLL_TIMEOUT_MS = 60_000;
 
 function applyProfile(next: AutomationProfile) {
     state.waterForm = next.waterForm;
@@ -257,14 +264,79 @@ async function onBindDevices(roles: string[]) {
     }
 }
 
+async function onBindNode(nodeId: number) {
+    if (!props.zoneId || bindingNodeIds.value.has(nodeId)) return;
+    bindingNodeIds.value = new Set([...bindingNodeIds.value, nodeId]);
+    try {
+        await api.nodes.update(nodeId, { zone_id: props.zoneId });
+        showToast('Привязка отправлена — ждём config_report от ноды…', 'info');
+        await loadNodes(props.zoneId);
+        startPendingPoll();
+    } catch (error) {
+        showToast((error as Error).message || 'Ошибка привязки ноды', 'error');
+    } finally {
+        const next = new Set(bindingNodeIds.value);
+        next.delete(nodeId);
+        bindingNodeIds.value = next;
+    }
+}
+
+function hasPendingBindings(): boolean {
+    if (!props.zoneId) return false;
+    return availableNodes.some(
+        (n) => n.pending_zone_id === props.zoneId && !n.zone_id,
+    );
+}
+
+function stopPendingPoll() {
+    if (pendingPollHandle != null) {
+        clearInterval(pendingPollHandle);
+        pendingPollHandle = null;
+    }
+    pendingPollDeadline = 0;
+}
+
+function startPendingPoll() {
+    pendingPollDeadline = Date.now() + PENDING_POLL_TIMEOUT_MS;
+    if (pendingPollHandle != null) return;
+    pendingPollHandle = setInterval(async () => {
+        if (!props.zoneId) {
+            stopPendingPoll();
+            return;
+        }
+        const hadPending = hasPendingBindings();
+        await loadNodes(props.zoneId);
+        const stillPending = hasPendingBindings();
+        if (hadPending && !stillPending) {
+            showToast('Нода подтвердила привязку (config_report получен)', 'success');
+            stopPendingPoll();
+            return;
+        }
+        if (!stillPending || Date.now() > pendingPollDeadline) {
+            stopPendingPoll();
+        }
+    }, PENDING_POLL_INTERVAL_MS);
+}
+
 onMounted(() => {
     if (props.zoneId) reloadAll();
+});
+
+onUnmounted(() => {
+    stopPendingPoll();
 });
 
 watch(
     () => props.zoneId,
     (id) => {
         if (id) reloadAll();
+    },
+);
+
+watch(
+    () => availableNodes.map((n) => `${n.id}:${n.zone_id ?? 0}:${n.pending_zone_id ?? 0}`).join('|'),
+    () => {
+        if (hasPendingBindings()) startPendingPoll();
     },
 );
 

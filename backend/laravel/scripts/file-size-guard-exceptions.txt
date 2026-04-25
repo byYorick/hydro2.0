@@ -51,7 +51,7 @@ backend/laravel/resources/js/Components/ZoneAutomation/CorrectionLiveEditCard.vu
 backend/laravel/resources/js/Components/ZoneAutomation/WaterContourSection.vue|648
 backend/laravel/resources/js/Components/__tests__/CorrectionConfigForm.spec.ts|505
 backend/laravel/resources/js/Pages/Devices/Show.vue|717
-backend/laravel/resources/js/Pages/Greenhouses/Show.vue|781
+backend/laravel/resources/js/Pages/Greenhouses/Show.vue|787
 backend/laravel/resources/js/Pages/Settings/Index.vue|1021
 backend/laravel/resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts|853
 backend/laravel/resources/js/Pages/Zones/Tabs/__tests__/ZoneSchedulerTab.spec.ts|502

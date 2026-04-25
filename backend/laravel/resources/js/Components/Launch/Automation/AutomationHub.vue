@@ -35,9 +35,12 @@
 
         <BindingsSubview
           v-if="currentSub === 'bindings'"
+          :zone-id="zoneId"
           :assignments="profile.assignments"
           :available-nodes="availableNodes"
+          :binding-node-ids="bindingNodeIds"
           @update:assignments="onAssignmentsUpdate"
+          @bind-node="(id: number) => $emit('bind-node', id)"
         />
 
         <ContourSubview
@@ -161,12 +164,14 @@ const props = withDefaults(
     availableNodes: SetupWizardNode[]
     refreshingNodes?: boolean
     bindingInProgress?: boolean
+    bindingNodeIds?: ReadonlySet<number>
     recipeSummary?: RecipeSummary | null
   }>(),
   {
     currentRecipePhase: null,
     refreshingNodes: false,
     bindingInProgress: false,
+    bindingNodeIds: () => new Set<number>(),
     recipeSummary: null,
   },
 )
@@ -177,6 +182,7 @@ const emit = defineEmits<{
   (e: 'update:zone-climate-form', v: ZoneClimateFormState): void
   (e: 'update:assignments', v: ZoneAutomationSectionAssignments): void
   (e: 'bind-devices', roles: string[]): void
+  (e: 'bind-node', nodeId: number): void
   (e: 'refresh-nodes'): void
   (e: 'refresh'): void
   (e: 'preset-applied', preset: unknown): void
