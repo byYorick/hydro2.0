@@ -76,7 +76,7 @@ import RequiredDevicesSection from '@/Components/ZoneAutomation/RequiredDevicesS
 import SolutionCorrectionSection from '@/Components/ZoneAutomation/SolutionCorrectionSection.vue'
 import WaterContourSection from '@/Components/ZoneAutomation/WaterContourSection.vue'
 import ZoneClimateSection from '@/Components/ZoneAutomation/ZoneClimateSection.vue'
-import type { Node as SetupWizardNode } from '@/types/SetupWizard'
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 import type {
   LightingFormState,

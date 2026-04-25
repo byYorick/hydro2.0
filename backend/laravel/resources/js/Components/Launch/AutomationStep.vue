@@ -53,7 +53,7 @@ import {
     bindingsResponseToAssignments,
     zoneLogicProfileToProfile,
 } from '@/composables/automationProfileConverters';
-import type { Node as SetupWizardNode } from '@/types/SetupWizard';
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode';
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';

@@ -355,7 +355,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ClimateFormState } from '@/composables/zoneAutomationTypes'
-import type { Node as SetupWizardNode } from '@/types/SetupWizard'
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 
 interface GreenhouseClimateBindingsState {
   climate_sensors: number[]
