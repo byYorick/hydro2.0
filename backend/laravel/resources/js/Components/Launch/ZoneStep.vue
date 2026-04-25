@@ -6,24 +6,26 @@
     <div class="flex flex-col gap-3">
       <ShellCard title="Теплица">
         <template #actions>
-          <Chip
-            v-if="selectedGreenhouseId"
-            tone="growth"
+          <Button
+            size="sm"
+            :variant="ghMode === 'select' ? 'primary' : 'secondary'"
+            @click="ghMode = 'select'"
           >
-            <template #icon>
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-growth"></span>
-            </template>
-            выбрана
-          </Chip>
-          <Chip
-            v-else
-            tone="warn"
+            Выбрать
+          </Button>
+          <Button
+            size="sm"
+            :variant="ghMode === 'create' ? 'primary' : 'secondary'"
+            @click="ghMode = 'create'"
           >
-            не выбрана
-          </Chip>
+            + Создать
+          </Button>
         </template>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div
+          v-if="ghMode === 'select'"
+          class="grid grid-cols-1 md:grid-cols-2 gap-3"
+        >
           <Field
             label="Теплица"
             required
@@ -71,14 +73,59 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pt-3 mt-3 border-t border-[var(--border-muted)]">
-          <span class="text-xs text-[var(--text-dim)]">Нужна новая теплица?</span>
-          <Link
-            :href="greenhousesIndexHref"
-            class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+        <div
+          v-else
+          class="grid grid-cols-1 md:grid-cols-2 gap-3"
+        >
+          <Field
+            label="Название теплицы"
+            required
+            :hint="`UID: ${generatedUid}`"
           >
-            → Перейти на /greenhouses
-          </Link>
+            <TextInput
+              v-model="newGhName"
+              placeholder="Berry"
+              maxlength="120"
+            />
+          </Field>
+          <Field label="Часовой пояс">
+            <TextInput
+              v-model="newGhTimezone"
+              placeholder="Europe/Moscow"
+              maxlength="64"
+            />
+          </Field>
+          <Field label="Тип теплицы">
+            <Select
+              v-model="newGhTypeCode"
+              :options="ghTypeOptions"
+              placeholder="не указан"
+            />
+          </Field>
+          <Field label="Описание">
+            <TextInput
+              v-model="newGhDescription"
+              placeholder="Главная теплица"
+              maxlength="255"
+            />
+          </Field>
+          <div class="md:col-span-2 flex items-center justify-end gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              @click="ghMode = 'select'"
+            >
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              :disabled="!newGhName.trim() || creatingGreenhouse"
+              @click="createGreenhouse"
+            >
+              {{ creatingGreenhouse ? 'Создание…' : 'Создать теплицу' }}
+            </Button>
+          </div>
         </div>
       </ShellCard>
 
@@ -178,8 +225,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Link } from '@inertiajs/vue3'
 import { api } from '@/services/api'
+import { generateUid } from '@/utils/transliterate'
 import { useToast } from '@/composables/useToast'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import Button from '@/Components/Button.vue'
@@ -207,6 +254,12 @@ interface ActiveGrowCyclePreview {
   active_grow_day?: number | null
 }
 
+interface GreenhouseType {
+  id: number
+  code: string
+  name: string
+}
+
 interface ZoneRecord {
   id: number
   name: string
@@ -224,12 +277,28 @@ const { showToast } = useToast()
 const { showHints } = useLaunchPreferences()
 
 const greenhouses = ref<GreenhouseRecord[]>([])
+const greenhouseTypes = ref<GreenhouseType[]>([])
 const zones = ref<ZoneRecord[]>([])
 const selectedGreenhouseId = ref<number | null>(null)
 const zoneMode = ref<'select' | 'create'>('select')
 const newZoneName = ref('')
 const newZoneDescription = ref('')
 const creatingZone = ref(false)
+
+const ghMode = ref<'select' | 'create'>('select')
+const newGhName = ref('')
+const newGhTimezone = ref('Europe/Moscow')
+const newGhTypeCode = ref<string>('')
+const newGhDescription = ref('')
+const creatingGreenhouse = ref(false)
+
+const generatedUid = computed(() =>
+  newGhName.value.trim() ? generateUid(newGhName.value, 'gh-') : 'gh-...',
+)
+
+const ghTypeOptions = computed(() => [
+  ...greenhouseTypes.value.map((t) => ({ value: t.code, label: t.name })),
+])
 
 const greenhouseOptions = computed(() =>
   greenhouses.value.map((g) => ({
@@ -265,8 +334,6 @@ const typeOptions = computed(() =>
   selectedGreenhouse.value?.type ? [selectedGreenhouse.value.type] : ['—'],
 )
 
-const greenhousesIndexHref = computed(() => '/greenhouses')
-
 const rightColClass = computed(() => 'lg:[grid-template-columns:1fr_320px]')
 
 function toArray<T>(value: unknown): T[] {
@@ -280,12 +347,14 @@ function toArray<T>(value: unknown): T[] {
 
 async function loadAll(): Promise<void> {
   try {
-    const [ghList, zoneList] = await Promise.all([
+    const [ghList, zoneList, typesList] = await Promise.all([
       api.greenhouses.list(),
       api.zones.list(),
+      api.greenhouses.types().catch(() => [] as unknown[]),
     ])
     greenhouses.value = toArray<GreenhouseRecord>(ghList)
     zones.value = toArray<ZoneRecord>(zoneList)
+    greenhouseTypes.value = toArray<GreenhouseType>(typesList)
 
     const initialZoneId = props.modelValue
     if (initialZoneId) {
@@ -324,6 +393,34 @@ function onGreenhouseSelect(id: number | null): void {
     }
   }
   zoneMode.value = 'select'
+}
+
+async function createGreenhouse(): Promise<void> {
+  const name = newGhName.value.trim()
+  if (!name) return
+  creatingGreenhouse.value = true
+  try {
+    const typeRecord = greenhouseTypes.value.find((t) => t.code === newGhTypeCode.value)
+    const created = (await api.greenhouses.create({
+      uid: generateUid(name, 'gh-'),
+      name,
+      timezone: newGhTimezone.value.trim() || null,
+      greenhouse_type_id: typeRecord?.id ?? null,
+      type: typeRecord?.code ?? null,
+      description: newGhDescription.value.trim() || null,
+    })) as unknown as GreenhouseRecord
+    greenhouses.value = [...greenhouses.value, created]
+    selectedGreenhouseId.value = created.id
+    newGhName.value = ''
+    newGhDescription.value = ''
+    newGhTypeCode.value = ''
+    ghMode.value = 'select'
+    showToast(`Теплица «${created.name}» создана`, 'success')
+  } catch (error) {
+    showToast((error as Error).message || 'Ошибка создания теплицы', 'error')
+  } finally {
+    creatingGreenhouse.value = false
+  }
 }
 
 async function createZone(): Promise<void> {

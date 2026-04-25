@@ -5,6 +5,8 @@ vi.mock('@/services/api', () => ({
   api: {
     greenhouses: {
       list: vi.fn(),
+      create: vi.fn(),
+      types: vi.fn(),
     },
     zones: {
       list: vi.fn(),
@@ -40,15 +42,33 @@ describe('ZoneStep', () => {
       { id: 11, name: 'Zone B', greenhouse_id: 1, status: 'DRAFT' },
       { id: 20, name: 'Zone C', greenhouse_id: 2, status: 'IDLE' },
     ] as any)
+    vi.mocked(api.greenhouses.types).mockResolvedValue([
+      { id: 1, code: 'film', name: 'Плёночная' },
+      { id: 2, code: 'glass', name: 'Стеклянная' },
+    ] as any)
   })
 
-  it('renders Теплица card and CTA to /greenhouses', async () => {
+  it('renders Теплица card with select/create toggle', async () => {
     const w = mount(ZoneStep, { props: { modelValue: null } })
     await flushPromises()
     expect(w.text()).toContain('Теплица')
-    expect(w.text()).toContain('Нужна новая теплица?')
-    const ghLink = w.find('a[href="/greenhouses"]')
-    expect(ghLink.exists()).toBe(true)
+    const buttons = w.findAll('button').map((b) => b.text())
+    expect(buttons).toContain('Выбрать')
+    expect(buttons.some((t) => t.includes('+ Создать'))).toBe(true)
+  })
+
+  it('switches to create mode and shows UID + type select + Создать button', async () => {
+    const w = mount(ZoneStep, { props: { modelValue: null } })
+    await flushPromises()
+    const createBtn = w.findAll('button').find((b) => b.text().includes('+ Создать'))!
+    await createBtn.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('Название теплицы')
+    expect(w.text()).toContain('Часовой пояс')
+    expect(w.text()).toContain('Тип теплицы')
+    expect(w.text()).toContain('UID:')
+    const submitBtn = w.findAll('button').find((b) => b.text().includes('Создать теплицу'))!
+    expect(submitBtn.attributes('disabled')).toBeDefined() // пока имя пустое
   })
 
   it('hides Зона card until greenhouse is selected', async () => {
