@@ -1,87 +1,93 @@
 <template>
-  <Card>
-    <div class="space-y-3">
-      <div class="flex items-center justify-between gap-3">
-        <div class="text-sm font-semibold">
-          Relay автотюнинг
-        </div>
-        <div class="flex gap-1">
-          <Button
-            size="sm"
-            :variant="selectedType === 'ph' ? 'default' : 'outline'"
-            @click="selectedType = 'ph'"
-          >
-            pH
-          </Button>
-          <Button
-            size="sm"
-            :variant="selectedType === 'ec' ? 'default' : 'outline'"
-            @click="selectedType = 'ec'"
-          >
-            EC
-          </Button>
-        </div>
-      </div>
+  <ShellCard title="Relay автотюнинг">
+    <template #actions>
+      <Button
+        size="sm"
+        :variant="selectedType === 'ph' ? 'primary' : 'secondary'"
+        @click="selectedType = 'ph'"
+      >
+        pH
+      </Button>
+      <Button
+        size="sm"
+        :variant="selectedType === 'ec' ? 'primary' : 'secondary'"
+        @click="selectedType = 'ec'"
+      >
+        EC
+      </Button>
+    </template>
 
-      <div class="text-xs space-y-1">
+    <div class="flex flex-col gap-2.5">
+      <div class="text-xs">
         <div
           v-if="status?.status === 'running'"
-          class="flex items-center gap-2 text-[color:var(--badge-info-text)]"
+          class="flex items-center gap-2 text-brand"
         >
-          <span class="animate-pulse">●</span>
+          <span class="animate-pulse font-mono">●</span>
           <span>
-            Выполняется: {{ status.progress?.cycles_detected ?? 0 }}/{{ status.progress?.min_cycles ?? 3 }} циклов
-            ({{ formatElapsed(status.progress?.elapsed_sec) }})
+            Выполняется:
+            <span class="font-mono">{{ status.progress?.cycles_detected ?? 0 }}/{{ status.progress?.min_cycles ?? 3 }}</span>
+            циклов
+            <span class="text-[var(--text-dim)]">({{ formatElapsed(status.progress?.elapsed_sec) }})</span>
           </span>
         </div>
 
         <div
           v-else-if="status?.status === 'complete'"
-          class="text-[color:var(--badge-success-text)]"
+          class="flex items-center gap-2 text-growth"
         >
-          Завершён: Kp={{ tunedKp ?? '?' }}, Ki={{ tunedKi ?? '?' }},
-          Au={{ formatOptionalNumber(status.result?.oscillation_amplitude, 4) ?? '?' }},
-          циклов={{ status.result?.cycles_detected ?? 0 }}
+          <span class="font-mono">✓</span>
+          <span>
+            Завершён:
+            <span class="font-mono">Kp={{ tunedKp ?? '?' }}</span>,
+            <span class="font-mono">Ki={{ tunedKi ?? '?' }}</span>,
+            <span class="font-mono">Au={{ formatOptionalNumber(status.result?.oscillation_amplitude, 4) ?? '?' }}</span>,
+            циклов <span class="font-mono">{{ status.result?.cycles_detected ?? 0 }}</span>
+          </span>
         </div>
 
         <div
           v-else-if="status?.status === 'timeout'"
-          class="text-[color:var(--badge-warning-text)]"
+          class="flex items-center gap-2 text-warn"
         >
-          Таймаут. Система не вошла в устойчивые колебания.
+          <span class="font-mono">!</span>
+          <span>Таймаут. Система не вошла в устойчивые колебания.</span>
         </div>
 
         <div
           v-else
-          class="text-[color:var(--text-dim)]"
+          class="text-[var(--text-dim)]"
         >
           Не запускался
         </div>
       </div>
 
-      <div class="rounded-md bg-[color:var(--bg-elevated)] p-2 text-xs text-[color:var(--text-dim)]">
-        Relay-автотюнинг занимает 1-2 часа. Во время процедуры PID заменяется relay-режимом.
-        После завершения коэффициенты сохраняются в конфиг PID.
-      </div>
+      <Hint :show="true">
+        Relay-автотюнинг занимает 1-2 часа. Во время процедуры PID заменяется
+        relay-режимом. После завершения коэффициенты сохраняются в конфиг PID.
+      </Hint>
 
       <Button
         size="sm"
-        variant="outline"
+        variant="primary"
         :disabled="isRunning || starting"
         @click="startAutotune"
       >
         <span v-if="starting">Запуск...</span>
-        <span v-else-if="isRunning">Выполняется ({{ status?.progress?.cycles_detected ?? 0 }}/{{ status?.progress?.min_cycles ?? 3 }})</span>
-        <span v-else>Запустить автотюнинг {{ selectedType.toUpperCase() }}</span>
+        <span
+          v-else-if="isRunning"
+        >Выполняется ({{ status?.progress?.cycles_detected ?? 0 }}/{{ status?.progress?.min_cycles ?? 3 }})</span>
+        <span v-else>▶ Запустить автотюнинг {{ selectedType.toUpperCase() }}</span>
       </Button>
     </div>
-  </Card>
+  </ShellCard>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
-import Card from '@/Components/Card.vue'
+import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
+import { Hint } from '@/Components/Shared/Primitives'
 import { usePidConfig } from '@/composables/usePidConfig'
 import type { RelayAutotuneStatus } from '@/types/PidConfig'
 
@@ -136,7 +142,6 @@ function syncPollingState(): void {
     }, 10_000)
     return
   }
-
   if (!isRunning.value) {
     stopPolling()
   }

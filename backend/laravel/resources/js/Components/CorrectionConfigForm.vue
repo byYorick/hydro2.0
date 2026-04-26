@@ -1,50 +1,60 @@
 <template>
   <div
-    class="correction-config"
+    class="flex flex-col gap-3"
     data-testid="correction-config-form"
   >
-    <!-- ================== ACTION BAR ================== -->
-    <div class="cc-actionbar">
-      <div class="cc-actionbar__lhs">
-        <span
+    <!-- ACTION BAR -->
+    <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+      <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+        <Chip
           v-if="isDirty"
-          class="cc-badge cc-badge--info"
+          tone="brand"
         >
-          <span class="cc-badge__dot" />
+          <template #icon>
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand" />
+          </template>
           изменено в форме
-        </span>
-        <span class="cc-pill cc-pill--violet">
-          {{ phaseOverrideStats.overrideCount }} переопределений фазы
-        </span>
-        <span class="cc-pill">
-          пресет: {{ selectedPreset?.name || 'Системный пресет' }}
-        </span>
+        </Chip>
+        <Chip tone="brand">
+          <span class="font-mono">{{ phaseOverrideStats.overrideCount }} переопределений фазы</span>
+        </Chip>
+        <Chip tone="neutral">
+          пресет: <span class="font-mono ml-1">{{ selectedPreset?.name || 'Системный пресет' }}</span>
+        </Chip>
         <span
           v-if="version !== null"
-          class="cc-meta"
-        >версия #{{ version }}</span>
+          class="text-[11px] font-mono text-[var(--text-dim)] ml-1"
+        >
+          версия #{{ version }}
+        </span>
         <span
           v-if="updatedAt"
-          class="cc-meta"
-        >обновлено {{ formatDate(updatedAt) }}</span>
+          class="text-[11px] font-mono text-[var(--text-dim)]"
+        >
+          обновлено {{ formatDate(updatedAt) }}
+        </span>
         <span
           v-if="lastAppliedVersion !== null"
-          class="cc-meta"
-        >AE применил v{{ lastAppliedVersion }}</span>
+          class="text-[11px] font-mono text-[var(--text-dim)]"
+        >
+          AE применил v{{ lastAppliedVersion }}
+        </span>
       </div>
-      <div class="cc-actionbar__rhs">
+      <div class="flex items-center gap-1.5 flex-wrap">
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
           data-testid="correction-config-history-open"
           @click="historyDrawerOpen = true"
         >
           История версий
-          <span class="cc-pill cc-pill--sm">{{ history.length }}</span>
+          <Chip tone="neutral">
+            <span class="font-mono">{{ history.length }}</span>
+          </Chip>
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
           data-testid="correction-config-reload"
           :disabled="loading"
           @click="reload"
@@ -53,6 +63,7 @@
         </Button>
         <Button
           size="sm"
+          variant="primary"
           data-testid="correction-config-save"
           :disabled="loading"
           @click="save"
@@ -62,47 +73,47 @@
       </div>
     </div>
 
-    <!-- ================== PRESET STRIP ================== -->
-    <div class="cc-preset-strip">
-      <span class="cc-preset-strip__label">Пресет</span>
+    <!-- PRESET STRIP -->
+    <div class="flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+      <span class="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold pr-1">
+        Пресет
+      </span>
 
       <button
         type="button"
-        class="cc-preset-pill"
-        :class="{ 'cc-preset-pill--active': selectedPresetId === null }"
+        :class="presetPillClass(selectedPresetId === null)"
         @click="onPresetPillClick(null)"
       >
         Системный пресет
-        <span class="cc-preset-pill__scope">system</span>
-        <span class="cc-preset-pill__lock">🔒</span>
+        <span class="text-[10px] font-mono opacity-65">system</span>
+        <span class="text-[10px]">🔒</span>
       </button>
 
       <button
         v-for="preset in presets"
         :key="preset.id"
         type="button"
-        class="cc-preset-pill"
-        :class="{ 'cc-preset-pill--active': selectedPresetId === preset.id }"
+        :class="presetPillClass(selectedPresetId === preset.id)"
         :data-testid="`correction-config-preset-${preset.id}`"
         @click="onPresetPillClick(preset.id)"
       >
         {{ preset.name }}
-        <span class="cc-preset-pill__scope">{{ preset.scope }}</span>
+        <span class="text-[10px] font-mono opacity-65">{{ preset.scope }}</span>
       </button>
 
       <button
         type="button"
-        class="cc-preset-pill cc-preset-pill--dashed"
+        class="px-2.5 py-1 rounded-full border border-dashed border-[var(--border-muted)] text-[12px] text-[var(--text-muted)] cursor-pointer hover:bg-[var(--bg-surface-strong)]"
         data-testid="correction-config-new-preset"
         @click="newPresetModalOpen = true"
       >
-        ＋ новый пресет
+        + новый пресет
       </button>
 
-      <div class="cc-preset-strip__actions">
+      <div class="ml-auto flex items-center gap-1.5">
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
           data-testid="correction-config-apply-preset"
           @click="applySelectedPresetSafe"
         >
@@ -111,7 +122,7 @@
         <Button
           v-if="selectedPreset?.scope === 'custom'"
           size="sm"
-          variant="outline"
+          variant="secondary"
           data-testid="correction-config-update-preset"
           :disabled="loading"
           @click="updateSelectedPreset"
@@ -120,17 +131,16 @@
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant="secondary"
           data-testid="correction-config-reset-defaults"
           @click="resetToDefaults"
         >
           Сбросить к стандартным
         </Button>
-        <div class="cc-menu-wrap">
+        <div class="relative">
           <Button
             size="sm"
-            variant="outline"
-            class="cc-menu-trigger"
+            variant="secondary"
             data-testid="correction-config-preset-menu"
             @click.stop="presetMenuOpen = !presetMenuOpen"
           >
@@ -139,14 +149,14 @@
           <div
             v-if="presetMenuOpen"
             v-click-outside="() => (presetMenuOpen = false)"
-            class="cc-menu"
+            class="absolute right-0 top-full mt-1 z-10 min-w-[200px] rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-lg overflow-hidden"
           >
-            <div class="cc-menu__header">
+            <div class="px-3 py-2 text-[11px] font-mono text-[var(--text-dim)] border-b border-[var(--border-muted)]">
               {{ selectedPreset?.name || 'Системный пресет' }}
             </div>
             <button
               type="button"
-              class="cc-menu__item"
+              :class="menuItemClass"
               :disabled="!selectedPreset || selectedPreset.scope !== 'custom'"
               @click="onMenuRename"
             >
@@ -154,29 +164,29 @@
             </button>
             <button
               type="button"
-              class="cc-menu__item"
+              :class="menuItemClass"
               @click="onMenuDuplicate"
             >
               Дублировать
             </button>
             <button
               type="button"
-              class="cc-menu__item"
+              :class="menuItemClass"
               @click="onMenuExport('json')"
             >
               Экспорт JSON
             </button>
             <button
               type="button"
-              class="cc-menu__item"
+              :class="menuItemClass"
               @click="onMenuExport('yaml')"
             >
               Экспорт YAML
             </button>
-            <div class="cc-menu__sep" />
+            <div class="h-px bg-[var(--border-muted)]" />
             <button
               type="button"
-              class="cc-menu__item cc-menu__item--danger"
+              :class="[menuItemClass, 'text-alert hover:bg-alert-soft']"
               :disabled="!selectedPreset || selectedPreset.scope !== 'custom' || loading"
               data-testid="correction-config-delete-preset"
               @click="deleteSelectedPreset"
@@ -188,79 +198,76 @@
       </div>
     </div>
 
-    <!-- ================== PHASE TABS ================== -->
-    <div class="cc-phase-tabs">
+    <!-- PHASE TABS -->
+    <div class="flex flex-wrap items-end gap-1 border-b border-[var(--border-muted)]">
       <button
         type="button"
-        class="cc-phase-tab"
-        :class="{ 'cc-phase-tab--active': currentTab === 'base' }"
+        :class="phaseTabClass(currentTab === 'base')"
         data-testid="correction-config-tab-base"
         @click="currentTab = 'base'"
       >
-        <span class="cc-phase-tab__title">Базовая конфигурация</span>
-        <span class="cc-phase-tab__k">общие параметры</span>
-        <div class="cc-phase-tab__meters">
-          <span class="cc-phase-tab__n">{{ baseFieldCount }} полей</span>
-        </div>
+        <span class="text-sm font-medium">Базовая конфигурация</span>
+        <span class="text-[11px] font-mono opacity-65">общие параметры</span>
+        <span class="text-[11px] font-mono opacity-80">{{ baseFieldCount }} полей</span>
       </button>
 
       <button
         v-for="phase in phases"
         :key="phase"
         type="button"
-        class="cc-phase-tab"
-        :class="{ 'cc-phase-tab--active': currentTab === phase }"
+        :class="phaseTabClass(currentTab === phase)"
         :data-testid="`correction-config-tab-${phase}`"
         @click="currentTab = phase"
       >
-        <span class="cc-phase-tab__title">{{ phaseLabel(phase) }}</span>
-        <span class="cc-phase-tab__k">{{ phase }}</span>
-        <div class="cc-phase-tab__meters">
-          <span
-            class="cc-phase-tab__n"
-            :class="{ 'cc-phase-tab__n--on': overrideCountByPhase[phase] > 0 }"
-          >
-            {{ overrideCountByPhase[phase] }} переопределений
-          </span>
-        </div>
+        <span class="text-sm font-medium">{{ phaseLabel(phase) }}</span>
+        <span class="text-[11px] font-mono opacity-65">{{ phase }}</span>
+        <span
+          class="text-[11px] font-mono"
+          :class="overrideCountByPhase[phase] > 0 ? 'text-brand' : 'opacity-65'"
+        >
+          {{ overrideCountByPhase[phase] }} переопределений
+        </span>
       </button>
 
-      <div class="cc-phase-tabs__right">
-        <label class="cc-toggle">
-          <input
-            v-model="advancedMode"
-            type="checkbox"
-            data-testid="correction-config-advanced-mode"
-          />
-          расширенный режим
-        </label>
-      </div>
+      <label class="ml-auto flex items-center gap-1.5 px-2 py-1.5 text-[12px] text-[var(--text-muted)] cursor-pointer">
+        <input
+          v-model="advancedMode"
+          type="checkbox"
+          data-testid="correction-config-advanced-mode"
+          class="accent-brand"
+        />
+        расширенный режим
+      </label>
     </div>
 
-    <!-- ================== MAIN (form + preview) ================== -->
-    <div class="cc-main">
-      <div class="cc-form-col">
+    <!-- MAIN (form + preview) -->
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-3">
+      <div class="flex flex-col gap-2 min-w-0">
         <div
           v-if="currentTab !== 'base'"
-          class="cc-phase-row"
+          class="flex flex-wrap items-center gap-2 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"
         >
-          <span class="cc-phase-row__icon">⚙</span>
-          <div class="cc-phase-row__text">
-            Редактирование фазы <b>«{{ phaseLabel(currentTab as CorrectionPhase) }}»</b>
+          <Chip tone="brand">
+            <template #icon>
+              <Ic name="edit" />
+            </template>
+            фаза
+          </Chip>
+          <div class="text-[12px] text-[var(--text-muted)] flex-1 min-w-[200px]">
+            Редактирование фазы <b class="text-[var(--text-primary)]">«{{ phaseLabel(currentTab as CorrectionPhase) }}»</b>
             · {{ overrideCountByPhase[currentTab as CorrectionPhase] }} параметров
             отличаются от базовой конфигурации
           </div>
-          <div class="cc-phase-row__gap" />
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             @click="copyBaseToPhase(currentTab as CorrectionPhase)"
           >
             Скопировать из базовой
           </Button>
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             @click="resetPhaseOverride(currentTab as CorrectionPhase)"
           >
             Сбросить переопределение
@@ -270,67 +277,67 @@
         <div
           v-for="section in visibleSections"
           :key="section.key"
-          class="cc-section"
-          :class="{ 'cc-section--open': openSections.has(section.key) }"
+          class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] overflow-hidden"
         >
           <button
             type="button"
-            class="cc-section__header"
+            class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--bg-surface-strong)] transition-colors"
             :data-testid="`correction-config-section-${section.key}`"
             @click="toggleSection(section.key)"
           >
-            <span class="cc-section__caret">▸</span>
-            <span class="cc-section__title">{{ section.label }}</span>
-            <span class="cc-section__sub">{{ section.key }}</span>
-            <span class="cc-section__flag">
-              <span
+            <span :class="['inline-block transition-transform', openSections.has(section.key) ? 'rotate-90' : '']">▸</span>
+            <span class="text-sm font-medium text-[var(--text-primary)]">{{ section.label }}</span>
+            <span class="text-[11px] font-mono text-[var(--text-dim)]">{{ section.key }}</span>
+            <span class="ml-auto">
+              <Chip
                 v-if="sectionOverrideCount(section) > 0"
-                class="cc-pill cc-pill--violet"
+                tone="brand"
               >
                 {{ sectionOverrideCount(section) }} переопределений
-              </span>
-              <span
+              </Chip>
+              <Chip
                 v-else
-                class="cc-pill"
-              >без переопределений</span>
+                tone="neutral"
+              >
+                без переопределений
+              </Chip>
             </span>
           </button>
 
           <div
             v-if="openSections.has(section.key)"
-            class="cc-section__body"
+            class="border-t border-[var(--border-muted)] px-3 py-3 flex flex-col gap-3"
           >
             <div
               v-if="sectionRuntimeNote(section.key, currentForm)"
-              class="cc-section__note"
+              class="text-[11px] text-[var(--text-muted)] leading-relaxed px-2.5 py-1.5 rounded-md bg-[var(--bg-surface-strong)] border border-[var(--border-muted)]"
             >
               {{ sectionRuntimeNote(section.key, currentForm) }}
             </div>
 
-            <div class="cc-fgrid">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div
                 v-for="field in visibleFields(section.fields)"
                 :key="field.path"
-                class="cc-field"
-                :class="{ 'cc-field--overridden': isFieldOverridden(field) }"
+                :class="['flex flex-col gap-1', isFieldOverridden(field) ? 'cc-field--overridden' : '']"
               >
-                <label class="cc-field__label">
+                <span class="text-xs font-medium text-[var(--text-muted)]">
                   {{ field.label }}
                   <span
                     v-if="field.unit"
-                    class="cc-field__hint"
+                    class="text-[10px] text-[var(--text-dim)] ml-1"
                   >{{ field.unit }}</span>
-                </label>
+                </span>
 
                 <label
                   v-if="field.type === 'boolean'"
-                  class="cc-toggle"
-                  :class="{ 'cc-toggle--on': Boolean(getByPath(currentForm, field.path)) }"
+                  class="flex items-center gap-2 text-sm cursor-pointer"
                 >
                   <input
                     :checked="Boolean(getByPath(currentForm, field.path))"
                     :data-testid="`correction-config-${currentTab}-${field.path}`"
                     type="checkbox"
+                    class="accent-brand"
                     @change="setByPath(currentForm, field.path, ($event.target as HTMLInputElement).checked)"
                   />
                   {{ Boolean(getByPath(currentForm, field.path)) ? 'включено' : 'выключено' }}
@@ -340,7 +347,7 @@
                   v-else-if="field.type === 'enum'"
                   :value="String(getByPath(currentForm, field.path) ?? '')"
                   :data-testid="`correction-config-${currentTab}-${field.path}`"
-                  class="cc-input cc-input--select"
+                  :class="inputCls"
                   :disabled="Boolean(field.readonly)"
                   @change="setByPath(currentForm, field.path, ($event.target as HTMLSelectElement).value)"
                 >
@@ -362,18 +369,18 @@
                   :min="field.min"
                   :max="field.max"
                   :disabled="Boolean(field.readonly)"
-                  class="cc-input"
+                  :class="inputCls"
                   @input="handleScalarInput(currentForm, field, $event)"
                 />
 
                 <div
                   v-if="field.type !== 'boolean'"
-                  class="cc-field__help"
+                  class="text-[11px] text-[var(--text-dim)] leading-snug"
                 >
                   {{ field.description }}
                   <span
                     v-if="isFieldOverridden(field) && currentTab !== 'base'"
-                    class="cc-field__base"
+                    class="text-brand ml-1 font-mono"
                   >
                     базовое: {{ formatFieldValue(field, getByPath(baseForm, field.path)) }}
                   </span>
@@ -384,49 +391,54 @@
         </div>
       </div>
 
-      <!-- ============== PREVIEW ============== -->
+      <!-- PREVIEW -->
       <aside
-        class="cc-preview-col"
+        class="min-w-0"
         data-testid="phase-effective-preview"
       >
-        <div class="cc-preview-stick">
-          <div class="cc-preview__header">
-            <h3>Итоговое состояние runtime</h3>
-            <span class="cc-pill">фаза: {{ currentTab }}</span>
+        <div class="sticky top-0 flex flex-col gap-2 px-3 py-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">
+              Итоговое состояние runtime
+            </h3>
+            <Chip tone="neutral">
+              <span class="font-mono">фаза: {{ currentTab }}</span>
+            </Chip>
           </div>
-          <div class="cc-preview__stats">
-            <span class="cc-pill cc-pill--violet">
-              {{ phaseOverrideStats.overrideCount }} переопределений
-            </span>
-            <span class="cc-pill">
-              {{ phaseOverrideStats.sectionCount }} секций затронуто
-            </span>
-            <span
+          <div class="flex flex-wrap gap-1.5">
+            <Chip tone="brand">
+              <span class="font-mono">{{ phaseOverrideStats.overrideCount }} переопределений</span>
+            </Chip>
+            <Chip tone="neutral">
+              <span class="font-mono">{{ phaseOverrideStats.sectionCount }} секций затронуто</span>
+            </Chip>
+            <Chip
               v-if="phaseOverrideStats.hiddenOverrideCount > 0"
-              class="cc-pill"
+              tone="neutral"
             >
-              скрыто в расширенных: {{ phaseOverrideStats.hiddenOverrideCount }}
-            </span>
+              <span class="font-mono">скрыто в расширенных: {{ phaseOverrideStats.hiddenOverrideCount }}</span>
+            </Chip>
           </div>
 
           <div
             v-for="group in effectivePreviewGroups"
             :key="group.key"
-            class="cc-preview__group"
+            class="flex flex-col gap-1 mt-1 pt-2 border-t border-[var(--border-muted)]"
           >
-            <h5>{{ group.label }}</h5>
+            <h5 class="text-[11px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">
+              {{ group.label }}
+            </h5>
             <div
               v-for="item in group.items"
               :key="item.path"
-              class="cc-preview__row"
-              :class="{ 'cc-preview__row--overridden': item.overridden }"
+              :class="['cc-preview__row flex items-baseline justify-between gap-2 text-[12px]', item.overridden ? 'cc-preview__row--overridden' : '']"
             >
-              <span class="cc-preview__k">{{ item.label }}</span>
-              <span class="cc-preview__v">
+              <span class="text-[var(--text-muted)]">{{ item.label }}</span>
+              <span class="font-mono text-[var(--text-primary)]">
                 {{ item.value }}
                 <span
                   v-if="item.overridden"
-                  class="cc-preview__base"
+                  class="cc-preview__base text-[10px] text-[var(--text-dim)] ml-1"
                 >{{ item.baseValue }}</span>
               </span>
             </div>
@@ -435,304 +447,303 @@
       </aside>
     </div>
 
-    <!-- ================== CONFLICT BANNER ================== -->
+    <!-- CONFLICT BANNER -->
     <teleport to="body">
       <div
         v-if="conflictOpen"
-        class="cc-conflict"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm"
         data-testid="correction-config-conflict-banner"
       >
-        <span class="cc-conflict__icon">⚠</span>
-        <div class="cc-conflict__body">
-          <h4>
-            Применить пресет «{{ pendingPresetName }}»?
-          </h4>
-          <p>
-            В форме есть <b>{{ pendingPresetDiffs.length }} несохранённых</b> переопределений,
-            которые будут затёрты значениями пресета. Несохранённые изменения
-            нельзя будет восстановить.
-          </p>
-          <div class="cc-conflict__diffs">
-            <span
-              v-for="d in pendingPresetDiffs.slice(0, 6)"
-              :key="d.path"
-              class="cc-pill cc-pill--warn"
-            >
-              {{ d.label }}: {{ d.oldVal }} → {{ d.newVal }}
-            </span>
-            <span
-              v-if="pendingPresetDiffs.length > 6"
-              class="cc-pill"
-            >+{{ pendingPresetDiffs.length - 6 }} ещё</span>
+        <div class="w-[min(540px,95vw)] rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl p-4 flex flex-col gap-3">
+          <div class="flex items-start gap-3">
+            <span class="text-warn text-2xl leading-none">⚠</span>
+            <div class="flex-1">
+              <h4 class="text-base font-semibold text-[var(--text-primary)]">
+                Применить пресет «{{ pendingPresetName }}»?
+              </h4>
+              <p class="text-[12px] text-[var(--text-muted)] leading-relaxed mt-1">
+                В форме есть <b>{{ pendingPresetDiffs.length }} несохранённых</b> переопределений,
+                которые будут затёрты значениями пресета. Несохранённые изменения
+                нельзя будет восстановить.
+              </p>
+              <div class="flex flex-wrap gap-1 mt-2">
+                <Chip
+                  v-for="d in pendingPresetDiffs.slice(0, 6)"
+                  :key="d.path"
+                  tone="warn"
+                >
+                  <span class="font-mono">{{ d.label }}: {{ d.oldVal }} → {{ d.newVal }}</span>
+                </Chip>
+                <Chip
+                  v-if="pendingPresetDiffs.length > 6"
+                  tone="neutral"
+                >
+                  +{{ pendingPresetDiffs.length - 6 }} ещё
+                </Chip>
+              </div>
+            </div>
           </div>
-          <div class="cc-conflict__actions">
+          <div class="flex items-center gap-2 justify-end">
             <Button
               size="sm"
-              @click="confirmApplyPendingPreset"
+              variant="secondary"
+              @click="cancelPendingPreset"
             >
-              Применить и затереть
+              Отмена
             </Button>
             <Button
               size="sm"
-              variant="outline"
+              variant="secondary"
               @click="openPresetCompareDiff"
             >
               Сравнить diff
             </Button>
             <Button
               size="sm"
-              variant="outline"
-              @click="cancelPendingPreset"
+              variant="primary"
+              @click="confirmApplyPendingPreset"
             >
-              Отмена
+              Применить и затереть
             </Button>
           </div>
         </div>
       </div>
     </teleport>
 
-    <!-- ================== HISTORY DRAWER ================== -->
+    <!-- HISTORY DRAWER -->
     <teleport to="body">
       <div
         v-if="historyDrawerOpen"
-        class="cc-backdrop"
-        @click="historyDrawerOpen = false"
-      />
-      <aside
-        v-if="historyDrawerOpen"
-        class="cc-drawer"
-        role="dialog"
-        aria-label="История версий"
+        class="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm"
+        @click.self="historyDrawerOpen = false"
       >
-        <div class="cc-drawer__header">
-          <h3>История версий</h3>
-          <span class="cc-pill">{{ history.length }} ревизий</span>
-          <div class="cc-drawer__gap" />
-          <button
-            type="button"
-            class="cc-drawer__close"
-            @click="historyDrawerOpen = false"
-          >
-            ×
-          </button>
-        </div>
-        <div class="cc-drawer__body">
-          <div
-            v-if="history.length === 0"
-            class="cc-drawer__empty"
-          >
-            Нет ревизий.
-          </div>
-          <div
-            v-for="item in history"
-            :key="item.id"
-            class="cc-hist"
-            @click="openHistoryDiff(item)"
-          >
-            <div class="cc-hist__head">
-              <span class="cc-hist__v">v{{ item.version }}</span>
-              <span
-                class="cc-pill"
-                :class="historyTypeClass(item.change_type)"
-              >{{ item.change_type }}</span>
-              <span class="cc-hist__t">{{ formatDate(item.changed_at) }}</span>
-            </div>
-            <div class="cc-hist__s">
-              {{ item.preset?.name || 'Системный пресет' }}
+        <aside
+          class="w-[min(440px,95vw)] h-screen flex flex-col bg-[var(--bg-surface-strong)] border-l border-[var(--border-muted)] shadow-2xl"
+          role="dialog"
+          aria-label="История версий"
+        >
+          <header class="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-muted)]">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">
+              История версий
+            </h3>
+            <Chip tone="neutral">
+              <span class="font-mono">{{ history.length }} ревизий</span>
+            </Chip>
+            <button
+              type="button"
+              class="ml-auto w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+              @click="historyDrawerOpen = false"
+            >
+              <Ic name="x" />
+            </button>
+          </header>
+          <div class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
+            <div
+              v-if="history.length === 0"
+              class="text-sm text-[var(--text-dim)] py-6 text-center"
+            >
+              Нет ревизий.
             </div>
             <div
-              v-if="item.changed_by_name"
-              class="cc-hist__preset"
+              v-for="item in history"
+              :key="item.id"
+              class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] px-3 py-2 flex flex-col gap-1 cursor-pointer hover:border-brand transition-colors"
+              @click="openHistoryDiff(item)"
             >
-              {{ item.changed_by_name }}
-            </div>
-            <div class="cc-hist__actions">
-              <Button
-                size="sm"
-                variant="outline"
-                @click.stop="openHistoryDiff(item)"
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-mono font-semibold text-brand">v{{ item.version }}</span>
+                <Chip :tone="historyChipTone(item.change_type)">
+                  {{ item.change_type }}
+                </Chip>
+                <span class="ml-auto text-[11px] font-mono text-[var(--text-dim)]">
+                  {{ formatDate(item.changed_at) }}
+                </span>
+              </div>
+              <div class="text-[12px] text-[var(--text-primary)]">
+                {{ item.preset?.name || 'Системный пресет' }}
+              </div>
+              <div
+                v-if="item.changed_by_name"
+                class="text-[11px] font-mono text-[var(--text-dim)]"
               >
-                показать diff
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="loading"
-                @click.stop="restoreRevision(item)"
-              >
-                восстановить
-              </Button>
+                {{ item.changed_by_name }}
+              </div>
+              <div class="flex gap-1.5 mt-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  @click.stop="openHistoryDiff(item)"
+                >
+                  показать diff
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  :disabled="loading"
+                  @click.stop="restoreRevision(item)"
+                >
+                  восстановить
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      </div>
     </teleport>
 
-    <!-- ================== DIFF MODAL ================== -->
+    <!-- DIFF MODAL -->
     <teleport to="body">
       <div
         v-if="diffModalOpen"
-        class="cc-diff-modal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
         data-testid="correction-config-diff-modal"
         @click.self="diffModalOpen = false"
       >
-        <div class="cc-diff">
-          <div class="cc-diff__header">
-            <h3>{{ diffTitle }}</h3>
-            <span class="cc-diff__crumb">{{ diffCrumb }}</span>
-            <div class="cc-diff__gap" />
+        <div class="w-[min(960px,95vw)] max-h-[90vh] flex flex-col rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl overflow-hidden">
+          <header class="flex items-center gap-3 px-4 py-3 border-b border-[var(--border-muted)]">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">{{ diffTitle }}</h3>
+            <span class="text-[11px] font-mono text-[var(--text-dim)]">{{ diffCrumb }}</span>
             <button
               type="button"
-              class="cc-diff__close"
+              class="ml-auto w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
               @click="diffModalOpen = false"
             >
-              ×
+              <Ic name="x" />
             </button>
-          </div>
-          <div class="cc-diff__tabs">
+          </header>
+          <div class="flex gap-1 px-4 pt-2 border-b border-[var(--border-muted)]">
             <button
               v-for="fmt in (['yaml', 'json', 'fields'] as const)"
               :key="fmt"
               type="button"
-              class="cc-diff__tab"
-              :class="{ 'cc-diff__tab--active': diffFormat === fmt }"
+              :class="diffTabClass(diffFormat === fmt)"
               @click="diffFormat = fmt"
             >
               {{ fmt === 'fields' ? 'По полям' : fmt.toUpperCase() }}
             </button>
           </div>
-          <div class="cc-diff__body">
-            <div class="cc-diff__side">
-              <div class="cc-diff__side-h">
-                <b>было</b>
-                <span class="cc-diff__fmt">{{ diffFormat }}</span>
+          <div class="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--border-muted)]">
+            <div class="flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
+              <div class="flex items-center gap-2 px-3 py-1.5 text-[11px] font-mono text-[var(--text-dim)] border-b border-[var(--border-muted)]">
+                <b class="text-[var(--text-primary)]">было</b>
+                <span class="ml-auto">{{ diffFormat }}</span>
               </div>
-              <div class="cc-diff__lines">
+              <div class="flex-1 overflow-auto font-mono text-[11px]">
                 <div
                   v-for="(line, i) in diffRender.before"
                   :key="`b-${i}`"
-                  class="cc-dl"
-                  :class="[`cc-dl--${line.t}`]"
+                  :class="['flex gap-2 px-2 py-0.5', diffLineClass(line.t)]"
                 >
-                  <div class="cc-dl__n">
-                    {{ line.n }}
-                  </div>
-                  <pre class="cc-dl__c">{{ line.c }}</pre>
+                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">{{ line.n }}</div>
+                  <pre class="flex-1 whitespace-pre-wrap break-all">{{ line.c }}</pre>
                 </div>
               </div>
             </div>
-            <div class="cc-diff__side">
-              <div class="cc-diff__side-h">
-                <b>стало</b>
-                <span class="cc-diff__fmt">{{ diffFormat }}</span>
+            <div class="flex flex-col bg-[var(--bg-elevated)] overflow-hidden">
+              <div class="flex items-center gap-2 px-3 py-1.5 text-[11px] font-mono text-[var(--text-dim)] border-b border-[var(--border-muted)]">
+                <b class="text-[var(--text-primary)]">стало</b>
+                <span class="ml-auto">{{ diffFormat }}</span>
               </div>
-              <div class="cc-diff__lines">
+              <div class="flex-1 overflow-auto font-mono text-[11px]">
                 <div
                   v-for="(line, i) in diffRender.after"
                   :key="`a-${i}`"
-                  class="cc-dl"
-                  :class="[`cc-dl--${line.t}`]"
+                  :class="['flex gap-2 px-2 py-0.5', diffLineClass(line.t)]"
                 >
-                  <div class="cc-dl__n">
-                    {{ line.n }}
-                  </div>
-                  <pre class="cc-dl__c">{{ line.c }}</pre>
+                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">{{ line.n }}</div>
+                  <pre class="flex-1 whitespace-pre-wrap break-all">{{ line.c }}</pre>
                 </div>
               </div>
             </div>
           </div>
-          <div class="cc-diff__stats">
-            <span><span class="cc-diff__add">+{{ diffStats.add }}</span> добавлено</span>
-            <span><span class="cc-diff__del">−{{ diffStats.del }}</span> удалено</span>
+          <div class="flex items-center gap-3 px-4 py-2 text-[11px] font-mono text-[var(--text-dim)] border-t border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+            <span><span class="text-growth">+{{ diffStats.add }}</span> добавлено</span>
+            <span><span class="text-alert">−{{ diffStats.del }}</span> удалено</span>
             <span>{{ diffStats.sections }} секций</span>
-            <div class="cc-diff__gap" />
-            <span>{{ diffMeta }}</span>
+            <span class="ml-auto">{{ diffMeta }}</span>
           </div>
-          <div class="cc-diff__footer">
+          <footer class="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-muted)]">
             <Button
-              variant="outline"
+              variant="secondary"
               @click="diffModalOpen = false"
             >
               Закрыть
             </Button>
-            <div class="cc-diff__gap" />
+            <div class="flex-1" />
             <Button
-              variant="outline"
+              variant="secondary"
               @click="copyDiffText"
             >
               Скопировать diff
             </Button>
             <Button
               v-if="diffContext?.kind === 'history'"
+              variant="primary"
               :disabled="loading"
               @click="restoreDiffRevision"
             >
               Восстановить v{{ diffContext.item.version }}
             </Button>
-          </div>
+          </footer>
         </div>
       </div>
     </teleport>
 
-    <!-- ================== NEW PRESET MODAL ================== -->
+    <!-- NEW PRESET MODAL -->
     <teleport to="body">
       <div
         v-if="newPresetModalOpen"
-        class="cc-diff-modal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
         @click.self="newPresetModalOpen = false"
       >
-        <div
-          class="cc-diff"
-          style="width: min(560px, 100%); min-height: auto"
-        >
-          <div class="cc-diff__header">
-            <h3>Сохранить как пользовательский пресет</h3>
-            <div class="cc-diff__gap" />
+        <div class="w-[min(560px,95vw)] flex flex-col rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl overflow-hidden">
+          <header class="flex items-center gap-3 px-4 py-3 border-b border-[var(--border-muted)]">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">
+              Сохранить как пользовательский пресет
+            </h3>
             <button
               type="button"
-              class="cc-diff__close"
+              class="ml-auto w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
               @click="newPresetModalOpen = false"
             >
-              ×
+              <Ic name="x" />
             </button>
-          </div>
-          <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
-            <label class="cc-field">
-              <span class="cc-field__label">Название</span>
+          </header>
+          <div class="px-4 py-3 flex flex-col gap-3">
+            <Field label="Название">
               <input
                 v-model="newPresetName"
                 type="text"
-                class="cc-input"
+                :class="inputCls"
                 placeholder="Hydro · Tomato · v3"
                 data-testid="correction-config-new-preset-name"
               />
-            </label>
-            <label class="cc-field">
-              <span class="cc-field__label">Описание</span>
+            </Field>
+            <Field label="Описание">
               <textarea
                 v-model="newPresetDescription"
-                class="cc-input cc-input--textarea"
+                :class="[inputCls, 'min-h-[80px] resize-y']"
                 placeholder="Когда использовать этот пресет, какие цели"
                 data-testid="correction-config-new-preset-description"
               />
-            </label>
+            </Field>
           </div>
-          <div class="cc-diff__footer">
+          <footer class="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-muted)] justify-end">
             <Button
-              variant="outline"
+              variant="secondary"
               @click="newPresetModalOpen = false"
             >
               Отмена
             </Button>
-            <div class="cc-diff__gap" />
             <Button
+              variant="primary"
               :disabled="loading || !newPresetName.trim()"
               data-testid="correction-config-save-preset"
               @click="onSaveAsPreset"
             >
               Сохранить пресет
             </Button>
-          </div>
+          </footer>
         </div>
       </div>
     </teleport>
@@ -742,6 +753,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import { Chip, Field } from '@/Components/Shared/Primitives'
+import type { ChipTone } from '@/Components/Shared/Primitives'
+import Ic from '@/Components/Icons/Ic.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import type { AutomationPreset } from '@/composables/useAutomationConfig'
 import { useCorrectionDiff } from '@/composables/useCorrectionDiff'
@@ -765,6 +779,12 @@ const CORRECTION_NAMESPACE = 'zone.correction'
 const automationConfig = useAutomationConfig()
 const { loading } = automationConfig
 
+const inputCls =
+  'w-full px-2.5 py-1.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 disabled:opacity-55'
+
+const menuItemClass =
+  'block w-full text-left px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-45 disabled:cursor-not-allowed'
+
 /* ================== STATE (бизнес-логика — как в v1) ================== */
 const presets = ref<CorrectionPreset[]>([])
 const sections = ref<CorrectionCatalogSection[]>([])
@@ -786,7 +806,7 @@ const phaseForms = ref<Record<CorrectionPhase, Record<string, unknown>>>({
 const newPresetName = ref('')
 const newPresetDescription = ref('')
 
-/* ================== UI-ONLY STATE (новое) ================== */
+/* ================== UI-ONLY STATE ================== */
 const currentTab = ref<'base' | CorrectionPhase>('solution_fill')
 const openSections = ref<Set<string>>(new Set())
 const historyDrawerOpen = ref(false)
@@ -802,7 +822,6 @@ const diffContext = ref<
   | null
 >(null)
 
-/* snapshot последнего server-state для isDirty */
 const lastServerState = ref<{
   base: Record<string, unknown>
   phases: Record<CorrectionPhase, Record<string, unknown>>
@@ -1066,11 +1085,45 @@ function phaseLabel(ph: CorrectionPhase): string {
   return map[ph] ?? ph
 }
 
-function historyTypeClass(ct: string): string {
-  if (ct === 'ae_rollback') return 'cc-pill--warn'
-  if (ct === 'preset_apply') return 'cc-pill--info'
-  if (ct === 'update') return 'cc-pill--violet'
-  return ''
+function historyChipTone(ct: string): ChipTone {
+  if (ct === 'ae_rollback') return 'warn'
+  if (ct === 'preset_apply') return 'brand'
+  if (ct === 'update') return 'brand'
+  return 'neutral'
+}
+
+function presetPillClass(active: boolean): string {
+  return [
+    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] cursor-pointer transition-colors',
+    active
+      ? 'bg-brand-soft border-brand text-brand-ink font-semibold'
+      : 'border-[var(--border-muted)] text-[var(--text-muted)] hover:bg-[var(--bg-surface-strong)]',
+  ].join(' ')
+}
+
+function phaseTabClass(active: boolean): string {
+  return [
+    'flex flex-col items-start gap-0.5 px-3 py-2 -mb-px border-b-2 cursor-pointer transition-colors min-w-[160px]',
+    active
+      ? 'border-brand text-[var(--text-primary)]'
+      : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+  ].join(' ')
+}
+
+function diffTabClass(active: boolean): string {
+  return [
+    'px-3 py-1.5 -mb-px text-[12px] font-medium border-b-2 transition-colors cursor-pointer',
+    active
+      ? 'border-brand text-brand'
+      : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+  ].join(' ')
+}
+
+function diffLineClass(t: 'ctx' | 'add' | 'del' | 'hdr'): string {
+  if (t === 'add') return 'bg-growth-soft/20 text-growth'
+  if (t === 'del') return 'bg-alert-soft/20 text-alert'
+  if (t === 'hdr') return 'text-[var(--text-dim)] font-semibold'
+  return 'text-[var(--text-muted)]'
 }
 
 function sectionOverrideCount(section: CorrectionCatalogSection): number {
@@ -1100,7 +1153,7 @@ function resetPhaseOverride(ph: CorrectionPhase): void {
   phaseForms.value[ph] = clone(baseForm.value)
 }
 
-/* ================== API CALLS (как в v1) ================== */
+/* ================== API CALLS ================== */
 function applyPayload(payload: ZoneCorrectionConfigPayload): void {
   presets.value = payload.available_presets ?? []
   sections.value = payload.meta.field_catalog ?? []
@@ -1277,7 +1330,6 @@ function onPresetPillClick(id: number | null): void {
 }
 
 function applySelectedPresetSafe(): void {
-  // кнопка "Применить в форму" — для активного preset, затирает форму
   applySelectedPreset()
 }
 
@@ -1304,7 +1356,6 @@ function openPresetCompareDiff(): void {
 async function openHistoryDiff(item: ZoneCorrectionConfigHistoryItem): Promise<void> {
   let snapshot: ZoneCorrectionConfigPayload | null = null
   try {
-    // см. handoff.md: нужен метод automationConfig.getRevision
     const raw = await automationConfig.getRevision<ZoneCorrectionConfigPayload>(
       'zone', props.zoneId, CORRECTION_NAMESPACE, item.version
     )
@@ -1346,10 +1397,9 @@ function copyDiffText(): void {
   navigator.clipboard?.writeText(text).catch(() => { /* ignore */ })
 }
 
-/* ================== PRESET MENU ACTIONS (stubs) ================== */
+/* ================== PRESET MENU ACTIONS ================== */
 function onMenuRename(): void {
   presetMenuOpen.value = false
-  // TODO: открыть модалку переименования; вызов automationConfig.updatePreset({ name })
 }
 function onMenuDuplicate(): void {
   presetMenuOpen.value = false
@@ -1362,7 +1412,6 @@ function onMenuExport(fmt: 'json' | 'yaml'): void {
   const data = selectedPreset.value?.config ?? { base: baseForm.value, phases: phaseForms.value }
   const text = fmt === 'json'
     ? JSON.stringify(data, null, 2)
-    // yaml: минимальная сериализация без зависимости
     : jsonToYaml(data)
   const blob = new Blob([text], { type: fmt === 'json' ? 'application/json' : 'text/yaml' })
   const url = URL.createObjectURL(blob)
@@ -1391,7 +1440,6 @@ function jsonToYaml(obj: unknown, indent = 0): string {
 onMounted(() => { void reload() })
 watch(() => props.zoneId, () => { void reload() })
 watch(sections, (s) => {
-  // при первой загрузке — раскрыть первую секцию и контроллеры (там лежат runtime-подсказки observe-loop)
   if (s.length && openSections.value.size === 0) {
     const initial = new Set<string>([s[0].key])
     for (const section of s) {
@@ -1403,7 +1451,6 @@ watch(sections, (s) => {
   }
 })
 
-/* Escape закрывает всё */
 function onEsc(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
   if (diffModalOpen.value) { diffModalOpen.value = false; return }
@@ -1414,458 +1461,3 @@ function onEsc(e: KeyboardEvent): void {
 }
 onMounted(() => window.addEventListener('keydown', onEsc))
 </script>
-
-<style scoped>
-/*
-  Стили локальные, используют существующие CSS-переменные проекта
-  (--text-primary, --text-muted, --text-dim, --border-muted и т.д.).
-  Только новые токены добавлены как fallback — см. handoff.md раздел "Токены".
-*/
-.correction-config {
-  background: var(--bg-surface, #fff);
-  border: 1px solid var(--border-muted);
-  border-radius: 12px;
-  overflow: visible;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-/* ========== ACTION BAR ========== */
-.cc-actionbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-muted);
-  background: var(--surface-muted, #fafbfc);
-  flex-wrap: wrap;
-}
-.cc-actionbar__lhs,
-.cc-actionbar__rhs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cc-actionbar__rhs { margin-left: auto; }
-.cc-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-dim); }
-
-/* ========== BADGE / PILL ========== */
-.cc-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px; padding: 3px 8px; border-radius: 999px;
-  border: 1px solid var(--border-muted); background: var(--surface-muted, #fafbfc);
-  color: var(--text-muted);
-}
-.cc-badge--info {
-  background: var(--badge-info-bg, #e7efff);
-  border-color: var(--badge-info-border, #c6daf9);
-  color: var(--badge-info-text, #1f6feb);
-}
-.cc-badge__dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
-.cc-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px; padding: 2px 8px; border-radius: 999px;
-  background: var(--surface-muted, #eef0f3);
-  color: var(--text-muted); border: 1px solid var(--border-muted);
-}
-.cc-pill--sm { padding: 1px 6px; font-size: 10px; margin-left: 4px; }
-.cc-pill--violet {
-  background: var(--accent-violet-soft, #efeafe);
-  border-color: #d9cffa;
-  color: var(--accent-violet, #6e3bd9);
-}
-.cc-pill--info {
-  background: var(--badge-info-bg, #e7efff);
-  border-color: var(--badge-info-border, #c6daf9);
-  color: var(--badge-info-text, #1f6feb);
-}
-.cc-pill--warn {
-  background: var(--badge-warning-bg, #fdf1e4);
-  border-color: var(--badge-warning-border, #f0c89b);
-  color: var(--badge-warning-text, #8a5a0a);
-}
-
-/* ========== PRESET STRIP ========== */
-.cc-preset-strip {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; border-bottom: 1px solid var(--border-muted);
-  flex-wrap: wrap;
-}
-.cc-preset-strip__label {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-dim); margin-right: 4px;
-}
-.cc-preset-pill {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 12px; border-radius: 999px;
-  border: 1px solid var(--border-muted); background: var(--bg-surface, #fff);
-  cursor: pointer; font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px; color: var(--text-muted);
-  transition: all .15s ease;
-}
-.cc-preset-pill:hover { border-color: var(--text-dim); color: var(--text-primary); }
-.cc-preset-pill--active {
-  background: var(--accent-blue, #1f6feb); color: #fff; border-color: var(--accent-blue, #1f6feb);
-  box-shadow: 0 0 0 3px var(--accent-blue-soft, #e7efff);
-}
-.cc-preset-pill--active .cc-preset-pill__scope { color: rgba(255, 255, 255, .75); }
-.cc-preset-pill__scope {
-  color: var(--text-dim); font-size: 10px;
-  letter-spacing: .04em; text-transform: uppercase;
-}
-.cc-preset-pill__lock { font-size: 10px; opacity: .7; }
-.cc-preset-pill--dashed { border-style: dashed; color: var(--text-dim); }
-.cc-preset-strip__actions {
-  margin-left: auto; display: flex; gap: 6px; align-items: center; position: relative;
-}
-
-/* ========== DROPDOWN MENU ========== */
-.cc-menu-wrap { position: relative; }
-.cc-menu-trigger { padding: 5px 8px; font-family: var(--font-mono, ui-monospace, monospace); }
-.cc-menu {
-  position: absolute; right: 0; top: calc(100% + 6px);
-  background: var(--bg-surface, #fff); border: 1px solid var(--border-muted);
-  border-radius: 10px; box-shadow: 0 12px 28px rgba(10, 20, 40, .12);
-  padding: 5px; min-width: 220px; z-index: 60;
-  display: flex; flex-direction: column;
-}
-.cc-menu__header {
-  padding: 6px 10px 4px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-dim);
-}
-.cc-menu__item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 10px; border-radius: 6px; cursor: pointer;
-  color: var(--text-primary); background: transparent; border: none;
-  font: inherit; text-align: left;
-}
-.cc-menu__item:hover:not(:disabled) { background: var(--surface-muted, #eef0f3); }
-.cc-menu__item:disabled { color: var(--text-dim); cursor: not-allowed; opacity: .6; }
-.cc-menu__item--danger { color: var(--badge-danger-text, #8a2020); }
-.cc-menu__item--danger:hover:not(:disabled) { background: var(--badge-danger-bg, #fdecec); }
-.cc-menu__sep { height: 1px; background: var(--border-muted); margin: 4px 2px; }
-
-/* ========== PHASE TABS ========== */
-.cc-phase-tabs {
-  display: flex; align-items: stretch;
-  width: 100%;
-  padding: 0 16px; border-bottom: 1px solid var(--border-muted);
-  background: var(--bg-surface, #fff);
-}
-.cc-phase-tab {
-  flex: 1 1 0;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 12px 16px; cursor: pointer; border: none;
-  border-bottom: 2px solid transparent; background: transparent;
-  font-size: 13px; font-weight: 500; color: var(--text-muted);
-  white-space: nowrap; min-width: 0; text-align: left;
-  transition: color .15s ease, border-color .15s ease;
-}
-.cc-phase-tab:hover { color: var(--text-primary); }
-.cc-phase-tab--active { color: var(--accent-blue, #1f6feb); border-bottom-color: var(--accent-blue, #1f6feb); }
-.cc-phase-tab__k {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px; color: var(--text-dim); letter-spacing: .02em;
-}
-.cc-phase-tab--active .cc-phase-tab__k { color: var(--accent-blue, #1f6feb); }
-.cc-phase-tab__meters {
-  display: flex; gap: 6px; margin-top: 6px;
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--text-dim);
-}
-.cc-phase-tab__n {
-  padding: 1px 6px; border-radius: 999px;
-  background: var(--surface-muted, #f0f2f5); border: 1px solid var(--border-muted);
-  color: var(--text-dim); font-weight: 500;
-}
-.cc-phase-tab__n--on {
-  background: var(--accent-violet-soft, #efeafe); border-color: #d9cffa; color: var(--accent-violet, #6e3bd9);
-}
-.cc-phase-tabs__right {
-  flex: 0 0 auto;
-  margin-left: auto; display: flex; align-items: center;
-  padding: 0 6px; gap: 8px;
-}
-
-/* ========== MAIN ========== */
-.cc-main { display: grid; grid-template-columns: 1fr 380px; min-height: 520px; }
-.cc-form-col { padding: 16px 18px; border-right: 1px solid var(--border-muted); min-width: 0; }
-.cc-preview-col { padding: 16px 18px; background: var(--surface-muted, #fbfbfc); min-width: 0; }
-
-/* phase row */
-.cc-phase-row {
-  display: flex; gap: 8px; align-items: center;
-  padding: 10px 14px; background: var(--accent-violet-soft, #efeafe);
-  border: 1px solid #d9cffa; border-radius: 8px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px; color: var(--accent-violet, #6e3bd9);
-  margin-bottom: 12px;
-}
-.cc-phase-row b { color: var(--accent-violet, #6e3bd9); font-family: inherit; font-size: 12.5px; font-weight: 600; }
-.cc-phase-row__gap { flex: 1; }
-
-/* section */
-.cc-section {
-  border: 1px solid var(--border-muted); border-radius: 10px;
-  background: var(--bg-surface, #fff); overflow: hidden;
-}
-.cc-section + .cc-section { margin-top: 12px; }
-.cc-section__header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; cursor: pointer; width: 100%;
-  border: none; background: var(--surface-muted, #fafbfc);
-  font: inherit; text-align: left; color: inherit;
-  border-bottom: 1px solid transparent;
-}
-.cc-section--open .cc-section__header { border-bottom-color: var(--border-muted); }
-.cc-section__caret {
-  color: var(--text-dim); font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px; transition: transform .15s ease;
-}
-.cc-section--open .cc-section__caret { transform: rotate(90deg); color: var(--accent-blue, #1f6feb); }
-.cc-section__title { font-size: 13px; font-weight: 600; }
-.cc-section__sub {
-  color: var(--text-dim); font-size: 11.5px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.cc-section__flag { display: flex; gap: 6px; }
-.cc-section__body { padding: 14px; }
-.cc-section__note {
-  background: var(--badge-info-bg, #e7efff);
-  border: 1px solid var(--badge-info-border, #c6daf9);
-  border-radius: 7px; padding: 8px 10px;
-  font-size: 11.5px; color: var(--badge-info-text, #1f6feb);
-  line-height: 1.5; margin-bottom: 12px;
-}
-
-/* field grid */
-.cc-fgrid { display: grid; gap: 12px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.cc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; position: relative; }
-.cc-field--overridden .cc-field__label::after {
-  content: "override"; font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 9.5px; background: var(--accent-violet-soft, #efeafe);
-  color: var(--accent-violet, #6e3bd9); padding: 1px 6px; border-radius: 999px;
-  border: 1px solid #d9cffa; margin-left: 6px; letter-spacing: .04em; text-transform: uppercase;
-}
-.cc-field__label {
-  font-size: 10.5px; color: var(--text-dim);
-  letter-spacing: .04em; text-transform: uppercase;
-  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-}
-.cc-field__hint { color: var(--text-dim); text-transform: none; letter-spacing: 0; font-weight: 400; }
-.cc-field__help { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
-.cc-field__base { font-family: var(--font-mono, ui-monospace, monospace); color: var(--text-dim); margin-left: 4px; }
-
-/* input */
-.cc-input {
-  height: 32px; border: 1px solid var(--border-muted); border-radius: 7px;
-  background: var(--bg-surface, #fff); padding: 0 10px;
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px;
-  color: var(--text-primary); width: 100%; transition: border-color .15s ease, box-shadow .15s ease;
-}
-.cc-input:hover { border-color: var(--text-dim); }
-.cc-input:focus { outline: none; border-color: var(--accent-blue, #1f6feb); box-shadow: 0 0 0 3px var(--accent-blue-soft, #e7efff); }
-.cc-input--textarea { height: auto; min-height: 88px; padding: 8px 10px; font-family: inherit; }
-.cc-input--select { appearance: auto; }
-.cc-field--overridden .cc-input { border-color: var(--accent-violet, #6e3bd9); background: var(--accent-violet-soft, #efeafe); }
-
-/* toggle */
-.cc-toggle {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 10px; border: 1px solid var(--border-muted); border-radius: 7px;
-  background: var(--bg-surface, #fff); font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px; color: var(--text-muted); cursor: pointer;
-}
-.cc-toggle--on {
-  border-color: var(--accent-blue, #1f6feb);
-  background: var(--accent-blue-soft, #e7efff);
-  color: var(--accent-blue, #1f6feb);
-}
-
-/* ========== PREVIEW ========== */
-.cc-preview-stick { position: sticky; top: 14px; }
-.cc-preview__header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.cc-preview__header h3 { margin: 0; font-size: 14px; font-weight: 600; }
-.cc-preview__stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.cc-preview__group {
-  border: 1px solid var(--border-muted); border-radius: 10px;
-  background: var(--bg-surface, #fff); overflow: hidden; margin-bottom: 10px;
-}
-.cc-preview__group h5 {
-  margin: 0; padding: 9px 12px; font-size: 11px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-dim); background: var(--surface-muted, #fafbfc);
-  border-bottom: 1px solid var(--border-muted);
-}
-.cc-preview__row {
-  display: grid; grid-template-columns: 1fr auto; gap: 10px;
-  align-items: baseline; padding: 7px 12px;
-  border-bottom: 1px dotted var(--border-muted); font-size: 12px;
-}
-.cc-preview__row:last-child { border-bottom: none; }
-.cc-preview__k {
-  color: var(--text-dim); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cc-preview__v { font-family: var(--font-mono, ui-monospace, monospace); font-weight: 500; text-align: right; color: var(--text-primary); font-size: 12px; }
-.cc-preview__row--overridden { background: var(--accent-violet-soft, #efeafe); }
-.cc-preview__row--overridden .cc-preview__k,
-.cc-preview__row--overridden .cc-preview__v { color: var(--accent-violet, #6e3bd9); }
-.cc-preview__base {
-  display: block; font-size: 10.5px; color: var(--text-dim);
-  font-weight: 400; text-decoration: line-through;
-}
-
-/* ========== CONFLICT BANNER ========== */
-.cc-conflict {
-  position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
-  background: var(--bg-surface, #fff); border: 1px solid var(--badge-warning-border, #f0c89b);
-  border-left: 4px solid var(--badge-warning-text, #8a5a0a);
-  box-shadow: 0 14px 40px rgba(10, 20, 40, .14); border-radius: 10px;
-  padding: 14px 18px; min-width: 480px; max-width: 620px;
-  z-index: 80; display: flex; gap: 14px; align-items: flex-start;
-}
-.cc-conflict__icon { font-size: 18px; color: var(--badge-warning-text, #8a5a0a); }
-.cc-conflict__body { flex: 1; }
-.cc-conflict__body h4 { margin: 0 0 4px; font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
-.cc-conflict__body p { margin: 0 0 8px; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
-.cc-conflict__diffs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.cc-conflict__actions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-/* ========== DRAWER ========== */
-.cc-backdrop {
-  position: fixed; inset: 0; background: rgba(14, 17, 22, .3);
-  backdrop-filter: blur(1px); z-index: 40;
-}
-.cc-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0;
-  width: min(480px, 96vw); background: var(--bg-surface, #fff);
-  border-left: 1px solid var(--border-muted);
-  box-shadow: -10px 0 30px rgba(10, 20, 40, .08);
-  z-index: 50; display: flex; flex-direction: column;
-}
-.cc-drawer__header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px; border-bottom: 1px solid var(--border-muted);
-}
-.cc-drawer__header h3 { margin: 0; font-size: 15px; font-weight: 600; }
-.cc-drawer__gap { flex: 1; }
-.cc-drawer__close {
-  width: 28px; height: 28px; border: 1px solid var(--border-muted); border-radius: 7px;
-  background: var(--bg-surface, #fff); cursor: pointer; color: var(--text-dim);
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 14px;
-}
-.cc-drawer__body { flex: 1; overflow: auto; padding: 12px 16px; }
-.cc-drawer__empty { font-size: 12px; color: var(--text-dim); }
-
-.cc-hist {
-  padding: 12px; border: 1px solid var(--border-muted); border-radius: 10px;
-  background: var(--bg-surface, #fff); margin-bottom: 8px; cursor: pointer;
-  transition: border-color .15s ease;
-}
-.cc-hist:hover { border-color: var(--accent-blue, #1f6feb); background: var(--accent-blue-soft, #e7efff); }
-.cc-hist__head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.cc-hist__v {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12.5px; font-weight: 600; color: var(--text-primary);
-}
-.cc-hist__t {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px; color: var(--text-dim); margin-left: auto;
-}
-.cc-hist__s { font-size: 12px; color: var(--text-muted); }
-.cc-hist__preset { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-dim); margin-top: 4px; }
-.cc-hist__actions { display: flex; gap: 6px; margin-top: 8px; }
-
-/* ========== DIFF MODAL ========== */
-.cc-diff-modal {
-  position: fixed; inset: 0; z-index: 90;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px; background: rgba(14, 17, 22, .35); backdrop-filter: blur(1px);
-}
-.cc-diff {
-  background: var(--bg-surface, #fff); border: 1px solid var(--border-muted); border-radius: 12px;
-  width: min(1040px, 100%); max-height: calc(100vh - 48px);
-  display: flex; flex-direction: column; overflow: hidden;
-  box-shadow: 0 24px 60px rgba(10, 20, 40, .25);
-}
-.cc-diff__header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px; border-bottom: 1px solid var(--border-muted);
-  background: var(--surface-muted, #fafbfc);
-}
-.cc-diff__header h3 { margin: 0; font-size: 15px; font-weight: 600; }
-.cc-diff__crumb { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; color: var(--text-dim); }
-.cc-diff__gap { flex: 1; }
-.cc-diff__close {
-  width: 28px; height: 28px; border: 1px solid var(--border-muted); border-radius: 7px;
-  background: var(--bg-surface, #fff); cursor: pointer; color: var(--text-dim);
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 14px;
-}
-.cc-diff__tabs {
-  display: flex; gap: 4px; padding: 10px 18px 0;
-  border-bottom: 1px solid var(--border-muted); background: var(--surface-muted, #fafbfc);
-}
-.cc-diff__tab {
-  padding: 7px 14px; font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px; color: var(--text-muted);
-  border: 1px solid transparent; border-bottom: none;
-  border-radius: 6px 6px 0 0; cursor: pointer;
-  margin-bottom: -1px; background: transparent;
-}
-.cc-diff__tab--active { background: var(--bg-surface, #fff); border-color: var(--border-muted); color: var(--accent-blue, #1f6feb); }
-.cc-diff__body { flex: 1; overflow: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-.cc-diff__side { min-width: 0; border-right: 1px solid var(--border-muted); }
-.cc-diff__side:last-child { border-right: none; }
-.cc-diff__side-h {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px; border-bottom: 1px solid var(--border-muted);
-  background: var(--surface-muted, #fafbfc);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px; color: var(--text-muted);
-  position: sticky; top: 0; z-index: 1;
-}
-.cc-diff__side-h b { font-family: inherit; color: var(--text-primary); font-weight: 600; font-size: 12.5px; }
-.cc-diff__fmt { margin-left: auto; }
-.cc-diff__lines { padding: 10px 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; line-height: 1.6; }
-.cc-dl { display: grid; grid-template-columns: 40px 1fr; padding: 0 14px 0 0; }
-.cc-dl__n {
-  color: var(--text-dim); text-align: right;
-  padding-right: 10px; user-select: none;
-  border-right: 1px solid var(--border-muted); margin-right: 10px;
-  font-size: 10.5px; padding-top: 1px;
-}
-.cc-dl__c { margin: 0; white-space: pre; overflow-x: auto; color: var(--text-primary); }
-.cc-dl--add { background: #e7f5ec; }
-.cc-dl--add .cc-dl__n, .cc-dl--add .cc-dl__c { color: #186a3b; }
-.cc-dl--del { background: #fdecec; }
-.cc-dl--del .cc-dl__n { color: #8a2020; }
-.cc-dl--del .cc-dl__c { color: #8a2020; text-decoration: line-through; text-decoration-color: rgba(138, 32, 32, .35); }
-.cc-dl--ctx { color: var(--text-muted); }
-.cc-dl--hdr { color: var(--text-dim); }
-.cc-diff__stats {
-  padding: 8px 18px; font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px; color: var(--text-dim);
-  border-top: 1px solid var(--border-muted); background: var(--surface-muted, #fafbfc);
-  display: flex; gap: 14px;
-}
-.cc-diff__add { color: var(--accent-green, #1f8a4c); }
-.cc-diff__del { color: var(--badge-danger-text, #8a2020); }
-.cc-diff__footer {
-  display: flex; gap: 8px; padding: 12px 18px;
-  border-top: 1px solid var(--border-muted);
-  background: var(--surface-muted, #fafbfc); align-items: center;
-}
-
-/* ========== RESPONSIVE ========== */
-@media (max-width: 1100px) {
-  .cc-main { grid-template-columns: 1fr; }
-  .cc-form-col { border-right: none; border-bottom: 1px solid var(--border-muted); }
-  .cc-preview-stick { position: static; }
-}
-@media (max-width: 720px) {
-  .cc-fgrid { grid-template-columns: 1fr; }
-  .cc-preset-strip__actions { margin-left: 0; width: 100%; }
-}
-</style>

@@ -520,7 +520,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
-import type { Node as SetupWizardNode } from '@/types/SetupWizard'
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 import type {
   WaterFormState,
   ZoneAutomationSectionAssignments,

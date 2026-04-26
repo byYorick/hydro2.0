@@ -1,369 +1,477 @@
 <template>
-    <form class="pid" data-testid="pid-config-form" @submit.prevent="onSubmit">
-        <!-- ================== ACTION BAR ================== -->
-        <div class="pid__actionbar">
-            <div class="pid__actionbar-lhs">
-                <span v-if="isDirty" class="pid__badge pid__badge--info">
-                    <span class="pid__badge-dot" />
-                    изменено
-                </span>
-                <span class="pid__pill pid__pill--violet">
-                    Контур {{ selectedType.toUpperCase() }}
-                </span>
-                <span class="pid__pill">
-                    пресет: {{ selectedPresetName }}
-                </span>
-                <span v-if="phaseTargetAvailable" class="pid__pill pid__pill--success">
-                    цель: {{ phaseTargetDisplay }}
-                </span>
-                <span v-else class="pid__pill pid__pill--danger">
-                    нет цели в рецепте
-                </span>
-                <span class="pid__meta">pH {{ savedBadge('ph') }} · EC {{ savedBadge('ec') }}</span>
-            </div>
-            <div class="pid__actionbar-rhs">
-                <button
-                    type="button"
-                    class="pid__btn pid__btn--outline"
-                    data-testid="pid-config-toggle-advanced"
-                    :disabled="loading"
-                    @click="showAdvanced = !showAdvanced"
-                >
-                    {{ showAdvanced ? 'Скрыть продвинутые' : 'Продвинутые настройки' }}
-                </button>
-                <button
-                    type="button"
-                    class="pid__btn pid__btn--outline"
-                    :disabled="loading"
-                    @click="onReset"
-                >
-                    Откатить изменения
-                </button>
-                <button
-                    type="submit"
-                    class="pid__btn pid__btn--primary"
-                    data-testid="pid-config-save"
-                    :disabled="loading || !phaseTargetAvailable || !isDirty"
-                >
-                    {{
-                        loading
-                            ? 'Сохранение…'
-                            : needsConfirmation && !confirmed
-                              ? 'Подтвердить и сохранить'
-                              : `Сохранить ${selectedType.toUpperCase()}`
-                    }}
-                </button>
-            </div>
-        </div>
+  <form
+    class="flex flex-col gap-3"
+    data-testid="pid-config-form"
+    @submit.prevent="onSubmit"
+  >
+    <!-- ACTION BAR -->
+    <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+      <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+        <Chip
+          v-if="isDirty"
+          tone="brand"
+        >
+          <template #icon>
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand" />
+          </template>
+          изменено
+        </Chip>
+        <Chip tone="brand">
+          Контур <span class="font-mono ml-1">{{ selectedType.toUpperCase() }}</span>
+        </Chip>
+        <Chip tone="neutral">
+          пресет: <span class="font-mono ml-1">{{ selectedPresetName }}</span>
+        </Chip>
+        <Chip
+          v-if="phaseTargetAvailable"
+          tone="growth"
+        >
+          цель: <span class="font-mono ml-1">{{ phaseTargetDisplay }}</span>
+        </Chip>
+        <Chip
+          v-else
+          tone="alert"
+        >
+          нет цели в рецепте
+        </Chip>
+        <span class="text-[11px] font-mono text-[var(--text-dim)] ml-1">
+          pH {{ savedBadge('ph') }} · EC {{ savedBadge('ec') }}
+        </span>
+      </div>
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          data-testid="pid-config-toggle-advanced"
+          :disabled="loading"
+          @click="showAdvanced = !showAdvanced"
+        >
+          {{ showAdvanced ? 'Скрыть продвинутые' : 'Продвинутые настройки' }}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          :disabled="loading"
+          @click="onReset"
+        >
+          ↺ Откатить
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          variant="primary"
+          data-testid="pid-config-save"
+          :disabled="loading || !phaseTargetAvailable || !isDirty"
+        >
+          {{
+            loading
+              ? 'Сохранение…'
+              : needsConfirmation && !confirmed
+                ? 'Подтвердить и сохранить'
+                : `Сохранить ${selectedType.toUpperCase()}`
+          }}
+        </Button>
+      </div>
+    </div>
 
-        <!-- ================== PRESET STRIP ================== -->
-        <div class="pid__preset-strip">
-            <span class="pid__preset-strip__label">Пресет</span>
-            <button
-                v-for="preset in presetOptions"
-                :key="preset.key"
-                type="button"
-                class="pid__preset-pill"
-                :class="{ 'pid__preset-pill--active': selectedPresetKey === preset.key }"
-                :data-testid="`pid-config-preset-${preset.key}`"
-                :disabled="presetSwitching || loading"
-                @click="onPresetPillClick(preset.key)"
-            >
-                {{ preset.name }}
-            </button>
-            <span v-if="selectedPresetDescription" class="pid__preset-desc">
-                · {{ selectedPresetDescription }}
+    <!-- PRESET STRIP -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] mr-1">
+        Пресет
+      </span>
+      <button
+        v-for="preset in presetOptions"
+        :key="preset.key"
+        type="button"
+        :data-testid="`pid-config-preset-${preset.key}`"
+        :disabled="presetSwitching || loading"
+        :class="[
+          'h-7 px-2.5 rounded-md text-xs font-medium border transition-colors',
+          selectedPresetKey === preset.key
+            ? 'bg-brand text-white border-brand'
+            : 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-[var(--border-muted)] hover:border-brand',
+          (presetSwitching || loading) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+        ]"
+        @click="onPresetPillClick(preset.key)"
+      >
+        {{ preset.name }}
+      </button>
+      <span
+        v-if="selectedPresetDescription"
+        class="text-[11px] text-[var(--text-dim)] ml-1.5"
+      >
+        · {{ selectedPresetDescription }}
+      </span>
+    </div>
+
+    <!-- LOOP TABS -->
+    <div class="flex gap-0.5 border-b border-[var(--border-muted)]">
+      <button
+        type="button"
+        data-testid="pid-config-type-ph"
+        :class="tabClass('ph')"
+        @click="selectedType = 'ph'"
+      >
+        <span>Контур pH</span>
+        <Chip
+          v-if="pidConfigSavedState.ph"
+          tone="growth"
+        >
+          сохранено
+        </Chip>
+        <Chip
+          v-else
+          tone="neutral"
+        >
+          нет переопределения
+        </Chip>
+      </button>
+      <button
+        type="button"
+        data-testid="pid-config-type-ec"
+        :class="tabClass('ec')"
+        @click="selectedType = 'ec'"
+      >
+        <span>Контур EC</span>
+        <Chip
+          v-if="pidConfigSavedState.ec"
+          tone="growth"
+        >
+          сохранено
+        </Chip>
+        <Chip
+          v-else
+          tone="neutral"
+        >
+          нет переопределения
+        </Chip>
+      </button>
+    </div>
+
+    <!-- BANNERS -->
+    <div
+      v-if="!phaseTargetAvailable"
+      class="rounded-md border border-alert bg-alert-soft/40 px-3 py-2 text-sm text-alert flex items-start gap-2"
+      data-testid="pid-config-phase-target-missing"
+    >
+      <span class="font-mono shrink-0">!</span>
+      <span>
+        В активной фазе рецепта нет целевого значения
+        <strong>{{ selectedType.toUpperCase() }}</strong>.
+        PID-конфиг не может быть сохранён — runtime перейдёт в fail-closed.
+      </span>
+    </div>
+
+    <div
+      v-if="needsConfirmation"
+      class="rounded-md border border-warn bg-warn-soft/40 px-3 py-2 text-sm text-warn flex items-start gap-2"
+    >
+      <span class="font-mono shrink-0">⚠</span>
+      <span>
+        Агрессивные настройки (<code class="font-mono">Kp &gt; 200</code>).
+        <span v-if="!confirmed">Нажмите «Подтвердить и сохранить» ещё раз.</span>
+      </span>
+    </div>
+
+    <!-- SECTIONS -->
+    <details
+      class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-hidden"
+      :open="openSections.has('zones')"
+      @toggle="toggleSection('zones', $event)"
+    >
+      <summary :class="summaryCls">
+        <span class="text-sm font-semibold">Зоны отклонения</span>
+        <span class="text-[11px] text-[var(--text-dim)]">
+          dead / close / far · границы реакций PID
+        </span>
+      </summary>
+      <div class="p-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Field
+          label="Цель"
+          :hint="phaseTargetAvailable ? phaseTargetSourceHint : 'runtime не подставит значения по умолчанию'"
+        >
+          <template #right>
+            <span class="text-[10px] text-[var(--text-dim)] flex items-center gap-1">
+              <Ic
+                name="lock"
+                size="sm"
+              />
+              из рецепта
             </span>
-        </div>
-
-        <!-- ================== LOOP TABS ================== -->
-        <div class="pid__tabs">
-            <button
-                type="button"
-                class="pid__tab"
-                :class="{ 'pid__tab--active': selectedType === 'ph' }"
-                data-testid="pid-config-type-ph"
-                @click="selectedType = 'ph'"
-            >
-                <span>Контур pH</span>
-                <span v-if="pidConfigSavedState.ph" class="pid__tab-badge">сохранено</span>
-                <span v-else class="pid__tab-badge pid__tab-badge--soft">нет переопределения</span>
-            </button>
-            <button
-                type="button"
-                class="pid__tab"
-                :class="{ 'pid__tab--active': selectedType === 'ec' }"
-                data-testid="pid-config-type-ec"
-                @click="selectedType = 'ec'"
-            >
-                <span>Контур EC</span>
-                <span v-if="pidConfigSavedState.ec" class="pid__tab-badge">сохранено</span>
-                <span v-else class="pid__tab-badge pid__tab-badge--soft">нет переопределения</span>
-            </button>
-        </div>
-
-        <div
-            v-if="!phaseTargetAvailable"
-            class="pid__banner pid__banner--danger"
-            data-testid="pid-config-phase-target-missing"
+          </template>
+          <input
+            :value="phaseTargetDisplay"
+            data-testid="pid-config-input-target"
+            type="number"
+            :step="0.01"
+            :min="selectedType === 'ph' ? 4 : 0"
+            :max="selectedType === 'ph' ? 9 : 10"
+            :class="readonlyCls"
+            :placeholder="`Цель ${selectedType.toUpperCase()} не задана`"
+            readonly
+          >
+        </Field>
+        <Field
+          label="Мёртвая зона"
+          hint="0..2 · игнорируется мелкое отклонение"
         >
-            В активной фазе рецепта нет целевого значения <strong>{{ selectedType.toUpperCase() }}</strong>.
-            PID-конфиг не может быть сохранён — runtime перейдёт в fail-closed.
-        </div>
-
-        <div v-if="needsConfirmation" class="pid__banner pid__banner--warn">
-            ⚠ Агрессивные настройки (<code>Kp &gt; 200</code>).
-            <span v-if="!confirmed">Нажмите «Подтвердить и сохранить» ещё раз.</span>
-        </div>
-
-        <!-- ================== SECTIONS ================== -->
-        <details class="pid__section" :open="openSections.has('zones')" @toggle="toggleSection('zones', $event)">
-            <summary class="pid__section-summary">
-                <span class="pid__section-title">Зоны отклонения</span>
-                <span class="pid__section-desc">dead / close / far · границы реакций PID</span>
-            </summary>
-            <div class="pid__section-body">
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Цель
-                        <span class="pid__field-lock">🔒 из рецепта</span>
-                    </span>
-                    <input
-                        :value="phaseTargetDisplay"
-                        type="number"
-                        data-testid="pid-config-input-target"
-                        :step="0.01"
-                        :min="selectedType === 'ph' ? 4 : 0"
-                        :max="selectedType === 'ph' ? 9 : 10"
-                        class="pid__input pid__input--readonly"
-                        :placeholder="`Цель ${selectedType.toUpperCase()} не задана`"
-                        readonly
-                    />
-                    <span class="pid__field-hint">{{ phaseTargetAvailable ? phaseTargetSourceHint : 'runtime не подставит значения по умолчанию' }}</span>
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Мёртвая зона
-                        <span v-if="isFieldDirty('dead_zone')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.dead_zone"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="2"
-                        class="pid__input"
-                        :title="fieldHelp('dead_zone')"
-                    />
-                    <span class="pid__field-hint">0..2 · игнорируется мелкое отклонение</span>
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Ближняя зона
-                        <span v-if="isFieldDirty('close_zone')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.close_zone"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="5"
-                        class="pid__input"
-                        :title="fieldHelp('close_zone')"
-                    />
-                    <span class="pid__field-hint">должна быть &gt; мёртвой зоны</span>
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Дальняя зона
-                        <span v-if="isFieldDirty('far_zone')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.far_zone"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="10"
-                        class="pid__input"
-                        :title="fieldHelp('far_zone')"
-                    />
-                    <span class="pid__field-hint">должна быть &gt; ближней зоны</span>
-                </label>
-            </div>
-        </details>
-
-        <details
-            v-if="showAdvanced"
-            class="pid__section"
-            :open="openSections.has('close')"
-            @toggle="toggleSection('close', $event)"
+          <template
+            v-if="isFieldDirty('dead_zone')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.dead_zone"
+            type="number"
+            step="0.01"
+            min="0"
+            max="2"
+            :class="inputCls"
+            :title="fieldHelp('dead_zone')"
+          >
+        </Field>
+        <Field
+          label="Ближняя зона"
+          hint="должна быть > мёртвой"
         >
-            <summary class="pid__section-summary">
-                <span class="pid__section-title">Коэффициенты ближней зоны</span>
-                <span class="pid__section-desc">мягкая коррекция около target</span>
-            </summary>
-            <div class="pid__section-body">
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Kp
-                        <span v-if="isCoeffDirty('close', 'kp')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.close.kp"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1000"
-                        class="pid__input"
-                        :title="fieldHelp('close.kp')"
-                    />
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Ki
-                        <span v-if="isCoeffDirty('close', 'ki')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.close.ki"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        class="pid__input"
-                        :title="fieldHelp('close.ki')"
-                    />
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Kd
-                        <span v-if="isCoeffDirty('close', 'kd')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.close.kd"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        class="pid__input"
-                        :title="fieldHelp('close.kd')"
-                    />
-                </label>
-            </div>
-        </details>
-
-        <details
-            v-if="showAdvanced"
-            class="pid__section"
-            :open="openSections.has('far')"
-            @toggle="toggleSection('far', $event)"
+          <template
+            v-if="isFieldDirty('close_zone')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.close_zone"
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            :class="inputCls"
+            :title="fieldHelp('close_zone')"
+          >
+        </Field>
+        <Field
+          label="Дальняя зона"
+          hint="должна быть > ближней"
         >
-            <summary class="pid__section-summary">
-                <span class="pid__section-title">Коэффициенты дальней зоны</span>
-                <span class="pid__section-desc">агрессивная коррекция при большом отклонении</span>
-            </summary>
-            <div class="pid__section-body">
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Kp
-                        <span v-if="isCoeffDirty('far', 'kp')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.far.kp"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1000"
-                        class="pid__input"
-                        :title="fieldHelp('far.kp')"
-                    />
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Ki
-                        <span v-if="isCoeffDirty('far', 'ki')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.far.ki"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        class="pid__input"
-                        :title="fieldHelp('far.ki')"
-                    />
-                </label>
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Kd
-                        <span v-if="isCoeffDirty('far', 'kd')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.zone_coeffs.far.kd"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        class="pid__input"
-                        :title="fieldHelp('far.kd')"
-                    />
-                </label>
-            </div>
-        </details>
+          <template
+            v-if="isFieldDirty('far_zone')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.far_zone"
+            type="number"
+            step="0.01"
+            min="0"
+            max="10"
+            :class="inputCls"
+            :title="fieldHelp('far_zone')"
+          >
+        </Field>
+      </div>
+    </details>
 
-        <details
-            v-if="showAdvanced"
-            class="pid__section"
-            :open="openSections.has('integral')"
-            @toggle="toggleSection('integral', $event)"
+    <details
+      v-if="showAdvanced"
+      class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-hidden"
+      :open="openSections.has('close')"
+      @toggle="toggleSection('close', $event)"
+    >
+      <summary :class="summaryCls">
+        <span class="text-sm font-semibold">Коэффициенты ближней зоны</span>
+        <span class="text-[11px] text-[var(--text-dim)]">мягкая коррекция около target</span>
+      </summary>
+      <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Field label="Kp">
+          <template
+            v-if="isCoeffDirty('close', 'kp')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.close.kp"
+            type="number"
+            step="0.1"
+            min="0"
+            max="1000"
+            :class="inputCls"
+            :title="fieldHelp('close.kp')"
+          >
+        </Field>
+        <Field label="Ki">
+          <template
+            v-if="isCoeffDirty('close', 'ki')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.close.ki"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            :class="inputCls"
+            :title="fieldHelp('close.ki')"
+          >
+        </Field>
+        <Field label="Kd">
+          <template
+            v-if="isCoeffDirty('close', 'kd')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.close.kd"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            :class="inputCls"
+            :title="fieldHelp('close.kd')"
+          >
+        </Field>
+      </div>
+    </details>
+
+    <details
+      v-if="showAdvanced"
+      class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-hidden"
+      :open="openSections.has('far')"
+      @toggle="toggleSection('far', $event)"
+    >
+      <summary :class="summaryCls">
+        <span class="text-sm font-semibold">Коэффициенты дальней зоны</span>
+        <span class="text-[11px] text-[var(--text-dim)]">агрессивная коррекция при большом отклонении</span>
+      </summary>
+      <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Field label="Kp">
+          <template
+            v-if="isCoeffDirty('far', 'kp')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.far.kp"
+            type="number"
+            step="0.1"
+            min="0"
+            max="1000"
+            :class="inputCls"
+            :title="fieldHelp('far.kp')"
+          >
+        </Field>
+        <Field label="Ki">
+          <template
+            v-if="isCoeffDirty('far', 'ki')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.far.ki"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            :class="inputCls"
+            :title="fieldHelp('far.ki')"
+          >
+        </Field>
+        <Field label="Kd">
+          <template
+            v-if="isCoeffDirty('far', 'kd')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.zone_coeffs.far.kd"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            :class="inputCls"
+            :title="fieldHelp('far.kd')"
+          >
+        </Field>
+      </div>
+    </details>
+
+    <details
+      v-if="showAdvanced"
+      class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-hidden"
+      :open="openSections.has('integral')"
+      @toggle="toggleSection('integral', $event)"
+    >
+      <summary :class="summaryCls">
+        <span class="text-sm font-semibold">Предел интеграла</span>
+        <span class="text-[11px] text-[var(--text-dim)]">max_integral · защита от переполнения</span>
+      </summary>
+      <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Field
+          label="Предел интеграла"
+          hint="pH обычно 12–20 · EC 20–100"
         >
-            <summary class="pid__section-summary">
-                <span class="pid__section-title">Предел интеграла</span>
-                <span class="pid__section-desc">max_integral · защита от переполнения</span>
-            </summary>
-            <div class="pid__section-body">
-                <label class="pid__field">
-                    <span class="pid__field-label">
-                        Предел интеграла
-                        <span v-if="isFieldDirty('max_integral')" class="pid__field-dirty">●</span>
-                    </span>
-                    <input
-                        v-model.number="form.max_integral"
-                        type="number"
-                        step="1"
-                        min="1"
-                        max="500"
-                        class="pid__input"
-                        :title="fieldHelp('max_integral')"
-                    />
-                    <span class="pid__field-hint">pH обычно 12–20 · EC 20–100</span>
-                </label>
-            </div>
-        </details>
+          <template
+            v-if="isFieldDirty('max_integral')"
+            #right
+          >
+            <span class="text-brand font-mono text-xs">●</span>
+          </template>
+          <input
+            v-model.number="form.max_integral"
+            type="number"
+            step="1"
+            min="1"
+            max="500"
+            :class="inputCls"
+            :title="fieldHelp('max_integral')"
+          >
+        </Field>
+      </div>
+    </details>
 
-        <!-- ================== PREVIEW ================== -->
-        <div class="pid__preview">
-            <div>
-                <span>Контур</span>
-                <strong>{{ selectedType.toUpperCase() }}</strong>
-            </div>
-            <div>
-                <span>Цель</span>
-                <strong>{{ phaseTargetAvailable ? phaseTargetDisplay : '—' }}</strong>
-            </div>
-            <div>
-                <span>мёртвая · ближняя · дальняя</span>
-                <strong>{{ form.dead_zone }} · {{ form.close_zone }} · {{ form.far_zone }}</strong>
-            </div>
-            <div>
-                <span>Предел интеграла</span>
-                <strong>{{ form.max_integral }}</strong>
-            </div>
-        </div>
-    </form>
+    <!-- PREVIEW -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 px-3 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+      <Stat
+        label="Контур"
+        :value="selectedType.toUpperCase()"
+        mono
+        tone="brand"
+      />
+      <Stat
+        label="Цель"
+        :value="phaseTargetAvailable ? phaseTargetDisplay : '—'"
+        mono
+      />
+      <Stat
+        label="мёртв · ближн · дальн"
+        :value="`${form.dead_zone} · ${form.close_zone} · ${form.far_zone}`"
+        mono
+      />
+      <Stat
+        label="Предел интеграла"
+        :value="form.max_integral"
+        mono
+      />
+    </div>
+  </form>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import Button from '@/Components/Button.vue'
+import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
+import Ic from '@/Components/Icons/Ic.vue'
 import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { usePidConfig } from '@/composables/usePidConfig'
 import { api } from '@/services/api'
@@ -378,14 +486,34 @@ import {
 import { logger } from '@/utils/logger'
 import type { PidConfig, PidConfigWithMeta } from '@/types/PidConfig'
 
-interface Props {
-  zoneId: number
-  phaseTargets?: RecipePhasePidTargets | null
-}
+const props = withDefaults(
+  defineProps<{
+    zoneId: number
+    phaseTargets?: RecipePhasePidTargets | null
+  }>(),
+  { phaseTargets: null },
+)
 
-const props = withDefaults(defineProps<Props>(), {
-  phaseTargets: null,
-})
+const emit = defineEmits<{
+  saved: [config: PidConfigWithMeta]
+}>()
+
+const inputCls =
+  'block w-full h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand'
+const readonlyCls =
+  'block w-full h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] px-2.5 text-sm font-mono outline-none cursor-not-allowed'
+const summaryCls =
+  'flex items-baseline gap-2 px-3 py-2 cursor-pointer bg-[var(--bg-elevated)] border-b border-[var(--border-muted)] hover:bg-[var(--bg-surface-strong)] [&::-webkit-details-marker]:hidden [&::marker]:content-none'
+
+function tabClass(type: 'ph' | 'ec'): string {
+  const active = selectedType.value === type
+  return [
+    'flex items-center gap-2 px-3 py-2 -mb-px text-sm font-medium border-b-2 transition-colors cursor-pointer',
+    active
+      ? 'border-brand text-brand'
+      : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+  ].join(' ')
+}
 
 const FIELD_HELP: Record<string, string> = {
   target: 'Целевое значение PID-контура. Берётся только из актуальной recipe phase и не сохраняется в zone.pid.*.',
@@ -404,10 +532,6 @@ const FIELD_HELP: Record<string, string> = {
 function fieldHelp(key: string): string {
   return FIELD_HELP[key] ?? 'Параметр PID-контура коррекции.'
 }
-
-const emit = defineEmits<{
-  saved: [config: PidConfigWithMeta]
-}>()
 
 const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
   ph: {
@@ -437,10 +561,7 @@ const confirmed = ref(false)
 const showAdvanced = ref(false)
 const presetSwitching = ref(false)
 const resolvedPhaseTargets = ref<RecipePhasePidTargets | null>(props.phaseTargets)
-const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({
-  ph: false,
-  ec: false,
-})
+const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({ ph: false, ec: false })
 const automationConfig = useAutomationConfig()
 const { getPidConfig, getAllPidConfigs, loading } = usePidConfig()
 const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
@@ -450,19 +571,12 @@ const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
 const lastSavedForm = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
 const openSections = ref<Set<string>>(new Set(['zones']))
 
-const pidSaveStatuses = computed(() => [
-  { type: 'ph' as const, label: 'pH', saved: pidConfigSavedState.value.ph },
-  { type: 'ec' as const, label: 'EC', saved: pidConfigSavedState.value.ec },
-])
-
-const allPidConfigsSaved = computed(() => pidSaveStatuses.value.every((item) => item.saved))
 const phaseTarget = computed(() => resolvedPhaseTargets.value?.[selectedType.value] ?? null)
 const phaseTargetAvailable = computed(() => typeof phaseTarget.value === 'number' && Number.isFinite(phaseTarget.value))
 const phaseTargetDisplay = computed(() => phaseTargetAvailable.value ? String(phaseTarget.value) : '')
 const phaseTargetSourceHint = computed(() => {
   const phaseLabel = resolvedPhaseTargets.value?.phaseLabel
   const base = phaseLabel ? `Цель взята из фазы рецепта «${phaseLabel}».` : 'Цель взята из актуальной фазы рецепта.'
-
   return `${base} Ручное редактирование запрещено, в zone.pid.* значение не сохраняется.`
 })
 const selectedPreset = computed(() => selectedRuntimeTuningPreset(runtimeTuningBundle.value))
@@ -470,12 +584,9 @@ const presetOptions = computed(() => runtimeTuningBundle.value?.presets ?? [])
 const selectedPresetName = computed(() => selectedPreset.value?.name ?? 'Системный пресет')
 const selectedPresetDescription = computed(() => selectedPreset.value?.description ?? 'Канонические стартовые значения PID и калибровки процесса для зоны.')
 
-const needsConfirmation = computed(() => {
-  return (
-    form.value.zone_coeffs.close.kp > 200 ||
-    form.value.zone_coeffs.far.kp > 200
-  )
-})
+const needsConfirmation = computed(
+  () => form.value.zone_coeffs.close.kp > 200 || form.value.zone_coeffs.far.kp > 200,
+)
 
 const isDirty = computed(() => {
   const a = form.value
@@ -576,10 +687,7 @@ async function loadConfig() {
 async function loadStatuses(): Promise<void> {
   try {
     const configs = await getAllPidConfigs(props.zoneId)
-    pidConfigSavedState.value = {
-      ph: Boolean(configs.ph),
-      ec: Boolean(configs.ec),
-    }
+    pidConfigSavedState.value = { ph: Boolean(configs.ph), ec: Boolean(configs.ec) }
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID status map:', error)
   }
@@ -587,7 +695,11 @@ async function loadStatuses(): Promise<void> {
 
 async function loadRuntimeTuningBundle(): Promise<void> {
   try {
-    const document = await automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE)
+    const document = await automationConfig.getDocument<Record<string, unknown>>(
+      'zone',
+      props.zoneId,
+      RUNTIME_TUNING_BUNDLE_NAMESPACE,
+    )
     runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(document)
     selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
   } catch (error) {
@@ -596,16 +708,18 @@ async function loadRuntimeTuningBundle(): Promise<void> {
 }
 
 async function persistRuntimeTuningBundle(nextBundle: RuntimeTuningBundlePayload): Promise<void> {
-  const document = await automationConfig.updateDocument('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE, nextBundle)
+  const document = await automationConfig.updateDocument(
+    'zone',
+    props.zoneId,
+    RUNTIME_TUNING_BUNDLE_NAMESPACE,
+    nextBundle,
+  )
   runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(document)
   selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
 }
 
 async function applySelectedPreset(): Promise<void> {
-  if (!runtimeTuningBundle.value) {
-    return
-  }
-
+  if (!runtimeTuningBundle.value) return
   presetSwitching.value = true
   try {
     await persistRuntimeTuningBundle({
@@ -621,10 +735,7 @@ async function applySelectedPreset(): Promise<void> {
 }
 
 function extractCurrentPhase(raw: unknown): unknown {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return null
-  }
-
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const payload = raw as Record<string, unknown>
   const activeGrowCycle = (
     payload.activeGrowCycle && typeof payload.activeGrowCycle === 'object' && !Array.isArray(payload.activeGrowCycle)
@@ -633,11 +744,7 @@ function extractCurrentPhase(raw: unknown): unknown {
         ? payload.active_grow_cycle
         : null)
   ) as Record<string, unknown> | null
-
-  if (!activeGrowCycle) {
-    return null
-  }
-
+  if (!activeGrowCycle) return null
   return activeGrowCycle.currentPhase ?? activeGrowCycle.current_phase ?? null
 }
 
@@ -646,7 +753,6 @@ async function hydratePhaseTargets(): Promise<void> {
     resolvedPhaseTargets.value = props.phaseTargets
     return
   }
-
   try {
     const payload = await api.zones.getDetail(props.zoneId)
     resolvedPhaseTargets.value = resolveRecipePhasePidTargets(extractCurrentPhase(payload))
@@ -664,12 +770,10 @@ async function onSubmit() {
     })
     return
   }
-
   if (needsConfirmation.value && !confirmed.value) {
     confirmed.value = true
     return
   }
-
   try {
     if (!runtimeTuningBundle.value) {
       logger.warn('[PidConfigForm] Refusing to save PID config without runtime tuning bundle', {
@@ -678,8 +782,13 @@ async function onSubmit() {
       })
       return
     }
-
-    await persistRuntimeTuningBundle(withPidOverride(runtimeTuningBundle.value, selectedType.value, form.value as unknown as Record<string, unknown>))
+    await persistRuntimeTuningBundle(
+      withPidOverride(
+        runtimeTuningBundle.value,
+        selectedType.value,
+        form.value as unknown as Record<string, unknown>,
+      ),
+    )
     await Promise.all([loadStatuses(), loadConfig()])
     emit('saved', {
       type: selectedType.value,
@@ -713,17 +822,15 @@ watch(
   () => props.phaseTargets,
   (targets) => {
     resolvedPhaseTargets.value = targets
-  }
+  },
 )
 
 watch(
   form,
   () => {
-    if (confirmed.value) {
-      confirmed.value = false
-    }
+    if (confirmed.value) confirmed.value = false
   },
-  { deep: true }
+  { deep: true },
 )
 
 onMounted(() => {
@@ -731,384 +838,3 @@ onMounted(() => {
   void loadRuntimeTuningBundle().then(() => Promise.all([loadStatuses(), loadConfig()]))
 })
 </script>
-
-<style scoped>
-.pid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-/* ============== ACTION BAR ============== */
-.pid__actionbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.6rem 0.85rem;
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.pid__actionbar-lhs,
-.pid__actionbar-rhs {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-}
-
-.pid__badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.22rem 0.6rem;
-    border-radius: 9999px;
-    font-size: 0.72rem;
-    font-weight: 600;
-}
-
-.pid__badge--info {
-    background: rgba(56, 189, 248, 0.12);
-    color: rgb(125, 211, 252);
-    border: 1px solid rgba(56, 189, 248, 0.35);
-}
-
-.pid__badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 9999px;
-    background: currentColor;
-}
-
-.pid__pill {
-    padding: 0.18rem 0.55rem;
-    font-size: 0.72rem;
-    border-radius: 9999px;
-    background: rgba(148, 163, 184, 0.1);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    font-family: ui-monospace, monospace;
-}
-
-.pid__pill--violet {
-    background: rgba(139, 92, 246, 0.12);
-    border-color: rgba(139, 92, 246, 0.35);
-    color: rgb(196, 181, 253);
-}
-
-.pid__pill--success {
-    background: rgba(34, 197, 94, 0.1);
-    border-color: rgba(34, 197, 94, 0.35);
-    color: rgb(134, 239, 172);
-}
-
-.pid__pill--danger {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.4);
-    color: rgb(252, 165, 165);
-}
-
-.pid__meta {
-    font-size: 0.7rem;
-    opacity: 0.7;
-    font-family: ui-monospace, monospace;
-}
-
-.pid__btn {
-    padding: 0.3rem 0.75rem;
-    border-radius: 0.35rem;
-    border: 1px solid transparent;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.pid__btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-}
-
-.pid__btn--outline {
-    border-color: rgba(148, 163, 184, 0.3);
-}
-
-.pid__btn--outline:hover:not(:disabled) {
-    background: rgba(148, 163, 184, 0.08);
-}
-
-.pid__btn--primary {
-    background: rgb(56, 189, 248);
-    color: #0f172a;
-}
-
-.pid__btn--primary:hover:not(:disabled) {
-    background: rgb(14, 165, 233);
-}
-
-/* ============== PRESET STRIP ============== */
-.pid__preset-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.5rem 0.85rem;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 0.45rem;
-}
-
-.pid__preset-strip__label {
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    font-weight: 700;
-    opacity: 0.55;
-    padding-right: 0.3rem;
-}
-
-.pid__preset-pill {
-    padding: 0.22rem 0.65rem;
-    border-radius: 9999px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font-size: 0.75rem;
-}
-
-.pid__preset-pill:disabled { cursor: not-allowed; opacity: 0.55; }
-
-.pid__preset-pill:hover:not(:disabled) {
-    background: rgba(148, 163, 184, 0.08);
-}
-
-.pid__preset-pill--active {
-    background: rgba(56, 189, 248, 0.12);
-    border-color: rgba(56, 189, 248, 0.55);
-    color: rgb(125, 211, 252);
-    font-weight: 600;
-}
-
-.pid__preset-desc {
-    font-size: 0.7rem;
-    opacity: 0.6;
-    margin-left: 0.3rem;
-}
-
-/* ============== TABS ============== */
-.pid__tabs {
-    display: flex;
-    gap: 0.3rem;
-    width: 100%;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-    padding-bottom: 0.1rem;
-}
-
-.pid__tab {
-    flex: 1 1 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid transparent;
-    border-bottom: none;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font-size: 0.82rem;
-    border-radius: 0.4rem 0.4rem 0 0;
-    margin-bottom: -1px;
-}
-
-.pid__tab:hover {
-    background: rgba(148, 163, 184, 0.06);
-}
-
-.pid__tab--active {
-    background: rgba(56, 189, 248, 0.1);
-    border-color: rgba(56, 189, 248, 0.45);
-    border-bottom-color: transparent;
-    color: rgb(125, 211, 252);
-    font-weight: 600;
-}
-
-.pid__tab-badge {
-    padding: 0.05rem 0.4rem;
-    font-size: 0.62rem;
-    border-radius: 9999px;
-    background: rgba(34, 197, 94, 0.18);
-    color: rgb(134, 239, 172);
-    font-weight: 500;
-    letter-spacing: 0.03em;
-}
-
-.pid__tab-badge--soft {
-    background: rgba(148, 163, 184, 0.15);
-    color: rgba(148, 163, 184, 0.9);
-}
-
-/* ============== BANNERS ============== */
-.pid__banner {
-    padding: 0.55rem 0.85rem;
-    border-radius: 0.4rem;
-    font-size: 0.78rem;
-}
-
-.pid__banner--danger {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: rgb(252, 165, 165);
-}
-
-.pid__banner--warn {
-    background: rgba(251, 191, 36, 0.08);
-    border: 1px solid rgba(251, 191, 36, 0.35);
-    color: rgb(250, 204, 21);
-}
-
-.pid__banner code {
-    font-family: ui-monospace, monospace;
-    background: rgba(15, 23, 42, 0.3);
-    padding: 0 0.3rem;
-    border-radius: 0.2rem;
-}
-
-/* ============== SECTIONS ============== */
-.pid__section {
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 0.45rem;
-    overflow: hidden;
-}
-
-.pid__section-summary {
-    cursor: pointer;
-    list-style: none;
-    padding: 0.55rem 0.85rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-}
-
-.pid__section-summary::before {
-    content: '▸ ';
-    opacity: 0.55;
-    margin-right: 0.25rem;
-}
-
-.pid__section[open] .pid__section-summary::before {
-    content: '▾ ';
-}
-
-.pid__section-title {
-    font-weight: 600;
-    font-size: 0.85rem;
-}
-
-.pid__section-desc {
-    font-size: 0.7rem;
-    opacity: 0.6;
-}
-
-.pid__section-body {
-    border-top: 1px solid rgba(148, 163, 184, 0.15);
-    padding: 0.75rem 0.85rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0.65rem;
-}
-
-/* ============== FIELDS ============== */
-.pid__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.8rem;
-}
-
-.pid__field-label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    font-weight: 600;
-    opacity: 0.7;
-}
-
-.pid__field-lock {
-    font-size: 0.6rem;
-    opacity: 0.6;
-    font-weight: 500;
-    text-transform: none;
-    letter-spacing: 0;
-}
-
-.pid__field-dirty {
-    color: rgb(56, 189, 248);
-    font-size: 0.9rem;
-    line-height: 1;
-}
-
-.pid__input {
-    padding: 0.42rem 0.55rem;
-    border-radius: 0.35rem;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: transparent;
-    color: inherit;
-    font-size: 0.85rem;
-}
-
-.pid__input:focus-visible {
-    outline: none;
-    border-color: rgba(56, 189, 248, 0.65);
-    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.16);
-}
-
-.pid__input--readonly {
-    opacity: 0.8;
-    cursor: not-allowed;
-}
-
-.pid__field-hint {
-    font-size: 0.68rem;
-    opacity: 0.65;
-    line-height: 1.3;
-}
-
-/* ============== PREVIEW ============== */
-.pid__preview {
-    display: flex;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-    padding: 0.6rem 0.85rem;
-    border: 1px dashed rgba(56, 189, 248, 0.25);
-    background: rgba(56, 189, 248, 0.04);
-    border-radius: 0.4rem;
-}
-
-.pid__preview > div {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-}
-
-.pid__preview span {
-    font-size: 0.6rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    opacity: 0.6;
-    font-weight: 600;
-}
-
-.pid__preview strong {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: rgb(125, 211, 252);
-    font-family: ui-monospace, monospace;
-}
-</style>

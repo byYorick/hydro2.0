@@ -194,6 +194,23 @@ def _apply_drift_to_nodes(
             node["drift_noise_per_minute"] = noise_value
 
 
+_LIVE_ORCHESTRATOR = None  # type: Optional["LiveOrchestrator"]
+
+
+def get_live_orchestrator():
+    """Singleton LiveOrchestrator (Phase C)."""
+    global _LIVE_ORCHESTRATOR
+    if _LIVE_ORCHESTRATOR is None:
+        from live import LiveOrchestrator
+        _LIVE_ORCHESTRATOR = LiveOrchestrator(
+            mqtt_host=DEFAULT_MQTT_CONFIG["host"],
+            mqtt_port=DEFAULT_MQTT_CONFIG["port"],
+            mqtt_username=DEFAULT_MQTT_CONFIG.get("username"),
+            mqtt_password=DEFAULT_MQTT_CONFIG.get("password"),
+        )
+    return _LIVE_ORCHESTRATOR
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Digital twin service started")
@@ -203,10 +220,25 @@ async def lifespan(app: FastAPI):
         message="Digital twin service started",
         context={"port": 8003},
     )
-    yield
+    try:
+        yield
+    finally:
+        # Phase C: остановить активные SimWorld и MQTT-bridge.
+        global _LIVE_ORCHESTRATOR
+        if _LIVE_ORCHESTRATOR is not None:
+            try:
+                await _LIVE_ORCHESTRATOR.stop()
+            except Exception as exc:
+                logger.warning("LiveOrchestrator stop failed: %s", exc)
+            _LIVE_ORCHESTRATOR = None
 
 
 app = FastAPI(title="Digital Twin Engine", lifespan=lifespan)
+
+from replay import router as replay_router  # noqa: E402  (fastapi requires app first)
+from calibration_api import router as calibration_router  # noqa: E402
+app.include_router(replay_router)
+app.include_router(calibration_router)
 
 
 @app.middleware("http")
@@ -221,7 +253,10 @@ async def trace_middleware(request: Request, call_next):
     return response
 
 # Модели для симуляции
-from models import PHModel, ECModel, ClimateModel
+# `models.py` сохранён как legacy-контракт для test_models.py.
+# Новый код использует модульные solvers через ZoneWorld.
+from models import PHModel, ECModel, ClimateModel  # noqa: F401  (legacy regression)
+from world import CommandRouter, ZoneWorld
 
 
 class SimulationResponse(BaseModel):
@@ -238,6 +273,13 @@ class LiveSimulationStartRequest(BaseModel):
     mqtt: Optional[Dict[str, Any]] = None
     telemetry: Optional[Dict[str, Any]] = None
     failure_mode: Optional[Dict[str, Any]] = None
+    # Phase C: физический backend для symлируемой зоны.
+    # 'drift' (default, legacy) — node-sim генерит drift-телеметрию сам.
+    # 'dt'                       — DT публикует physics-based телеметрию,
+    #                              а node-sim используется только для
+    #                              status/heartbeat/lwt (sensors=[] override).
+    physics_mode: str = Field("drift", pattern="^(drift|dt)$")
+    tick_seconds: float = Field(1.0, gt=0.0, le=10.0)
 
 
 class LiveSimulationStopRequest(BaseModel):
@@ -364,14 +406,26 @@ async def get_recipe_revision_phases(recipe_id: int) -> List[Dict[str, Any]]:
     return phases
 
 
+def _sanitize_numeric(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {k: _sanitize_numeric(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_numeric(v) for v in value]
+    return value
+
+
+# Чтение `zone_dt_params` вынесено в `dt_params.py` чтобы избежать конфликта
+# `Duplicated timeseries` prometheus_client при повторном импорте `main`.
+from dt_params import get_zone_dt_params  # noqa: E402, F401
+
+
 async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
-    """
-    Симуляция зоны на заданный период времени.
-    """
+    """Симуляция зоны на заданный период времени через ZoneWorld."""
     with SIMULATION_DURATION.time():
         SIMULATIONS_RUN.inc()
 
-        # Получаем фазы рецепта
         recipe_id = request.scenario.recipe_id
         logger.info(
             "Digital twin simulation requested",
@@ -387,118 +441,76 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
 
         phases = await get_recipe_revision_phases(recipe_id)
         if not phases:
-            raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found or has no phases")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Recipe {recipe_id} not found or has no phases",
+            )
 
-        def to_float(value: Any, default: float) -> float:
-            if value is None:
-                return default
-            if isinstance(value, Decimal):
-                return float(value)
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return default
+        initial_state = _sanitize_numeric(request.scenario.initial_state or {})
+        params_by_group = await get_zone_dt_params(request.zone_id)
 
-        def sanitize_numeric(value: Any) -> Any:
-            if isinstance(value, Decimal):
-                return float(value)
-            if isinstance(value, dict):
-                return {k: sanitize_numeric(v) for k, v in value.items()}
-            if isinstance(value, list):
-                return [sanitize_numeric(v) for v in value]
-            return value
+        world = ZoneWorld(params_by_group=params_by_group)
+        state = world.initial_state(initial_state)
 
-        # Начальное состояние
-        initial_state = sanitize_numeric(request.scenario.initial_state or {})
-        ph = to_float(initial_state.get("ph"), 6.0)
-        ec = to_float(initial_state.get("ec"), 1.2)
-        temp_air = to_float(initial_state.get("temp_air"), 22.0)
-        temp_water = to_float(initial_state.get("temp_water"), 20.0)
-        humidity_air = to_float(initial_state.get("humidity_air"), 60.0)
+        # Phase B: если задан inputs_schedule — используем command-driven шаги.
+        inputs_schedule = list(request.inputs_schedule or [])
+        command_router: Optional[CommandRouter] = None
+        if inputs_schedule:
+            command_router = CommandRouter(world.actuator_solver, inputs_schedule)
 
-        # Получаем калиброванные параметры для зоны (опционально, можно кэшировать)
-        # Для MVP используем дефолтные параметры, калибровку можно вызывать отдельно
-        calibrated_params = None
-        
-        # Инициализация моделей с калиброванными параметрами (если есть)
-        ph_params = calibrated_params.get("ph") if calibrated_params and isinstance(calibrated_params, dict) else None
-        ec_params = calibrated_params.get("ec") if calibrated_params and isinstance(calibrated_params, dict) else None
-        climate_params = calibrated_params.get("climate") if calibrated_params and isinstance(calibrated_params, dict) else None
-        
-        ph_model = PHModel(ph_params)
-        ec_model = ECModel(ec_params)
-        climate_model = ClimateModel(climate_params)
-
-        # Результаты симуляции
-        points = []
         start_time = utcnow()
         current_time = start_time
         end_time = current_time + timedelta(hours=request.duration_hours)
         step_delta = timedelta(minutes=request.step_minutes)
         step_hours = step_delta.total_seconds() / 3600
 
-        # Определяем текущую фазу
         current_phase_index = 0
         phase_start_time = current_time
-        cumulative_hours = 0.0
+        points: List[Dict[str, Any]] = []
 
         while current_time < end_time:
-            # Проверяем переход на следующую фазу
             if current_phase_index < len(phases):
-                phase = phases[current_phase_index]
-                phase_duration = phase.get("duration_hours", 0)
-                
-                if (current_time - phase_start_time).total_seconds() / 3600 >= phase_duration:
+                phase_duration = float(phases[current_phase_index].get("duration_hours", 0) or 0)
+                elapsed_in_phase = (current_time - phase_start_time).total_seconds() / 3600
+                if elapsed_in_phase >= phase_duration:
                     current_phase_index += 1
                     if current_phase_index < len(phases):
                         phase_start_time = current_time
                     else:
-                        # Все фазы завершены, используем последнюю
+                        # Все фазы завершены — оставляем последнюю как hold targets.
                         current_phase_index = len(phases) - 1
 
-            # Получаем targets текущей фазы
             if current_phase_index < len(phases):
-                phase = phases[current_phase_index]
-                targets = sanitize_numeric(phase.get("targets", {}))
-                target_ph = to_float(targets.get("ph", ph), ph)
-                target_ec = to_float(targets.get("ec", ec), ec)
-                target_temp_air = to_float(targets.get("temp_air", temp_air), temp_air)
-                target_humidity_air = to_float(targets.get("humidity_air", humidity_air), humidity_air)
+                targets = _sanitize_numeric(phases[current_phase_index].get("targets", {}) or {})
             else:
-                # Используем последние значения как targets
-                target_ph = ph
-                target_ec = ec
-                target_temp_air = temp_air
-                target_humidity_air = humidity_air
+                targets = {}
 
-            # Симулируем один шаг (используем длительность шага, а не накопленное время)
-            ph = to_float(ph, 6.0)
-            ec = to_float(ec, 1.2)
-            temp_air = to_float(temp_air, 22.0)
-            humidity_air = to_float(humidity_air, 60.0)
-            
-            # pH модель
-            ph = ph_model.step(ph, target_ph, step_hours)
-            
-            # EC модель
-            ec = ec_model.step(ec, target_ec, step_hours)
-            
-            # Климат модель
-            temp_air, humidity_air = climate_model.step(
-                temp_air, humidity_air, target_temp_air, target_humidity_air, step_hours
-            )
+            elapsed_minutes_total = (current_time - start_time).total_seconds() / 60.0
+            if command_router is not None:
+                # Применить cmd-события до конца этого шага (incl).
+                command_router.advance_to(elapsed_minutes_total + request.step_minutes)
+                state = world.step_with_commands(state, targets, step_hours)
+            else:
+                state = world.step(state, targets, step_hours)
 
-            # Сохраняем точку
-            elapsed_hours_total = (current_time - start_time).total_seconds() / 3600
-            points.append({
-                "t": elapsed_hours_total,  # часы от начала
-                "ph": round(ph, 2),
-                "ec": round(ec, 2),
-                "temp_air": round(temp_air, 1),
-                "temp_water": round(temp_water, 1),
-                "humidity_air": round(humidity_air, 1),
+            elapsed_hours_total = elapsed_minutes_total / 60.0
+            point: Dict[str, Any] = {
+                "t": elapsed_hours_total,
+                "ph": round(state.chem.ph, 2),
+                "ec": round(state.chem.ec, 2),
+                "temp_air": round(state.climate.temp_air_c, 1),
+                "temp_water": round(state.tank.water_temp_c, 1),
+                "humidity_air": round(state.climate.humidity_air_pct, 1),
                 "phase_index": current_phase_index,
-            })
+            }
+            if command_router is not None:
+                point["solution_volume_l"] = round(state.tank.solution_volume_l, 2)
+                point["clean_volume_l"] = round(state.tank.clean_volume_l, 2)
+                point["level_clean_max"] = state.tank.level_clean_max
+                point["level_solution_max"] = state.tank.level_solution_max
+                point["level_solution_min"] = state.tank.level_solution_min
+                point["water_content"] = round(state.substrate.water_content_pct, 1)
+            points.append(point)
 
             current_time += step_delta
 
@@ -780,6 +792,12 @@ async def _complete_live_simulation(
         )
     finally:
         LIVE_SIM_TASKS.pop(simulation_id, None)
+        # Phase C: cleanup SimWorld если был зарегистрирован.
+        try:
+            orch = get_live_orchestrator()
+            await orch.unregister_simulation(simulation_id)
+        except Exception as exc:
+            logger.debug("DT SimWorld unregister no-op: %s", exc)
 
 
 @app.post("/simulate/zone", response_model=SimulationResponse)
@@ -808,7 +826,7 @@ async def simulate_zone_endpoint(request: SimulationRequest):
 async def start_live_simulation(request: LiveSimulationStartRequest):
     try:
         simulation_id, session_id, time_scale, scenario_payload = await _create_live_simulation(request)
-        _, _, nodes = await _load_node_configs(request.zone_id)
+        gh_uid, zone_uid, nodes = await _load_node_configs(request.zone_id)
 
         mqtt_config = dict(DEFAULT_MQTT_CONFIG)
         telemetry_config = dict(DEFAULT_TELEMETRY_CONFIG)
@@ -819,6 +837,16 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
         telemetry_config = _scale_telemetry_config(telemetry_config, time_scale)
         _apply_initial_state_to_nodes(nodes, scenario_payload)
         _apply_drift_to_nodes(nodes, scenario_payload)
+
+        # Phase C: при physics_mode='dt' DT берёт на себя sensors-телеметрию.
+        # Чтобы node-sim не публиковал свою drift-телеметрию параллельно с DT,
+        # обнуляем sensors. status/heartbeat/lwt останутся на node-sim.
+        if request.physics_mode == "dt":
+            for node in nodes:
+                node["sensors"] = []
+                node.pop("initial_sensors", None)
+                node.pop("drift_per_minute", None)
+                node.pop("drift_noise_per_minute", None)
 
         payload = {
             "session_id": session_id,
@@ -860,6 +888,44 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
             message="Node-sim сессия запущена",
             payload={"node_sim_session_id": session_id},
         )
+
+        # Phase C: регистрируем SimWorld в DT (если physics_mode='dt').
+        if request.physics_mode == "dt":
+            try:
+                params_by_group = await get_zone_dt_params(request.zone_id)
+                initial_state = scenario_payload.get("initial_state") or {}
+                orch = get_live_orchestrator()
+                await orch.register_simulation(
+                    simulation_id=simulation_id,
+                    zone_id=request.zone_id,
+                    gh_uid=gh_uid,
+                    zone_uid=zone_uid,
+                    params_by_group=params_by_group,
+                    initial_state=initial_state if isinstance(initial_state, dict) else {},
+                    time_scale=time_scale,
+                    tick_seconds=request.tick_seconds,
+                )
+                await _record_simulation_event(
+                    simulation_id,
+                    request.zone_id,
+                    service="digital-twin",
+                    stage="dt_world_registered",
+                    status="completed",
+                    message="DT physics-backend поднят для зоны",
+                    payload={"tick_seconds": request.tick_seconds},
+                )
+            except Exception as exc:
+                logger.exception("Failed to register DT SimWorld", exc_info=exc)
+                await _record_simulation_event(
+                    simulation_id,
+                    request.zone_id,
+                    service="digital-twin",
+                    stage="dt_world_registered",
+                    status="failed",
+                    message="Не удалось поднять DT physics-backend",
+                    payload={"error": str(exc)},
+                    level="error",
+                )
 
         task = asyncio.create_task(
             _complete_live_simulation(simulation_id, session_id, request.sim_duration_minutes)
@@ -935,6 +1001,13 @@ async def stop_live_simulation(request: LiveSimulationStopRequest):
         task = LIVE_SIM_TASKS.pop(request.simulation_id, None)
         if task:
             task.cancel()
+
+        # Phase C: cleanup SimWorld для этой симуляции (если был зарегистрирован).
+        try:
+            orch = get_live_orchestrator()
+            await orch.unregister_simulation(request.simulation_id)
+        except Exception as exc:
+            logger.debug("DT SimWorld unregister on stop no-op: %s", exc)
 
         return {"status": "ok"}
     except HTTPException:

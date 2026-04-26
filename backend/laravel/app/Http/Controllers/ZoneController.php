@@ -132,11 +132,35 @@ class ZoneController extends Controller
             'activeGrowCycle.currentPhase',
             'activeGrowCycle.phases',
             'activeGrowCycle.plant:id,name',
+            'channelBindings.nodeChannel:id,node_id,channel,type,metric',
+            'channelBindings.nodeChannel.node:id,uid,name,type',
         ]);
+
+        $bindings = $zone->channelBindings->map(function ($binding) {
+            $channel = $binding->nodeChannel;
+            $node = $channel?->node;
+
+            return [
+                'id' => (int) $binding->id,
+                'role' => $binding->role,
+                'direction' => $binding->direction,
+                'node_channel_id' => $channel?->id !== null ? (int) $channel->id : null,
+                'channel' => $channel?->channel,
+                'channel_type' => $channel?->type,
+                'metric' => $channel?->metric,
+                'node_id' => $node?->id !== null ? (int) $node->id : null,
+                'node_uid' => $node?->uid,
+                'node_name' => $node?->name,
+                'node_type' => $node?->type,
+            ];
+        })->values();
+
+        $payload = $zone->toArray();
+        $payload['channel_bindings'] = $bindings;
 
         return response()->json([
             'status' => 'ok',
-            'data' => $zone,
+            'data' => $payload,
         ]);
     }
 

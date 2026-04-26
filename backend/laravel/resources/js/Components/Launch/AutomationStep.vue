@@ -1,47 +1,48 @@
 <template>
-    <section class="launch-step">
-        <header class="launch-step__header">
-            <h3 class="launch-step__title">Автоматика зоны</h3>
-            <p class="launch-step__desc">
-                Конфигурация зоны, привязки узлов к ролям и параметры подсистем. При запуске цикла
-                эти настройки будут сохранены как <code>zone.logic_profile</code> + channel bindings.
-            </p>
-        </header>
+  <section class="flex flex-col gap-3">
+    <div
+      v-if="!zoneId"
+      class="px-3 py-2.5 rounded-md border border-warn-soft bg-warn-soft text-warn text-sm"
+    >
+      Автоматика становится доступна после выбора зоны.
+    </div>
 
-        <div v-if="!zoneId" class="launch-step__empty">
-            Автоматика становится доступна после выбора зоны.
-        </div>
+    <template v-else>
+      <div
+        v-if="loading"
+        class="px-3 py-2.5 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-muted)] text-sm"
+      >
+        Загрузка конфигурации зоны…
+      </div>
 
-        <template v-else>
-            <div v-if="loading" class="launch-step__skeleton">
-                Загрузка конфигурации зоны…
-            </div>
-
-            <AutomationHub
-                v-else
-                :zone-id="zoneId"
-                :profile="state"
-                :current-recipe-phase="currentRecipePhase"
-                :system-type-locked="isSystemTypeLocked"
-                :available-nodes="availableNodes"
-                :refreshing-nodes="refreshingNodes"
-                :binding-in-progress="bindingInProgress"
-                @update:water-form="(v) => (state.waterForm = v)"
-                @update:lighting-form="(v) => (state.lightingForm = v)"
-                @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
-                @update:assignments="(v) => (state.assignments = v)"
-                @bind-devices="onBindDevices"
-                @refresh-nodes="onRefreshNodes"
-                @refresh="reloadAll"
-                @preset-applied="onPresetApplied"
-                @preset-cleared="onPresetCleared"
-            />
-        </template>
-    </section>
+      <AutomationHub
+        v-else
+        :zone-id="zoneId"
+        :profile="state"
+        :current-recipe-phase="currentRecipePhase"
+        :system-type-locked="isSystemTypeLocked"
+        :available-nodes="availableNodes"
+        :refreshing-nodes="refreshingNodes"
+        :binding-in-progress="bindingInProgress"
+        :binding-node-ids="bindingNodeIds"
+        :recipe-summary="recipeSummary"
+        @update:water-form="(v) => (state.waterForm = v)"
+        @update:lighting-form="(v) => (state.lightingForm = v)"
+        @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
+        @update:assignments="(v) => (state.assignments = v)"
+        @bind-devices="onBindDevices"
+        @bind-node="onBindNode"
+        @refresh-nodes="onRefreshNodes"
+        @refresh="reloadAll"
+        @preset-applied="onPresetApplied"
+        @preset-cleared="onPresetCleared"
+      />
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import AutomationHub from '@/Components/Launch/Automation/AutomationHub.vue';
 import { api } from '@/services/api';
 import { useToast } from '@/composables/useToast';
@@ -53,19 +54,30 @@ import {
     bindingsResponseToAssignments,
     zoneLogicProfileToProfile,
 } from '@/composables/automationProfileConverters';
-import type { Node as SetupWizardNode } from '@/types/SetupWizard';
+import type { ZoneAutomationBindRole } from '@/composables/zoneAutomationTypes';
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode';
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 
+interface RecipeSummary {
+    name?: string | null;
+    revisionLabel?: string | null;
+    systemType?: string | null;
+    targetPh?: number | null;
+    targetEc?: number | null;
+}
+
 interface Props {
     zoneId?: number;
     currentRecipePhase?: unknown;
+    recipeSummary?: RecipeSummary | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
     zoneId: undefined,
     currentRecipePhase: null,
+    recipeSummary: null,
 });
 
 const emit = defineEmits<{
@@ -80,6 +92,11 @@ const availableNodes: SetupWizardNode[] = reactive([]);
 const loading = ref(false);
 const refreshingNodes = ref(false);
 const bindingInProgress = ref(false);
+const bindingNodeIds = ref<Set<number>>(new Set());
+let pendingPollHandle: ReturnType<typeof setInterval> | null = null;
+let pendingPollDeadline = 0;
+const PENDING_POLL_INTERVAL_MS = 2500;
+const PENDING_POLL_TIMEOUT_MS = 60_000;
 
 function applyProfile(next: AutomationProfile) {
     state.waterForm = next.waterForm;
@@ -134,16 +151,73 @@ async function loadLogicProfile(zoneId: number) {
     }
 }
 
-async function loadBindings(zoneId: number) {
+/**
+ * Подгружает channel_bindings из ZoneController::show — теперь backend
+ * возвращает их вместе с node_id, что является source-of-truth для assignments.
+ */
+async function loadBindings(zoneId: number): Promise<void> {
     try {
         const resp = await api.zones.getById(zoneId);
         const data = resp as unknown as { channel_bindings?: unknown };
         if (data.channel_bindings) {
-            state.assignments = bindingsResponseToAssignments(data.channel_bindings);
+            const fromApi = bindingsResponseToAssignments(data.channel_bindings);
+            // Применяем поверх defaults, но не затираем уже выставленные пользователем.
+            const next = { ...state.assignments };
+            let changed = false;
+            for (const [role, id] of Object.entries(fromApi)) {
+                if (next[role as ZoneAutomationBindRole] == null && id != null) {
+                    next[role as ZoneAutomationBindRole] = id;
+                    changed = true;
+                }
+            }
+            if (changed) state.assignments = next;
         }
     } catch {
         // keep defaults
     }
+}
+
+/**
+ * Маппинг assignment_role → binding_role[] (зеркало SetupWizardController::bindingSpecs()).
+ * Один assignment_role в UI может покрывать несколько binding_role на железе
+ * (например, irrigation = pump_main + drain).
+ */
+const ROLE_BINDING_ROLES: Record<ZoneAutomationBindRole, string[]> = {
+    irrigation: ['pump_main', 'drain'],
+    ph_correction: ['pump_acid', 'pump_base'],
+    ec_correction: ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
+    light: ['light_actuator'],
+    soil_moisture_sensor: ['soil_moisture_sensor'],
+    co2_sensor: ['co2_sensor'],
+    co2_actuator: ['co2_actuator'],
+    root_vent_actuator: ['root_vent_actuator'],
+};
+
+/**
+ * Подтягивает assignments из реальных channel_bindings зоны.
+ * Backend в NodeController отдаёт `binding_role` per channel — этого достаточно,
+ * чтобы определить, какой узел уже играет роль pump_main / ph_dose / и т.д.
+ */
+function deriveBindingsFromNodes(zoneId: number): void {
+    const next = { ...state.assignments };
+    let changed = false;
+    for (const role of Object.keys(ROLE_BINDING_ROLES) as ZoneAutomationBindRole[]) {
+        if (next[role] != null) continue;
+        const bindingRoles = ROLE_BINDING_ROLES[role];
+        for (const node of availableNodes) {
+            if (node.zone_id !== zoneId) continue;
+            const channels = node.channels ?? [];
+            const matched = channels.some(
+                (ch) => typeof ch.binding_role === 'string' && bindingRoles.includes(ch.binding_role),
+            );
+            if (matched) {
+                next[role] = node.id;
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) state.assignments = next;
 }
 
 async function loadNodes(zoneId: number) {
@@ -173,6 +247,9 @@ async function reloadAll() {
             loadBindings(props.zoneId),
             loadNodes(props.zoneId),
         ]);
+        // Fallback: если в channel_bindings нет записи, но узел в зоне
+        // имеет канал с подходящим binding_role — подставим его.
+        deriveBindingsFromNodes(props.zoneId);
     } finally {
         loading.value = false;
     }
@@ -183,6 +260,7 @@ async function onRefreshNodes() {
     refreshingNodes.value = true;
     try {
         await loadNodes(props.zoneId);
+        deriveBindingsFromNodes(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
         showToast((error as Error).message || 'Ошибка обновления списка нод', 'error');
@@ -240,7 +318,7 @@ async function onBindDevices(roles: string[]) {
 
         showToast(`Привязка выполнена (${roles.join(', ')})`, 'success');
         await loadNodes(props.zoneId);
-        await loadBindings(props.zoneId);
+        deriveBindingsFromNodes(props.zoneId);
     } catch (error) {
         showToast((error as Error).message || 'Ошибка привязки', 'error');
     } finally {
@@ -248,14 +326,88 @@ async function onBindDevices(roles: string[]) {
     }
 }
 
+async function onBindNode(nodeId: number) {
+    if (!props.zoneId || bindingNodeIds.value.has(nodeId)) return;
+    const node = availableNodes.find((n) => n.id === nodeId);
+    if (
+        node
+        && node.zone_id === props.zoneId
+        && (node.pending_zone_id == null || node.pending_zone_id === props.zoneId)
+    ) {
+        showToast('Нода уже привязана к этой зоне', 'info');
+        return;
+    }
+    bindingNodeIds.value = new Set([...bindingNodeIds.value, nodeId]);
+    try {
+        await api.nodes.update(nodeId, { zone_id: props.zoneId });
+        showToast('Привязка отправлена — ждём config_report от ноды…', 'info');
+        await loadNodes(props.zoneId);
+        startPendingPoll();
+    } catch (error) {
+        showToast((error as Error).message || 'Ошибка привязки ноды', 'error');
+    } finally {
+        const next = new Set(bindingNodeIds.value);
+        next.delete(nodeId);
+        bindingNodeIds.value = next;
+    }
+}
+
+function hasPendingBindings(): boolean {
+    if (!props.zoneId) return false;
+    return availableNodes.some(
+        (n) => n.pending_zone_id === props.zoneId && !n.zone_id,
+    );
+}
+
+function stopPendingPoll() {
+    if (pendingPollHandle != null) {
+        clearInterval(pendingPollHandle);
+        pendingPollHandle = null;
+    }
+    pendingPollDeadline = 0;
+}
+
+function startPendingPoll() {
+    pendingPollDeadline = Date.now() + PENDING_POLL_TIMEOUT_MS;
+    if (pendingPollHandle != null) return;
+    pendingPollHandle = setInterval(async () => {
+        if (!props.zoneId) {
+            stopPendingPoll();
+            return;
+        }
+        const hadPending = hasPendingBindings();
+        await loadNodes(props.zoneId);
+        const stillPending = hasPendingBindings();
+        if (hadPending && !stillPending) {
+            showToast('Нода подтвердила привязку (config_report получен)', 'success');
+            stopPendingPoll();
+            return;
+        }
+        if (!stillPending || Date.now() > pendingPollDeadline) {
+            stopPendingPoll();
+        }
+    }, PENDING_POLL_INTERVAL_MS);
+}
+
 onMounted(() => {
     if (props.zoneId) reloadAll();
+});
+
+onUnmounted(() => {
+    stopPendingPoll();
 });
 
 watch(
     () => props.zoneId,
     (id) => {
         if (id) reloadAll();
+    },
+);
+
+watch(
+    () => availableNodes.map((n) => `${n.id}:${n.zone_id ?? 0}:${n.pending_zone_id ?? 0}`).join('|'),
+    () => {
+        if (hasPendingBindings()) startPendingPoll();
     },
 );
 
@@ -290,33 +442,3 @@ function onPresetCleared() {
 }
 </script>
 
-<style scoped>
-.launch-step { display: flex; flex-direction: column; gap: 1rem; }
-.launch-step__title { font-size: 1rem; font-weight: 600; margin: 0 0 0.25rem; }
-.launch-step__desc { margin: 0; opacity: 0.75; font-size: 0.875rem; }
-.launch-step__skeleton,
-.launch-step__empty {
-    padding: 0.75rem;
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 0.5rem;
-    background: rgba(148, 163, 184, 0.06);
-    font-size: 0.875rem;
-}
-.launch-step__empty {
-    background: rgba(251, 191, 36, 0.08);
-    border-color: rgba(251, 191, 36, 0.35);
-}
-.launch-step__form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.launch-step__add-btn {
-    padding: 0.4rem 0.8rem;
-    background: transparent;
-    border: 1px dashed rgba(148, 163, 184, 0.45);
-    border-radius: 0.375rem;
-    color: inherit;
-    cursor: pointer;
-    font-size: 0.85rem;
-    text-decoration: none;
-    display: inline-block;
-}
-.launch-step__add-btn:hover { background: rgba(148, 163, 184, 0.08); }
-</style>

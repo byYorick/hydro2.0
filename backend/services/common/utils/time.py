@@ -18,6 +18,17 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def to_naive_utc(dt: datetime) -> datetime:
+    """Привести datetime к naive UTC (для PostgreSQL TIMESTAMP WITHOUT TIME ZONE).
+
+    - aware datetime → конвертируется в UTC и tzinfo сбрасывается;
+    - naive datetime → возвращается как есть (предполагается уже UTC).
+    """
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def utcnow_naive() -> datetime:
     """
     Возвращает текущее время в UTC как naive datetime (без tzinfo).

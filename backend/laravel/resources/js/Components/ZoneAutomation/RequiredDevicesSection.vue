@@ -194,7 +194,7 @@
 
 <script setup lang="ts">
 import Button from '@/Components/Button.vue'
-import type { Node as SetupWizardNode } from '@/types/SetupWizard'
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 import type { ZoneAutomationSectionAssignments } from '@/composables/zoneAutomationTypes'
 import { nodeLabel } from '@/composables/zoneAutomationNodeMatching'
 import { useZoneAutomationSectionContext } from '@/composables/useZoneAutomationSectionContext'

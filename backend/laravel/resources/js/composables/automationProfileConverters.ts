@@ -263,8 +263,34 @@ export function profileToZoneLogicProfile(profile: AutomationProfile): Dict {
 }
 
 /**
- * Из ответа `GET /api/zones/{id}/channel-bindings` извлекает assignments для форм.
- * Ожидаемый формат: array объектов `{role, node_channel_id}` или `{role, channel_id}`.
+ * Маппинг binding_role (от backend) → assignment_role (UI ключ).
+ * Зеркало SetupWizardController::bindingSpecs() — один assignment_role
+ * покрывает несколько binding_role на железе.
+ */
+const BINDING_ROLE_TO_ASSIGNMENT_ROLE: Record<string, keyof AutomationProfile['assignments']> = {
+    pump_main: 'irrigation',
+    drain: 'irrigation',
+    pump_acid: 'ph_correction',
+    pump_base: 'ph_correction',
+    pump_a: 'ec_correction',
+    pump_b: 'ec_correction',
+    pump_c: 'ec_correction',
+    pump_d: 'ec_correction',
+    light_actuator: 'light',
+    soil_moisture_sensor: 'soil_moisture_sensor',
+    co2_sensor: 'co2_sensor',
+    co2_actuator: 'co2_actuator',
+    root_vent_actuator: 'root_vent_actuator',
+};
+
+/**
+ * Из payload `data.channel_bindings` (ZoneController::show) извлекает
+ * assignments для форм. Ожидаемый формат: array объектов
+ * `{role, node_id, node_channel_id, ...}` — UI хранит node_id.
+ *
+ * Fallback: если в записях только `node_channel_id` (старый формат) — пропускаем,
+ * т.к. UI работает с node_id; вызывающий должен использовать
+ * deriveBindingsFromNodes() как альтернативу.
  */
 export function bindingsResponseToAssignments(raw: unknown): AutomationProfile['assignments'] {
     const out = { ...automationProfileDefaults.assignments };
@@ -276,10 +302,15 @@ export function bindingsResponseToAssignments(raw: unknown): AutomationProfile['
     for (const entry of list) {
         if (!entry || typeof entry !== 'object') continue;
         const rec = entry as Dict;
-        const role = asString(rec.role, '');
-        const id = asNumber(rec.node_channel_id ?? rec.channel_id ?? rec.id, 0);
-        if (role in out && id > 0) {
-            (out as Record<string, number | null>)[role] = id;
+        const bindingRole = asString(rec.role, '');
+        const nodeId = asNumber(rec.node_id, 0);
+        if (nodeId <= 0) continue;
+        const assignmentRole = BINDING_ROLE_TO_ASSIGNMENT_ROLE[bindingRole];
+        if (!assignmentRole) continue;
+        // Если уже задан этим же node_id — не перезаписываем, иначе ставим.
+        const current = (out as Record<string, number | null>)[assignmentRole];
+        if (current == null) {
+            (out as Record<string, number | null>)[assignmentRole] = nodeId;
         }
     }
     return out;

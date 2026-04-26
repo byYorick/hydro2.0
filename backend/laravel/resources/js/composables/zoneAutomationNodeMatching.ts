@@ -1,5 +1,5 @@
 import { computed, type ComputedRef, type MaybeRefOrGetter, toValue } from 'vue'
-import type { Node as SetupWizardNode } from '@/types/SetupWizard'
+import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
 
 export function nodeLabel(node: SetupWizardNode): string {
   return node.name || node.uid || `Node #${node.id}`

@@ -38,20 +38,20 @@ backend/laravel/app/Services/ZoneService.php|878
 
 # -------- Frontend (resources/js) --------
 backend/laravel/resources/js/Components/AutomationProcessDiagram.vue|1067
-backend/laravel/resources/js/Components/CorrectionConfigForm.vue|1871
+backend/laravel/resources/js/Components/CorrectionConfigForm.vue|1463
 backend/laravel/resources/js/Components/CorrectionRuntimeReadinessCard.vue|677
 backend/laravel/resources/js/Components/Launch/Calibration/CalibrationHub.vue|522
-backend/laravel/resources/js/Components/Launch/Calibration/CalibrationPumpsSubpage.vue|547
-backend/laravel/resources/js/Components/Launch/Calibration/PumpCalibrationDrawer.vue|1288
-backend/laravel/resources/js/Components/PidConfigForm.vue|1114
-backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|1315
+backend/laravel/resources/js/Components/Launch/Calibration/PumpCalibrationDrawer.vue|1370
+backend/laravel/resources/js/Pages/Launch/Index.vue|553
+backend/laravel/resources/js/Components/PidConfigForm.vue|840
+backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|935
 backend/laravel/resources/js/Components/PumpCalibrationModal.vue|557
 backend/laravel/resources/js/Components/RecipeEditor.vue|1123
 backend/laravel/resources/js/Components/ZoneAutomation/CorrectionLiveEditCard.vue|1143
 backend/laravel/resources/js/Components/ZoneAutomation/WaterContourSection.vue|648
 backend/laravel/resources/js/Components/__tests__/CorrectionConfigForm.spec.ts|505
 backend/laravel/resources/js/Pages/Devices/Show.vue|717
-backend/laravel/resources/js/Pages/Greenhouses/Show.vue|781
+backend/laravel/resources/js/Pages/Greenhouses/Show.vue|787
 backend/laravel/resources/js/Pages/Settings/Index.vue|1021
 backend/laravel/resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts|853
 backend/laravel/resources/js/Pages/Zones/Tabs/__tests__/ZoneSchedulerTab.spec.ts|502
