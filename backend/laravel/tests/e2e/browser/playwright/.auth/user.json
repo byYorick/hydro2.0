@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6IjRpS3hOeFlDaDNZaXhsb2ZkWVlNS1E9PSIsInZhbHVlIjoibS9XaDN2Vm4rUjBieWpVYlFBTDNoK0twQnFxTzZHc1FJSm1lekk2YnBSSUYxbGpLTkJRaHQzYk1zZ3lBOWszK05SYmE1WTl4MGpIeWs4SmhwSVR6MmFkUGF6TWdHT3BRRWEvbHhlazdCSUVUeS9BbVlmZExyVkF4WjFIUFltVSsiLCJtYWMiOiJlMmI0MzNlYjI2ZjY2MmI1OTI1OGRmMDE2YWIxNTY5MDE0NjE0YThkMTYyZWY1ZjhhY2RhZjZhZWUwOGFiN2FjIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6ImNudEx0bldGV2tDaDJKeEFoUkJTUmc9PSIsInZhbHVlIjoiUHpkVHBQc2JSZXJhNVBEeTduaG1XMldtSTJZZkdGSEY4Y0xRcFJyNzZvWENnQUZMUHpUNEFVWU9OVDlOaytmYWNDUXhZTGpKQ244SUJEQTNuWCtKUGk3UGFheUNaaEJHWlovUGMvYUU3NFNkdGlpN0ZMQkYxZTk5NW1LM3VzajYiLCJtYWMiOiJiYzgyOTdjY2U0ODYzY2U4NzU4YzJmN2YyOGU3YzZjODBiMjVkZDkwYmQ3ZjM5YzE5MWQzNGFhZTNiYTdmMWRkIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1777281643.122877,
+      "expires": 1777391126.797734,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "laravel_session",
-      "value": "eyJpdiI6IlBudlVEcGpVNE53VDhtSXhDRnR5UlE9PSIsInZhbHVlIjoiTDhiT2ZNWnEzVU85RkpoRVJDRDFnb2dvazJyMno4WlBSU1h2K1pUWmJNWnJ5dGdRQUNPSndsejNGYVlrczBtUlFJSWgwQlRiaTRsb0ZzMUdYbFJWV1Qvb2lsTDdIOVExd2l5K0RwM2ljcXQ3ZUlqclBmZ1IzMSs5eGxZa1hyMm4iLCJtYWMiOiIyZTJhOWEzZDJmZDNiOTE5ZmVhNjU3ZjBkYzFiOGJjMWFiMjFmNDE4NTA5ZTkyOWFlN2I2MjY1MWZhZTE1ODk4IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IjFxbU9FUW1HcmFMem5CeGpWUDBDY3c9PSIsInZhbHVlIjoidHptNEFESHJ0SGVmVDhWUWhMdEFnQXdMeWdSWHhJWisxNCswQUlOOHdwTnFZNCs4UHM2dk1BM1NyUzF0RGZBekh6YUZLL1liWlVvRkR6OUNtV1gzdzBkSXhBWUN0SDNDZTdrdXJTL1ozVkllOWZaUXZ1SkprT3FybkNpSTlxek0iLCJtYWMiOiJhMjdkOGIyODU1NDM4NTQ1Y2JhZDJmYjVlNGM1MmYyMzY3Yjk2YzkyOWM0MjRlMjkxODczOTc5YTdkZDc5NDY3IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1777281644.627002,
+      "expires": 1777391127.902624,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
@@ -27,7 +27,7 @@
       "localStorage": [
         {
           "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1777274444455,\"transport\":\"ws\",\"latency\":679,\"cacheSkipCount\":0}"
+          "value": "{\"timestamp\":1777383927908,\"transport\":\"ws\",\"latency\":401,\"cacheSkipCount\":0}"
         }
       ]
     }

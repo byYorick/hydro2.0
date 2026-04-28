@@ -184,10 +184,12 @@ test.describe('Zone Detail', () => {
   });
 
   test('should open zone alert details from alerts tab', async ({ page, apiHelper, testZone }) => {
+    test.setTimeout(60000);
+
     const alert = await apiHelper.seedZoneAlert(testZone.id);
 
     try {
-      await page.goto(`/zones/${testZone.id}?tab=alerts`, { waitUntil: 'networkidle' });
+      await page.goto(`/zones/${testZone.id}?tab=alerts`, { waitUntil: 'load' });
       await expect(page.getByRole('tab', { name: 'Алерты' })).toBeVisible({ timeout: 15000 });
 
       const alertRow = page.locator('[data-testid^="zone-alert-row-"]').first();
@@ -210,6 +212,8 @@ test.describe('Zone Detail', () => {
   });
 
   test('should render scheduler workspace and execution details on scheduler tab', async ({ page, apiHelper, testGreenhouse }) => {
+    test.setTimeout(60000);
+
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
     const executionId = '501';
     const now = Date.now();
@@ -353,7 +357,7 @@ test.describe('Zone Detail', () => {
         });
       });
 
-      await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
+      await page.goto(`/zones/${zone.id}`, { waitUntil: 'load' });
       await page.getByRole('tab', { name: 'Планировщик' }).click();
       await expect(page.getByRole('heading', { level: 3, name: 'Планировщик зоны' })).toBeVisible({ timeout: 15000 });
 

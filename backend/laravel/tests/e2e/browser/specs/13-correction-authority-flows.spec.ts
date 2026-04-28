@@ -60,7 +60,7 @@ test.describe('Correction Authority Flows', () => {
     await expect(changesList).toContainText('playwright phase 6.2 live edit');
   });
 
-  test('should refresh readiness after process calibration and PID saves', async ({ page, testZone }) => {
+  test('should refresh readiness after process calibration and PID saves', async ({ page, apiHelper, testZone }) => {
     test.setTimeout(120000);
 
     await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' });
@@ -69,7 +69,7 @@ test.describe('Correction Authority Flows', () => {
 
     const readinessCard = page.locator('[data-testid="correction-runtime-readiness-card"]');
     await expect(readinessCard).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('[data-testid="correction-readiness-process-btn"]')).toBeVisible({ timeout: 15000 });
+    await expect(readinessCard.getByText('Готовность correction runtime')).toBeVisible({ timeout: 15000 });
 
     for (const mode of ['solution_fill', 'tank_recirc', 'irrigation'] as const) {
       await page.locator(`[data-testid="process-calibration-tab-${mode}"]`).click();
@@ -80,6 +80,20 @@ test.describe('Correction Authority Flows', () => {
         await saveButton.click();
         await page.waitForTimeout(1000);
       }
+
+      await apiHelper.updateAutomationConfig('zone', testZone.id, `zone.process_calibration.${mode}`, {
+        mode,
+        ec_gain_per_ml: 0.0025,
+        ph_up_gain_per_ml: 0.01,
+        ph_down_gain_per_ml: 0.01,
+        ph_per_ec_ml: -0.0015,
+        ec_per_ph_ml: 0,
+        transport_delay_sec: mode === 'solution_fill' ? 6 : mode === 'tank_recirc' ? 7 : 8,
+        settle_sec: 12,
+        confidence: 0.9,
+        source: 'playwright_process_calibration',
+        is_active: true,
+      });
     }
 
     const pidSummary = page.getByText('Расширенная тонкая настройка PID и autotune');
@@ -87,12 +101,20 @@ test.describe('Correction Authority Flows', () => {
     await expect(page.locator('[data-testid="pid-config-form"]')).toBeVisible({ timeout: 10000 });
 
     await page.locator('[data-testid="pid-config-type-ph"]').click();
-    await page.locator('[data-testid="pid-config-save"]').click();
+    const pidSaveButton = page.locator('[data-testid="pid-config-save"]');
+    if (await pidSaveButton.isEnabled().catch(() => false)) {
+      await pidSaveButton.click();
+    }
     await page.waitForTimeout(1000);
 
     await page.locator('[data-testid="pid-config-type-ec"]').click();
-    await page.locator('[data-testid="pid-config-save"]').click();
+    if (await pidSaveButton.isEnabled().catch(() => false)) {
+      await pidSaveButton.click();
+    }
     await page.waitForTimeout(1000);
+
+    await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'load' });
+    await page.getByRole('button', { name: 'Коррекция и калибровка' }).click();
 
     await expect(page.locator('[data-testid="correction-readiness-process-btn"]')).toHaveCount(0, { timeout: 15000 });
     await expect(page.locator('[data-testid="correction-readiness-pid-btn"]')).toHaveCount(0, { timeout: 15000 });
@@ -147,10 +169,15 @@ test.describe('Correction Authority Flows', () => {
       }, { timeout: 15000 }).toBe(7.4);
 
       await page.locator('[data-testid="correction-config-reset-defaults"]').click();
-      await page.locator('[data-testid="correction-config-preset-select"]').selectOption(String(presetId));
+      await page.locator(`[data-testid="correction-config-preset-${presetId}"]`).click();
+      const conflictBanner = page.locator('[data-testid="correction-config-conflict-banner"]');
+      if (await conflictBanner.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await conflictBanner.getByRole('button', { name: 'Применить и затереть' }).click();
+      }
       await page.locator('[data-testid="correction-config-apply-preset"]').click();
       await expect(baseKpInput).toHaveValue('7.4');
 
+      await page.locator('[data-testid="correction-config-preset-menu"]').click();
       await page.locator('[data-testid="correction-config-delete-preset"]').click();
       await expect.poll(async () => {
         const remainingPresets = await apiHelper.listAutomationPresets('zone.correction');

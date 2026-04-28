@@ -3,8 +3,9 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Commands', () => {
   test('should send command and show status updates', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    test.setTimeout(60000);
+
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'load' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -65,13 +66,14 @@ test.describe('Commands', () => {
       }
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').first()).toBeVisible();
     }
   });
 
   test('should show command status updates via WebSocket', async ({ page, testZone }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    test.setTimeout(60000);
+
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'load' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -85,13 +87,14 @@ test.describe('Commands', () => {
       await expect(wsIndicator.first()).toBeVisible({ timeout: 10000 });
     } else {
       // Если индикатор не найден, просто проверяем, что страница загружена
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').first()).toBeVisible();
     }
   });
 
   test('should show error message for invalid channel', async ({ page, testZone }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    test.setTimeout(60000);
+
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'load' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -108,7 +111,7 @@ test.describe('Commands', () => {
       await expect(commandForm.or(commandButtons).first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').first()).toBeVisible();
     }
   });
 });

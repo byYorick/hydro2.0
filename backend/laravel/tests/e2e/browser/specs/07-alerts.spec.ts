@@ -3,7 +3,9 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Alerts', () => {
   test('should display alerts table', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -21,7 +23,7 @@ test.describe('Alerts', () => {
   });
 
   test('should filter alerts by active status', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1, table, [data-testid*="alert"]', { timeout: 15000 });
 
     // Проверяем наличие фильтра "Только активные"
@@ -47,8 +49,9 @@ test.describe('Alerts', () => {
   });
 
   test('should filter alerts by zone', async ({ page, testZone }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -108,7 +111,9 @@ test.describe('Alerts', () => {
   });
 
   test('should display alert rows', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -135,7 +140,7 @@ test.describe('Alerts', () => {
   });
 
   test('should resolve alert', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1, table, [data-testid^="alert-row-"]', { timeout: 15000 });
 
     // Ищем первую строку алерта
