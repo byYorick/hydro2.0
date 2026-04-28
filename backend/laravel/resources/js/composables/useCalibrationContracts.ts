@@ -1,6 +1,7 @@
 import { computed, type ComputedRef } from 'vue';
 import type { PumpCalibration } from '@/types/PidConfig';
 import type { Device } from '@/types';
+import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow';
 
 export type ContractStatus = 'passed' | 'active' | 'blocker' | 'optional';
 
@@ -23,6 +24,7 @@ export interface ContractInputs {
     processDocs: ComputedRef<Record<string, unknown>>;
     correctionDoc: ComputedRef<Record<string, unknown> | null>;
     pidDoc: ComputedRef<Record<string, unknown> | null>;
+    readinessBlockers: ComputedRef<LaunchFlowReadinessBlocker[]>;
 }
 
 const REQUIRED_PUMPS: Array<{ role: string; title: string; component: string }> = [
@@ -50,6 +52,61 @@ function hasSensor(devices: Device[], metric: 'PH' | 'EC'): boolean {
 }
 
 export function useCalibrationContracts(inputs: ContractInputs) {
+    function mapReadinessBlockerToContract(blocker: LaunchFlowReadinessBlocker, index: number): CalibrationContract {
+        const codePrefix = blocker.code.split(':')[0] || 'readiness';
+        const role = blocker.action?.role ?? '';
+        const pidType = blocker.action?.pid_type ?? '';
+
+        if (codePrefix === 'missing_binding') {
+            return {
+                id: `readiness.binding.${index}`,
+                subsystem: 'pump',
+                component: role || 'binding',
+                title: blocker.message,
+                description: 'Глобальный readiness-блокер launch-flow.',
+                status: 'blocker',
+                required: true,
+                action: { label: blocker.action?.label ?? 'К насосам', target: 'pumps' },
+            };
+        }
+
+        if (codePrefix === 'missing_pid_config') {
+            return {
+                id: `readiness.pid.${index}`,
+                subsystem: 'pid',
+                component: pidType || 'pid',
+                title: blocker.message,
+                description: 'Глобальный readiness-блокер launch-flow.',
+                status: 'blocker',
+                required: true,
+                action: { label: blocker.action?.label ?? 'К PID', target: 'pid' },
+            };
+        }
+
+        if (codePrefix === 'missing_process_calibration') {
+            return {
+                id: `readiness.process.${index}`,
+                subsystem: 'process',
+                component: blocker.action?.mode || 'process',
+                title: blocker.message,
+                description: 'Глобальный readiness-блокер launch-flow.',
+                status: 'blocker',
+                required: true,
+                action: { label: blocker.action?.label ?? 'К процессу', target: 'process' },
+            };
+        }
+
+        return {
+            id: `readiness.generic.${index}`,
+            subsystem: 'process',
+            component: blocker.code,
+            title: blocker.message,
+            description: 'Глобальный readiness-блокер launch-flow.',
+            status: 'blocker',
+            required: true,
+        };
+    }
+
     const contracts = computed<CalibrationContract[]>(() => {
         const pumps = inputs.pumps.value;
         const devices = inputs.devices.value;
@@ -136,7 +193,9 @@ export function useCalibrationContracts(inputs: ContractInputs) {
             action: { label: 'К PID', target: 'pid' },
         });
 
-        return out;
+        const globalReadinessBlockers = inputs.readinessBlockers.value.map(mapReadinessBlockerToContract);
+
+        return [...out, ...globalReadinessBlockers];
     });
 
     const requiredContracts = computed(() => contracts.value.filter((c) => c.required));

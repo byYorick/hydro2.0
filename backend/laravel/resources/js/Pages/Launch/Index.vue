@@ -130,6 +130,7 @@
         v-else-if="currentStep === 'calibration'"
         :zone-id="state.zone_id"
         :phase-targets="phaseTargetsForPid"
+        :readiness-blockers="readinessBlockers"
         @calibration-updated="onCalibrationUpdated"
       />
 
@@ -168,11 +169,20 @@
         :can-launch="canLaunch"
         :submitting="submitting"
         :blocker-reason="footerBlockerReason"
+        :blockers-count="readinessBlockers.length"
         @back="goBack"
         @next="goNext"
         @launch="handleSubmit"
+        @show-blockers="readinessBlockersOpen = true"
       />
     </template>
+    <BlockersDrawer
+      :open="readinessBlockersOpen"
+      :blockers="readinessBlockerContracts"
+      title="Readiness blockers"
+      @close="readinessBlockersOpen = false"
+      @navigate="onReadinessBlockerNavigate"
+    />
     </LaunchShell>
   </AppLayout>
 </template>
@@ -185,6 +195,7 @@ import LaunchShell from '@/Components/Launch/Shell/LaunchShell.vue'
 import LaunchTopBar from '@/Components/Launch/Shell/LaunchTopBar.vue'
 import LaunchStepper from '@/Components/Launch/Shell/LaunchStepper.vue'
 import LaunchFooterNav from '@/Components/Launch/Shell/LaunchFooterNav.vue'
+import BlockersDrawer, { type BlockerContract } from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import StepHeader from '@/Components/Launch/Shell/StepHeader.vue'
 import type {
   LaunchStep,
@@ -360,12 +371,20 @@ const selectedRecipe = computed(
   () => recipeOptions.value.find((r) => r.latest_published_revision_id === state.recipe_revision_id) ?? null,
 )
 
+function asNullableNumber(value: unknown): number | null {
+  if (value == null) {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 const recipeSummary = computed(() => {
   const phase = currentRecipePhase.value as
     | {
         irrigation_mode?: string | null
-        ph_target?: number | null
-        ec_target?: number | null
+        ph_target?: number | string | null
+        ec_target?: number | string | null
       }
     | null
   if (!selectedRecipe.value && !phase) return null
@@ -373,13 +392,28 @@ const recipeSummary = computed(() => {
     name: selectedRecipe.value?.name ?? null,
     revisionLabel: state.recipe_revision_id ? `r${state.recipe_revision_id}` : null,
     systemType: phase?.irrigation_mode ?? null,
-    targetPh: phase?.ph_target ?? null,
-    targetEc: phase?.ec_target ?? null,
+    targetPh: asNullableNumber(phase?.ph_target),
+    targetEc: asNullableNumber(phase?.ec_target),
   }
 })
 
 const errorList = computed(() =>
   Object.entries(errors.value).map(([path, message]) => ({ path, message })),
+)
+
+const readinessBlockersOpen = ref(false)
+const readinessBlockers = computed(() => manifest.value?.readiness.blockers ?? [])
+const readinessBlockerContracts = computed<BlockerContract[]>(() =>
+  readinessBlockers.value.map((blocker, idx) => ({
+    id: `${blocker.code}-${idx}`,
+    subsystem: blocker.code.split(':')[0] || 'readiness',
+    component: blocker.action?.role || blocker.action?.pid_type || blocker.code,
+    title: blocker.message,
+    description: blocker.severity ? `severity: ${blocker.severity}` : undefined,
+    action: blocker.action?.route?.name
+      ? { label: blocker.action.label ?? 'Открыть', target: String(idx) }
+      : undefined,
+  })),
 )
 
 const footerBlockerReason = computed<string | null>(() => {
@@ -525,6 +559,17 @@ function openBlockerAction(blocker: LaunchFlowReadinessBlocker): void {
   } catch {
     showToast(`Маршрут ${name} не найден`, 'warning')
   }
+}
+
+function onReadinessBlockerNavigate(contract: BlockerContract): void {
+  const idx = Number(contract.action?.target ?? -1)
+  const blocker = readinessBlockers.value[idx]
+  if (!blocker) {
+    return
+  }
+
+  readinessBlockersOpen.value = false
+  openBlockerAction(blocker)
 }
 
 const submitting = ref(false)

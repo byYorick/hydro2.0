@@ -59,6 +59,7 @@ import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode';
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
+import { autoSelectAssignmentsByNodeType } from '@/composables/zoneAutomationAssignmentAutoSelect';
 
 interface RecipeSummary {
     name?: string | null;
@@ -220,6 +221,19 @@ function deriveBindingsFromNodes(zoneId: number): void {
     if (changed) state.assignments = next;
 }
 
+function autoSelectAssignments(zoneId: number): void {
+    const next = autoSelectAssignmentsByNodeType(
+        state.assignments,
+        availableNodes,
+        zoneId,
+    );
+
+    const changed = JSON.stringify(next) !== JSON.stringify(state.assignments);
+    if (changed) {
+        state.assignments = next;
+    }
+}
+
 async function loadNodes(zoneId: number) {
     try {
         const nodes = await api.nodes.list({
@@ -250,6 +264,8 @@ async function reloadAll() {
         // Fallback: если в channel_bindings нет записи, но узел в зоне
         // имеет канал с подходящим binding_role — подставим его.
         deriveBindingsFromNodes(props.zoneId);
+        // Автопривязка по типам/каналам: заполняем только пустые роли.
+        autoSelectAssignments(props.zoneId);
     } finally {
         loading.value = false;
     }
@@ -261,6 +277,7 @@ async function onRefreshNodes() {
     try {
         await loadNodes(props.zoneId);
         deriveBindingsFromNodes(props.zoneId);
+        autoSelectAssignments(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
         showToast((error as Error).message || 'Ошибка обновления списка нод', 'error');
@@ -319,6 +336,7 @@ async function onBindDevices(roles: string[]) {
         showToast(`Привязка выполнена (${roles.join(', ')})`, 'success');
         await loadNodes(props.zoneId);
         deriveBindingsFromNodes(props.zoneId);
+        autoSelectAssignments(props.zoneId);
     } catch (error) {
         showToast((error as Error).message || 'Ошибка привязки', 'error');
     } finally {

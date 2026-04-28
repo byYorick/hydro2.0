@@ -46,6 +46,24 @@ export interface UseLaunchStepsReturn {
 }
 
 export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn {
+  function blockersReason(prefix: string): string {
+    const blockers = input.manifest.value?.readiness.blockers ?? []
+    if (blockers.length === 0) {
+      return ''
+    }
+
+    const details = blockers
+      .slice(0, 2)
+      .map((b) => b.message || b.code)
+      .filter((m) => m.length > 0)
+      .join('; ')
+    const suffix = blockers.length > 2 ? ` (+${blockers.length - 2})` : ''
+
+    return details.length > 0
+      ? `${prefix}: ${details}${suffix}`
+      : `${prefix}: ${blockers.length}`
+  }
+
   const visibleSteps = computed(
     () => (input.manifest.value?.steps ?? []).filter((s) => s.visible),
   )
@@ -98,7 +116,7 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
       const blockers = input.manifest.value?.readiness.blockers ?? []
       return blockers.length === 0
         ? true
-        : { ok: false, reason: `Осталось ${blockers.length} blocker(ов)` }
+        : { ok: false, reason: blockersReason('Остались blockers') }
     }
     if (stepId === 'preview') {
       if (!input.isFormValid.value) return { ok: false, reason: 'Payload не валиден' }
@@ -106,7 +124,7 @@ export function useLaunchSteps(input: UseLaunchStepsInput): UseLaunchStepsReturn
       if (blockers.length > 0) {
         return {
           ok: false,
-          reason: `Readiness blockers: ${blockers.length} — запуск заблокирован`,
+          reason: `${blockersReason('Запуск заблокирован')}`,
         }
       }
       return true

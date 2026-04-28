@@ -15,41 +15,45 @@
         <span class="text-xs font-medium text-[var(--text-muted)]">Изменения logic profile</span>
         <span class="font-mono text-[11px] text-brand-ink">{{ diffRows.length }} измен.</span>
       </div>
-      <div
-        class="grid items-center px-3 py-2 bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--text-dim)]"
-        style="grid-template-columns: 24px 1.4fr 1fr 1fr"
-      >
-        <span aria-hidden="true"></span>
-        <span>Путь</span>
-        <span>Текущее</span>
-        <span>Новое</span>
-      </div>
-      <div
-        v-for="row in diffRows"
-        :key="row.path"
-        :data-op="row.op"
-        class="grid items-center px-3 py-1.5 border-t border-[var(--border-muted)] hover:bg-[var(--bg-elevated)]"
-        style="grid-template-columns: 24px 1.4fr 1fr 1fr"
-      >
-        <span class="flex items-center">
-          <span
-            class="inline-block w-2 h-2 rounded-sm"
-            :class="dotClass(row.op)"
-          ></span>
-        </span>
-        <span
-          class="font-mono text-[11px] text-[var(--text-muted)] truncate"
-          :title="row.path"
-        >{{ row.path }}</span>
-        <span
-          class="font-mono text-xs text-[var(--text-dim)]"
-          :class="row.op === 'replace' ? 'line-through' : ''"
-        >
-          {{ row.op === 'add' ? '—' : formatValue(row.previous) }}
-        </span>
-        <span class="font-mono text-xs text-brand-ink">
-          {{ row.op === 'remove' ? '—' : formatValue(row.next) }}
-        </span>
+      <div class="overflow-x-auto">
+        <div class="min-w-[760px]">
+          <div
+            class="grid items-center px-3 py-2 bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--text-dim)]"
+            style="grid-template-columns: 24px 1.4fr 1fr 1fr"
+          >
+            <span aria-hidden="true"></span>
+            <span>Путь</span>
+            <span>Текущее</span>
+            <span>Новое</span>
+          </div>
+          <div
+            v-for="row in diffRows"
+            :key="row.path"
+            :data-op="row.op"
+            class="grid items-center px-3 py-1.5 border-t border-[var(--border-muted)] hover:bg-[var(--bg-elevated)]"
+            style="grid-template-columns: 24px 1.4fr 1fr 1fr"
+          >
+            <span class="flex items-center">
+              <span
+                class="inline-block w-2 h-2 rounded-sm"
+                :class="dotClass(row.op)"
+              ></span>
+            </span>
+            <span
+              class="min-w-0 font-mono text-[11px] text-[var(--text-muted)] truncate"
+              :title="row.path"
+            >{{ row.path }}</span>
+            <span
+              class="min-w-0 font-mono text-xs text-[var(--text-dim)] break-all"
+              :class="row.op === 'replace' ? 'line-through' : ''"
+            >
+              {{ row.op === 'add' ? '—' : formatValue(row.previous) }}
+            </span>
+            <span class="min-w-0 font-mono text-xs text-brand-ink break-all">
+              {{ row.op === 'remove' ? '—' : formatValue(row.next) }}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   </div>

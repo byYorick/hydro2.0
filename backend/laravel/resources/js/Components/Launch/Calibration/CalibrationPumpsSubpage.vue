@@ -115,10 +115,10 @@
                 <Button
                   v-else
                   size="sm"
-                  variant="primary"
+                  variant="secondary"
                   @click="$emit('calibrate', p)"
                 >
-                  ▶ откалибровать
+                  откалибровать
                 </Button>
               </td>
             </tr>

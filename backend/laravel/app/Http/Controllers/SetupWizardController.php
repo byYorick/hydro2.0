@@ -628,13 +628,24 @@ class SetupWizardController extends Controller
         $matches = [];
 
         foreach ($node->channels as $channel) {
-            $name = strtolower((string) ($channel->channel ?? ''));
-            if ($name === '' || ! in_array($name, $normalizedCandidates, true)) {
+            $type = strtolower((string) ($channel->type ?? ''));
+            if ($type !== '' && $type !== strtolower($direction)) {
                 continue;
             }
 
-            $type = strtolower((string) ($channel->type ?? ''));
-            if ($type !== '' && $type !== strtolower($direction)) {
+            $name = strtolower((string) ($channel->channel ?? ''));
+            $actuatorType = strtolower((string) data_get($channel->config, 'actuator_type', ''));
+            $metric = strtolower((string) ($channel->metric ?? ''));
+
+            $matchesCandidate = false;
+            foreach ([$name, $actuatorType, $metric] as $candidateValue) {
+                if ($candidateValue !== '' && in_array($candidateValue, $normalizedCandidates, true)) {
+                    $matchesCandidate = true;
+                    break;
+                }
+            }
+
+            if (! $matchesCandidate) {
                 continue;
             }
 

@@ -82,4 +82,20 @@ describe('LaunchFooterNav', () => {
     const next = w.findAll('button').find((b) => b.text().includes('Дальше'))!
     expect(next.attributes('disabled')).toBeDefined()
   })
+
+  it('emits show-blockers when blocker button clicked', async () => {
+    const w = mount(LaunchFooterNav, {
+      props: {
+        active: 1,
+        total: 5,
+        completion: ['done', 'current', 'todo', 'todo', 'todo'] as StepCompletion[],
+        blockerReason: 'Остались blockers: calibration',
+        blockersCount: 3,
+      },
+    })
+
+    const open = w.findAll('button').find((b) => b.text().includes('Показать блокеры'))!
+    await open.trigger('click')
+    expect(w.emitted('show-blockers')).toBeTruthy()
+  })
 })

@@ -51,17 +51,14 @@
                   v-for="(step, idx) in steps"
                   :key="step.id"
                   class="flex items-start gap-2 px-2 py-1.5 rounded-md"
-                  :class="{
-                    'bg-brand-soft text-brand-ink': currentStep === step.id,
-                    'opacity-75': currentStep !== step.id && !isStepDone(step.id),
-                  }"
+                  :class="{ 'bg-brand-soft text-brand-ink': step.id === 'measure' }"
                 >
                   <span
                     :class="[
                       'inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-semibold border shrink-0',
                       isStepDone(step.id)
                         ? 'bg-growth text-white border-growth'
-                        : currentStep === step.id
+                        : step.id === 'measure'
                           ? 'border-brand text-brand bg-[var(--bg-surface)] ring-2 ring-brand-soft'
                           : 'bg-[var(--bg-surface)] text-[var(--text-muted)] border-[var(--border-strong)]',
                     ]"
@@ -106,65 +103,10 @@
             </aside>
 
             <section class="flex-1 min-w-0 overflow-y-auto p-4 flex flex-col gap-3.5">
-              <!-- STEP 1: SELECT -->
-              <div
-                v-if="currentStep === 'select'"
-                class="flex flex-col gap-3"
-              >
-                <div class="flex items-baseline gap-2">
-                  <span class="font-mono text-2xl font-bold text-[var(--text-dim)]">1.</span>
-                  <div class="flex flex-col gap-0.5">
-                    <div class="text-base font-semibold">
-                      Выбор насоса
-                    </div>
-                    <div class="text-xs text-[var(--text-muted)]">
-                      Компонент, канал и длительность тестового запуска.
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <Field
-                    label="Компонент"
-                    required
-                  >
-                    <Select
-                      v-model="form.component"
-                      :options="componentOptions"
-                      mono
-                    />
-                  </Field>
-                  <Field
-                    label="Канал насоса"
-                    required
-                  >
-                    <Select
-                      :model-value="form.node_channel_id != null ? String(form.node_channel_id) : ''"
-                      :options="channelOptions"
-                      placeholder="Выберите канал…"
-                      mono
-                      @update:model-value="(v: string) => (form.node_channel_id = v ? Number(v) : null)"
-                    />
-                  </Field>
-                  <Field label="Длительность (сек)">
-                    <input
-                      v-bind="numAttrs"
-                      v-model.number="form.duration_sec"
-                      min="1"
-                      max="60"
-                    >
-                  </Field>
-                </div>
-              </div>
-
-              <!-- STEP 2: RUN + MEASURE -->
-              <div
-                v-if="currentStep === 'measure'"
-                class="flex flex-col gap-3"
-              >
+              <div class="flex flex-col gap-3">
                 <div class="flex items-baseline justify-between gap-3 flex-wrap">
                   <div class="flex items-baseline gap-2">
-                    <span class="font-mono text-2xl font-bold text-[var(--text-dim)]">2.</span>
+                    <span class="font-mono text-2xl font-bold text-[var(--text-dim)]">1.</span>
                     <div class="text-base font-semibold">
                       Запуск и замер
                     </div>
@@ -175,6 +117,27 @@
                   >
                     <span class="font-mono">токен запуска {{ runToken.slice(0, 8) }}</span>
                   </Chip>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Field label="Компонент">
+                    <div class="h-8 px-2.5 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono flex items-center">
+                      {{ componentLabel(form.component) }}
+                    </div>
+                  </Field>
+                  <Field label="Канал насоса">
+                    <div class="h-8 px-2.5 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono flex items-center truncate">
+                      {{ selectedChannelLabel || '— не привязан' }}
+                    </div>
+                  </Field>
+                  <Field label="Длительность (сек)">
+                    <input
+                      v-bind="numAttrs"
+                      v-model.number="form.duration_sec"
+                      min="1"
+                      max="60"
+                    >
+                  </Field>
                 </div>
 
                 <ShellCard title="Тестовый запуск">
@@ -188,12 +151,12 @@
                   </template>
                   <div class="flex items-center gap-2 flex-wrap">
                     <Button
-                      variant="primary"
+                      variant="secondary"
                       size="md"
                       :disabled="loadingRun"
                       @click="runCalibration"
                     >
-                      {{ loadingRun ? '▶ Запуск…' : '▶ Запустить калибровку' }}
+                      {{ loadingRun ? 'Запуск…' : 'Запустить калибровку' }}
                     </Button>
                     <span class="font-mono text-xs text-[var(--text-muted)]">
                       {{ form.duration_sec }} сек · {{ form.component.toUpperCase() }} · ch{{ form.node_channel_id }}
@@ -375,15 +338,6 @@
             class="flex items-center justify-between gap-3 px-4 py-3 border-t border-[var(--border-muted)] bg-[var(--bg-surface)]"
           >
             <Button
-              v-if="currentStep === 'measure'"
-              size="sm"
-              variant="secondary"
-              @click="currentStep = 'select'"
-            >
-              ← к выбору
-            </Button>
-            <Button
-              v-else
               size="sm"
               variant="secondary"
               @click="onClose"
@@ -392,51 +346,39 @@
             </Button>
 
             <div class="flex items-center gap-1.5">
-              <template v-if="currentStep === 'select'">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  :disabled="!canRun"
-                  @click="goToRun"
-                >
-                  Далее →
-                </Button>
-              </template>
-              <template v-else>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  :disabled="loadingRun"
-                  @click="runCalibration"
-                >
-                  {{ runToken ? '↻ повторить запуск' : '▶ запустить' }}
-                </Button>
-                <Button
-                  v-if="!savedForCurrent"
-                  size="sm"
-                  variant="primary"
-                  :disabled="loadingSave || !canSave"
-                  @click="saveCalibration"
-                >
-                  {{ loadingSave ? 'Сохранение…' : 'Сохранить' }}
-                </Button>
-                <Button
-                  v-else-if="nextUncalibrated"
-                  size="sm"
-                  variant="primary"
-                  @click="goToNext"
-                >
-                  К {{ nextUncalibrated.label }} →
-                </Button>
-                <Button
-                  v-else
-                  size="sm"
-                  variant="primary"
-                  @click="onClose"
-                >
-                  Закрыть
-                </Button>
-              </template>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="loadingRun"
+                @click="runCalibration"
+              >
+                {{ runToken ? '↻ повторить запуск' : '▶ запустить' }}
+              </Button>
+              <Button
+                v-if="!savedForCurrent"
+                size="sm"
+                variant="primary"
+                :disabled="loadingSave || !canSave"
+                @click="saveCalibration"
+              >
+                {{ loadingSave ? 'Сохранение…' : 'Сохранить' }}
+              </Button>
+              <Button
+                v-else-if="nextUncalibrated"
+                size="sm"
+                variant="primary"
+                @click="goToNext"
+              >
+                К {{ nextUncalibrated.label }} →
+              </Button>
+              <Button
+                v-else
+                size="sm"
+                variant="primary"
+                @click="onClose"
+              >
+                Закрыть
+              </Button>
             </div>
           </footer>
         </aside>
@@ -448,7 +390,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
-import { Chip, Field, Select, Stat } from '@/Components/Shared/Primitives'
+import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
 import ShellCard from '@/Components/Launch/Shell/ShellCard.vue'
 import Ic from '@/Components/Icons/Ic.vue'
 import type { Device } from '@/types'
@@ -458,8 +400,6 @@ import type {
   PumpCalibrationSavePayload,
 } from '@/types/Calibration'
 import type { PumpCalibration } from '@/types/PidConfig'
-
-export type PumpCalibrationStep = 'select' | 'measure'
 
 const props = withDefaults(
   defineProps<{
@@ -506,11 +446,9 @@ const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }
 ]
 
 const steps = [
-  { id: 'select' as const, title: 'Выбор насоса', desc: 'компонент · канал · длительность' },
   { id: 'measure' as const, title: 'Запуск, замер, сохранение', desc: 'объём · мл/сек · сохранить' },
 ]
 
-const currentStep = ref<PumpCalibrationStep>('select')
 const runToken = ref<string | null>(null)
 const runFinishedAt = ref<number | null>(null)
 
@@ -538,9 +476,7 @@ watch(
   () => props.show,
   (open) => {
     if (open) {
-      if (props.initialComponent) form.component = props.initialComponent
-      if (props.initialNodeChannelId) form.node_channel_id = props.initialNodeChannelId
-      currentStep.value = 'select'
+      setInitialPumpSelection()
       runToken.value = null
       runFinishedAt.value = null
       form.actual_ml = null
@@ -573,6 +509,12 @@ watch(
     if (seq !== prev && seq > 0) {
       lastSavedAt.value = Date.now()
       lastSavedComponent.value = form.component
+      const next = nextUncalibrated.value
+      if (next) {
+        goToNext()
+      } else {
+        onClose()
+      }
     }
   },
 )
@@ -603,10 +545,6 @@ const pumpChannels = computed<PumpChannelOption[]>(() => {
   }
   return out
 })
-
-const channelOptions = computed(() =>
-  pumpChannels.value.map((c) => ({ value: String(c.id), label: c.label })),
-)
 
 const currentComponent = computed(() => form.component)
 const isPhComponent = computed(() => form.component === 'ph_up' || form.component === 'ph_down')
@@ -683,7 +621,7 @@ const previewVisible = computed(
 )
 
 const dirtyBadge = computed(() => {
-  if (currentStep.value === 'measure' && !form.actual_ml) {
+  if (!form.actual_ml) {
     return 'не сохранено · объём не указан'
   }
   return ''
@@ -696,10 +634,8 @@ const runRecentAgo = computed(() => {
   return `${Math.floor(diff / 60)} мин`
 })
 
-function isStepDone(id: PumpCalibrationStep): boolean {
-  if (id === 'select') return currentStep.value !== 'select' && canRun.value
-  if (id === 'measure') return savedForCurrent.value
-  return false
+function isStepDone(id: 'measure'): boolean {
+  return id === 'measure' && savedForCurrent.value
 }
 
 function formatFloat(v: number | null, digits: number): string {
@@ -714,11 +650,6 @@ function runCalibration() {
     node_channel_id: form.node_channel_id!,
     duration_sec: form.duration_sec,
   })
-}
-
-function goToRun() {
-  if (!canRun.value) return
-  currentStep.value = 'measure'
 }
 
 interface NextCandidate {
@@ -805,7 +736,51 @@ function goToNext() {
   runToken.value = null
   runFinishedAt.value = null
   lastSavedComponent.value = null
-  currentStep.value = 'measure'
+}
+
+const selectedChannelLabel = computed(() => {
+  if (!form.node_channel_id) return ''
+  return pumpChannels.value.find((c) => c.id === form.node_channel_id)?.label ?? ''
+})
+
+function componentLabel(component: PumpCalibrationComponent): string {
+  return componentOptions.find((o) => o.value === component)?.label ?? component
+}
+
+function setInitialPumpSelection(): void {
+  if (props.initialComponent) {
+    form.component = props.initialComponent
+  }
+  if (props.initialNodeChannelId) {
+    form.node_channel_id = props.initialNodeChannelId
+  }
+
+  if (!form.node_channel_id && props.initialComponent) {
+    const initialRole = componentToRole[props.initialComponent]
+    const initialPump = props.pumps.find((p) => p.role === initialRole && p.node_channel_id > 0)
+    if (initialPump) {
+      form.node_channel_id = initialPump.node_channel_id
+      return
+    }
+  }
+
+  if (!form.node_channel_id) {
+    const next = nextUncalibrated.value
+    if (next) {
+      form.component = next.component
+      form.node_channel_id = next.nodeChannelId
+      return
+    }
+
+    const fallback = props.pumps.find((p) => p.node_channel_id > 0)
+    if (fallback) {
+      const fallbackComponent = NEXT_ORDER.find((item) => item.role === fallback.role)?.component
+      if (fallbackComponent) {
+        form.component = fallbackComponent
+      }
+      form.node_channel_id = fallback.node_channel_id
+    }
+  }
 }
 
 function saveCalibration() {

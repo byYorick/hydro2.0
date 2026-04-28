@@ -326,4 +326,97 @@ class SetupWizardValidateDevicesTest extends TestCase
             ->count();
         $this->assertSame(11, $instancesCount);
     }
+
+    public function test_it_applies_bindings_by_actuator_type_when_channel_names_are_generic(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+
+        $irrigationNode = DeviceNode::factory()->create([
+            'uid' => 'nd-test-irrig-generic-1',
+            'type' => 'irrig',
+            'zone_id' => null,
+        ]);
+        NodeChannel::query()->create([
+            'node_id' => $irrigationNode->id,
+            'channel' => 'ch1',
+            'type' => 'ACTUATOR',
+            'config' => ['actuator_type' => 'pump_main'],
+        ]);
+        NodeChannel::query()->create([
+            'node_id' => $irrigationNode->id,
+            'channel' => 'ch2',
+            'type' => 'ACTUATOR',
+            'config' => ['actuator_type' => 'drain'],
+        ]);
+
+        $phNode = DeviceNode::factory()->create([
+            'uid' => 'nd-test-ph-generic-1',
+            'type' => 'ph',
+            'zone_id' => null,
+        ]);
+        NodeChannel::query()->create([
+            'node_id' => $phNode->id,
+            'channel' => 'ph-1',
+            'type' => 'ACTUATOR',
+            'config' => ['actuator_type' => 'pump_acid'],
+        ]);
+        NodeChannel::query()->create([
+            'node_id' => $phNode->id,
+            'channel' => 'ph-2',
+            'type' => 'ACTUATOR',
+            'config' => ['actuator_type' => 'pump_base'],
+        ]);
+
+        $ecNode = DeviceNode::factory()->create([
+            'uid' => 'nd-test-ec-generic-1',
+            'type' => 'ec',
+            'zone_id' => null,
+        ]);
+        foreach (['pump_a', 'pump_b', 'pump_c', 'pump_d'] as $index => $actuatorType) {
+            NodeChannel::query()->create([
+                'node_id' => $ecNode->id,
+                'channel' => 'ec-'.($index + 1),
+                'type' => 'ACTUATOR',
+                'config' => ['actuator_type' => $actuatorType],
+            ]);
+        }
+
+        $response = $this->actingAs($user)->postJson('/api/setup-wizard/apply-device-bindings', [
+            'zone_id' => $zone->id,
+            'assignments' => [
+                'irrigation' => $irrigationNode->id,
+                'ph_correction' => $phNode->id,
+                'ec_correction' => $ecNode->id,
+                'accumulation' => null,
+            ],
+            'selected_node_ids' => [
+                $irrigationNode->id,
+                $phNode->id,
+                $ecNode->id,
+            ],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status', 'ok');
+
+        $zoneBindingRoles = ChannelBinding::query()
+            ->whereHas('infrastructureInstance', function ($query) use ($zone) {
+                $query->where('owner_type', 'zone')->where('owner_id', $zone->id);
+            })
+            ->pluck('role')
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertContains('pump_main', $zoneBindingRoles);
+        $this->assertContains('drain', $zoneBindingRoles);
+        $this->assertContains('pump_acid', $zoneBindingRoles);
+        $this->assertContains('pump_base', $zoneBindingRoles);
+        $this->assertContains('pump_a', $zoneBindingRoles);
+        $this->assertContains('pump_b', $zoneBindingRoles);
+        $this->assertContains('pump_c', $zoneBindingRoles);
+        $this->assertContains('pump_d', $zoneBindingRoles);
+    }
 }

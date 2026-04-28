@@ -4,6 +4,7 @@
       v-if="zoneId"
       :zone-id="zoneId"
       :phase-targets="phaseTargets"
+      :readiness-blockers="readinessBlockers ?? []"
       @updated="$emit('calibration-updated')"
     />
     <div
@@ -18,10 +19,12 @@
 <script setup lang="ts">
 import CalibrationHub from '@/Components/Launch/Calibration/CalibrationHub.vue'
 import type { RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
+import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 
 defineProps<{
   zoneId?: number
   phaseTargets?: RecipePhasePidTargets | null
+  readinessBlockers?: LaunchFlowReadinessBlocker[]
 }>()
 
 defineEmits<{

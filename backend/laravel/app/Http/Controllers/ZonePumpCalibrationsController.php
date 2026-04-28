@@ -17,6 +17,7 @@ class ZonePumpCalibrationsController extends Controller
     {
         $this->authorizeZoneAccess($request, $zone);
         $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('pump_calibration', true);
+        $this->ensureAutoBindingsForDosingChannels($zone);
 
         $latestCalibrations = DB::table('pump_calibrations as p')
             ->select(
@@ -152,6 +153,14 @@ class ZonePumpCalibrationsController extends Controller
             ->first();
 
         if (! $binding) {
+            $fallbackRole = $this->resolveDosingRoleForZoneChannel($zone, $channelId);
+            if ($fallbackRole !== null) {
+                $this->ensureBindingForRole($zone, $channelId, $fallbackRole);
+                $binding = (object) ['role' => $fallbackRole];
+            }
+        }
+
+        if (! $binding) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Channel not bound to this zone',
@@ -211,5 +220,145 @@ class ZonePumpCalibrationsController extends Controller
         if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             abort(403, 'Forbidden: Access denied to this zone');
         }
+    }
+
+    private function ensureAutoBindingsForDosingChannels(Zone $zone): void
+    {
+        $channels = DB::table('node_channels as nc')
+            ->join('nodes as n', 'n.id', '=', 'nc.node_id')
+            ->leftJoin('channel_bindings as cb', 'cb.node_channel_id', '=', 'nc.id')
+            ->where(function ($query) use ($zone): void {
+                $query->where('n.zone_id', $zone->id)
+                    ->orWhere('n.pending_zone_id', $zone->id);
+            })
+            ->whereRaw("LOWER(COALESCE(nc.type, '')) = 'actuator'")
+            ->select(
+                'nc.id',
+                'nc.channel',
+                DB::raw("LOWER(COALESCE(nc.config->>'actuator_type', '')) as actuator_type"),
+                DB::raw('MIN(cb.role) as bound_role')
+            )
+            ->groupBy('nc.id', 'nc.channel', DB::raw("LOWER(COALESCE(nc.config->>'actuator_type', ''))"))
+            ->orderBy('nc.id')
+            ->get();
+
+        foreach ($channels as $channel) {
+            if (is_string($channel->bound_role) && $channel->bound_role !== '') {
+                continue;
+            }
+
+            $role = $this->resolveDosingRole((string) ($channel->channel ?? ''), (string) ($channel->actuator_type ?? ''));
+            if (! $role) {
+                continue;
+            }
+
+            $this->ensureBindingForRole($zone, (int) $channel->id, $role);
+        }
+    }
+
+    private function resolveDosingRoleForZoneChannel(Zone $zone, int $channelId): ?string
+    {
+        $channel = DB::table('node_channels as nc')
+            ->join('nodes as n', 'n.id', '=', 'nc.node_id')
+            ->where('nc.id', $channelId)
+            ->where(function ($query) use ($zone): void {
+                $query->where('n.zone_id', $zone->id)
+                    ->orWhere('n.pending_zone_id', $zone->id);
+            })
+            ->whereRaw("LOWER(COALESCE(nc.type, '')) = 'actuator'")
+            ->select(
+                'nc.channel',
+                DB::raw("LOWER(COALESCE(nc.config->>'actuator_type', '')) as actuator_type")
+            )
+            ->first();
+
+        if (! $channel) {
+            return null;
+        }
+
+        return $this->resolveDosingRole(
+            (string) ($channel->channel ?? ''),
+            (string) ($channel->actuator_type ?? '')
+        );
+    }
+
+    private function resolveDosingRole(string $channelName, string $actuatorType): ?string
+    {
+        $normalizedActuatorType = strtolower(trim($actuatorType));
+        if (PumpCalibrationCatalog::isDosingRole($normalizedActuatorType)) {
+            return $normalizedActuatorType;
+        }
+
+        $normalizedChannel = strtolower(trim($channelName));
+        if (PumpCalibrationCatalog::isDosingRole($normalizedChannel)) {
+            return $normalizedChannel;
+        }
+
+        return null;
+    }
+
+    private function ensureBindingForRole(Zone $zone, int $nodeChannelId, string $role): void
+    {
+        if (! PumpCalibrationCatalog::isDosingRole($role)) {
+            return;
+        }
+
+        $existingRoleBinding = DB::table('channel_bindings as cb')
+            ->join('infrastructure_instances as ii', 'ii.id', '=', 'cb.infrastructure_instance_id')
+            ->where('ii.owner_type', 'zone')
+            ->where('ii.owner_id', $zone->id)
+            ->where('cb.role', $role)
+            ->exists();
+
+        if ($existingRoleBinding) {
+            return;
+        }
+
+        $alreadyBound = DB::table('channel_bindings')
+            ->where('node_channel_id', $nodeChannelId)
+            ->exists();
+        if ($alreadyBound) {
+            return;
+        }
+
+        $instanceId = DB::table('infrastructure_instances')
+            ->where('owner_type', 'zone')
+            ->where('owner_id', $zone->id)
+            ->where('label', $this->autoBindingLabelForRole($role))
+            ->value('id');
+
+        if (! $instanceId) {
+            $instanceId = DB::table('infrastructure_instances')->insertGetId([
+                'owner_type' => 'zone',
+                'owner_id' => $zone->id,
+                'asset_type' => 'PUMP',
+                'label' => $this->autoBindingLabelForRole($role),
+                'required' => in_array($role, ['pump_acid', 'pump_base', 'pump_a'], true),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('channel_bindings')->insert([
+            'infrastructure_instance_id' => $instanceId,
+            'node_channel_id' => $nodeChannelId,
+            'direction' => 'actuator',
+            'role' => $role,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function autoBindingLabelForRole(string $role): string
+    {
+        return match ($role) {
+            'pump_a' => 'Auto EC NPK Pump',
+            'pump_b' => 'Auto EC Calcium Pump',
+            'pump_c' => 'Auto EC Magnesium Pump',
+            'pump_d' => 'Auto EC Micro Pump',
+            'pump_base' => 'Auto pH Up Pump',
+            'pump_acid' => 'Auto pH Down Pump',
+            default => 'Auto Dosing Pump',
+        };
     }
 }

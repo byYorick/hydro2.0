@@ -63,13 +63,14 @@
           size="sm"
           variant="primary"
           data-testid="pid-config-save"
-          :disabled="loading || !phaseTargetAvailable || !isDirty"
+          class="w-full sm:w-auto"
+          :disabled="loading || !phaseTargetAvailable"
         >
           {{
             loading
               ? 'Сохранение…'
               : needsConfirmation && !confirmed
-                ? 'Подтвердить и сохранить'
+                ? 'Подтвердить'
                 : `Сохранить ${selectedType.toUpperCase()}`
           }}
         </Button>
@@ -166,12 +167,12 @@
 
     <div
       v-if="needsConfirmation"
-      class="rounded-md border border-warn bg-warn-soft/40 px-3 py-2 text-sm text-warn flex items-start gap-2"
+      class="rounded-md border border-warn bg-warn-soft/40 px-3 py-2 text-sm text-warn flex items-start gap-2 break-words"
     >
       <span class="font-mono shrink-0">⚠</span>
       <span>
         Агрессивные настройки (<code class="font-mono">Kp &gt; 200</code>).
-        <span v-if="!confirmed">Нажмите «Подтвердить и сохранить» ещё раз.</span>
+        <span v-if="!confirmed">Нажмите «Подтвердить» ещё раз.</span>
       </span>
     </div>
 
@@ -563,7 +564,7 @@ const presetSwitching = ref(false)
 const resolvedPhaseTargets = ref<RecipePhasePidTargets | null>(props.phaseTargets)
 const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({ ph: false, ec: false })
 const automationConfig = useAutomationConfig()
-const { getPidConfig, getAllPidConfigs, loading } = usePidConfig()
+const { getPidConfig, getAllPidConfigs, updatePidConfig, loading } = usePidConfig()
 const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
 const selectedPresetKey = ref('system_default')
 
@@ -775,20 +776,21 @@ async function onSubmit() {
     return
   }
   try {
-    if (!runtimeTuningBundle.value) {
-      logger.warn('[PidConfigForm] Refusing to save PID config without runtime tuning bundle', {
+    await updatePidConfig(props.zoneId, selectedType.value, form.value)
+    if (runtimeTuningBundle.value) {
+      await persistRuntimeTuningBundle(
+        withPidOverride(
+          runtimeTuningBundle.value,
+          selectedType.value,
+          form.value as unknown as Record<string, unknown>,
+        ),
+      )
+    } else {
+      logger.warn('[PidConfigForm] runtime_tuning_bundle is unavailable; saved only zone.pid.*', {
         zoneId: props.zoneId,
         pidType: selectedType.value,
       })
-      return
     }
-    await persistRuntimeTuningBundle(
-      withPidOverride(
-        runtimeTuningBundle.value,
-        selectedType.value,
-        form.value as unknown as Record<string, unknown>,
-      ),
-    )
     await Promise.all([loadStatuses(), loadConfig()])
     emit('saved', {
       type: selectedType.value,

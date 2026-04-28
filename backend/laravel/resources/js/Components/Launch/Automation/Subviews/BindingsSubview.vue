@@ -34,7 +34,7 @@
           </span>
           <Select
             :model-value="assignments[row.key] != null ? String(assignments[row.key]) : ''"
-            :options="nodeOptions"
+            :options="nodeOptionsForRole(row.key)"
             mono
             size="sm"
             @update:model-value="(v: string) => onUpdate(row.key, v)"
@@ -92,7 +92,7 @@
           <span class="text-sm">{{ row.label }}</span>
           <Select
             :model-value="assignments[row.key] != null ? String(assignments[row.key]) : ''"
-            :options="nodeOptions"
+            :options="nodeOptionsForRole(row.key)"
             mono
             size="sm"
             @update:model-value="(v: string) => onUpdate(row.key, v)"
@@ -159,6 +159,10 @@ import type {
   ZoneAutomationBindRole,
 } from '@/composables/zoneAutomationTypes'
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
+import {
+  matchesAnyBindingRole,
+  matchesAnyChannel,
+} from '@/composables/zoneAutomationNodeMatching'
 
 const props = defineProps<{
   zoneId: number
@@ -179,6 +183,12 @@ interface RoleDef {
   label: string
   role: string
   iconName?: IcName
+}
+
+interface RoleFilterSpec {
+  typeCandidates: string[]
+  channelCandidates: string[]
+  bindingRoleCandidates: string[]
 }
 
 const REQUIRED: RoleDef[] = [
@@ -208,6 +218,49 @@ const ASSIGNED_ROLE_KEYS: ZoneAutomationBindRole[] = [
   'root_vent_actuator',
 ]
 
+const ROLE_FILTER_SPECS: Record<ZoneAutomationBindRole, RoleFilterSpec> = {
+  irrigation: {
+    typeCandidates: ['irrig', 'pump', 'pump_node', 'relay', 'relay_node'],
+    channelCandidates: ['pump_main', 'drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+    bindingRoleCandidates: ['pump_main', 'drain'],
+  },
+  ph_correction: {
+    typeCandidates: ['ph', 'ph_node'],
+    channelCandidates: ['pump_acid', 'pump_base', 'ph_sensor'],
+    bindingRoleCandidates: ['pump_acid', 'pump_base'],
+  },
+  ec_correction: {
+    typeCandidates: ['ec', 'ec_node'],
+    channelCandidates: ['pump_a', 'pump_b', 'pump_c', 'pump_d', 'ec_sensor'],
+    bindingRoleCandidates: ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
+  },
+  light: {
+    typeCandidates: ['light', 'light_node', 'relay', 'relay_node'],
+    channelCandidates: ['light', 'light_main', 'white_light', 'uv_light'],
+    bindingRoleCandidates: ['light', 'light_actuator'],
+  },
+  soil_moisture_sensor: {
+    typeCandidates: ['soil', 'substrate', 'climate', 'climate_node'],
+    channelCandidates: ['soil_moisture', 'soil_moisture_pct', 'substrate_moisture'],
+    bindingRoleCandidates: ['soil_moisture_sensor'],
+  },
+  co2_sensor: {
+    typeCandidates: ['climate', 'climate_node'],
+    channelCandidates: ['co2_ppm'],
+    bindingRoleCandidates: ['co2_sensor'],
+  },
+  co2_actuator: {
+    typeCandidates: ['climate', 'climate_node', 'relay', 'relay_node'],
+    channelCandidates: ['co2_inject'],
+    bindingRoleCandidates: ['co2_actuator'],
+  },
+  root_vent_actuator: {
+    typeCandidates: ['climate', 'climate_node', 'relay', 'relay_node'],
+    channelCandidates: ['root_vent', 'fan_root'],
+    bindingRoleCandidates: ['root_vent_actuator'],
+  },
+}
+
 const assignedIds = computed(() => {
   const ids = new Set<number>()
   for (const key of ASSIGNED_ROLE_KEYS) {
@@ -219,10 +272,10 @@ const assignedIds = computed(() => {
 
 const visibleNodes = computed(() =>
   props.availableNodes.filter(
-    (n) =>
-      n.zone_id === props.zoneId
+    (n) => n.zone_id === props.zoneId
       || n.pending_zone_id === props.zoneId
-      || assignedIds.value.has(n.id),
+      || assignedIds.value.has(n.id)
+      || (n.zone_id == null && n.pending_zone_id == null),
   ),
 )
 
@@ -234,13 +287,27 @@ const unboundCount = computed(() => {
   return count
 })
 
-const nodeOptions = computed(() => [
-  { value: '', label: '— не задано —' },
-  ...visibleNodes.value.map((n) => ({
-    value: String(n.id),
-    label: nodeOptionLabel(n),
-  })),
-])
+function nodeMatchesRole(node: SetupWizardNode, role: ZoneAutomationBindRole): boolean {
+  const spec = ROLE_FILTER_SPECS[role]
+  const normalizedType = String(node.type ?? '').toLowerCase()
+  const typeMatched = spec.typeCandidates.includes(normalizedType)
+  const channelMatched = matchesAnyChannel(node, spec.channelCandidates)
+  const bindingRoleMatched = matchesAnyBindingRole(node, spec.bindingRoleCandidates)
+
+  return typeMatched || channelMatched || bindingRoleMatched
+}
+
+function nodeOptionsForRole(role: ZoneAutomationBindRole): Array<{ value: string; label: string }> {
+  return [
+    { value: '', label: '— не задано —' },
+    ...visibleNodes.value
+      .filter((node) => nodeMatchesRole(node, role))
+      .map((node) => ({
+        value: String(node.id),
+        label: nodeOptionLabel(node),
+      })),
+  ]
+}
 
 function nodeOptionLabel(n: SetupWizardNode): string {
   const base = nodeLabel(n)

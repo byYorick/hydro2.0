@@ -19,13 +19,25 @@
         <span class="text-xs text-[var(--text-muted)]">
           {{ doneCount }} из {{ total }} завершено
         </span>
-        <span
+        <div
           v-if="blockerReason"
-          class="max-w-[420px] truncate text-[11px] text-warn"
-          :title="blockerReason"
+          class="flex items-center gap-1.5"
         >
-          {{ blockerReason }}
-        </span>
+          <span
+            class="max-w-[420px] truncate text-[11px] text-warn"
+            :title="blockerReason"
+          >
+            {{ blockerReason }}
+          </span>
+          <Button
+            v-if="blockersCount > 0"
+            size="sm"
+            variant="secondary"
+            @click="$emit('show-blockers')"
+          >
+            Показать блокеры
+          </Button>
+        </div>
       </div>
       <Button
         v-if="active < total - 1"
@@ -61,12 +73,14 @@ const props = defineProps<{
   canLaunch?: boolean
   submitting?: boolean
   blockerReason?: string | null
+  blockersCount?: number
 }>()
 
 defineEmits<{
   (e: 'back'): void
   (e: 'next'): void
   (e: 'launch'): void
+  (e: 'show-blockers'): void
 }>()
 
 const doneCount = computed(

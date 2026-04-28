@@ -121,13 +121,18 @@ import type {
   PumpCalibrationRunPayload,
   PumpCalibrationSavePayload,
 } from '@/types/Calibration'
+import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
 
 const props = withDefaults(
   defineProps<{
     zoneId: number
     phaseTargets?: RecipePhasePidTargets | null
+    readinessBlockers?: LaunchFlowReadinessBlocker[]
   }>(),
-  { phaseTargets: null },
+  {
+    phaseTargets: null,
+    readinessBlockers: () => [],
+  },
 )
 const emit = defineEmits<{ (e: 'updated'): void }>()
 
@@ -152,6 +157,7 @@ const { contracts, summary, blockers } = useCalibrationContracts({
   processDocs: computed(() => processDocs.value),
   correctionDoc: computed(() => correctionDoc.value),
   pidDoc: computed(() => pidDoc.value),
+  readinessBlockers: computed(() => props.readinessBlockers),
 })
 
 const pumpActions = usePumpCalibrationActions({

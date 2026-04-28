@@ -224,4 +224,34 @@ class ZonePumpCalibrationsControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonCount(0, 'data');
     }
+
+    public function test_index_auto_binds_dosing_channels_by_actuator_type(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'ch-generic-1',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => '',
+            'config' => ['actuator_type' => 'pump_b'],
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/pump-calibrations");
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.node_channel_id', $channel->id)
+            ->assertJsonPath('data.0.role', 'pump_b')
+            ->assertJsonPath('data.0.component', 'calcium');
+
+        $this->assertDatabaseHas('channel_bindings', [
+            'node_channel_id' => $channel->id,
+            'role' => 'pump_b',
+            'direction' => 'actuator',
+        ]);
+    }
 }

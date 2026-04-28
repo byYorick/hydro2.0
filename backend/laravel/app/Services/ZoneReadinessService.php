@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\ChannelBinding;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Support\Automation\ZoneLogicProfile;
@@ -711,9 +712,95 @@ class ZoneReadinessService
             ->unique()
             ->toArray();
 
-        $missingBindings = array_diff($requiredBindings, $existingBindings);
+        $missingBindings = array_values(array_diff($requiredBindings, $existingBindings));
+        if ($missingBindings === []) {
+            return [];
+        }
 
-        return array_values($missingBindings);
+        $autoBoundRoles = $this->autoBindTransportRolesFromNodeChannels($zone, $missingBindings);
+        if ($autoBoundRoles === []) {
+            return $missingBindings;
+        }
+
+        return array_values(array_diff($missingBindings, $autoBoundRoles));
+    }
+
+    /**
+     * Пытается автоматически создать missing bindings для transport-ролей,
+     * если на узлах зоны уже есть каналы с каноничными именами.
+     *
+     * @param  array<int, string>  $missingBindings
+     * @return array<int, string>  Роли, которые удалось auto-bind
+     */
+    private function autoBindTransportRolesFromNodeChannels(Zone $zone, array $missingBindings): array
+    {
+        $roleCandidates = [
+            'pump_main' => ['pump_main'],
+            'drain' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+        ];
+
+        $autoBound = [];
+        foreach ($missingBindings as $role) {
+            if (! isset($roleCandidates[$role])) {
+                continue;
+            }
+
+            $channelId = NodeChannel::query()
+                ->select('node_channels.id')
+                ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
+                ->leftJoin('channel_bindings', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
+                ->where(function ($query) use ($zone) {
+                    $query->where('nodes.zone_id', $zone->id)
+                        ->orWhere('nodes.pending_zone_id', $zone->id);
+                })
+                ->whereRaw("LOWER(COALESCE(node_channels.type, '')) = 'actuator'")
+                ->where(function ($query) use ($roleCandidates, $role) {
+                    foreach ($roleCandidates[$role] as $candidate) {
+                        $query->orWhereRaw('LOWER(node_channels.channel) = ?', [$candidate]);
+                    }
+                })
+                ->whereNull('channel_bindings.id')
+                ->orderBy('node_channels.id')
+                ->value('node_channels.id');
+
+            if (! is_numeric($channelId)) {
+                continue;
+            }
+
+            $label = $role === 'pump_main' ? 'Auto Main Pump' : 'Auto Drain';
+            $assetType = $role === 'pump_main' ? 'PUMP' : 'DRAIN';
+            $required = $role === 'pump_main';
+
+            $now = now();
+            $instanceId = InfrastructureInstance::query()
+                ->where('owner_type', 'zone')
+                ->where('owner_id', $zone->id)
+                ->where('label', $label)
+                ->value('id');
+
+            if (! $instanceId) {
+                $instanceId = InfrastructureInstance::query()->insertGetId([
+                    'owner_type' => 'zone',
+                    'owner_id' => $zone->id,
+                    'asset_type' => $assetType,
+                    'label' => $label,
+                    'required' => $required,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            ChannelBinding::query()->create([
+                'infrastructure_instance_id' => (int) $instanceId,
+                'node_channel_id' => (int) $channelId,
+                'direction' => 'actuator',
+                'role' => $role,
+            ]);
+
+            $autoBound[] = $role;
+        }
+
+        return array_values(array_unique($autoBound));
     }
 
     /**
