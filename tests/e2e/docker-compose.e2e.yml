@@ -78,6 +78,7 @@ services:
     environment:
     - WEB_DOCUMENT_ROOT=/app/public
     - APP_ENV=testing
+    - ZONE_READINESS_STRICT=${ZONE_READINESS_STRICT:-0}
     - APP_DEBUG=true
     - APP_DEBUG_MODE=true
     # Разделяем кеши bootstrap между e2e и dev, чтобы исключить перекрестный config cache

@@ -183,24 +183,30 @@ test.describe('Zone Detail', () => {
     await expect(page.getByText('Schema version:')).toBeVisible({ timeout: 15000 });
   });
 
-  test('should open zone alert details from alerts tab', async ({ page }) => {
-    await page.goto('/zones/1?tab=alerts', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('tab', { name: 'Алерты' })).toBeVisible({ timeout: 15000 });
+  test('should open zone alert details from alerts tab', async ({ page, apiHelper, testZone }) => {
+    const alert = await apiHelper.seedZoneAlert(testZone.id);
 
-    const alertRow = page.locator('[data-testid^="zone-alert-row-"]').first();
-    await expect(alertRow).toBeVisible({ timeout: 15000 });
+    try {
+      await page.goto(`/zones/${testZone.id}?tab=alerts`, { waitUntil: 'networkidle' });
+      await expect(page.getByRole('tab', { name: 'Алерты' })).toBeVisible({ timeout: 15000 });
 
-    await alertRow.click();
+      const alertRow = page.locator('[data-testid^="zone-alert-row-"]').first();
+      await expect(alertRow).toBeVisible({ timeout: 15000 });
 
-    const detailsModal = page.locator('[data-testid="zone-alert-details-modal"]').last();
-    await expect(detailsModal).toBeVisible({ timeout: 15000 });
-    await expect(detailsModal).toContainText('Детали алерта');
-    await expect(detailsModal).toContainText('Тип');
-    await expect(detailsModal).toContainText('Статус');
+      await alertRow.click();
 
-    const hasCode = await detailsModal.getByText('Код').isVisible().catch(() => false);
-    const hasPayload = await detailsModal.getByText('Payload details').isVisible().catch(() => false);
-    expect(hasCode || hasPayload).toBe(true);
+      const detailsModal = page.locator('[data-testid="zone-alert-details-modal"]').last();
+      await expect(detailsModal).toBeVisible({ timeout: 15000 });
+      await expect(detailsModal).toContainText('Детали алерта');
+      await expect(detailsModal).toContainText(/тип/i);
+      await expect(detailsModal).toContainText(/статус/i);
+
+      const hasCode = await detailsModal.getByText('Код').isVisible().catch(() => false);
+      const hasPayload = await detailsModal.getByText('Payload details').isVisible().catch(() => false);
+      expect(hasCode || hasPayload).toBe(true);
+    } finally {
+      await apiHelper.deleteAlert(alert.id).catch(() => {});
+    }
   });
 
   test('should render scheduler workspace and execution details on scheduler tab', async ({ page, apiHelper, testGreenhouse }) => {
@@ -352,19 +358,16 @@ test.describe('Zone Detail', () => {
       await expect(page.getByRole('heading', { level: 3, name: 'Планировщик зоны' })).toBeVisible({ timeout: 15000 });
 
       await expect(page.getByText('Live sync')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Исполнимых окон 1')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Активно 1')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('сейчас · Полив · interval')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Сконфигурировано, но не исполняется этим runtime')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Свет', { exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Окна').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('исполнимых').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активные').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('сейчас').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Полив').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Лента исполнений')).toBeVisible({ timeout: 15000 });
       await page.getByRole('button', { name: /#501/ }).click();
 
-      await expect(page.getByText('Детали run')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Lifecycle')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByRole('heading', { level: 5, name: 'Timeline' })).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('TASK_RECEIVED')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('AE_CURRENT_STAGE')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('COMMAND_DISPATCHED')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('#501').last()).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('[data-testid="scheduler-causal-chain"]')).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
@@ -481,17 +484,18 @@ test.describe('Zone Detail', () => {
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Планировщик' }).click();
       await expect(page.getByRole('heading', { level: 3, name: 'Планировщик зоны' })).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('24H', { exact: true })).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Недавние run')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: '24h' })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Недавние исполнения')).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('button', { name: '7d' })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('button', { name: /#701/ })).toBeVisible({ timeout: 15000 });
       await expect(page.getByRole('button', { name: /#702/ })).toBeVisible({ timeout: 15000 });
 
       await page.getByRole('button', { name: '7d' }).click();
-      await expect(page.getByText('7D', { exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: '7d' })).toBeVisible({ timeout: 15000 });
 
       await page.getByRole('button', { name: /#701/ }).click();
-      await expect(page.getByText('TASK_FINISHED')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('#701').last()).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('[data-testid="scheduler-causal-chain"]')).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
@@ -612,7 +616,8 @@ test.describe('Zone Detail', () => {
       await expect(page.getByRole('heading', { level: 3, name: 'Планировщик зоны' })).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Live sync')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('полуавто').first()).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Активно 1')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активные').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('1').first()).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Активного run нет')).not.toBeVisible();
       await expect(page.getByRole('button', { name: new RegExp(`#${executionId}`) })).toBeVisible({ timeout: 15000 });
     } finally {

@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 import { APIRequestContext } from '@playwright/test';
 
 const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+const laravelAppRoot = process.env.LARAVEL_APP_ROOT || path.resolve(process.cwd(), '../../..');
 
 export interface TestGreenhouse {
   id: number;
@@ -120,7 +122,7 @@ export class APITestHelper {
       'php',
       ['artisan', 'e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`],
       {
-        cwd: process.cwd(),
+        cwd: laravelAppRoot,
         encoding: 'utf8',
       },
     );
@@ -276,7 +278,7 @@ export class APITestHelper {
 
   private runArtisanTinkerJson<T>(code: string): T {
     const output = execFileSync('php', ['artisan', 'tinker', `--execute=${code}`], {
-      cwd: process.cwd(),
+      cwd: laravelAppRoot,
       encoding: 'utf8',
     });
     const jsonLine = output
@@ -291,6 +293,79 @@ export class APITestHelper {
     }
 
     return JSON.parse(jsonLine) as T;
+  }
+
+  async seedZoneReadinessNode(zoneId: number, prefix = `pw-zone-${Date.now()}`): Promise<SeededGreenhouseClimateNodes> {
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+    return this.runArtisanTinkerJson<SeededGreenhouseClimateNodes>(`
+      $zone = \\App\\Models\\Zone::query()->findOrFail(${zoneId});
+      $prefix = '${safePrefix}';
+      $node = \\App\\Models\\DeviceNode::query()->create([
+        'zone_id' => $zone->id,
+        'uid' => $prefix . '-irrig',
+        'hardware_id' => $prefix . '-irrig',
+        'name' => 'Playwright Irrigation Node ' . $prefix,
+        'type' => 'irrig',
+        'status' => 'online',
+        'lifecycle_state' => 'ACTIVE',
+        'validated' => true,
+        'last_seen_at' => now(),
+        'last_heartbeat_at' => now(),
+        'first_seen_at' => now(),
+      ]);
+      foreach (['main_pump', 'force_irrigation', 'storage_state', 'drain'] as $channel) {
+        \\App\\Models\\NodeChannel::query()->create([
+          'node_id' => $node->id,
+          'channel' => $channel,
+          'type' => $channel === 'storage_state' ? 'SENSOR' : 'ACTUATOR',
+          'is_active' => true,
+          'last_seen_at' => now(),
+        ]);
+      }
+      echo json_encode([
+        'climateSensor' => [
+          'id' => $node->id,
+          'uid' => $node->uid,
+          'name' => $node->name,
+        ],
+        'ventActuator' => [
+          'id' => $node->id,
+          'uid' => $node->uid,
+          'name' => $node->name,
+        ],
+        'uids' => [$node->uid],
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async seedZoneAlert(zoneId: number, code = `pw_zone_alert_${Date.now()}`): Promise<{ id: number }> {
+    const safeCode = code.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    return this.runArtisanTinkerJson<{ id: number }>(`
+      $alert = \\App\\Models\\Alert::query()->create([
+        'zone_id' => ${zoneId},
+        'source' => 'e2e',
+        'code' => '${safeCode}',
+        'type' => 'playwright_zone_alert',
+        'details' => ['payload' => ['source' => 'playwright']],
+        'status' => 'ACTIVE',
+        'category' => 'test',
+        'severity' => 'warning',
+        'error_count' => 1,
+        'first_seen_at' => now(),
+        'last_seen_at' => now(),
+        'created_at' => now(),
+      ]);
+      echo json_encode(['id' => $alert->id], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async deleteAlert(id: number): Promise<void> {
+    this.runArtisanTinkerJson<{ deleted: number }>(`
+      $deleted = \\App\\Models\\Alert::query()->whereKey(${id})->delete();
+      echo json_encode(['deleted' => $deleted], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
   }
 
   async seedGreenhouseClimateNodes(prefix = `e2e-gh-${Date.now()}`): Promise<SeededGreenhouseClimateNodes> {

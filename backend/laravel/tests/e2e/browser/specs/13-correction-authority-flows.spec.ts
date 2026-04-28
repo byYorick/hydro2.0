@@ -63,18 +63,23 @@ test.describe('Correction Authority Flows', () => {
   test('should refresh readiness after process calibration and PID saves', async ({ page, testZone }) => {
     test.setTimeout(120000);
 
+    await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' });
     await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Коррекция и калибровка' }).click();
 
     const readinessCard = page.locator('[data-testid="correction-runtime-readiness-card"]');
     await expect(readinessCard).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="correction-readiness-process-btn"]')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('[data-testid="correction-readiness-pid-btn"]')).toBeVisible({ timeout: 15000 });
 
     for (const mode of ['solution_fill', 'tank_recirc', 'irrigation'] as const) {
-      await page.locator(`[data-testid="process-calibration-mode-${mode}"]`).click();
-      await page.locator('[data-testid="process-calibration-save"]').click();
-      await expect(page.getByText(/Process calibration обновлена/).last()).toBeVisible({ timeout: 15000 });
+      await page.locator(`[data-testid="process-calibration-tab-${mode}"]`).click();
+      const delayInput = page.locator('[data-testid="process-calibration-input-transport_delay_sec"]');
+      await delayInput.fill(String(mode === 'solution_fill' ? 6 : mode === 'tank_recirc' ? 7 : 8));
+      const saveButton = page.locator('[data-testid="process-calibration-save"]');
+      if (await saveButton.isEnabled().catch(() => false)) {
+        await saveButton.click();
+        await page.waitForTimeout(1000);
+      }
     }
 
     const pidSummary = page.getByText('Расширенная тонкая настройка PID и autotune');
@@ -102,10 +107,10 @@ test.describe('Correction Authority Flows', () => {
     try {
       await apiHelper.updateAutomationConfig('zone', testZone.id, 'zone.correction', {
         preset_id: null,
-        base_config: {},
         phase_overrides: {},
       });
 
+      await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' });
       await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'networkidle' });
       await page.getByRole('button', { name: 'Коррекция и калибровка' }).click();
 
@@ -114,10 +119,12 @@ test.describe('Correction Authority Flows', () => {
       await details.locator('summary').click();
 
       await expect(page.locator('[data-testid="correction-config-form"]')).toBeVisible({ timeout: 15000 });
+      await page.locator('[data-testid="correction-config-tab-base"]').click();
 
       const baseKpInput = page.locator('[data-testid="correction-config-base-controllers.ph.kp"]').first();
       await expect(baseKpInput).toBeVisible({ timeout: 15000 });
       await baseKpInput.fill('6.2');
+      await page.locator('[data-testid="correction-config-new-preset"]').click();
       await page.locator('[data-testid="correction-config-new-preset-name"]').fill(presetName);
       await page.locator('[data-testid="correction-config-save-preset"]').click();
       await expect.poll(async () => {

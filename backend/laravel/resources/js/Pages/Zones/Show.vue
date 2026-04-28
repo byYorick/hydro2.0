@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="space-y-2">
+    <div class="space-y-2" data-testid="zone-detail-page">
+      <h1 class="sr-only">{{ zone.name }}</h1>
       <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5">
         <Tabs
           v-model="activeTab"

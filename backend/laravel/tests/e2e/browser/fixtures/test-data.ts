@@ -84,9 +84,11 @@ export const test = base.extend<TestDataFixtures>({
     // Добавляем задержку для избежания rate limiting
     await new Promise(resolve => setTimeout(resolve, 500));
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
+    const seededNode = await apiHelper.seedZoneReadinessNode(zone.id, `pw-zone-${zone.id}-${Date.now()}`);
     await apiHelper.attachRecipeToZone(zone.id, testRecipe.id);
     await use(zone);
     // Очистка после теста
+    await apiHelper.cleanupNodesByUids(seededNode.uids).catch(() => {});
     await apiHelper.deleteZone(zone.id).catch(() => {});
   },
 });

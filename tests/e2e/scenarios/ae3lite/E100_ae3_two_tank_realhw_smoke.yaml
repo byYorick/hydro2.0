@@ -103,6 +103,23 @@ actions:
     ph_node_id: ${ph_node_row.0.node_id}
     ec_node_id: ${ec_node_row.0.node_id}
 
+  - step: isolate_ae3_critical_sensors
+    type: database_execute
+    query: |
+      UPDATE sensors
+      SET is_active = CASE
+            WHEN type = 'PH' AND node_id = CAST(:ph_node_id AS bigint) THEN TRUE
+            WHEN type = 'EC' AND node_id = CAST(:ec_node_id AS bigint) THEN TRUE
+            ELSE FALSE
+          END,
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND type IN ('PH', 'EC')
+    params:
+      zone_id: ${zone_id}
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+
   - step: publish_irrig_node_config
     type: api_post
     endpoint: /api/nodes/${irrig_node_id}/config/publish
@@ -284,6 +301,25 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: load_test_node_correction_preset
+    type: database_query
+    query: |
+      SELECT id
+      FROM zone_correction_presets
+      WHERE slug = 'test-node'
+      LIMIT 1
+    expected_rows: 1
+    save: test_node_correction_preset_row
+
+  - step: apply_test_node_correction_preset
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
+    payload:
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        phase_overrides: {}
+    save: correction_config_update_response
+
   - step: cleanup_existing_correction_bindings
     type: database_execute
     query: |
@@ -446,6 +482,8 @@ actions:
                     prepare_recirculation_timeout_sec: 180
                     telemetry_max_age_sec: 10
                     irr_state_max_age_sec: 30
+                    irr_state_wait_timeout_sec: 12
+                    sensor_mode_stabilization_time_sec: 0
                   target_ph: 5.8
                   target_ec: 1.4
                   prepare_tolerance:
@@ -532,6 +570,8 @@ actions:
                       prepare_recirculation_timeout_sec: 180
                       telemetry_max_age_sec: 10
                       irr_state_max_age_sec: 30
+                      irr_state_wait_timeout_sec: 12
+                      sensor_mode_stabilization_time_sec: 0
                     target_ph: 5.8
                     target_ec: 1.4
                     prepare_tolerance:
@@ -1141,7 +1181,7 @@ assertions:
 
   - name: runtime_task_pending_clean_fill_check
     type: custom_assert
-    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'"
+    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() in ('two_tank', 'two_tank_drip_substrate_trays')"
 
   - name: workflow_phase_tank_filling
     type: custom_assert

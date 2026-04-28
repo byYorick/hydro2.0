@@ -83,6 +83,25 @@ actions:
     zone_id: ${zone_row.0.zone_id}
     node_id: ${node_row.0.node_id}
 
+  - step: load_test_node_correction_preset
+    type: database_query
+    query: |
+      SELECT id
+      FROM zone_correction_presets
+      WHERE slug = 'test-node'
+      LIMIT 1
+    expected_rows: 1
+    save: test_node_correction_preset_row
+
+  - step: apply_test_node_correction_preset
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
+    payload:
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        phase_overrides: {}
+    save: correction_config_update_response
+
   - step: wait_for_node_online
     type: db_wait
     query: |

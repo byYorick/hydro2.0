@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-2">
+  <div class="space-y-2" data-testid="zone-events-list">
 
     <!-- Компактная шапка: заголовок + пилюли + поиск + CSV в одну строку -->
     <div class="flex flex-wrap items-center gap-1.5 px-1">

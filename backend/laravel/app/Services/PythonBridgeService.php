@@ -446,6 +446,13 @@ class PythonBridgeService
         $lastException = null;
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            if ($attempt > 1 && isset($data['sig'], $data['ts']) && $command->node_id) {
+                $node = DeviceNode::find($command->node_id);
+                if ($node instanceof DeviceNode) {
+                    $data = app(\App\Services\CommandSignatureService::class)->signCommand($node, $data);
+                }
+            }
+
             try {
                 Log::info('PythonBridgeService: Sending command request', [
                     'cmd_id' => $command->cmd_id,
