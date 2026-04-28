@@ -89,13 +89,24 @@ class NodeCommandController extends Controller
                 'details' => $e->getMessage(),
             ], 503);
         } catch (RequestException $e) {
+            $upstreamStatus = $e->response?->status();
             Log::error('NodeCommandController: Request error', [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
                 'command_type' => $data['cmd'] ?? null,
                 'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
+                'status' => $upstreamStatus,
             ]);
+
+            if ($upstreamStatus !== null && $upstreamStatus >= 500) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'SERVICE_UNAVAILABLE',
+                    'message' => 'Command service is temporarily unavailable. Please try again later.',
+                    'details' => $this->extractRequestExceptionDetails($e),
+                ], 503);
+            }
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'COMMAND_FAILED',

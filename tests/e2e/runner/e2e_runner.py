@@ -416,14 +416,14 @@ class E2ERunner:
                     result.returncode,
                     result.stdout.strip(),
                     result.stderr.strip(),
-                    "raising" if strict else f"using fallback {fallback!r}",
+                    "raising" if strict else f"using fallback name {fallback!r}",
                 )
         except Exception as exc:
             logger.warning(
                 "Failed to resolve container name for service=%s project=%s; %s",
                 compose_service,
                 project,
-                "raising" if strict else f"using fallback {fallback!r}",
+                "raising" if strict else f"using fallback name {fallback!r}",
                 exc_info=True,
             )
             if strict:
@@ -2126,11 +2126,19 @@ class E2ERunner:
             step_name = c.get("step", c.get("name", "cleanup"))
             optional = bool(c.get("optional", False))
             condition = c.get("condition")
-            try:
-                if condition is not None and not self._evaluate_action_condition(condition):
+            if condition is not None:
+                try:
+                    condition_result = self._evaluate_action_condition(condition)
+                except Exception as e:
+                    if optional:
+                        logger.warning(f"Optional cleanup step '{step_name}' condition failed: {e}")
+                        continue
+                    raise
+                if not condition_result:
                     logger.info(f"Skipping cleanup step '{step_name}': condition is false ({condition})")
                     continue
 
+            try:
                 c_type = c.get("type")
                 wait_seconds = float(c.get("wait_seconds", 0) or 0)
                 c_cfg = {

@@ -13,7 +13,7 @@
               <h2 class="text-lg font-bold text-[color:var(--text-primary)] truncate">
                 {{ zone.name }}
               </h2>
-              <Badge :variant="variant">{{ translateStatus(zone.status) }}</Badge>
+              <Badge :variant="variant" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
               <Badge :variant="cycleStatusVariant" size="sm">{{ cycleStatusLabel }}</Badge>
             </div>
             <!-- Рецепт и фаза -->
@@ -81,6 +81,7 @@
         </svg>
       </div>
       <p class="text-sm font-medium text-[color:var(--text-primary)]">Цикл выращивания не запущен</p>
+      <Badge :variant="variant" data-testid="zone-status-badge" class="mt-2">{{ translateStatus(zone.status) }}</Badge>
       <p class="mt-1 text-xs text-[color:var(--text-dim)]">Запустите цикл, чтобы начать выращивание в этой зоне</p>
       <button
         v-if="canManageRecipe"

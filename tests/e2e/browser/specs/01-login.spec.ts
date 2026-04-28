@@ -113,7 +113,7 @@ test.describe('Login/Logout', () => {
       await logoutButton.first().click();
       
       // Ждем редиректа на login
-      await page.waitForURL(`${baseURL}/login`, { timeout: 10000 });
+      await page.waitForURL(/\/login(?:\?.*)?$/, { timeout: 10000 });
       
       // Проверяем, что мы на странице логина
       await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });

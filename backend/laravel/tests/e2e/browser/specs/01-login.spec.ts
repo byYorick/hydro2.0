@@ -100,7 +100,7 @@ test.describe('Login/Logout', () => {
     await expect(logoutButton.first()).toBeVisible({ timeout: 10000 });
     await logoutButton.first().click();
 
-    await page.waitForURL(`${baseURL}/login`, { timeout: 10000 });
+    await page.waitForURL(/\/login(?:\?.*)?$/, { timeout: 10000 });
     await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });
   });
 });

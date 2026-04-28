@@ -144,6 +144,21 @@ actions:
     save: command_response
     optional: true
 
+  - step: wait_test_command_terminal_status
+    type: db.wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
+        AND status IN ('DONE', 'ERROR', 'TIMEOUT', 'INVALID', 'NO_EFFECT')
+      LIMIT 1
+    params:
+      command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+    timeout: 10.0
+    expected_rows: 1
+    optional: true
+
 assertions:
   # Проверка 1: Zone существует
   - name: zone_exists
@@ -157,6 +172,16 @@ assertions:
     expected_rows: 1
 
 cleanup:
+  - step: delete_test_command
+    type: database_execute
+    query: |
+      DELETE FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+    optional: true
+
   # Удаление binding через правильный endpoint
   # Нужен ID binding из zone_channel_bindings, поэтому делаем через БД или опционально через API
   - step: delete_binding_via_db

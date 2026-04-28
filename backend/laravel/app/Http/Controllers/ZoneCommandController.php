@@ -175,12 +175,22 @@ class ZoneCommandController extends Controller
                 'details' => $e->getMessage(),
             ], 503);
         } catch (RequestException $e) {
+            $upstreamStatus = $e->response?->status();
             Log::error('ZoneCommandController: Request error', [
                 'zone_id' => $zone->id,
                 'command_type' => $data['type'] ?? null,
                 'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
+                'status' => $upstreamStatus,
             ]);
+
+            if ($upstreamStatus !== null && $upstreamStatus >= 500) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'SERVICE_UNAVAILABLE',
+                    'message' => 'Command service is temporarily unavailable. Please try again later.',
+                    'details' => $this->extractRequestExceptionDetails($e),
+                ], 503);
+            }
 
             return response()->json([
                 'status' => 'error',

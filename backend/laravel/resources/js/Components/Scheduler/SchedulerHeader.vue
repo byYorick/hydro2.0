@@ -4,10 +4,10 @@
       <!-- Левая часть: заголовок + бейджи -->
       <div class="flex flex-wrap items-center gap-1.5 min-w-0">
         <h3 class="font-headline text-base font-bold tracking-tight text-[color:var(--text-primary)]">
-          Планировщик
+          Планировщик зоны
         </h3>
         <span class="text-xs text-[color:var(--text-dim)]">· зона #{{ zoneId }}</span>
-        <Badge variant="info" size="sm">Live</Badge>
+        <Badge variant="info" size="sm">Live sync</Badge>
         <Badge :variant="statusVariant(hasActiveRun ? 'running' : 'accepted')" size="sm">
           {{ controlModeLabel(controlMode) }}
         </Badge>

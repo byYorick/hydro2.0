@@ -154,15 +154,6 @@ test.describe('Cycle Control', () => {
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
-    const eventsList = page.locator(`[data-testid="${TEST_IDS.ZONE_EVENTS_LIST}"]`)
-      .or(page.locator('text=/События|Events/i').locator('..'));
-    
-    // Проверяем наличие списка событий
-    const hasEventsList = await eventsList.count() > 0;
-    if (hasEventsList) {
-      await expect(eventsList.first()).toBeVisible({ timeout: 15000 });
-    }
-
     // Выполняем действие
     try {
       await apiHelper.startZone(testZone.id);
@@ -173,15 +164,9 @@ test.describe('Cycle Control', () => {
 
     // Ждем обновления событий
     await page.waitForTimeout(3000);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(2000);
+    await page.goto(`/zones/${testZone.id}?tab=events`, { waitUntil: 'domcontentloaded' });
+    const eventsList = page.locator(`[data-testid="${TEST_IDS.ZONE_EVENTS_LIST}"]`);
 
-    // Проверяем, что список событий все еще виден (если был)
-    if (hasEventsList) {
-      await expect(eventsList.first()).toBeVisible({ timeout: 10000 });
-    } else {
-      // Если список событий не найден, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
-    }
+    await expect(eventsList.first()).toBeVisible({ timeout: 10000 });
   });
 });

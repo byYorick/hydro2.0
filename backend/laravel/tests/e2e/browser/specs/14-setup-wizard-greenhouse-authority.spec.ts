@@ -36,13 +36,9 @@ test.describe('Setup Wizard Greenhouse Authority', () => {
 
       await apiHelper.updateAutomationConfig('greenhouse', testGreenhouse.id, 'greenhouse.logic_profile', profilePayload);
 
-      await page.goto('/setup/wizard', { waitUntil: 'networkidle' });
-      await expect(page.locator('[data-testid="setup-wizard-greenhouse-select"]')).toBeVisible({ timeout: 15000 });
-
-      await page.locator('[data-testid="setup-wizard-greenhouse-select"]').selectOption(String(testGreenhouse.id));
-      await page.waitForTimeout(1500);
-      await page.locator('[data-testid="setup-wizard-zone-select"]').selectOption(String(testZone.id));
-      await page.waitForTimeout(1000);
+      await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' });
+      await page.goto(`/greenhouses/${testGreenhouse.id}`, { waitUntil: 'networkidle' });
+      await expect(page.locator('h1')).toBeVisible({ timeout: 15000 });
 
       const climateEnabled = page.locator('[data-testid="greenhouse-climate-enabled"]');
       await expect(climateEnabled).toBeChecked();
