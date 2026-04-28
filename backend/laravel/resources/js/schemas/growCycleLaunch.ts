@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+function requiredPositiveInt(message: string) {
+    return z
+        .number({
+            error: (issue) => (
+                issue.input === undefined || issue.input === null
+                    ? message
+                    : 'Ожидается числовой идентификатор.'
+            ),
+        })
+        .int('Ожидается целочисленный идентификатор.')
+        .positive(message);
+}
+
 const irrigationOverrideSchema = z
     .object({
         mode: z.enum(['TIME', 'MOISTURE', 'TASK']).optional(),
@@ -59,13 +72,19 @@ export const bindingsSchema = z
 
 export const growCycleLaunchSchema = z
     .object({
-        zone_id: z.number().int().positive(),
-        recipe_revision_id: z.number().int().positive(),
-        plant_id: z.number().int().positive(),
+        zone_id: requiredPositiveInt('Выберите зону.'),
+        recipe_revision_id: requiredPositiveInt('Выберите опубликованную ревизию рецепта.'),
+        plant_id: requiredPositiveInt('Выберите растение.'),
         planting_at: z
-            .string()
+            .string({
+                error: (issue) => (
+                    issue.input === undefined || issue.input === null
+                        ? 'Укажите дату и время посадки.'
+                        : 'Дата посадки должна быть строкой.'
+                ),
+            })
             .refine((value) => !Number.isNaN(Date.parse(value)), {
-                message: 'ISO datetime required',
+                message: 'Укажите корректную дату и время посадки.',
             }),
         batch_label: z.string().trim().max(100).optional(),
         notes: z.string().trim().max(2_000).optional(),

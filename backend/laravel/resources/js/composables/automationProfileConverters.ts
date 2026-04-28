@@ -1,5 +1,17 @@
 import type { AutomationProfile } from '@/schemas/automationProfile';
 import { automationProfileDefaults } from '@/schemas/automationProfile';
+import {
+    createDefaultClimateForm,
+    FALLBACK_AUTOMATION_DEFAULTS,
+} from './useAutomationDefaults';
+import { buildGrowthCycleConfigPayload } from './zoneAutomationProfilePayload';
+import type { ZoneAutomationForms } from './zoneAutomationTypes';
+import {
+    normalizeZoneLogicProfilePayload,
+    resolveZoneLogicProfileEntry,
+    upsertZoneLogicProfilePayload,
+    type ZoneAutomationLogicMode,
+} from './zoneLogicProfileDocument';
 
 type Dict = Record<string, unknown>;
 
@@ -30,11 +42,224 @@ function asString(value: unknown, fallback: string): string {
     return fallback;
 }
 
+function asStringList(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+}
+
 function asEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
     if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) {
         return value as T;
     }
     return fallback;
+}
+
+function firstDict(value: unknown): Dict {
+    if (!Array.isArray(value)) return {};
+    return asDict(value[0]);
+}
+
+function secondsToMinutes(value: unknown, fallback: number): number {
+    const seconds = asNumber(value, Number.NaN);
+    if (!Number.isFinite(seconds)) return fallback;
+    return Math.max(0, Math.round(seconds / 60));
+}
+
+function asRatio(value: unknown, fallback: number): number {
+    const number = asNumber(value, fallback);
+    if (number > 1 && number <= 100) return number / 100;
+    return number;
+}
+
+function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
+    const d = automationProfileDefaults;
+
+    const irrigation = asDict(subsystems.irrigation);
+    const irrigationExecution = asDict(irrigation.execution);
+    const irrigationDecision = asDict(irrigation.decision);
+    const irrigationDecisionConfig = asDict(irrigationDecision.config);
+    const irrigationRecovery = asDict(irrigation.recovery);
+    const irrigationSafety = asDict(irrigation.safety);
+    const irrigationSchedule = firstDict(irrigationExecution.schedule);
+    const drainControl = asDict(irrigationExecution.drain_control);
+
+    const diagnostics = asDict(subsystems.diagnostics);
+    const diagnosticsExecution = asDict(diagnostics.execution);
+    const diagnosticsRefill = asDict(diagnosticsExecution.refill);
+    const diagnosticsStartup = asDict(diagnosticsExecution.startup);
+    const diagnosticsCorrection = asDict(diagnosticsExecution.correction);
+    const diagnosticsRecovery = asDict(diagnosticsExecution.irrigation_recovery);
+    const failSafeGuards = asDict(diagnosticsExecution.fail_safe_guards);
+
+    const lighting = asDict(subsystems.lighting);
+    const lightingExecution = asDict(lighting.execution);
+    const lightingLux = asDict(lightingExecution.lux);
+    const lightingPhotoperiod = asDict(lightingExecution.photoperiod);
+    const lightingSchedule = firstDict(lightingExecution.schedule);
+
+    const zoneClimate = asDict(subsystems.zone_climate ?? subsystems.climate);
+    const solutionChange = asDict(subsystems.solution_change);
+    const solutionChangeExecution = asDict(solutionChange.execution);
+
+    const detectedTopology = asString(diagnosticsExecution.topology, '');
+    const fallbackTanksCount = detectedTopology === 'three_tank_drip_substrate_trays' ? 3 : d.waterForm.tanksCount;
+    const refillRequiredNodeTypes = asStringList(
+        diagnosticsExecution.required_node_types ?? diagnosticsStartup.required_node_types,
+    ).join(',');
+
+    return {
+        waterForm: {
+            systemType: asEnum(
+                irrigationExecution.system_type,
+                ['drip', 'substrate_trays', 'nft'] as const,
+                d.waterForm.systemType,
+            ),
+            tanksCount: (() => {
+                const raw = asNumber(irrigationExecution.tanks_count, fallbackTanksCount);
+                const rounded = Math.round(raw);
+                return rounded >= 3 ? 3 : 2;
+            })(),
+            cleanTankFillL: asNumber(irrigationExecution.clean_tank_fill_l, d.waterForm.cleanTankFillL),
+            nutrientTankTargetL: asNumber(irrigationExecution.nutrient_tank_target_l, d.waterForm.nutrientTankTargetL),
+            irrigationBatchL: asNumber(irrigationExecution.irrigation_batch_l, d.waterForm.irrigationBatchL),
+            intervalMinutes: asNumber(
+                irrigationExecution.interval_minutes,
+                secondsToMinutes(irrigationExecution.interval_sec, d.waterForm.intervalMinutes),
+            ),
+            durationSeconds: asNumber(
+                irrigationExecution.duration_seconds,
+                asNumber(irrigationExecution.duration_sec, d.waterForm.durationSeconds),
+            ),
+            fillTemperatureC: asNumber(irrigationExecution.fill_temperature_c, d.waterForm.fillTemperatureC),
+            fillWindowStart: asString(irrigationSchedule.start, d.waterForm.fillWindowStart),
+            fillWindowEnd: asString(irrigationSchedule.end, d.waterForm.fillWindowEnd),
+            targetPh: d.waterForm.targetPh,
+            targetEc: d.waterForm.targetEc,
+            phPct: d.waterForm.phPct,
+            ecPct: d.waterForm.ecPct,
+            valveSwitching: asBool(irrigationExecution.valve_switching_enabled, d.waterForm.valveSwitching),
+            correctionDuringIrrigation: asBool(
+                irrigationExecution.correction_during_irrigation,
+                d.waterForm.correctionDuringIrrigation,
+            ),
+            enableDrainControl: asBool(drainControl.enabled, d.waterForm.enableDrainControl),
+            drainTargetPercent: asNumber(drainControl.target_percent, d.waterForm.drainTargetPercent),
+            diagnosticsEnabled: asBool(diagnostics.enabled, d.waterForm.diagnosticsEnabled),
+            diagnosticsIntervalMinutes: secondsToMinutes(
+                diagnosticsExecution.interval_sec,
+                d.waterForm.diagnosticsIntervalMinutes,
+            ),
+            diagnosticsWorkflow: asEnum(
+                diagnosticsExecution.workflow,
+                ['startup', 'cycle_start', 'diagnostics'] as const,
+                'diagnostics',
+            ),
+            cleanTankFullThreshold: asRatio(
+                diagnosticsExecution.clean_tank_full_threshold,
+                d.waterForm.cleanTankFullThreshold,
+            ),
+            refillDurationSeconds: asNumber(
+                diagnosticsRefill.duration_sec ?? diagnosticsExecution.refill_duration_sec,
+                d.waterForm.refillDurationSeconds,
+            ),
+            refillTimeoutSeconds: asNumber(
+                diagnosticsRefill.timeout_sec ?? diagnosticsExecution.refill_timeout_sec,
+                d.waterForm.refillTimeoutSeconds,
+            ),
+            mainPumpFlowLpm: d.waterForm.mainPumpFlowLpm,
+            cleanWaterFlowLpm: d.waterForm.cleanWaterFlowLpm,
+            workingTankL: d.waterForm.workingTankL,
+            startupCleanFillTimeoutSeconds: asNumber(
+                diagnosticsStartup.clean_fill_timeout_sec,
+                d.waterForm.refillTimeoutSeconds,
+            ),
+            startupSolutionFillTimeoutSeconds: asNumber(
+                diagnosticsStartup.solution_fill_timeout_sec,
+                d.waterForm.refillTimeoutSeconds,
+            ),
+            startupPrepareRecirculationTimeoutSeconds: asNumber(
+                diagnosticsStartup.prepare_recirculation_timeout_sec,
+                d.waterForm.refillTimeoutSeconds,
+            ),
+            startupCleanFillRetryCycles: asNumber(diagnosticsStartup.clean_fill_retry_cycles, 0),
+            cleanFillMinCheckDelayMs: asNumber(failSafeGuards.clean_fill_min_check_delay_ms, 0),
+            solutionFillCleanMinCheckDelayMs: asNumber(failSafeGuards.solution_fill_clean_min_check_delay_ms, 0),
+            solutionFillSolutionMinCheckDelayMs: asNumber(failSafeGuards.solution_fill_solution_min_check_delay_ms, 0),
+            recirculationStopOnSolutionMin: asBool(failSafeGuards.recirculation_stop_on_solution_min, false),
+            estopDebounceMs: asNumber(failSafeGuards.estop_debounce_ms, 0),
+            irrigationDecisionStrategy: asEnum(
+                irrigationDecision.strategy,
+                ['task', 'smart_soil_v1'] as const,
+                'task',
+            ),
+            irrigationDecisionLookbackSeconds: asNumber(irrigationDecisionConfig.lookback_sec, 0),
+            irrigationDecisionMinSamples: asNumber(irrigationDecisionConfig.min_samples, 0),
+            irrigationDecisionStaleAfterSeconds: asNumber(irrigationDecisionConfig.stale_after_sec, 0),
+            irrigationDecisionHysteresisPct: asNumber(irrigationDecisionConfig.hysteresis_pct, 0),
+            irrigationDecisionSpreadAlertThresholdPct: asNumber(
+                irrigationDecisionConfig.spread_alert_threshold_pct,
+                0,
+            ),
+            irrigationRecoveryMaxContinueAttempts: asNumber(
+                irrigationRecovery.max_continue_attempts ?? diagnosticsRecovery.max_continue_attempts,
+                0,
+            ),
+            irrigationRecoveryTimeoutSeconds: asNumber(
+                irrigationRecovery.timeout_sec ?? diagnosticsRecovery.timeout_sec,
+                0,
+            ),
+            irrigationAutoReplayAfterSetup: asBool(irrigationRecovery.auto_replay_after_setup, false),
+            irrigationMaxSetupReplays: asNumber(irrigationRecovery.max_setup_replays, 0),
+            stopOnSolutionMin: asBool(
+                irrigationSafety.stop_on_solution_min ?? failSafeGuards.irrigation_stop_on_solution_min,
+                false,
+            ),
+            correctionMaxEcCorrectionAttempts: asNumber(diagnosticsCorrection.max_ec_correction_attempts, 0),
+            correctionMaxPhCorrectionAttempts: asNumber(diagnosticsCorrection.max_ph_correction_attempts, 0),
+            correctionPrepareRecirculationMaxAttempts: asNumber(
+                diagnosticsCorrection.prepare_recirculation_max_attempts,
+                0,
+            ),
+            correctionPrepareRecirculationMaxCorrectionAttempts: asNumber(
+                diagnosticsCorrection.prepare_recirculation_max_correction_attempts,
+                0,
+            ),
+            correctionStabilizationSec: asNumber(diagnosticsCorrection.stabilization_sec, 0),
+            refillRequiredNodeTypes,
+            refillPreferredChannel: asString(
+                diagnosticsRefill.channel ?? diagnosticsExecution.preferred_channel,
+                d.waterForm.refillPreferredChannel,
+            ),
+            solutionChangeEnabled: asBool(solutionChange.enabled, d.waterForm.solutionChangeEnabled),
+            solutionChangeIntervalMinutes: secondsToMinutes(
+                solutionChangeExecution.interval_sec,
+                d.waterForm.solutionChangeIntervalMinutes,
+            ),
+            solutionChangeDurationSeconds: asNumber(
+                solutionChangeExecution.duration_sec,
+                d.waterForm.solutionChangeDurationSeconds,
+            ),
+            manualIrrigationSeconds: d.waterForm.manualIrrigationSeconds,
+        },
+        lightingForm: {
+            enabled: asBool(lighting.enabled, d.lightingForm.enabled),
+            luxDay: asNumber(lightingLux.day, d.lightingForm.luxDay),
+            luxNight: asNumber(lightingLux.night, d.lightingForm.luxNight),
+            hoursOn: asNumber(lightingPhotoperiod.hours_on, d.lightingForm.hoursOn),
+            intervalMinutes: secondsToMinutes(lightingExecution.interval_sec, d.lightingForm.intervalMinutes),
+            scheduleStart: asString(lightingSchedule.start, d.lightingForm.scheduleStart),
+            scheduleEnd: asString(lightingSchedule.end, d.lightingForm.scheduleEnd),
+            manualIntensity: d.lightingForm.manualIntensity,
+            manualDurationHours: d.lightingForm.manualDurationHours,
+        },
+        zoneClimateForm: {
+            enabled: asBool(zoneClimate.enabled, d.zoneClimateForm.enabled),
+        },
+        assignments: { ...d.assignments },
+    };
 }
 
 /**
@@ -43,6 +268,11 @@ function asEnum<T extends string>(value: unknown, allowed: readonly T[], fallbac
  */
 export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
     const root = asDict(payload);
+    const canonicalEntry = resolveZoneLogicProfileEntry(normalizeZoneLogicProfilePayload(root));
+    if (canonicalEntry) {
+        return profileFromCanonicalSubsystems(asDict(canonicalEntry.subsystems));
+    }
+
     const water = asDict(root.water);
     const lighting = asDict(root.lighting);
     const zoneClimate = asDict(root.zone_climate ?? root.climate);
@@ -93,7 +323,7 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
                 ['startup', 'cycle_start', 'diagnostics'] as const,
                 'diagnostics',
             ),
-            cleanTankFullThreshold: asNumber(water.clean_tank_full_threshold, d.waterForm.cleanTankFullThreshold),
+            cleanTankFullThreshold: asRatio(water.clean_tank_full_threshold, d.waterForm.cleanTankFullThreshold),
             refillDurationSeconds: asNumber(refill.duration_seconds ?? water.refill_duration_seconds, d.waterForm.refillDurationSeconds),
             refillTimeoutSeconds: asNumber(refill.timeout_seconds ?? water.refill_timeout_seconds, d.waterForm.refillTimeoutSeconds),
             mainPumpFlowLpm: asNumber(pumps.main_flow_lpm ?? water.main_pump_flow_lpm, d.waterForm.mainPumpFlowLpm),
@@ -153,113 +383,38 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
     };
 }
 
-/**
- * Преобразует `AutomationProfile` обратно в `zone.logic_profile` JSON payload
- * (PUT /api/automation-configs/zone/{id}/zone.logic_profile).
- */
-export function profileToZoneLogicProfile(profile: AutomationProfile): Dict {
-    const w = profile.waterForm;
-    const l = profile.lightingForm;
-    const z = profile.zoneClimateForm;
-
-    return {
-        water: {
-            system_type: w.systemType,
-            tanks_count: w.tanksCount,
-            clean_tank_fill_l: w.cleanTankFillL,
-            nutrient_tank_target_l: w.nutrientTankTargetL,
-            irrigation_batch_l: w.irrigationBatchL,
-            irrigation: {
-                interval_minutes: w.intervalMinutes,
-                duration_seconds: w.durationSeconds,
-            },
-            fill_temperature_c: w.fillTemperatureC,
-            fill_window: {
-                start: w.fillWindowStart,
-                end: w.fillWindowEnd,
-            },
-            correction: {
-                target_ph: w.targetPh,
-                target_ec: w.targetEc,
-                ph_pct: w.phPct,
-                ec_pct: w.ecPct,
-            },
-            valve_switching: w.valveSwitching,
-            correction_during_irrigation: w.correctionDuringIrrigation,
-            enable_drain_control: w.enableDrainControl,
-            drain_target_percent: w.drainTargetPercent,
-            diagnostics: {
-                enabled: w.diagnosticsEnabled,
-                interval_minutes: w.diagnosticsIntervalMinutes,
-                workflow: w.diagnosticsWorkflow,
-            },
-            clean_tank_full_threshold: w.cleanTankFullThreshold,
-            refill: {
-                duration_seconds: w.refillDurationSeconds,
-                timeout_seconds: w.refillTimeoutSeconds,
-                required_node_types: w.refillRequiredNodeTypes,
-                preferred_channel: w.refillPreferredChannel,
-            },
-            pumps: {
-                main_flow_lpm: w.mainPumpFlowLpm,
-                clean_water_flow_lpm: w.cleanWaterFlowLpm,
-            },
-            working_tank_l: w.workingTankL,
-            startup: {
-                clean_fill_timeout_seconds: w.startupCleanFillTimeoutSeconds,
-                solution_fill_timeout_seconds: w.startupSolutionFillTimeoutSeconds,
-                prepare_recirculation_timeout_seconds: w.startupPrepareRecirculationTimeoutSeconds,
-                clean_fill_retry_cycles: w.startupCleanFillRetryCycles,
-                clean_fill_min_check_delay_ms: w.cleanFillMinCheckDelayMs,
-                solution_fill_clean_min_check_delay_ms: w.solutionFillCleanMinCheckDelayMs,
-                solution_fill_solution_min_check_delay_ms: w.solutionFillSolutionMinCheckDelayMs,
-                recirculation_stop_on_solution_min: w.recirculationStopOnSolutionMin,
-                estop_debounce_ms: w.estopDebounceMs,
-            },
-            irrigation_decision: {
-                strategy: w.irrigationDecisionStrategy,
-                lookback_sec: w.irrigationDecisionLookbackSeconds,
-                min_samples: w.irrigationDecisionMinSamples,
-                stale_after_sec: w.irrigationDecisionStaleAfterSeconds,
-                hysteresis_pct: w.irrigationDecisionHysteresisPct,
-                spread_alert_threshold_pct: w.irrigationDecisionSpreadAlertThresholdPct,
-            },
-            irrigation_recovery: {
-                max_continue_attempts: w.irrigationRecoveryMaxContinueAttempts,
-                timeout_seconds: w.irrigationRecoveryTimeoutSeconds,
-                auto_replay_after_setup: w.irrigationAutoReplayAfterSetup,
-                max_setup_replays: w.irrigationMaxSetupReplays,
-            },
-            stop_on_solution_min: w.stopOnSolutionMin,
-            correction_limits: {
-                max_ec_correction_attempts: w.correctionMaxEcCorrectionAttempts,
-                max_ph_correction_attempts: w.correctionMaxPhCorrectionAttempts,
-                prepare_recirculation_max_attempts: w.correctionPrepareRecirculationMaxAttempts,
-                prepare_recirculation_max_correction_attempts: w.correctionPrepareRecirculationMaxCorrectionAttempts,
-                stabilization_sec: w.correctionStabilizationSec,
-            },
-            solution_change: {
-                enabled: w.solutionChangeEnabled,
-                interval_minutes: w.solutionChangeIntervalMinutes,
-                duration_seconds: w.solutionChangeDurationSeconds,
-            },
-            manual_irrigation_seconds: w.manualIrrigationSeconds,
-        },
-        lighting: {
-            enabled: l.enabled,
-            lux_day: l.luxDay,
-            lux_night: l.luxNight,
-            hours_on: l.hoursOn,
-            interval_minutes: l.intervalMinutes,
-            schedule_start: l.scheduleStart,
-            schedule_end: l.scheduleEnd,
-            manual_intensity: l.manualIntensity,
-            manual_duration_hours: l.manualDurationHours,
-        },
-        zone_climate: {
-            enabled: z.enabled,
-        },
+export function profileToZoneLogicSubsystems(profile: AutomationProfile): Dict {
+    const forms: ZoneAutomationForms = {
+        climateForm: createDefaultClimateForm(FALLBACK_AUTOMATION_DEFAULTS),
+        waterForm: profile.waterForm,
+        lightingForm: profile.lightingForm,
+        zoneClimateForm: profile.zoneClimateForm,
     };
+
+    const payload = buildGrowthCycleConfigPayload(forms, {
+        includeClimateSubsystem: false,
+        automationDefaults: FALLBACK_AUTOMATION_DEFAULTS,
+    });
+
+    return asDict(payload.subsystems);
+}
+
+/**
+ * Преобразует `AutomationProfile` обратно в canonical `zone.logic_profile`.
+ * Возвращаемое значение передаётся как payload в automation-configs API без
+ * дополнительной обёртки `{ payload: ... }`.
+ */
+export function profileToZoneLogicProfile(
+    profile: AutomationProfile,
+    currentPayload: unknown = {},
+    mode: ZoneAutomationLogicMode = 'working',
+): Dict {
+    return upsertZoneLogicProfilePayload(
+        normalizeZoneLogicProfilePayload(currentPayload),
+        mode,
+        profileToZoneLogicSubsystems(profile),
+        true,
+    ) as unknown as Dict;
 }
 
 /**

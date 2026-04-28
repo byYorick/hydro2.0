@@ -129,7 +129,7 @@ export function upsertZoneLogicProfilePayload(
     mode,
     is_active: activate || previousEntry?.is_active === true,
     subsystems,
-    command_plans: previousEntry?.command_plans,
+    ...(previousEntry?.command_plans ? { command_plans: previousEntry.command_plans } : {}),
     updated_at: now,
     updated_by: previousEntry?.updated_by ?? null,
     created_at: previousEntry?.created_at ?? now,

@@ -27,6 +27,19 @@ describe('growCycleLaunchSchema', () => {
         expect(parsed.success).toBe(false);
     });
 
+    it('uses actionable messages for missing required ids', () => {
+        const parsed = growCycleLaunchSchema.safeParse({});
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) {
+            expect(parsed.error.flatten().fieldErrors).toMatchObject({
+                zone_id: ['Выберите зону.'],
+                recipe_revision_id: ['Выберите опубликованную ревизию рецепта.'],
+                plant_id: ['Выберите растение.'],
+                planting_at: ['Укажите дату и время посадки.'],
+            });
+        }
+    });
+
     it('rejects non-parsable planting_at', () => {
         const parsed = growCycleLaunchSchema.safeParse({ ...base, planting_at: 'not-a-date' });
         expect(parsed.success).toBe(false);

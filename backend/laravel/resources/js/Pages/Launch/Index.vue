@@ -381,7 +381,7 @@ watch(
 )
 
 const mergedLogicProfile = computed<Record<string, unknown>>(
-  () => profileToZoneLogicProfile(automationProfile.value) as Record<string, unknown>,
+  () => profileToZoneLogicProfile(automationProfile.value, currentLogicProfile.value) as Record<string, unknown>,
 )
 
 function toArray<T>(value: unknown): T[] {
@@ -508,9 +508,12 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true
   try {
     try {
-      await api.automationConfigs.update('zone', payload.zone_id, 'zone.logic_profile', {
-        payload: profileToZoneLogicProfile(automationProfile.value),
-      })
+      const nextLogicProfile = profileToZoneLogicProfile(
+        automationProfile.value,
+        currentLogicProfile.value,
+      )
+      await api.automationConfigs.update('zone', payload.zone_id, 'zone.logic_profile', nextLogicProfile)
+      currentLogicProfile.value = nextLogicProfile
     } catch (error) {
       showToast(
         `Ошибка сохранения zone.logic_profile: ${(error as Error).message || 'неизвестная'}`,
