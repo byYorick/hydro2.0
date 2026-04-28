@@ -86,7 +86,7 @@ actions:
   - step: set_command_id_from_response
     type: set
     command_id: ${command_response.data.command_id}
-    condition: ${command_response && command_response.data && command_response.data.command_id}
+    condition: ${context.get('command_response') and context.get('command_response').get('data') and context.get('command_response').get('data').get('command_id')}
 
   # Если команда не была создана из-за 503, создаем команду вручную для теста
   - step: create_command_manually_if_needed
@@ -99,12 +99,12 @@ actions:
       zone_id: ${test_zone_id}
       node_id: ${test_node_id}
     save: manual_command
-    condition: ${!command_id || command_id == '' || command_id == null}
+    condition: ${not context.get('command_id')}
 
   - step: set_command_id_from_manual
     type: set
     command_id: ${manual_command.0.cmd_id}
-    condition: ${manual_command && len(manual_command) > 0 && manual_command[0].cmd_id}
+    condition: ${context.get('manual_command') and len(context.get('manual_command')) > 0 and context.get('manual_command')[0].get('cmd_id')}
 
   # Ждем обработку timeout-механизмом.
   # В зависимости от текущей конфигурации окружения команда может остаться SENT
@@ -112,12 +112,12 @@ actions:
   - step: wait_for_timeout_processing
     type: sleep
     seconds: 90
-    condition: ${real_hw != 1}
+    condition: ${int(context.get('real_hw') or 0) != 1}
 
   - step: wait_for_terminal_status_real_hw
     type: sleep
     seconds: 8
-    condition: ${real_hw == 1}
+    condition: ${int(context.get('real_hw') or 0) == 1}
 
   - step: fetch_command_status_for_assert
     type: database_query

@@ -45,9 +45,30 @@
 
     <div
       v-if="manifestQuery.isLoading.value"
-      class="px-4 py-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-sm text-[var(--text-muted)]"
+      class="grid gap-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] p-4"
+      data-test="launch-manifest-skeleton"
+      aria-busy="true"
     >
-      Загрузка manifest'а…
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="h-3 w-24 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
+          <div class="mt-2 h-6 w-56 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
+        </div>
+        <div class="hidden h-7 w-28 animate-pulse rounded-full bg-[var(--bg-elevated)] sm:block"></div>
+      </div>
+      <div class="grid gap-3 lg:grid-cols-[1fr_320px]">
+        <div class="grid gap-3">
+          <div
+            v-for="i in 3"
+            :key="i"
+            class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"
+          ></div>
+        </div>
+        <div class="hidden grid gap-3 lg:grid">
+          <div class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
+          <div class="h-36 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
+        </div>
+      </div>
     </div>
 
     <div
@@ -146,6 +167,7 @@
         :completion="completion"
         :can-launch="canLaunch"
         :submitting="submitting"
+        :blocker-reason="footerBlockerReason"
         @back="goBack"
         @next="goNext"
         @launch="handleSubmit"
@@ -359,6 +381,22 @@ const recipeSummary = computed(() => {
 const errorList = computed(() =>
   Object.entries(errors.value).map(([path, message]) => ({ path, message })),
 )
+
+const footerBlockerReason = computed<string | null>(() => {
+  if (manifestQuery.isFetching.value && !manifest.value) {
+    return 'Загружаем readiness manifest'
+  }
+
+  if (stepperSteps.value.length === 0 || !currentStep.value) {
+    return null
+  }
+
+  const verdict = canProceedStep(
+    activeIndex.value >= stepperSteps.value.length - 1 ? 'preview' : currentStep.value,
+  )
+
+  return verdict === true ? null : verdict.reason
+})
 
 const currentLogicProfile = ref<Record<string, unknown>>({})
 

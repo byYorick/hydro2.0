@@ -9,8 +9,12 @@
 
     <div
       v-else
-      class="border border-[var(--border-muted)] rounded-md overflow-hidden"
+      class="border border-[var(--border-muted)] rounded-lg overflow-hidden bg-[var(--bg-surface)]"
     >
+      <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-[var(--border-muted)] bg-[var(--bg-elevated)]">
+        <span class="text-xs font-medium text-[var(--text-muted)]">Изменения logic profile</span>
+        <span class="font-mono text-[11px] text-brand-ink">{{ diffRows.length }} измен.</span>
+      </div>
       <div
         class="grid items-center px-3 py-2 bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--text-dim)]"
         style="grid-template-columns: 24px 1.4fr 1fr 1fr"
@@ -24,7 +28,7 @@
         v-for="row in diffRows"
         :key="row.path"
         :data-op="row.op"
-        class="grid items-center px-3 py-1.5 border-t border-[var(--border-muted)]"
+        class="grid items-center px-3 py-1.5 border-t border-[var(--border-muted)] hover:bg-[var(--bg-elevated)]"
         style="grid-template-columns: 24px 1.4fr 1fr 1fr"
       >
         <span class="flex items-center">
@@ -33,7 +37,10 @@
             :class="dotClass(row.op)"
           ></span>
         </span>
-        <span class="font-mono text-[11px] text-[var(--text-muted)] truncate">{{ row.path }}</span>
+        <span
+          class="font-mono text-[11px] text-[var(--text-muted)] truncate"
+          :title="row.path"
+        >{{ row.path }}</span>
         <span
           class="font-mono text-xs text-[var(--text-dim)]"
           :class="row.op === 'replace' ? 'line-through' : ''"

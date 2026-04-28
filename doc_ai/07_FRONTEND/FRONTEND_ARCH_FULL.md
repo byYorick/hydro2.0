@@ -73,7 +73,7 @@ WebSocket → обновление данных зон / нод / алертов
 8. **Settings** (`/settings`) – настройки системы
 9. **Admin** (`/admin`) – административная панель (для админов)
 10. **Profile** (`/profile`) – профиль пользователя
-11. **Setup** (`/setup/wizard`) – мастер первоначальной настройки
+11. **Launch** (`/launch/{zoneId?}`) – единый мастер настройки зоны и запуска grow cycle; `/setup/wizard` редиректится сюда
 
 ## 3.0a. Recipes (`/recipes`, `/recipes/create`, `/recipes/{id}/edit`)
 
@@ -112,34 +112,33 @@ Canonical recipe UX:
 
 ---
 
-## 3.0. Setup Wizard (`/setup/wizard`)
+## 3.0. Launch Wizard (`/launch/{zoneId?}`)
 
-Текущий мастер запуска состоит из 6 шагов:
+Canonical мастер запуска состоит из 5 manifest-driven шагов:
 
-1. `Теплица`
-2. `Зона`
-3. `Культура и рецепт`
-4. `Автоматика зоны`
-5. `Калибровка`
-6. `Запуск`
+1. `zone` — выбор теплицы/зоны или работа с переданным `zoneId`;
+2. `recipe` — растение, published revision рецепта, дата посадки и партия;
+3. `automation` — привязки узлов, водный контур, полив, correction, свет, климат;
+4. `calibration` — sensor/pump/process/PID readiness;
+5. `preview` — diff `zone.logic_profile`, readiness blockers/warnings и запуск.
 
 Новый canonical UX:
 
-- общий климат теплицы редактируется только на уровне теплицы;
-- в шаге `1. Теплица` есть inline-toggle `Управлять климатом`;
-- при включении шага климата сначала выбираются greenhouse climate nodes, затем сохраняется profile;
-- шаг `4. Автоматика зоны` собран блоками, а не отдельными шагами `devices/profile`:
+- entry point один: `/launch/{zoneId?}`; старые `/setup/wizard` и legacy wizard entry points редиректятся на `/launch`;
+- `/launch` остаётся внутри `AppLayout`, но использует собственный embedded `LaunchShell` с `LaunchTopBar`, `LaunchStepper`, `StepHeader` и `LaunchFooterNav`;
+- manifest загружается через `GET /api/launch-flow/manifest`; на loading показывается skeleton, а blocker reason выводится в footer рядом с навигацией;
+- шаг `automation` собран блоками, а не отдельными шагами `devices/profile`:
   - `Водный контур` объединяет обязательные zonal bindings (`irrigation`, `ph_correction`, `ec_correction`) и всю water logic;
   - `Климат зоны` начинается со switch `enabled`; если блок включён, UI раскрывает привязку CO2/root-vent нод и настройки логики;
   - `Освещение` устроено так же: switch `enabled` + раскрытие binding/logics только для включённой подсистемы;
-- сохранение шага `4` идёт по блокам (`water_contour`, `zone_climate`, `lighting`), но readiness шага считается единой зональной automation-конфигурацией;
-- шаг `5. Калибровка` идёт в логическом порядке: `sensor calibration -> pump calibration -> process calibration`;
+- сохранение automation-конфига идёт по блокам (`water_contour`, `zone_climate`, `lighting`), но readiness шага считается единой зональной automation-конфигурацией;
+- шаг `calibration` идёт в логическом порядке: `sensor calibration -> pump calibration -> process calibration`;
 - zone-level `runtime bounds` для pump calibration не вынесены в отдельный блок шага и живут внутри `pump calibration wizard` как advanced settings для редких override-сценариев;
 - `PID/autotune` не участвует в основном linear-flow шага и живёт в отдельном advanced-блоке `Расширенная тонкая настройка PID и autotune`;
-- шаг `6. Проверка и запуск` объединяет `correction runtime readiness`, launch checklist и открытие мастера цикла;
+- шаг `preview` объединяет `correction runtime readiness`, launch checklist и открытие мастера цикла;
 - correction/calibration stack не дублируется вручную, а переиспользуется отдельным шагом тем же shared-блоком, что и на `Zone Detail`.
 
-Экран `Greenhouses/Show.vue` теперь использует ту же greenhouse-climate форму, что и setup wizard:
+Экран `Greenhouses/Show.vue` использует ту же greenhouse-climate форму, что и launch/zone edit flow:
 
 - устаревший modal массовой отправки `FORCE_CLIMATE` по зонам удалён;
 - greenhouse climate сохраняется как отдельный greenhouse profile + greenhouse bindings;

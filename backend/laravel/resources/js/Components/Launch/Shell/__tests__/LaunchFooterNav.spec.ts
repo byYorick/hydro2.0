@@ -67,4 +67,19 @@ describe('LaunchFooterNav', () => {
     })
     expect(w.text()).toContain('2 из 5')
   })
+
+  it('shows blocker reason and disables forward action', () => {
+    const w = mount(LaunchFooterNav, {
+      props: {
+        active: 1,
+        total: 5,
+        completion: ['done', 'current', 'todo', 'todo', 'todo'] as StepCompletion[],
+        blockerReason: 'Выберите ревизию рецепта',
+      },
+    })
+
+    expect(w.text()).toContain('Выберите ревизию рецепта')
+    const next = w.findAll('button').find((b) => b.text().includes('Дальше'))!
+    expect(next.attributes('disabled')).toBeDefined()
+  })
 })

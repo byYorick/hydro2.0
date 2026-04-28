@@ -45,12 +45,25 @@ describe('Select', () => {
       props: { modelValue: 'a', options: ['a'], invalid: true },
     })
     expect(w.find('select').classes()).toContain('border-alert')
+    expect(w.find('select').classes()).toContain('focus:border-alert')
   })
 
   it('disables select when disabled', () => {
     const w = mount(Select, {
       props: { modelValue: 'a', options: ['a'], disabled: true },
     })
-    expect(w.find('select').attributes('disabled')).toBeDefined()
+    const select = w.find('select')
+    expect(select.attributes('disabled')).toBeDefined()
+    expect(select.classes()).toContain('opacity-100')
+    expect(select.classes()).not.toContain('opacity-50')
+  })
+
+  it('uses brand focus classes instead of browser-default blue focus', () => {
+    const w = mount(Select, {
+      props: { modelValue: 'a', options: ['a'] },
+    })
+    const classes = w.find('select').classes()
+    expect(classes).toContain('focus:border-brand')
+    expect(classes).toContain('focus:ring-brand-soft')
   })
 })

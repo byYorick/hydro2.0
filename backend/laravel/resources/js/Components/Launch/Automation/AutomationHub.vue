@@ -77,31 +77,33 @@
         />
 
         <div
-          class="flex gap-1.5 flex-wrap pt-2.5 border-t border-[var(--border-muted)]"
+          class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-dashed border-[var(--border-muted)] bg-[var(--bg-elevated)] px-3 py-2"
         >
           <a
-            class="px-2.5 py-1 rounded-md border border-dashed border-brand text-brand text-xs hover:bg-brand-soft"
+            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-brand-soft bg-brand-soft text-brand-ink text-xs hover:border-brand"
             :href="`/zones/${zoneId}/edit`"
             target="_blank"
             rel="noopener"
           >
             Открыть полную инфраструктуру зоны ↗
           </a>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="refreshingNodes"
-            @click="$emit('refresh-nodes')"
-          >
-            {{ refreshingNodes ? '↻ Обновление…' : '↻ Обновить ноды' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="$emit('refresh')"
-          >
-            ↻ Перечитать всё
-          </Button>
+          <div class="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="refreshingNodes"
+              @click="$emit('refresh-nodes')"
+            >
+              {{ refreshingNodes ? '↻ Обновление…' : '↻ Обновить ноды' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              @click="$emit('refresh')"
+            >
+              ↻ Перечитать всё
+            </Button>
+          </div>
         </div>
       </section>
     </div>

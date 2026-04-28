@@ -5,7 +5,7 @@
 Создан в рамках Волны 1 плана доработки фронтенда.
 
 **Дата создания:** 2025-01-27  
-**Статус:** Требует актуализации (проверено 2026-02-11)
+**Статус:** Требует актуализации (частично обновлено для `/launch` 2026-04-28)
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -22,7 +22,7 @@ Breaking-change: обратная совместимость со старыми
 | `Zones/Show.vue:300` | `/api/zones/{id}/telemetry/history` | GET | `TelemetryController::zoneHistory` | ✅ Используется |
 | `Zones/Show.vue:340` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/zones/{id}/grow-cycles` | POST | `GrowCycleController::store` | ✅ Используется |
-| `Components/GrowCycle/GrowthCycleWizard.vue`, `Pages/Setup/Wizard.vue` | `/api/zones/{id}/health` | GET | `ZoneController::health` | ✅ Используется |
+| `Pages/Launch/Index.vue` | `/api/launch-flow/manifest` | GET | `LaunchFlowManifestController` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/pause` | POST | `GrowCycleController::pause` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/resume` | POST | `GrowCycleController::resume` | ✅ Используется |
 | `Zones/Show.vue:400` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |

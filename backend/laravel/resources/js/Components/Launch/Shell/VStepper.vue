@@ -16,8 +16,10 @@
           type="button"
           :aria-current="i === active ? 'step' : undefined"
           :class="[
-            'flex items-center gap-2.5 w-full px-2 py-2 border-0 rounded-md text-left',
-            i === active ? 'bg-brand-soft text-brand-ink' : 'bg-transparent',
+            'flex items-center gap-2.5 w-full px-2 py-2 border rounded-lg text-left transition-colors',
+            i === active
+              ? 'border-brand-soft bg-brand-soft text-brand-ink'
+              : 'border-transparent bg-transparent hover:bg-[var(--bg-elevated)]',
             completion[i] === 'todo' && i !== active
               ? 'text-[var(--text-dim)]'
               : i === active

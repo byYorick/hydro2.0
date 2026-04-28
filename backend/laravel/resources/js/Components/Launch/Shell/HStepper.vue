@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex items-center gap-0 px-5 py-3 border-b border-[var(--border-muted)] bg-[var(--bg-surface-strong)] overflow-x-auto"
+    class="flex items-center gap-1 px-5 py-3 bg-[var(--bg-surface-strong)] overflow-x-auto"
   >
     <template
       v-for="(step, i) in steps"
@@ -10,7 +10,10 @@
         type="button"
         :aria-current="i === active ? 'step' : undefined"
         :class="[
-          'flex items-center gap-2.5 px-2.5 py-1.5 bg-transparent border-0 rounded-md whitespace-nowrap text-left',
+          'flex items-center gap-2.5 px-2.5 py-1.5 border rounded-lg whitespace-nowrap text-left transition-colors',
+          i === active
+            ? 'border-brand-soft bg-brand-soft'
+            : 'border-transparent bg-transparent hover:bg-[var(--bg-elevated)]',
           completion[i] === 'todo' && i !== active
             ? 'text-[var(--text-dim)]'
             : 'text-[var(--text-primary)]',
@@ -39,7 +42,7 @@
       <span
         v-if="i < steps.length - 1"
         :class="[
-          'flex-auto min-w-[24px] h-px mx-0.5',
+          'flex-auto min-w-[28px] h-px mx-0.5',
           completion[i] === 'done' ? 'bg-brand' : 'bg-[var(--border-muted)]',
         ]"
         aria-hidden="true"

@@ -65,7 +65,7 @@ resources/js/Pages/
  Admin/Recipes.vue
  Greenhouses/Create.vue
  Profile/Edit.vue
- Setup/Wizard.vue
+ Launch/Index.vue
  Auth/ (Login, Register, etc.)
 ```
 
@@ -94,6 +94,9 @@ resources/js/Pages/
 ### UX требования:
 - стабильное меню слева, скрытие на мобильных;
 - тёмная тема по умолчанию, переключатель в Settings.
+- `/launch/{zoneId?}` также рендерится внутри `AppLayout`, но использует
+  собственный embedded `LaunchShell` для topbar/stepper/footer мастера. Full-screen
+  режим для launch wizard не используется.
 
 ---
 
@@ -228,7 +231,8 @@ resources/js/Pages/
 ### 6.6.1. Shared UI автоматики зоны
 
 Shared-компоненты автоматики зоны обязаны использовать одинаковый UX и contract ownership
-в `/setup/wizard` и в zone edit screens.
+в `/launch/{zoneId?}` и в zone edit screens. Legacy `/setup/wizard` должен
+редиректить в `/launch`.
 
 Water / irrigation / correction rules:
 

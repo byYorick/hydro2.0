@@ -4,10 +4,14 @@
       :value="modelValue ?? ''"
       :disabled="disabled"
       :class="[
-        'block w-full appearance-none rounded-md border px-3 pr-9 outline-none transition focus-visible:ring-2 focus-visible:ring-brand bg-[var(--bg-surface)] text-[var(--text-primary)]',
-        invalid ? 'border-alert' : 'border-[var(--border-muted)]',
+        'block w-full appearance-none rounded-lg border px-3 pr-9 outline-none transition-[border-color,box-shadow,background-color] duration-150 bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
+        invalid
+          ? 'border-alert focus:border-alert focus:ring-2 focus:ring-alert-soft focus-visible:border-alert focus-visible:ring-2 focus-visible:ring-alert-soft'
+          : 'border-[var(--border-muted)] focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft',
         mono ? 'font-mono' : 'font-sans',
-        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-default',
+        disabled
+          ? 'cursor-not-allowed border-[var(--border-muted)] bg-[var(--bg-elevated)] text-[var(--text-dim)] opacity-100'
+          : 'cursor-default hover:border-[var(--border-strong)]',
         sizeClass,
       ]"
       @change="onChange"
@@ -27,7 +31,12 @@
         </option>
       </template>
     </select>
-    <span class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+    <span
+      :class="[
+        'pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2',
+        props.disabled ? 'text-[var(--text-dim)]' : 'text-[var(--text-muted)]',
+      ]"
+    >
       <svg
         width="14"
         height="14"

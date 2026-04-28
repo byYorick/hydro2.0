@@ -1,6 +1,6 @@
 <template>
   <div
-    class="min-h-screen flex flex-col bg-[var(--bg-main)] text-[var(--text-primary)] font-sans antialiased"
+    class="min-h-[calc(100vh-8.5rem)] flex flex-col rounded-xl border border-[var(--border-muted)] bg-[var(--bg-main)] text-[var(--text-primary)] font-sans antialiased shadow-[var(--shadow-card)]"
     :data-density="density"
     :data-stepper="stepper"
   >
@@ -9,7 +9,7 @@
     </slot>
     <div
       v-if="$slots.stepper"
-      class="sticky top-12 z-[15] bg-[var(--bg-surface-strong)] backdrop-blur-sm"
+      class="sticky top-12 z-[15] border-b border-[var(--border-muted)] bg-[var(--bg-surface-strong)] backdrop-blur-sm"
     >
       <slot name="stepper" />
     </div>

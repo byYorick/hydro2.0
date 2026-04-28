@@ -1,9 +1,9 @@
 # Launch Wizard Redesign — План
 
-**Версия:** 1.0
-**Дата:** 2026-04-25
+**Версия:** 1.1
+**Дата:** 2026-04-28
 **Автор:** Georgiy
-**Статус:** approved (ожидает реализации)
+**Статус:** approved / implementation in progress
 **Референс:** `/home/georgiy/esp/hydro/hydro2.0/hydroflow/` (React 18 prototype)
 
 ---
@@ -14,7 +14,7 @@
 
 ## 2. Контекст
 
-- Текущий `/launch` использует [BaseWizard](../../backend/laravel/resources/js/Components/Shared/BaseWizard/BaseWizard.vue) и manifest от `GET /api/launch-flow/manifest`. Шаги: `zone | recipe | automation | calibration | preview`.
+- До редизайна `/launch` использовал [BaseWizard](../../backend/laravel/resources/js/Components/Shared/BaseWizard/BaseWizard.vue) и manifest от `GET /api/launch-flow/manifest`. Новый UI использует `LaunchShell` поверх того же manifest. Шаги: `zone | recipe | automation | calibration | preview`.
 - Референс `hydroflow` (10 файлов JSX, 3611 строк) задаёт собственный shell (TopBar+Stepper+FooterNav), палитру (teal `#0e8a8f` + growth/warn/alert), типографику (IBM Plex Sans + JetBrains Mono), 6 подразделов в шаге «Автоматика» и 5 в «Калибровке», correction profile presets, water presets, lock recipe-derived полей.
 - Старый `Pages/Setup/Wizard.vue` (787 строк) — мёртвый код в роутинге, удаляется этим PR.
 
@@ -33,7 +33,7 @@
 | 9 | Density / Stepper toggle | Сохранять в `localStorage` |
 | 10 | TweaksPanel из рефа | Не переносим в продакшн |
 | 11 | Dark/Light темы | Обе обязательны, default = dark (как в репо) |
-| 12 | Каркас | Свой shell для `/launch` (без BaseWizard) |
+| 12 | Каркас | Свой `LaunchShell` для `/launch` внутри `AppLayout` (без `BaseWizard`, без full-screen режима) |
 | 13 | Service health endpoint | Есть: `/api/system/health` + `/api/pipeline/health` |
 | 14 | Vertical stepper | Только на ≥ 1280px, на узких прячем |
 | 15 | recipe-derived поля на шаге 3 | Read-only, редактирование только в шаге 2 |
@@ -67,17 +67,24 @@
 
 ### 5.1. Shell для `/launch`
 
-Не используем `BaseWizard.vue` и `AppLayout.vue` напрямую. Свой каркас:
+Не используем `BaseWizard.vue`. `/launch` остаётся обычной Inertia-страницей внутри
+`AppLayout.vue`, чтобы сохранить навигацию, command palette, toast/error boundary и
+общий рабочий контекст оператора. Внутри основного слота `AppLayout` рендерится
+собственный wizard-каркас:
 
 ```
-LaunchShell
-├─ LaunchTopBar         (logo + breadcrumbs + service health pills + user)
-├─ LaunchStepper        (HStepper по умолчанию, VStepper при ≥1280px и stepper='vertical')
-├─ <main>               (текущий шаг + StepHeader)
-└─ LaunchFooterNav      (sticky, прогресс «X из 5» + Назад/Далее/Запустить)
+AppLayout
+└─ LaunchShell          (embedded wizard card, not full-screen)
+   ├─ LaunchTopBar      (logo + breadcrumbs + service health pills + user)
+   ├─ LaunchStepper     (HStepper по умолчанию, VStepper при ≥1280px и stepper='vertical')
+   ├─ <main>            (manifest skeleton/loading, текущий шаг + StepHeader)
+   └─ LaunchFooterNav   (sticky, прогресс, blocker reason, Назад/Далее/Запустить)
 ```
 
-`AppLayout` НЕ заворачивает `/launch` (full-screen wizard). Auth+toast — через слои Inertia middleware, а не через layout.
+Full-screen режим для `/launch` не используется. Визуальный фокус достигается не
+удалением глобального layout, а вложенной `LaunchShell`-карточкой с собственным
+topbar/stepper/footer. При загрузке manifest показывается skeleton-состояние;
+если текущий шаг или запуск заблокирован, причина выводится в `LaunchFooterNav`.
 
 ### 5.2. Дизайн-токены
 
@@ -267,7 +274,7 @@ PreviewStep
 | `backend/laravel/tailwind.config.js` | + colors (brand/growth/warn/alert), fontFamily (sans/mono) |
 | `backend/laravel/resources/css/app.css` | + CSS-переменные тем + `@font-face` локальные шрифты |
 | `backend/laravel/resources/views/app.blade.php` | удалить bunny.net Figtree (или оставить, если используется на других страницах — проверить `git grep -F 'fonts.bunny'`) |
-| `backend/laravel/resources/js/Pages/Launch/Index.vue` | переписать под `LaunchShell` |
+| `backend/laravel/resources/js/Pages/Launch/Index.vue` | переписать под embedded `LaunchShell` внутри `AppLayout`, добавить manifest skeleton и footer blocker reason |
 | `backend/laravel/resources/js/Components/Launch/ZoneStep.vue` | переписать |
 | `backend/laravel/resources/js/Components/Launch/RecipeStep.vue` | переписать (встраивает RecipeEditor) |
 | `backend/laravel/resources/js/Components/Launch/Automation/AutomationHub.vue` | переписать как router-shell |
@@ -379,7 +386,7 @@ PreviewStep
 |---|---|
 | RecipeEditor 56KB — тяжело вписать в новый layout без декомпозиции | Встраиваем в `<Card>` без изменений; визуальная гармония — через wrapper-padding. Если совсем плохо — частичная декомпозиция как 12-й коммит этого PR |
 | File-size guard срабатывает на больших Subview | Subview > 350 строк — обязательная декомпозиция (extract row/column components) |
-| AppLayout-зависимый функционал (sidebar collapse, command palette) не работает на `/launch` | Решение #12 явное: нам это не нужно. WebSocket подключение перепроверить — должно жить в Inertia middleware |
+| Визуальный фокус wizard'а теряется из-за глобального `AppLayout` | `LaunchShell` оформляется как отдельная embedded wizard-card; `AppLayout` сохраняет command palette, toast/error boundary и навигационный контекст |
 | Health endpoint возвращает другой формат, чем ожидает реф | Адаптируем в `useServiceHealth` (маппинг). Backend не трогаем |
 | Локальные шрифты добавляют 200-400 KB к bundle | Subset до latin+cyrillic, weights 400/500/600/700 для sans, 400/500 для mono — итог ~80-120 KB |
 | Process-calibrations endpoint — другой URL, чем в рефе | Используем существующий `automation-configs/zone/.../zone.process_calibration.{mode}` |

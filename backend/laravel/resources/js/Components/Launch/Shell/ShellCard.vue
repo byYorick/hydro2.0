@@ -1,10 +1,10 @@
 <template>
   <section
-    class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] overflow-hidden"
+    class="rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] shadow-[0_1px_0_var(--border-muted)] overflow-hidden"
   >
     <header
       v-if="title || $slots.title || $slots.actions"
-      class="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-[var(--border-muted)]"
+      class="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-[var(--border-muted)] bg-[var(--bg-elevated)]"
     >
       <div class="text-sm font-semibold text-[var(--text-primary)]">
         <slot name="title">

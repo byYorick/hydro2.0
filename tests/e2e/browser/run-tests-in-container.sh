@@ -54,6 +54,9 @@ ensure_playwright_chromium() {
 
 ensure_playwright_chromium
 
+echo "Проверка прав Laravel storage/cache..."
+docker exec "${CONTAINER_NAME}" sh -c "mkdir -p /app/storage/framework/cache/data /app/bootstrap/cache && chown -R application:application /app/storage /app/bootstrap/cache && chmod -R ug+rwX /app/storage /app/bootstrap/cache"
+
 # Копируем файлы тестов в контейнер (если нужно)
 # docker cp tests/e2e/browser ${CONTAINER_NAME}:/app/tests/e2e/
 

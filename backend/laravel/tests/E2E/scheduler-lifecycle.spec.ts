@@ -6,7 +6,18 @@ type ExecutionRun = {
   zone_id: number
   task_type: string
   status: string
+  chain?: Array<{
+    step: 'SNAPSHOT' | 'DECISION' | 'TASK' | 'DISPATCH' | 'RUNNING' | 'COMPLETE' | 'FAIL' | 'SKIP'
+    at?: string | null
+    ref: string
+    detail: string
+    status: 'ok' | 'err' | 'skip' | 'run' | 'warn'
+    live?: boolean
+  }>
   current_stage?: string | null
+  error_code?: string | null
+  human_error_message?: string | null
+  is_active?: boolean
   created_at?: string | null
   updated_at?: string | null
   scheduled_for?: string | null
@@ -111,6 +122,12 @@ const baseRuns: ExecutionRun[] = [
 const detailsByExecutionId: Record<string, ExecutionRun> = {
   '601': {
     ...baseRuns[0],
+    chain: [
+      { step: 'SNAPSHOT', ref: 'workspace', detail: 'Targets and schedule loaded', status: 'ok', at: '2026-02-10T08:00:00Z' },
+      { step: 'DECISION', ref: 'intent', detail: 'cycle_start_initiated', status: 'ok', at: '2026-02-10T08:00:00Z' },
+      { step: 'TASK', ref: 'ae-task-601', detail: 'Task accepted by AE3', status: 'ok', at: '2026-02-10T08:00:05Z' },
+      { step: 'COMPLETE', ref: 'done', detail: 'done', status: 'ok', at: '2026-02-10T08:01:00Z' },
+    ],
     lifecycle: [
       { status: 'accepted', at: '2026-02-10T08:00:00Z', source: 'intent' },
       { status: 'completed', at: '2026-02-10T08:01:00Z', source: 'ae_task' },
@@ -132,6 +149,13 @@ const detailsByExecutionId: Record<string, ExecutionRun> = {
   },
   '602': {
     ...baseRuns[1],
+    is_active: true,
+    chain: [
+      { step: 'SNAPSHOT', ref: 'workspace', detail: 'Targets and schedule loaded', status: 'ok', at: '2026-02-10T08:10:00Z' },
+      { step: 'DECISION', ref: 'intent', detail: 'cycle_start_initiated', status: 'ok', at: '2026-02-10T08:10:00Z' },
+      { step: 'RUNNING', ref: 'clean_fill', detail: 'clean_fill', status: 'run', live: true, at: '2026-02-10T08:10:10Z' },
+      { step: 'DISPATCH', ref: 'pump_start', detail: 'pump_start', status: 'run', live: true, at: '2026-02-10T08:10:20Z' },
+    ],
     lifecycle: [
       { status: 'accepted', at: '2026-02-10T08:10:00Z', source: 'intent' },
       { status: 'running', at: '2026-02-10T08:10:05Z', source: 'ae_task' },
@@ -159,6 +183,13 @@ const detailsByExecutionId: Record<string, ExecutionRun> = {
   },
   '603': {
     ...baseRuns[2],
+    error_code: 'cycle_start_refill_timeout',
+    human_error_message: 'Бак чистой воды не заполнился до таймаута',
+    chain: [
+      { step: 'SNAPSHOT', ref: 'workspace', detail: 'Targets and schedule loaded', status: 'ok', at: '2026-02-10T08:20:00Z' },
+      { step: 'DECISION', ref: 'intent', detail: 'cycle_start_initiated', status: 'ok', at: '2026-02-10T08:20:00Z' },
+      { step: 'FAIL', ref: 'cycle_start_refill_timeout', detail: 'Бак чистой воды не заполнился до таймаута', status: 'err', at: '2026-02-10T08:22:30Z' },
+    ],
     lifecycle: [
       { status: 'accepted', at: '2026-02-10T08:20:00Z', source: 'intent' },
       { status: 'failed', at: '2026-02-10T08:22:30Z', source: 'ae_task' },
@@ -269,35 +300,40 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
 
     await page.goto(`/zones/${zoneId}`, { waitUntil: 'load' })
     await page.getByRole('tab', { name: 'Планировщик' }).click()
-    await expect(page.getByText('План и исполнение')).toBeVisible()
+    await expect(page.getByTestId('scheduler-root')).toBeVisible()
+    await expect(page.getByText('Планировщик зоны')).toBeVisible()
     await expect(page.getByRole('button', { name: /#601/ })).toBeVisible()
   })
 
   test('показывает completed run с lifecycle и timeline', async ({ page }) => {
     await page.getByRole('button', { name: /#601/ }).click()
 
-    await expect(page.getByText('Детали исполнения')).toBeVisible()
-    await expect(page.getByText('Lifecycle')).toBeVisible()
-    await expect(page.getByText('Timeline')).toBeVisible()
-    await expect(page.getByText('TASK_RECEIVED')).toBeVisible()
-    await expect(page.getByText('TASK_FINISHED')).toBeVisible()
-    await expect(page.getByText('done')).toBeVisible()
+    const chain = page.getByTestId('scheduler-causal-chain')
+    await expect(chain).toBeVisible()
+    await expect(chain.getByText('ЦЕПОЧКА РЕШЕНИЙ')).toBeVisible()
+    await expect(chain.getByText('SNAPSHOT')).toBeVisible()
+    await expect(chain.getByTestId('scheduler-chain-step-COMPLETE')).toBeVisible()
+    await expect(chain.getByText('done').first()).toBeVisible()
   })
 
   test('показывает running run с текущим stage', async ({ page }) => {
     await page.getByRole('button', { name: /#602/ }).click()
 
-    await expect(page.getByText('Полив · clean_fill')).toBeVisible()
-    await expect(page.getByText('AE_CURRENT_STAGE')).toBeVisible()
-    await expect(page.getByText('COMMAND_DISPATCHED')).toBeVisible()
-    await expect(page.getByText('pump_start')).toBeVisible()
+    const chain = page.getByTestId('scheduler-causal-chain')
+    await expect(chain).toBeVisible()
+    await expect(chain.getByText('RUNNING')).toBeVisible()
+    await expect(chain.getByText('clean_fill').first()).toBeVisible()
+    await expect(chain.getByText('DISPATCH')).toBeVisible()
+    await expect(chain.getByText('pump_start').first()).toBeVisible()
   })
 
   test('показывает failed run с reason и error code', async ({ page }) => {
     await page.getByRole('button', { name: /#603/ }).click()
 
-    await expect(page.getByText('failed')).toBeVisible()
-    await expect(page.getByText('cycle_start_refill_timeout')).toBeVisible()
-    await expect(page.getByText('Бак чистой воды не заполнился до таймаута')).toBeVisible()
+    const chain = page.getByTestId('scheduler-causal-chain')
+    await expect(chain).toBeVisible()
+    await expect(chain.getByTestId('scheduler-chain-step-FAIL')).toBeVisible()
+    await expect(chain.getByText('cycle_start_refill_timeout').first()).toBeVisible()
+    await expect(chain.getByText('Бак чистой воды не заполнился до таймаута').first()).toBeVisible()
   })
 })

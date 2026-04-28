@@ -24,13 +24,12 @@
               @update:model-value="(v: string) => onPlantSelect(v ? Number(v) : null)"
             />
           </Field>
-          <Field
+          <div
             v-if="errors['plant_id']"
-            label=" "
-            :error="errors['plant_id']"
+            class="md:col-span-2 rounded-md border border-alert-soft bg-alert-soft px-3 py-2 text-xs text-alert"
           >
-            <span></span>
-          </Field>
+            {{ errors['plant_id'] }}
+          </div>
 
           <div
             v-if="creatingPlantOpen"
@@ -117,13 +116,12 @@
             />
           </Field>
 
-          <Field
+          <div
             v-if="errors['recipe_revision_id']"
-            label=" "
-            :error="errors['recipe_revision_id']"
+            class="md:col-span-2 rounded-md border border-alert-soft bg-alert-soft px-3 py-2 text-xs text-alert"
           >
-            <span></span>
-          </Field>
+            {{ errors['recipe_revision_id'] }}
+          </div>
 
           <div
             v-if="selectedRecipeId"
@@ -167,7 +165,7 @@
             <div class="flex gap-2">
               <input
                 type="datetime-local"
-                class="block w-full h-8 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft"
                 :value="plantingLocalValue"
                 @input="onPlantingChange(($event.target as HTMLInputElement).value)"
               />
@@ -196,7 +194,7 @@
             class="md:col-span-2"
           >
             <textarea
-              class="block w-full min-h-[72px] rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-brand resize-y"
+              class="block w-full min-h-[72px] rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 py-1.5 text-sm outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft resize-y"
               :value="notes ?? ''"
               maxlength="2000"
               rows="3"

@@ -14,14 +14,24 @@
       <span class="font-mono text-xs text-[var(--text-dim)]">{{ active + 1 }}/{{ total }}</span>
     </div>
 
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-[var(--text-muted)]">
-        {{ doneCount }} из {{ total }} завершено
-      </span>
+    <div class="flex min-w-0 items-center gap-2">
+      <div class="flex min-w-0 max-w-[46vw] flex-col items-end">
+        <span class="text-xs text-[var(--text-muted)]">
+          {{ doneCount }} из {{ total }} завершено
+        </span>
+        <span
+          v-if="blockerReason"
+          class="max-w-[420px] truncate text-[11px] text-warn"
+          :title="blockerReason"
+        >
+          {{ blockerReason }}
+        </span>
+      </div>
       <Button
         v-if="active < total - 1"
         variant="primary"
         size="sm"
+        :disabled="Boolean(blockerReason)"
         @click="$emit('next')"
       >
         Дальше →
@@ -30,7 +40,7 @@
         v-else
         variant="success"
         size="sm"
-        :disabled="!canLaunch || submitting"
+        :disabled="!canLaunch || submitting || Boolean(blockerReason)"
         @click="$emit('launch')"
       >
         {{ submitting ? 'Запуск…' : 'Запустить цикл' }}
@@ -50,6 +60,7 @@ const props = defineProps<{
   completion: readonly StepCompletion[]
   canLaunch?: boolean
   submitting?: boolean
+  blockerReason?: string | null
 }>()
 
 defineEmits<{
