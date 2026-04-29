@@ -1,12 +1,16 @@
 /**
  * Composable для централизованной работы с API
  */
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import axios, {
+  type AxiosInstance,
+  type AxiosRequestConfig,
+  type AxiosRequestHeaders,
+} from 'axios'
 import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import type { ToastHandler } from '@/utils/apiClient'
 
-// Тип функции для показа Toast
-export type ToastHandler = (message: string, variant?: string, duration?: number) => void
+export type { ToastHandler }
 
 // Создаем настроенный экземпляр axios
 const api: AxiosInstance = axios.create({
@@ -53,18 +57,20 @@ api.interceptors.request.use(
     if (method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       const csrfToken = getCsrfToken()
       if (csrfToken) {
-        config.headers = config.headers || {}
-        config.headers['X-CSRF-TOKEN'] = csrfToken
+        const headers = (config.headers ?? {}) as AxiosRequestHeaders
+        headers['X-CSRF-TOKEN'] = csrfToken
+        config.headers = headers
       }
     }
-    
+
     // Также добавляем CSRF токен для GET запросов, если он нужен для аутентификации
     // (некоторые API endpoints могут требовать его для проверки сессии)
     if (method === 'GET') {
       const csrfToken = getCsrfToken()
       if (csrfToken && !config.headers?.['X-CSRF-TOKEN']) {
-        config.headers = config.headers || {}
-        config.headers['X-CSRF-TOKEN'] = csrfToken
+        const headers = (config.headers ?? {}) as AxiosRequestHeaders
+        headers['X-CSRF-TOKEN'] = csrfToken
+        config.headers = headers
       }
     }
     
