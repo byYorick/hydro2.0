@@ -20,6 +20,7 @@ class ScheduleDispatcher
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
     ];
+    private const ZONE_SETUP_PENDING_REASON = 'zone_setup_pending';
 
     public function __construct(
         private readonly ActiveTaskStore $activeTaskStore,
@@ -78,6 +79,30 @@ class ScheduleDispatcher
                 'dispatched' => false,
                 'retryable' => true,
                 'reason' => 'schedule_busy',
+            ];
+        }
+
+        $zoneWorkflowPhase = $this->resolveZoneWorkflowPhaseFromContext(
+            context: $context,
+            zoneId: $zoneId,
+        );
+        if ($this->shouldSkipIrrigationDispatchForSetupPending($zoneId, $taskType, $zoneWorkflowPhase)) {
+            $writeLog(
+                SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
+                'skipped',
+                [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'reason' => self::ZONE_SETUP_PENDING_REASON,
+                    'workflow_phase' => $zoneWorkflowPhase ?? 'missing',
+                    'automation_runtime' => $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch'),
+                ],
+            );
+
+            return [
+                'dispatched' => false,
+                'retryable' => true,
+                'reason' => self::ZONE_SETUP_PENDING_REASON,
             ];
         }
 
@@ -625,5 +650,28 @@ class ScheduleDispatcher
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function resolveZoneWorkflowPhaseFromContext(ScheduleCycleContext $context, int $zoneId): ?string
+    {
+        $phase = $context->zoneWorkflowPhases[$zoneId] ?? null;
+        if (! is_string($phase)) {
+            return null;
+        }
+        $normalized = strtolower(trim($phase));
+
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function shouldSkipIrrigationDispatchForSetupPending(int $zoneId, string $taskType, ?string $workflowPhase): bool
+    {
+        if ($taskType !== 'irrigation') {
+            return false;
+        }
+        if ($this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch') !== 'ae3') {
+            return false;
+        }
+
+        return $workflowPhase !== 'ready';
     }
 }

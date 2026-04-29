@@ -465,6 +465,47 @@ function toArray<T>(value: unknown): T[] {
   return []
 }
 
+function extractLaunchErrorMessage(error: unknown): string {
+  const fallback = error instanceof Error ? error.message : 'неизвестная'
+  if (!error || typeof error !== 'object') {
+    return fallback
+  }
+
+  const payload = (error as {
+    response?: {
+      data?: {
+        message?: string
+        error?: string
+        errors?: Record<string, string[] | string>
+      }
+    }
+  }).response?.data
+
+  const parts: string[] = []
+  if (typeof payload?.message === 'string' && payload.message.trim() !== '') {
+    parts.push(payload.message.trim())
+  } else if (typeof payload?.error === 'string' && payload.error.trim() !== '') {
+    parts.push(payload.error.trim())
+  }
+
+  const nested = payload?.errors
+  if (nested && typeof nested === 'object') {
+    for (const value of Object.values(nested)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (typeof item === 'string' && item.trim() !== '') {
+            parts.push(item.trim())
+          }
+        }
+      } else if (typeof value === 'string' && value.trim() !== '') {
+        parts.push(value.trim())
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join('; ') : fallback
+}
+
 async function loadReferenceData() {
   try {
     const [zonesRaw, plantsRaw] = await Promise.all([api.zones.list(), api.plants.list()])
@@ -521,6 +562,13 @@ function onStepSelect(index: number): void {
     currentStep.value = step.id
     return
   }
+
+  const firstBlocker = readinessBlockers.value[0]
+  if (firstBlocker && step.id === 'preview') {
+    showToast(firstBlocker.message || 'Есть активные блокеры readiness', 'warning')
+    return
+  }
+
   // Forward jump: every step before must be passable.
   for (let i = 0; i < index; i++) {
     if (canProceedStep(stepperSteps.value[i].id) !== true) {
@@ -536,6 +584,13 @@ function goNext(): void {
   const i = activeIndex.value
   const next = stepperSteps.value[i + 1]
   if (!next) return
+
+  const firstBlocker = readinessBlockers.value[0]
+  if (firstBlocker && next.id === 'preview') {
+    showToast(firstBlocker.message || 'Есть активные блокеры readiness', 'warning')
+    return
+  }
+
   const verdict = canProceedStep(currentStep.value)
   if (verdict !== true) {
     showToast((verdict as { reason: string }).reason, 'warning')
@@ -626,8 +681,9 @@ async function handleSubmit(): Promise<void> {
         router.visit(`/zones/${payload.zone_id}`)
       }
     } catch (error) {
+      const details = extractLaunchErrorMessage(error)
       showToast(
-        `Ошибка запуска цикла: ${(error as Error).message || 'неизвестная'}. ` +
+        `Ошибка запуска цикла: ${details}. ` +
           'Конфиг и привязки уже сохранены — повторите «Запустить» после устранения причины.',
         'error',
       )

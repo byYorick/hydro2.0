@@ -172,6 +172,7 @@ Route::middleware([
     Route::get('nodes', [NodeController::class, 'index']);
     Route::get('nodes/{node}', [NodeController::class, 'show']);
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
+    Route::get('nodes/{node}/live-mqtt-status', [NodeController::class, 'liveMqttStatus']);
     Route::get('nodes/{node}/lifecycle/allowed-transitions', [NodeController::class, 'getAllowedTransitions']);
     Route::get('unassigned-node-errors', [UnassignedNodeErrorController::class, 'index']);
     Route::get('unassigned-node-errors/stats', [UnassignedNodeErrorController::class, 'stats']);

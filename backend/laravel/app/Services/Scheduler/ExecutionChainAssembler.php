@@ -286,6 +286,16 @@ class ExecutionChainAssembler
         }
 
         $errorCode = (string) ($task->error_code ?? 'UNKNOWN');
+        if (strtolower($errorCode) === 'start_irrigation_setup_pending') {
+            return [
+                'step' => 'SETUP_PENDING',
+                'at' => $this->toIso($task->completed_at ?? $task->updated_at),
+                'ref' => 'ex-'.$task->id,
+                'detail' => 'Полив отложен: зона ещё не завершила setup и не перешла в READY',
+                'status' => 'warn',
+            ];
+        }
+
         $errorMessage = (string) ($task->error_message ?? '');
         $detail = trim($errorCode.' · '.$errorMessage, ' ·') ?: 'Задача завершилась с ошибкой';
 

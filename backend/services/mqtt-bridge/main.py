@@ -1,12 +1,13 @@
 from fastapi import FastAPI, Path
 from fastapi import HTTPException, Request
-from fastapi import Body, Response
+from fastapi import Body, Query, Response
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from typing import Optional
 import hashlib
 import hmac
 from common.hmac_utils import canonical_json_payload
+import asyncio
 import logging
 import os
 import time
@@ -20,6 +21,7 @@ from common.simulation_events import record_simulation_event
 from common.service_logs import send_service_log
 from common.logging_setup import setup_standard_logging, install_exception_handlers
 from common.trace_context import clear_trace_id, get_trace_id, set_trace_id, set_trace_id_from_headers
+from status_probe import probe_node_status
 
 # Настройка логирования
 setup_standard_logging("mqtt-bridge")
@@ -191,6 +193,39 @@ def _auth(request: Request):
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/bridge/nodes/{node_uid}/live-status")
+async def live_node_status(
+    request: Request,
+    node_uid: str = Path(..., min_length=1),
+    greenhouse_uid: str = Query(..., min_length=1),
+    zone_segment: str = Query(..., min_length=1),
+    timeout_sec: float = Query(5.0, ge=1.0, le=15.0),
+):
+    """
+    Проверка доступности узла по MQTT: подписка на retained/online status,
+    без чтения состояния из БД Laravel.
+    """
+    _auth(request)
+    REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/live-status").inc()
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: probe_node_status(
+                greenhouse_uid.strip(),
+                zone_segment.strip(),
+                node_uid,
+                float(timeout_sec),
+            ),
+        )
+    except Exception as e:
+        logger.error("live_node_status probe failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"live_status_probe_failed: {e!s}") from e
+
+    return {"status": "ok", "data": result}
 
 
 @app.post("/bridge/zones/{zone_id}/commands")

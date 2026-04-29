@@ -14,8 +14,11 @@ use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
 use App\Services\NodeSwapService;
+use App\Services\PythonBridgeService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -253,6 +256,74 @@ class NodeController extends Controller
         }
 
         return response()->json(['status' => 'ok', 'data' => $node]);
+    }
+
+    /**
+     * Проверка доступности узла по MQTT (retained/online на …/status), не из БД телеметрии.
+     */
+    public function liveMqttStatus(Request $request, DeviceNode $node): JsonResponse
+    {
+        $this->authorize('view', $node);
+
+        $validated = $request->validate([
+            'timeout_sec' => ['sometimes', 'numeric', 'min:1', 'max:15'],
+        ]);
+        $timeoutSec = (float) ($validated['timeout_sec'] ?? 5.0);
+
+        if ($node->zone_id === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Node is not assigned to a zone',
+            ], 422);
+        }
+
+        $node->loadMissing(['zone.greenhouse']);
+
+        $zone = $node->zone;
+        if ($zone === null) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Zone not found for node',
+            ], 422);
+        }
+
+        $ghUid = $zone->greenhouse?->uid;
+        if ($ghUid === null || $ghUid === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Greenhouse uid missing for node zone',
+            ], 422);
+        }
+
+        $format = strtolower((string) Config::get('services.python_bridge.mqtt_zone_format', 'id'));
+        $zoneUid = is_string($zone->uid ?? null) ? trim((string) $zone->uid) : '';
+        $zoneSegment = ($format === 'uid' && $zoneUid !== '')
+            ? $zoneUid
+            : 'zn-'.$zone->id;
+
+        try {
+            $data = app(PythonBridgeService::class)->fetchNodeLiveMqttStatus(
+                (string) $node->uid,
+                (string) $ghUid,
+                $zoneSegment,
+                $timeoutSec,
+            );
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $data,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('NodeController: liveMqttStatus failed', [
+                'node_id' => $node->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'MQTT bridge request failed',
+            ], 502);
+        }
     }
 
     public function update(UpdateNodeRequest $request, DeviceNode $node)

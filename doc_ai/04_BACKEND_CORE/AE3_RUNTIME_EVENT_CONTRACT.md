@@ -214,6 +214,31 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Это audit trail, не runtime event. UI `GET /api/zones/{id}/config-changes`
 возвращает timeline с filter `?namespace=`.
 
+### 4.9 `IRRIGATION_BLOCKED_SETUP_PENDING`
+
+Назначение:
+- зафиксировать fail-closed отклонение `start-irrigation` на ingress-уровне, когда зона ещё не в `workflow_phase='ready'`.
+
+Обязательные поля:
+
+1. `event_schema_version`
+2. `zone_id`
+3. `workflow_phase`
+4. `reason` (`setup_pending`)
+
+Условно обязательные поля:
+
+1. `task_id` (если уже известен в контексте запроса)
+2. `source`
+3. `idempotency_key`
+4. `requested_mode`
+
+Инварианты:
+
+1. Событие эмитится только при `POST /zones/{id}/start-irrigation` до создания `irrigation_start` task.
+2. При этом runtime возвращает `409` с `error_code=start_irrigation_setup_pending`.
+3. Для метрик используется счётчик `ae3_start_irrigation_blocked_total{reason="setup_pending"}`.
+
 ## 5. E2E / Read-Model Guidance
 
 1. Новый e2e/assertion contract не должен доказывать причинность по `created_at`,

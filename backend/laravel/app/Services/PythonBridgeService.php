@@ -571,6 +571,66 @@ class PythonBridgeService
     }
 
     /**
+     * Разовая проверка статуса узла по MQTT через mqtt-bridge (без чтения состояния из БД).
+     *
+     * @return array<string, mixed>
+     */
+    public function fetchNodeLiveMqttStatus(
+        string $nodeUid,
+        string $greenhouseUid,
+        string $zoneSegment,
+        float $timeoutSec = 5.0,
+    ): array {
+        $baseUrl = rtrim((string) Config::get('services.python_bridge.base_url'), '/');
+        if ($baseUrl === '') {
+            throw new \RuntimeException('Python bridge base URL not configured');
+        }
+
+        $token = Config::get('services.python_bridge.token');
+        $timeoutBounded = min(15.0, max(1.0, $timeoutSec));
+        $query = http_build_query([
+            'greenhouse_uid' => $greenhouseUid,
+            'zone_segment' => $zoneSegment,
+            'timeout_sec' => $timeoutBounded,
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        $url = $baseUrl.'/bridge/nodes/'.rawurlencode($nodeUid).'/live-status?'.$query;
+
+        $headers = [];
+        if (is_string($token) && $token !== '') {
+            $headers['Authorization'] = 'Bearer '.$token;
+        }
+
+        $verifySsl = $this->shouldVerifySsl();
+        if (! $verifySsl && app()->environment('production')) {
+            $verifySsl = true;
+        }
+
+        $httpTimeout = min(30.0, $timeoutBounded + 5.0);
+
+        $request = Http::withHeaders($headers)->timeout($httpTimeout);
+        if (! $verifySsl) {
+            $request = $request->withoutVerifying();
+        }
+
+        $response = $request->get($url);
+
+        if (! $response->successful()) {
+            throw new RequestException($response);
+        }
+
+        $json = $response->json();
+        if (! is_array($json) || ($json['status'] ?? '') !== 'ok') {
+            $msg = is_array($json) ? (string) ($json['message'] ?? 'bridge_invalid_response') : 'bridge_invalid_response';
+            throw new \RuntimeException($msg);
+        }
+
+        $data = $json['data'] ?? null;
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
      * Автоматически определяет node_uid и channel для команды зоны на основе типа команды
      */
     private function resolveNodeAndChannel(Zone $zone, string $commandType, array $params = []): ?array

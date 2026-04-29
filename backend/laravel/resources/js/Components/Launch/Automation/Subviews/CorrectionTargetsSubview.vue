@@ -9,29 +9,31 @@
     <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
       Целевые значения <span class="text-[10px] text-brand normal-case ml-1.5">← из рецепта, read-only</span>
     </div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-      <Field label="targetPh" required hint="из рецепта">
-        <div :class="lockedCls">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+      <Field :label="meta('targetPh').label" required :hint="meta('targetPh').hint">
+        <div :class="lockedCls" :title="meta('targetPh').details">
           <Ic name="lock" size="sm" class="text-[var(--text-dim)]" />
           {{ waterForm.targetPh }}
         </div>
       </Field>
-      <Field label="targetEc" required hint="из рецепта">
-        <div :class="lockedCls">
+      <Field :label="meta('targetEc').label" required :hint="meta('targetEc').hint">
+        <div :class="lockedCls" :title="meta('targetEc').details">
           <Ic name="lock" size="sm" class="text-[var(--text-dim)]" />
           {{ waterForm.targetEc }} <span class="text-[var(--text-dim)] text-xs ml-1">mS/cm</span>
         </div>
       </Field>
-      <Field label="phPct" hint="допуск">
+      <Field :label="meta('phPct').label" :hint="meta('phPct').hint">
         <input
           v-bind="numAttrs"
+          :title="meta('phPct').details"
           :value="waterForm.phPct"
           @input="upd('phPct', toNum($event))"
         >
       </Field>
-      <Field label="ecPct" hint="допуск">
+      <Field :label="meta('ecPct').label" :hint="meta('ecPct').hint">
         <input
           v-bind="numAttrs"
+          :title="meta('ecPct').details"
           :value="waterForm.ecPct"
           @input="upd('ecPct', toNum($event))"
         >
@@ -77,6 +79,43 @@ const numAttrs = { class: inputCls, type: 'number' }
 
 const lockedCls =
   'flex items-center h-8 px-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono text-[var(--text-primary)] gap-1.5'
+
+type CorrectionMeta = { label: string; hint: string; details: string }
+const CORRECTION_FIELD_META: Partial<Record<keyof WaterFormState, CorrectionMeta>> = {
+  targetPh: {
+    label: 'Целевой pH',
+    hint: 'Значение из активной фазы рецепта',
+    details: 'Базовый целевой pH для зоны. Используется контроллером pH как опорная точка коррекции.',
+  },
+  targetEc: {
+    label: 'Целевой EC',
+    hint: 'Значение из активной фазы рецепта',
+    details: 'Базовый целевой EC (mS/cm) для зоны. Используется контроллером EC как опорная точка коррекции.',
+  },
+  phPct: {
+    label: 'Допуск pH, %',
+    hint: 'Ширина окна корректировки',
+    details: 'Процент допустимого отклонения pH от target до запуска коррекции.',
+  },
+  ecPct: {
+    label: 'Допуск EC, %',
+    hint: 'Ширина окна корректировки',
+    details: 'Процент допустимого отклонения EC от target до запуска коррекции.',
+  },
+}
+
+function meta(key: keyof WaterFormState): CorrectionMeta {
+  const originalName = String(key)
+  const base = CORRECTION_FIELD_META[key] ?? {
+    label: originalName,
+    hint: 'Параметр коррекции',
+    details: 'Параметр влияет на логику и пороги коррекции pH/EC.',
+  }
+  return {
+    ...base,
+    details: `${originalName}: ${base.details}`,
+  }
+}
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]) {
   emit('update:waterForm', { ...props.waterForm, [key]: value })

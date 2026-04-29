@@ -243,6 +243,12 @@ IRRIGATION_WAIT_READY_DURATION_SECONDS = Histogram(
     buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600],
 )
 
+IRRIGATION_BLOCKED = Counter(
+    "ae3_start_irrigation_blocked_total",
+    "Ingress blocks for start-irrigation before task creation",
+    ["reason"],
+)
+
 # ─── Active tasks gauge ─────────────────────────────────────────────
 
 ACTIVE_TASKS = Gauge(

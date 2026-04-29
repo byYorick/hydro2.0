@@ -133,10 +133,6 @@ class GrowCycleAutomationDispatcher
 
     protected function isEnabled(): bool
     {
-        if (app()->runningInConsole()) {
-            return false;
-        }
-
         return (bool) $this->runtimeConfig->automationEngineValue('grow_cycle_start_dispatch_enabled', false);
     }
 
@@ -228,13 +224,21 @@ class GrowCycleAutomationDispatcher
     {
         $message = $error->getMessage();
 
-        return str_contains($message, 'automation_engine_start_cycle_http_error_v2:404:')
+        $isTransientZoneNotFound = str_contains($message, 'automation_engine_start_cycle_http_error_v2:404:')
             && str_contains($message, sprintf("Zone '%d' not found", $zoneId));
+        if ($isTransientZoneNotFound) {
+            return true;
+        }
+
+        $isZoneBusy = str_contains($message, 'automation_engine_start_cycle_http_error_v2:409:')
+            && str_contains($message, '"start_cycle_zone_busy"');
+
+        return $isZoneBusy;
     }
 
     private function maxAttempts(): int
     {
-        return 3;
+        return 5;
     }
 
     protected function retryDelayMs(int $attempt): int
@@ -343,6 +347,11 @@ class GrowCycleAutomationDispatcher
         }
 
         if (str_starts_with($message, 'automation_engine_start_cycle_http_error_v2:')) {
+            if (str_contains($message, 'automation_engine_start_cycle_http_error_v2:409:')
+                && str_contains($message, '"start_cycle_zone_busy"')) {
+                return 'automation_engine_start_cycle_zone_busy';
+            }
+
             return 'automation_engine_start_cycle_http_error';
         }
 

@@ -9,7 +9,10 @@ from typing import Any, Awaitable, Callable, Mapping
 from fastapi import Body, FastAPI, HTTPException, Request
 
 from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest, StartLightingTickRequest
-from ae3lite.domain.errors import TaskCreateError
+from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.domain.errors import ErrorCodes, TaskCreateError
+from ae3lite.infrastructure.metrics import IRRIGATION_BLOCKED
+from common.db import create_zone_event
 from common.utils.time import utcnow_naive as _utcnow
 
 
@@ -249,6 +252,7 @@ def bind_start_irrigation_route(
     start_irrigation_rate_limit_window_sec_fn: Callable[[], int],
     start_irrigation_rate_limit_max_requests_fn: Callable[[], int],
     claim_start_irrigation_intent_fn: Callable[..., Awaitable[dict[str, Any]]],
+    load_zone_workflow_phase_fn: Callable[[int], Awaitable[str | None]],
     create_task_from_intent_fn: Callable[..., Awaitable[Any]],
     kick_worker_fn: Callable[[], Any],
     build_start_cycle_response_fn: Callable[..., dict[str, Any]],
@@ -314,6 +318,41 @@ def bind_start_irrigation_route(
     ) -> dict[str, Any]:
         await validate_scheduler_zone_fn(zone_id)
         await validate_scheduler_security_baseline_fn(request)
+        workflow_phase = str((await load_zone_workflow_phase_fn(zone_id)) or "").strip().lower()
+        if workflow_phase != "ready":
+            IRRIGATION_BLOCKED.labels(reason="setup_pending").inc()
+            event_payload = with_runtime_event_contract(
+                {
+                    "zone_id": int(zone_id),
+                    "workflow_phase": workflow_phase if workflow_phase != "" else "missing",
+                    "reason": "setup_pending",
+                    "source": str(req.source or "").strip().lower() or None,
+                    "idempotency_key": str(req.idempotency_key or "").strip() or None,
+                    "requested_mode": str(req.mode or "").strip().lower() or None,
+                }
+            )
+            event_payload = {key: value for key, value in event_payload.items() if value is not None}
+            try:
+                await create_zone_event(
+                    int(zone_id),
+                    "IRRIGATION_BLOCKED_SETUP_PENDING",
+                    event_payload,
+                )
+            except Exception:
+                logger.warning(
+                    "AE3 compat start-irrigation не смог записать IRRIGATION_BLOCKED_SETUP_PENDING zone_id=%s",
+                    zone_id,
+                    exc_info=True,
+                )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": ErrorCodes.START_IRRIGATION_SETUP_PENDING,
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase if workflow_phase != "" else "missing",
+                    "message": "Зона не готова к поливу: дождитесь завершения setup/cycle_start.",
+                },
+            )
         if is_start_irrigation_rate_limit_enabled_fn() and not start_irrigation_rate_limit_check_fn(zone_id):
             raise HTTPException(
                 status_code=429,

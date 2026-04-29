@@ -12,6 +12,7 @@ class SchedulerCycleOrchestrator
 {
     private const BACKPRESSURE_REASONS = [
         'schedule_busy',
+        'zone_setup_pending',
         'start_cycle_zone_busy',
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
@@ -75,6 +76,7 @@ class SchedulerCycleOrchestrator
                 },
             );
             $zoneIds = $this->scheduleLoader->loadActiveZoneIds($zoneFilter);
+            $zoneWorkflowPhases = [];
 
             if ($zoneIds === []) {
                 $stats = [
@@ -91,6 +93,20 @@ class SchedulerCycleOrchestrator
                 $this->writeCycleMetrics($dispatchMetrics, $stats, $cycleStartedAt);
 
                 return $stats;
+            }
+
+            if ($zoneIds !== []) {
+                $workflowRows = DB::table('zone_workflow_state')
+                    ->select(['zone_id', 'workflow_phase'])
+                    ->whereIn('zone_id', $zoneIds)
+                    ->get();
+                foreach ($workflowRows as $workflowRow) {
+                    $zoneKey = (int) ($workflowRow->zone_id ?? 0);
+                    if ($zoneKey <= 0) {
+                        continue;
+                    }
+                    $zoneWorkflowPhases[$zoneKey] = strtolower(trim((string) ($workflowRow->workflow_phase ?? '')));
+                }
             }
 
             $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
@@ -160,6 +176,7 @@ class SchedulerCycleOrchestrator
                 cycleNow: $realNow,
                 lastRunByTaskName: $lastRunByTaskName,
                 reconciledBusyness: $reconciledBusyness,
+                zoneWorkflowPhases: $zoneWorkflowPhases,
             );
             /** @var array<int, CarbonImmutable> $zoneCursorCache */
             $zoneCursorCache = [];

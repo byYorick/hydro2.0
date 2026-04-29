@@ -10,6 +10,13 @@ describe('errorCatalog', () => {
     })).toBe('Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
   })
 
+  it('локализует код start_irrigation_setup_pending', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'start_irrigation_setup_pending',
+      message: 'Zone is not ready',
+    })).toBe('Полив отклонён: зона ещё не готова. Сначала завершите setup/cycle_start.')
+  })
+
   it('возвращает уже локализованное сообщение без изменений', () => {
     expect(resolveHumanErrorMessage({
       code: 'command_timeout',

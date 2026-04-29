@@ -30,6 +30,18 @@ export interface NodeLifecycleTransitionPayload {
   [key: string]: unknown
 }
 
+/** Ответ mqtt-bridge probe (hydro/{gh}/{zone}/{node}/status). */
+export interface NodeLiveMqttStatusData {
+  topic: string
+  reachable: boolean
+  retained?: boolean | null
+  raw_payload?: string | null
+  payload?: unknown
+  reason?: string | null
+  mqtt_status?: string | null
+  error?: string | null
+}
+
 export const nodesApi = {
   list(params?: NodesListParams): Promise<Device[]> {
     return apiGet<Device[]>('/nodes', { params })
@@ -59,6 +71,16 @@ export const nodesApi = {
    */
   getConfig(nodeId: number): Promise<Record<string, unknown>> {
     return apiGet<Record<string, unknown>>(`/nodes/${nodeId}/config`)
+  },
+
+  /**
+   * Live-проверка по MQTT (подписка на …/status через mqtt-bridge), не из БД.
+   */
+  liveMqttStatus(
+    nodeId: number,
+    params?: { timeout_sec?: number },
+  ): Promise<NodeLiveMqttStatusData> {
+    return apiGet<NodeLiveMqttStatusData>(`/nodes/${nodeId}/live-mqtt-status`, { params })
   },
 
   /**

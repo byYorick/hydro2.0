@@ -162,6 +162,8 @@ services:
       - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-host.docker.internal}
       - MQTT_HOST=${MQTT_HOST:-mqtt}
       - MQTT_PORT=${MQTT_PORT:-1883}
+      # Сегмент зоны в топиках hydro/{gh}/… — как у history-logger; иначе live-mqtt-status подписывается на zn-{id}, а трафик в zn-{uuid}
+      - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)

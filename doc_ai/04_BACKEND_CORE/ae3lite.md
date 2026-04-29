@@ -74,6 +74,13 @@ AE3-Lite v1 не включает:
 
 Источник истины для «зона готова к поливу» в runtime плана — поле **`zone_workflow_phase`** в snapshot зоны (read-model), которое AE3-Lite кладёт в `plan.runtime` при планировании (`CycleStartPlanner` / аналог). Значение **`ready`** означает: workflow зоны в PostgreSQL (`zone_workflow_state.workflow_phase`) приведён в состояние готовности после завершения подготовительных шагов (например, после успешного `cycle_start` / завершения связанной задачи в `WorkflowRouter`).
 
+Ingress-guard `POST /zones/{id}/start-irrigation`:
+
+1. До создания canonical task runtime проверяет текущее значение `zone_workflow_state.workflow_phase` в read-model.
+2. Если фаза не `ready` (или row отсутствует), запрос отклоняется fail-closed с `409 start_irrigation_setup_pending`; `irrigation_start` task не создаётся, lease зоны не захватывается.
+3. Для observability пишется zone event `IRRIGATION_BLOCKED_SETUP_PENDING` и инкрементируется `ae3_start_irrigation_blocked_total{reason="setup_pending"}`.
+4. Этот guard не заменяет `await_ready`: стадия остаётся safety-net для уже созданных задач (recovery/старые intents), где runtime обязан подтвердить `ready` по poll/reconcile.
+
 Стадия **`await_ready`** в задаче `irrigation_start`:
 
 1. Пока `zone_workflow_phase != ready`, исполнитель возвращает **poll** с интервалом `AE_IRRIGATION_WAIT_READY_POLL_SEC` и при первом заходе фиксирует дедлайн `irrigation_wait_ready_deadline_at` (окно `AE_IRRIGATION_WAIT_READY_SEC`).

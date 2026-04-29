@@ -17,6 +17,15 @@
       :target-ec="recipeSummary.targetEc"
     />
 
+    <div
+      v-if="setupPendingLabel"
+      class="inline-flex items-center gap-2 self-start rounded-full border border-warn-soft bg-warn-soft px-3 py-1 text-xs font-medium text-warn"
+      data-testid="launch-setup-pending-badge"
+    >
+      <span class="h-1.5 w-1.5 rounded-full bg-warn"></span>
+      {{ setupPendingLabel }}
+    </div>
+
     <div class="grid gap-3 lg:[grid-template-columns:240px_1fr] items-start">
       <AutomationSidebar
         :current="currentSub"
@@ -39,6 +48,7 @@
           :assignments="profile.assignments"
           :available-nodes="availableNodes"
           :binding-node-ids="bindingNodeIds"
+          :binding-failed-node-ids="bindingFailedNodeIds"
           @update:assignments="onAssignmentsUpdate"
           @bind-node="(id: number) => $emit('bind-node', id)"
         />
@@ -167,14 +177,18 @@ const props = withDefaults(
     refreshingNodes?: boolean
     bindingInProgress?: boolean
     bindingNodeIds?: ReadonlySet<number>
+    bindingFailedNodeIds?: ReadonlySet<number>
     recipeSummary?: RecipeSummary | null
+    workflowPhase?: string | null
   }>(),
   {
     currentRecipePhase: null,
     refreshingNodes: false,
     bindingInProgress: false,
     bindingNodeIds: () => new Set<number>(),
+    bindingFailedNodeIds: () => new Set<number>(),
     recipeSummary: null,
+    workflowPhase: null,
   },
 )
 
@@ -266,6 +280,14 @@ const irrigationSubtitle = computed(() => {
 const correctionSubtitle = computed(() => {
   const w = props.profile.waterForm
   return `pH ${w.targetPh} · EC ${w.targetEc}`
+})
+
+const setupPendingLabel = computed<string | null>(() => {
+  const normalized = String(props.workflowPhase ?? '').trim().toLowerCase()
+  if (normalized === '' || normalized === 'ready') {
+    return null
+  }
+  return `Setup pending: ${normalized.toUpperCase()}`
 })
 
 const SUB_META: Record<AutomationSubKey, { title: string; desc: string }> = {

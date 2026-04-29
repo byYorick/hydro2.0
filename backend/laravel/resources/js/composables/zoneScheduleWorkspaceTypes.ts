@@ -77,6 +77,7 @@ export type ChainStepType =
   | 'TASK'
   | 'DISPATCH'
   | 'RUNNING'
+  | 'SETUP_PENDING'
   | 'COMPLETE'
   | 'FAIL'
   | 'SKIP'

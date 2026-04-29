@@ -139,6 +139,24 @@ class ExecutionChainTest extends TestCase
         self::assertTrue($running['live']);
     }
 
+    public function test_assemble_returns_setup_pending_step_for_start_irrigation_setup_pending_error(): void
+    {
+        $taskId = $this->insertAeTask([
+            'status' => 'failed',
+            'error_code' => 'start_irrigation_setup_pending',
+            'error_message' => 'Зона не готова к поливу',
+            'completed_at' => now()->toDateTimeString(),
+        ]);
+
+        $chain = app(ExecutionChainAssembler::class)->assemble($this->zone->id, (string) $taskId);
+
+        $setupPending = $this->pickStep($chain, 'SETUP_PENDING');
+        self::assertNotNull($setupPending);
+        self::assertSame('warn', $setupPending['status']);
+        self::assertStringContainsString('зона ещё не завершила setup', mb_strtolower((string) $setupPending['detail']));
+        self::assertNull($this->pickStep($chain, 'FAIL'));
+    }
+
     public function test_http_show_includes_chain_field(): void
     {
         $user = User::factory()->create();

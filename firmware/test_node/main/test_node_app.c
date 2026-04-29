@@ -3444,6 +3444,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             s_virtual_state.valve_clean_fill_on = job->relay_state;
             handled = true;
             if (!was_on && job->relay_state) {
+                s_virtual_state.clean_max_latched = false;
                 s_virtual_state.clean_fill_stage_active = true;
                 s_virtual_state.clean_fill_started_at = get_timestamp_seconds();
                 ui_logf(
@@ -3757,6 +3758,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
     {
         bool now_solution_fill_active = is_solution_fill_active();
         if (!was_solution_fill_active && now_solution_fill_active) {
+            s_virtual_state.solution_max_latched = false;
             s_virtual_state.solution_fill_stage_active = true;
             s_virtual_state.solution_fill_started_at = get_timestamp_seconds();
             ui_logf(

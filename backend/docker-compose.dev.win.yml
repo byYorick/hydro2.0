@@ -112,6 +112,8 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Как у history-logger: сегмент зоны в MQTT (uid vs zn-id)
+      - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
       # Laravel scheduler owner flags
       - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
       - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}

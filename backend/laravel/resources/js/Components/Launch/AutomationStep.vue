@@ -25,7 +25,9 @@
         :refreshing-nodes="refreshingNodes"
         :binding-in-progress="bindingInProgress"
         :binding-node-ids="bindingNodeIds"
+        :binding-failed-node-ids="bindingFailedNodeIds"
         :recipe-summary="recipeSummary"
+        :workflow-phase="zoneWorkflowPhase"
         @update:water-form="(v) => (state.waterForm = v)"
         @update:lighting-form="(v) => (state.lightingForm = v)"
         @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
@@ -94,10 +96,59 @@ const loading = ref(false);
 const refreshingNodes = ref(false);
 const bindingInProgress = ref(false);
 const bindingNodeIds = ref<Set<number>>(new Set());
+const bindingFailedNodeIds = ref<Set<number>>(new Set());
 let pendingPollHandle: ReturnType<typeof setInterval> | null = null;
 let pendingPollDeadline = 0;
 const PENDING_POLL_INTERVAL_MS = 2500;
-const PENDING_POLL_TIMEOUT_MS = 60_000;
+/** Опрос pending + снятие лоадеров при зависании (согласовано с UI-таймаутом привязки). */
+const PENDING_POLL_TIMEOUT_MS = 30_000;
+/** Максимум показа лоадера «Привязать» для одной ноды до принудительного сброса. */
+const BINDING_NODE_UI_TIMEOUT_MS = 30_000;
+
+const bindingNodeUiTimeoutHandles = new Map<number, ReturnType<typeof setTimeout>>();
+const zoneWorkflowPhase = ref<string | null>(null);
+
+function clearBindingUiTimeout(nodeId: number): void {
+    const t = bindingNodeUiTimeoutHandles.get(nodeId);
+    if (t != null) {
+        clearTimeout(t);
+        bindingNodeUiTimeoutHandles.delete(nodeId);
+    }
+}
+
+function clearAllBindingUiTimeouts(): void {
+    for (const t of bindingNodeUiTimeoutHandles.values()) {
+        clearTimeout(t);
+    }
+    bindingNodeUiTimeoutHandles.clear();
+}
+
+function syncBindingUiTimeouts(): void {
+    for (const id of [...bindingNodeUiTimeoutHandles.keys()]) {
+        if (!bindingNodeIds.value.has(id)) {
+            clearBindingUiTimeout(id);
+        }
+    }
+}
+
+function scheduleBindingUiTimeout(nodeId: number, zoneId: number): void {
+    clearBindingUiTimeout(nodeId);
+    const t = setTimeout(() => {
+        bindingNodeUiTimeoutHandles.delete(nodeId);
+        if (!bindingNodeIds.value.has(nodeId)) {
+            return;
+        }
+        const n = availableNodes.find((x) => x.id === nodeId);
+        if (n && n.zone_id === zoneId) {
+            reconcileBindingSpinners(zoneId);
+            return;
+        }
+        bindingNodeIds.value = new Set([...bindingNodeIds.value].filter((id) => id !== nodeId));
+        bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, nodeId]);
+        showToast('Таймаут привязки (30 с) — проверьте узел и повторите', 'warning');
+    }, BINDING_NODE_UI_TIMEOUT_MS);
+    bindingNodeUiTimeoutHandles.set(nodeId, t);
+}
 
 function applyProfile(next: AutomationProfile) {
     state.waterForm = next.waterForm;
@@ -141,6 +192,24 @@ watch(
     },
 );
 
+watch(
+    () => state.assignments,
+    (next) => {
+        const used = new Set<number>();
+        for (const v of Object.values(next)) {
+            if (typeof v === 'number' && v > 0) {
+                used.add(v);
+            }
+        }
+        const failed = bindingFailedNodeIds.value;
+        const pruned = new Set([...failed].filter((id) => used.has(id)));
+        if (pruned.size !== failed.size) {
+            bindingFailedNodeIds.value = pruned;
+        }
+    },
+    { deep: true },
+);
+
 async function loadLogicProfile(zoneId: number) {
     try {
         const doc = await api.automationConfigs.get('zone', zoneId, 'zone.logic_profile');
@@ -159,7 +228,18 @@ async function loadLogicProfile(zoneId: number) {
 async function loadBindings(zoneId: number): Promise<void> {
     try {
         const resp = await api.zones.getById(zoneId);
-        const data = resp as unknown as { channel_bindings?: unknown };
+        const data = resp as unknown as {
+            channel_bindings?: unknown;
+            workflow_phase?: unknown;
+            zone_workflow_state?: { workflow_phase?: unknown } | null;
+        };
+        const rawWorkflowPhase =
+            data.workflow_phase
+            ?? data.zone_workflow_state?.workflow_phase
+            ?? null;
+        zoneWorkflowPhase.value = typeof rawWorkflowPhase === 'string'
+            ? rawWorkflowPhase.trim().toLowerCase()
+            : null;
         if (data.channel_bindings) {
             const fromApi = bindingsResponseToAssignments(data.channel_bindings);
             // Применяем поверх defaults, но не затираем уже выставленные пользователем.
@@ -174,6 +254,7 @@ async function loadBindings(zoneId: number): Promise<void> {
             if (changed) state.assignments = next;
         }
     } catch {
+        zoneWorkflowPhase.value = null;
         // keep defaults
     }
 }
@@ -355,15 +436,24 @@ async function onBindNode(nodeId: number) {
         showToast('Нода уже привязана к этой зоне', 'info');
         return;
     }
+    bindingFailedNodeIds.value = new Set(
+        [...bindingFailedNodeIds.value].filter((id) => id !== nodeId),
+    );
     bindingNodeIds.value = new Set([...bindingNodeIds.value, nodeId]);
+    scheduleBindingUiTimeout(nodeId, props.zoneId);
     try {
         await api.nodes.update(nodeId, { zone_id: props.zoneId });
+        bindingFailedNodeIds.value = new Set(
+            [...bindingFailedNodeIds.value].filter((id) => id !== nodeId),
+        );
         showToast('Привязка отправлена — ждём config_report от ноды…', 'info');
         await loadNodes(props.zoneId);
+        reconcileBindingSpinners(props.zoneId);
         startPendingPoll();
     } catch (error) {
+        clearBindingUiTimeout(nodeId);
+        bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, nodeId]);
         showToast((error as Error).message || 'Ошибка привязки ноды', 'error');
-    } finally {
         const next = new Set(bindingNodeIds.value);
         next.delete(nodeId);
         bindingNodeIds.value = next;
@@ -375,6 +465,59 @@ function hasPendingBindings(): boolean {
     return availableNodes.some(
         (n) => n.pending_zone_id === props.zoneId && !n.zone_id,
     );
+}
+
+/**
+ * Убирает node из bindingNodeIds, когда нода уже привязана к зоне (zone_id),
+ * чтобы лоадер держался до config_report / промоута pending → zone.
+ */
+function reconcileBindingSpinners(zoneId: number): void {
+    if (bindingNodeIds.value.size === 0) {
+        return;
+    }
+    const next = new Set(bindingNodeIds.value);
+    for (const nodeId of [...bindingNodeIds.value]) {
+        const n = availableNodes.find((x) => x.id === nodeId);
+        if (n && n.zone_id === zoneId) {
+            next.delete(nodeId);
+        }
+    }
+    if (next.size !== bindingNodeIds.value.size) {
+        bindingNodeIds.value = next;
+        syncBindingUiTimeouts();
+    }
+}
+
+/**
+ * После дедлайна опроса: снять лоадер с нод в ожидании device, пометить ошибку.
+ * (Не трогаем setTimeout из sync до обновления bindingNodeIds — иначе UI-таймаут
+ * отменится без срабатывания и не будет иконки ошибки.)
+ */
+function clearBindingSpinnersAwaitingDevice(zoneId: number): void {
+    const next = new Set(bindingNodeIds.value);
+    const failedIds: number[] = [];
+    for (const nodeId of [...bindingNodeIds.value]) {
+        const n = availableNodes.find((x) => x.id === nodeId);
+        if (!n) {
+            next.delete(nodeId);
+            failedIds.push(nodeId);
+            continue;
+        }
+        if (n.zone_id === zoneId) {
+            next.delete(nodeId);
+            continue;
+        }
+        if (n.pending_zone_id === zoneId && !n.zone_id) {
+            next.delete(nodeId);
+            failedIds.push(nodeId);
+        }
+    }
+    if (failedIds.length > 0) {
+        bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, ...failedIds]);
+        showToast('Таймаут ожидания config_report (30 с) — проверьте узел и повторите привязку', 'warning');
+    }
+    bindingNodeIds.value = next;
+    syncBindingUiTimeouts();
 }
 
 function stopPendingPoll() {
@@ -395,6 +538,7 @@ function startPendingPoll() {
         }
         const hadPending = hasPendingBindings();
         await loadNodes(props.zoneId);
+        reconcileBindingSpinners(props.zoneId);
         const stillPending = hasPendingBindings();
         if (hadPending && !stillPending) {
             showToast('Нода подтвердила привязку (config_report получен)', 'success');
@@ -402,6 +546,9 @@ function startPendingPoll() {
             return;
         }
         if (!stillPending || Date.now() > pendingPollDeadline) {
+            if (Date.now() > pendingPollDeadline && stillPending) {
+                clearBindingSpinnersAwaitingDevice(props.zoneId);
+            }
             stopPendingPoll();
         }
     }, PENDING_POLL_INTERVAL_MS);
@@ -413,11 +560,17 @@ onMounted(() => {
 
 onUnmounted(() => {
     stopPendingPoll();
+    clearAllBindingUiTimeouts();
+    bindingNodeIds.value = new Set();
+    bindingFailedNodeIds.value = new Set();
 });
 
 watch(
     () => props.zoneId,
     (id) => {
+        clearAllBindingUiTimeouts();
+        bindingNodeIds.value = new Set();
+        bindingFailedNodeIds.value = new Set();
         if (id) reloadAll();
     },
 );
@@ -425,6 +578,9 @@ watch(
 watch(
     () => availableNodes.map((n) => `${n.id}:${n.zone_id ?? 0}:${n.pending_zone_id ?? 0}`).join('|'),
     () => {
+        if (props.zoneId) {
+            reconcileBindingSpinners(props.zoneId);
+        }
         if (hasPendingBindings()) startPendingPoll();
     },
 );

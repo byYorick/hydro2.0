@@ -121,7 +121,7 @@ class LaunchFlowReadinessEnricher
                     }
                     $out[] = [
                         'code' => 'missing_pid_config:'.$pidType,
-                        'message' => 'Не сохранён PID-конфиг для '.strtoupper($pidType),
+                        'message' => 'Не сохранён PID-конфиг для '.strtoupper($pidType).'. Пресет/черновые значения не учитываются до явного сохранения.',
                         'severity' => 'error',
                         'action' => [
                             'type' => 'open_pid_editor',

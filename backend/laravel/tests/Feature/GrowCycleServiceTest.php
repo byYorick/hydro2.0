@@ -622,6 +622,96 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_retries_start_cycle_zone_busy_and_marks_intent_failed_with_structured_code(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
+            public int $dispatchAttempts = 0;
+
+            protected function isEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function shouldDispatchForZone(int $zoneId): bool
+            {
+                return true;
+            }
+
+            protected function automationStartCycleConfig(): array
+            {
+                return [
+                    'api_url' => 'http://automation-engine:9405',
+                    'timeout_sec' => 2.0,
+                    'scheduler_id' => 'laravel-scheduler',
+                    'token' => 'test-token',
+                ];
+            }
+
+            protected function retryDelayMs(int $attempt): int
+            {
+                return 1;
+            }
+
+            protected function postStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            {
+                $this->dispatchAttempts++;
+
+                throw new \RuntimeException(
+                    'automation_engine_start_cycle_http_error_v2:409:{"detail":{"error":"start_cycle_zone_busy","zone_id":'
+                    .$zoneId.',"active_task_id":42}}'
+                );
+            }
+        };
+
+        $this->app->instance(GrowCycleAutomationDispatcher::class, $dispatcher);
+        $service = app(GrowCycleService::class);
+
+        $cycle = $service->createCycle($zone, $revision, $plant->id);
+        $startedCycle = $service->startCycle($cycle, Carbon::now());
+
+        $this->assertSame(5, $dispatcher->dispatchAttempts);
+        $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'status' => 'failed',
+            'error_code' => 'automation_engine_start_cycle_zone_busy',
+        ]);
+    }
+
+    #[Test]
+    public function automation_dispatcher_enabled_flag_works_in_console_runtime(): void
+    {
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $runtimeConfig
+            ->expects($this->once())
+            ->method('automationEngineValue')
+            ->with('grow_cycle_start_dispatch_enabled', false)
+            ->willReturn(true);
+
+        $dispatcher = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleAutomationDispatcher {
+            public function enabledForTest(): bool
+            {
+                return $this->isEnabled();
+            }
+        };
+
+        $this->assertTrue($dispatcher->enabledForTest());
+    }
+
+    #[Test]
     public function it_skips_automation_start_cycle_dispatch_when_zone_two_tank_topology_is_incomplete(): void
     {
         $zone = Zone::factory()->create([

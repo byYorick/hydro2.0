@@ -418,6 +418,82 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         });
     }
 
+    public function test_command_skips_irrigation_until_zone_ready_then_dispatches_on_next_tick(): void
+    {
+        $this->enableSchedulerConfig();
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 2);
+
+        DB::table('zone_workflow_state')->updateOrInsert(
+            ['zone_id' => $zone->id],
+            [
+                'workflow_phase' => 'tank_filling',
+                'payload' => json_encode(['workflow_phase' => 'tank_filling']),
+                'updated_at' => now(),
+            ],
+        );
+
+        Http::fake(function (Request $request) use ($zone) {
+            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation'))) {
+                return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+            }
+
+            return Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => 'setup-ready-7001',
+                    'zone_id' => $zone->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200);
+        });
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        Http::assertNotSent(static function (Request $request) use ($zone): bool {
+            return $request->method() === 'POST'
+                && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation');
+        });
+        $this->assertDatabaseCount('zone_automation_intents', 0);
+
+        $taskLog = DB::table('scheduler_logs')
+            ->where('task_name', 'laravel_scheduler_task_irrigation_zone_'.$zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($taskLog);
+        $this->assertSame('skipped', $taskLog->status);
+        $details = is_string($taskLog->details ?? null)
+            ? json_decode($taskLog->details, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($taskLog->details ?? null) ? $taskLog->details : []);
+        $this->assertSame('zone_setup_pending', $details['reason'] ?? null);
+        $this->assertSame('tank_filling', $details['workflow_phase'] ?? null);
+
+        DB::table('zone_workflow_state')
+            ->where('zone_id', $zone->id)
+            ->update([
+                'workflow_phase' => 'ready',
+                'payload' => json_encode(['workflow_phase' => 'ready']),
+                'updated_at' => now()->addSecond(),
+            ]);
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        Http::assertSent(static function (Request $request) use ($zone): bool {
+            return $request->method() === 'POST'
+                && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation');
+        });
+        $this->assertDatabaseCount('zone_automation_intents', 1);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'pending',
+        ]);
+    }
+
     private function isSchedulerZoneStartPost(Request $request, Zone $zone): bool
     {
         if ($request->method() !== 'POST') {
@@ -459,6 +535,15 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'zone_id' => $zone->id,
             'status' => GrowCycleStatus::RUNNING,
         ]);
+
+        DB::table('zone_workflow_state')->updateOrInsert(
+            ['zone_id' => $zone->id],
+            [
+                'workflow_phase' => 'ready',
+                'payload' => json_encode(['workflow_phase' => 'ready']),
+                'updated_at' => now(),
+            ],
+        );
 
         return [$zone, $cycle];
     }

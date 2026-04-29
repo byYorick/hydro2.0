@@ -48,6 +48,8 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 - Конфигурация и флаги cutover: переменные `AUTOMATION_LARAVEL_SCHEDULER_*`, синхронизация токенов с `automation-engine` (см. `doc_ai/08_SECURITY_AND_OPS/RUNBOOKS.md`, раздел про планировщик).
 - Метрики dispatch: при необходимости — публичный endpoint Laravel `GET /api/system/scheduler/metrics` (см. `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`).
 - Ответы `409 *_zone_busy` при активной AE3-задаче считаются ожидаемым `backpressure` single-writer модели и не должны интерпретироваться как операционный dispatch failure в alerting-агрегатах.
+- Для `task_type=irrigation` на AE3 scheduler-dispatch обязан проверять `zone_workflow_state.workflow_phase` и при значении, отличном от `ready` (или при отсутствии row), не вызывать `start-irrigation`: логировать `reason=zone_setup_pending` как retryable backpressure.
+- Защитный ingress-контракт AE3 зеркалит это правило: `POST /zones/{id}/start-irrigation` при `workflow_phase != ready` возвращает `409 start_irrigation_setup_pending` и не создаёт task/lease.
 - UI оператора: schedule workspace и timeline строятся из канонического состояния автоматизации, а не из удалённого Python task API.
 - Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **полив, освещение и diagnostics**; остальные запланированные типы перечисляются как non-executable, пока не реализован отдельный compat-path.
 

@@ -114,6 +114,7 @@ class ScheduleDispatcherTest extends TestCase
             cycleNow: $triggerTime,
             lastRunByTaskName: [],
             reconciledBusyness: [],
+            zoneWorkflowPhases: [],
         );
         $logs = [];
 
@@ -185,6 +186,7 @@ class ScheduleDispatcherTest extends TestCase
             cycleNow: $triggerTime,
             lastRunByTaskName: [],
             reconciledBusyness: [],
+            zoneWorkflowPhases: [],
         );
         $logs = [];
 
@@ -271,6 +273,7 @@ class ScheduleDispatcherTest extends TestCase
             cycleNow: $triggerTime,
             lastRunByTaskName: [],
             reconciledBusyness: [],
+            zoneWorkflowPhases: [],
         );
         $logs = [];
 
@@ -355,6 +358,7 @@ class ScheduleDispatcherTest extends TestCase
             cycleNow: $triggerTime,
             lastRunByTaskName: [],
             reconciledBusyness: [],
+            zoneWorkflowPhases: [],
         );
         $logs = [];
 
@@ -378,5 +382,70 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertSame('failed', $logs[0]['status']);
         $this->assertSame('start_cycle_zone_busy', $logs[0]['context']['error']);
         $this->assertSame(409, $logs[0]['context']['status_code']);
+    }
+
+    public function test_dispatch_skips_irrigation_for_ae3_when_zone_setup_is_pending(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake();
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-04-13 18:28:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            intervalSec: 240,
+            payload: ['duration_sec' => 120],
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [
+                $zone->id => 'idle',
+            ],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'zone_setup_pending',
+        ], $result);
+        $this->assertDatabaseCount('zone_automation_intents', 0);
+        Http::assertNothingSent();
+        $this->assertCount(1, $logs);
+        $this->assertSame('skipped', $logs[0]['status']);
+        $this->assertSame('zone_setup_pending', $logs[0]['context']['reason']);
+        $this->assertSame('idle', $logs[0]['context']['workflow_phase']);
     }
 }

@@ -727,6 +727,33 @@ async function applySelectedPreset(): Promise<void> {
       ...runtimeTuningBundle.value,
       selected_preset_key: selectedPresetKey.value,
     })
+    const selected = selectedRuntimeTuningPreset(runtimeTuningBundle.value)
+    const previewPid = runtimeTuningBundle.value.resolved_preview?.pid
+    const nextPh = normalizeConfig(
+      (previewPid?.ph && Object.keys(previewPid.ph).length > 0)
+        ? previewPid.ph
+        : selected?.pid?.ph,
+      'ph',
+    )
+    const nextEc = normalizeConfig(
+      (previewPid?.ec && Object.keys(previewPid.ec).length > 0)
+        ? previewPid.ec
+        : selected?.pid?.ec,
+      'ec',
+    )
+
+    await Promise.all([
+      updatePidConfig(props.zoneId, 'ph', nextPh),
+      updatePidConfig(props.zoneId, 'ec', nextEc),
+    ])
+
+    emit('saved', {
+      type: selectedType.value,
+      config: selectedType.value === 'ph' ? nextPh : nextEc,
+      updated_by: null,
+      updated_at: null,
+      is_default: false,
+    })
     await Promise.all([loadStatuses(), loadConfig()])
   } catch (error) {
     logger.error('[PidConfigForm] Failed to apply runtime tuning preset:', error)

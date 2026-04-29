@@ -35,6 +35,8 @@ return [
         'base_url' => env('PY_API_URL', 'http://mqtt-bridge:9000'),
         'token' => env('PY_API_TOKEN'),
         'ingest_token' => env('PY_INGEST_TOKEN'),
+        /** id | uid — сегмент зоны в MQTT (`zn-{id}` vs `zones.uid`), должен совпадать с MQTT_ZONE_FORMAT в Python. */
+        'mqtt_zone_format' => env('MQTT_ZONE_FORMAT', 'id'),
         'verify_ssl' => env('PY_API_VERIFY_SSL', true),
         'timeout' => env('PY_API_TIMEOUT', 10), // таймаут в секундах
         'retry_attempts' => env('PY_API_RETRY_ATTEMPTS', 2), // количество попыток

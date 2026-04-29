@@ -532,6 +532,20 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             extract_trace_id_from_headers_fn=extract_trace_id_from_headers,
         )
 
+    async def _load_zone_workflow_phase(zone_id: int) -> str | None:
+        rows = await fetch(
+            """
+            SELECT workflow_phase
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            int(zone_id),
+        )
+        if not rows:
+            return None
+        return str((rows[0] or {}).get("workflow_phase") or "").strip().lower() or None
+
     bind_start_cycle_route(
         app,
         validate_scheduler_zone_fn=_validate_scheduler_zone,
@@ -582,6 +596,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             claimed_stale_after_sec=runtime_config.start_cycle_claim_stale_sec,
             running_stale_after_sec=runtime_config.start_cycle_running_stale_sec,
         ),
+        load_zone_workflow_phase_fn=_load_zone_workflow_phase,
         create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now, allow_create=True: bundle.create_task_from_intent_use_case.run(
             zone_id=zone_id,
             source=source,

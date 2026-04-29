@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Models\Greenhouse;
 use App\Models\Zone;
 use App\Jobs\PublishNodeConfigJob;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
@@ -398,5 +400,67 @@ class NodeControllerTest extends TestCase
         $response->assertOk();
         $this->assertContains($assignedNode->id, $ids);
         $this->assertContains($unassignedNode->id, $ids);
+    }
+
+    public function test_node_live_mqtt_status_requires_assigned_zone(): void
+    {
+        // agronomist может смотреть непривязанные ноды (policy view), иначе 403 до валидации zone_id
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $node = DeviceNode::factory()->create(['zone_id' => null]);
+
+        $response = $this->actingAs($user)->getJson("/api/nodes/{$node->id}/live-mqtt-status");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+    }
+
+    public function test_node_live_mqtt_status_proxies_mqtt_bridge(): void
+    {
+        config(['services.python_bridge.mqtt_zone_format' => 'id']);
+        config(['services.python_bridge.base_url' => 'http://mqtt-bridge.test']);
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/bridge/nodes/') && str_contains($request->url(), '/live-status')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'topic' => 'hydro/gh-probe/zn-7/nd-probe-001/status',
+                        'reachable' => true,
+                        'mqtt_status' => 'ONLINE',
+                        'reason' => null,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['not' => 'found'], 404);
+        });
+
+        $user = User::factory()->create(['role' => 'operator']);
+        $greenhouse = Greenhouse::factory()->create(['uid' => 'gh-probe']);
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $this->grantZoneAccess($user, $zone);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-probe-001',
+        ]);
+
+        $response = $this->actingAs($user)->getJson("/api/nodes/{$node->id}/live-mqtt-status?timeout_sec=3");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.reachable', true)
+            ->assertJsonPath('data.topic', 'hydro/gh-probe/zn-7/nd-probe-001/status');
+
+        Http::assertSent(function (Request $request) use ($zone, $node): bool {
+            $url = $request->url();
+            if (! str_contains($url, '/bridge/nodes/'.rawurlencode($node->uid).'/live-status')) {
+                return false;
+            }
+            parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $q);
+
+            return ($q['greenhouse_uid'] ?? '') === 'gh-probe'
+                && ($q['zone_segment'] ?? '') === 'zn-'.$zone->id
+                && (float) ($q['timeout_sec'] ?? 0) === 3.0;
+        });
     }
 }
