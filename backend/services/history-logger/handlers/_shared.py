@@ -349,16 +349,6 @@ async def resolve_zone_id_for_node_event(
 ) -> Optional[int]:
     if zone_uid:
         zone_uid_str = str(zone_uid).strip()
-        if zone_uid_str.startswith("zn-"):
-            try:
-                return int(zone_uid_str.split("-", 1)[1])
-            except (ValueError, IndexError):
-                pass
-        else:
-            try:
-                return int(zone_uid_str)
-            except ValueError:
-                pass
 
         zone_rows = await fetch(
             """
@@ -371,6 +361,17 @@ async def resolve_zone_id_for_node_event(
         )
         if zone_rows:
             return zone_rows[0].get("id")
+
+        if zone_uid_str.startswith("zn-"):
+            try:
+                return int(zone_uid_str.split("-", 1)[1])
+            except (ValueError, IndexError):
+                pass
+        else:
+            try:
+                return int(zone_uid_str)
+            except ValueError:
+                pass
 
     if node_uid:
         node_rows = await fetch(
