@@ -54,7 +54,6 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     waterTopologyLabel: state.waterTopologyLabel,
     resetToRecommended: state.resetToRecommended,
     runManualIrrigation: state.runManualIrrigation,
-    runManualClimate: state.runManualClimate,
     runManualLighting: state.runManualLighting,
     runManualPh: state.runManualPh,
     runManualEc: state.runManualEc,

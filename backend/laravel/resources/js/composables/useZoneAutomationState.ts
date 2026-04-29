@@ -470,7 +470,6 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
 
   const quickActions = reactive({
     irrigation: false,
-    climate: false,
     lighting: false,
     ph: false,
     ec: false,
@@ -646,17 +645,6 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     })
   }
 
-  async function runManualClimate(): Promise<void> {
-    if (!props.zoneId) return
-
-    await withQuickAction('climate', async () => {
-      await sendZoneCommand(props.zoneId as number, 'FORCE_CLIMATE', {
-        target_temp: clamp(climateForm.dayTemp, 10, 35),
-        target_humidity: clamp(climateForm.dayHumidity, 30, 90),
-      })
-    })
-  }
-
   async function runManualLighting(): Promise<void> {
     if (!props.zoneId) return
 
@@ -720,7 +708,6 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     // Actions
     resetToRecommended,
     runManualIrrigation,
-    runManualClimate,
     runManualLighting,
     runManualPh,
     runManualEc,

@@ -106,6 +106,7 @@ import DayNightStrip from '../DayNightStrip.vue'
 import { Field, Hint, ToggleField } from '@/Components/Shared/Primitives'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { LightingFormState } from '@/composables/zoneAutomationTypes'
+import { toInt, toNum, toStr } from './sharedFormUtils'
 
 const props = defineProps<{ lightingForm: LightingFormState }>()
 const emit = defineEmits<{
@@ -124,15 +125,5 @@ function upd<K extends keyof LightingFormState>(
   value: LightingFormState[K],
 ): void {
   emit('update:lightingForm', { ...props.lightingForm, [key]: value })
-}
-function toNum(e: Event) {
-  const n = Number((e.target as HTMLInputElement).value)
-  return Number.isFinite(n) ? n : 0
-}
-function toInt(e: Event) {
-  return Math.trunc(toNum(e))
-}
-function toStr(e: Event) {
-  return (e.target as HTMLInputElement).value
 }
 </script>

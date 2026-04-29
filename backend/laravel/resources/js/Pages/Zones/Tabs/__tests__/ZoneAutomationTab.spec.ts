@@ -39,10 +39,6 @@ vi.mock('@/Components/AIPredictionsSection.vue', () => ({
   default: { name: 'AIPredictionsSection', template: '<div />' },
 }))
 
-vi.mock('@/Components/PidConfigForm.vue', () => ({
-  default: { name: 'PidConfigForm', template: '<div />' },
-}))
-
 vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
   default: {
     name: 'CorrectionRuntimeReadinessCard',
@@ -53,10 +49,6 @@ vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
 
 vi.mock('@/Components/ProcessCalibrationPanel.vue', () => ({
   default: { name: 'ProcessCalibrationPanel', template: '<div />' },
-}))
-
-vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
-  default: { name: 'RelayAutotuneTrigger', template: '<div />' },
 }))
 
 vi.mock('@/Components/ZoneAutomationAccordionSection.vue', () => ({
@@ -89,6 +81,10 @@ vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
 
 vi.mock('@/Components/SensorCalibrationStatus.vue', () => ({
   default: { name: 'SensorCalibrationStatus', template: '<div />' },
+}))
+
+vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
+  default: { name: 'RelayAutotuneTrigger', template: '<div />' },
 }))
 
 vi.mock('@/Components/ZonePumpCalibrationSettingsCard.vue', () => ({
@@ -635,4 +631,5 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.get('[data-testid="mock-pump-save-seq"]').text()).toBe('3')
     expect(wrapper.get('[data-testid="mock-pump-run-seq"]').text()).toBe('5')
   })
+
 })

@@ -331,6 +331,7 @@ import { Field, Select, Hint, ToggleField } from '@/Components/Shared/Primitives
 import Ic from '@/Components/Icons/Ic.vue'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
+import { createMetaResolver, toInt, toNum, toStr, type FieldMeta } from './sharedFormUtils'
 
 const props = defineProps<{
   waterForm: WaterFormState
@@ -350,8 +351,7 @@ const inputCls =
 const numAttrs = { class: inputCls, type: 'number' }
 const textAttrs = { class: inputCls, type: 'text' }
 
-type WaterMeta = { label: string; hint: string; details: string }
-const WATER_FIELD_META: Partial<Record<keyof WaterFormState, WaterMeta>> = {
+const WATER_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   systemType: { label: 'Тип гидросистемы', hint: 'Берётся из активного рецепта', details: 'Определяет сценарий работы водного контура: набор этапов запуска, fill/recirculation и проверки.' },
   tanksCount: { label: 'Число баков', hint: 'Допустимо 2-3', details: 'Определяет топологию контура и набор обязательных шагов при старте.' },
   workingTankL: { label: 'Рабочий объём бака, л', hint: 'База для расчётов доз', details: 'Объём раствора в рабочем баке; влияет на расчёт дозировок и динамику коррекций pH/EC.' },
@@ -389,19 +389,11 @@ const WATER_FIELD_META: Partial<Record<keyof WaterFormState, WaterMeta>> = {
   solutionChangeDurationSeconds: { label: 'Длительность процедуры смены, сек', hint: 'Продолжительность операции', details: 'Сколько секунд длится операция смены раствора после старта.' },
   manualIrrigationSeconds: { label: 'Ручной полив, сек', hint: 'Длительность ручного старта', details: 'Сколько секунд работает полив при ручном запуске оператором.' },
 }
-
-function meta(key: keyof WaterFormState): WaterMeta {
-  const originalName = String(key)
-  const base = WATER_FIELD_META[key] ?? {
-    label: originalName,
-    hint: 'Параметр водного контура',
-    details: 'Параметр влияет на расчёты и переходы workflow водного контура.',
-  }
-  return {
-    ...base,
-    details: `${originalName}: ${base.details}`,
-  }
-}
+const meta = createMetaResolver<WaterFormState>(WATER_FIELD_META, {
+  label: '',
+  hint: 'Параметр водного контура',
+  details: 'Параметр влияет на расчёты и переходы workflow водного контура.',
+})
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]): void {
   emit('update:waterForm', { ...props.waterForm, [key]: value })
@@ -409,18 +401,6 @@ function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]): 
 
 function onPresetUpdate(next: WaterFormState): void {
   emit('update:waterForm', next)
-}
-
-function toNum(e: Event): number {
-  const v = (e.target as HTMLInputElement).value
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-function toInt(e: Event): number {
-  return Math.trunc(toNum(e))
-}
-function toStr(e: Event): string {
-  return (e.target as HTMLInputElement).value
 }
 
 // — Inline SectionLabel for visual parity with реф —

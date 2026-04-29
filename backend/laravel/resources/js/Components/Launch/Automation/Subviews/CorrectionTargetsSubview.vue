@@ -58,6 +58,7 @@ import CorrectionProfileChooser from '../CorrectionProfileChooser.vue'
 import type { CorrectionProfileKey } from '../correctionPresets'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
+import { createMetaResolver, toNum, type FieldMeta } from './sharedFormUtils'
 
 const props = defineProps<{ waterForm: WaterFormState }>()
 const emit = defineEmits<{ (e: 'update:waterForm', next: WaterFormState): void }>()
@@ -80,8 +81,7 @@ const numAttrs = { class: inputCls, type: 'number' }
 const lockedCls =
   'flex items-center h-8 px-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] text-sm font-mono text-[var(--text-primary)] gap-1.5'
 
-type CorrectionMeta = { label: string; hint: string; details: string }
-const CORRECTION_FIELD_META: Partial<Record<keyof WaterFormState, CorrectionMeta>> = {
+const CORRECTION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   targetPh: {
     label: 'Целевой pH',
     hint: 'Значение из активной фазы рецепта',
@@ -103,26 +103,14 @@ const CORRECTION_FIELD_META: Partial<Record<keyof WaterFormState, CorrectionMeta
     details: 'Процент допустимого отклонения EC от target до запуска коррекции.',
   },
 }
-
-function meta(key: keyof WaterFormState): CorrectionMeta {
-  const originalName = String(key)
-  const base = CORRECTION_FIELD_META[key] ?? {
-    label: originalName,
-    hint: 'Параметр коррекции',
-    details: 'Параметр влияет на логику и пороги коррекции pH/EC.',
-  }
-  return {
-    ...base,
-    details: `${originalName}: ${base.details}`,
-  }
-}
+const meta = createMetaResolver<WaterFormState>(CORRECTION_FIELD_META, {
+  label: '',
+  hint: 'Параметр коррекции',
+  details: 'Параметр влияет на логику и пороги коррекции pH/EC.',
+})
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]) {
   emit('update:waterForm', { ...props.waterForm, [key]: value })
-}
-function toNum(e: Event) {
-  const n = Number((e.target as HTMLInputElement).value)
-  return Number.isFinite(n) ? n : 0
 }
 
 function onPresetApply(patch: Partial<WaterFormState>) {

@@ -145,6 +145,7 @@ import Button from '@/Components/Button.vue'
 import { Field, Hint, ToggleField } from '@/Components/Shared/Primitives'
 import { useLaunchPreferences } from '@/composables/useLaunchPreferences'
 import type { WaterFormState } from '@/composables/zoneAutomationTypes'
+import { createMetaResolver, toInt, toNum, type FieldMeta } from './sharedFormUtils'
 
 const props = defineProps<{ waterForm: WaterFormState }>()
 const emit = defineEmits<{ (e: 'update:waterForm', next: WaterFormState): void }>()
@@ -159,8 +160,7 @@ const inputCls =
   'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
 const numAttrs = { class: inputCls, type: 'number' }
 
-type IrrigationMeta = { label: string; hint: string; details: string }
-const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, IrrigationMeta>> = {
+const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = {
   intervalMinutes: {
     label: 'Интервал полива, мин',
     hint: 'Период запуска полива',
@@ -222,28 +222,13 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, IrrigationMeta
     details: 'Ограничивает число повторных setup-проходов до блокировки сценария.',
   },
 }
-
-function meta(key: keyof WaterFormState): IrrigationMeta {
-  const originalName = String(key)
-  const base = IRRIGATION_FIELD_META[key] ?? {
-    label: originalName,
-    hint: 'Параметр режима полива',
-    details: 'Параметр влияет на расписание, SMART-решение или recovery полива.',
-  }
-  return {
-    ...base,
-    details: `${originalName}: ${base.details}`,
-  }
-}
+const meta = createMetaResolver<WaterFormState>(IRRIGATION_FIELD_META, {
+  label: '',
+  hint: 'Параметр режима полива',
+  details: 'Параметр влияет на расписание, SMART-решение или recovery полива.',
+})
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]) {
   emit('update:waterForm', { ...props.waterForm, [key]: value })
-}
-function toNum(e: Event) {
-  const n = Number((e.target as HTMLInputElement).value)
-  return Number.isFinite(n) ? n : 0
-}
-function toInt(e: Event) {
-  return Math.trunc(toNum(e))
 }
 </script>
