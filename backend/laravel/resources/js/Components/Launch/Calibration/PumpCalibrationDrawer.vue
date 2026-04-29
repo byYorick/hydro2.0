@@ -555,17 +555,22 @@ interface ContextPill {
   done: boolean
 }
 
-const componentToRole: Record<PumpCalibrationComponent, string> = {
-  npk: 'pump_a',
-  calcium: 'pump_b',
-  magnesium: 'pump_c',
-  micro: 'pump_d',
-  ph_up: 'pump_base',
-  ph_down: 'pump_acid',
+function roleForComponent(component: PumpCalibrationComponent): string {
+  return component === 'npk'
+    ? 'pump_a'
+    : component === 'calcium'
+      ? 'pump_b'
+      : component === 'magnesium'
+        ? 'pump_c'
+        : component === 'micro'
+          ? 'pump_d'
+          : component === 'ph_up'
+            ? 'pump_base'
+            : 'pump_acid'
 }
 
 function pumpDoneFor(component: PumpCalibrationComponent): boolean {
-  const role = componentToRole[component]
+  const role = roleForComponent(component)
   const pump = props.pumps.find((p) => p.role === role)
   return !!pump?.ml_per_sec && pump.ml_per_sec > 0
 }
@@ -756,7 +761,7 @@ function setInitialPumpSelection(): void {
   }
 
   if (!form.node_channel_id && props.initialComponent) {
-    const initialRole = componentToRole[props.initialComponent]
+    const initialRole = roleForComponent(props.initialComponent)
     const initialPump = props.pumps.find((p) => p.role === initialRole && p.node_channel_id > 0)
     if (initialPump) {
       form.node_channel_id = initialPump.node_channel_id

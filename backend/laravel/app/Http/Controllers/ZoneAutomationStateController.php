@@ -19,13 +19,13 @@ use Illuminate\Support\Facades\Log;
 class ZoneAutomationStateController extends Controller
 {
     private const STATE_CACHE_TTL_SECONDS = 300;
+
     private const CONTROL_MODE_FALLBACK_BACKOFF_SECONDS = 120;
 
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
-    ) {
-    }
+    ) {}
 
     public function show(Request $request, Zone $zone): JsonResponse
     {
@@ -206,10 +206,20 @@ class ZoneAutomationStateController extends Controller
         $state = $this->mapWorkflowPhaseToAutomationState($workflowPhase);
         $lastTaskState = $this->fetchLastTaskStateFromDatabase($zoneId);
 
+        $stateLabel = $this->automationStateLabel($state);
+        if (($lastTaskState['failed'] ?? false) === true) {
+            $failedHeadline = is_string($lastTaskState['human_error_message'] ?? null)
+                ? trim((string) $lastTaskState['human_error_message'])
+                : '';
+            if ($failedHeadline !== '') {
+                $stateLabel = $failedHeadline;
+            }
+        }
+
         return [
             'zone_id' => $zoneId,
             'state' => $state,
-            'state_label' => $this->automationStateLabel($state),
+            'state_label' => $stateLabel,
             'state_details' => [
                 'started_at' => $lastTaskState['created_at'] ?? null,
                 'elapsed_sec' => 0,

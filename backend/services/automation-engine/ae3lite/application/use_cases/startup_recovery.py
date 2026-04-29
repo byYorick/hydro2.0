@@ -71,6 +71,10 @@ class StartupRecoveryUseCase:
             if terminal_outcome is not None:
                 terminal_outcomes.append(terminal_outcome)
 
+        rec_failed, rec_outcomes = await self._reconcile_pending_vs_terminal_idle_workflow(now=now)
+        failed_tasks += rec_failed
+        terminal_outcomes.extend(rec_outcomes)
+
         return StartupRecoveryResult(
             released_expired_leases=released_expired_leases,
             scanned_tasks=len(tasks),
@@ -80,6 +84,54 @@ class StartupRecoveryUseCase:
             recovered_waiting_command_tasks=recovered_waiting_command_tasks,
             terminal_outcomes=tuple(terminal_outcomes),
         )
+
+    async def _reconcile_pending_vs_terminal_idle_workflow(
+        self,
+        *,
+        now: datetime,
+    ) -> tuple[int, list[StartupRecoveryTerminalOutcome]]:
+        """Снимает «осиротевшие» pending-задачи при idle workflow с терминальным *_stop stage в payload."""
+        rows = await self._task_repository.fetch_pending_with_idle_zone_workflow_rows()
+        failed_count = 0
+        outcomes: list[StartupRecoveryTerminalOutcome] = []
+        for row in rows:
+            row_map = dict(row)
+            snap = row_map.pop("snapshot_stage", None)
+            snapshot_stage = str(snap).strip() if snap else ""
+            if not snapshot_stage:
+                continue
+            task = AutomationTask.from_row(row_map)
+            topo = str(task.topology or "two_tank").strip()
+            if not self._registry.has_topology(topo):
+                topo = "two_tank"
+            try:
+                st = self._registry.get(topo, snapshot_stage)
+            except KeyError:
+                continue
+            if st.terminal_error is None:
+                continue
+            failed = await self._task_repository.fail_pending_or_active_for_recovery(
+                task_id=task.id,
+                error_code="startup_recovery_pending_vs_terminal_workflow",
+                error_message=(
+                    f"Отмена pending {task.task_type}: zone_workflow в терминальном stage "
+                    f"{snapshot_stage} после остановки цикла"
+                ),
+                now=now,
+            )
+            if failed is None:
+                logger.warning(
+                    "Startup recovery: reconcile fail_pending noop task_id=%s zone_id=%s",
+                    task.id,
+                    task.zone_id,
+                )
+                continue
+            failed_count += 1
+            STARTUP_RECOVERY_TASK.labels(outcome="failed").inc()
+            terminal_outcome = self._build_terminal_outcome(task=failed)
+            if terminal_outcome is not None:
+                outcomes.append(terminal_outcome)
+        return failed_count, outcomes
 
     async def _recover_task(
         self,

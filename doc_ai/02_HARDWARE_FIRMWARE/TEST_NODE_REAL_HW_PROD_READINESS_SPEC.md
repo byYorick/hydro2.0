@@ -415,12 +415,13 @@ Transient-overlap правило для `pump_main`:
 
 `clean_fill`:
 
-- `level_clean_min=1` через 5s от старта stage
+- `level_clean_min=1` сразу при активном пути наполнения чистым (`valve_clean_fill` / `tank_fill`) или при
+  активном `solution_fill` (подача из чистого контура), чтобы совпасть с AE3 при `clean_fill_min_check_delay_ms=0`
 - `level_clean_max=1` через 30s (latch)
 
 `solution_fill`:
 
-- `level_solution_min=1` через 10s
+- `level_solution_min=1` сразу при активном пути (`pump_main` + `valve_clean_supply` + `valve_solution_fill`)
 - `level_solution_max=1` через 180s (latch)
 
 События:

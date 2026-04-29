@@ -91,6 +91,14 @@ function createPreset(overrides: Partial<ZoneAutomationPreset> = {}): ZoneAutoma
         prepare_recirculation_timeout_sec: 1200,
         level_poll_interval_sec: 60,
         clean_fill_retry_cycles: 1,
+        fail_safe_guards: {
+          clean_fill_min_check_delay_ms: 5000,
+          solution_fill_clean_min_check_delay_ms: 5000,
+          solution_fill_solution_min_check_delay_ms: 15000,
+          recirculation_stop_on_solution_min: true,
+          irrigation_stop_on_solution_min: true,
+          estop_debounce_ms: 80,
+        },
       },
       climate: null,
       lighting: null,
@@ -125,6 +133,35 @@ describe('applyPresetToWaterForm', () => {
     expect(result.startupSolutionFillTimeoutSeconds).toBe(1800)
     expect(result.startupPrepareRecirculationTimeoutSeconds).toBe(1200)
     expect(result.startupCleanFillRetryCycles).toBe(1)
+  })
+
+  it('применяет fail_safe_guards из пресета', () => {
+    const form = createWaterForm()
+    const preset = createPreset({
+      config: {
+        ...createPreset().config,
+        startup: {
+          ...createPreset().config.startup,
+          fail_safe_guards: {
+            clean_fill_min_check_delay_ms: 7000,
+            solution_fill_clean_min_check_delay_ms: 6000,
+            solution_fill_solution_min_check_delay_ms: 20000,
+            recirculation_stop_on_solution_min: false,
+            irrigation_stop_on_solution_min: false,
+            estop_debounce_ms: 120,
+          },
+        },
+      },
+    })
+
+    const result = applyPresetToWaterForm(preset, form)
+
+    expect(result.cleanFillMinCheckDelayMs).toBe(7000)
+    expect(result.solutionFillCleanMinCheckDelayMs).toBe(6000)
+    expect(result.solutionFillSolutionMinCheckDelayMs).toBe(20000)
+    expect(result.recirculationStopOnSolutionMin).toBe(false)
+    expect(result.stopOnSolutionMin).toBe(false)
+    expect(result.estopDebounceMs).toBe(120)
   })
 
   it('применяет tanks_count из пресета', () => {
@@ -217,6 +254,8 @@ describe('buildPresetFromWaterForm', () => {
     expect(payload.config.irrigation.correction_during_irrigation).toBe(true)
     expect(payload.config.startup.clean_fill_timeout_sec).toBe(1200)
     expect(payload.config.startup.solution_fill_timeout_sec).toBe(1800)
+    expect(payload.config.startup.fail_safe_guards?.clean_fill_min_check_delay_ms).toBe(5000)
+    expect(payload.config.startup.fail_safe_guards?.solution_fill_solution_min_check_delay_ms).toBe(15000)
   })
 
   it('включает irrigation_decision config для smart_soil_v1', () => {
@@ -291,6 +330,14 @@ describe('isPresetModified', () => {
     const preset = createPreset()
     const form = applyPresetToWaterForm(preset, createWaterForm())
     form.durationSeconds = 999
+
+    expect(isPresetModified(preset, form)).toBe(true)
+  })
+
+  it('возвращает true при изменении fail_safe задержки', () => {
+    const preset = createPreset()
+    const form = applyPresetToWaterForm(preset, createWaterForm())
+    form.cleanFillMinCheckDelayMs = 9999
 
     expect(isPresetModified(preset, form)).toBe(true)
   })

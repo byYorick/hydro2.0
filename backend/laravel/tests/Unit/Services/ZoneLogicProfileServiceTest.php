@@ -141,6 +141,8 @@ class ZoneLogicProfileServiceTest extends TestCase
                     'enabled' => true,
                     'execution' => [
                         'workflow' => 'startup',
+                        'topology' => 'two_tank_drip_substrate_trays',
+                        'startup' => [],
                         'two_tank_commands' => [
                             'clean_fill_start' => [
                                 [
@@ -158,6 +160,7 @@ class ZoneLogicProfileServiceTest extends TestCase
         );
 
         $this->assertSame('cycle_start', data_get($profile->commandPlans, 'plans.diagnostics.execution.workflow'));
+        $this->assertSame(5.0, data_get($profile->commandPlans, 'plans.diagnostics.execution.startup.irr_state_wait_timeout_sec'));
         $this->assertCount(1, data_get($profile->commandPlans, 'plans.diagnostics.steps', []));
     }
 

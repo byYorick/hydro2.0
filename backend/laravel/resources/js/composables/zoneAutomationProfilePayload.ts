@@ -310,6 +310,8 @@ export function buildGrowthCycleConfigPayload(
               .split(',')
               .map((item) => item.trim())
               .filter((item) => item.length > 0),
+      // AE3 runtime-plan contract requires this field in diagnostics.execution.startup.
+      irr_state_wait_timeout_sec: 5.0,
       clean_fill_timeout_sec: startupCleanFillTimeoutSec,
       solution_fill_timeout_sec: startupSolutionFillTimeoutSec,
       prepare_recirculation_timeout_sec: startupPrepareRecirculationTimeoutSec,

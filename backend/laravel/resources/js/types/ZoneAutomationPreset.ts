@@ -30,12 +30,23 @@ export interface IrrigationDecision {
   config?: IrrigationDecisionConfig | null
 }
 
+/** Задержки min-check и флаги fail-safe AE3/NodeConfig при старте зоны. */
+export interface StartupFailSafeGuardsConfig {
+  clean_fill_min_check_delay_ms: number
+  solution_fill_clean_min_check_delay_ms: number
+  solution_fill_solution_min_check_delay_ms: number
+  recirculation_stop_on_solution_min: boolean
+  irrigation_stop_on_solution_min: boolean
+  estop_debounce_ms: number
+}
+
 export interface StartupConfig {
   clean_fill_timeout_sec: number
   solution_fill_timeout_sec: number
   prepare_recirculation_timeout_sec: number
   level_poll_interval_sec: number
   clean_fill_retry_cycles: number
+  fail_safe_guards?: StartupFailSafeGuardsConfig
 }
 
 export interface ZoneAutomationPresetConfig {

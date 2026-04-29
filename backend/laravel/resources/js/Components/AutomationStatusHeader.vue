@@ -91,7 +91,7 @@ type PipelineStageVisualStatus = WorkflowStageStatus | 'manual' | 'canceled' | '
 interface Props {
   stateCode: AutomationStateType
   stateLabel: string
-  stateVariant: 'neutral' | 'info' | 'warning' | 'success'
+  stateVariant: 'neutral' | 'info' | 'warning' | 'success' | 'danger'
   isProcessActive: boolean
   progressSummary: string
   errorMessage: string | null

@@ -702,3 +702,85 @@ async def test_state_prefers_terminal_last_task_over_stale_active_workflow_snaps
     assert result["state_details"]["failed"] is True
     assert result["state_details"]["error_code"] == "command_timeout"
     assert result["current_stage"] == "solution_fill_start"
+
+
+async def test_ready_macro_shows_irrigation_substage_label_for_active_task() -> None:
+    task = SimpleNamespace(
+        id=101,
+        status="running",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="await_ready",
+            workflow_phase="ready",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=42)
+
+    assert result["state"] == "READY"
+    assert result["state_label"] == "Ожидание готового раствора"
+    assert result["state_details"]["failed"] is False
+
+
+async def test_workflow_ready_snapshot_merges_newer_workflow_with_older_failed_terminal_task() -> None:
+    workflow = ZoneWorkflow(
+        zone_id=3,
+        workflow_phase="ready",
+        version=2,
+        scheduler_task_id="201",
+        started_at=NOW.replace(tzinfo=None),
+        updated_at=NOW.replace(tzinfo=None),
+        payload={"ae3_cycle_start_stage": "complete_ready"},
+    )
+    last_task = SimpleNamespace(
+        id=202,
+        status="failed",
+        error_code="test_irrigation_stop",
+        error_message="clean fill stopped",
+        updated_at=(NOW - timedelta(hours=1)).replace(tzinfo=None),
+        workflow=WorkflowState(
+            current_stage="clean_fill_source_empty_stop",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=None, last_task=last_task),
+        workflow_repository=_WorkflowRepo(workflow),
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=3)
+
+    assert result["state"] == "READY"
+    assert result["state_details"]["failed"] is True
+    assert result["state_details"]["error_code"] == "test_irrigation_stop"
+    assert "сбой" in result["state_label"]
+    assert "источник чистой воды пуст" in result["state_label"]

@@ -53,9 +53,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
 #define TASK_STACK_MQTT_REANNOUNCE 6144
 #define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 5632
-#define CLEAN_FILL_MIN_DELAY_SEC 5
 #define CLEAN_FILL_DELAY_SEC 30
-#define SOLUTION_FILL_MIN_DELAY_SEC 10
 #define SOLUTION_FILL_DELAY_SEC 180
 #define STATE_QUERY_BARRIER_QUIET_MS 1500
 #define STATE_QUERY_BARRIER_POLL_MS 50
@@ -1316,14 +1314,22 @@ static float resolve_clean_min_switch_value(void) {
     if (s_virtual_state.force_clean_sensor_conflict && clean_max_active) {
         return 0.0f;
     }
-    if (s_virtual_state.clean_max_latched) {
+    /* Пока симуляция в активном clean_fill, считаем нижний датчик «мокнуто влажным»,
+     * чтобы не срывать AE3 на clean_fill_source_empty при нулевых guard-delay. */
+    if (s_virtual_state.clean_fill_stage_active) {
         return 1.0f;
     }
-    if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
-        int64_t now_sec = get_timestamp_seconds();
-        if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_MIN_DELAY_SEC) {
-            return 1.0f;
-        }
+    /* AE3 может использовать clean_fill_min_check_delay_ms=0: первая проверка идёт сразу после
+     * команд наполнения. Пока water_level ещё ниже порога 0.18, без этого правила telemetry даёт 0 и
+     * backend видит clean_fill_source_empty. На реальном стенде «вода на входе» есть, пока открыт
+     * путь clean_fill или идёт solution_fill с подачей из чистого контура. */
+    if (s_virtual_state.valve_clean_fill_on || s_virtual_state.tank_fill_on ||
+        (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_supply_on &&
+         s_virtual_state.valve_solution_fill_on)) {
+        return 1.0f;
+    }
+    if (s_virtual_state.clean_max_latched) {
+        return 1.0f;
     }
     return level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true);
 }
@@ -1351,14 +1357,14 @@ static float resolve_solution_min_switch_value(void) {
     if (s_virtual_state.force_solution_sensor_conflict && solution_max_active) {
         return 0.0f;
     }
-    if (s_virtual_state.solution_max_latched) {
+    /* См. resolve_clean_min_switch_value: при нулевых guard-delay в AE3 solution_min проверяется
+     * раньше, чем solution_level успевает подняться над порогом. */
+    if (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_supply_on &&
+        s_virtual_state.valve_solution_fill_on) {
         return 1.0f;
     }
-    if (s_virtual_state.solution_fill_stage_active && s_virtual_state.solution_fill_started_at > 0) {
-        int64_t now_sec = get_timestamp_seconds();
-        if ((now_sec - s_virtual_state.solution_fill_started_at) >= SOLUTION_FILL_MIN_DELAY_SEC) {
-            return 1.0f;
-        }
+    if (s_virtual_state.solution_max_latched) {
+        return 1.0f;
     }
     return level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true);
 }

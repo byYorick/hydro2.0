@@ -7,8 +7,29 @@ import type {
   ZoneAutomationPresetFilters,
   IrrigationSystemType,
   CorrectionProfile,
+  StartupFailSafeGuardsConfig,
 } from '@/types/ZoneAutomationPreset'
 import type { WaterFormState } from './zoneAutomationTypes'
+import { FALLBACK_AUTOMATION_DEFAULTS } from './useAutomationDefaults'
+
+function resolvePresetStartupFailSafe(
+  startup: ZoneAutomationPresetConfig['startup'],
+): StartupFailSafeGuardsConfig {
+  const fb = FALLBACK_AUTOMATION_DEFAULTS
+  const g = startup.fail_safe_guards
+  return {
+    clean_fill_min_check_delay_ms: g?.clean_fill_min_check_delay_ms ?? fb.water_clean_fill_min_check_delay_ms,
+    solution_fill_clean_min_check_delay_ms:
+      g?.solution_fill_clean_min_check_delay_ms ?? fb.water_solution_fill_clean_min_check_delay_ms,
+    solution_fill_solution_min_check_delay_ms:
+      g?.solution_fill_solution_min_check_delay_ms ?? fb.water_solution_fill_solution_min_check_delay_ms,
+    recirculation_stop_on_solution_min:
+      g?.recirculation_stop_on_solution_min ?? fb.water_recirculation_stop_on_solution_min,
+    irrigation_stop_on_solution_min:
+      g?.irrigation_stop_on_solution_min ?? fb.water_irrigation_stop_on_solution_min,
+    estop_debounce_ms: g?.estop_debounce_ms ?? fb.water_estop_debounce_ms,
+  }
+}
 
 export function useZoneAutomationPresets() {
   const presets: Ref<ZoneAutomationPreset[]> = ref([])
@@ -92,6 +113,7 @@ export function applyPresetToWaterForm(
   form: WaterFormState,
 ): WaterFormState {
   const cfg = preset.config
+  const failSafe = resolvePresetStartupFailSafe(cfg.startup)
 
   return {
     ...form,
@@ -111,6 +133,12 @@ export function applyPresetToWaterForm(
     startupSolutionFillTimeoutSeconds: cfg.startup.solution_fill_timeout_sec,
     startupPrepareRecirculationTimeoutSeconds: cfg.startup.prepare_recirculation_timeout_sec,
     startupCleanFillRetryCycles: cfg.startup.clean_fill_retry_cycles,
+    cleanFillMinCheckDelayMs: failSafe.clean_fill_min_check_delay_ms,
+    solutionFillCleanMinCheckDelayMs: failSafe.solution_fill_clean_min_check_delay_ms,
+    solutionFillSolutionMinCheckDelayMs: failSafe.solution_fill_solution_min_check_delay_ms,
+    recirculationStopOnSolutionMin: failSafe.recirculation_stop_on_solution_min,
+    stopOnSolutionMin: failSafe.irrigation_stop_on_solution_min,
+    estopDebounceMs: failSafe.estop_debounce_ms,
     // System type from preset
     tanksCount: preset.tanks_count,
   }
@@ -129,6 +157,7 @@ export function buildPresetFromWaterForm(
     correctionProfile?: CorrectionProfile | null
   },
 ): ZoneAutomationPresetCreatePayload {
+  const fb = FALLBACK_AUTOMATION_DEFAULTS
   const config: ZoneAutomationPresetConfig = {
     irrigation: {
       duration_sec: form.durationSeconds,
@@ -156,6 +185,17 @@ export function buildPresetFromWaterForm(
       prepare_recirculation_timeout_sec: form.startupPrepareRecirculationTimeoutSeconds ?? 1200,
       level_poll_interval_sec: 60,
       clean_fill_retry_cycles: form.startupCleanFillRetryCycles ?? 1,
+      fail_safe_guards: {
+        clean_fill_min_check_delay_ms: form.cleanFillMinCheckDelayMs ?? fb.water_clean_fill_min_check_delay_ms,
+        solution_fill_clean_min_check_delay_ms:
+          form.solutionFillCleanMinCheckDelayMs ?? fb.water_solution_fill_clean_min_check_delay_ms,
+        solution_fill_solution_min_check_delay_ms:
+          form.solutionFillSolutionMinCheckDelayMs ?? fb.water_solution_fill_solution_min_check_delay_ms,
+        recirculation_stop_on_solution_min:
+          form.recirculationStopOnSolutionMin ?? fb.water_recirculation_stop_on_solution_min,
+        irrigation_stop_on_solution_min: form.stopOnSolutionMin ?? fb.water_irrigation_stop_on_solution_min,
+        estop_debounce_ms: form.estopDebounceMs ?? fb.water_estop_debounce_ms,
+      },
     },
     climate: null,
     lighting: null,
@@ -180,6 +220,14 @@ export function isPresetModified(
   form: WaterFormState,
 ): boolean {
   const cfg = preset.config
+  const fb = FALLBACK_AUTOMATION_DEFAULTS
+  const failSafe = resolvePresetStartupFailSafe(cfg.startup)
+  const cleanFillDelay = form.cleanFillMinCheckDelayMs ?? fb.water_clean_fill_min_check_delay_ms
+  const solutionCleanDelay = form.solutionFillCleanMinCheckDelayMs ?? fb.water_solution_fill_clean_min_check_delay_ms
+  const solutionMinDelay = form.solutionFillSolutionMinCheckDelayMs ?? fb.water_solution_fill_solution_min_check_delay_ms
+  const recircStop = form.recirculationStopOnSolutionMin ?? fb.water_recirculation_stop_on_solution_min
+  const irrigStop = form.stopOnSolutionMin ?? fb.water_irrigation_stop_on_solution_min
+  const estopMs = form.estopDebounceMs ?? fb.water_estop_debounce_ms
   return (
     form.durationSeconds !== cfg.irrigation.duration_sec
     || Math.round(cfg.irrigation.interval_sec / 60) !== form.intervalMinutes
@@ -188,6 +236,12 @@ export function isPresetModified(
     || form.startupCleanFillTimeoutSeconds !== cfg.startup.clean_fill_timeout_sec
     || form.startupSolutionFillTimeoutSeconds !== cfg.startup.solution_fill_timeout_sec
     || form.startupPrepareRecirculationTimeoutSeconds !== cfg.startup.prepare_recirculation_timeout_sec
+    || cleanFillDelay !== failSafe.clean_fill_min_check_delay_ms
+    || solutionCleanDelay !== failSafe.solution_fill_clean_min_check_delay_ms
+    || solutionMinDelay !== failSafe.solution_fill_solution_min_check_delay_ms
+    || recircStop !== failSafe.recirculation_stop_on_solution_min
+    || irrigStop !== failSafe.irrigation_stop_on_solution_min
+    || estopMs !== failSafe.estop_debounce_ms
     || form.tanksCount !== preset.tanks_count
   )
 }

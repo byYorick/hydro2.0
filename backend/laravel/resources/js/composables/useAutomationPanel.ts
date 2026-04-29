@@ -489,6 +489,13 @@ export function useAutomationPanel(
   const stateCode = computed<AutomationStateType>(() => automationState.value?.state ?? 'IDLE')
 
   const stateLabel = computed(() => {
+    const details = automationState.value?.state_details
+    if (details?.failed) {
+      const human = details.human_error_message?.trim()
+      if (human) return human
+      const raw = details.error_message?.trim()
+      if (raw) return raw
+    }
     if (automationState.value?.state_label) return automationState.value.state_label
     const labels: Record<AutomationStateType, string> = {
       IDLE: 'Система в ожидании',
@@ -501,7 +508,8 @@ export function useAutomationPanel(
     return labels[stateCode.value]
   })
 
-  const stateVariant = computed<'neutral' | 'info' | 'warning' | 'success'>(() => {
+  const stateVariant = computed<'neutral' | 'info' | 'warning' | 'success' | 'danger'>(() => {
+    if (automationState.value?.state_details?.failed) return 'danger'
     const map: Record<AutomationStateType, 'neutral' | 'info' | 'warning' | 'success'> = {
       IDLE: 'neutral',
       TANK_FILLING: 'info',

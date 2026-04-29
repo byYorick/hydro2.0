@@ -76,6 +76,7 @@ function asRatio(value: unknown, fallback: number): number {
 
 function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
     const d = automationProfileDefaults;
+    const fb = FALLBACK_AUTOMATION_DEFAULTS;
 
     const irrigation = asDict(subsystems.irrigation);
     const irrigationExecution = asDict(irrigation.execution);
@@ -185,11 +186,20 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
                 d.waterForm.refillTimeoutSeconds,
             ),
             startupCleanFillRetryCycles: asNumber(diagnosticsStartup.clean_fill_retry_cycles, 0),
-            cleanFillMinCheckDelayMs: asNumber(failSafeGuards.clean_fill_min_check_delay_ms, 0),
-            solutionFillCleanMinCheckDelayMs: asNumber(failSafeGuards.solution_fill_clean_min_check_delay_ms, 0),
-            solutionFillSolutionMinCheckDelayMs: asNumber(failSafeGuards.solution_fill_solution_min_check_delay_ms, 0),
-            recirculationStopOnSolutionMin: asBool(failSafeGuards.recirculation_stop_on_solution_min, false),
-            estopDebounceMs: asNumber(failSafeGuards.estop_debounce_ms, 0),
+            cleanFillMinCheckDelayMs: asNumber(failSafeGuards.clean_fill_min_check_delay_ms, fb.water_clean_fill_min_check_delay_ms),
+            solutionFillCleanMinCheckDelayMs: asNumber(
+                failSafeGuards.solution_fill_clean_min_check_delay_ms,
+                fb.water_solution_fill_clean_min_check_delay_ms,
+            ),
+            solutionFillSolutionMinCheckDelayMs: asNumber(
+                failSafeGuards.solution_fill_solution_min_check_delay_ms,
+                fb.water_solution_fill_solution_min_check_delay_ms,
+            ),
+            recirculationStopOnSolutionMin: asBool(
+                failSafeGuards.recirculation_stop_on_solution_min,
+                fb.water_recirculation_stop_on_solution_min,
+            ),
+            estopDebounceMs: asNumber(failSafeGuards.estop_debounce_ms, fb.water_estop_debounce_ms),
             irrigationDecisionStrategy: asEnum(
                 irrigationDecision.strategy,
                 ['task', 'smart_soil_v1'] as const,
@@ -215,7 +225,7 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
             irrigationMaxSetupReplays: asNumber(irrigationRecovery.max_setup_replays, 0),
             stopOnSolutionMin: asBool(
                 irrigationSafety.stop_on_solution_min ?? failSafeGuards.irrigation_stop_on_solution_min,
-                false,
+                fb.water_irrigation_stop_on_solution_min,
             ),
             correctionMaxEcCorrectionAttempts: asNumber(diagnosticsCorrection.max_ec_correction_attempts, 0),
             correctionMaxPhCorrectionAttempts: asNumber(diagnosticsCorrection.max_ph_correction_attempts, 0),
@@ -290,6 +300,7 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
     const correctionLimits = asDict(water.correction_limits);
 
     const d = automationProfileDefaults;
+    const fb = FALLBACK_AUTOMATION_DEFAULTS;
 
     return {
         waterForm: {
@@ -333,11 +344,20 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             startupSolutionFillTimeoutSeconds: asNumber(startup.solution_fill_timeout_seconds, d.waterForm.refillTimeoutSeconds),
             startupPrepareRecirculationTimeoutSeconds: asNumber(startup.prepare_recirculation_timeout_seconds, d.waterForm.refillTimeoutSeconds),
             startupCleanFillRetryCycles: asNumber(startup.clean_fill_retry_cycles, 0),
-            cleanFillMinCheckDelayMs: asNumber(startup.clean_fill_min_check_delay_ms, 0),
-            solutionFillCleanMinCheckDelayMs: asNumber(startup.solution_fill_clean_min_check_delay_ms, 0),
-            solutionFillSolutionMinCheckDelayMs: asNumber(startup.solution_fill_solution_min_check_delay_ms, 0),
-            recirculationStopOnSolutionMin: asBool(startup.recirculation_stop_on_solution_min, false),
-            estopDebounceMs: asNumber(startup.estop_debounce_ms, 0),
+            cleanFillMinCheckDelayMs: asNumber(startup.clean_fill_min_check_delay_ms, fb.water_clean_fill_min_check_delay_ms),
+            solutionFillCleanMinCheckDelayMs: asNumber(
+                startup.solution_fill_clean_min_check_delay_ms,
+                fb.water_solution_fill_clean_min_check_delay_ms,
+            ),
+            solutionFillSolutionMinCheckDelayMs: asNumber(
+                startup.solution_fill_solution_min_check_delay_ms,
+                fb.water_solution_fill_solution_min_check_delay_ms,
+            ),
+            recirculationStopOnSolutionMin: asBool(
+                startup.recirculation_stop_on_solution_min,
+                fb.water_recirculation_stop_on_solution_min,
+            ),
+            estopDebounceMs: asNumber(startup.estop_debounce_ms, fb.water_estop_debounce_ms),
             irrigationDecisionStrategy: asEnum(
                 decision.strategy,
                 ['task', 'smart_soil_v1'] as const,
@@ -352,7 +372,7 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             irrigationRecoveryTimeoutSeconds: asNumber(recovery.timeout_seconds, 0),
             irrigationAutoReplayAfterSetup: asBool(recovery.auto_replay_after_setup, false),
             irrigationMaxSetupReplays: asNumber(recovery.max_setup_replays, 0),
-            stopOnSolutionMin: asBool(water.stop_on_solution_min, false),
+            stopOnSolutionMin: asBool(water.stop_on_solution_min, fb.water_irrigation_stop_on_solution_min),
             correctionMaxEcCorrectionAttempts: asNumber(correctionLimits.max_ec_correction_attempts, 0),
             correctionMaxPhCorrectionAttempts: asNumber(correctionLimits.max_ph_correction_attempts, 0),
             correctionPrepareRecirculationMaxAttempts: asNumber(correctionLimits.prepare_recirculation_max_attempts, 0),

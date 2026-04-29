@@ -359,6 +359,7 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.diagnostics.execution.startup.clean_fill_timeout_sec).toBe(940)
     expect(payload.subsystems.diagnostics.execution.startup.solution_fill_timeout_sec).toBe(1300)
     expect(payload.subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec).toBe(920)
+    expect(payload.subsystems.diagnostics.execution.startup.irr_state_wait_timeout_sec).toBe(5)
     expect(payload.subsystems.diagnostics.execution.startup.clean_fill_retry_cycles).toBe(4)
     expect(payload.subsystems.irrigation.decision.strategy).toBe('smart_soil_v1')
     expect(payload.subsystems.irrigation.decision.config.lookback_sec).toBe(2400)

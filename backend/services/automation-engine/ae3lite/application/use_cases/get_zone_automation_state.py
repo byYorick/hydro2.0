@@ -201,13 +201,14 @@ class GetZoneAutomationStateUseCase:
             workflow_state=workflow_state,
             last_task=last_task,
         ):
-            return await self._build_workflow_state(
+            built = await self._build_workflow_state(
                 zone_id=zone_id,
                 workflow_state=workflow_state,
                 telemetry=telemetry,
                 telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
             )
+            return self._merge_last_failed_task_into_workflow_view(built, last_task)
         if task is None:
             task = last_task
 
@@ -337,6 +338,61 @@ class GetZoneAutomationStateUseCase:
             events[-1]["active"] = True
         return events
 
+    def _primary_automation_state_label(
+        self,
+        *,
+        workflow_phase: str,
+        mapped_macro_state: str,
+        current_stage: str,
+        is_terminal_failed: bool,
+    ) -> str:
+        """Человекочитаемый заголовок для UI: не показывать «Раствор готов», если идёт подэтап полива."""
+        cs_key = str(current_stage or "").strip().lower()
+
+        if is_terminal_failed:
+            stage_line = _STAGE_LABELS.get(cs_key)
+            return f"{stage_line} — сбой" if stage_line else "Сбой автоматики"
+
+        if workflow_phase == "idle" and cs_key == "startup":
+            return "Инициализация"
+
+        if mapped_macro_state == "READY" and cs_key and cs_key != "complete_ready":
+            stage_line = _STAGE_LABELS.get(cs_key)
+            if stage_line:
+                return stage_line
+
+        return _STATE_LABELS.get(mapped_macro_state, "Ожидание")
+
+    def _merge_last_failed_task_into_workflow_view(self, payload: dict[str, Any], last_task: Optional[Any]) -> dict[str, Any]:
+        """Снимок workflow в БД может оставаться ready, пока последняя ae_task уже failed — не маскируем сбой."""
+        if last_task is None:
+            return payload
+        status = str(getattr(last_task, "status", "") or "").strip().lower()
+        if status != "failed":
+            return payload
+
+        details = dict(payload.get("state_details") or {})
+        details["failed"] = True
+        details["error_code"] = getattr(last_task, "error_code", None)
+        details["error_message"] = getattr(last_task, "error_message", None)
+        payload["state_details"] = details
+
+        wf = getattr(last_task, "workflow", None)
+        failed_stage = str(getattr(wf, "current_stage", "") or "").strip() if wf is not None else ""
+        wf_phase = (
+            str(getattr(wf, "workflow_phase", "") or "").strip().lower()
+            if wf is not None
+            else str(payload.get("workflow_phase") or "").strip().lower()
+        )
+
+        payload["state_label"] = self._primary_automation_state_label(
+            workflow_phase=wf_phase,
+            mapped_macro_state=str(payload.get("state") or "IDLE"),
+            current_stage=failed_stage,
+            is_terminal_failed=True,
+        )
+        return payload
+
     async def _build_state(
         self,
         *,
@@ -364,9 +420,8 @@ class GetZoneAutomationStateUseCase:
         is_failed = status == "failed"
         is_active = status in ("pending", "claimed", "running", "waiting_command")
 
-        state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
-        if is_failed:
-            state = "IDLE"
+        mapped_macro = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
+        state = "IDLE" if is_failed else mapped_macro
 
         timeline = await self._build_timeline(
             zone_id=zone_id,
@@ -382,7 +437,12 @@ class GetZoneAutomationStateUseCase:
         return {
             "zone_id": zone_id,
             "state": state,
-            "state_label": _STATE_LABELS.get(state, "Ожидание"),
+            "state_label": self._primary_automation_state_label(
+                workflow_phase=workflow_phase,
+                mapped_macro_state=mapped_macro,
+                current_stage=str(current_stage) if current_stage is not None else "",
+                is_terminal_failed=is_failed,
+            ),
             "state_details": {
                 "started_at": None,
                 "elapsed_sec": 0,
@@ -449,9 +509,12 @@ class GetZoneAutomationStateUseCase:
                 **{k: v for k, v in solution_tank_guard.items() if v is not None},
             }
         state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
-        state_label = _STATE_LABELS.get(state, "Ожидание")
-        if workflow_phase == "idle" and str(current_stage or "").strip().lower() == "startup":
-            state_label = "Инициализация"
+        state_label = self._primary_automation_state_label(
+            workflow_phase=workflow_phase,
+            mapped_macro_state=state,
+            current_stage=str(current_stage or ""),
+            is_terminal_failed=False,
+        )
         timeline = await self._build_timeline(
             zone_id=zone_id,
             transitions=[],

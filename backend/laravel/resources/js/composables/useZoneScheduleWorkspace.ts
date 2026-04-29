@@ -159,9 +159,16 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     }
 
     if (activeRun.value && automationState.value?.state_label) {
+      const st = automationState.value.state_details
+      const failed = Boolean(st?.failed)
+      const headline = failed
+        ? (asNonEmptyString(st?.human_error_message)
+          ?? asNonEmptyString(st?.error_message)
+          ?? automationState.value.state_label)
+        : automationState.value.state_label
       items.push({
-        tone: 'info',
-        title: `Сейчас выполняется: ${automationState.value.state_label}`,
+        tone: failed ? 'danger' : 'info',
+        title: failed ? `Сбой автоматики: ${headline}` : `Сейчас выполняется: ${headline}`,
         detail: activeRun.value.current_stage || automationState.value.current_stage || null,
       })
     }

@@ -252,6 +252,54 @@ async def _cleanup(prefix: str) -> None:
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
 
+async def _insert_zone_workflow_state(
+    zone_id: int,
+    *,
+    workflow_phase: str,
+    payload: dict,
+    scheduler_task_id: str | None,
+    now: datetime,
+) -> None:
+    await execute(
+        """
+        INSERT INTO zone_workflow_state (
+            zone_id, workflow_phase, started_at, updated_at, payload, scheduler_task_id, version
+        )
+        VALUES ($1, $2, $3, $3, $4::jsonb, $5, 1)
+        """,
+        zone_id,
+        workflow_phase,
+        now,
+        payload,
+        scheduler_task_id,
+    )
+
+
+async def _insert_pending_irrigation_task(
+    zone_id: int,
+    *,
+    prefix: str,
+    now: datetime,
+    intent_id: int | None,
+) -> int:
+    rows = await fetch(
+        """
+        INSERT INTO ae_tasks (
+            zone_id, task_type, status, idempotency_key, scheduled_for, due_at,
+            created_at, updated_at, topology, current_stage, workflow_phase, intent_id
+        )
+        VALUES ($1, 'irrigation_start', 'pending', $2, $3, $3, $3, $3,
+                'two_tank', 'await_ready', 'ready', $4)
+        RETURNING id
+        """,
+        zone_id,
+        f"{prefix}-irr-pend",
+        now,
+        intent_id,
+    )
+    return int(rows[0]["id"])
+
+
 class _UnusedHistoryLoggerClient:
     async def publish(self, **kwargs):
         raise AssertionError("history-logger publish must not be used during startup recovery")
@@ -434,5 +482,57 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         assert ae_command is not None
         assert ae_command["terminal_status"] == "DONE"
         assert await _count_ae_commands(task_id=task_id) == 1
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_fails_pending_irrigation_when_workflow_idle_terminal_stop() -> None:
+    prefix = f"ae3-reconcile-pending-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task_repo = PgAutomationTaskRepository()
+    command_repo = PgAeCommandRepository()
+    lease_repo = PgZoneLeaseRepository()
+    workflow_repo = PgZoneWorkflowRepository()
+    gateway = SequentialCommandGateway(
+        task_repository=task_repo,
+        command_repository=command_repo,
+        history_logger_client=_UnusedHistoryLoggerClient(),
+        poll_interval_sec=0.05,
+    )
+    recovery_use_case = StartupRecoveryUseCase(
+        task_repository=task_repo,
+        lease_repository=lease_repo,
+        command_gateway=gateway,
+        workflow_repository=workflow_repo,
+        topology_registry=TopologyRegistry(),
+    )
+    await recovery_use_case.run(now=now)
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        await _insert_zone_workflow_state(
+            zone_id,
+            workflow_phase="idle",
+            payload={"ae3_cycle_start_stage": "clean_fill_source_empty_stop"},
+            scheduler_task_id="1",
+            now=now,
+        )
+        intent_id = await _insert_intent(zone_id=zone_id, prefix=prefix, status="running", now=now)
+        task_id = await _insert_pending_irrigation_task(
+            zone_id,
+            prefix=prefix,
+            now=now,
+            intent_id=intent_id,
+        )
+
+        result = await recovery_use_case.run(now=now + timedelta(seconds=2))
+
+        updated = await task_repo.get_by_id(task_id=task_id)
+        assert updated is not None
+        assert updated.status == "failed"
+        assert updated.error_code == "startup_recovery_pending_vs_terminal_workflow"
+        assert result.failed_tasks >= 1
     finally:
         await _cleanup(prefix)

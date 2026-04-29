@@ -201,6 +201,19 @@ class PgAutomationTaskRepository:
         )
         return [AutomationTask.from_row(row) for row in rows]
 
+    async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[Any]:
+        """Pending-задачи при workflow_phase=idle (часто после терминального stop в payload)."""
+        return await self._fetch(
+            """
+            SELECT t.*, zws.payload->>'ae3_cycle_start_stage' AS snapshot_stage
+            FROM ae_tasks t
+            INNER JOIN zone_workflow_state zws ON zws.zone_id = t.zone_id
+            WHERE t.status = 'pending'
+              AND zws.workflow_phase = 'idle'
+            ORDER BY t.id ASC
+            """,
+        )
+
     # ── Создание ────────────────────────────────────────────────────
 
     async def create_pending(
@@ -707,6 +720,36 @@ class PgAutomationTaskRepository:
             owner=None,
             require_owner=False,
         )
+
+    async def fail_pending_or_active_for_recovery(
+        self,
+        *,
+        task_id: int,
+        error_code: str,
+        error_message: str,
+        now: datetime,
+    ) -> AutomationTask | None:
+        """Переводит задачу в failed для recovery/reconcile, включая pending (см. fail_for_recovery)."""
+        normalized_now = self._normalize_timestamp(now)
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks
+            SET status = 'failed',
+                error_code = $2,
+                error_message = $3,
+                updated_at = $4,
+                completed_at = $4
+            WHERE id = $1
+              AND status = ANY($5::text[])
+            RETURNING *
+            """,
+            task_id,
+            error_code,
+            error_message,
+            normalized_now,
+            list(ACTIVE_TASK_STATUSES),
+        )
+        return self._task_from_row(row)
 
     # ── Audit trail ─────────────────────────────────────────────────
 
