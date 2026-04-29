@@ -9,6 +9,8 @@ import pytest
 
 from ae3lite.application.dto import ZoneActuatorRef
 from ae3lite.application.use_cases.execute_task import (
+    COMMAND_SEND_RETRY_EXHAUSTED_CODE,
+    COMMAND_SEND_RETRY_SEC,
     ExecuteTaskUseCase,
     SNAPSHOT_RETRY_EXHAUSTED_CODE,
     SNAPSHOT_TRANSIENT_RETRY_SEC,
@@ -344,6 +346,13 @@ class _WorkflowRouterRaises:
         raise RuntimeError("boom")
 
 
+class _WorkflowRouterCommandSendFailed:
+    async def run(self, *, task, plan, now):
+        from ae3lite.domain.errors import TaskExecutionError
+
+        raise TaskExecutionError("command_send_failed", "ReadTimeout")
+
+
 
 class _WorkflowRouterCancelledByTimeout:
     async def run(self, *, task, plan, now):
@@ -612,6 +621,117 @@ async def test_execute_task_transient_snapshot_gap_exhausted_fails_closed_with_s
     ]
     assert len(recorded_infra_alerts) == 1
     assert recorded_infra_alerts[0]["code"] == "infra_ae3_snapshot_retry_exhausted"
+    assert recorded_infra_alerts[0]["severity"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_command_send_failed_requeues_and_emits_observability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="irrigation_check", topology="two_tank")
+    task_repo = _TaskRepoRequeue(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterCommandSendFailed(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "pending"
+    assert finalize.calls == []
+    assert alerts.calls == []
+    assert len(task_repo.update_stage_calls) == 1
+    assert task_repo.update_stage_calls[0]["due_at"] == NOW + timedelta(seconds=COMMAND_SEND_RETRY_SEC)
+    assert [event_type for _, event_type, _ in recorded_events] == ["AE_COMMAND_SEND_RETRY_SCHEDULED"]
+    payload = recorded_events[0][2]
+    assert payload["source_error_code"] == "command_send_failed"
+    assert payload["retry_reason"] == "history_logger_transport_transient"
+    assert payload["retry_after_sec"] == COMMAND_SEND_RETRY_SEC
+    assert len(recorded_infra_alerts) == 1
+    assert recorded_infra_alerts[0]["code"] == "infra_ae3_command_send_retry_scheduled"
+    assert recorded_infra_alerts[0]["severity"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_command_send_failed_retry_exhausted_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="irrigation_check", topology="two_tank")
+    task = replace(
+        task,
+        workflow=replace(
+            task.workflow,
+            stage_entered_at=NOW - timedelta(seconds=121),
+        ),
+    )
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterCommandSendFailed(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == COMMAND_SEND_RETRY_EXHAUSTED_CODE
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
+    assert [event_type for _, event_type, _ in recorded_events] == [
+        "AE_COMMAND_SEND_RETRY_EXHAUSTED",
+        "AE_TASK_FAILED",
+    ]
+    assert len(recorded_infra_alerts) == 1
+    assert recorded_infra_alerts[0]["code"] == "infra_ae3_command_send_retry_exhausted"
     assert recorded_infra_alerts[0]["severity"] == "error"
 
 

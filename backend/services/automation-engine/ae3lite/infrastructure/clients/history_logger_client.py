@@ -90,7 +90,9 @@ class HistoryLoggerClient:
                 response = await self._post(path, payload, headers)
             except httpx.RequestError as exc:
                 if attempt >= self._max_retries:
-                    raise CommandPublishError(f"Запрос к history-logger завершился ошибкой: {exc}") from exc
+                    raise CommandPublishError(
+                        f"Запрос к history-logger завершился ошибкой: {self._format_request_error(exc=exc, path=path)}"
+                    ) from exc
                 await self._sleep_before_retry(path=path, attempt=attempt, reason=type(exc).__name__)
                 attempt += 1
                 continue
@@ -118,6 +120,17 @@ class HistoryLoggerClient:
             return await self._client.post(f"{self._base_url}{path}", json=dict(payload), headers=dict(headers))
         async with httpx.AsyncClient(timeout=self._timeout_sec) as client:
             return await client.post(f"{self._base_url}{path}", json=dict(payload), headers=dict(headers))
+
+    def _format_request_error(self, *, exc: httpx.RequestError, path: str) -> str:
+        detail = str(exc).strip()
+        request_url = ""
+        if getattr(exc, "request", None) is not None and getattr(exc.request, "url", None) is not None:
+            request_url = str(exc.request.url)
+        else:
+            request_url = f"{self._base_url}{path}"
+        if detail:
+            return f"{type(exc).__name__}: {detail} (url={request_url})"
+        return f"{type(exc).__name__} (url={request_url})"
 
     def _extract_error_message(self, response: httpx.Response) -> str:
         try:

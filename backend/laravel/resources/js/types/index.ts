@@ -4,7 +4,7 @@
 
 export type * from './Zone'
 export type * from './ZoneTargets'
-export type * from './Telemetry'
+export * from './Telemetry'
 export type * from './Device'
 export type * from './Alert'
 export type * from './Recipe'

@@ -1,9 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
 import { logger } from '@/utils/logger'
-
-export const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
-export type TelemetryRange = (typeof telemetryRanges)[number]
+import { telemetryRanges, type TelemetryRange } from '@/types'
 
 export interface ZoneTelemetryChartDeps {
   fetchHistory: (
@@ -25,6 +23,7 @@ export function useZoneTelemetryChart(
 ) {
   const { fetchHistory, fetchHistoryWithNodes, hasSoilMoisture } = deps
   const chartTimeRange = ref<TelemetryRange>('24H')
+  const isChartLoading = ref(false)
   const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
   const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
   const chartDataSoilMoisture = ref<Record<number, Array<{ ts: number; value: number }>>>({})
@@ -172,19 +171,26 @@ export function useZoneTelemetryChart(
 
   async function refreshChartData(timeRange: TelemetryRange): Promise<void> {
     const requestVersion = ++chartDataRequestVersion
+    isChartLoading.value = true
     const soilPromise = hasSoilMoisture.value
       ? loadSoilMoistureData(timeRange)
       : Promise.resolve<Record<number, Array<{ ts: number; value: number }>>>({})
 
-    const [phData, ecData, soilData] = await Promise.all([
-      loadChartData('PH', timeRange),
-      loadChartData('EC', timeRange),
-      soilPromise,
-    ])
-    if (requestVersion !== chartDataRequestVersion) return
-    chartDataPh.value = phData
-    chartDataEc.value = ecData
-    chartDataSoilMoisture.value = soilData
+    try {
+      const [phData, ecData, soilData] = await Promise.all([
+        loadChartData('PH', timeRange),
+        loadChartData('EC', timeRange),
+        soilPromise,
+      ])
+      if (requestVersion !== chartDataRequestVersion) return
+      chartDataPh.value = phData
+      chartDataEc.value = ecData
+      chartDataSoilMoisture.value = soilData
+    } finally {
+      if (requestVersion === chartDataRequestVersion) {
+        isChartLoading.value = false
+      }
+    }
   }
 
   async function onChartTimeRangeChange(newRange: TelemetryRange): Promise<void> {
@@ -220,6 +226,7 @@ export function useZoneTelemetryChart(
     chartDataPh,
     chartDataEc,
     chartDataSoilMoisture,
+    isChartLoading,
     onChartTimeRangeChange,
     refreshChartData,
     initStoredRange,

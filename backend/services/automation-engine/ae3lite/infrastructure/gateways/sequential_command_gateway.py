@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.metrics import (
+    COMMAND_DISPATCH_FAILED,
     COMMAND_DISPATCH_DURATION,
     COMMAND_DISPATCHED,
     COMMAND_POLL_ITERATIONS,
@@ -19,6 +20,7 @@ from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
 )
 from common.db import create_zone_event
+from common.service_logs import send_service_log
 from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
@@ -247,9 +249,32 @@ class SequentialCommandGateway:
                     f"Не удалось перевести задачу {task.id} в waiting_command",
                 )
         except Exception as exc:
+            error_type = type(exc).__name__
+            normalized_error = str(exc).strip() or error_type
+            COMMAND_DISPATCH_FAILED.labels(
+                stage=planned.channel or "unknown",
+                error_type=error_type,
+            ).inc()
+            send_service_log(
+                service="automation-engine",
+                level="error",
+                message="AE3 command dispatch failed before waiting_command",
+                context={
+                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+                    "task_id": int(getattr(task, "id", 0) or 0) or None,
+                    "stage": str(getattr(task, "current_stage", "") or ""),
+                    "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+                    "node_uid": str(planned.node_uid or ""),
+                    "channel": str(planned.channel or ""),
+                    "cmd": str(cmd_name or ""),
+                    "cmd_id": cmd_id,
+                    "error_type": error_type,
+                    "error_message": normalized_error,
+                },
+            )
             try:
                 await self._command_repository.mark_publish_failed(
-                    ae_command_id=ae_command_id, last_error=str(exc), now=now
+                    ae_command_id=ae_command_id, last_error=normalized_error, now=now
                 )
             except Exception:
                 logger.debug(
@@ -272,7 +297,7 @@ class SequentialCommandGateway:
                         f"(likely concurrent cleanup): {exc}"
                     ),
                 )
-            raise TaskExecutionError("command_send_failed", str(exc)) from exc
+            raise TaskExecutionError("command_send_failed", normalized_error) from exc
 
         _poll_deadline = (
             task.workflow.stage_deadline_at

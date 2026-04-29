@@ -142,3 +142,31 @@ async def test_history_logger_client_retries_once_on_transport_error(monkeypatch
     assert command_id == "cmd-789"
     assert attempts == 2
     assert sleep_calls == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_request_error_without_message_still_has_context() -> None:
+    request = httpx.Request("POST", "http://history-logger:9300/commands")
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(base_url="http://history-logger:9300", client=client, max_retries=0)
+
+    try:
+        with pytest.raises(CommandPublishError) as exc_info:
+            await gateway.publish(
+                greenhouse_uid="gh-1",
+                zone_id=9,
+                node_uid="nd-irrig-1",
+                channel="pump_main",
+                cmd="set_relay",
+                params={"state": True},
+            )
+    finally:
+        await client.aclose()
+
+    message = str(exc_info.value)
+    assert "ReadTimeout" in message
+    assert "url=http://history-logger:9300/commands" in message

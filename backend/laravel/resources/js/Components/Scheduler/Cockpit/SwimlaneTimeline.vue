@@ -25,6 +25,9 @@
         <span class="swim-pill">
           <span class="swim-dot bg-[color:var(--text-dim)]"></span> SKIP
         </span>
+        <span class="swim-pill">
+          <span class="swim-dot bg-[color:var(--accent-amber)]"></span> PLAN
+        </span>
       </div>
     </header>
 
@@ -129,6 +132,11 @@ function formatLabel(reference: Date, offsetHours: number): string {
   const target = new Date(reference.getTime() + offsetHours * 60 * 60 * 1000)
   const hh = String(target.getHours()).padStart(2, '0')
   const mm = String(target.getMinutes()).padStart(2, '0')
+  if (props.horizon === '7d') {
+    const dd = String(target.getDate()).padStart(2, '0')
+    const mo = String(target.getMonth() + 1).padStart(2, '0')
+    return `${dd}.${mo} ${hh}:${mm}`
+  }
   return `${hh}:${mm}`
 }
 </script>

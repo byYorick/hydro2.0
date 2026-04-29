@@ -16,6 +16,7 @@
         :chart-data-ph="chartDataPh"
         :chart-data-ec="chartDataEc"
         :chart-data-soil-moisture="chartDataSoilMoisture"
+        :loading="isChartLoading"
         :has-soil-moisture="hasSoilMoisture"
         :devices="devices"
         :telemetry="telemetry"
@@ -198,6 +199,7 @@ const {
     chartDataPh,
     chartDataEc,
     chartDataSoilMoisture,
+    isChartLoading,
     hasSoilMoisture,
     onChartTimeRangeChange,
     onRunCycle,

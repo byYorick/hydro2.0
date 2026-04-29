@@ -44,6 +44,39 @@ const el = ref()
 let chart: ECharts | undefined
 let resizeObserver: ResizeObserver | undefined
 
+const buildSafeOption = (option: EChartsOption): EChartsOption => {
+  const gridOption = Array.isArray(option.grid) ? option.grid[0] : option.grid
+  return {
+    ...option,
+    grid: {
+      left: gridOption?.left ?? 40,
+      right: gridOption?.right ?? 16,
+      top: gridOption?.top ?? 16,
+      bottom: gridOption?.bottom ?? 32,
+      containLabel: gridOption?.containLabel ?? false,
+      ...(gridOption || {}),
+    },
+  }
+}
+
+const initChart = (): void => {
+  if (!el.value) {
+    return
+  }
+
+  if (chart) {
+    chart.dispose()
+    chart = undefined
+  }
+
+  chart = echarts.init(el.value, props.dark ? 'dark' : undefined, {
+    renderer: 'canvas',
+    useDirtyRect: false,
+  })
+
+  chart.setOption(buildSafeOption(props.option))
+}
+
 const onResize = () => {
   if (chart && el.value) {
     chart.resize()
@@ -53,10 +86,7 @@ const onResize = () => {
 onMounted(() => {
   if (!el.value) return
 
-  chart = echarts.init(el.value, props.dark ? 'dark' : undefined, {
-    renderer: 'canvas',
-    useDirtyRect: false, // Отключаем для стабильности
-  })
+  initChart()
 
   // Настраиваем глобальные стили для tooltip (только один раз)
   if (!window.__echartsTooltipStyleAdded) {
@@ -76,22 +106,6 @@ onMounted(() => {
     window.__echartsTooltipStyleAdded = true
   }
 
-  // Улучшаем опции для предотвращения выхода за границы
-  const gridOption = Array.isArray(props.option.grid) ? props.option.grid[0] : props.option.grid
-  const safeOption = {
-    ...props.option,
-    grid: {
-      left: gridOption?.left ?? 40,
-      right: gridOption?.right ?? 16,
-      top: gridOption?.top ?? 16,
-      bottom: gridOption?.bottom ?? 32,
-      containLabel: gridOption?.containLabel ?? false,
-      ...(gridOption || {}), // Сохраняем все настройки grid из опций
-    },
-  }
-
-  chart.setOption(safeOption)
-
   window.addEventListener('resize', onResize)
 
   // Используем ResizeObserver для более точного отслеживания изменений размера
@@ -105,25 +119,17 @@ watch(
   () => props.option,
   (opt) => {
     if (chart) {
-      // Улучшаем опции для предотвращения выхода за границы
-      const gridOption = Array.isArray(opt.grid) ? opt.grid[0] : opt.grid
-      const safeOption = {
-        ...opt,
-        grid: {
-          left: gridOption?.left ?? 40,
-          right: gridOption?.right ?? 16,
-          top: gridOption?.top ?? 16,
-          bottom: gridOption?.bottom ?? 32,
-          containLabel: gridOption?.containLabel ?? false,
-          ...(gridOption || {}), // Сохраняем все настройки grid из опций
-        },
-      }
-      // Используем notMerge: false для инкрементальных обновлений (добавляем только новые данные)
-      // Без replaceMerge, чтобы обновлялись только измененные части опции
-      chart.setOption(safeOption, { notMerge: false, lazyUpdate: false })
+      chart.setOption(buildSafeOption(opt), { notMerge: false, lazyUpdate: false })
     }
   },
   { deep: true }
+)
+
+watch(
+  () => props.dark,
+  () => {
+    initChart()
+  }
 )
 
 onBeforeUnmount(() => {

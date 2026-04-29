@@ -26,6 +26,7 @@
           :stage-label="activeStageLabel"
           :eta-label="etaLabel"
           :eta-hint="etaHint"
+          :eta-estimated="activeEtaEstimated"
           :end-at="activeEndAt"
         />
         <NextUpCard
@@ -158,7 +159,10 @@ const lanesHistory = computed<LaneHistory[]>(() => {
   if (workspace.value?.lanes_history?.length) {
     return workspace.value.lanes_history
   }
-  return deriveLaneHistory(recentRuns.value, horizon.value)
+  return deriveLaneHistory(recentRuns.value, horizon.value, {
+    windows: workspace.value?.plan?.windows ?? [],
+    laneTypes: workspace.value?.plan?.lanes?.map((lane) => lane.task_type) ?? [],
+  })
 })
 
 const configOnlyLanesLabels = computed(() =>
@@ -193,24 +197,78 @@ const activeStageLabel = computed<string | null>(() => {
   )
 })
 
-const etaLabel = computed<string>(() => {
-  const run = activeRun.value
-  if (!run) return '—'
-  if (run.due_at) return formatRelativeTrigger(run.due_at)
-  if (run.expires_at) return formatRelativeTrigger(run.expires_at)
-  return '—'
-})
+function parseIso(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function readRunDurationSec(run: ExecutionRun): number | null {
+  if (typeof run.requested_duration_sec === 'number' && Number.isFinite(run.requested_duration_sec) && run.requested_duration_sec > 0) {
+    return run.requested_duration_sec
+  }
+
+  const config = run.decision_config as Record<string, unknown> | null | undefined
+  if (!config || typeof config !== 'object') {
+    return null
+  }
+
+  const candidates: unknown[] = [
+    config.requested_duration_sec,
+    config.duration_sec,
+    config.max_duration_sec,
+    config.timeout_sec,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+function deriveRunEndAt(run: ExecutionRun): Date | null {
+  const directDeadline = parseIso(run.due_at) ?? parseIso(run.expires_at)
+  if (directDeadline) return directDeadline
+
+  const durationSec = readRunDurationSec(run)
+  if (durationSec === null) return null
+
+  const startAt =
+    parseIso(run.accepted_at) ??
+    parseIso(run.scheduled_for) ??
+    parseIso(run.created_at) ??
+    parseIso(run.updated_at)
+
+  if (!startAt) return null
+  return new Date(startAt.getTime() + durationSec * 1000)
+}
 
 const activeEndAt = computed<string | null>(() => {
   const run = activeRun.value
   if (!run) return null
-  return run.due_at ?? run.expires_at ?? null
+  const endAt = deriveRunEndAt(run)
+  return endAt ? endAt.toISOString() : null
+})
+
+const etaLabel = computed<string>(() => {
+  const endAt = activeEndAt.value
+  if (!endAt) return '—'
+  return formatRelativeTrigger(endAt)
 })
 
 const etaHint = computed<string>(() => {
+  return activeEndAt.value ? 'осталось до завершения' : 'длительность не задана'
+})
+
+const activeEtaEstimated = computed<boolean>(() => {
   const run = activeRun.value
-  if (!run?.due_at && !run?.expires_at) return 'длительность не задана'
-  return 'осталось до завершения'
+  if (!run) return false
+  const hasDirectDeadline = Boolean(parseIso(run.due_at) ?? parseIso(run.expires_at))
+  if (hasDirectDeadline) return false
+  return activeEndAt.value !== null
 })
 
 const selectedExecutionErrorMessage = computed<string | null>(() =>

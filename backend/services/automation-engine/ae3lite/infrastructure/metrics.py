@@ -160,6 +160,12 @@ COMMAND_DISPATCH_DURATION = Histogram(
     buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
 )
 
+COMMAND_DISPATCH_FAILED = Counter(
+    "ae3_command_dispatch_failed_total",
+    "Total command dispatch failures before terminal command status",
+    ["stage", "error_type"],
+)
+
 COMMAND_TERMINAL = Counter(
     "ae3_command_terminal_total",
     "Total terminal command acknowledgements received",

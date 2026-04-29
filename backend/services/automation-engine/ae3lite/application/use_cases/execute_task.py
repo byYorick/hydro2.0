@@ -39,6 +39,13 @@ SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
 )
 SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
 SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
+COMMAND_SEND_RETRY_SEC = max(1, int(os.getenv("AE3_COMMAND_SEND_RETRY_SEC", "8")))
+COMMAND_SEND_MAX_STAGE_AGE_SEC = max(
+    COMMAND_SEND_RETRY_SEC,
+    int(os.getenv("AE3_COMMAND_SEND_MAX_STAGE_AGE_SEC", "120")),
+)
+COMMAND_SEND_RETRY_SCHEDULED_CODE = "infra_ae3_command_send_retry_scheduled"
+COMMAND_SEND_RETRY_EXHAUSTED_CODE = "ae3_command_send_retry_exhausted"
 
 
 class ExecuteTaskUseCase:
@@ -305,6 +312,15 @@ class ExecuteTaskUseCase:
                 )
                 return terminal_task
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
+            if str(error_code or "").strip().lower() == "command_send_failed":
+                retried_task = await self._retry_transient_command_send_failure(
+                    task=running_task,
+                    owner=owner,
+                    error=exc,
+                    now=now,
+                )
+                if retried_task is not None:
+                    return retried_task
             logger.error(
                 "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
                 running_task.zone_id,
@@ -351,6 +367,106 @@ class ExecuteTaskUseCase:
                 error_message=message,
                 now=now,
             )
+
+    async def _retry_transient_command_send_failure(
+        self,
+        *,
+        task: Any,
+        owner: str,
+        error: TaskExecutionError,
+        now: datetime,
+    ) -> Any | None:
+        stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
+        stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
+        error_message = str(error).strip() or type(error).__name__
+        details = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "topology": str(getattr(task, "topology", "") or ""),
+            "error_code": COMMAND_SEND_RETRY_EXHAUSTED_CODE,
+            "source_error_code": "command_send_failed",
+            "source_error": error_message,
+            "retry_reason": "history_logger_transport_transient",
+            "stage_age_sec": stage_age_sec,
+            "max_stage_age_sec": COMMAND_SEND_MAX_STAGE_AGE_SEC,
+        }
+        if stage_age_sec >= COMMAND_SEND_MAX_STAGE_AGE_SEC:
+            final_message = (
+                f"{error_message} (command-send retry budget exhausted after {stage_age_sec}s "
+                f"in stage {getattr(task, 'current_stage', '')})"
+            )
+            logger.error(
+                "AE3 transient command_send_failed исчерпал бюджет повторов: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
+                getattr(task, "zone_id", None),
+                getattr(task, "id", None),
+                getattr(task, "current_stage", None),
+                stage_age_sec,
+                error_message,
+            )
+            await self._emit_snapshot_retry_observability(
+                task=task,
+                now=now,
+                event_type="AE_COMMAND_SEND_RETRY_EXHAUSTED",
+                alert_code="infra_ae3_command_send_retry_exhausted",
+                alert_message=final_message,
+                severity="error",
+                details=details,
+            )
+            return await self._fail_closed(
+                task=task,
+                owner=owner,
+                error_code=COMMAND_SEND_RETRY_EXHAUSTED_CODE,
+                error_message=final_message,
+                now=now,
+            )
+
+        update_stage = getattr(self._task_repository, "update_stage", None)
+        if not callable(update_stage):
+            raise TaskExecutionError(
+                "ae3_command_send_retry_persist_failed",
+                f"Task repository не поддерживает update_stage для command_send retry task_id={task.id}",
+            )
+
+        due_at = now + timedelta(seconds=COMMAND_SEND_RETRY_SEC)
+        updated_task = await update_stage(
+            task_id=int(getattr(task, "id", 0) or 0),
+            owner=owner,
+            workflow=getattr(task, "workflow"),
+            correction=getattr(task, "correction", None),
+            due_at=due_at,
+            now=now,
+        )
+        if updated_task is None:
+            raise TaskExecutionError(
+                "ae3_command_send_retry_persist_failed",
+                f"Не удалось сохранить command_send retry для задачи {task.id}",
+            )
+        logger.warning(
+            "AE3 transient command_send_failed: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
+            getattr(task, "zone_id", None),
+            getattr(task, "id", None),
+            getattr(task, "current_stage", None),
+            COMMAND_SEND_RETRY_SEC,
+            stage_age_sec,
+            error_message,
+        )
+        await self._emit_snapshot_retry_observability(
+            task=task,
+            now=now,
+            event_type="AE_COMMAND_SEND_RETRY_SCHEDULED",
+            alert_code=COMMAND_SEND_RETRY_SCHEDULED_CODE,
+            alert_message=error_message,
+            severity="warning",
+            details={
+                **details,
+                "retry_after_sec": COMMAND_SEND_RETRY_SEC,
+                "next_due_at": due_at.astimezone(timezone.utc).isoformat()
+                if due_at.tzinfo is not None
+                else due_at.replace(tzinfo=timezone.utc).isoformat(),
+            },
+        )
+        return updated_task
 
     async def _retry_transient_snapshot_gap(
         self,

@@ -21,6 +21,9 @@ export interface TelemetrySample {
   max?: number | null
 }
 
+export const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
+export type TelemetryRange = (typeof telemetryRanges)[number]
+
 /**
  * Тип метрики телеметрии
  */

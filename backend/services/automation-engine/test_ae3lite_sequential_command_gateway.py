@@ -279,6 +279,37 @@ async def test_run_batch_publish_failure_raises():
 
 
 @pytest.mark.asyncio
+async def test_run_batch_publish_failure_emits_dispatch_failed_metric_and_service_log(monkeypatch: pytest.MonkeyPatch):
+    labels = {"stage": "pump_main", "error_type": "CommandPublishError"}
+    before_metric = REGISTRY.get_sample_value("ae3_command_dispatch_failed_total", labels) or 0.0
+    captured_logs: list[dict] = []
+
+    def fake_send_service_log(*, service, level, message, context):
+        captured_logs.append(
+            {
+                "service": service,
+                "level": level,
+                "message": message,
+                "context": context,
+            }
+        )
+
+    monkeypatch.setattr(sequential_command_gateway_module, "send_service_log", fake_send_service_log)
+    gw = _make_gw(history_logger=_FakeHistoryLogger(fail=True))
+
+    with pytest.raises(TaskExecutionError):
+        await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+
+    after_metric = REGISTRY.get_sample_value("ae3_command_dispatch_failed_total", labels) or 0.0
+    assert after_metric == before_metric + 1.0
+    assert len(captured_logs) == 1
+    assert captured_logs[0]["service"] == "automation-engine"
+    assert captured_logs[0]["level"] == "error"
+    assert captured_logs[0]["context"]["cmd_id"].startswith("ae3-t1-z1-s")
+    assert captured_logs[0]["context"]["channel"] == "pump_main"
+
+
+@pytest.mark.asyncio
 async def test_run_batch_create_pending_task_missing_returns_fail_closed():
     cmd_repo = _FakeCommandRepo(create_pending_returns_none=True)
     gw = _make_gw(command_repo=cmd_repo)

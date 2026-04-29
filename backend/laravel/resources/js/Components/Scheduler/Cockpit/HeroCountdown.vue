@@ -34,6 +34,13 @@
           >
             {{ laneLabel }}
           </Badge>
+          <Badge
+            v-if="etaEstimated"
+            variant="warning"
+            size="sm"
+          >
+            расчётный ETA
+          </Badge>
           <span class="text-[11px] text-[color:var(--text-dim)]">· этап</span>
           <span class="text-[11px] font-semibold text-[color:var(--text-primary)]">{{ stageLabel }}</span>
         </div>
@@ -101,6 +108,7 @@ interface Props {
   /** Static fallback label, если `endAt` не задан. */
   etaLabel?: string
   etaHint?: string
+  etaEstimated?: boolean
   /**
    * Конечный момент, до которого идёт countdown. Если задан — компонент
    * обновляет таймер в реальном времени через `useRafCountdown`,
@@ -114,14 +122,34 @@ const props = withDefaults(defineProps<Props>(), {
   stageLabel: null,
   etaLabel: '—',
   etaHint: 'осталось до завершения',
+  etaEstimated: false,
   endAt: null,
 })
 
 const endAtRef = toRef(props, 'endAt')
 const { label: liveLabel, remainingSeconds } = useRafCountdown(endAtRef)
 
+function formatOverdue(totalSeconds: number): string {
+  const safe = Math.max(0, Math.abs(totalSeconds))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const seconds = safe % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  if (hours > 0) {
+    return `+${String(hours).padStart(2, '0')}:${mm}:${ss}`
+  }
+  return `+${mm}:${ss}`
+}
+
 const displayLabel = computed<string>(() => {
-  if (props.endAt) return liveLabel.value
+  if (props.endAt) {
+    const remaining = remainingSeconds.value
+    if (remaining !== null && remaining <= 0) {
+      return formatOverdue(remaining)
+    }
+    return liveLabel.value
+  }
   return props.etaLabel
 })
 

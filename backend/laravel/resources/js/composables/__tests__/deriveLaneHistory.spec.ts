@@ -23,7 +23,7 @@ describe('deriveLaneHistory', () => {
       run({ execution_id: 'b', task_type: 'irrigation', created_at: '2026-02-10T12:00:00Z', status: 'running', is_active: true }),
       run({ execution_id: 'c', task_type: 'ph_correction', created_at: '2026-02-10T09:00:00Z', status: 'failed' }),
     ]
-    const lanes = deriveLaneHistory(runs, '24h', now)
+    const lanes = deriveLaneHistory(runs, '24h', { now })
     const byLane = Object.fromEntries(lanes.map((l) => [l.lane, l.runs]))
 
     expect(byLane.irrigation).toHaveLength(2)
@@ -40,7 +40,7 @@ describe('deriveLaneHistory', () => {
       run({ execution_id: 'far', created_at: '2026-02-09T00:00:00Z' }), // −36 ч
       run({ execution_id: 'ok', created_at: '2026-02-10T06:00:00Z' }),
     ]
-    const lanes = deriveLaneHistory(runs, '24h', now)
+    const lanes = deriveLaneHistory(runs, '24h', { now })
     const bucket = lanes.find((l) => l.lane === 'irrigation')!
     expect(bucket.runs).toHaveLength(1)
   })
@@ -54,7 +54,7 @@ describe('deriveLaneHistory', () => {
         created_at: '2026-02-10T10:00:00Z',
       }),
     ]
-    const lanes = deriveLaneHistory(runs, '24h', now)
+    const lanes = deriveLaneHistory(runs, '24h', { now })
     expect(lanes[0].runs[0].s).toBe('skip')
   })
 
@@ -62,7 +62,32 @@ describe('deriveLaneHistory', () => {
     const runs: ExecutionRun[] = [
       run({ task_type: 'irrigation', schedule_task_type: 'ph_correction' }),
     ]
-    const lanes = deriveLaneHistory(runs, '24h', now)
+    const lanes = deriveLaneHistory(runs, '24h', { now })
     expect(lanes[0].lane).toBe('ph_correction')
+  })
+
+  it('добавляет будущие окна в ленту, даже если run ещё не создан', () => {
+    const lanes = deriveLaneHistory([], '24h', {
+      now,
+      windows: [
+        {
+          plan_window_id: 'w-1',
+          zone_id: 1,
+          task_type: 'irrigation',
+          label: 'Полив',
+          schedule_key: 'sch:z1:irrigation',
+          trigger_at: '2026-02-10T16:00:00Z',
+          origin: 'schedule',
+          state: 'planned',
+          mode: 'auto',
+        },
+      ],
+      laneTypes: ['irrigation'],
+    })
+
+    expect(lanes).toHaveLength(1)
+    expect(lanes[0].lane).toBe('irrigation')
+    expect(lanes[0].runs[0].s).toBe('warn')
+    expect(lanes[0].runs[0].t).toBe(66.67)
   })
 })

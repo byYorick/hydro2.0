@@ -1,292 +1,52 @@
 <template>
   <Card class="relative">
-    <div class="flex items-center justify-between mb-2">
+    <div class="mb-2">
       <div class="text-sm font-semibold">
         {{ title }}
       </div>
-      <div class="flex items-center gap-2">
-        <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
-          <span class="mr-2">🖱️ Колесо мыши — zoom</span>
-          <span>Перетаскивание — pan</span>
-        </div>
-        <Button 
-          size="sm" 
-          variant="outline" 
-          class="text-xs"
-          title="Экспорт данных"
-          @click="exportData"
-        >
-          📥 Экспорт
-        </Button>
-        <div class="flex gap-1">
-          <Button 
-            size="sm" 
-            :variant="timeRange === '1H' ? 'default' : 'secondary'" 
-            @click="setRange('1H')"
-          >
-            1H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '24H' ? 'default' : 'secondary'" 
-            @click="setRange('24H')"
-          >
-            24H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '7D' ? 'default' : 'secondary'" 
-            @click="setRange('7D')"
-          >
-            7D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '30D' ? 'default' : 'secondary'" 
-            @click="setRange('30D')"
-          >
-            30D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
-            @click="setRange('ALL')"
-          >
-            ALL
-          </Button>
-        </div>
+      <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
+        <span class="mr-2">🖱️ Колесо мыши — zoom</span>
+        <span>Перетаскивание — pan</span>
       </div>
     </div>
-    <ChartBase :option="option" />
+    <ChartBase :option="option" :dark="isDark" />
   </Card>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
-import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import type { TelemetrySample } from '@/types'
 import { useTheme } from '@/composables/useTheme'
-import type { EChartsOption } from 'echarts'
-
-type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
+import { useChartColors } from '@/composables/useChartColors'
+import { useTelemetryChartOptions } from '@/composables/useTelemetryChartOptions'
+import type { TelemetryRange } from '@/types'
 
 interface Props {
   title: string
   seriesName?: string
   data?: TelemetrySample[]
-  timeRange?: TimeRange
+  timeRange?: TelemetryRange
 }
 
 const props = withDefaults(defineProps<Props>(), {
   seriesName: 'value',
   data: () => [],
-  timeRange: '24H'
+  timeRange: '24H',
 })
 
-const emit = defineEmits<{
-  'time-range-change': [range: TimeRange]
-}>()
+const { theme, isDark } = useTheme()
+const { palette } = useChartColors(theme)
 
-const { theme } = useTheme()
+const series = computed(() => [{
+  name: props.seriesName,
+  label: props.seriesName,
+  color: '#60a5fa',
+  data: props.data,
+  yAxisIndex: 0,
+}])
 
-const setRange = (r: TimeRange): void => {
-  emit('time-range-change', r)
-}
-
-// Экспорт данных в CSV
-function exportData(): void {
-  if (!props.data || props.data.length === 0) {
-    alert('Нет данных для экспорта')
-    return
-  }
-  
-  // Формируем CSV
-  const headers = ['Время', props.seriesName]
-  const rows = props.data.map(item => {
-    const date = new Date(item.ts)
-    const timeStr = date.toISOString()
-    return [timeStr, item.value.toString()]
-  })
-  
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.join(','))
-  ].join('\n')
-  
-  // Создаем blob и скачиваем
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-  link.setAttribute('href', url)
-  link.setAttribute('download', `${props.title.toLowerCase().replace(/\s+/g, '_')}_${props.timeRange}_${new Date().toISOString().split('T')[0]}.csv`)
-  link.style.visibility = 'hidden'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
-
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
-
-const chartColors = computed(() => {
-  theme.value
-  return {
-    textPrimary: resolveCssColor('--text-primary', '#f3f4f6'),
-    textDim: resolveCssColor('--text-dim', '#9ca3af'),
-    borderMuted: resolveCssColor('--border-muted', '#374151'),
-    borderStrong: resolveCssColor('--border-strong', '#4b5563'),
-    tooltipBg: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
-    badgeNeutralBg: resolveCssColor('--badge-neutral-bg', 'rgba(75, 85, 99, 0.2)'),
-    badgeInfoBg: resolveCssColor('--badge-info-bg', 'rgba(96, 165, 250, 0.2)'),
-    accentCyan: resolveCssColor('--accent-cyan', '#60a5fa'),
-  }
-})
-
-const option = computed<EChartsOption>(() => {
-  const dataLength = props.data?.length || 0
-  const hasLargeDataset = dataLength > 50 // Показываем DataZoom для наборов данных > 50 точек
-  const colors = chartColors.value
-  
-  return {
-    tooltip: { 
-      trigger: 'axis',
-      confine: false, // Не ограничиваем tooltip границами графика
-      appendToBody: true, // Добавляем tooltip в body для правильного z-index
-      renderMode: 'html', // Используем HTML рендеринг для лучшего контроля
-      formatter: (params: unknown) => {
-        if (!params || !Array.isArray(params) || params.length === 0) return ''
-        
-        const point = params[0] as { axisValue: number; value: number; seriesName: string }
-        const date = new Date(point.axisValue)
-        // Форматируем время в понятном формате: "25.12.2024, 15:30"
-        const dateStr = date.toLocaleDateString('ru-RU', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric' 
-        })
-        const timeStr = date.toLocaleTimeString('ru-RU', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })
-        
-        // Определяем, является ли это pH метрикой
-        const isPH = props.seriesName.toLowerCase().includes('ph') || 
-                     props.title.toLowerCase().includes('ph')
-        
-        // Для pH показываем 2 знака после точки, для остальных - 1
-        const valueStr = typeof point.value === 'number' 
-          ? point.value.toFixed(isPH ? 2 : 1)
-          : String(point.value)
-        
-        return `${dateStr}, ${timeStr}<br/>${point.seriesName}: ${valueStr}`
-      },
-      backgroundColor: colors.tooltipBg,
-      borderColor: colors.borderMuted,
-      borderWidth: 1,
-      textStyle: {
-        color: colors.textPrimary,
-        fontSize: 12,
-      },
-      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 8px 12px; border-radius: 6px;',
-    },
-    grid: { 
-      left: 50, 
-      right: 20, 
-      top: 20, 
-      bottom: hasLargeDataset ? 80 : 40, // Увеличиваем место для DataZoom
-      containLabel: true, // Автоматически подстраивает размеры под подписи осей
-    },
-    xAxis: {
-      type: 'time' as const,
-      axisLabel: { 
-        color: colors.textDim,
-        rotate: 0, // Не поворачиваем подписи
-        formatter: (value: number) => {
-          // Форматируем время для компактности
-          const date = new Date(value)
-          return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-        },
-      },
-      axisLine: { lineStyle: { color: colors.borderMuted } },
-      boundaryGap: [0, 0], // График начинается от края
-    },
-    yAxis: {
-      type: 'value' as const,
-      axisLabel: { 
-        color: colors.textDim,
-        formatter: (value: number) => {
-          // Компактный формат для больших чисел
-          if (Math.abs(value) >= 1000) {
-            return (value / 1000).toFixed(1) + 'k'
-          }
-          return value.toFixed(1)
-        }
-      },
-      splitLine: { lineStyle: { color: colors.borderMuted } },
-      scale: false, // Не масштабируем ось автоматически
-    },
-    // DataZoom для навигации по данным (zoom и pan)
-    dataZoom: [
-      {
-        type: 'inside', // Внутренний DataZoom (скролл колесом мыши, перетаскивание для pan)
-        start: 0,
-        end: 100,
-        minValueSpan: dataLength > 0 ? Math.min(3600000, (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 3600000) : 3600000, // Минимум 1 час или весь диапазон если меньше
-        maxValueSpan: dataLength > 0 ? (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 86400000 : 86400000, // Максимум весь диапазон
-        filterMode: 'none', // Не фильтруем данные при zoom
-      },
-      ...(hasLargeDataset ? [{
-        type: 'slider', // Внешний DataZoom (ползунок внизу) - только для больших наборов
-        start: 0,
-        end: 100,
-        height: 24,
-        bottom: 10,
-        handleIcon: 'path://M30.9,53.2C16.8,53.2,5.3,41.7,5.3,27.6S16.8,2,30.9,2C45,2,56.4,13.5,56.4,27.6S45,53.2,30.9,53.2z M30.9,3.5C17.6,3.5,6.8,14.4,6.8,27.6c0,13.3,10.8,24.1,24.1,24.1C44.2,51.7,55,40.9,55,27.6C54.9,14.4,44.1,3.5,30.9,3.5z M36.9,35.8c0,0.6-0.4,1-1,1H26.5c-0.6,0-1-0.4-1-1V19.4c0-0.6,0.4-1,1-1h9.4c0.6,0,1,0.4,1,1V35.8z',
-        handleSize: '80%',
-        handleStyle: {
-          color: colors.borderStrong,
-          borderColor: colors.borderMuted,
-        },
-        textStyle: {
-          color: colors.textDim,
-          fontSize: 10,
-        },
-        borderColor: colors.borderMuted,
-        fillerColor: colors.badgeNeutralBg,
-        dataBackground: {
-          lineStyle: { color: colors.borderStrong },
-          areaStyle: { color: colors.badgeNeutralBg },
-        },
-        selectedDataBackground: {
-          lineStyle: { color: colors.accentCyan },
-          areaStyle: { color: colors.badgeInfoBg },
-        },
-        minValueSpan: dataLength > 0 ? Math.min(3600000, (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 3600000) : 3600000,
-      }] : []),
-    ],
-    series: [
-      {
-        name: props.seriesName,
-        type: 'line',
-        showSymbol: false,
-        smooth: true,
-        lineStyle: { width: 2 },
-        data: props.data.map(p => [p.ts, p.value]),
-        // Ограничиваем область данных
-        clip: true, // Обрезаем линию по границам grid
-        // Оптимизация для больших наборов данных
-        large: hasLargeDataset,
-        largeThreshold: 100,
-      },
-    ],
-  }
-})
+const timeRange = computed<TelemetryRange>(() => props.timeRange)
+const { option } = useTelemetryChartOptions(palette, series, timeRange)
 </script>

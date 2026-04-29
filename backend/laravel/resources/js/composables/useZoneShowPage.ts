@@ -412,6 +412,7 @@ export function useZoneShowPage() {
     chartDataPh: chart.chartDataPh,
     chartDataEc: chart.chartDataEc,
     chartDataSoilMoisture: chart.chartDataSoilMoisture,
+    isChartLoading: chart.isChartLoading,
     hasSoilMoisture,
     onChartTimeRangeChange: chart.onChartTimeRangeChange,
     // from cycle actions

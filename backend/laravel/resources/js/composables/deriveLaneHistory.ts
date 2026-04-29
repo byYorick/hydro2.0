@@ -3,9 +3,16 @@ import type {
   LaneHistory,
   LaneHistoryPoint,
   LaneHistoryStatus,
+  PlanWindow,
 } from '@/composables/zoneScheduleWorkspaceTypes'
 
 export type LaneHistoryHorizon = '24h' | '7d'
+
+interface DeriveLaneHistoryOptions {
+  now?: Date
+  windows?: PlanWindow[]
+  laneTypes?: string[]
+}
 
 const HORIZON_HOURS: Record<LaneHistoryHorizon, number> = {
   '24h': 24,
@@ -56,8 +63,9 @@ function runStatusToHistoryStatus(run: ExecutionRun): LaneHistoryStatus {
 export function deriveLaneHistory(
   runs: ExecutionRun[],
   horizon: LaneHistoryHorizon,
-  now: Date = new Date(),
+  options: DeriveLaneHistoryOptions = {},
 ): LaneHistory[] {
+  const now = options.now ?? new Date()
   const halfMs = HORIZON_HALF_MS[horizon] ?? HORIZON_HALF_MS['24h']
   const nowMs = now.getTime()
   const start = nowMs - halfMs
@@ -65,6 +73,15 @@ export function deriveLaneHistory(
   const windowMs = end - start
 
   const lanes = new Map<string, LaneHistoryPoint[]>()
+  const laneTypes = options.laneTypes ?? []
+
+  for (const laneType of laneTypes) {
+    const key = String(laneType ?? '').trim()
+    if (key === '') continue
+    if (!lanes.has(key)) {
+      lanes.set(key, [])
+    }
+  }
 
   for (const run of runs) {
     const at = pickRunStart(run)
@@ -81,11 +98,32 @@ export function deriveLaneHistory(
     lanes.set(key, bucket)
   }
 
+  for (const window of options.windows ?? []) {
+    const triggerAt = new Date(window.trigger_at)
+    if (Number.isNaN(triggerAt.getTime())) continue
+    const atMs = triggerAt.getTime()
+    if (atMs < start || atMs > end) continue
+
+    const t = ((atMs - start) / windowMs) * 100
+    const clamped = Math.min(100, Math.max(0, t))
+    const key = String(window.task_type ?? '').trim()
+    if (key === '') continue
+
+    const bucket = lanes.get(key) ?? []
+    const hasNearPoint = bucket.some((point) => Math.abs(point.t - clamped) < 0.2)
+    if (!hasNearPoint) {
+      bucket.push({ t: Number(clamped.toFixed(2)), s: 'warn' })
+      lanes.set(key, bucket)
+    }
+  }
+
   for (const bucket of lanes.values()) {
     bucket.sort((a, b) => a.t - b.t)
   }
 
-  return Array.from(lanes.entries()).map(([lane, runs]) => ({ lane, runs }))
+  return Array.from(lanes.entries())
+    .map(([lane, runs]) => ({ lane, runs }))
+    .filter((lane) => lane.runs.length > 0)
 }
 
 export function laneHistoryHorizonHours(horizon: LaneHistoryHorizon): number {

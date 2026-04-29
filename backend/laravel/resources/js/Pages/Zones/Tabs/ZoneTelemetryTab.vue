@@ -3,19 +3,10 @@
     <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Диапазон</span>
-          <button
-            v-for="range in ranges"
-            :key="range"
-            type="button"
-            class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
-            :class="range === chartTimeRange
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
-              : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-            @click="onRangeClick(range)"
-          >
-            {{ range }}
-          </button>
+          <TelemetryRangePicker
+            :model-value="chartTimeRange"
+            @update:model-value="onRangeClick"
+          />
           <button
             type="button"
             class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
@@ -49,13 +40,18 @@
         </div>
       </div>
 
-      <div v-if="chartDataPh.length > 0 || chartDataEc.length > 0">
+      <div
+        v-if="loading"
+        class="space-y-2"
+      >
+        <div class="h-64 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] animate-pulse"></div>
+      </div>
+      <div v-else-if="chartDataPh.length > 0 || chartDataEc.length > 0">
         <MultiSeriesTelemetryChart
           v-if="!showSeparateCharts"
           title="pH и EC"
           :series="multiSeriesData"
           :time-range="chartTimeRange"
-          @time-range-change="onChartRangeChange"
         />
         <div
           v-else
@@ -66,14 +62,12 @@
             :data="chartDataPh"
             series-name="pH"
             :time-range="chartTimeRange"
-            @time-range-change="onChartRangeChange"
           />
           <ZoneTelemetryChart
             title="EC"
             :data="chartDataEc"
             series-name="EC"
             :time-range="chartTimeRange"
-            @time-range-change="onChartRangeChange"
           />
         </div>
       </div>
@@ -116,7 +110,6 @@
           title="Влажность почвы, %"
           :series="soilMoistureSeries"
           :time-range="chartTimeRange"
-          @time-range-change="onChartRangeChange"
         />
       </div>
       <div
@@ -140,14 +133,16 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
 import Button from '@/Components/Button.vue'
+import TelemetryRangePicker from '@/Components/TelemetryRangePicker.vue'
 import { useTheme } from '@/composables/useTheme'
+import { useChartColors } from '@/composables/useChartColors'
+import { downloadCsv, toIsoTimestamp } from '@/composables/useCsvExport'
 import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
 import type { Device } from '@/types/Device'
+import type { TelemetryRange } from '@/types'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
-
-type TelemetryRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
 type PhaseTargets = {
   ph?: { min?: number; max?: number } | null
@@ -169,6 +164,7 @@ interface Props {
   chartDataEc: Array<{ ts: number; value: number }>
   chartDataSoilMoisture: Record<number, Array<{ ts: number; value: number }>>
   hasSoilMoisture: boolean
+  loading?: boolean
   devices: Device[]
   telemetry: ZoneTelemetry
   targets: ZoneTargetsInput
@@ -178,17 +174,10 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{ (e: 'timeRangeChange', range: TelemetryRange): void }>()
 
-const ranges: TelemetryRange[] = ['1H', '24H', '7D', '30D', 'ALL']
 const showSeparateCharts = ref(false)
 
 const { theme } = useTheme()
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
+const { resolveCssColor } = useChartColors(theme)
 
 const SOIL_MOISTURE_COLORS = [
   { cssVar: '--accent-amber', fallback: '#f59e0b' },
@@ -304,29 +293,21 @@ const onRangeClick = (range: TelemetryRange): void => {
   emit('timeRangeChange', range)
 }
 
-const onChartRangeChange = (range: string): void => {
-  emit('timeRangeChange', range as TelemetryRange)
-}
-
 const exportTelemetry = (): void => {
-  if (typeof window === 'undefined') return
+  const rows: Array<Array<string | number>> = [['metric', 'timestamp', 'value', 'node_id']]
+  for (const point of props.chartDataPh) {
+    rows.push(['PH', toIsoTimestamp(point.ts), point.value, ''])
+  }
+  for (const point of props.chartDataEc) {
+    rows.push(['EC', toIsoTimestamp(point.ts), point.value, ''])
+  }
+  for (const [nodeId, points] of Object.entries(props.chartDataSoilMoisture)) {
+    for (const point of points) {
+      rows.push(['SOIL_MOISTURE', toIsoTimestamp(point.ts), point.value, nodeId])
+    }
+  }
 
-  const rows: string[] = ['metric,timestamp,value']
-  props.chartDataPh.forEach((point) => {
-    rows.push(`PH,${new Date(point.ts).toISOString()},${point.value}`)
-  })
-  props.chartDataEc.forEach((point) => {
-    rows.push(`EC,${new Date(point.ts).toISOString()},${point.value}`)
-  })
-
-  const csv = rows.join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
   const fileLabel = props.zoneId ? `zone-${props.zoneId}` : 'zone'
-  link.href = url
-  link.download = `${fileLabel}-telemetry-${props.chartTimeRange}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
+  downloadCsv(`${fileLabel}-telemetry-${props.chartTimeRange}.csv`, rows)
 }
 </script>
