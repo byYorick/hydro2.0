@@ -67,6 +67,10 @@
         title="Профиль зоны"
         :default-open="true"
       >
+        <p class="text-xs text-[color:var(--text-dim)] leading-relaxed">
+          Документ автоматики зоны в БД (<code class="text-[11px] text-[color:var(--text-muted)]">zone.logic_profile</code>).
+          Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в блоке «Коррекция и калибровка» ниже.
+        </p>
         <AutomationProfileCard
           :can-configure-automation="canConfigureAutomation"
           :telemetry-label="telemetryLabel"
@@ -91,7 +95,9 @@
                 Применение профиля автоматики
               </p>
               <p class="text-xs text-[color:var(--text-dim)] mt-0.5">
-                Профиль сначала сохраняется в БД, затем отправляется `GROWTH_CYCLE_CONFIG` (`mode=adjust`, `profile_mode`).
+                Профиль сначала сохраняется в БД, затем отправляется <code class="text-[11px]">GROWTH_CYCLE_CONFIG</code>
+                (<code class="text-[11px]">mode=adjust</code>, <code class="text-[11px]">profile_mode</code>).
+                Сетпоинты pH/EC фазы рецепта этим действием не меняются — используйте live edit фазы или редактор рецепта.
               </p>
             </div>
             <div class="text-xs text-[color:var(--text-muted)] shrink-0">
@@ -207,7 +213,7 @@
             size="sm"
             @click="showEditWizard = true"
           >
-            Редактировать (как в мастере запуска)
+            Редактировать в мастере запуска
           </Button>
           <Button
             size="sm"

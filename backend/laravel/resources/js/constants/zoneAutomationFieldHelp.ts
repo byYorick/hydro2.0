@@ -69,7 +69,7 @@ export const ZONE_AUTOMATION_FIELD_HELP: Record<string, string> = {
   'lighting.intervalMinutes': 'Частота пересчёта и обновления lighting automation в минутах.',
   'lighting.manualIntensity': 'Интенсивность в процентах для ручного режима досветки.',
   'lighting.manualDurationHours': 'Длительность ручного lighting override в часах.',
-  'zoneClimate.enabled': 'Включает отдельный zonal climate subsystem для CO2 и прикорневой вентиляции.',
+  'zoneClimate.enabled': 'Включает подсистему zonal climate в zone.logic_profile (флаг и capabilities). Узлы CO₂ и прикорневой вентиляции привязываются в мастере запуска; не смешивать с макроклиматом теплицы (greenhouse.logic_profile).',
 }
 
 export function zoneAutomationFieldHelp(key: string): string {

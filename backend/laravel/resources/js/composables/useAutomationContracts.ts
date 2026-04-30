@@ -202,7 +202,7 @@ export function useAutomationContracts(inputs: Inputs) {
                 subsystem: 'climate',
                 component: 'enabled',
                 title: 'Климат',
-                description: 'Zone climate выключен — пропускается.',
+                description: 'Zonal climate в профиле зоны выключен — блок пропускается.',
                 status: 'optional',
                 required: false,
                 action: { label: 'К климату', target: 'climate' },

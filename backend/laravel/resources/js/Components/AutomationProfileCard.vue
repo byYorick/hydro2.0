@@ -3,14 +3,22 @@
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
       <div>
         <p class="text-[11px] uppercase tracking-[0.24em] text-[color:var(--text-dim)]">
-          профиль управления
+          Профиль автоматики зоны
         </p>
         <h2 class="text-xl font-semibold mt-1 text-[color:var(--text-primary)]">
-          Вода, коррекция, zone climate и досветка
+          Вода, контур коррекции, zonal climate и досветка
         </h2>
-        <p class="text-sm text-[color:var(--text-muted)] mt-1 max-w-3xl">
-          Общий климат теплицы вынесен на уровень теплицы. Здесь показывается профиль зоны и её опциональные подсистемы.
-        </p>
+        <div class="text-sm text-[color:var(--text-muted)] mt-1 max-w-3xl space-y-2">
+          <p>
+            Макроклимат теплицы настраивается на странице теплицы. Здесь — сводка authority-профиля зоны в БД
+            (полив, досветка, опциональный zonal climate, параметры водного контура), без дублирования климатического профиля теплицы.
+          </p>
+          <p>
+            Канонические целевые pH/EC <span class="text-[color:var(--text-primary)]">активной фазы рецепта</span>
+            задаются в рецепте и в блоке «Коррекция и калибровка» / live edit фазы; цифры в карточке «контур pH/EC»
+            — из профиля автоматики зоны и могут с ними не совпадать.
+          </p>
+        </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Badge :variant="canConfigureAutomation ? 'success' : 'warning'">
@@ -24,7 +32,7 @@
           size="sm"
           @click="$emit('edit')"
         >
-          Редактировать (как в мастере запуска)
+          Редактировать в мастере запуска
         </Button>
       </div>
     </div>
@@ -32,13 +40,13 @@
     <div class="ui-kpi-grid md:grid-cols-2 xl:grid-cols-4 mt-4">
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          Zone climate
+          Zonal climate
         </div>
         <div class="ui-kpi-value !text-lg">
-          {{ zoneClimateEnabled ? 'enabled' : 'disabled' }}
+          {{ zoneClimateEnabled ? 'вкл.' : 'выкл.' }}
         </div>
         <div class="ui-kpi-hint">
-          CO2 и прикорневая вентиляция
+          Флаг подсистемы в профиле зоны; узлы CO₂ и прикорневой вентиляции привязываются в мастере. Не путать с климатом теплицы.
         </div>
       </article>
 
@@ -50,20 +58,20 @@
           {{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}
         </div>
         <div class="ui-kpi-hint">
-          {{ waterTopologyLabel }} · diag {{ waterForm.diagnosticsIntervalMinutes }} мин
+          Топология и диагностика из профиля зоны: {{ waterTopologyLabel }} · diag {{ waterForm.diagnosticsIntervalMinutes }} мин
         </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="ui-kpi-label">
-          Коррекция pH / EC
+          Контур pH / EC (профиль)
         </div>
         <div class="ui-kpi-value !text-lg">
           pH {{ waterForm.targetPh.toFixed(2) }} · EC {{ waterForm.targetEc.toFixed(1) }}
         </div>
         <div class="ui-kpi-hint">
-          Допуск pH ±{{ phToleranceAbs.toFixed(2) }} ({{ phPct }}%)
-          · EC ±{{ ecToleranceAbs.toFixed(2) }} ({{ ecPct }}%)
+          Ориентиры и допуски из профиля зоны: pH ±{{ phToleranceAbs.toFixed(2) }} ({{ phPct }}%)
+          · EC ±{{ ecToleranceAbs.toFixed(2) }} ({{ ecPct }}%). Сетпоинты цикла — из фазы рецепта.
         </div>
       </article>
 
@@ -75,7 +83,7 @@
           {{ lightingForm.luxDay }} lux
         </div>
         <div class="ui-kpi-hint">
-          {{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }} · {{ lightingForm.intervalMinutes }} мин
+          Расписание из профиля зоны: {{ lightingForm.scheduleStart }}–{{ lightingForm.scheduleEnd }} · каждые {{ lightingForm.intervalMinutes }} мин
         </div>
       </article>
     </div>
