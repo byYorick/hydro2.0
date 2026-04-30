@@ -42,30 +42,6 @@ vi.mock('axios', () => ({
   },
 }))
 
-// Мокируем useApi, чтобы он автоматически добавлял префикс /api/ к путям
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosGetMock(finalUrl, config)
-      },
-      post: (url: string, data?: any, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosPostMock(finalUrl, data, config)
-      },
-      patch: (url: string, data?: any, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosGetMock(finalUrl, config)
-      },
-      delete: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosGetMock(finalUrl, config)
-      },
-    },
-  }),
-}))
-
 vi.mock('@inertiajs/vue3', () => ({
   router: {
     reload: routerReloadMock,
@@ -152,7 +128,7 @@ describe('AttachRecipeModal.vue', () => {
     expect(axiosGetMock).toHaveBeenCalled()
     const calls = axiosGetMock.mock.calls
     expect(calls.length).toBeGreaterThan(0)
-    expect(calls[0][0]).toContain('/api/recipes')
+    expect(calls[0][0]).toContain('/recipes')
   })
 
   it('отображает список рецептов', async () => {
@@ -219,7 +195,7 @@ describe('AttachRecipeModal.vue', () => {
       expect(axiosPostMock).toHaveBeenCalled()
       const calls = axiosPostMock.mock.calls
       expect(calls.length).toBeGreaterThan(0)
-      expect(calls[0][0]).toContain('/api/zones/1/attach-recipe')
+      expect(calls[0][0]).toContain('/zones/1/attach-recipe')
       expect(calls[0][1]).toMatchObject({ recipe_id: 1 })
     }
   })

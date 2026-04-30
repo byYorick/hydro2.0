@@ -10,8 +10,9 @@
     :stroke-linejoin="def.strokeLinejoin ?? 'round'"
     aria-hidden="true"
   >
-    <!-- eslint-disable-next-line vue/no-v-html -->
+    <!-- eslint-disable vue/no-v-html -->
     <g v-html="def.body" />
+    <!-- eslint-enable vue/no-v-html -->
   </svg>
 </template>
 

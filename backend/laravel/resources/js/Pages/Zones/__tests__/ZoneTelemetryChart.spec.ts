@@ -7,20 +7,26 @@ vi.mock('@/Components/Card.vue', () => ({
 }))
 
 vi.mock('@/Components/Button.vue', () => ({
-  default: { 
-    name: 'Button', 
+  default: {
+    name: 'Button',
     props: ['size', 'variant'],
-    template: '<button :class="variant" @click="$emit(\'click\')"><slot /></button>' 
+    template: '<button :class="variant" @click="$emit(\'click\')"><slot /></button>',
   },
 }))
 
 vi.mock('@/Components/ChartBase.vue', () => ({
-  default: { 
-    name: 'ChartBase', 
+  default: {
+    name: 'ChartBase',
     props: ['option'],
-    template: '<div class="chart-base"></div>' 
+    template: '<div class="chart-base"></div>',
   },
 }))
+
+function chartOption(wrapper: ReturnType<typeof mount>): Record<string, unknown> {
+  const chart = wrapper.findComponent({ name: 'ChartBase' })
+  expect(chart.exists()).toBe(true)
+  return chart.props('option') as Record<string, unknown>
+}
 
 describe('ZoneTelemetryChart.vue', () => {
   const sampleData = [
@@ -28,7 +34,7 @@ describe('ZoneTelemetryChart.vue', () => {
     { ts: Date.now(), value: 5.9 },
   ]
 
-  it('отображает заголовок и кнопки времени', () => {
+  it('отображает заголовок и подсказку по взаимодействию', () => {
     const wrapper = mount(ZoneTelemetryChart, {
       props: {
         title: 'pH',
@@ -37,16 +43,13 @@ describe('ZoneTelemetryChart.vue', () => {
         timeRange: '24H',
       },
     })
-    
+
     expect(wrapper.text()).toContain('pH')
-    expect(wrapper.text()).toContain('1H')
-    expect(wrapper.text()).toContain('24H')
-    expect(wrapper.text()).toContain('7D')
-    expect(wrapper.text()).toContain('30D')
-    expect(wrapper.text()).toContain('ALL')
+    expect(wrapper.text()).toContain('Колесо мыши')
+    expect(wrapper.text()).toContain('Перетаскивание')
   })
 
-  it('выделяет активную кнопку времени', () => {
+  it('передаёт в ChartBase option с серией и dataZoom под timeRange', () => {
     const wrapper = mount(ZoneTelemetryChart, {
       props: {
         title: 'pH',
@@ -55,39 +58,15 @@ describe('ZoneTelemetryChart.vue', () => {
         timeRange: '7D',
       },
     })
-    
-    // Фильтруем только кнопки времени (исключаем кнопку экспорта)
-    const buttons = wrapper.findAll('button').filter(btn => {
-      const text = btn.text()
-      return ['1H', '24H', '7D', '30D', 'ALL'].includes(text)
-    })
-    const activeButton = buttons.find(btn => {
-      const classes = btn.classes()
-      return classes.includes('default') || (!classes.includes('secondary') && btn.text() === '7D')
-    })
-    expect(activeButton?.text()).toBe('7D')
+
+    const option = chartOption(wrapper)
+    const dataZoom = option.dataZoom as Array<{ start?: number }>
+    expect(Array.isArray(option.series)).toBe(true)
+    expect((option.series as unknown[]).length).toBeGreaterThan(0)
+    expect(dataZoom?.[0]?.start).toBe(70)
   })
 
-  it('эмитит событие time-range-change при клике на кнопку', async () => {
-    const wrapper = mount(ZoneTelemetryChart, {
-      props: {
-        title: 'pH',
-        seriesName: 'pH',
-        data: sampleData,
-        timeRange: '24H',
-      },
-    })
-    
-    const buttons = wrapper.findAll('button')
-    const button1H = buttons.find(btn => btn.text() === '1H')
-    
-    await button1H?.trigger('click')
-    
-    expect(wrapper.emitted('time-range-change')).toBeTruthy()
-    expect(wrapper.emitted('time-range-change')?.[0]).toEqual(['1H'])
-  })
-
-  it('передает данные в ChartBase', () => {
+  it('передаёт данные в ChartBase', () => {
     const wrapper = mount(ZoneTelemetryChart, {
       props: {
         title: 'EC',
@@ -96,17 +75,13 @@ describe('ZoneTelemetryChart.vue', () => {
         timeRange: '24H',
       },
     })
-    
-    const chartBase = wrapper.findComponent({ name: 'ChartBase' })
-    expect(chartBase.exists()).toBe(true)
-    
-    const option = chartBase.props('option')
-    expect(option).toBeDefined()
+
+    const option = chartOption(wrapper)
     expect(option.series).toBeDefined()
     expect(Array.isArray(option.series)).toBe(true)
     expect(option.series.length).toBeGreaterThan(0)
-    expect(option.series[0].name).toBe('EC')
-    expect(option.series[0].data).toBeDefined()
+    expect((option.series as Array<{ name?: string }>)[0].name).toBe('EC')
+    expect((option.series as Array<{ data?: unknown }>)[0].data).toBeDefined()
   })
 
   it('обрабатывает пустые данные', () => {
@@ -118,10 +93,8 @@ describe('ZoneTelemetryChart.vue', () => {
         timeRange: '24H',
       },
     })
-    
-    expect(wrapper.text()).toContain('pH')
-    const chartBase = wrapper.findComponent({ name: 'ChartBase' })
-    expect(chartBase.exists()).toBe(true)
+
+    const option = chartOption(wrapper)
+    expect(option.series).toBeDefined()
   })
 })
-

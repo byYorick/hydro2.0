@@ -179,20 +179,19 @@ async function onAttach() {
       recipeId: selectedRecipeId.value,
     })
 
-    if (data?.status === 'ok') {
-      logger.info('[AttachRecipeModal] Recipe attached successfully, emitting event')
-      
-      // Эмитим событие для обновления UI и показа уведомления ПЕРЕД закрытием
-      emit('attached', selectedRecipeId.value)
-      
-      // Небольшая задержка перед закрытием модального окна, чтобы дать время родителю обработать событие
-      await new Promise(resolve => setTimeout(resolve, 50))
-      
-      emit('close')
-    } else {
+    if (data?.status != null && data.status !== 'ok') {
       throw new Error('Неожиданный ответ от сервера')
     }
-  } catch (error: any) {
+
+    logger.info('[AttachRecipeModal] Recipe attached successfully, emitting event')
+
+    emit('attached', selectedRecipeId.value)
+
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    emit('close')
+  } catch (error: unknown) {
+    showToast('Не удалось привязать рецепт', 'error')
     logger.error('Failed to attach recipe:', error)
     // Не закрываем модальное окно при ошибке
     // emit('close') - убираем, чтобы пользователь мог попробовать снова

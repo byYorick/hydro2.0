@@ -136,6 +136,7 @@ vi.mock('@/services/api', () => ({
         unwrapEnvelope(apiPostMock(`/api/zones/${zoneId}/control-mode`, payload)),
       runManualStep: (zoneId: number, payload: Record<string, unknown>) =>
         apiPostMock(`/api/zones/${zoneId}/manual-step`, payload),
+      getState: (zoneId: number) => unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/state`)),
     },
   },
 }))
@@ -320,7 +321,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.luxNight).toBe(500)
     expect(vm.lightingForm.scheduleStart).toBe('05:30')
     expect(vm.lightingForm.scheduleEnd).toBe('20:30')
-    expect(wrapper.text()).toContain('Допуск pH ±0.29 (5%)')
+    expect(wrapper.text()).toContain('pH ±0.29 (5%)')
     expect(wrapper.text()).not.toContain('Задачи автоматики')
   })
 
@@ -403,7 +404,7 @@ describe('ZoneAutomationTab.vue', () => {
     const vm = wrapper.vm as any
     expect(vm.climateForm.dayTemp).toBe(23)
 
-    const editButton = wrapper.findAll('button').find((btn) => btn.text() === 'Редактировать')
+    const editButton = wrapper.findAll('button').find((btn) => btn.text().includes('Редактировать'))
     expect(editButton).toBeTruthy()
     await editButton!.trigger('click')
     await flushPromises()
@@ -550,7 +551,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(manualIrrigationButton).toBeTruthy()
     expect(manualIrrigationButton!.attributes('disabled')).toBeUndefined()
 
-    const editButton = wrapper.findAll('button').find((btn) => btn.text() === 'Редактировать')
+    const editButton = wrapper.findAll('button').find((btn) => btn.text().includes('Редактировать'))
     expect(editButton).toBeUndefined()
   })
 

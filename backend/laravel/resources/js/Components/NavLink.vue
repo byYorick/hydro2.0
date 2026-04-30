@@ -15,7 +15,7 @@
       @mouseenter="onTipEnter"
       @mouseleave="showTip = false"
     >
-      <!-- eslint-disable-next-line vue/no-v-html -->
+      <!-- eslint-disable vue/no-v-html -->
       <svg
         v-if="icon"
         class="h-5 w-5 shrink-0"
@@ -27,6 +27,7 @@
         stroke-linejoin="round"
         v-html="icon"
       />
+      <!-- eslint-enable vue/no-v-html -->
     </Link>
     <Teleport to="body">
       <div
@@ -54,7 +55,7 @@
         : isActive ? 'nav-link--active' : ''
     ]"
   >
-    <!-- eslint-disable-next-line vue/no-v-html -->
+    <!-- eslint-disable vue/no-v-html -->
     <svg
       v-if="icon && !mobile"
       class="h-4 w-4 shrink-0"
@@ -66,6 +67,7 @@
       stroke-linejoin="round"
       v-html="icon"
     />
+    <!-- eslint-enable vue/no-v-html -->
     <slot><span class="truncate">{{ label }}</span></slot>
   </Link>
 </template>

@@ -694,8 +694,8 @@ const nextUncalibrated = computed<NextCandidate | null>(() => {
     if (desc.component === form.component) continue
     const pump = pumpByRole(desc.role)
     const calibrated = !!pump?.ml_per_sec && pump.ml_per_sec > 0
-    const hasChannel = pump && pump.node_channel_id > 0
-    if (calibrated || !hasChannel) continue
+    const hasChannel = Boolean(pump && pump.node_channel_id > 0)
+    if (!pump || calibrated || !hasChannel) continue
 
     const sameGroup = desc.group === currentGroup
     const bucketIdx = sameGroup

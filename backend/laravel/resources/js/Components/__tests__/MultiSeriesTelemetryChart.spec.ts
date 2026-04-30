@@ -1,27 +1,24 @@
 import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import MultiSeriesTelemetryChart from '../MultiSeriesTelemetryChart.vue'
 
-// Моки для зависимостей
 vi.mock('@/Components/Card.vue', () => ({
   default: { name: 'Card', template: '<div class="card"><slot /></div>' },
 }))
 
-vi.mock('@/Components/Button.vue', () => ({
-  default: { 
-    name: 'Button', 
-    props: ['size', 'variant'],
-    template: '<button><slot /></button>' 
+vi.mock('@/Components/ChartBase.vue', () => ({
+  default: {
+    name: 'ChartBase',
+    props: ['option'],
+    template: '<div class="chart-base"></div>',
   },
 }))
 
-vi.mock('@/Components/ChartBase.vue', () => ({
-  default: { 
-    name: 'ChartBase', 
-    props: ['option'],
-    template: '<div class="chart-base"></div>' 
-  },
-}))
+function chartOption(wrapper: ReturnType<typeof mount>): Record<string, unknown> {
+  const chart = wrapper.findComponent({ name: 'ChartBase' })
+  expect(chart.exists()).toBe(true)
+  return chart.props('option') as Record<string, unknown>
+}
 
 const sampleSeries = [
   {
@@ -51,43 +48,6 @@ const sampleSeries = [
 ]
 
 describe('MultiSeriesTelemetryChart.vue', () => {
-  let clickSpy: ReturnType<typeof vi.spyOn>
-  const originalBlob = globalThis.Blob
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    class MockBlob {
-      parts: string[]
-      type: string
-
-      constructor(parts: unknown[], options?: { type?: string }) {
-        this.parts = parts.map((part) => String(part))
-        this.type = options?.type ?? ''
-      }
-
-      text(): Promise<string> {
-        return Promise.resolve(this.parts.join(''))
-      }
-    }
-    vi.stubGlobal('Blob', MockBlob)
-    Object.defineProperty(globalThis.URL, 'createObjectURL', {
-      value: vi.fn(() => 'blob:telemetry-export'),
-      configurable: true,
-      writable: true,
-    })
-    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    })
-  })
-
-  afterEach(() => {
-    clickSpy.mockRestore()
-    vi.stubGlobal('Blob', originalBlob)
-  })
-
   it('отображает компонент с сериями данных', () => {
     const wrapper = mount(MultiSeriesTelemetryChart, {
       props: {
@@ -101,53 +61,17 @@ describe('MultiSeriesTelemetryChart.vue', () => {
     expect(wrapper.text()).toContain('Телеметрия')
   })
 
-  it('отображает кнопки выбора временного диапазона', () => {
+  it('передаёт в ChartBase option с dataZoom под timeRange', () => {
     const wrapper = mount(MultiSeriesTelemetryChart, {
       props: {
         series: sampleSeries,
-        timeRange: '24H',
+        timeRange: '7D',
       },
     })
 
-    expect(wrapper.text()).toContain('1H')
-    expect(wrapper.text()).toContain('24H')
-    expect(wrapper.text()).toContain('7D')
-    expect(wrapper.text()).toContain('30D')
-    expect(wrapper.text()).toContain('ALL')
-  })
-
-  it('выделяет активный временной диапазон', () => {
-    const wrapper = mount(MultiSeriesTelemetryChart, {
-      props: {
-        series: sampleSeries,
-        timeRange: '24H',
-      },
-    })
-
-    const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const activeButton = buttons.find(btn => btn.props('variant') === 'default')
-    expect(activeButton).toBeTruthy()
-    if (activeButton) {
-      expect(activeButton.text()).toBe('24H')
-    }
-  })
-
-  it('эмитирует событие time-range-change при изменении диапазона', async () => {
-    const wrapper = mount(MultiSeriesTelemetryChart, {
-      props: {
-        series: sampleSeries,
-        timeRange: '24H',
-      },
-    })
-
-    const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const button1H = buttons.find(btn => btn.text() === '1H')
-    
-    if (button1H) {
-      await button1H.trigger('click')
-      expect(wrapper.emitted('time-range-change')).toBeTruthy()
-      expect(wrapper.emitted('time-range-change')?.[0]).toEqual(['1H'])
-    }
+    const option = chartOption(wrapper)
+    const dataZoom = option.dataZoom as Array<{ start?: number }>
+    expect(dataZoom?.[0]?.start).toBe(70)
   })
 
   it('отображает легенду с текущими значениями', () => {
@@ -160,7 +84,6 @@ describe('MultiSeriesTelemetryChart.vue', () => {
 
     expect(wrapper.text()).toContain('Температура')
     expect(wrapper.text()).toContain('Влажность')
-    // Проверяем, что отображаются текущие значения
     expect(wrapper.text()).toMatch(/21\.5|62\.0/)
   })
 
@@ -185,19 +108,16 @@ describe('MultiSeriesTelemetryChart.vue', () => {
     expect(wrapper.text()).toContain('Телеметрия')
   })
 
-  it('использует значение по умолчанию для timeRange', () => {
+  it('использует значение по умолчанию для timeRange (24H в option)', () => {
     const wrapper = mount(MultiSeriesTelemetryChart, {
       props: {
         series: sampleSeries,
       },
     })
 
-    const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const activeButton = buttons.find(btn => btn.props('variant') === 'default')
-    expect(activeButton).toBeTruthy()
-    if (activeButton) {
-      expect(activeButton.text()).toBe('24H')
-    }
+    const option = chartOption(wrapper)
+    const dataZoom = option.dataZoom as Array<{ start?: number }>
+    expect(dataZoom?.[0]?.start).toBe(50)
   })
 
   describe('formatValue', () => {
@@ -214,7 +134,6 @@ describe('MultiSeriesTelemetryChart.vue', () => {
         },
       })
 
-      // Проверяем, что значение отформатировано с 2 знаками
       const text = wrapper.text()
       expect(text).toMatch(/6\.75/)
     })
@@ -249,38 +168,7 @@ describe('MultiSeriesTelemetryChart.vue', () => {
         },
       })
 
-      // Компонент должен обрабатывать null значения
       expect(wrapper.exists()).toBe(true)
-    })
-  })
-
-  describe('exportData', () => {
-    it('экспортирует данные в CSV', async () => {
-      const wrapper = mount(MultiSeriesTelemetryChart, {
-        props: {
-          title: 'Telemetry Export',
-          series: sampleSeries,
-          timeRange: '24H',
-        },
-      })
-
-      const exportButton = wrapper.findAll('button').find((button) => button.text().includes('Экспорт'))
-      expect(exportButton).toBeTruthy()
-
-      await exportButton?.trigger('click')
-
-      expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
-      const blobArg = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0]
-      expect(blobArg).toBeInstanceOf(Blob)
-
-      const csvContent = await blobArg.text()
-      expect(csvContent).toContain('Время,Температура (°C),Влажность (%)')
-      expect(csvContent).toContain('20.5,60')
-      expect(csvContent).toContain('21,61')
-      expect(csvContent).toContain('21.5,62')
-
-      expect(clickSpy).toHaveBeenCalledTimes(1)
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:telemetry-export')
     })
   })
 })

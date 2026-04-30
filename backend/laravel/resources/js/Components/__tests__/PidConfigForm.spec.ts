@@ -5,14 +5,15 @@ import PidConfigForm from '@/Components/PidConfigForm.vue'
 
 const getPidConfigMock = vi.hoisted(() => vi.fn())
 const getAllPidConfigsMock = vi.hoisted(() => vi.fn())
+const updatePidConfigMock = vi.hoisted(() => vi.fn())
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const updateDocumentMock = vi.hoisted(() => vi.fn())
-const apiGetMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/composables/usePidConfig', () => ({
   usePidConfig: () => ({
     getPidConfig: getPidConfigMock,
     getAllPidConfigs: getAllPidConfigsMock,
+    updatePidConfig: updatePidConfigMock,
     loading: ref(false),
   }),
 }))
@@ -21,14 +22,6 @@ vi.mock('@/composables/useAutomationConfig', () => ({
   useAutomationConfig: () => ({
     getDocument: getDocumentMock,
     updateDocument: updateDocumentMock,
-  }),
-}))
-
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
-    },
   }),
 }))
 
@@ -43,9 +36,9 @@ describe('PidConfigForm.vue', () => {
   beforeEach(() => {
     getPidConfigMock.mockReset()
     getAllPidConfigsMock.mockReset()
+    updatePidConfigMock.mockReset()
     getDocumentMock.mockReset()
     updateDocumentMock.mockReset()
-    apiGetMock.mockReset()
 
     getPidConfigMock.mockResolvedValue({
       type: 'ph',
@@ -140,6 +133,7 @@ describe('PidConfigForm.vue', () => {
       updated_at: '2026-03-17T10:00:00Z',
       updated_by: 5,
     })
+    updatePidConfigMock.mockResolvedValue(undefined)
     updateDocumentMock.mockImplementation(async (_scopeType: string, _scopeId: number, _namespace: string, payload: Record<string, unknown>) => ({
       namespace: 'zone.runtime_tuning_bundle',
       scope_type: 'zone',
@@ -150,12 +144,6 @@ describe('PidConfigForm.vue', () => {
       updated_at: '2026-03-17T10:00:00Z',
       updated_by: 5,
     }))
-    apiGetMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: {},
-      },
-    })
   })
 
   it('сохраняет только canonical PID tuning и не отправляет target в PID-документ', async () => {
