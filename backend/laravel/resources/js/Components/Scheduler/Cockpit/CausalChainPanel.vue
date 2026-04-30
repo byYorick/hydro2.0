@@ -1,6 +1,6 @@
 <template>
   <section
-    class="flex min-h-0 flex-1 flex-col rounded-2xl border p-3.5"
+    class="causal-chain-panel flex min-h-0 flex-1 flex-col rounded-2xl border p-3.5"
     :class="isFailed
       ? 'border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/5'
       : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70'"
@@ -32,7 +32,7 @@
       </div>
       <button
         type="button"
-        class="rounded-md border border-[color:var(--border-muted)] px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]"
+        class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-main)]/20 px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]"
         data-testid="scheduler-chain-close"
         @click="$emit('close')"
       >
@@ -42,7 +42,7 @@
 
     <div
       v-if="run.error_code"
-      class="mt-3 rounded-lg border border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/10 px-2.5 py-2"
+      class="mt-3 rounded-xl border border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/10 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       data-testid="scheduler-chain-error"
     >
       <div class="text-[11px] font-semibold text-[color:var(--accent-red)]">
@@ -69,7 +69,7 @@
 
     <ol
       v-else
-      class="mt-2 flex flex-1 flex-col gap-0.5 overflow-auto"
+      class="scrollbar-glow mt-2 flex flex-1 flex-col gap-1 overflow-auto pr-1"
     >
       <li
         v-for="(step, index) in steps"
@@ -91,7 +91,7 @@
             class="mt-0.5 min-h-[10px] w-0.5 flex-1 bg-[color:var(--border-muted)]"
           ></span>
         </div>
-        <div class="pb-2">
+        <div class="rounded-xl border border-transparent px-2 pb-2 pt-1 transition-colors hover:border-[color:var(--border-muted)] hover:bg-[color:var(--bg-main)]/15">
           <div class="flex flex-wrap items-baseline gap-1.5">
             <Badge
               variant="neutral"
@@ -119,11 +119,11 @@
       </li>
     </ol>
 
-    <footer class="mt-2 flex gap-1.5">
+    <footer class="mt-3 flex gap-1.5">
       <button
         v-if="isFailed"
         type="button"
-        class="flex-1 rounded-md border border-[color:var(--border-muted)] px-2 py-1 text-[11px] text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+        class="flex-1 rounded-lg border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/10 px-2 py-1.5 text-[11px] font-semibold text-[color:var(--text-primary)] hover:bg-[color:var(--accent-red)]/15"
         data-testid="scheduler-chain-retry"
         @click="$emit('retry', run.execution_id)"
       >
@@ -131,7 +131,7 @@
       </button>
       <button
         type="button"
-        class="flex-1 rounded-md border border-[color:var(--border-muted)] px-2 py-1 text-[11px] text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+        class="flex-1 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-main)]/20 px-2 py-1.5 text-[11px] text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
         data-testid="scheduler-chain-open-events"
         @click="$emit('open-events', run.execution_id)"
       >
@@ -140,7 +140,7 @@
       <button
         v-if="run.correlation_id"
         type="button"
-        class="rounded-md border border-[color:var(--border-muted)] px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:bg-[color:var(--bg-elevated)]"
+        class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-main)]/20 px-2 py-1.5 text-[11px] text-[color:var(--text-dim)] hover:bg-[color:var(--bg-elevated)]"
         :title="`Скопировать correction_window_id: ${run.correlation_id}`"
         data-testid="scheduler-chain-copy"
         @click="copyCorrelation"
@@ -226,6 +226,12 @@ function copyCorrelation(): void {
 </script>
 
 <style scoped>
+.causal-chain-panel {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 42px color-mix(in srgb, var(--bg-main) 32%, transparent);
+}
+
 .chain-dot-live {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-cyan) 20%, transparent);
   animation: chain-dot-ping 1.6s ease-out infinite;

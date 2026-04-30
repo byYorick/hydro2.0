@@ -1,6 +1,6 @@
 <template>
   <section
-    class="flex min-h-0 flex-1 flex-col rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 p-3"
+    class="swimlane-panel flex min-h-0 flex-1 flex-col rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 p-3.5"
     data-testid="scheduler-swimlane"
   >
     <header class="flex flex-wrap items-center justify-between gap-2">
@@ -40,26 +40,32 @@
 
     <div
       v-else
-      class="mt-2.5 flex flex-1 flex-col gap-1.5"
+      class="mt-3 flex flex-1 flex-col gap-2"
     >
       <div
         v-for="lane in lanes"
         :key="lane.lane"
-        class="grid items-center gap-2.5"
-        :style="{ gridTemplateColumns: '120px minmax(0,1fr)' }"
+        class="grid items-center gap-3"
+        :style="{ gridTemplateColumns: '128px minmax(0,1fr)' }"
       >
-        <span class="truncate text-[11px] font-medium text-[color:var(--text-dim)]">
-          {{ lane.lane }}
-        </span>
-        <div class="relative h-6 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40">
+        <div class="min-w-0">
+          <span class="block truncate text-[11px] font-semibold text-[color:var(--text-primary)]">
+            {{ lane.lane }}
+          </span>
+          <span class="text-[9px] text-[color:var(--text-muted)]">{{ lane.runs.length }} событий</span>
+        </div>
+        <div class="swim-track relative h-8 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40">
           <div
-            class="absolute top-[-2px] bottom-[-2px] w-px bg-[color:var(--accent-cyan)]"
+            class="absolute top-[-4px] bottom-[-4px] z-10 w-px bg-[color:var(--accent-cyan)] shadow-[0_0_12px_color-mix(in_srgb,var(--accent-cyan)_45%,transparent)]"
             style="left: 50%"
+          ></div>
+          <div
+            class="absolute left-1/2 top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color:var(--accent-cyan)]"
           ></div>
           <div
             v-for="(point, index) in lane.runs"
             :key="`${lane.lane}-${index}`"
-            class="absolute top-1 rounded-[3px]"
+            class="swim-point absolute top-2 rounded-[4px]"
             :class="point.s === 'run' ? 'h-4 w-[18px]' : 'h-4 w-2.5'"
             :style="{
               left: `${point.t}%`,
@@ -76,8 +82,8 @@
     </div>
 
     <footer
-      class="mt-2 grid gap-2.5 text-[9px] text-[color:var(--text-muted)]"
-      :style="{ gridTemplateColumns: '120px minmax(0,1fr)' }"
+      class="mt-2.5 grid gap-3 text-[9px] text-[color:var(--text-muted)]"
+      :style="{ gridTemplateColumns: '128px minmax(0,1fr)' }"
     >
       <span></span>
       <div class="flex justify-between">
@@ -153,6 +159,22 @@ function formatLabel(reference: Date, offsetHours: number): string {
   font-size: 10px;
   font-weight: 500;
   border: 1px solid var(--border-muted);
+}
+
+.swimlane-panel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.swim-track {
+  overflow: hidden;
+  background-image:
+    linear-gradient(90deg, transparent 0, transparent calc(25% - 1px), color-mix(in srgb, var(--border-muted) 54%, transparent) 25%, transparent calc(25% + 1px)),
+    linear-gradient(90deg, transparent 0, transparent calc(75% - 1px), color-mix(in srgb, var(--border-muted) 54%, transparent) 75%, transparent calc(75% + 1px));
+}
+
+.swim-point {
+  z-index: 11;
+  border: 1px solid color-mix(in srgb, #fff 32%, transparent);
 }
 
 .swim-dot {

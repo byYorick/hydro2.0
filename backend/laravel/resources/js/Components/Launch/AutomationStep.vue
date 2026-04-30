@@ -59,7 +59,7 @@ import {
 import type { ZoneAutomationBindRole } from '@/composables/zoneAutomationTypes';
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode';
 import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
-import type { IrrigationSystem, WaterFormState } from '@/composables/zoneAutomationTypes';
+import type { IrrigationSystem } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 import { autoSelectAssignmentsByNodeType } from '@/composables/zoneAutomationAssignmentAutoSelect';
 
@@ -75,12 +75,19 @@ interface Props {
     zoneId?: number;
     currentRecipePhase?: unknown;
     recipeSummary?: RecipeSummary | null;
+    /**
+     * Если true — не эмитим `update:profile` до завершения первого `reloadAll()`
+     * (нужно для модалки редактирования зоны, чтобы не затирать черновик дефолтами).
+     * В мастере запуска оставляем false.
+     */
+    emitProfileAfterHydrate?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
     zoneId: undefined,
     currentRecipePhase: null,
     recipeSummary: null,
+    emitProfileAfterHydrate: false,
 });
 
 const emit = defineEmits<{
@@ -90,6 +97,17 @@ const emit = defineEmits<{
 const { showToast } = useToast();
 
 const state = reactive<AutomationProfile>(structuredClone(automationProfileDefaults));
+
+const profileEmitAllowed = ref(!props.emitProfileAfterHydrate);
+
+function emitProfileFromState(): void {
+    emit('update:profile', {
+        waterForm: { ...state.waterForm },
+        lightingForm: { ...state.lightingForm },
+        zoneClimateForm: { ...state.zoneClimateForm },
+        assignments: { ...state.assignments },
+    });
+}
 const availableNodes: SetupWizardNode[] = reactive([]);
 
 const loading = ref(false);
@@ -335,6 +353,9 @@ async function loadNodes(zoneId: number) {
 
 async function reloadAll() {
     if (!props.zoneId) return;
+    if (props.emitProfileAfterHydrate) {
+        profileEmitAllowed.value = false;
+    }
     loading.value = true;
     try {
         await Promise.all([
@@ -349,6 +370,10 @@ async function reloadAll() {
         autoSelectAssignments(props.zoneId);
     } finally {
         loading.value = false;
+        if (props.emitProfileAfterHydrate) {
+            profileEmitAllowed.value = true;
+            emitProfileFromState();
+        }
     }
 }
 
@@ -592,20 +617,14 @@ watch(
         zoneClimateForm: state.zoneClimateForm,
         assignments: state.assignments,
     }),
-    (next) => {
-        emit('update:profile', {
-            waterForm: { ...next.waterForm },
-            lightingForm: { ...next.lightingForm },
-            zoneClimateForm: { ...next.zoneClimateForm },
-            assignments: { ...next.assignments },
-        });
+    () => {
+        if (props.emitProfileAfterHydrate && !profileEmitAllowed.value) {
+            return;
+        }
+        emitProfileFromState();
     },
-    { deep: true, immediate: true },
+    { deep: true, immediate: !props.emitProfileAfterHydrate },
 );
-
-function onWaterFormUpdate(next: WaterFormState) {
-    state.waterForm = next;
-}
 
 function onPresetApplied(preset: ZoneAutomationPreset) {
     showToast(`Применён пресет «${preset.name}»`, 'success');

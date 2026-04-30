@@ -274,7 +274,7 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
 
 /**
  * Преобразует `zone.logic_profile` JSON payload в типизированные формы для
- * `<ZoneAutomationProfileSections>`. Неизвестные/отсутствующие поля → defaults.
+ * `AutomationStep` / мастера запуска. Неизвестные/отсутствующие поля → defaults.
  */
 export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
     const root = asDict(payload);

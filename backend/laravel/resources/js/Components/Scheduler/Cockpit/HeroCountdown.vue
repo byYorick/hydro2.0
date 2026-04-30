@@ -4,28 +4,36 @@
     data-testid="scheduler-hero-countdown"
   >
     <template v-if="run">
-      <div class="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] text-[color:var(--accent-cyan)]">
-        <span class="hero-dot"></span>
-        <span>ИСПОЛНЯЕТСЯ</span>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.15em] text-[color:var(--accent-cyan)]">
+            <span class="hero-dot"></span>
+            <span>ИСПОЛНЯЕТСЯ</span>
+            <span
+              v-if="run.execution_id"
+              class="font-mono text-[11px] font-semibold"
+            >
+              #{{ run.execution_id }}
+            </span>
+          </div>
+          <div
+            class="mt-2 tabular-nums text-[46px] font-bold leading-none tracking-[-0.04em]"
+            :class="isExpired ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
+            data-testid="scheduler-hero-countdown-value"
+          >
+            {{ displayLabel }}
+          </div>
+        </div>
         <span
-          v-if="run.execution_id"
-          class="font-mono text-[11px] font-semibold"
-        >
-          · #{{ run.execution_id }}
-        </span>
-      </div>
-      <div
-        class="mt-1.5 tabular-nums text-[44px] font-bold leading-none"
-        :class="isExpired ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
-        data-testid="scheduler-hero-countdown-value"
-      >
-        {{ displayLabel }}
+          class="hero-radar"
+          aria-hidden="true"
+        ></span>
       </div>
       <div class="mt-1 text-[11px] text-[color:var(--text-dim)]">
         {{ isExpired ? 'таймер истёк — ожидаем завершение' : etaHint }}
       </div>
 
-      <div class="mt-3 flex flex-col gap-1.5">
+      <div class="mt-4 flex flex-col gap-1.5">
         <div class="flex flex-wrap items-center gap-1.5">
           <Badge
             v-if="laneLabel"
@@ -42,12 +50,12 @@
             расчётный ETA
           </Badge>
           <span class="text-[11px] text-[color:var(--text-dim)]">· этап</span>
-          <span class="text-[11px] font-semibold text-[color:var(--text-primary)]">{{ stageLabel }}</span>
+          <span class="text-[11px] font-semibold text-[color:var(--text-primary)]">{{ stageLabel ?? 'этап не определён' }}</span>
         </div>
 
         <div
           v-if="progressSteps.length > 0"
-          class="mt-1 flex gap-[3px]"
+          class="mt-1.5 flex gap-[3px]"
         >
           <div
             v-for="(step, index) in progressSteps"
@@ -69,8 +77,8 @@
           >{{ step }}</span>
         </div>
 
-        <div class="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[color:var(--text-muted)]">
-          <span v-if="run.decision_strategy">🧩 {{ run.decision_strategy }}</span>
+        <div class="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-[color:var(--text-muted)]">
+          <span v-if="run.decision_strategy">strategy {{ run.decision_strategy }}</span>
           <span v-if="run.decision_bundle_revision">·</span>
           <span v-if="run.decision_bundle_revision">bundle {{ run.decision_bundle_revision }}</span>
           <span v-if="run.correlation_id">·</span>
@@ -83,7 +91,11 @@
     </template>
 
     <template v-else>
-      <div class="flex min-h-[120px] flex-col items-center justify-center gap-1 text-center">
+      <div class="flex min-h-[150px] flex-col items-center justify-center gap-2 text-center">
+        <span
+          class="hero-radar hero-radar--idle"
+          aria-hidden="true"
+        ></span>
         <span class="text-[10px] font-bold tracking-[0.15em] text-[color:var(--text-dim)]">
           ИСПОЛНЕНИЙ СЕЙЧАС НЕТ
         </span>
@@ -175,11 +187,12 @@ const currentStep = computed<number>(() => {
 <style scoped>
 .hero-countdown {
   border-color: color-mix(in srgb, var(--accent-cyan) 30%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-cyan) 10%, transparent),
-    color-mix(in srgb, var(--accent-cyan) 2%, transparent)
-  );
+  background:
+    radial-gradient(90% 70% at 18% 0%, color-mix(in srgb, var(--accent-cyan) 17%, transparent), transparent 62%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-cyan) 8%, transparent), color-mix(in srgb, var(--bg-elevated) 72%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 20px 44px color-mix(in srgb, var(--accent-cyan) 8%, transparent);
 }
 
 .hero-dot {
@@ -190,6 +203,25 @@ const currentStep = computed<number>(() => {
   background: var(--accent-cyan);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-cyan) 18%, transparent);
   animation: hero-countdown-ping 1.6s ease-out infinite;
+}
+
+.hero-radar {
+  display: inline-block;
+  width: 2.7rem;
+  height: 2.7rem;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 34%, transparent);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, var(--accent-cyan) 0 2px, transparent 3px),
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 8px, color-mix(in srgb, var(--accent-cyan) 20%, transparent) 9px 10px),
+    conic-gradient(from 180deg, color-mix(in srgb, var(--accent-cyan) 42%, transparent), transparent 45%);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--accent-cyan) 18%, transparent);
+}
+
+.hero-radar--idle {
+  opacity: 0.62;
+  filter: grayscale(0.25);
 }
 
 @keyframes hero-countdown-ping {

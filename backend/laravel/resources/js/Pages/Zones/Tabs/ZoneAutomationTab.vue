@@ -207,7 +207,7 @@
             size="sm"
             @click="showEditWizard = true"
           >
-            Редактировать конфиг зоны
+            Редактировать (как в мастере запуска)
           </Button>
           <Button
             size="sm"
@@ -239,13 +239,14 @@
 
       <ZoneAutomationEditWizard
         :open="showEditWizard"
+        :zone-id="Number(zoneId)"
         :climate-form="climateForm"
         :water-form="waterForm"
         :lighting-form="lightingForm"
         :zone-climate-form="zoneClimateForm"
         :is-applying="isApplyingProfile"
-        :is-system-type-locked="isSystemTypeLocked"
         :current-recipe-phase="props.currentRecipePhase ?? null"
+        :recipe-summary="recipeSummaryForWizard"
         @close="showEditWizard = false"
         @apply="onApplyFromWizard"
       />
@@ -272,6 +273,7 @@ import { useRole } from '@/composables/useRole'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
+import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType'
 import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
 import type {
@@ -389,6 +391,36 @@ const {
 
 const zoneId = toRef(props, 'zoneId')
 const showEditWizard = ref(false)
+
+function asNullableNumber(value: unknown): number | null {
+  if (value == null) {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const recipeSummaryForWizard = computed(() => {
+  const phase = props.currentRecipePhase as Record<string, unknown> | null | undefined
+  if (!phase) {
+    return null
+  }
+  const cycle = props.activeGrowCycle as {
+    recipe?: { name?: string | null } | null
+    plant?: { name?: string | null } | null
+  } | null | undefined
+  const resolvedSystem = resolveRecipePhaseSystemType(
+    phase as Parameters<typeof resolveRecipePhaseSystemType>[0],
+    'drip',
+  )
+  return {
+    name: cycle?.recipe?.name ?? cycle?.plant?.name ?? null,
+    revisionLabel: null,
+    systemType: resolvedSystem,
+    targetPh: asNullableNumber(phase.ph_target),
+    targetEc: asNullableNumber(phase.ec_target),
+  }
+})
 const showRuntimePayload = ref(false)
 const lastAutomationSnapshot = ref<AutomationState | null>(null)
 const pendingControlModeValue = ref<'auto' | 'semi' | 'manual' | null>(null)

@@ -1,6 +1,6 @@
 <template>
   <div
-    class="space-y-3"
+    class="scheduler-workspace space-y-3 p-2 md:p-3"
     data-testid="scheduler-root"
   >
     <SchedulerHeader
@@ -429,3 +429,31 @@ watch(
   },
 )
 </script>
+
+<style scoped>
+.scheduler-workspace {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-muted) 86%, transparent);
+  border-radius: 1.6rem;
+  background:
+    radial-gradient(70% 46% at 18% 0%, color-mix(in srgb, var(--accent-cyan) 12%, transparent), transparent 62%),
+    radial-gradient(56% 45% at 98% 12%, color-mix(in srgb, var(--accent-green) 11%, transparent), transparent 66%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, transparent), color-mix(in srgb, var(--bg-main) 88%, transparent));
+  box-shadow: var(--shadow-card);
+}
+
+.scheduler-workspace::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text-dim) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text-dim) 6%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.78), transparent 82%);
+  pointer-events: none;
+}
+</style>

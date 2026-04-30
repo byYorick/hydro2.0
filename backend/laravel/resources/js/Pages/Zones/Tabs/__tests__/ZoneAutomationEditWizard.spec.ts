@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { automationProfileDefaults } from '@/schemas/automationProfile'
 
 vi.mock('@/Components/Modal.vue', () => ({
   default: {
@@ -17,23 +18,24 @@ vi.mock('@/Components/Button.vue', () => ({
   },
 }))
 
-vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
+vi.mock('@/Components/Launch/AutomationStep.vue', () => ({
   default: {
-    name: 'ZoneAutomationProfileSections',
-    props: ['waterForm', 'lightingForm', 'zoneClimateForm', 'isSystemTypeLocked', 'currentRecipePhase'],
-    template: `
-      <div>
-        <div>Полив и накопление</div>
-        <div>Коррекция</div>
-        <div>Zone climate</div>
-        <div>Свет</div>
-        <input
-          data-test="tanks-input"
-          :disabled="isSystemTypeLocked || waterForm.systemType === 'drip'"
-          :value="waterForm.tanksCount"
-        />
-      </div>
-    `,
+    name: 'AutomationStep',
+    props: ['zoneId', 'emitProfileAfterHydrate'],
+    emits: ['update:profile'],
+    mounted() {
+      const vm = this as { $emit: (e: string, p: unknown) => void }
+      vm.$emit('update:profile', {
+        ...automationProfileDefaults,
+        waterForm: {
+          ...automationProfileDefaults.waterForm,
+          systemType: 'drip',
+          tanksCount: 3,
+        },
+        zoneClimateForm: { enabled: true },
+      })
+    },
+    template: '<div data-testid="automation-step-stub">мастере запуска</div>',
   },
 }))
 
@@ -42,8 +44,8 @@ import ZoneAutomationEditWizard from '../ZoneAutomationEditWizard.vue'
 function createProps(overrides: Record<string, unknown> = {}) {
   return {
     open: true,
+    zoneId: 42,
     isApplying: false,
-    isSystemTypeLocked: false,
     climateForm: {
       enabled: true,
       dayTemp: 23,
@@ -124,27 +126,15 @@ function createProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ZoneAutomationEditWizard.vue', () => {
-  it('показывает новый текст и секции вместо legacy wizard steps', () => {
+  it('показывает текст унификации с мастером запуска и монтирует AutomationStep', () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
 
-    expect(wrapper.text()).toContain('Общий климат теплицы редактируется на уровне теплицы')
-    expect(wrapper.text()).toContain('Полив и накопление')
-    expect(wrapper.text()).toContain('Коррекция')
-    expect(wrapper.text()).toContain('Zone climate')
-    expect(wrapper.text()).toContain('Свет')
-    expect(wrapper.text()).not.toContain('Observe-window после дозы')
-  })
-
-  it('блокирует поле "Баков" для drip-системы', () => {
-    const wrapper = mount(ZoneAutomationEditWizard, {
-      props: createProps(),
-    })
-
-    const tanksInput = wrapper.find('[data-test="tanks-input"]')
-    expect(tanksInput.exists()).toBe(true)
-    expect(tanksInput.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('шаг')
+    expect(wrapper.text()).toContain('«Автоматика»')
+    expect(wrapper.text()).toContain('мастере запуска')
+    expect(wrapper.find('[data-testid="automation-step-stub"]').exists()).toBe(true)
   })
 
   it('санитизирует payload waterForm перед emit apply', async () => {
@@ -158,7 +148,10 @@ describe('ZoneAutomationEditWizard.vue', () => {
 
     const emitted = wrapper.emitted('apply')
     expect(emitted).toBeTruthy()
-    const payload = emitted?.[0]?.[0] as any
+    const payload = emitted?.[0]?.[0] as {
+      waterForm: { systemType: string; tanksCount: number; enableDrainControl: boolean }
+      zoneClimateForm: { enabled: boolean }
+    }
     expect(payload.waterForm.systemType).toBe('drip')
     expect(payload.waterForm.tanksCount).toBe(2)
     expect(payload.waterForm.enableDrainControl).toBe(false)

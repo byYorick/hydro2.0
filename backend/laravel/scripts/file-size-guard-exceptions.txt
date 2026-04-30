@@ -48,7 +48,6 @@ backend/laravel/resources/js/Components/ProcessCalibrationPanel.vue|935
 backend/laravel/resources/js/Components/PumpCalibrationModal.vue|557
 backend/laravel/resources/js/Components/RecipeEditor.vue|1123
 backend/laravel/resources/js/Components/ZoneAutomation/CorrectionLiveEditCard.vue|1143
-backend/laravel/resources/js/Components/ZoneAutomation/WaterContourSection.vue|648
 backend/laravel/resources/js/Components/__tests__/CorrectionConfigForm.spec.ts|505
 backend/laravel/resources/js/Pages/Devices/Show.vue|717
 backend/laravel/resources/js/Pages/Greenhouses/Show.vue|787

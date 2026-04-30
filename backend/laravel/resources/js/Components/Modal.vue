@@ -7,9 +7,9 @@
       class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80"
       @click="$emit('close')"
     ></div>
-    <div 
+    <div
       class="relative w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-4 max-h-[90vh] overflow-y-auto shadow-[var(--shadow-card)]"
-      :class="size === 'large' ? 'max-w-4xl' : 'max-w-lg'"
+      :class="size === 'xlarge' ? 'max-w-6xl' : size === 'large' ? 'max-w-4xl' : 'max-w-lg'"
       :data-testid="$attrs['data-testid']"
     >
       <div class="mb-2 text-base font-semibold text-[color:var(--text-primary)]">
@@ -38,13 +38,13 @@ import Button from './Button.vue'
 interface Props {
   open?: boolean
   title?: string
-  size?: 'default' | 'large'
+  size?: 'default' | 'large' | 'xlarge'
 }
 
 withDefaults(defineProps<Props>(), {
   open: false,
   title: '',
-  size: 'default'
+  size: 'default',
 })
 
 defineEmits<{

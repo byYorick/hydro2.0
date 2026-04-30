@@ -2,22 +2,40 @@
   <Modal
     :open="open"
     title="Редактирование автоматизации зоны"
-    size="large"
+    size="xlarge"
     @close="$emit('close')"
   >
     <div class="space-y-4">
       <div class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-4 py-3 text-xs text-[color:var(--text-dim)]">
-        Общий климат теплицы редактируется на уровне теплицы. Здесь остаются полив, коррекция, zone climate и свет.
+        <p class="m-0">
+          Тот же интерфейс, что шаг
+          <strong class="text-[color:var(--text-primary)]">«Автоматика»</strong>
+          в мастере запуска цикла: контур, привязки нод, полив, коррекция, климат зоны, свет.
+        </p>
+        <p class="mt-2 mb-0">
+          Общий климат теплицы редактируется на уровне теплицы.
+        </p>
       </div>
 
-      <ZoneAutomationProfileSections
-        :water-form="draftWaterForm"
-        :lighting-form="draftLightingForm"
-        :zone-climate-form="draftZoneClimateForm"
-        :can-configure="true"
-        :is-system-type-locked="isSystemTypeLocked"
-        :current-recipe-phase="props.currentRecipePhase ?? null"
-      />
+      <div
+        v-if="zoneId > 0"
+        class="max-h-[min(72vh,880px)] overflow-y-auto pr-0.5"
+      >
+        <AutomationStep
+          :key="automationStepKey"
+          :zone-id="zoneId"
+          :current-recipe-phase="currentRecipePhase ?? null"
+          :recipe-summary="recipeSummary"
+          :emit-profile-after-hydrate="true"
+          @update:profile="onAutomationProfileSync"
+        />
+      </div>
+      <p
+        v-else
+        class="text-xs text-red-500"
+      >
+        Не задан идентификатор зоны.
+      </p>
 
       <p
         v-if="stepError"
@@ -31,9 +49,9 @@
       <Button
         type="button"
         variant="outline"
-        @click="resetDraft"
+        @click="reloadAutomationEditor"
       >
-        Сбросить к рекомендуемым
+        Перечитать с сервера
       </Button>
       <Button
         type="button"
@@ -47,14 +65,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
+import AutomationStep from '@/Components/Launch/AutomationStep.vue'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import {
   clamp,
-  resetToRecommended as resetFormsToRecommended,
   syncSystemToTankLayout,
   validateForms,
 } from '@/composables/zoneAutomationFormLogic'
@@ -64,16 +81,26 @@ import type {
   WaterFormState,
   ZoneClimateFormState,
 } from '@/composables/zoneAutomationTypes'
+import type { AutomationProfile } from '@/schemas/automationProfile'
+
+interface RecipeSummaryLite {
+  name?: string | null
+  revisionLabel?: string | null
+  systemType?: string | null
+  targetPh?: number | null
+  targetEc?: number | null
+}
 
 interface Props {
   open: boolean
+  zoneId: number
   climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
   zoneClimateForm?: ZoneClimateFormState
   isApplying: boolean
-  isSystemTypeLocked: boolean
   currentRecipePhase?: unknown | null
+  recipeSummary?: RecipeSummaryLite | null
 }
 
 interface ZoneAutomationWizardApplyPayload {
@@ -90,6 +117,7 @@ const emit = defineEmits<{
 
 const props = withDefaults(defineProps<Props>(), {
   zoneClimateForm: () => ({ enabled: false }),
+  recipeSummary: null,
 })
 const automationDefaults = useAutomationDefaults()
 
@@ -98,6 +126,19 @@ const draftClimateForm = reactive<ClimateFormState>({ ...props.climateForm })
 const draftWaterForm = reactive<WaterFormState>({ ...props.waterForm })
 const draftLightingForm = reactive<LightingFormState>({ ...props.lightingForm })
 const draftZoneClimateForm = reactive<ZoneClimateFormState>({ ...props.zoneClimateForm })
+const automationStepKey = ref(0)
+
+function onAutomationProfileSync(profile: AutomationProfile): void {
+  Object.assign(draftWaterForm, profile.waterForm as WaterFormState)
+  Object.assign(draftLightingForm, profile.lightingForm as LightingFormState)
+  Object.assign(draftZoneClimateForm, profile.zoneClimateForm as ZoneClimateFormState)
+  stepError.value = null
+}
+
+function reloadAutomationEditor(): void {
+  stepError.value = null
+  automationStepKey.value += 1
+}
 
 function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.diagnosticsWorkflow = form.diagnosticsWorkflow === 'startup' ||
@@ -258,18 +299,6 @@ function syncDraftFromProps(): void {
   syncWorkflowByTopology(draftWaterForm)
 }
 
-function resetDraft(): void {
-  resetFormsToRecommended({
-    climateForm: draftClimateForm,
-    waterForm: draftWaterForm,
-    lightingForm: draftLightingForm,
-  }, automationDefaults.value)
-  draftZoneClimateForm.enabled = false
-  normalizeWaterRuntimeFields(draftWaterForm)
-  syncWorkflowByTopology(draftWaterForm)
-  stepError.value = null
-}
-
 function emitApply(): void {
   normalizeWaterRuntimeFields(draftWaterForm)
   syncWorkflowByTopology(draftWaterForm)
@@ -339,6 +368,7 @@ watch(
     if (isOpen) {
       syncDraftFromProps()
       stepError.value = null
+      automationStepKey.value += 1
     }
   },
 )

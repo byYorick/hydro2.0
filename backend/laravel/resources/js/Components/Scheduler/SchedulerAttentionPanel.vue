@@ -1,15 +1,22 @@
 <template>
   <section
     v-if="items.length > 0"
-    class="surface-card rounded-xl border border-[color:var(--border-muted)] p-2 md:p-3"
+    class="attention-panel surface-card rounded-2xl border border-[color:var(--border-muted)] p-3"
   >
-    <h4 class="text-xs font-semibold text-[color:var(--text-primary)]">Требует внимания</h4>
+    <div class="flex items-center justify-between gap-2">
+      <h4 class="text-xs font-semibold text-[color:var(--text-primary)]">
+        Требует внимания
+      </h4>
+      <span class="rounded-full border border-[color:var(--border-muted)] px-2 py-0.5 text-[10px] text-[color:var(--text-muted)]">
+        {{ items.length }}
+      </span>
+    </div>
 
-    <div class="mt-1.5 space-y-1">
+    <div class="mt-2 space-y-1.5">
       <article
         v-for="(item, index) in items"
         :key="`${item.title}-${index}`"
-        class="relative overflow-hidden rounded-lg border px-2.5 py-2"
+        class="relative overflow-hidden rounded-xl border px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
         :class="cardClass(item.tone)"
       >
         <span
@@ -27,8 +34,13 @@
             <span v-else>i</span>
           </span>
           <div class="min-w-0">
-            <p class="text-xs font-medium text-[color:var(--text-primary)]">{{ item.title }}</p>
-            <p v-if="item.detail" class="mt-0.5 text-[11px] text-[color:var(--text-dim)]">
+            <p class="text-xs font-medium text-[color:var(--text-primary)]">
+              {{ item.title }}
+            </p>
+            <p
+              v-if="item.detail"
+              class="mt-0.5 text-[11px] text-[color:var(--text-dim)]"
+            >
               {{ item.detail }}
             </p>
           </div>
@@ -68,3 +80,9 @@ function iconClass(tone: AttentionItem['tone']): string {
   return 'text-[color:var(--accent-cyan)]'
 }
 </script>
+
+<style scoped>
+.attention-panel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow-card);
+}
+</style>
