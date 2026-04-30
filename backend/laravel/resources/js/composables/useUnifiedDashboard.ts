@@ -18,6 +18,8 @@ export interface UnifiedSummary {
   zones_running: number
   zones_warning: number
   zones_alarm: number
+  /** Зоны, где AE3 остановлен ACTIVE-алертом из AlertPolicyService::POLICY_MANAGED_CODES. */
+  zones_blocked?: number
   cycles_running: number
   cycles_paused: number
   cycles_planned: number

@@ -1,7 +1,7 @@
 <template>
-  <div class="metric-pill">
+  <div class="metric-compact-card border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-2 py-1 rounded-[10px]">
     <div class="flex items-baseline justify-between gap-2">
-      <span class="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">
+      <span class="text-[9px] uppercase tracking-wider text-[color:var(--text-muted)]">
         {{ label }}
       </span>
       <span
@@ -13,38 +13,42 @@
       </span>
     </div>
 
-    <div class="mt-0.5 flex items-baseline gap-1">
+    <div class="mt-0.5 flex items-baseline gap-1 min-h-[15px]">
       <span
-        class="text-xl font-semibold tabular-nums leading-none"
+        class="text-sm font-semibold tabular-nums leading-none"
         :class="offline ? 'text-[color:var(--text-dim)]' : valueColorClass"
       >
         {{ offline ? '—' : formattedValue }}
       </span>
       <span
         v-if="unit && !offline && value !== null"
-        class="text-[10px] text-[color:var(--text-muted)]"
+        class="text-[9px] text-[color:var(--text-muted)]"
       >
         {{ unit }}
       </span>
     </div>
 
-    <div class="mt-1.5 relative h-1.5 w-full rounded-full bg-[color:var(--border-muted)]">
+    <div class="mt-1 relative h-1.5 w-full rounded bg-[color:var(--border-muted)]">
       <!-- Target zone (green) -->
       <div
         v-if="targetZoneStyle"
-        class="absolute inset-y-0 rounded-full bg-[color:var(--accent-green)]/35"
+        class="absolute inset-y-0 rounded bg-[color:var(--accent-green)]/35"
         :style="targetZoneStyle"
+      ></div>
+      <!-- Visual center divider -->
+      <div
+        class="absolute top-1/2 left-1/2 h-2 w-[1px] -translate-x-1/2 -translate-y-1/2 bg-[color:var(--text-dim)]/70"
       ></div>
       <!-- Marker -->
       <div
         v-if="markerStyle"
-        class="absolute top-1/2 h-2.5 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+        class="absolute top-1/2 h-2.5 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded"
         :class="markerColorClass"
         :style="markerStyle"
       ></div>
     </div>
 
-    <div class="mt-1 text-[9px] text-[color:var(--text-dim)] tabular-nums">
+    <div class="mt-0.5 text-[8px] text-[color:var(--text-dim)] tabular-nums">
       {{ rangeLabel }}
     </div>
   </div>
@@ -155,7 +159,7 @@ const rangeLabel = computed(() => {
 </script>
 
 <style scoped>
-.metric-pill {
+.metric-compact-card {
   display: flex;
   flex-direction: column;
   min-width: 0;

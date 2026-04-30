@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class UnifiedDashboardService
 {
@@ -17,6 +18,7 @@ class UnifiedDashboardService
         private GrowCyclePresenter $growCyclePresenter,
         private ZoneFrontendTelemetryService $zoneFrontendTelemetry,
         private ZoneIrrigationModalContextService $irrigationModalContext,
+        private AlertPolicyService $alertPolicy,
     ) {}
 
     /**
@@ -25,11 +27,51 @@ class UnifiedDashboardService
     public function getData(?User $user): array
     {
         $userId = $user?->id ?? 0;
-        $cacheKey = "unified_dashboard_{$userId}";
+        $version = self::cacheVersion();
+        $cacheKey = "unified_dashboard_{$userId}_v{$version}";
 
         return Cache::remember($cacheKey, 30, function () use ($user) {
             return $this->buildUncachedData($user);
         });
+    }
+
+    /**
+     * Ключ счётчика версии кеша unified-дашборда. Версия включается в имя
+     * кеш-ключа (`unified_dashboard_<user>_v<version>`); при инвалидации мы
+     * лишь увеличиваем счётчик — старые записи протухают сами по TTL, новые
+     * читаются под новым именем. Подход не требует поддержки тегов кешем
+     * (работает с file/database/redis) и идемпотентен.
+     */
+    public const CACHE_VERSION_KEY = 'unified_dashboard_cache_version';
+
+    /**
+     * Сбросить кеш unified-дашборда. Вызывается из `AlertService` при
+     * создании/резолве/ack алерта, чтобы блокировка автоматики (и `zones_blocked`
+     * в summary) пересчитывалась без задержки 30 секунд.
+     */
+    public static function invalidate(): void
+    {
+        try {
+            Cache::increment(self::CACHE_VERSION_KEY);
+        } catch (\Throwable $e) {
+            // Драйвер не поддержал increment — фолбэк через get+put.
+            $current = (int) (Cache::get(self::CACHE_VERSION_KEY) ?? 0);
+            Cache::forever(self::CACHE_VERSION_KEY, $current + 1);
+        }
+    }
+
+    private static function cacheVersion(): int
+    {
+        $value = Cache::get(self::CACHE_VERSION_KEY);
+        if ($value === null) {
+            // Инициализируем счётчик единожды; ключ держим долго (forever),
+            // потому что версия должна расти монотонно между перезапусками.
+            Cache::forever(self::CACHE_VERSION_KEY, 1);
+
+            return 1;
+        }
+
+        return (int) $value;
     }
 
     /**
@@ -65,16 +107,23 @@ class UnifiedDashboardService
         $telemetryByZone = $this->zoneFrontendTelemetry->getZoneSnapshots($zoneIds, true);
         $alertsByZone = $this->getAlertsByZone($zoneIds);
         $latestAlerts = $this->getLatestAlerts($user, $accessibleZoneIds);
-        $summary = $this->buildSummary($zones);
+        // Запрос к alerts для определения блокировки автоматики выполняется
+        // до get*ByZone-методов, которые могут проглотить SQL-ошибку и оставить
+        // транзакцию pgsql aborted (см. SQLSTATE[25P02]).
+        $automationBlockByZone = $this->getAutomationBlockByZone($zoneIds);
         $workflowByZone = $this->getWorkflowStateByZone($zoneIds);
         $tankLevelsByZone = $this->getTankLevelsByZone($zoneIds);
+        $irrigNodeByZone = $this->getIrrigNodeStateByZone($zoneIds);
         $zonesData = $this->formatZones(
             $zones,
             $telemetryByZone,
             $alertsByZone,
             $workflowByZone,
             $tankLevelsByZone,
+            $irrigNodeByZone,
+            $automationBlockByZone,
         );
+        $summary = $this->buildSummary($zones, $automationBlockByZone);
         $greenhouses = $this->getGreenhouses($zones);
 
         return [
@@ -87,7 +136,7 @@ class UnifiedDashboardService
 
     /**
      * @param  array<int>  $zoneIds
-     * @return array<int, array<int, array{id: int, type: string, details: string, created_at: string|null}>>
+     * @return array<int, array<int, array{id: int, type: string, code: string|null, severity: string|null, source: string|null, details: string, created_at: string|null}>>
      */
     private function getAlertsByZone(array $zoneIds): array
     {
@@ -108,6 +157,9 @@ class UnifiedDashboardService
                 return [
                     'id' => $alert->id,
                     'type' => $alert->type,
+                    'code' => $alert->code,
+                    'severity' => $alert->severity,
+                    'source' => $alert->source,
                     'details' => is_array($alert->details)
                         ? (string) json_encode($alert->details)
                         : (string) $alert->details,
@@ -117,6 +169,96 @@ class UnifiedDashboardService
         }
 
         return $alertsByZone;
+    }
+
+    /**
+     * Признак блокировки автоматики по каждой зоне на основе ACTIVE-алертов
+     * с кодами из `AlertPolicyService::policyManagedCodes()`.
+     *
+     * @param  array<int, int>  $zoneIds
+     * @return array<int, array{blocked: bool, reason_code: string|null, severity: string|null, message: string|null, since: string|null, alert_id: int|null, alerts_count: int}>
+     */
+    private function getAutomationBlockByZone(array $zoneIds): array
+    {
+        if (empty($zoneIds)) {
+            return [];
+        }
+
+        $whitelist = $this->alertPolicy->policyManagedCodes();
+        $normalizedWhitelist = array_values(array_filter(array_unique(array_map(
+            static fn ($code) => strtolower(trim((string) $code)),
+            $whitelist
+        ))));
+        if ($normalizedWhitelist === []) {
+            return [];
+        }
+
+        try {
+            $alerts = Alert::query()
+                ->whereIn('zone_id', $zoneIds)
+                ->where('status', 'ACTIVE')
+                ->whereIn(DB::raw('LOWER(code)'), $normalizedWhitelist)
+                ->orderByDesc('id')
+                ->get(['id', 'zone_id', 'code', 'severity', 'details', 'created_at', 'first_seen_at']);
+        } catch (\Throwable $e) {
+            Log::warning('getAutomationBlockByZone failed: '.$e->getMessage());
+
+            return [];
+        }
+
+        $bySeverityWeight = [
+            'critical' => 4,
+            'error' => 3,
+            'warning' => 2,
+            'info' => 1,
+        ];
+
+        $primaryByZone = [];
+        $countByZone = [];
+
+        foreach ($alerts as $alert) {
+            $zoneId = (int) $alert->zone_id;
+            $countByZone[$zoneId] = ($countByZone[$zoneId] ?? 0) + 1;
+
+            $current = $primaryByZone[$zoneId] ?? null;
+            $currentWeight = $current ? ($bySeverityWeight[strtolower((string) ($current->severity ?? ''))] ?? 0) : -1;
+            $candidateWeight = $bySeverityWeight[strtolower((string) ($alert->severity ?? ''))] ?? 0;
+
+            if ($current === null || $candidateWeight > $currentWeight) {
+                $primaryByZone[$zoneId] = $alert;
+            }
+        }
+
+        $result = [];
+        foreach ($primaryByZone as $zoneId => $alert) {
+            $details = is_array($alert->details) ? $alert->details : [];
+            $message = null;
+            foreach (['human_error_message', 'message', 'error_message', 'reason'] as $key) {
+                $candidate = $details[$key] ?? null;
+                if (is_string($candidate) && trim($candidate) !== '') {
+                    $message = trim($candidate);
+                    break;
+                }
+            }
+
+            $since = $alert->first_seen_at instanceof \DateTimeInterface
+                ? Carbon::instance($alert->first_seen_at)->toIso8601String()
+                : ($alert->created_at instanceof \DateTimeInterface
+                    ? Carbon::instance($alert->created_at)->toIso8601String()
+                    : null);
+
+            $result[$zoneId] = [
+                'blocked' => true,
+                'reason_code' => $alert->code,
+                'severity' => $alert->severity,
+                'message' => $message,
+                'since' => $since,
+                'alert_id' => (int) $alert->id,
+                'alerts_count' => (int) ($countByZone[$zoneId] ?? 1),
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -139,15 +281,27 @@ class UnifiedDashboardService
             ->get();
     }
 
-    private function buildSummary(Collection $zones): array
+    /**
+     * @param  array<int, array{blocked: bool, reason_code: string|null, severity: string|null, message: string|null, since: string|null, alert_id: int|null, alerts_count: int}>  $automationBlockByZone
+     */
+    private function buildSummary(Collection $zones, array $automationBlockByZone = []): array
     {
         $greenhouseIds = $zones->pluck('greenhouse_id')->filter()->unique()->values();
+
+        $zonesBlocked = 0;
+        foreach ($zones as $zone) {
+            $block = $automationBlockByZone[(int) $zone->id] ?? null;
+            if (is_array($block) && ! empty($block['blocked'])) {
+                $zonesBlocked++;
+            }
+        }
 
         $summary = [
             'zones_total' => $zones->count(),
             'zones_running' => $zones->where('status', 'RUNNING')->count(),
             'zones_warning' => $zones->where('status', 'WARNING')->count(),
             'zones_alarm' => $zones->where('status', 'ALARM')->count(),
+            'zones_blocked' => $zonesBlocked,
             'cycles_running' => 0,
             'cycles_paused' => 0,
             'cycles_planned' => 0,
@@ -188,7 +342,9 @@ class UnifiedDashboardService
      * @param  array<int, array>  $telemetryByZone
      * @param  array<int, array>  $alertsByZone
      * @param  array<int, array{phase: string, label: string|null, stale: bool}>  $workflowByZone
-     * @param  array<int, array{clean_percent: float|null, solution_percent: float|null, clean_offline: bool, solution_offline: bool}>  $tankLevelsByZone
+     * @param  array<int, array{clean_percent: float|null, solution_percent: float|null, buffer_percent: float|null, clean_offline: bool, solution_offline: bool, buffer_offline: bool, clean_present: bool, solution_present: bool, buffer_present: bool, topology_count: int|null}>  $tankLevelsByZone
+     * @param  array<int, array{online: bool, stale: bool, last_seen_at: string|null}|null>  $irrigNodeByZone
+     * @param  array<int, array{blocked: bool, reason_code: string|null, severity: string|null, message: string|null, since: string|null, alert_id: int|null, alerts_count: int}>  $automationBlockByZone
      * @return array<int, array<string, mixed>>
      */
     private function formatZones(
@@ -197,8 +353,10 @@ class UnifiedDashboardService
         array $alertsByZone,
         array $workflowByZone = [],
         array $tankLevelsByZone = [],
+        array $irrigNodeByZone = [],
+        array $automationBlockByZone = [],
     ): array {
-        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone, $workflowByZone, $tankLevelsByZone) {
+        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone, $workflowByZone, $tankLevelsByZone, $irrigNodeByZone, $automationBlockByZone) {
             $cycle = $zone->activeGrowCycle;
             $cycleDto = $cycle ? ($this->growCyclePresenter->buildCycleDto($cycle)['cycle'] ?? null) : null;
 
@@ -245,8 +403,66 @@ class UnifiedDashboardService
                 'crop' => $crop,
                 'system_state' => $workflowByZone[$zone->id] ?? null,
                 'tank_levels' => $tankLevelsByZone[$zone->id] ?? null,
+                'irrig_node' => $irrigNodeByZone[$zone->id] ?? null,
+                'automation_block' => $automationBlockByZone[$zone->id] ?? null,
             ];
         })->values()->toArray();
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     * @return array<int, array{online: bool, stale: bool, last_seen_at: string|null}|null>
+     */
+    private function getIrrigNodeStateByZone(array $zoneIds): array
+    {
+        if (empty($zoneIds)) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('nodes')
+                ->whereIn('zone_id', $zoneIds)
+                ->where(function ($query) {
+                    $query
+                        ->where('type', 'irrig')
+                        ->orWhere('type', 'irrigation')
+                        ->orWhere('type', 'valve_irrigation')
+                        ->orWhere('type', 'pump')
+                        ->orWhere('type', 'pump_node');
+                })
+                ->select(['zone_id', 'status', 'last_seen_at'])
+                ->get();
+        } catch (\Throwable $e) {
+            Log::warning('getIrrigNodeStateByZone failed: '.$e->getMessage());
+
+            return [];
+        }
+
+        $staleThreshold = Carbon::now()->subMinutes(2);
+        $result = [];
+        foreach ($zoneIds as $zoneId) {
+            $result[$zoneId] = null;
+        }
+
+        foreach ($rows as $row) {
+            $zoneId = (int) $row->zone_id;
+            $lastSeen = $row->last_seen_at ? Carbon::parse($row->last_seen_at) : null;
+            $isStale = $lastSeen === null || $lastSeen->lt($staleThreshold);
+            // Для UI статуса IRR опираемся на canonical node.status.
+            // last_seen_at оставляем как диагностику, но не сбрасываем online в offline только из-за stale окна.
+            $isOnline = strtolower((string) ($row->status ?? 'offline')) === 'online';
+
+            // Если есть несколько irrig-нод, выбираем наиболее «здоровую».
+            if (! isset($result[$zoneId]) || $result[$zoneId] === null || ($isOnline && ! $result[$zoneId]['online'])) {
+                $result[$zoneId] = [
+                    'online' => $isOnline,
+                    'stale' => $isStale,
+                    'last_seen_at' => $lastSeen?->toIso8601String(),
+                ];
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -269,6 +485,8 @@ class UnifiedDashboardService
                 ->select(['zone_id', 'workflow_phase', 'updated_at'])
                 ->get();
         } catch (\Throwable $e) {
+            Log::warning('getWorkflowStateByZone failed: '.$e->getMessage());
+
             return [];
         }
 
@@ -323,7 +541,7 @@ class UnifiedDashboardService
      * Возвращает проценты, если известна capacity, иначе null.
      *
      * @param  array<int, int>  $zoneIds
-     * @return array<int, array{clean_percent: float|null, solution_percent: float|null, clean_offline: bool, solution_offline: bool}>
+     * @return array<int, array{clean_percent: float|null, solution_percent: float|null, buffer_percent: float|null, clean_offline: bool, solution_offline: bool, buffer_offline: bool, clean_present: bool, solution_present: bool, buffer_present: bool, topology_count: int|null}>
      */
     private function getTankLevelsByZone(array $zoneIds): array
     {
@@ -332,18 +550,25 @@ class UnifiedDashboardService
         }
 
         try {
+            // В новой схеме у sensors нет колонки `channel`; канал хранится либо в
+            // jsonb `specs->channel` (заполняет registry/seeders), либо в `label`
+            // (заполняет SoilMoistureSensorBindingService и аналоги). Берём первое
+            // непустое значение через COALESCE — это даёт стабильный ключ
+            // clean/solution/buffer для матчинга в `groupTankChannel()`.
             $rows = DB::table('telemetry_last')
                 ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
                 ->whereIn('sensors.zone_id', $zoneIds)
-                ->where('sensors.metric_type', 'WATER_LEVEL')
+                ->where('sensors.type', 'WATER_LEVEL')
                 ->select([
                     'sensors.zone_id',
-                    'sensors.channel',
+                    DB::raw("COALESCE(NULLIF(sensors.specs->>'channel', ''), sensors.label) as channel"),
                     'telemetry_last.last_value as value',
                     'telemetry_last.updated_at',
                 ])
                 ->get();
         } catch (\Throwable $e) {
+            Log::warning('getTankLevelsByZone failed: '.$e->getMessage());
+
             return [];
         }
 
@@ -360,14 +585,40 @@ class UnifiedDashboardService
             $buckets[$zoneId] ??= [
                 'clean' => [],
                 'solution' => [],
+                'buffer' => [],
+                'clean_present' => false,
+                'solution_present' => false,
+                'buffer_present' => false,
             ];
 
             // Группировка по назначению: clean_* → clean tank, solution_* → solution tank.
+            // В fallback могут приехать русские label, поэтому учитываем и RU-токены.
             $target = null;
-            if (str_contains($channel, 'clean')) {
+            if (
+                str_contains($channel, 'clean')
+                || str_contains($channel, 'fresh')
+                || str_contains($channel, 'чист')
+            ) {
                 $target = 'clean';
-            } elseif (str_contains($channel, 'solution') || str_contains($channel, 'nutrient')) {
+                $buckets[$zoneId]['clean_present'] = true;
+            } elseif (
+                str_contains($channel, 'solution')
+                || str_contains($channel, 'nutrient')
+                || str_contains($channel, 'раств')
+                || str_contains($channel, 'пит')
+            ) {
                 $target = 'solution';
+                $buckets[$zoneId]['solution_present'] = true;
+            } elseif (
+                str_contains($channel, 'buffer')
+                || str_contains($channel, 'drain')
+                || str_contains($channel, 'return')
+                || str_contains($channel, 'буфер')
+                || str_contains($channel, 'слив')
+                || str_contains($channel, 'дрен')
+            ) {
+                $target = 'buffer';
+                $buckets[$zoneId]['buffer_present'] = true;
             }
             if ($target === null) {
                 continue;
@@ -384,8 +635,14 @@ class UnifiedDashboardService
             $result[$zoneId] = [
                 'clean_percent' => $this->aggregateTankPercent($tanks['clean']),
                 'solution_percent' => $this->aggregateTankPercent($tanks['solution']),
+                'buffer_percent' => $this->aggregateTankPercent($tanks['buffer']),
                 'clean_offline' => $this->isTankOffline($tanks['clean']),
                 'solution_offline' => $this->isTankOffline($tanks['solution']),
+                'buffer_offline' => $this->isTankOffline($tanks['buffer']),
+                'clean_present' => (bool) ($tanks['clean_present'] ?? false),
+                'solution_present' => (bool) ($tanks['solution_present'] ?? false),
+                'buffer_present' => (bool) ($tanks['buffer_present'] ?? false),
+                'topology_count' => $this->resolveTankTopologyCount($tanks),
             ];
         }
 
@@ -425,6 +682,25 @@ class UnifiedDashboardService
         }
 
         return true;
+    }
+
+    /**
+     * @param  array{clean: array, solution: array, buffer: array, clean_present: bool, solution_present: bool, buffer_present: bool}  $tanks
+     */
+    private function resolveTankTopologyCount(array $tanks): ?int
+    {
+        $cleanPresent = (bool) ($tanks['clean_present'] ?? false);
+        $solutionPresent = (bool) ($tanks['solution_present'] ?? false);
+        $bufferPresent = (bool) ($tanks['buffer_present'] ?? false);
+
+        if ($bufferPresent) {
+            return 3;
+        }
+        if ($cleanPresent || $solutionPresent) {
+            return 2;
+        }
+
+        return null;
     }
 
     /**

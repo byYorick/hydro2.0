@@ -2,6 +2,10 @@
   <AppLayout>
     <div class="space-y-2" data-testid="zone-detail-page">
       <h1 class="sr-only">{{ zone.name }}</h1>
+      <ZoneAutomationBlockBanner
+        :block="automationBlock"
+        @open-alerts="activeTab = 'alerts'"
+      />
       <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5">
         <Tabs
           v-model="activeTab"
@@ -157,7 +161,9 @@ import ZoneEventsTab from "@/Pages/Zones/Tabs/ZoneEventsTab.vue";
 import ZoneSchedulerTab from "@/Pages/Zones/Tabs/ZoneSchedulerTab.vue";
 import ZoneTelemetryTab from "@/Pages/Zones/Tabs/ZoneTelemetryTab.vue";
 import ZoneDetailModals from "@/Pages/Zones/ZoneDetailModals.vue";
+import ZoneAutomationBlockBanner from "@/Components/ZoneAutomationBlockBanner.vue";
 import { useZoneShowPage } from "@/composables/useZoneShowPage";
+import { computeAutomationBlock } from "@/utils/automationBlock";
 
 const {
     zoneTabs,
@@ -228,6 +234,13 @@ const {
     onCycleChangeRecipe,
     confirmChangeRecipe,
 } = useZoneShowPage();
+
+/**
+ * Признак «AE3 остановлен ACTIVE-алертом» из массива `alerts` страницы зоны.
+ * См. `utils/automationBlock.ts` (whitelist синхронизирован с
+ * `AlertPolicyService::POLICY_MANAGED_CODES`).
+ */
+const automationBlock = computed(() => computeAutomationBlock(alerts.value));
 
 /**
  * true если phase_started_at + duration_hours/days < now.

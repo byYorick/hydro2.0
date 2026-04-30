@@ -3,7 +3,10 @@
     v-if="hasAnyData"
     class="space-y-1"
   >
-    <div class="flex items-center justify-between text-[9px] uppercase tracking-wider text-[color:var(--text-dim)]">
+    <div
+      v-if="showHeader"
+      class="flex items-center justify-between text-[9px] uppercase tracking-wider text-[color:var(--text-dim)]"
+    >
       <span>Телеметрия · 24 часа</span>
       <div class="flex items-center gap-2 normal-case tracking-normal">
         <span
@@ -59,11 +62,14 @@ interface Props {
   series: TelemetrySeries[]
   width?: number
   height?: number
+  /** Скрыть внутреннюю строку «Телеметрия · 24 часа» и легенду (когда родитель рендерит свой header). */
+  showHeader?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   width: 240,
   height: 34,
+  showHeader: true,
 })
 
 const nonEmpty = computed(() =>

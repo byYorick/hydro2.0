@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Alert;
 use App\Models\DeviceNode;
 use App\Models\Sensor;
 use App\Models\TelemetryLast;
 use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -93,6 +95,198 @@ class UnifiedDashboardTest extends TestCase
                 ->has('zones')
                 ->where('zones.0.id', $zone->id)
                 ->where('zones.0.telemetry.ec', 1.2);
+        });
+    }
+
+    public function test_dashboard_marks_zone_as_blocked_by_policy_managed_alert(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'AE3_TASK_FAILED',
+            'status' => 'ACTIVE',
+            'severity' => 'critical',
+            'details' => [
+                'human_error_message' => 'Цикл прерван: prepare_recirculation timeout',
+                'task_id' => 42,
+            ],
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ph_correction_no_effect',
+            'type' => 'PH_NO_EFFECT',
+            'status' => 'ACTIVE',
+            'severity' => 'warning',
+            'details' => ['message' => 'pH дозы не дают эффекта'],
+            'created_at' => now()->subMinutes(2),
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('summary.zones_blocked', 1)
+                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
+                    $z->where('id', $zone->id)
+                        ->where('automation_block.blocked', true)
+                        ->where('automation_block.reason_code', 'biz_ae3_task_failed')
+                        ->where('automation_block.severity', 'critical')
+                        ->where('automation_block.message', 'Цикл прерван: prepare_recirculation timeout')
+                        ->where('automation_block.alerts_count', 2)
+                        ->etc();
+                });
+        });
+    }
+
+    public function test_dashboard_marks_zone_as_blocked_for_uppercase_policy_code(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'BIZ_AE3_TASK_FAILED',
+            'type' => 'AE3_TASK_FAILED',
+            'status' => 'ACTIVE',
+            'severity' => 'critical',
+            'details' => ['human_error_message' => 'Ошибка в верхнем регистре'],
+            'created_at' => now()->subMinutes(1),
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('summary.zones_blocked', 1)
+                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
+                    $z->where('id', $zone->id)
+                        ->where('automation_block.blocked', true)
+                        ->where('automation_block.reason_code', 'BIZ_AE3_TASK_FAILED')
+                        ->etc();
+                });
+        });
+    }
+
+    public function test_dashboard_drops_block_after_resolving_alert_via_alert_service(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'AE3_TASK_FAILED',
+            'status' => 'ACTIVE',
+            'severity' => 'critical',
+            'details' => ['human_error_message' => 'X'],
+            'created_at' => now()->subMinute(),
+        ]);
+
+        // Первая выдача — кэш заполнен, зона помечена как blocked.
+        $this->actingAs($user)->get('/')->assertOk()
+            ->assertInertia(fn (AssertableInertia $p) => $p
+                ->component('Dashboard/Index')
+                ->where('summary.zones_blocked', 1)
+                ->etc()
+            );
+
+        // Резолвим алерт штатно через сервис — он должен сбросить кэш дашборда.
+        /** @var \App\Services\AlertService $service */
+        $service = app(\App\Services\AlertService::class);
+        $service->resolveByCode($zone->id, 'biz_ae3_task_failed', [
+            'resolved_via' => 'manual',
+            'resolved_by' => 'tester',
+        ]);
+
+        // Вторая выдача — кэш сброшен, automation_block снят, zones_blocked = 0.
+        $this->actingAs($user)->get('/')->assertOk()
+            ->assertInertia(function (AssertableInertia $page) use ($zone): void {
+                $page->component('Dashboard/Index')
+                    ->where('summary.zones_blocked', 0)
+                    ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
+                        $z->where('id', $zone->id)
+                            ->where('automation_block', null)
+                            ->etc();
+                    });
+            });
+    }
+
+    public function test_dashboard_does_not_mark_zone_as_blocked_for_non_policy_alerts(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_command_timeout',
+            'type' => 'COMMAND_TIMEOUT',
+            'status' => 'ACTIVE',
+            'severity' => 'error',
+            'details' => ['message' => 'taimeout'],
+            'created_at' => now()->subMinute(),
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('summary.zones_blocked', 0)
+                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
+                    $z->where('id', $zone->id)
+                        ->where('automation_block', null)
+                        ->etc();
+                });
+        });
+    }
+
+    public function test_dashboard_alerts_preview_carries_code_and_severity(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'CONFIG_MISSING',
+            'status' => 'ACTIVE',
+            'severity' => 'error',
+            'details' => ['message' => 'нет конфига'],
+            'created_at' => now()->subMinute(),
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
+                    $z->where('id', $zone->id)
+                        ->has('alerts_preview', 1, function (AssertableInertia $a): void {
+                            $a->where('code', 'biz_zone_correction_config_missing')
+                                ->where('severity', 'error')
+                                ->where('source', 'biz')
+                                ->etc();
+                        })
+                        ->etc();
+                });
         });
     }
 }

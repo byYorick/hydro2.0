@@ -33,7 +33,7 @@ class AlertService
         $prepared = $this->prepareAlertPayload($data);
 
         try {
-            return DB::transaction(function () use ($prepared) {
+            $alert = DB::transaction(function () use ($prepared) {
                 $alert = Alert::create([
                     'zone_id' => $prepared['zone_id'],
                     'source' => $prepared['source'],
@@ -65,6 +65,14 @@ class AlertService
 
                 return $alert;
             });
+
+            // Сбрасываем кеш unified-дашборда сразу: автоматика-блок и счётчик
+            // `zones_blocked` должны обновляться без 30-секундной задержки кеша.
+            // Делаем это за пределами `DB::afterCommit`, потому что в тестах
+            // внешняя транзакция RefreshDatabase никогда не коммитится.
+            UnifiedDashboardService::invalidate();
+
+            return $alert;
         } catch (\Exception $e) {
             $this->saveToPendingAlerts($prepared, $e);
             throw $e;
@@ -74,7 +82,7 @@ class AlertService
     /**
      * Создать или обновить активный алерт с дедупликацией.
      *
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      * @return array{alert: Alert|null, created: bool, event_id: int|null, rate_limited?: bool}
      */
     public function createOrUpdateActive(array $data): array
@@ -88,7 +96,7 @@ class AlertService
             throw new \InvalidArgumentException('code is required for deduplication');
         }
 
-        return DB::transaction(function () use ($prepared, $zoneId, $code, $dedupeKey) {
+        $result = DB::transaction(function () use ($prepared, $zoneId, $code, $dedupeKey) {
             $existing = $this->findActiveAlertForDeduplication($zoneId, $code, $dedupeKey);
 
             if (! $existing && $this->shouldRateLimit($code, $zoneId)) {
@@ -219,14 +227,22 @@ class AlertService
                 'event_id' => $eventId,
             ];
         });
+
+        // Сбрасываем кеш unified-дашборда: новый ACTIVE-алерт мог появиться
+        // или счётчики измениться — UI должен увидеть это сразу.
+        if (! ($result['rate_limited'] ?? false)) {
+            UnifiedDashboardService::invalidate();
+        }
+
+        return $result;
     }
 
     /**
      * Закрыть активный алерт по ключу (zone_id, code).
      *
-     * @param int|null $zoneId ID зоны (null для unassigned alert)
-     * @param string $code Код алерта
-     * @param array<string, mixed> $context Дополнительный контекст
+     * @param  int|null  $zoneId  ID зоны (null для unassigned alert)
+     * @param  string  $code  Код алерта
+     * @param  array<string, mixed>  $context  Дополнительный контекст
      * @return array{resolved: bool, alert: Alert|null, event_id: int|null}
      */
     public function resolveByCode(?int $zoneId, string $code, array $context = []): array
@@ -234,7 +250,7 @@ class AlertService
         $normalizedCode = $this->alertCatalog->normalizeCode($code);
         $dedupeKey = $this->normalizeString(($context['details']['dedupe_key'] ?? null));
 
-        return DB::transaction(function () use ($zoneId, $normalizedCode, $context, $dedupeKey) {
+        $result = DB::transaction(function () use ($zoneId, $normalizedCode, $context, $dedupeKey) {
             $alert = $this->findActiveAlertForDeduplication($zoneId, $normalizedCode, $dedupeKey);
             if (! $alert) {
                 return [
@@ -310,6 +326,14 @@ class AlertService
                 'event_id' => $eventId,
             ];
         });
+
+        // Сбрасываем кеш unified-дашборда сразу после успешного резолва, чтобы
+        // блок автоматики снимался без 30-секундной задержки кеша.
+        if (! empty($result['resolved'])) {
+            UnifiedDashboardService::invalidate();
+        }
+
+        return $result;
     }
 
     /**
@@ -317,7 +341,7 @@ class AlertService
      */
     public function acknowledge(Alert $alert, array $context = []): Alert
     {
-        return DB::transaction(function () use ($alert, $context) {
+        $fresh = DB::transaction(function () use ($alert, $context) {
             if ($this->normalizeStatus((string) $alert->status) === 'RESOLVED') {
                 throw new \DomainException('Alert is already resolved');
             }
@@ -348,15 +372,21 @@ class AlertService
             }
 
             Log::info('Alert acknowledged', ['alert_id' => $fresh->id]);
+
             return $fresh;
         });
+
+        // Сбрасываем кеш unified-дашборда: алерт переведён в RESOLVED.
+        UnifiedDashboardService::invalidate();
+
+        return $fresh;
     }
 
     /**
      * Добавить в details audit-метаданные закрытия алерта.
      *
-     * @param array<string, mixed> $details
-     * @param array<string, mixed> $context
+     * @param  array<string, mixed>  $details
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     private function applyResolutionAuditDetails(array $details, string $resolvedAtIso, array $context = []): array
@@ -409,7 +439,7 @@ class AlertService
     /**
      * Сохранить алерт в pending_alerts для последующей обработки.
      *
-     * @param array<string, mixed> $alertData
+     * @param  array<string, mixed>  $alertData
      */
     private function saveToPendingAlerts(array $alertData, \Exception $e): void
     {
@@ -466,6 +496,7 @@ class AlertService
                 'count' => $count,
                 'max_per_minute' => $maxPerMinute,
             ]);
+
             return true;
         }
 
@@ -473,7 +504,7 @@ class AlertService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
     private function prepareAlertPayload(array $data): array
@@ -563,8 +594,8 @@ class AlertService
     }
 
     /**
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
     private function mergeAlertDetails(array $base, array $extra): array
@@ -579,7 +610,6 @@ class AlertService
     }
 
     /**
-     * @param mixed $details
      * @return array<string, mixed>
      */
     private function normalizeDetails(mixed $details): array
@@ -680,7 +710,7 @@ class AlertService
     }
 
     /**
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
     private function buildEventPayload(Alert $alert, string $action, array $extra = []): array

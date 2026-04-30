@@ -94,6 +94,18 @@
                 {{ summary.alerts_active }}
               </div>
             </div>
+            <div
+              v-if="(summary.zones_blocked ?? 0) > 0"
+              class="ui-kpi-card border border-[color:var(--badge-danger-border)]"
+              data-testid="dashboard-zones-blocked"
+            >
+              <div class="ui-kpi-label text-[color:var(--accent-red)]">
+                Авто остановлено
+              </div>
+              <div class="ui-kpi-value text-[color:var(--accent-red)] animate-pulse">
+                {{ summary.zones_blocked }}
+              </div>
+            </div>
           </div>
         </section>
 

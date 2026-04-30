@@ -48,9 +48,23 @@ export interface ZoneSystemState {
 export interface ZoneTankLevels {
   clean_percent: number | null
   solution_percent: number | null
+  buffer_percent?: number | null
   /** Индивидуальный «offline» для каждого бака (нода с сенсором оффлайн) */
   clean_offline?: boolean
   solution_offline?: boolean
+  buffer_offline?: boolean
+  /** Флаги присутствия каналов уровней (для определения топологии 1/2 бака). */
+  clean_present?: boolean
+  solution_present?: boolean
+  buffer_present?: boolean
+  /** Определённая на backend топология: 2 или 3 бака. */
+  topology_count?: number | null
+}
+
+export interface ZoneIrrigNodeState {
+  online: boolean
+  stale: boolean
+  last_seen_at: string | null
 }
 
 export interface ZoneSummary {
@@ -70,7 +84,15 @@ export interface ZoneSummary {
   /** Сводка коррекции при поливе (как на странице зоны) */
   irrigation_correction_summary?: IrrigationCorrectionSummary | null
   alerts_count: number
-  alerts_preview: Array<{ id: number; type: string; details: string; created_at: string }>
+  alerts_preview: Array<{
+    id: number
+    type: string
+    code?: string | null
+    severity?: string | null
+    source?: string | null
+    details: string
+    created_at: string
+  }>
   devices: { total: number; online: number }
   recipe: { id: number; name: string } | null
   plant: { id: number; name: string } | null
@@ -79,6 +101,23 @@ export interface ZoneSummary {
   system_state?: ZoneSystemState | null
   /** Уровни двух баков (clean/solution) в процентах. */
   tank_levels?: ZoneTankLevels | null
+  /** Статус irrig-ноды для карточки system state. */
+  irrig_node?: ZoneIrrigNodeState | null
+  /**
+   * Признак «автоматика остановлена ACTIVE-алертом» (AE3 не возобновится сам).
+   * Backend заполняет, если есть алерт из AlertPolicyService::POLICY_MANAGED_CODES.
+   */
+  automation_block?: ZoneAutomationBlock | null
+}
+
+export interface ZoneAutomationBlock {
+  blocked: boolean
+  reason_code: string | null
+  severity: string | null
+  message: string | null
+  since: string | null
+  alert_id: number | null
+  alerts_count: number
 }
 
 export interface Summary {

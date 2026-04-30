@@ -5,7 +5,9 @@ namespace App\Services;
 class AlertPolicyService
 {
     public const MODE_MANUAL_ACK = 'manual_ack';
+
     public const MODE_AUTO_RESOLVE_ON_RECOVERY = 'auto_resolve_on_recovery';
+
     public const MODES = [
         self::MODE_MANUAL_ACK,
         self::MODE_AUTO_RESOLVE_ON_RECOVERY,
@@ -32,8 +34,7 @@ class AlertPolicyService
 
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
-    ) {
-    }
+    ) {}
 
     public function currentMode(): string
     {
@@ -67,6 +68,18 @@ class AlertPolicyService
     public function autoResolveEligibleCodes(): array
     {
         return self::AUTO_RESOLVE_ELIGIBLE_CODES;
+    }
+
+    /**
+     * Список alert-кодов, которые в режиме `manual_ack` означают,
+     * что AE3 не возобновит автоматику без ручного вмешательства.
+     * Используется backend/UI для индикации «автоматика заблокирована ошибкой».
+     *
+     * @return list<string>
+     */
+    public function policyManagedCodes(): array
+    {
+        return self::POLICY_MANAGED_CODES;
     }
 
     public function isPolicyManagedCode(?string $code): bool
