@@ -94,7 +94,7 @@
                       <span
                         class="inline-block w-1.5 h-1.5 rounded-full"
                         :class="p.done ? 'bg-growth' : p.component === form.component ? 'bg-brand' : 'bg-[var(--text-dim)]'"
-                      />
+                      ></span>
                     </template>
                     {{ p.label }}<span v-if="p.component === form.component"> · текущий</span>
                   </Chip>
@@ -136,7 +136,7 @@
                       v-model.number="form.duration_sec"
                       min="1"
                       max="60"
-                    >
+                    />
                   </Field>
                 </div>
 
@@ -183,7 +183,7 @@
                         v-model.number="form.actual_ml"
                         step="0.1"
                         min="0"
-                      >
+                      />
                     </Field>
                     <Field
                       label="Температура"
@@ -193,7 +193,7 @@
                         v-bind="numAttrs"
                         v-model.number="form.temperature_c"
                         step="0.1"
-                      >
+                      />
                     </Field>
                     <Field
                       label="Объём теста (для k)"
@@ -204,7 +204,7 @@
                         v-model.number="form.test_volume_l"
                         step="0.1"
                         min="0"
-                      >
+                      />
                     </Field>
                     <Field
                       label="EC до дозы"
@@ -215,7 +215,7 @@
                         v-model.number="form.ec_before_ms"
                         step="0.01"
                         min="0"
-                      >
+                      />
                     </Field>
                     <Field
                       label="EC после дозы"
@@ -226,7 +226,7 @@
                         v-model.number="form.ec_after_ms"
                         step="0.01"
                         min="0"
-                      >
+                      />
                     </Field>
                   </div>
 
@@ -501,7 +501,7 @@ watch(
 
 const lastSavedAt = ref<number | null>(null)
 const lastSavedComponent = ref<PumpCalibrationComponent | null>(null)
-void lastSavedAt
+void lastSavedAt.value
 
 watch(
   () => props.saveSuccessSeq,
@@ -650,9 +650,11 @@ function formatFloat(v: number | null, digits: number): string {
 
 function runCalibration() {
   if (!canRun.value) return
+  const channelId = form.node_channel_id
+  if (channelId == null || channelId <= 0) return
   emit('start', {
     component: form.component,
-    node_channel_id: form.node_channel_id!,
+    node_channel_id: channelId,
     duration_sec: form.duration_sec,
   })
 }
@@ -714,7 +716,7 @@ const nextUncalibrated = computed<NextCandidate | null>(() => {
       component: desc.component,
       label: desc.label,
       role: desc.role,
-      nodeChannelId: pump!.node_channel_id,
+      nodeChannelId: pump.node_channel_id,
       group: desc.group,
       required: desc.required,
       doneInPath,
@@ -790,19 +792,25 @@ function setInitialPumpSelection(): void {
 
 function saveCalibration() {
   if (!canSave.value) return
-  const hasRunToken = runToken.value !== null && runToken.value !== ''
+  const nodeChannelId = form.node_channel_id
+  const actualMl = form.actual_ml
+  if (nodeChannelId == null || actualMl == null) return
+
+  const token = runToken.value
+  const hasRunToken = token !== null && token !== ''
+
   const payload = {
     component: form.component,
-    node_channel_id: form.node_channel_id!,
+    node_channel_id: nodeChannelId,
     duration_sec: form.duration_sec,
-    actual_ml: form.actual_ml!,
+    actual_ml: actualMl,
     skip_run: true as const,
     test_volume_l: form.test_volume_l ?? undefined,
     ec_before_ms: form.ec_before_ms ?? undefined,
     ec_after_ms: form.ec_after_ms ?? undefined,
     temperature_c: form.temperature_c ?? undefined,
     ...(hasRunToken
-      ? { run_token: runToken.value! }
+      ? { run_token: token }
       : { manual_override: true as const }),
   }
   emit('save', payload)

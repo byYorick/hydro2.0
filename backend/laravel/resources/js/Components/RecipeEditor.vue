@@ -1,48 +1,110 @@
 <template>
   <div class="space-y-3">
     <!-- ── 1. Культура ────────────────────────────────────────── -->
-    <div v-if="!hidePlantSelect" class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
-      <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Культура</div>
-
-      <div v-if="plantMode === 'select'" class="grid gap-2 md:grid-cols-[1fr_auto]">
-        <select id="recipe-plant" v-model.number="form.plant_id" class="input-field" :disabled="plantsLoading">
-          <option :value="null">Выберите культуру</option>
-          <option v-for="plant in plants" :key="plant.id" :value="plant.id">{{ plant.name }}</option>
-        </select>
-        <Button size="sm" variant="secondary" @click="plantMode = 'create'">Создать</Button>
+    <div
+      v-if="!hidePlantSelect"
+      class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2"
+    >
+      <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+        Культура
       </div>
 
-      <div v-else class="space-y-2">
+      <div
+        v-if="plantMode === 'select'"
+        class="grid gap-2 md:grid-cols-[1fr_auto]"
+      >
+        <select
+          id="recipe-plant"
+          v-model.number="form.plant_id"
+          class="input-field"
+          :disabled="plantsLoading"
+        >
+          <option :value="null">
+            Выберите культуру
+          </option>
+          <option
+            v-for="plant in plants"
+            :key="plant.id"
+            :value="plant.id"
+          >
+            {{ plant.name }}
+          </option>
+        </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="plantMode = 'create'"
+        >
+          Создать
+        </Button>
+      </div>
+
+      <div
+        v-else
+        class="space-y-2"
+      >
         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название растения</label>
-            <input v-model="newPlantName" class="input-field" placeholder="Томат Черри" />
+            <input
+              v-model="newPlantName"
+              class="input-field"
+              placeholder="Томат Черри"
+            />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Вид (species)</label>
-            <input v-model="newPlantSpecies" class="input-field" placeholder="Solanum lycopersicum" />
+            <input
+              v-model="newPlantSpecies"
+              class="input-field"
+              placeholder="Solanum lycopersicum"
+            />
           </div>
           <div>
             <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Сорт (variety)</label>
-            <input v-model="newPlantVariety" class="input-field" placeholder="Cherry" />
+            <input
+              v-model="newPlantVariety"
+              class="input-field"
+              placeholder="Cherry"
+            />
           </div>
         </div>
         <div class="flex gap-2">
-          <Button size="sm" :disabled="!newPlantName.trim() || creatingPlant" @click="createPlant">
+          <Button
+            size="sm"
+            :disabled="!newPlantName.trim() || creatingPlant"
+            @click="createPlant"
+          >
             {{ creatingPlant ? 'Создание...' : 'Создать растение' }}
           </Button>
-          <Button size="sm" variant="secondary" @click="plantMode = 'select'">Отмена</Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="plantMode = 'select'"
+          >
+            Отмена
+          </Button>
         </div>
       </div>
     </div>
-    <div v-else class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-2.5 py-1.5 text-xs text-[color:var(--text-muted)]">
+    <div
+      v-else
+      class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-2.5 py-1.5 text-xs text-[color:var(--text-muted)]"
+    >
       Культура: <span class="font-semibold text-[color:var(--text-primary)]">{{ lockedPlantLabel || 'Выбрана на предыдущем шаге' }}</span>
     </div>
 
     <!-- ── 2. Название рецепта ────────────────────────────────── -->
     <div>
-      <div class="text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название рецепта</div>
-      <div class="text-xs font-semibold text-[color:var(--text-primary)]" data-testid="recipe-name-display">{{ recipeName }}</div>
+      <div class="text-[12px] text-[color:var(--text-primary)] font-medium mb-1">
+        Название рецепта
+      </div>
+      <div
+        class="text-xs font-semibold text-[color:var(--text-primary)]"
+        data-testid="recipe-name-display"
+      >
+        {{ recipeName }}
+      </div>
       <input
         id="recipe-description"
         v-model="recipeLabel"
@@ -54,11 +116,20 @@
 
     <!-- ── 3. Система подготовки раствора и полива ─────────────── -->
     <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-2">
-      <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Система подготовки раствора и полива</div>
+      <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+        Система подготовки раствора и полива
+      </div>
       <div class="max-w-lg">
-        <select v-model="recipeIrrigationMode" class="input-field w-full">
-          <option value="SUBSTRATE">Проточная (2 бака)</option>
-          <option value="RECIRC">Рециркуляция (3 бака)</option>
+        <select
+          v-model="recipeIrrigationMode"
+          class="input-field w-full"
+        >
+          <option value="SUBSTRATE">
+            Проточная (2 бака)
+          </option>
+          <option value="RECIRC">
+            Рециркуляция (3 бака)
+          </option>
         </select>
         <div class="mt-1.5 text-[12px] text-[color:var(--text-muted)] leading-snug space-y-0.5">
           <p v-if="recipeIrrigationMode === 'SUBSTRATE'">
@@ -69,13 +140,17 @@
             <span class="font-semibold text-[color:var(--text-primary)]">3 бака</span> — для гидропоники NFT, DWC и подобных:
             чистая вода → бак раствора → циркуляция по корням → возвратный бак → обратно в раствор
           </p>
-          <p class="text-[color:var(--text-dim)]">Режим не меняется между фазами — это характеристика установки</p>
+          <p class="text-[color:var(--text-dim)]">
+            Режим не меняется между фазами — это характеристика установки
+          </p>
         </div>
       </div>
     </div>
 
     <!-- ── 4. Фазы ────────────────────────────────────────────── -->
-    <div class="text-xs font-semibold">Фазы роста</div>
+    <div class="text-xs font-semibold">
+      Фазы роста
+    </div>
 
     <div class="space-y-3">
       <section
@@ -88,7 +163,12 @@
           <div class="flex items-end gap-4">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Название</label>
-              <input v-model="phase.name" :data-testid="`phase-name-input-${index}`" class="input-field !w-40" placeholder="VEG / BLOOM" />
+              <input
+                v-model="phase.name"
+                :data-testid="`phase-name-input-${index}`"
+                class="input-field !w-40"
+                placeholder="VEG / BLOOM"
+              />
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность (дни:часы)</label>
@@ -104,7 +184,10 @@
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Раздельно день / ночь</label>
               <label class="md-switch">
-                <input type="checkbox" v-model="phase.day_night_enabled" />
+                <input
+                  v-model="phase.day_night_enabled"
+                  type="checkbox"
+                />
                 <span class="md-switch__track">
                   <span class="md-switch__thumb"></span>
                 </span>
@@ -113,7 +196,15 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button v-if="form.phases.length > 1" type="button" size="sm" variant="secondary" @click="$emit('remove-phase', form.phases.indexOf(phase))">Удалить</Button>
+            <Button
+              v-if="form.phases.length > 1"
+              type="button"
+              size="sm"
+              variant="secondary"
+              @click="$emit('remove-phase', form.phases.indexOf(phase))"
+            >
+              Удалить
+            </Button>
             <div class="flex flex-col items-center">
               <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color:var(--accent-primary)]/10 text-[11px] font-bold text-[color:var(--accent-primary)]">{{ index + 1 }}</span>
               <span class="text-[8px] text-[color:var(--text-dim)] mt-0.5">фаза</span>
@@ -123,28 +214,55 @@
 
         <!-- Полив -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Полив</div>
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Полив
+          </div>
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Тип системы полива</label>
-              <select v-model="phase.irrigation_system_type" class="input-field w-full">
+              <select
+                v-model="phase.irrigation_system_type"
+                class="input-field w-full"
+              >
                 <template v-if="recipeIrrigationMode === 'SUBSTRATE'">
-                  <option value="drip_tape">Капельная лента</option>
-                  <option value="drip_emitter">Капельные форсунки</option>
+                  <option value="drip_tape">
+                    Капельная лента
+                  </option>
+                  <option value="drip_emitter">
+                    Капельные форсунки
+                  </option>
                 </template>
                 <template v-else>
-                  <option value="nft">NFT (Nutrient Film)</option>
-                  <option value="dwc">DWC (Deep Water Culture)</option>
-                  <option value="ebb_flow">Прилив-отлив (ebb &amp; flow)</option>
-                  <option value="aeroponics">Аэропоника</option>
+                  <option value="nft">
+                    NFT (Nutrient Film)
+                  </option>
+                  <option value="dwc">
+                    DWC (Deep Water Culture)
+                  </option>
+                  <option value="ebb_flow">
+                    Прилив-отлив (ebb &amp; flow)
+                  </option>
+                  <option value="aeroponics">
+                    Аэропоника
+                  </option>
                 </template>
               </select>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Субстрат</label>
               <div class="flex gap-2">
-                <select v-model="phase.substrate_type" class="input-field flex-1 min-w-0" :disabled="substrateOptions(phase).length === 0">
-                  <option v-for="opt in substrateOptions(phase)" :key="opt.value ?? 'null'" :value="opt.value">{{ opt.label }}</option>
+                <select
+                  v-model="phase.substrate_type"
+                  class="input-field flex-1 min-w-0"
+                  :disabled="substrateOptions(phase).length === 0"
+                >
+                  <option
+                    v-for="opt in substrateOptions(phase)"
+                    :key="opt.value ?? 'null'"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
                 </select>
                 <button
                   type="button"
@@ -152,7 +270,25 @@
                   title="Создать новый субстрат"
                   @click="substrateModalOpen = true"
                 >
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <svg
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  ><line
+                    x1="12"
+                    y1="5"
+                    x2="12"
+                    y2="19"
+                  /><line
+                    x1="5"
+                    y1="12"
+                    x2="19"
+                    y2="12"
+                  /></svg>
                 </button>
               </div>
             </div>
@@ -160,26 +296,77 @@
             <div v-if="recipeIrrigationMode === 'SUBSTRATE' && !phase.day_night_enabled">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Влажность субстрата, %</label>
               <div class="stepper">
-                <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.day = Math.max(0, (phase.day_night.soil_moisture.day ?? 0) - 1)">−</button>
-                <input v-model.number="phase.day_night.soil_moisture.day" type="number" step="1" class="stepper__input" />
-                <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.day = Math.min(100, (phase.day_night.soil_moisture.day ?? 0) + 1)">+</button>
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.day_night.soil_moisture.day = Math.max(0, (phase.day_night.soil_moisture.day ?? 0) - 1)"
+                >
+                  −
+                </button>
+                <input
+                  v-model.number="phase.day_night.soil_moisture.day"
+                  type="number"
+                  step="1"
+                  class="stepper__input"
+                />
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.day_night.soil_moisture.day = Math.min(100, (phase.day_night.soil_moisture.day ?? 0) + 1)"
+                >
+                  +
+                </button>
               </div>
             </div>
             <template v-if="recipeIrrigationMode === 'SUBSTRATE' && phase.day_night_enabled">
               <div>
                 <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">☀ Влажность день, %</label>
                 <div class="stepper">
-                  <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.day = Math.max(0, (phase.day_night.soil_moisture.day ?? 0) - 1)">−</button>
-                  <input v-model.number="phase.day_night.soil_moisture.day" type="number" step="1" class="stepper__input" />
-                  <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.day = Math.min(100, (phase.day_night.soil_moisture.day ?? 0) + 1)">+</button>
+                  <button
+                    type="button"
+                    class="stepper__btn"
+                    @click="phase.day_night.soil_moisture.day = Math.max(0, (phase.day_night.soil_moisture.day ?? 0) - 1)"
+                  >
+                    −
+                  </button>
+                  <input
+                    v-model.number="phase.day_night.soil_moisture.day"
+                    type="number"
+                    step="1"
+                    class="stepper__input"
+                  />
+                  <button
+                    type="button"
+                    class="stepper__btn"
+                    @click="phase.day_night.soil_moisture.day = Math.min(100, (phase.day_night.soil_moisture.day ?? 0) + 1)"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
               <div>
                 <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">☾ Влажность ночь, %</label>
                 <div class="stepper">
-                  <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.night = Math.max(0, (phase.day_night.soil_moisture.night ?? 0) - 1)">−</button>
-                  <input v-model.number="phase.day_night.soil_moisture.night" type="number" step="1" class="stepper__input" />
-                  <button type="button" class="stepper__btn" @click="phase.day_night.soil_moisture.night = Math.min(100, (phase.day_night.soil_moisture.night ?? 0) + 1)">+</button>
+                  <button
+                    type="button"
+                    class="stepper__btn"
+                    @click="phase.day_night.soil_moisture.night = Math.max(0, (phase.day_night.soil_moisture.night ?? 0) - 1)"
+                  >
+                    −
+                  </button>
+                  <input
+                    v-model.number="phase.day_night.soil_moisture.night"
+                    type="number"
+                    step="1"
+                    class="stepper__input"
+                  />
+                  <button
+                    type="button"
+                    class="stepper__btn"
+                    @click="phase.day_night.soil_moisture.night = Math.min(100, (phase.day_night.soil_moisture.night ?? 0) + 1)"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
             </template>
@@ -194,7 +381,9 @@
                 class="input-field !w-32 text-center tracking-widest"
                 @change="setIntervalFromString(phase, ($event.target as HTMLInputElement).value)"
               />
-              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">Время между началами циклов полива</p>
+              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
+                Время между началами циклов полива
+              </p>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Длительность полива (ММ:СС)</label>
@@ -205,71 +394,227 @@
                 class="input-field !w-28 text-center tracking-widest"
                 @change="setDurationIrrigFromString(phase, ($event.target as HTMLInputElement).value)"
               />
-              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">Сколько длится один цикл полива (подача раствора)</p>
+              <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
+                Сколько длится один цикл полива (подача раствора)
+              </p>
             </div>
           </div>
         </div>
 
         <!-- Раствор (pH / EC) -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
-          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Раствор</div>
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Раствор
+          </div>
           <div :class="phase.day_night_enabled ? 'space-y-3' : 'max-w-sm space-y-2'">
             <!-- pH -->
             <div>
-              <div class="text-sm font-extrabold text-[color:var(--text-primary)] mb-1 tracking-widest uppercase">pH</div>
+              <div class="text-sm font-extrabold text-[color:var(--text-primary)] mb-1 tracking-widest uppercase">
+                pH
+              </div>
               <div class="flex flex-wrap gap-3">
                 <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
-                  <div v-if="phase.day_night_enabled" class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">☀ день</div>
+                  <div
+                    v-if="phase.day_night_enabled"
+                    class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
+                  >
+                    ☀ день
+                  </div>
                   <div class="target-row">
-                    <div class="target-row__side"><span class="target-row__label">мин</span><input v-model.number="phase.ph_min" type="number" step="0.1" class="target-row__input hide-spin" /></div>
-                    <div class="target-row__center">
-                      <button type="button" class="target-row__btn" @click="phase.ph_target = +((phase.ph_target ?? 0) - 0.1).toFixed(1); onPhTargetChange(phase)">&minus;</button>
-                      <input v-model.number="phase.ph_target" type="number" step="0.1" class="target-row__input target-row__input--main hide-spin" @input="onPhTargetChange(phase)" />
-                      <button type="button" class="target-row__btn" @click="phase.ph_target = +((phase.ph_target ?? 0) + 0.1).toFixed(1); onPhTargetChange(phase)">+</button>
+                    <div class="target-row__side">
+                      <span class="target-row__label">мин</span><input
+                        v-model.number="phase.ph_min"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
                     </div>
-                    <div class="target-row__side"><span class="target-row__label">макс</span><input v-model.number="phase.ph_max" type="number" step="0.1" class="target-row__input hide-spin" /></div>
+                    <div class="target-row__center">
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.ph_target = +((phase.ph_target ?? 0) - 0.1).toFixed(1); onPhTargetChange(phase)"
+                      >
+                        &minus;
+                      </button>
+                      <input
+                        v-model.number="phase.ph_target"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input target-row__input--main hide-spin"
+                        @input="onPhTargetChange(phase)"
+                      />
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.ph_target = +((phase.ph_target ?? 0) + 0.1).toFixed(1); onPhTargetChange(phase)"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div class="target-row__side">
+                      <span class="target-row__label">макс</span><input
+                        v-model.number="phase.ph_max"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
+                    </div>
                   </div>
                 </div>
-                <div v-if="phase.day_night_enabled" class="flex-1 min-w-[280px] max-w-sm">
-                  <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">☾ ночь</div>
+                <div
+                  v-if="phase.day_night_enabled"
+                  class="flex-1 min-w-[280px] max-w-sm"
+                >
+                  <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
+                    ☾ ночь
+                  </div>
                   <div class="target-row">
-                    <div class="target-row__side"><span class="target-row__label">мин</span><input v-model.number="phase.day_night.ph.night_min" type="number" step="0.1" class="target-row__input hide-spin" /></div>
-                    <div class="target-row__center">
-                      <button type="button" class="target-row__btn" @click="phase.day_night.ph.night = +((phase.day_night.ph.night ?? 0) - 0.1).toFixed(1); onPhNightTargetChange(phase)">&minus;</button>
-                      <input v-model.number="phase.day_night.ph.night" type="number" step="0.1" class="target-row__input target-row__input--main hide-spin" @input="onPhNightTargetChange(phase)" />
-                      <button type="button" class="target-row__btn" @click="phase.day_night.ph.night = +((phase.day_night.ph.night ?? 0) + 0.1).toFixed(1); onPhNightTargetChange(phase)">+</button>
+                    <div class="target-row__side">
+                      <span class="target-row__label">мин</span><input
+                        v-model.number="phase.day_night.ph.night_min"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
                     </div>
-                    <div class="target-row__side"><span class="target-row__label">макс</span><input v-model.number="phase.day_night.ph.night_max" type="number" step="0.1" class="target-row__input hide-spin" /></div>
+                    <div class="target-row__center">
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.day_night.ph.night = +((phase.day_night.ph.night ?? 0) - 0.1).toFixed(1); onPhNightTargetChange(phase)"
+                      >
+                        &minus;
+                      </button>
+                      <input
+                        v-model.number="phase.day_night.ph.night"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input target-row__input--main hide-spin"
+                        @input="onPhNightTargetChange(phase)"
+                      />
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.day_night.ph.night = +((phase.day_night.ph.night ?? 0) + 0.1).toFixed(1); onPhNightTargetChange(phase)"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div class="target-row__side">
+                      <span class="target-row__label">макс</span><input
+                        v-model.number="phase.day_night.ph.night_max"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
             <!-- EC -->
             <div>
-              <div class="text-sm font-extrabold text-[color:var(--text-primary)] mb-1 tracking-widest uppercase">EC</div>
+              <div class="text-sm font-extrabold text-[color:var(--text-primary)] mb-1 tracking-widest uppercase">
+                EC
+              </div>
               <div class="flex flex-wrap gap-3">
                 <div :class="phase.day_night_enabled ? 'flex-1 min-w-[280px] max-w-sm' : 'w-full max-w-sm'">
-                  <div v-if="phase.day_night_enabled" class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">☀ день</div>
+                  <div
+                    v-if="phase.day_night_enabled"
+                    class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1"
+                  >
+                    ☀ день
+                  </div>
                   <div class="target-row">
-                    <div class="target-row__side"><span class="target-row__label">мин</span><input v-model.number="phase.ec_min" type="number" step="0.1" class="target-row__input hide-spin" /></div>
-                    <div class="target-row__center">
-                      <button type="button" class="target-row__btn" @click="phase.ec_target = +((phase.ec_target ?? 0) - 0.1).toFixed(1); onEcTargetChange(phase)">&minus;</button>
-                      <input v-model.number="phase.ec_target" type="number" step="0.1" class="target-row__input target-row__input--main hide-spin" @input="onEcTargetChange(phase)" />
-                      <button type="button" class="target-row__btn" @click="phase.ec_target = +((phase.ec_target ?? 0) + 0.1).toFixed(1); onEcTargetChange(phase)">+</button>
+                    <div class="target-row__side">
+                      <span class="target-row__label">мин</span><input
+                        v-model.number="phase.ec_min"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
                     </div>
-                    <div class="target-row__side"><span class="target-row__label">макс</span><input v-model.number="phase.ec_max" type="number" step="0.1" class="target-row__input hide-spin" /></div>
+                    <div class="target-row__center">
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.ec_target = +((phase.ec_target ?? 0) - 0.1).toFixed(1); onEcTargetChange(phase)"
+                      >
+                        &minus;
+                      </button>
+                      <input
+                        v-model.number="phase.ec_target"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input target-row__input--main hide-spin"
+                        @input="onEcTargetChange(phase)"
+                      />
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.ec_target = +((phase.ec_target ?? 0) + 0.1).toFixed(1); onEcTargetChange(phase)"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div class="target-row__side">
+                      <span class="target-row__label">макс</span><input
+                        v-model.number="phase.ec_max"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
+                    </div>
                   </div>
                 </div>
-                <div v-if="phase.day_night_enabled" class="flex-1 min-w-[280px] max-w-sm">
-                  <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">☾ ночь</div>
+                <div
+                  v-if="phase.day_night_enabled"
+                  class="flex-1 min-w-[280px] max-w-sm"
+                >
+                  <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider mb-1">
+                    ☾ ночь
+                  </div>
                   <div class="target-row">
-                    <div class="target-row__side"><span class="target-row__label">мин</span><input v-model.number="phase.day_night.ec.night_min" type="number" step="0.1" class="target-row__input hide-spin" /></div>
-                    <div class="target-row__center">
-                      <button type="button" class="target-row__btn" @click="phase.day_night.ec.night = +((phase.day_night.ec.night ?? 0) - 0.1).toFixed(1); onEcNightTargetChange(phase)">&minus;</button>
-                      <input v-model.number="phase.day_night.ec.night" type="number" step="0.1" class="target-row__input target-row__input--main hide-spin" @input="onEcNightTargetChange(phase)" />
-                      <button type="button" class="target-row__btn" @click="phase.day_night.ec.night = +((phase.day_night.ec.night ?? 0) + 0.1).toFixed(1); onEcNightTargetChange(phase)">+</button>
+                    <div class="target-row__side">
+                      <span class="target-row__label">мин</span><input
+                        v-model.number="phase.day_night.ec.night_min"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
                     </div>
-                    <div class="target-row__side"><span class="target-row__label">макс</span><input v-model.number="phase.day_night.ec.night_max" type="number" step="0.1" class="target-row__input hide-spin" /></div>
+                    <div class="target-row__center">
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.day_night.ec.night = +((phase.day_night.ec.night ?? 0) - 0.1).toFixed(1); onEcNightTargetChange(phase)"
+                      >
+                        &minus;
+                      </button>
+                      <input
+                        v-model.number="phase.day_night.ec.night"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input target-row__input--main hide-spin"
+                        @input="onEcNightTargetChange(phase)"
+                      />
+                      <button
+                        type="button"
+                        class="target-row__btn"
+                        @click="phase.day_night.ec.night = +((phase.day_night.ec.night ?? 0) + 0.1).toFixed(1); onEcNightTargetChange(phase)"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div class="target-row__side">
+                      <span class="target-row__label">макс</span><input
+                        v-model.number="phase.day_night.ec.night_max"
+                        type="number"
+                        step="0.1"
+                        class="target-row__input hide-spin"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -279,51 +624,132 @@
 
         <!-- Питание -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
-          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Питание</div>
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Питание
+          </div>
           <div class="flex flex-wrap gap-2">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим питания</label>
-              <select v-model="phase.nutrient_mode" class="input-field !min-w-[200px]">
-                <option value="ratio_ec_pid">PID по EC + доли</option>
-                <option value="delta_ec_by_k">По дельте EC (k)</option>
-                <option value="dose_ml_l_only">Фикс. доза мл/л</option>
+              <select
+                v-model="phase.nutrient_mode"
+                class="input-field !min-w-[200px]"
+              >
+                <option value="ratio_ec_pid">
+                  PID по EC + доли
+                </option>
+                <option value="delta_ec_by_k">
+                  По дельте EC (k)
+                </option>
+                <option value="dose_ml_l_only">
+                  Фикс. доза мл/л
+                </option>
               </select>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
-                <template v-if="phase.nutrient_mode === 'ratio_ec_pid'">PID-регулятор по EC, доза распределяется по долям компонентов</template>
-                <template v-else-if="phase.nutrient_mode === 'delta_ec_by_k'">Расчёт дозы через разницу EC, коэффициент k и объём раствора</template>
-                <template v-else>Фиксированная доза мл/л для каждого компонента, без PID</template>
+                <template v-if="phase.nutrient_mode === 'ratio_ec_pid'">
+                  PID-регулятор по EC, доза распределяется по долям компонентов
+                </template>
+                <template v-else-if="phase.nutrient_mode === 'delta_ec_by_k'">
+                  Расчёт дозы через разницу EC, коэффициент k и объём раствора
+                </template>
+                <template v-else>
+                  Фиксированная доза мл/л для каждого компонента, без PID
+                </template>
               </p>
             </div>
             <div v-if="phase.nutrient_mode !== 'dose_ml_l_only'">
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Режим дозирования</label>
-              <select v-model="phase.nutrient_ec_dosing_mode" class="input-field !min-w-[200px]">
-                <option value="sequential">Последовательный</option>
-                <option value="parallel">Параллельный</option>
+              <select
+                v-model="phase.nutrient_ec_dosing_mode"
+                class="input-field !min-w-[200px]"
+              >
+                <option value="sequential">
+                  Последовательный
+                </option>
+                <option value="parallel">
+                  Параллельный
+                </option>
               </select>
               <p class="text-[12px] text-[color:var(--text-muted)] mt-1 leading-snug">
-                <template v-if="phase.nutrient_ec_dosing_mode === 'parallel'">Ca, Mg, Micro дозируются одновременно в одном окне коррекции</template>
-                <template v-else>Ca &rarr; Mg &rarr; Micro по очереди, каждый ждёт подтверждения</template>
+                <template v-if="phase.nutrient_ec_dosing_mode === 'parallel'">
+                  Ca, Mg, Micro дозируются одновременно в одном окне коррекции
+                </template>
+                <template v-else>
+                  Ca &rarr; Mg &rarr; Micro по очереди, каждый ждёт подтверждения
+                </template>
               </p>
             </div>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <RecipeEditorProductField label="NPK" description="Азот, фосфор, калий — основа роста" component="npk" :products="npkProducts" v-model:product-id="phase.nutrient_npk_product_id" v-model:ratio="phase.nutrient_npk_ratio_pct" v-model:dose="phase.nutrient_npk_dose_ml_l" @product-created="onProductCreated" />
-            <RecipeEditorProductField label="Кальций" description="Укрепление клеток, профилактика вершинной гнили" component="calcium" :products="calciumProducts" v-model:product-id="phase.nutrient_calcium_product_id" v-model:ratio="phase.nutrient_calcium_ratio_pct" v-model:dose="phase.nutrient_calcium_dose_ml_l" @product-created="onProductCreated" />
-            <RecipeEditorProductField label="Магний" description="Фотосинтез, хлорофилл, усвоение фосфора" component="magnesium" :products="magnesiumProducts" v-model:product-id="phase.nutrient_magnesium_product_id" v-model:ratio="phase.nutrient_magnesium_ratio_pct" v-model:dose="phase.nutrient_magnesium_dose_ml_l" @product-created="onProductCreated" />
-            <RecipeEditorProductField label="Микро" description="Fe, Mn, Zn, Cu, B, Mo — ферменты и иммунитет" component="micro" :products="microProducts" v-model:product-id="phase.nutrient_micro_product_id" v-model:ratio="phase.nutrient_micro_ratio_pct" v-model:dose="phase.nutrient_micro_dose_ml_l" @product-created="onProductCreated" />
+            <RecipeEditorProductField
+              v-model:product-id="phase.nutrient_npk_product_id"
+              v-model:ratio="phase.nutrient_npk_ratio_pct"
+              v-model:dose="phase.nutrient_npk_dose_ml_l"
+              label="NPK"
+              description="Азот, фосфор, калий — основа роста"
+              component="npk"
+              :products="npkProducts"
+              @product-created="onProductCreated"
+            />
+            <RecipeEditorProductField
+              v-model:product-id="phase.nutrient_calcium_product_id"
+              v-model:ratio="phase.nutrient_calcium_ratio_pct"
+              v-model:dose="phase.nutrient_calcium_dose_ml_l"
+              label="Кальций"
+              description="Укрепление клеток, профилактика вершинной гнили"
+              component="calcium"
+              :products="calciumProducts"
+              @product-created="onProductCreated"
+            />
+            <RecipeEditorProductField
+              v-model:product-id="phase.nutrient_magnesium_product_id"
+              v-model:ratio="phase.nutrient_magnesium_ratio_pct"
+              v-model:dose="phase.nutrient_magnesium_dose_ml_l"
+              label="Магний"
+              description="Фотосинтез, хлорофилл, усвоение фосфора"
+              component="magnesium"
+              :products="magnesiumProducts"
+              @product-created="onProductCreated"
+            />
+            <RecipeEditorProductField
+              v-model:product-id="phase.nutrient_micro_product_id"
+              v-model:ratio="phase.nutrient_micro_ratio_pct"
+              v-model:dose="phase.nutrient_micro_dose_ml_l"
+              label="Микро"
+              description="Fe, Mn, Zn, Cu, B, Mo — ферменты и иммунитет"
+              component="micro"
+              :products="microProducts"
+              @product-created="onProductCreated"
+            />
           </div>
           <!-- Ratio + Нормализация -->
           <div class="flex flex-col items-end gap-1">
             <div class="text-right">
-              <div class="text-sm font-bold" :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'">
+              <div
+                class="text-sm font-bold"
+                :class="Math.abs(nutrientRatioSum(phase) - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+              >
                 {{ nutrientRatioSum(phase).toFixed(1) }}%
               </div>
-              <div class="text-[11px] text-[color:var(--text-muted)]">сумма долей</div>
+              <div class="text-[11px] text-[color:var(--text-muted)]">
+                сумма долей
+              </div>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-[12px] text-[color:var(--text-muted)]">Привести сумму долей к 100%</span>
-              <button type="button" class="soft-btn" @click="normalizePhaseRatios(phase)">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <button
+                type="button"
+                class="soft-btn"
+                @click="normalizePhaseRatios(phase)"
+              >
+                <svg
+                  class="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
                 Нормализовать
               </button>
             </div>
@@ -377,7 +803,10 @@
             </div>
 
             <!-- Карточка ночь -->
-            <div v-if="phase.day_night_enabled" class="ec-breakdown-card ec-breakdown-card--night">
+            <div
+              v-if="phase.day_night_enabled"
+              class="ec-breakdown-card ec-breakdown-card--night"
+            >
               <div class="ec-breakdown-card__header">
                 <span class="ec-breakdown-card__title">☾ Ночь</span>
                 <span class="ec-breakdown-card__total">EC {{ ecBreakdownForTarget(phase, 0, phase.day_night.ec.night ?? 0).total }}</span>
@@ -419,85 +848,241 @@
 
         <!-- Климат -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
-          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Климат</div>
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Климат
+          </div>
           <!-- Режим: одно значение на день+ночь -->
-          <div v-if="!phase.day_night_enabled" class="grid grid-cols-2 gap-3 max-w-md">
+          <div
+            v-if="!phase.day_night_enabled"
+            class="grid grid-cols-2 gap-3 max-w-md"
+          >
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Температура, °C</label>
               <div class="stepper">
-                <button type="button" class="stepper__btn" @click="phase.temp_air_target = +((phase.temp_air_target ?? 0) - 0.5).toFixed(1)">−</button>
-                <input v-model.number="phase.temp_air_target" type="number" step="0.1" class="stepper__input" />
-                <button type="button" class="stepper__btn" @click="phase.temp_air_target = +((phase.temp_air_target ?? 0) + 0.5).toFixed(1)">+</button>
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.temp_air_target = +((phase.temp_air_target ?? 0) - 0.5).toFixed(1)"
+                >
+                  −
+                </button>
+                <input
+                  v-model.number="phase.temp_air_target"
+                  type="number"
+                  step="0.1"
+                  class="stepper__input"
+                />
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.temp_air_target = +((phase.temp_air_target ?? 0) + 0.5).toFixed(1)"
+                >
+                  +
+                </button>
               </div>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Влажность, %</label>
               <div class="stepper">
-                <button type="button" class="stepper__btn" @click="phase.humidity_target = Math.max(0, (phase.humidity_target ?? 0) - 1)">−</button>
-                <input v-model.number="phase.humidity_target" type="number" step="1" class="stepper__input" />
-                <button type="button" class="stepper__btn" @click="phase.humidity_target = Math.min(100, (phase.humidity_target ?? 0) + 1)">+</button>
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.humidity_target = Math.max(0, (phase.humidity_target ?? 0) - 1)"
+                >
+                  −
+                </button>
+                <input
+                  v-model.number="phase.humidity_target"
+                  type="number"
+                  step="1"
+                  class="stepper__input"
+                />
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.humidity_target = Math.min(100, (phase.humidity_target ?? 0) + 1)"
+                >
+                  +
+                </button>
               </div>
             </div>
           </div>
           <!-- Режим: раздельно день/ночь — таблица -->
-          <div v-else class="grid grid-cols-[140px_1fr_1fr] gap-x-3 gap-y-2 items-center max-w-lg">
+          <div
+            v-else
+            class="grid grid-cols-[140px_1fr_1fr] gap-x-3 gap-y-2 items-center max-w-lg"
+          >
             <div></div>
-            <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider text-center">☀ день</div>
-            <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider text-center">☾ ночь</div>
+            <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider text-center">
+              ☀ день
+            </div>
+            <div class="text-[10px] text-[color:var(--text-dim)] uppercase tracking-wider text-center">
+              ☾ ночь
+            </div>
             <label class="text-[12px] text-[color:var(--text-primary)] font-medium">Температура, °C</label>
             <div class="stepper">
-              <button type="button" class="stepper__btn" @click="phase.day_night.temperature.day = +((phase.day_night.temperature.day ?? 0) - 0.5).toFixed(1)">−</button>
-              <input v-model.number="phase.day_night.temperature.day" type="number" step="0.1" class="stepper__input" />
-              <button type="button" class="stepper__btn" @click="phase.day_night.temperature.day = +((phase.day_night.temperature.day ?? 0) + 0.5).toFixed(1)">+</button>
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.temperature.day = +((phase.day_night.temperature.day ?? 0) - 0.5).toFixed(1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="phase.day_night.temperature.day"
+                type="number"
+                step="0.1"
+                class="stepper__input"
+              />
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.temperature.day = +((phase.day_night.temperature.day ?? 0) + 0.5).toFixed(1)"
+              >
+                +
+              </button>
             </div>
             <div class="stepper">
-              <button type="button" class="stepper__btn" @click="phase.day_night.temperature.night = +((phase.day_night.temperature.night ?? 0) - 0.5).toFixed(1)">−</button>
-              <input v-model.number="phase.day_night.temperature.night" type="number" step="0.1" class="stepper__input" />
-              <button type="button" class="stepper__btn" @click="phase.day_night.temperature.night = +((phase.day_night.temperature.night ?? 0) + 0.5).toFixed(1)">+</button>
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.temperature.night = +((phase.day_night.temperature.night ?? 0) - 0.5).toFixed(1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="phase.day_night.temperature.night"
+                type="number"
+                step="0.1"
+                class="stepper__input"
+              />
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.temperature.night = +((phase.day_night.temperature.night ?? 0) + 0.5).toFixed(1)"
+              >
+                +
+              </button>
             </div>
             <label class="text-[12px] text-[color:var(--text-primary)] font-medium">Влажность, %</label>
             <div class="stepper">
-              <button type="button" class="stepper__btn" @click="phase.day_night.humidity.day = Math.max(0, (phase.day_night.humidity.day ?? 0) - 1)">−</button>
-              <input v-model.number="phase.day_night.humidity.day" type="number" step="1" class="stepper__input" />
-              <button type="button" class="stepper__btn" @click="phase.day_night.humidity.day = Math.min(100, (phase.day_night.humidity.day ?? 0) + 1)">+</button>
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.humidity.day = Math.max(0, (phase.day_night.humidity.day ?? 0) - 1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="phase.day_night.humidity.day"
+                type="number"
+                step="1"
+                class="stepper__input"
+              />
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.humidity.day = Math.min(100, (phase.day_night.humidity.day ?? 0) + 1)"
+              >
+                +
+              </button>
             </div>
             <div class="stepper">
-              <button type="button" class="stepper__btn" @click="phase.day_night.humidity.night = Math.max(0, (phase.day_night.humidity.night ?? 0) - 1)">−</button>
-              <input v-model.number="phase.day_night.humidity.night" type="number" step="1" class="stepper__input" />
-              <button type="button" class="stepper__btn" @click="phase.day_night.humidity.night = Math.min(100, (phase.day_night.humidity.night ?? 0) + 1)">+</button>
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.humidity.night = Math.max(0, (phase.day_night.humidity.night ?? 0) - 1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="phase.day_night.humidity.night"
+                type="number"
+                step="1"
+                class="stepper__input"
+              />
+              <button
+                type="button"
+                class="stepper__btn"
+                @click="phase.day_night.humidity.night = Math.min(100, (phase.day_night.humidity.night ?? 0) + 1)"
+              >
+                +
+              </button>
             </div>
           </div>
         </div>
 
         <!-- Свет -->
         <div class="rounded-md border border-[color:var(--border-muted)] p-2.5 space-y-2">
-          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">Свет</div>
+          <div class="text-[12px] font-bold uppercase tracking-[0.16em] text-[color:var(--text-muted)]">
+            Свет
+          </div>
           <div class="grid grid-cols-2 md:grid-cols-2 gap-3 max-w-md">
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Фотопериод, часов</label>
               <div class="stepper">
-                <button type="button" class="stepper__btn" @click="phase.lighting_photoperiod_hours = Math.max(0, (phase.lighting_photoperiod_hours ?? 0) - 1)">−</button>
-                <input v-model.number="phase.lighting_photoperiod_hours" type="number" min="0" max="24" class="stepper__input" />
-                <button type="button" class="stepper__btn" @click="phase.lighting_photoperiod_hours = Math.min(24, (phase.lighting_photoperiod_hours ?? 0) + 1)">+</button>
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.lighting_photoperiod_hours = Math.max(0, (phase.lighting_photoperiod_hours ?? 0) - 1)"
+                >
+                  −
+                </button>
+                <input
+                  v-model.number="phase.lighting_photoperiod_hours"
+                  type="number"
+                  min="0"
+                  max="24"
+                  class="stepper__input"
+                />
+                <button
+                  type="button"
+                  class="stepper__btn"
+                  @click="phase.lighting_photoperiod_hours = Math.min(24, (phase.lighting_photoperiod_hours ?? 0) + 1)"
+                >
+                  +
+                </button>
               </div>
             </div>
             <div>
               <label class="block text-[12px] text-[color:var(--text-primary)] font-medium mb-1">Старт дня</label>
-              <input v-model="phase.lighting_start_time" type="time" class="input-field" />
+              <input
+                v-model="phase.lighting_start_time"
+                type="time"
+                class="input-field"
+              />
             </div>
           </div>
         </div>
-
       </section>
     </div>
 
     <!-- ── Кнопки внизу ──────────────────────────────────────── -->
     <div class="flex items-center justify-between pt-2">
-      <Button type="button" size="sm" variant="secondary" data-testid="add-phase-button" @click="$emit('add-phase')">Добавить фазу</Button>
-      <Button type="button" size="sm" data-testid="save-recipe-bottom-button" @click="$emit('save')">Сохранить</Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        data-testid="add-phase-button"
+        @click="$emit('add-phase')"
+      >
+        Добавить фазу
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        data-testid="save-recipe-bottom-button"
+        @click="$emit('save')"
+      >
+        Сохранить
+      </Button>
     </div>
 
-    <SubstrateCreateModal :open="substrateModalOpen" @close="substrateModalOpen = false" @created="onSubstrateCreated" />
+    <SubstrateCreateModal
+      :open="substrateModalOpen"
+      @close="substrateModalOpen = false"
+      @created="onSubstrateCreated"
+    />
   </div>
 </template>
 

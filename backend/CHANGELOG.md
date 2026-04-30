@@ -251,7 +251,7 @@
 
 #### Мониторинг
 - Исправлены порты для метрик Prometheus (history-logger: 9300)
-- См. `docs/MONITORING_IMPLEMENTATION.md` для деталей
+- Исторический отчет о реализации перенесен в `../doc_ai/00_ARCHIVE/REPORTS/BACKEND_MONITORING_IMPLEMENTATION.md`
 
 ### Улучшения
 
@@ -267,4 +267,4 @@
 
 ---
 
-_Подробные отчеты об исправлениях см. в `docs/fixes/` (после консолидации)_
+_Исторические отчеты об исправлениях и аудитах перенесены в `../doc_ai/00_ARCHIVE/REPORTS/`._

@@ -94,7 +94,13 @@ export function deriveLaneHistory(
 
     const key = laneKey(run)
     const bucket = lanes.get(key) ?? []
-    bucket.push({ t: Number(clamped.toFixed(2)), s: runStatusToHistoryStatus(run) })
+    bucket.push({
+      t: Number(clamped.toFixed(2)),
+      s: runStatusToHistoryStatus(run),
+      kind: 'executed',
+      execution_id: run.execution_id,
+      at: at.toISOString(),
+    })
     lanes.set(key, bucket)
   }
 
@@ -112,7 +118,12 @@ export function deriveLaneHistory(
     const bucket = lanes.get(key) ?? []
     const hasNearPoint = bucket.some((point) => Math.abs(point.t - clamped) < 0.2)
     if (!hasNearPoint) {
-      bucket.push({ t: Number(clamped.toFixed(2)), s: 'warn' })
+      bucket.push({
+        t: Number(clamped.toFixed(2)),
+        s: 'warn',
+        kind: 'planned',
+        at: triggerAt.toISOString(),
+      })
       lanes.set(key, bucket)
     }
   }

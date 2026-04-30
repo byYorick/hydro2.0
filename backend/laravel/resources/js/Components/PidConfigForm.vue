@@ -12,7 +12,7 @@
           tone="brand"
         >
           <template #icon>
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand" />
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
           </template>
           изменено
         </Chip>
@@ -212,7 +212,7 @@
             :class="readonlyCls"
             :placeholder="`Цель ${selectedType.toUpperCase()} не задана`"
             readonly
-          >
+          />
         </Field>
         <Field
           label="Мёртвая зона"
@@ -232,7 +232,7 @@
             max="2"
             :class="inputCls"
             :title="fieldHelp('dead_zone')"
-          >
+          />
         </Field>
         <Field
           label="Ближняя зона"
@@ -252,7 +252,7 @@
             max="5"
             :class="inputCls"
             :title="fieldHelp('close_zone')"
-          >
+          />
         </Field>
         <Field
           label="Дальняя зона"
@@ -272,7 +272,7 @@
             max="10"
             :class="inputCls"
             :title="fieldHelp('far_zone')"
-          >
+          />
         </Field>
       </div>
     </details>
@@ -303,7 +303,7 @@
             max="1000"
             :class="inputCls"
             :title="fieldHelp('close.kp')"
-          >
+          />
         </Field>
         <Field label="Ki">
           <template
@@ -320,7 +320,7 @@
             max="100"
             :class="inputCls"
             :title="fieldHelp('close.ki')"
-          >
+          />
         </Field>
         <Field label="Kd">
           <template
@@ -337,7 +337,7 @@
             max="100"
             :class="inputCls"
             :title="fieldHelp('close.kd')"
-          >
+          />
         </Field>
       </div>
     </details>
@@ -368,7 +368,7 @@
             max="1000"
             :class="inputCls"
             :title="fieldHelp('far.kp')"
-          >
+          />
         </Field>
         <Field label="Ki">
           <template
@@ -385,7 +385,7 @@
             max="100"
             :class="inputCls"
             :title="fieldHelp('far.ki')"
-          >
+          />
         </Field>
         <Field label="Kd">
           <template
@@ -402,7 +402,7 @@
             max="100"
             :class="inputCls"
             :title="fieldHelp('far.kd')"
-          >
+          />
         </Field>
       </div>
     </details>
@@ -436,7 +436,7 @@
             max="500"
             :class="inputCls"
             :title="fieldHelp('max_integral')"
-          >
+          />
         </Field>
       </div>
     </details>

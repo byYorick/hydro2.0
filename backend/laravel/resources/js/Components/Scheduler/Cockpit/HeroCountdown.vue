@@ -32,6 +32,13 @@
       <div class="mt-1 text-[11px] text-[color:var(--text-dim)]">
         {{ isExpired ? 'таймер истёк — ожидаем завершение' : etaHint }}
       </div>
+      <div
+        v-if="isExpired && expectedDeadlineLabel"
+        class="mt-1 text-[11px] font-medium text-[color:var(--accent-amber)]"
+        data-testid="scheduler-hero-expected-deadline"
+      >
+        Ожидалось до {{ expectedDeadlineLabel }}
+      </div>
 
       <div class="mt-4 flex flex-col gap-1.5">
         <div class="flex flex-wrap items-center gap-1.5">
@@ -77,16 +84,25 @@
           >{{ step }}</span>
         </div>
 
-        <div class="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-[color:var(--text-muted)]">
-          <span v-if="run.decision_strategy">strategy {{ run.decision_strategy }}</span>
-          <span v-if="run.decision_bundle_revision">·</span>
-          <span v-if="run.decision_bundle_revision">bundle {{ run.decision_bundle_revision }}</span>
-          <span v-if="run.correlation_id">·</span>
-          <span
-            v-if="run.correlation_id"
-            class="font-mono"
-          >{{ run.correlation_id }}</span>
-        </div>
+        <details
+          v-if="hasTechnicalDetails"
+          class="group mt-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/35 px-2 py-1.5 text-[10px] text-[color:var(--text-muted)]"
+        >
+          <summary class="cursor-pointer select-none font-medium text-[color:var(--text-dim)] marker:text-[color:var(--text-dim)]">
+            Технические детали
+          </summary>
+          <div class="mt-1.5 space-y-1 font-mono text-[10px] leading-snug break-all">
+            <p v-if="run.decision_strategy">
+              <span class="text-[color:var(--text-dim)]">strategy</span> {{ run.decision_strategy }}
+            </p>
+            <p v-if="run.decision_bundle_revision">
+              <span class="text-[color:var(--text-dim)]">bundle</span> {{ run.decision_bundle_revision }}
+            </p>
+            <p v-if="run.correlation_id">
+              <span class="text-[color:var(--text-dim)]">correlation</span> {{ run.correlation_id }}
+            </p>
+          </div>
+        </details>
       </div>
     </template>
 
@@ -127,6 +143,8 @@ interface Props {
    * игнорируя `etaLabel`.
    */
   endAt?: string | Date | null
+  /** Отображение крайнего срока при просрочке (из родителя). */
+  formatDateTime?: (value: string | null | undefined) => string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -136,6 +154,7 @@ const props = withDefaults(defineProps<Props>(), {
   etaHint: 'осталось до завершения',
   etaEstimated: false,
   endAt: null,
+  formatDateTime: undefined,
 })
 
 const endAtRef = toRef(props, 'endAt')
@@ -166,8 +185,33 @@ const displayLabel = computed<string>(() => {
 })
 
 const isExpired = computed<boolean>(() => {
+  if (!props.endAt) return false
   const remaining = remainingSeconds.value
   return remaining !== null && remaining <= 0
+})
+
+function defaultFormatDateTime(value: string | null | undefined): string {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return '—'
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
+const expectedDeadlineLabel = computed<string | null>(() => {
+  if (!props.endAt || !isExpired.value) return null
+  const fmt = props.formatDateTime ?? defaultFormatDateTime
+  return fmt(typeof props.endAt === 'string' ? props.endAt : props.endAt.toISOString())
+})
+
+const hasTechnicalDetails = computed<boolean>(() => {
+  const run = props.run
+  if (!run) return false
+  return Boolean(run.decision_strategy || run.decision_bundle_revision || run.correlation_id)
 })
 
 const progressSteps = computed<string[]>(() => {

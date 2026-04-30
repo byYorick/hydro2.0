@@ -1,7 +1,13 @@
 """Tests for alerts_manager with Phase 2 features."""
 import pytest
-from unittest.mock import AsyncMock, patch
-from alerts_manager import ensure_alert, _get_alert_source_and_code, ALERT_TYPE_MAPPING
+from unittest.mock import patch
+from alerts_manager import (
+    ensure_alert,
+    resolve_alert,
+    _build_dedupe_key,
+    _get_alert_source_and_code,
+    ALERT_TYPE_MAPPING,
+)
 from common.alerts import AlertSource, AlertCode
 
 
@@ -49,39 +55,44 @@ def test_get_alert_source_and_code_unknown_type():
 
 @pytest.mark.asyncio
 async def test_ensure_alert_creates_new_alert_with_source_and_code():
-    """Test that ensure_alert creates new alert with source and code."""
-    with patch("alerts_manager.fetch") as mock_fetch, \
-         patch("alerts_manager.create_alert") as mock_create_alert, \
-         patch("alerts_manager.create_zone_event") as mock_create_event:
-        # Mock no existing alert
-        mock_fetch.return_value = []
-        
+    """Test that ensure_alert publishes canonical source and code."""
+    with patch("alerts_manager.send_biz_alert") as mock_send_biz_alert:
+        mock_send_biz_alert.return_value = True
+
         await ensure_alert(1, "PH_HIGH", {"ph": 7.5, "target": 6.5})
-        
-        # Check that create_alert was called with correct source and code
-        mock_create_alert.assert_called_once()
-        call_args = mock_create_alert.call_args
-        assert call_args[1]["zone_id"] == 1
-        assert call_args[1]["source"] == AlertSource.BIZ.value
-        assert call_args[1]["code"] == AlertCode.BIZ_HIGH_PH.value
-        assert call_args[1]["type"] == "PH_HIGH"
-        assert call_args[1]["details"] == {"ph": 7.5, "target": 6.5}
+
+        mock_send_biz_alert.assert_called_once()
+        kwargs = mock_send_biz_alert.call_args.kwargs
+        assert kwargs["zone_id"] == 1
+        assert kwargs["code"] == AlertCode.BIZ_HIGH_PH.value
+        assert kwargs["alert_type"] == "PH_HIGH"
+        assert kwargs["details"]["ph"] == 7.5
+        assert kwargs["details"]["target"] == 6.5
+        assert kwargs["details"]["dedupe_key"] == kwargs["dedupe_key"]
 
 
 @pytest.mark.asyncio
 async def test_ensure_alert_updates_existing_alert():
-    """Test that ensure_alert updates existing alert details."""
-    with patch("alerts_manager.fetch") as mock_fetch, \
-         patch("alerts_manager.execute") as mock_execute, \
-         patch("alerts_manager.create_alert") as mock_create_alert:
-        # Mock existing alert
-        mock_fetch.return_value = [{"id": 123, "details": '{"ph": 7.0}'}]
-        
+    """Existing alerts are updated only by Laravel deduplication."""
+    with patch("alerts_manager.send_biz_alert") as mock_send_biz_alert:
+        mock_send_biz_alert.return_value = True
+
         await ensure_alert(1, "PH_HIGH", {"ph": 7.5, "target": 6.5})
-        
-        # Should update, not create
-        mock_create_alert.assert_not_called()
-        mock_execute.assert_called_once()
+
+        mock_send_biz_alert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_alert_uses_same_code_and_dedupe_key():
+    with patch("alerts_manager._publisher.resolve") as mock_resolve:
+        mock_resolve.return_value = True
+
+        assert await resolve_alert(1, "PH_HIGH") is True
+
+        kwargs = mock_resolve.call_args.kwargs
+        assert kwargs["source"] == AlertSource.BIZ.value
+        assert kwargs["code"] == AlertCode.BIZ_HIGH_PH.value
+        assert kwargs["dedupe_key"] == _build_dedupe_key(1, AlertCode.BIZ_HIGH_PH.value, {})
 
 
 def test_alert_type_mapping_completeness():
@@ -96,4 +107,3 @@ def test_alert_type_mapping_completeness():
         source, code = ALERT_TYPE_MAPPING[alert_type]
         assert source in [AlertSource.BIZ.value, AlertSource.INFRA.value]
         assert code.startswith("biz_") or code.startswith("infra_")
-

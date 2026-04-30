@@ -1,17 +1,32 @@
 <template>
-  <Modal :open="open" :title="`Создание продукта — ${componentLabel}`" size="large" @close="$emit('close')">
+  <Modal
+    :open="open"
+    :title="`Создание продукта — ${componentLabel}`"
+    size="large"
+    @close="$emit('close')"
+  >
     <div class="space-y-4 text-[color:var(--text-primary)]">
       <!-- Базовое -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Основное</div>
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+          Основное
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Производитель <span class="text-red-500">*</span></label>
-            <input v-model="form.manufacturer" class="input-field" placeholder="Yara, Masterblend, Haifa..." />
+            <input
+              v-model="form.manufacturer"
+              class="input-field"
+              placeholder="Yara, Masterblend, Haifa..."
+            />
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название продукта <span class="text-red-500">*</span></label>
-            <input v-model="form.name" class="input-field" placeholder="Masterblend 4-18-38" />
+            <input
+              v-model="form.name"
+              class="input-field"
+              placeholder="Masterblend 4-18-38"
+            />
           </div>
         </div>
         <div>
@@ -25,25 +40,46 @@
 
       <!-- Химический состав -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Химический состав</div>
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+          Химический состав
+        </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Состав / формула</label>
-          <input v-model="form.composition" class="input-field" placeholder="N 4% · P 18% · K 38%" />
-          <p class="text-[11px] text-[color:var(--text-muted)] mt-1">Указать % содержания элементов, либо химическую формулу (Ca(NO₃)₂·4H₂O)</p>
+          <input
+            v-model="form.composition"
+            class="input-field"
+            placeholder="N 4% · P 18% · K 38%"
+          />
+          <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
+            Указать % содержания элементов, либо химическую формулу (Ca(NO₃)₂·4H₂O)
+          </p>
         </div>
       </div>
 
       <!-- Рекомендации -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Применение</div>
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+          Применение
+        </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Рекомендуемые стадии роста</label>
-          <input v-model="form.recommended_stage" class="input-field" placeholder="VEG, BLOOM, FRUIT" />
-          <p class="text-[11px] text-[color:var(--text-muted)] mt-1">На каких стадиях применять — через запятую</p>
+          <input
+            v-model="form.recommended_stage"
+            class="input-field"
+            placeholder="VEG, BLOOM, FRUIT"
+          />
+          <p class="text-[11px] text-[color:var(--text-muted)] mt-1">
+            На каких стадиях применять — через запятую
+          </p>
         </div>
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-          <textarea v-model="form.notes" rows="2" class="input-field !h-auto !py-2" placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"></textarea>
+          <textarea
+            v-model="form.notes"
+            rows="2"
+            class="input-field !h-auto !py-2"
+            placeholder="Например: хорошо растворим в тёплой воде; хранить в сухом месте"
+          ></textarea>
         </div>
       </div>
     </div>

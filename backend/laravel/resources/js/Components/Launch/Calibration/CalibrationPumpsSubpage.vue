@@ -10,7 +10,7 @@
           <span
             class="inline-block w-1.5 h-1.5 rounded-full"
             :class="overallDotClass"
-          />
+          ></span>
         </template>
         <span class="font-mono">{{ calibratedCount }} / {{ pumpRows.length }}</span>
       </Chip>
@@ -37,7 +37,7 @@
               <span
                 class="inline-block w-1.5 h-1.5 rounded-full"
                 :class="rowDot(p)"
-              />
+              ></span>
             </template>
             {{ p.shortLabel }}
           </Chip>
@@ -65,7 +65,7 @@
               >
                 {{ col }}
               </th>
-              <th class="px-3 py-2" />
+              <th class="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>

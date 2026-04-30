@@ -23,21 +23,29 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
-      <Field :label="meta('intervalMinutes').label" :hint="meta('intervalMinutes').hint" required>
+      <Field
+        :label="meta('intervalMinutes').label"
+        :hint="meta('intervalMinutes').hint"
+        required
+      >
         <input
           v-bind="numAttrs"
           :title="meta('intervalMinutes').details"
           :value="waterForm.intervalMinutes"
           @input="upd('intervalMinutes', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('durationSeconds').label" :hint="meta('durationSeconds').hint" required>
+      <Field
+        :label="meta('durationSeconds').label"
+        :hint="meta('durationSeconds').hint"
+        required
+      >
         <input
           v-bind="numAttrs"
           :title="meta('durationSeconds').details"
           :value="waterForm.durationSeconds"
           @input="upd('durationSeconds', toInt($event))"
-        >
+        />
       </Field>
       <ToggleField
         :model-value="waterForm.correctionDuringIrrigation"
@@ -58,45 +66,60 @@
         SMART soil v1 — параметры решения
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <Field :label="meta('irrigationDecisionLookbackSeconds').label" :hint="meta('irrigationDecisionLookbackSeconds').hint">
+        <Field
+          :label="meta('irrigationDecisionLookbackSeconds').label"
+          :hint="meta('irrigationDecisionLookbackSeconds').hint"
+        >
           <input
             v-bind="numAttrs"
             :title="meta('irrigationDecisionLookbackSeconds').details"
             :value="waterForm.irrigationDecisionLookbackSeconds ?? 0"
             @input="upd('irrigationDecisionLookbackSeconds', toInt($event))"
-          >
+          />
         </Field>
-        <Field :label="meta('irrigationDecisionMinSamples').label" :hint="meta('irrigationDecisionMinSamples').hint">
+        <Field
+          :label="meta('irrigationDecisionMinSamples').label"
+          :hint="meta('irrigationDecisionMinSamples').hint"
+        >
           <input
             v-bind="numAttrs"
             :title="meta('irrigationDecisionMinSamples').details"
             :value="waterForm.irrigationDecisionMinSamples ?? 0"
             @input="upd('irrigationDecisionMinSamples', toInt($event))"
-          >
+          />
         </Field>
-        <Field :label="meta('irrigationDecisionStaleAfterSeconds').label" :hint="meta('irrigationDecisionStaleAfterSeconds').hint">
+        <Field
+          :label="meta('irrigationDecisionStaleAfterSeconds').label"
+          :hint="meta('irrigationDecisionStaleAfterSeconds').hint"
+        >
           <input
             v-bind="numAttrs"
             :title="meta('irrigationDecisionStaleAfterSeconds').details"
             :value="waterForm.irrigationDecisionStaleAfterSeconds ?? 0"
             @input="upd('irrigationDecisionStaleAfterSeconds', toInt($event))"
-          >
+          />
         </Field>
-        <Field :label="meta('irrigationDecisionHysteresisPct').label" :hint="meta('irrigationDecisionHysteresisPct').hint">
+        <Field
+          :label="meta('irrigationDecisionHysteresisPct').label"
+          :hint="meta('irrigationDecisionHysteresisPct').hint"
+        >
           <input
             v-bind="numAttrs"
             :title="meta('irrigationDecisionHysteresisPct').details"
             :value="waterForm.irrigationDecisionHysteresisPct ?? 0"
             @input="upd('irrigationDecisionHysteresisPct', toNum($event))"
-          >
+          />
         </Field>
-        <Field :label="meta('irrigationDecisionSpreadAlertThresholdPct').label" :hint="meta('irrigationDecisionSpreadAlertThresholdPct').hint">
+        <Field
+          :label="meta('irrigationDecisionSpreadAlertThresholdPct').label"
+          :hint="meta('irrigationDecisionSpreadAlertThresholdPct').hint"
+        >
           <input
             v-bind="numAttrs"
             :title="meta('irrigationDecisionSpreadAlertThresholdPct').details"
             :value="waterForm.irrigationDecisionSpreadAlertThresholdPct ?? 0"
             @input="upd('irrigationDecisionSpreadAlertThresholdPct', toNum($event))"
-          >
+          />
         </Field>
       </div>
     </template>
@@ -105,29 +128,38 @@
       Recovery / повторы
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-      <Field :label="meta('irrigationRecoveryMaxContinueAttempts').label" :hint="meta('irrigationRecoveryMaxContinueAttempts').hint">
+      <Field
+        :label="meta('irrigationRecoveryMaxContinueAttempts').label"
+        :hint="meta('irrigationRecoveryMaxContinueAttempts').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('irrigationRecoveryMaxContinueAttempts').details"
           :value="waterForm.irrigationRecoveryMaxContinueAttempts ?? 0"
           @input="upd('irrigationRecoveryMaxContinueAttempts', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('irrigationRecoveryTimeoutSeconds').label" :hint="meta('irrigationRecoveryTimeoutSeconds').hint">
+      <Field
+        :label="meta('irrigationRecoveryTimeoutSeconds').label"
+        :hint="meta('irrigationRecoveryTimeoutSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('irrigationRecoveryTimeoutSeconds').details"
           :value="waterForm.irrigationRecoveryTimeoutSeconds ?? 0"
           @input="upd('irrigationRecoveryTimeoutSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('irrigationMaxSetupReplays').label" :hint="meta('irrigationMaxSetupReplays').hint">
+      <Field
+        :label="meta('irrigationMaxSetupReplays').label"
+        :hint="meta('irrigationMaxSetupReplays').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('irrigationMaxSetupReplays').details"
           :value="waterForm.irrigationMaxSetupReplays ?? 0"
           @input="upd('irrigationMaxSetupReplays', toInt($event))"
-        >
+        />
       </Field>
     </div>
 

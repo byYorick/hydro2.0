@@ -83,49 +83,71 @@ const failPercent = computed<string>(() => {
   return `${Math.round((props.counters.failed_24h / total) * 1000) / 10}%`
 })
 
+const totalAttempts24h = computed<number>(() =>
+  props.counters.completed_24h + props.counters.failed_24h,
+)
+
+const failureRatio = computed<number | null>(() => {
+  const total = totalAttempts24h.value
+  if (total <= 0) return null
+  return props.counters.failed_24h / total
+})
+
 function meter(value: number, max: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0
   return Math.min(100, Math.max(12, Math.round((value / max) * 100)))
 }
 
-const kpis = computed(() => [
-  {
-    key: 'active',
-    label: 'Активные',
-    value: props.counters.active,
-    sub: props.runtime ? `runtime=${props.runtime}` : 'runtime=—',
-    color: 'var(--accent-cyan)',
-    live: props.counters.active > 0,
-    meter: meter(props.counters.active, 3),
-  },
-  {
-    key: 'completed',
-    label: 'Успешные за 24ч',
-    value: props.counters.completed_24h,
-    sub: `${sloPercent.value} SLO`,
-    color: 'var(--accent-green)',
-    live: false,
-    meter: meter(props.counters.completed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
-  },
-  {
-    key: 'failed',
-    label: 'Ошибки за 24ч',
-    value: props.counters.failed_24h,
-    sub: failPercent.value,
-    color: 'var(--accent-red)',
-    live: false,
-    meter: meter(props.counters.failed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
-  },
-  {
-    key: 'windows',
-    label: 'Окна на горизонте',
-    value: props.executableWindowsCount,
-    sub: props.windowTypeCount > 0 ? `${props.windowTypeCount} типа` : '—',
-    color: 'var(--accent-amber)',
-    live: false,
-    meter: meter(props.executableWindowsCount, 6),
-  },
-])
+const kpis = computed(() => {
+  const total = totalAttempts24h.value
+  const totalNote = total > 0 ? `всего ${total} за 24ч` : 'нет попыток за 24ч'
+  const failHigh =
+    failureRatio.value !== null
+    && failureRatio.value >= 0.25
+    && props.counters.failed_24h > 0
+
+  return [
+    {
+      key: 'active',
+      label: 'Активные',
+      value: props.counters.active,
+      sub: props.runtime ? `runtime=${props.runtime}` : 'runtime=—',
+      color: 'var(--accent-cyan)',
+      live: props.counters.active > 0,
+      meter: meter(props.counters.active, 3),
+    },
+    {
+      key: 'completed',
+      label: 'Успешные за 24ч',
+      value: props.counters.completed_24h,
+      sub: `${sloPercent.value} SLO · ${totalNote}`,
+      color: 'var(--accent-green)',
+      live: false,
+      meter: meter(props.counters.completed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
+    },
+    {
+      key: 'failed',
+      label: 'Ошибки за 24ч',
+      value: props.counters.failed_24h,
+      sub:
+        failHigh
+          ? `${failPercent.value} · высокая доля ошибок — проверьте узлы и каналы · ${totalNote}`
+          : `${failPercent.value} · ${totalNote}`,
+      color: 'var(--accent-red)',
+      live: false,
+      meter: meter(props.counters.failed_24h, Math.max(4, props.counters.completed_24h + props.counters.failed_24h)),
+    },
+    {
+      key: 'windows',
+      label: 'Окна на горизонте',
+      value: props.executableWindowsCount,
+      sub: props.windowTypeCount > 0 ? `${props.windowTypeCount} типа` : '—',
+      color: 'var(--accent-amber)',
+      live: false,
+      meter: meter(props.executableWindowsCount, 6),
+    },
+  ]
+})
 </script>
 
 <style scoped>

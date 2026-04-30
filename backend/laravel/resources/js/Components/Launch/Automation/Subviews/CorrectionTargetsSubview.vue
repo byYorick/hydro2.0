@@ -10,33 +10,61 @@
       Целевые значения <span class="text-[10px] text-brand normal-case ml-1.5">← из рецепта, read-only</span>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-      <Field :label="meta('targetPh').label" required :hint="meta('targetPh').hint">
-        <div :class="lockedCls" :title="meta('targetPh').details">
-          <Ic name="lock" size="sm" class="text-[var(--text-dim)]" />
+      <Field
+        :label="meta('targetPh').label"
+        required
+        :hint="meta('targetPh').hint"
+      >
+        <div
+          :class="lockedCls"
+          :title="meta('targetPh').details"
+        >
+          <Ic
+            name="lock"
+            size="sm"
+            class="text-[var(--text-dim)]"
+          />
           {{ waterForm.targetPh }}
         </div>
       </Field>
-      <Field :label="meta('targetEc').label" required :hint="meta('targetEc').hint">
-        <div :class="lockedCls" :title="meta('targetEc').details">
-          <Ic name="lock" size="sm" class="text-[var(--text-dim)]" />
+      <Field
+        :label="meta('targetEc').label"
+        required
+        :hint="meta('targetEc').hint"
+      >
+        <div
+          :class="lockedCls"
+          :title="meta('targetEc').details"
+        >
+          <Ic
+            name="lock"
+            size="sm"
+            class="text-[var(--text-dim)]"
+          />
           {{ waterForm.targetEc }} <span class="text-[var(--text-dim)] text-xs ml-1">mS/cm</span>
         </div>
       </Field>
-      <Field :label="meta('phPct').label" :hint="meta('phPct').hint">
+      <Field
+        :label="meta('phPct').label"
+        :hint="meta('phPct').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('phPct').details"
           :value="waterForm.phPct"
           @input="upd('phPct', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('ecPct').label" :hint="meta('ecPct').hint">
+      <Field
+        :label="meta('ecPct').label"
+        :hint="meta('ecPct').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('ecPct').details"
           :value="waterForm.ecPct"
           @input="upd('ecPct', toNum($event))"
-        >
+        />
       </Field>
     </div>
 

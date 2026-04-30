@@ -1,7 +1,12 @@
 <template>
   <AppLayout>
-    <div class="space-y-2" data-testid="zone-detail-page">
-      <h1 class="sr-only">{{ zone.name }}</h1>
+    <div
+      class="space-y-2"
+      data-testid="zone-detail-page"
+    >
+      <h1 class="sr-only">
+        {{ zone.name }}
+      </h1>
       <ZoneAutomationBlockBanner
         :block="automationBlock"
         @open-alerts="activeTab = 'alerts'"

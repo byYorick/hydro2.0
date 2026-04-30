@@ -3,32 +3,43 @@
     class="swimlane-panel flex min-h-0 flex-1 flex-col rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 p-3.5"
     data-testid="scheduler-swimlane"
   >
-    <header class="flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2">
-        <h4 class="m-0 text-[13px] font-semibold text-[color:var(--text-primary)]">
-          Лента исполнений
-        </h4>
-        <Badge
-          variant="neutral"
-          size="xs"
-        >
-          {{ horizonLabel }}
-        </Badge>
+    <header class="flex flex-col gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <h4 class="m-0 text-[13px] font-semibold text-[color:var(--text-primary)]">
+            Лента исполнений
+          </h4>
+          <Badge
+            variant="neutral"
+            size="xs"
+          >
+            {{ horizonLabel }}
+          </Badge>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-1">
+          <span class="swim-pill">
+            <span class="swim-dot bg-[color:var(--accent-green)]"></span> OK
+          </span>
+          <span class="swim-pill">
+            <span class="swim-dot bg-[color:var(--accent-red)]"></span> FAIL
+          </span>
+          <span class="swim-pill">
+            <span class="swim-dot bg-[color:var(--text-dim)]"></span> SKIP
+          </span>
+          <span class="swim-pill">
+            <span class="swim-dot bg-[color:var(--accent-cyan)]"></span> RUN
+          </span>
+          <span class="swim-pill">
+            <span class="swim-dot bg-[color:var(--accent-amber)]"></span> WARN
+          </span>
+          <span class="swim-pill">
+            <span class="swim-plan-diamond bg-[color:var(--accent-amber)]"></span> PLAN
+          </span>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-1">
-        <span class="swim-pill">
-          <span class="swim-dot bg-[color:var(--accent-green)]"></span> OK
-        </span>
-        <span class="swim-pill">
-          <span class="swim-dot bg-[color:var(--accent-red)]"></span> FAIL
-        </span>
-        <span class="swim-pill">
-          <span class="swim-dot bg-[color:var(--text-dim)]"></span> SKIP
-        </span>
-        <span class="swim-pill">
-          <span class="swim-dot bg-[color:var(--accent-amber)]"></span> PLAN
-        </span>
-      </div>
+      <p class="m-0 text-[9px] leading-snug text-[color:var(--text-muted)]">
+        Ромб — окно плана без факта исполнения; янтарная полоска — деградация; широкая бирюзовая — активный run.
+      </p>
     </header>
 
     <div
@@ -65,17 +76,10 @@
           <div
             v-for="(point, index) in lane.runs"
             :key="`${lane.lane}-${index}`"
-            class="swim-point absolute top-2 rounded-[4px]"
-            :class="point.s === 'run' ? 'h-4 w-[18px]' : 'h-4 w-2.5'"
-            :style="{
-              left: `${point.t}%`,
-              background: STATUS_COLOR[point.s],
-              transform: 'translateX(-50%)',
-              boxShadow: point.s === 'run'
-                ? '0 0 0 3px color-mix(in srgb, var(--accent-cyan) 25%, transparent)'
-                : 'none',
-            }"
-            :title="`${lane.lane} · ${point.s}`"
+            class="swim-point absolute top-1/2 z-[11] rounded-[4px]"
+            :class="pointClass(point)"
+            :style="pointStyle(point)"
+            :title="pointTitle(lane.lane, point)"
           ></div>
         </div>
       </div>
@@ -100,16 +104,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
-import type { LaneHistory, LaneHistoryStatus } from '@/composables/zoneScheduleWorkspaceTypes'
+import type { LaneHistory, LaneHistoryPoint, LaneHistoryStatus } from '@/composables/zoneScheduleWorkspaceTypes'
 
 interface Props {
   lanes: LaneHistory[]
   horizon: '24h' | '7d'
   now?: Date
+  formatDateTime?: (value: string | null | undefined) => string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   now: undefined,
+  formatDateTime: undefined,
 })
 
 const STATUS_COLOR: Record<LaneHistoryStatus, string> = {
@@ -118,6 +124,80 @@ const STATUS_COLOR: Record<LaneHistoryStatus, string> = {
   skip: 'var(--text-dim)',
   run: 'var(--accent-cyan)',
   warn: 'var(--accent-amber)',
+}
+
+function defaultFormatDateTime(value: string | null | undefined): string {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
+function statusRu(point: LaneHistoryPoint): string {
+  if (point.kind === 'planned') {
+    return 'окно плана'
+  }
+  const labels: Record<LaneHistoryStatus, string> = {
+    ok: 'успех',
+    err: 'ошибка',
+    skip: 'пропуск',
+    run: 'выполняется',
+    warn: 'деградация',
+  }
+  return labels[point.s] ?? point.s
+}
+
+function pointTitle(laneName: string, point: LaneHistoryPoint): string {
+  const fmt = props.formatDateTime ?? defaultFormatDateTime
+  const timePart = point.at ? fmt(point.at) : ''
+  const statusPart = statusRu(point)
+  if (point.kind === 'planned' && timePart) {
+    return `${laneName}: ${timePart} · ${statusPart}`
+  }
+  if (point.execution_id && timePart) {
+    return `${laneName}: #${point.execution_id} · ${timePart} · ${statusPart}`
+  }
+  if (timePart) {
+    return `${laneName}: ${timePart} · ${statusPart}`
+  }
+  return `${laneName} · ${point.s}`
+}
+
+function pointClass(point: LaneHistoryPoint): string {
+  if (point.kind === 'planned') {
+    return 'swim-point--planned h-2.5 w-2.5 border-amber-200/50'
+  }
+  if (point.s === 'run') {
+    return 'h-4 w-[18px]'
+  }
+  return 'h-4 w-2.5'
+}
+
+function pointStyle(point: LaneHistoryPoint): Record<string, string> {
+  const baseLeft = { left: `${point.t}%` }
+  if (point.kind === 'planned') {
+    return {
+      ...baseLeft,
+      background: STATUS_COLOR[point.s],
+      transform: 'translate(-50%, -50%) rotate(45deg)',
+      boxShadow: 'none',
+    }
+  }
+  const shadow =
+    point.s === 'run'
+      ? '0 0 0 3px color-mix(in srgb, var(--accent-cyan) 25%, transparent)'
+      : 'none'
+  return {
+    ...baseLeft,
+    background: STATUS_COLOR[point.s],
+    transform: 'translate(-50%, -50%)',
+    boxShadow: shadow,
+  }
 }
 
 const horizonLabel = computed(() =>
@@ -182,5 +262,14 @@ function formatLabel(reference: Date, offsetHours: number): string {
   width: 6px;
   height: 6px;
   border-radius: 999px;
+}
+
+.swim-plan-diamond {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  vertical-align: middle;
 }
 </style>

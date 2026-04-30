@@ -13,18 +13,40 @@
               <h2 class="text-lg font-bold text-[color:var(--text-primary)] truncate">
                 {{ zone.name }}
               </h2>
-              <Badge :variant="variant" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
-              <Badge :variant="cycleStatusVariant" size="sm">{{ cycleStatusLabel }}</Badge>
+              <Badge
+                :variant="variant"
+                data-testid="zone-status-badge"
+              >
+                {{ translateStatus(zone.status) }}
+              </Badge>
+              <Badge
+                :variant="cycleStatusVariant"
+                size="sm"
+              >
+                {{ cycleStatusLabel }}
+              </Badge>
             </div>
             <!-- Рецепт и фаза -->
-            <div v-if="recipeName" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--text-muted)]">
+            <div
+              v-if="recipeName"
+              class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--text-muted)]"
+            >
               <span>{{ recipeName }}</span>
-              <span v-if="currentPhaseName" class="text-[color:var(--border-strong)]">&middot;</span>
+              <span
+                v-if="currentPhaseName"
+                class="text-[color:var(--border-strong)]"
+              >&middot;</span>
               <span v-if="currentPhaseName">
                 Фаза {{ currentPhaseIndex }}: {{ currentPhaseName }}
               </span>
-              <span v-if="phaseTimeLeftLabel" class="text-[color:var(--border-strong)]">&middot;</span>
-              <span v-if="phaseTimeLeftLabel" class="text-[color:var(--accent-cyan)]">
+              <span
+                v-if="phaseTimeLeftLabel"
+                class="text-[color:var(--border-strong)]"
+              >&middot;</span>
+              <span
+                v-if="phaseTimeLeftLabel"
+                class="text-[color:var(--accent-cyan)]"
+              >
                 {{ phaseTimeLeftLabel }}
               </span>
             </div>
@@ -48,7 +70,10 @@
       </section>
 
       <!-- KPI: pH / EC / Температура / Влажность -->
-      <ZoneTargets :telemetry="telemetry" :targets="targets" />
+      <ZoneTargets
+        :telemetry="telemetry"
+        :targets="targets"
+      />
 
       <!-- Прогресс фаз -->
       <Card v-if="activeGrowCycle?.recipeRevision">
@@ -76,22 +101,57 @@
       class="surface-card flex flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--border-muted)] px-6 py-16 text-center"
     >
       <div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--bg-elevated)]">
-        <svg class="h-7 w-7 text-[color:var(--text-dim)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          class="h-7 w-7 text-[color:var(--text-dim)]"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
       </div>
-      <p class="text-sm font-medium text-[color:var(--text-primary)]">Цикл выращивания не запущен</p>
-      <Badge :variant="variant" data-testid="zone-status-badge" class="mt-2">{{ translateStatus(zone.status) }}</Badge>
-      <p class="mt-1 text-xs text-[color:var(--text-dim)]">Запустите цикл, чтобы начать выращивание в этой зоне</p>
+      <p class="text-sm font-medium text-[color:var(--text-primary)]">
+        Цикл выращивания не запущен
+      </p>
+      <Badge
+        :variant="variant"
+        data-testid="zone-status-badge"
+        class="mt-2"
+      >
+        {{ translateStatus(zone.status) }}
+      </Badge>
+      <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+        Запустите цикл, чтобы начать выращивание в этой зоне
+      </p>
       <button
         v-if="canManageRecipe"
         type="button"
         class="mt-5 inline-flex items-center gap-2 rounded-lg border border-[color:var(--accent-cyan)]/40 bg-[color:var(--accent-cyan)]/10 px-4 py-2 text-sm font-medium text-[color:var(--accent-cyan)] transition-colors hover:bg-[color:var(--accent-cyan)]/20"
         @click="$emit('run-cycle')"
       >
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <svg
+          class="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+          />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
         </svg>
         Запустить цикл
       </button>

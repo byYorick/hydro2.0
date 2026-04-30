@@ -1,82 +1,107 @@
 <template>
-    <div class="base-wizard" :class="{ 'base-wizard--dark': darkMode }">
-        <header class="base-wizard__header">
-            <slot name="header">
-                <h2 v-if="title" class="base-wizard__title">{{ title }}</h2>
-            </slot>
-            <slot name="progress" :visible-steps="visibleSteps" :current-index="currentIndex">
-                <ol class="base-wizard__progress" :aria-label="'Шаги мастера'">
-                    <li
-                        v-for="(step, index) in visibleSteps"
-                        :key="step.id"
-                        class="base-wizard__progress-item"
-                        :class="{
-                            'is-active': step.id === modelValue,
-                            'is-done': index < currentIndex,
-                            'is-pending': index > currentIndex,
-                        }"
-                    >
-                        <button
-                            type="button"
-                            class="base-wizard__progress-btn"
-                            :aria-current="step.id === modelValue ? 'step' : undefined"
-                            :disabled="!stepIsReachable(step.id, index)"
-                            @click="jumpTo(step.id)"
-                        >
-                            <span class="base-wizard__progress-idx">{{ index + 1 }}</span>
-                            <span class="base-wizard__progress-title">{{ step.title }}</span>
-                        </button>
-                    </li>
-                </ol>
-            </slot>
-        </header>
+  <div
+    class="base-wizard"
+    :class="{ 'base-wizard--dark': darkMode }"
+  >
+    <header class="base-wizard__header">
+      <slot name="header">
+        <h2
+          v-if="title"
+          class="base-wizard__title"
+        >
+          {{ title }}
+        </h2>
+      </slot>
+      <slot
+        name="progress"
+        :visible-steps="visibleSteps"
+        :current-index="currentIndex"
+      >
+        <ol
+          class="base-wizard__progress"
+          :aria-label="'Шаги мастера'"
+        >
+          <li
+            v-for="(step, index) in visibleSteps"
+            :key="step.id"
+            class="base-wizard__progress-item"
+            :class="{
+              'is-active': step.id === modelValue,
+              'is-done': index < currentIndex,
+              'is-pending': index > currentIndex,
+            }"
+          >
+            <button
+              type="button"
+              class="base-wizard__progress-btn"
+              :aria-current="step.id === modelValue ? 'step' : undefined"
+              :disabled="!stepIsReachable(step.id, index)"
+              @click="jumpTo(step.id)"
+            >
+              <span class="base-wizard__progress-idx">{{ index + 1 }}</span>
+              <span class="base-wizard__progress-title">{{ step.title }}</span>
+            </button>
+          </li>
+        </ol>
+      </slot>
+    </header>
 
-        <section class="base-wizard__content" role="group" :aria-labelledby="`wizard-step-${activeStep?.id}`">
-            <slot :name="`step-${activeStep?.id ?? 'unknown'}`" :step="activeStep" />
-        </section>
+    <section
+      class="base-wizard__content"
+      role="group"
+      :aria-labelledby="`wizard-step-${activeStep?.id}`"
+    >
+      <slot
+        :name="`step-${activeStep?.id ?? 'unknown'}`"
+        :step="activeStep"
+      ></slot>
+    </section>
 
-        <footer class="base-wizard__footer">
-            <slot name="navigation" v-bind="navigationState">
-                <div class="base-wizard__nav">
-                    <button
-                        type="button"
-                        class="base-wizard__btn base-wizard__btn--secondary"
-                        :disabled="isFirst"
-                        @click="goBack"
-                    >
-                        {{ backLabel }}
-                    </button>
-                    <button
-                        v-if="!isLast"
-                        type="button"
-                        class="base-wizard__btn base-wizard__btn--primary"
-                        :disabled="!forwardAllowed"
-                        :title="forwardBlockedReason"
-                        @click="goForward"
-                    >
-                        {{ nextLabel }}
-                    </button>
-                    <button
-                        v-else
-                        type="button"
-                        class="base-wizard__btn base-wizard__btn--primary"
-                        :disabled="!forwardAllowed || submitting"
-                        :title="forwardBlockedReason"
-                        @click="submit"
-                    >
-                        {{ submitting ? submittingLabel : submitLabel }}
-                    </button>
-                    <button
-                        type="button"
-                        class="base-wizard__btn base-wizard__btn--ghost"
-                        @click="cancel"
-                    >
-                        {{ cancelLabel }}
-                    </button>
-                </div>
-            </slot>
-        </footer>
-    </div>
+    <footer class="base-wizard__footer">
+      <slot
+        name="navigation"
+        v-bind="navigationState"
+      >
+        <div class="base-wizard__nav">
+          <button
+            type="button"
+            class="base-wizard__btn base-wizard__btn--secondary"
+            :disabled="isFirst"
+            @click="goBack"
+          >
+            {{ backLabel }}
+          </button>
+          <button
+            v-if="!isLast"
+            type="button"
+            class="base-wizard__btn base-wizard__btn--primary"
+            :disabled="!forwardAllowed"
+            :title="forwardBlockedReason"
+            @click="goForward"
+          >
+            {{ nextLabel }}
+          </button>
+          <button
+            v-else
+            type="button"
+            class="base-wizard__btn base-wizard__btn--primary"
+            :disabled="!forwardAllowed || submitting"
+            :title="forwardBlockedReason"
+            @click="submit"
+          >
+            {{ submitting ? submittingLabel : submitLabel }}
+          </button>
+          <button
+            type="button"
+            class="base-wizard__btn base-wizard__btn--ghost"
+            @click="cancel"
+          >
+            {{ cancelLabel }}
+          </button>
+        </div>
+      </slot>
+    </footer>
+  </div>
 </template>
 
 <script setup lang="ts">

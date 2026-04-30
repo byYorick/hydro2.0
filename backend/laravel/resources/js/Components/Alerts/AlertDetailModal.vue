@@ -6,8 +6,10 @@
     data-testid="zone-alert-details-modal"
     @close="$emit('close')"
   >
-    <div v-if="alert" class="space-y-2.5">
-
+    <div
+      v-if="alert"
+      class="space-y-2.5"
+    >
       <!-- Основные поля: компактная сетка ключ–значение -->
       <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2">
         <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs">
@@ -62,17 +64,38 @@
         v-if="message || description || recommendation"
         class="space-y-1.5"
       >
-        <div v-if="message" class="space-y-0.5">
-          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Сообщение</p>
-          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ message }}</p>
+        <div
+          v-if="message"
+          class="space-y-0.5"
+        >
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+            Сообщение
+          </p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">
+            {{ message }}
+          </p>
         </div>
-        <div v-if="description" class="space-y-0.5">
-          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Описание</p>
-          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ description }}</p>
+        <div
+          v-if="description"
+          class="space-y-0.5"
+        >
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+            Описание
+          </p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">
+            {{ description }}
+          </p>
         </div>
-        <div v-if="recommendation" class="space-y-0.5">
-          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Что делать</p>
-          <p class="text-xs leading-snug text-[color:var(--text-primary)]">{{ recommendation }}</p>
+        <div
+          v-if="recommendation"
+          class="space-y-0.5"
+        >
+          <p class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+            Что делать
+          </p>
+          <p class="text-xs leading-snug text-[color:var(--text-primary)]">
+            {{ recommendation }}
+          </p>
         </div>
       </div>
 
@@ -86,8 +109,14 @@
           <span class="text-[11px] text-[color:var(--text-dim)]">{{ payloadExpanded ? '⌄' : '›' }}</span>
           <span class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Payload</span>
           <div class="ml-auto flex items-center gap-1.5">
-            <span v-if="copyState === 'copied'" class="text-[11px] text-[color:var(--accent-green)]">Скопировано</span>
-            <span v-else-if="copyState === 'failed'" class="text-[11px] text-[color:var(--accent-red)]">Ошибка</span>
+            <span
+              v-if="copyState === 'copied'"
+              class="text-[11px] text-[color:var(--accent-green)]"
+            >Скопировано</span>
+            <span
+              v-else-if="copyState === 'failed'"
+              class="text-[11px] text-[color:var(--accent-red)]"
+            >Ошибка</span>
             <span
               class="h-5 px-2 text-[11px] rounded border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] transition-colors"
               :class="copyState === 'copying' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'"

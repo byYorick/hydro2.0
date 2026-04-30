@@ -11,7 +11,10 @@
             :class="irrigNodeOnline ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--accent-red)]'"
           ></span>
           <span class="text-[10px] font-medium text-[color:var(--text-primary)]">IRR</span>
-          <span class="text-[10px]" :class="irrigNodeOnline ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'">
+          <span
+            class="text-[10px]"
+            :class="irrigNodeOnline ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'"
+          >
             {{ irrigNodeOnline ? 'online' : 'offline' }}
           </span>
         </div>
@@ -53,7 +56,10 @@
       Топология: {{ topologyLabel }}
     </div>
 
-    <div class="mt-2.5 grid gap-2" :class="tankGridClass">
+    <div
+      class="mt-2.5 grid gap-2"
+      :class="tankGridClass"
+    >
       <TankLevelIndicator
         v-for="tank in resolvedTankCards"
         :key="tank.key"

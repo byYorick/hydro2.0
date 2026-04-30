@@ -1,16 +1,33 @@
 <template>
-  <Modal :open="show" title="Привязать рецепт к зоне" @close="$emit('close')">
-    <div v-if="loading" class="text-sm text-neutral-400">Загрузка...</div>
-    <div v-else class="space-y-4">
+  <Modal
+    :open="show"
+    title="Привязать рецепт к зоне"
+    @close="$emit('close')"
+  >
+    <div
+      v-if="loading"
+      class="text-sm text-neutral-400"
+    >
+      Загрузка...
+    </div>
+    <div
+      v-else
+      class="space-y-4"
+    >
       <div>
-        <label for="attach-recipe-select" class="block text-xs text-neutral-400 mb-1">Выберите рецепт</label>
+        <label
+          for="attach-recipe-select"
+          class="block text-xs text-neutral-400 mb-1"
+        >Выберите рецепт</label>
         <select
           id="attach-recipe-select"
-          name="recipe_id"
           v-model="selectedRecipeId"
+          name="recipe_id"
           class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
         >
-          <option :value="null">Выберите рецепт</option>
+          <option :value="null">
+            Выберите рецепт
+          </option>
           <option
             v-for="recipe in recipes"
             :key="recipe.id"
@@ -22,31 +39,49 @@
       </div>
       
       <div v-if="selectedRecipeId">
-        <label for="attach-recipe-start-at" class="block text-xs text-neutral-400 mb-1">Дата начала (опционально)</label>
+        <label
+          for="attach-recipe-start-at"
+          class="block text-xs text-neutral-400 mb-1"
+        >Дата начала (опционально)</label>
         <input
           id="attach-recipe-start-at"
-          name="start_at"
           v-model="startAt"
+          name="start_at"
           type="datetime-local"
           class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
           autocomplete="off"
         />
       </div>
       
-      <div v-if="selectedRecipe && selectedRecipe.phases" class="text-xs text-neutral-400">
-        <div class="font-semibold mb-2">Фазы рецепта:</div>
-        <div v-for="phase in selectedRecipe.phases" :key="phase.id" class="mb-1 pl-2 border-l-2 border-neutral-700">
+      <div
+        v-if="selectedRecipe && selectedRecipe.phases"
+        class="text-xs text-neutral-400"
+      >
+        <div class="font-semibold mb-2">
+          Фазы рецепта:
+        </div>
+        <div
+          v-for="phase in selectedRecipe.phases"
+          :key="phase.id"
+          class="mb-1 pl-2 border-l-2 border-neutral-700"
+        >
           {{ phase.phase_index + 1 }}. {{ phase.name }} — {{ phase.duration_hours }}ч
         </div>
       </div>
     </div>
     
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onAttach"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="!selectedRecipeId || attaching"
+        @click="onAttach"
       >
         {{ attaching ? 'Привязка...' : 'Привязать' }}
       </Button>
@@ -59,11 +94,10 @@ import { ref, computed, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 interface Props {
   show: boolean
@@ -113,17 +147,10 @@ onMounted(() => {
 async function loadRecipes(): Promise<void> {
   loading.value = true
   try {
-    const response = await api.get<{ data?: Recipe[] } | Recipe[]>('/recipes')
-    
-    const data = (response.data as { data?: Recipe[] })?.data || (response.data as Recipe[])
-    // Обрабатываем pagination response
-    if (Array.isArray(data)) {
-      recipes.value = data
-    } else {
-      recipes.value = []
-    }
+    const data = await api.recipes.list()
+    recipes.value = Array.isArray(data) ? data as Recipe[] : []
   } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
+    showToast('Не удалось загрузить список рецептов', 'error')
     logger.error('Failed to load recipes:', error)
   } finally {
     loading.value = false
@@ -135,23 +162,24 @@ async function onAttach() {
   
   attaching.value = true
   try {
-    const payload: any = { recipe_id: selectedRecipeId.value }
+    const payload: { recipe_id: number; start_at?: string } = {
+      recipe_id: selectedRecipeId.value,
+    }
     if (startAt.value) {
       payload.start_at = new Date(startAt.value).toISOString()
     }
-    
-    const response = await api.post(
-      `/zones/${props.zoneId}/attach-recipe`,
-      payload
+
+    const data = await api.zones.attachRecipe<{ status?: string } & Record<string, unknown>>(
+      props.zoneId,
+      payload,
     )
-    
-    // Проверяем успешный ответ
+
     logger.info('[AttachRecipeModal] Response received:', {
-      data: response.data,
-      recipeId: selectedRecipeId.value
+      data,
+      recipeId: selectedRecipeId.value,
     })
-    
-    if (response.data?.status === 'ok' || response.status === 200 || response.status === 201) {
+
+    if (data?.status === 'ok') {
       logger.info('[AttachRecipeModal] Recipe attached successfully, emitting event')
       
       // Эмитим событие для обновления UI и показа уведомления ПЕРЕД закрытием

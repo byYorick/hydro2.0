@@ -59,7 +59,7 @@
         ]"
         :title="`${pill.label}: ${pill.status}`"
       >
-        <span :class="['inline-block w-1.5 h-1.5 rounded-full', dotClass(pill.status)]" />
+        <span :class="['inline-block w-1.5 h-1.5 rounded-full', dotClass(pill.status)]"></span>
         <span class="font-mono">{{ pill.label }}</span>
       </span>
 

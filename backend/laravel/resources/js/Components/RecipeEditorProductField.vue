@@ -1,8 +1,12 @@
 <template>
   <div class="rounded-lg border border-[color:var(--border-muted)] p-2.5 flex flex-col gap-1.5">
     <div class="product-field__header">
-      <div class="text-sm font-bold text-[color:var(--text-primary)]">{{ label }}</div>
-      <div class="text-[12px] text-[color:var(--text-muted)] leading-snug product-field__desc">{{ description || ' ' }}</div>
+      <div class="text-sm font-bold text-[color:var(--text-primary)]">
+        {{ label }}
+      </div>
+      <div class="text-[12px] text-[color:var(--text-muted)] leading-snug product-field__desc">
+        {{ description || ' ' }}
+      </div>
     </div>
 
     <div class="flex gap-1">
@@ -11,8 +15,14 @@
         class="input-field flex-1 min-w-0"
         @input="onProductInput($event)"
       >
-        <option value="">Продукт</option>
-        <option v-for="product in products" :key="product.id" :value="product.id">
+        <option value="">
+          Продукт
+        </option>
+        <option
+          v-for="product in products"
+          :key="product.id"
+          :value="product.id"
+        >
           {{ product.manufacturer }} · {{ product.name }}
         </option>
       </select>
@@ -22,7 +32,25 @@
         title="Создать новый продукт"
         @click="modalOpen = true"
       >
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg
+          class="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><line
+          x1="12"
+          y1="5"
+          x2="12"
+          y2="19"
+        /><line
+          x1="5"
+          y1="12"
+          x2="19"
+          y2="12"
+        /></svg>
       </button>
     </div>
 
@@ -35,7 +63,9 @@
         placeholder="—"
         @input="onRatioInput($event)"
       />
-      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">Доля от EC, %</div>
+      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
+        Доля от EC, %
+      </div>
     </div>
     <div>
       <input
@@ -46,7 +76,9 @@
         placeholder="—"
         @input="onDoseInput($event)"
       />
-      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">Доза, мл/л</div>
+      <div class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
+        Доза, мл/л
+      </div>
     </div>
 
     <NutrientProductCreateModal

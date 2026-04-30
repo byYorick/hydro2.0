@@ -1,6 +1,9 @@
 <template>
   <!-- Collapsed: icon only + tooltip (Teleport → position:fixed, не режется overflow:hidden сайдбара) -->
-  <div v-if="collapsed" class="relative">
+  <div
+    v-if="collapsed"
+    class="relative"
+  >
     <Link
       ref="linkEl"
       :href="href"
@@ -12,6 +15,7 @@
       @mouseenter="onTipEnter"
       @mouseleave="showTip = false"
     >
+      <!-- eslint-disable-next-line vue/no-v-html -->
       <svg
         v-if="icon"
         class="h-5 w-5 shrink-0"
@@ -50,6 +54,7 @@
         : isActive ? 'nav-link--active' : ''
     ]"
   >
+    <!-- eslint-disable-next-line vue/no-v-html -->
     <svg
       v-if="icon && !mobile"
       class="h-4 w-4 shrink-0"

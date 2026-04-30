@@ -223,4 +223,11 @@ export const zonesApi = {
   ): Promise<T> {
     return apiGet<T>(`/zones/${zoneId}/relay-autotune/status`, { params })
   },
+
+  attachRecipe<T = Record<string, unknown>>(
+    zoneId: number,
+    payload: { recipe_id: number; start_at?: string },
+  ): Promise<T> {
+    return apiPost<T>(`/zones/${zoneId}/attach-recipe`, payload)
+  },
 }

@@ -3,7 +3,7 @@ Climate Controller - управление температурой, влажно
 Согласно ZONE_CONTROLLER_FULL.md раздел 5
 """
 from typing import Optional, Dict, Any, List, Tuple
-from common.db import fetch, execute, create_zone_event
+from common.db import fetch, create_zone_event
 from alerts_manager import ensure_alert
 
 
@@ -272,4 +272,3 @@ async def check_humidity_alerts(zone_id: int, humidity: float, target_humidity: 
             'target_humidity': target_humidity,
             'diff': target_humidity - humidity
         })
-

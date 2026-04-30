@@ -1,6 +1,8 @@
 # TASKS_REFACTORING_PLAN.md
 # Задачи по рефакторингу backend (10–20 теплиц, 1–5 зон каждая)
-# Основано на AUDIT_REPORT, AUDIT_ACTION_PLAN, DEEP_BUGS_AND_ARCHITECTURE_ANALYSIS
+# Основано на архивных отчетах `doc_ai/00_ARCHIVE/REPORTS/BACKEND_AUDIT_REPORT_2025_12_08.md`,
+# `doc_ai/00_ARCHIVE/REPORTS/BACKEND_AUDIT_ACTION_PLAN_2025_12_08.md`
+# и `DEEP_BUGS_AND_ARCHITECTURE_ANALYSIS.md`
 
 ## 1. Критические (сначала)
 - Регистрация нод: добавить SELECT FOR UPDATE по hardware_id + retry при UID коллизии.
@@ -41,5 +43,4 @@
 - Telemetry latency p99 ≤ 500 мс при ~100 зонах.
 - Queue overflow incidents: 0 (alerts только при тестах).
 - Ошибки обработки зон < 1% за цикл.
-
 

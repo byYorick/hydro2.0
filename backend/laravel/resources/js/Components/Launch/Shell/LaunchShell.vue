@@ -11,7 +11,7 @@
       v-if="$slots.stepper"
       class="sticky top-12 z-[15] border-b border-[var(--border-muted)] bg-[var(--bg-surface-strong)] backdrop-blur-sm"
     >
-      <slot name="stepper" />
+      <slot name="stepper"></slot>
     </div>
 
     <div class="flex flex-1 min-h-0">

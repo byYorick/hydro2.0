@@ -22,7 +22,10 @@
       </div>
 
       <!-- Кнопка "Загрузить ещё" сверху (старые события) -->
-      <div v-if="paginated && hasMore && events.length > 0" class="text-center">
+      <div
+        v-if="paginated && hasMore && events.length > 0"
+        class="text-center"
+      >
         <button
           type="button"
           :disabled="loadingMore"

@@ -32,7 +32,10 @@
         </div>
         <div class="text-xs text-[color:var(--text-dim)] mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span v-if="zone.greenhouse">{{ zone.greenhouse.name }}</span>
-          <span v-if="zone.recipe" class="truncate">· {{ zone.recipe.name }}</span>
+          <span
+            v-if="zone.recipe"
+            class="truncate"
+          >· {{ zone.recipe.name }}</span>
           <span v-if="zone.devices?.total">· Устр: {{ zone.devices.online }}/{{ zone.devices.total }}</span>
         </div>
       </div>
@@ -73,7 +76,9 @@
       class="rounded-md border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]/10 px-2.5 py-1.5 text-[11px] leading-snug text-[color:var(--accent-red)]"
       data-testid="zone-card-automation-block-reason"
     >
-      <div class="font-medium">{{ automationBlockLabelText }}</div>
+      <div class="font-medium">
+        {{ automationBlockLabelText }}
+      </div>
       <div
         v-if="automationBlockMessageText"
         class="text-[color:var(--text-secondary)] truncate"

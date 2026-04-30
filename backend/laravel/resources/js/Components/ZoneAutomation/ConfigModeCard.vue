@@ -1,5 +1,8 @@
 <template>
-  <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3" data-testid="config-mode-card">
+  <section
+    class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3"
+    data-testid="config-mode-card"
+  >
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
       <div>
         <div class="flex items-center gap-2">
@@ -133,14 +136,18 @@
           type="button"
           class="text-xs px-3 py-1 rounded border border-[color:var(--border-muted)]"
           @click="liveDialog.open = false"
-        >Отмена</button>
+        >
+          Отмена
+        </button>
         <button
           type="button"
           class="text-xs px-3 py-1 rounded bg-[color:var(--accent,#3b82f6)] text-white disabled:opacity-50"
           :disabled="saving || liveDialog.reason.length < 3 || liveDialog.ttlMin < 5"
           data-testid="config-mode-live-confirm"
           @click="confirmLive"
-        >Включить live</button>
+        >
+          Включить live
+        </button>
       </div>
     </div>
 
@@ -165,13 +172,17 @@
           type="button"
           class="text-xs px-3 py-1 rounded border border-[color:var(--border-muted)]"
           @click="extendDialog.open = false"
-        >Отмена</button>
+        >
+          Отмена
+        </button>
         <button
           type="button"
           class="text-xs px-3 py-1 rounded bg-[color:var(--accent,#3b82f6)] text-white disabled:opacity-50"
           :disabled="saving || extendDialog.ttlMin < 5"
           @click="confirmExtend"
-        >Продлить</button>
+        >
+          Продлить
+        </button>
       </div>
     </div>
   </section>

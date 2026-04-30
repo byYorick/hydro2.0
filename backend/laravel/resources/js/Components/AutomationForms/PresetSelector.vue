@@ -22,7 +22,9 @@
         :disabled="!canConfigure"
         @change="onSelectChange"
       >
-        <option value="">— Настроить с нуля —</option>
+        <option value="">
+          — Настроить с нуля —
+        </option>
         <optgroup
           v-if="systemPresets.length > 0"
           label="Системные"
@@ -52,7 +54,7 @@
         v-else
         class="flex items-center gap-2 text-xs text-[var(--text-muted)]"
       >
-        <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+        <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent"></span>
         Загрузка профилей...
       </div>
     </div>
@@ -213,9 +215,10 @@ watch(
 watch(
   () => props.waterForm.systemType,
   () => {
+    const preset = selectedPreset.value
     if (
-      selectedPreset.value &&
-      !filteredPresets.value.some((p) => p.id === selectedPreset.value!.id)
+      preset &&
+      !filteredPresets.value.some((p) => p.id === preset.id)
     ) {
       selectedPreset.value = null
       emit('presetCleared')

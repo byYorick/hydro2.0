@@ -13,6 +13,7 @@ from light_controller import (
     parse_photoperiod,
     get_light_nodes,
     check_light_failure,
+    ensure_light_failure_alert,
 )
 
 
@@ -154,3 +155,12 @@ async def test_check_light_failure_should_be_off():
     failure = await check_light_failure(1, should_be_on=False)
     assert failure is False
 
+
+@pytest.mark.asyncio
+async def test_ensure_light_failure_alert_uses_canonical_alert_manager():
+    with patch("light_controller.ensure_alert") as mock_ensure_alert:
+        await ensure_light_failure_alert(1)
+
+        mock_ensure_alert.assert_called_once()
+        assert mock_ensure_alert.call_args.args[0] == 1
+        assert mock_ensure_alert.call_args.args[1] == "LIGHT_FAILURE"

@@ -42,6 +42,49 @@ Breaking-change: обратная совместимость со старыми
 - Оптимизация параметров
 - Рекомендации по улучшению
 
+#### [AI_ROADMAP.md](AI_ROADMAP.md)
+**Дорожная карта AI/ML слоя**
+- Очередность внедрения pipeline'ов
+- Зависимости между AI/ML направлениями
+- Статусы FULL/CHARTER/IDEA
+
+### AI/ML pipeline plans
+
+#### [ML_FEATURE_PIPELINE.md](ML_FEATURE_PIPELINE.md)
+**Feature pipeline для ML-моделей**
+- Витрины признаков
+- Версионирование feature schemas
+- Shadow/canary lifecycle моделей
+
+#### [VISION_PIPELINE.md](VISION_PIPELINE.md)
+**Computer vision pipeline**
+- Ingest изображений
+- Visual features
+- Интеграция с прогнозами урожая и IPM
+
+#### [IRRIGATION_ML_PIPELINE.md](IRRIGATION_ML_PIPELINE.md)
+**ML pipeline умного полива**
+- ET/VPD baseline
+- Weather forecast integration
+- Advisory/canary контур для irrigation decisions
+
+### AI/ML charters
+
+- [CLIMATE_CONTROL_CHARTER.md](CLIMATE_CONTROL_CHARTER.md)
+- [NUTRIENT_BUDGET_CHARTER.md](NUTRIENT_BUDGET_CHARTER.md)
+- [YIELD_FORECASTING_CHARTER.md](YIELD_FORECASTING_CHARTER.md)
+- [IPM_CHARTER.md](IPM_CHARTER.md)
+- [DIGITAL_TWIN_SIMULATOR_CHARTER.md](DIGITAL_TWIN_SIMULATOR_CHARTER.md)
+- [EXPLAINABILITY_UX_CHARTER.md](EXPLAINABILITY_UX_CHARTER.md)
+- [MULTI_ZONE_COORDINATION_CHARTER.md](MULTI_ZONE_COORDINATION_CHARTER.md)
+- [ENERGY_OPTIMIZATION_CHARTER.md](ENERGY_OPTIMIZATION_CHARTER.md)
+- [ROOT_ZONE_MONITORING_CHARTER.md](ROOT_ZONE_MONITORING_CHARTER.md)
+- [SENSOR_HEALTH_CHARTER.md](SENSOR_HEALTH_CHARTER.md)
+- [UNIFIED_ALERTING_CHARTER.md](UNIFIED_ALERTING_CHARTER.md)
+- [AB_TESTING_CHARTER.md](AB_TESTING_CHARTER.md)
+- [DISASTER_RECOVERY_CHARTER.md](DISASTER_RECOVERY_CHARTER.md)
+- [MOBILE_AR_CHARTER.md](MOBILE_AR_CHARTER.md)
+
 ---
 
 ## 🔗 Связанные разделы
@@ -54,10 +97,11 @@ Breaking-change: обратная совместимость со старыми
 
 ## 🎯 С чего начать
 
-1. **AI архитектура?** → Изучите [AI_ARCH_FULL.md](AI_ARCH_FULL.md)
-2. **Цифровой двойник?** → См. [DIGITAL_TWIN_ENGINE.md](DIGITAL_TWIN_ENGINE.md)
-3. **Симуляция?** → Прочитайте [ZONE_SIMULATION_ENGINE.md](ZONE_SIMULATION_ENGINE.md)
-4. **Оптимизация?** → См. [AI_OPTIMIZATION_ENGINE.md](AI_OPTIMIZATION_ENGINE.md)
+1. **AI/ML roadmap?** → Начните с [AI_ROADMAP.md](AI_ROADMAP.md)
+2. **AI архитектура?** → Изучите [AI_ARCH_FULL.md](AI_ARCH_FULL.md)
+3. **Цифровой двойник?** → См. [DIGITAL_TWIN_ENGINE.md](DIGITAL_TWIN_ENGINE.md)
+4. **Симуляция?** → Прочитайте [ZONE_SIMULATION_ENGINE.md](ZONE_SIMULATION_ENGINE.md)
+5. **Оптимизация?** → См. [AI_OPTIMIZATION_ENGINE.md](AI_OPTIMIZATION_ENGINE.md)
 
 ---
 

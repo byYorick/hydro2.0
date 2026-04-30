@@ -6,13 +6,19 @@
   >
     <!-- Цветная точка -->
     <div class="flex shrink-0 items-center pt-[5px]">
-      <span class="h-1.5 w-1.5 rounded-full shrink-0" :class="eventDotClass(item.kind)"></span>
+      <span
+        class="h-1.5 w-1.5 rounded-full shrink-0"
+        :class="eventDotClass(item.kind)"
+      ></span>
     </div>
 
     <div class="min-w-0 flex-1">
       <!-- Строка: бейдж + время + стрелка -->
       <div class="flex flex-wrap items-center gap-1">
-        <Badge :variant="getEventVariant(item.kind)" size="sm">
+        <Badge
+          :variant="getEventVariant(item.kind)"
+          size="sm"
+        >
           {{ translateEventKind(item.kind) }}
         </Badge>
         <span class="text-[10px] text-[color:var(--text-muted)]">
@@ -40,7 +46,10 @@
         class="mt-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-2"
       >
         <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[10px]">
-          <template v-for="detail in details" :key="detail.label">
+          <template
+            v-for="detail in details"
+            :key="detail.label"
+          >
             <span class="whitespace-nowrap text-[color:var(--text-dim)]">{{ detail.label }}:</span>
             <strong
               class="min-w-0 break-words font-mono leading-snug"

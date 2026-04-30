@@ -284,3 +284,39 @@ async def ensure_no_flow_alert(zone_id: int, flow_value: Optional[float], min_fl
                 'min_flow': min_flow
             }
         )
+
+
+async def execute_fill_mode(
+    zone_id: int,
+    *,
+    target_level: float,
+    mqtt_client: Any,
+    gh_uid: str,
+    max_duration_sec: int,
+) -> Dict[str, Any]:
+    """Legacy water-cycle hook kept fail-closed; AE3 owns production fill flows."""
+    return {
+        "success": False,
+        "error": "legacy_fill_mode_unavailable",
+        "zone_id": zone_id,
+        "target_level": target_level,
+        "max_duration_sec": max_duration_sec,
+    }
+
+
+async def execute_drain_mode(
+    zone_id: int,
+    *,
+    target_level: float,
+    mqtt_client: Any,
+    gh_uid: str,
+    max_duration_sec: int,
+) -> Dict[str, Any]:
+    """Legacy water-cycle hook kept fail-closed; AE3 owns production drain flows."""
+    return {
+        "success": False,
+        "error": "legacy_drain_mode_unavailable",
+        "zone_id": zone_id,
+        "target_level": target_level,
+        "max_duration_sec": max_duration_sec,
+    }

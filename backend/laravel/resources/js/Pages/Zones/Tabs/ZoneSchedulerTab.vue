@@ -28,6 +28,7 @@
           :eta-hint="etaHint"
           :eta-estimated="activeEtaEstimated"
           :end-at="activeEndAt"
+          :format-date-time="formatDateTime"
         />
         <NextUpCard
           :windows="nextExecutableWindows"
@@ -48,6 +49,7 @@
         <SwimlaneTimeline
           :lanes="lanesHistory"
           :horizon="horizon"
+          :format-date-time="formatDateTime"
         />
         <RecentRunsTable
           :runs="recentRuns"
@@ -60,8 +62,9 @@
 
       <template #right>
         <SchedulerAttentionPanel
-          v-if="attentionItems.length > 0"
-          :items="attentionItems"
+          v-if="attentionAlerts.length > 0 || attentionStatus.length > 0"
+          :alert-items="attentionAlerts"
+          :status-items="attentionStatus"
         />
         <CausalChainPanel
           v-if="selectedExecution"
@@ -133,7 +136,8 @@ const {
   executionCounters,
   nextExecutableWindows,
   configOnlyLanes,
-  attentionItems,
+  attentionAlerts,
+  attentionStatus,
   fetchWorkspace,
   fetchAutomationState,
   fetchExecution,

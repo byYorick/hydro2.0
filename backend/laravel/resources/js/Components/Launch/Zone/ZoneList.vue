@@ -4,7 +4,7 @@
       class="grid items-center px-3 py-2 bg-[var(--bg-elevated)] text-[11px] uppercase tracking-wider text-[var(--text-dim)]"
       style="grid-template-columns: 24px 1.4fr 1fr 1fr 90px"
     >
-      <span aria-hidden="true" />
+      <span aria-hidden="true"></span>
       <span>Имя</span>
       <span>Культура</span>
       <span>Стадия</span>
@@ -25,7 +25,7 @@
         <span
           class="inline-block w-2.5 h-2.5 rounded-full"
           :class="activeId === zone.id ? 'bg-brand' : 'bg-[var(--border-strong)]'"
-        />
+        ></span>
       </span>
       <span class="text-sm font-medium text-[var(--text-primary)] truncate">{{ zone.name }}</span>
       <span class="text-xs text-[var(--text-muted)] truncate">{{ zone.plant ?? '—' }}</span>

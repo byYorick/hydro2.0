@@ -1,7 +1,15 @@
 import { mount } from '@vue/test-utils'
+import { computed } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import HeroCountdown from '../HeroCountdown.vue'
 import type { ExecutionRun } from '@/composables/zoneScheduleWorkspaceTypes'
+
+vi.mock('@/composables/useRafCountdown', () => ({
+  useRafCountdown: () => ({
+    label: computed(() => '00:00'),
+    remainingSeconds: computed(() => -55),
+  }),
+}))
 
 vi.mock('@/Components/Badge.vue', () => ({
   default: {
@@ -55,7 +63,26 @@ describe('HeroCountdown.vue', () => {
     // Прогресс-бар: 5 сегментов, 3 первых активны.
     const segments = wrapper.findAll('[class*="flex-1"][class*="rounded-sm"]')
     expect(segments).toHaveLength(5)
+    expect(wrapper.text()).toContain('Технические детали')
     expect(wrapper.text()).toContain('bundle 3.1.7')
     expect(wrapper.text()).toContain('cw-118')
+  })
+
+  it('при просрочке endAt показывает «Ожидалось до» и использует formatDateTime', () => {
+    const wrapper = mount(HeroCountdown, {
+      props: {
+        run: buildRun({ decision_config: undefined }),
+        laneLabel: 'ph_correction',
+        stageLabel: 'x',
+        endAt: '2026-04-30T18:00:00.000Z',
+        formatDateTime: () => '30.04.2026, 21:00',
+      },
+    })
+
+    expect(wrapper.find('[data-testid="scheduler-hero-countdown-value"]').text()).toMatch(/^\+/)
+    expect(wrapper.text()).toContain('таймер истёк — ожидаем завершение')
+    const deadline = wrapper.find('[data-testid="scheduler-hero-expected-deadline"]')
+    expect(deadline.exists()).toBe(true)
+    expect(deadline.text()).toContain('Ожидалось до 30.04.2026, 21:00')
   })
 })

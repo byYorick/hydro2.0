@@ -41,4 +41,27 @@ describe('KpiRow.vue', () => {
     })
     expect(wrapper.find('[data-testid="scheduler-kpi-completed"]').text()).toContain('90%')
   })
+
+  it('показывает предупреждение при доле ошибок ≥25%', () => {
+    const wrapper = mount(KpiRow, {
+      props: {
+        counters: { active: 0, completed_24h: 3, failed_24h: 1 },
+        executableWindowsCount: 0,
+      },
+    })
+    const failedCard = wrapper.find('[data-testid="scheduler-kpi-failed"]')
+    expect(failedCard.text()).toContain('высокая доля ошибок')
+    expect(failedCard.text()).toContain('всего 4 за 24ч')
+  })
+
+  it('не показывает предупреждение о высокой доле при доле ошибок ниже 25%', () => {
+    const wrapper = mount(KpiRow, {
+      props: {
+        counters: { active: 0, completed_24h: 10, failed_24h: 2 },
+        executableWindowsCount: 0,
+      },
+    })
+    expect(wrapper.find('[data-testid="scheduler-kpi-failed"]').text()).not.toContain('высокая доля ошибок')
+    expect(wrapper.find('[data-testid="scheduler-kpi-failed"]').text()).toContain('всего 12 за 24ч')
+  })
 })

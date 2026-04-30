@@ -28,130 +28,175 @@
           {{ waterForm.systemType }}
         </div>
       </Field>
-      <Field :label="meta('tanksCount').label" :hint="meta('tanksCount').hint">
+      <Field
+        :label="meta('tanksCount').label"
+        :hint="meta('tanksCount').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('tanksCount').details"
           :value="waterForm.tanksCount"
           @input="upd('tanksCount', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('workingTankL').label" :hint="meta('workingTankL').hint">
+      <Field
+        :label="meta('workingTankL').label"
+        :hint="meta('workingTankL').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('workingTankL').details"
           :value="waterForm.workingTankL"
           @input="upd('workingTankL', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('cleanTankFillL').label" :hint="meta('cleanTankFillL').hint">
+      <Field
+        :label="meta('cleanTankFillL').label"
+        :hint="meta('cleanTankFillL').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('cleanTankFillL').details"
           :value="waterForm.cleanTankFillL"
           @input="upd('cleanTankFillL', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('nutrientTankTargetL').label" :hint="meta('nutrientTankTargetL').hint">
+      <Field
+        :label="meta('nutrientTankTargetL').label"
+        :hint="meta('nutrientTankTargetL').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('nutrientTankTargetL').details"
           :value="waterForm.nutrientTankTargetL"
           @input="upd('nutrientTankTargetL', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('irrigationBatchL').label" :hint="meta('irrigationBatchL').hint">
+      <Field
+        :label="meta('irrigationBatchL').label"
+        :hint="meta('irrigationBatchL').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('irrigationBatchL').details"
           :value="waterForm.irrigationBatchL"
           @input="upd('irrigationBatchL', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('mainPumpFlowLpm').label" :hint="meta('mainPumpFlowLpm').hint">
+      <Field
+        :label="meta('mainPumpFlowLpm').label"
+        :hint="meta('mainPumpFlowLpm').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('mainPumpFlowLpm').details"
           :value="waterForm.mainPumpFlowLpm"
           @input="upd('mainPumpFlowLpm', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('cleanWaterFlowLpm').label" :hint="meta('cleanWaterFlowLpm').hint">
+      <Field
+        :label="meta('cleanWaterFlowLpm').label"
+        :hint="meta('cleanWaterFlowLpm').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('cleanWaterFlowLpm').details"
           :value="waterForm.cleanWaterFlowLpm"
           @input="upd('cleanWaterFlowLpm', toNum($event))"
-        >
+        />
       </Field>
     </div>
 
     <SectionLabel>Окно наполнения и температура</SectionLabel>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-      <Field :label="meta('fillWindowStart').label" :hint="meta('fillWindowStart').hint">
+      <Field
+        :label="meta('fillWindowStart').label"
+        :hint="meta('fillWindowStart').hint"
+      >
         <input
           v-bind="textAttrs"
           :title="meta('fillWindowStart').details"
           :value="waterForm.fillWindowStart"
           @input="upd('fillWindowStart', toStr($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('fillWindowEnd').label" :hint="meta('fillWindowEnd').hint">
+      <Field
+        :label="meta('fillWindowEnd').label"
+        :hint="meta('fillWindowEnd').hint"
+      >
         <input
           v-bind="textAttrs"
           :title="meta('fillWindowEnd').details"
           :value="waterForm.fillWindowEnd"
           @input="upd('fillWindowEnd', toStr($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('fillTemperatureC').label" :hint="meta('fillTemperatureC').hint">
+      <Field
+        :label="meta('fillTemperatureC').label"
+        :hint="meta('fillTemperatureC').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('fillTemperatureC').details"
           :value="waterForm.fillTemperatureC"
           @input="upd('fillTemperatureC', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('cleanTankFullThreshold').label" :hint="meta('cleanTankFullThreshold').hint">
+      <Field
+        :label="meta('cleanTankFullThreshold').label"
+        :hint="meta('cleanTankFullThreshold').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('cleanTankFullThreshold').details"
           :value="waterForm.cleanTankFullThreshold"
           @input="upd('cleanTankFullThreshold', toNum($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('refillDurationSeconds').label" :hint="meta('refillDurationSeconds').hint">
+      <Field
+        :label="meta('refillDurationSeconds').label"
+        :hint="meta('refillDurationSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('refillDurationSeconds').details"
           :value="waterForm.refillDurationSeconds"
           @input="upd('refillDurationSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('refillTimeoutSeconds').label" :hint="meta('refillTimeoutSeconds').hint">
+      <Field
+        :label="meta('refillTimeoutSeconds').label"
+        :hint="meta('refillTimeoutSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('refillTimeoutSeconds').details"
           :value="waterForm.refillTimeoutSeconds"
           @input="upd('refillTimeoutSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('refillRequiredNodeTypes').label" :hint="meta('refillRequiredNodeTypes').hint">
+      <Field
+        :label="meta('refillRequiredNodeTypes').label"
+        :hint="meta('refillRequiredNodeTypes').hint"
+      >
         <input
           v-bind="textAttrs"
           :title="meta('refillRequiredNodeTypes').details"
           :value="waterForm.refillRequiredNodeTypes"
           placeholder="pump,valve"
           @input="upd('refillRequiredNodeTypes', toStr($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('refillPreferredChannel').label" :hint="meta('refillPreferredChannel').hint">
+      <Field
+        :label="meta('refillPreferredChannel').label"
+        :hint="meta('refillPreferredChannel').hint"
+      >
         <input
           v-bind="textAttrs"
           :title="meta('refillPreferredChannel').details"
           :value="waterForm.refillPreferredChannel"
           @input="upd('refillPreferredChannel', toStr($event))"
-        >
+        />
       </Field>
     </div>
 
@@ -163,15 +208,21 @@
         :title="meta('diagnosticsEnabled').details"
         @update:model-value="(v) => upd('diagnosticsEnabled', v)"
       />
-      <Field :label="meta('diagnosticsIntervalMinutes').label" :hint="meta('diagnosticsIntervalMinutes').hint">
+      <Field
+        :label="meta('diagnosticsIntervalMinutes').label"
+        :hint="meta('diagnosticsIntervalMinutes').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('diagnosticsIntervalMinutes').details"
           :value="waterForm.diagnosticsIntervalMinutes"
           @input="upd('diagnosticsIntervalMinutes', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('diagnosticsWorkflow').label" :hint="meta('diagnosticsWorkflow').hint">
+      <Field
+        :label="meta('diagnosticsWorkflow').label"
+        :hint="meta('diagnosticsWorkflow').hint"
+      >
         <Select
           :title="meta('diagnosticsWorkflow').details"
           :model-value="waterForm.diagnosticsWorkflow ?? 'cycle_start'"
@@ -181,69 +232,93 @@
           @update:model-value="(v: string) => upd('diagnosticsWorkflow', v as 'startup' | 'cycle_start' | 'diagnostics')"
         />
       </Field>
-      <Field :label="meta('estopDebounceMs').label" :hint="meta('estopDebounceMs').hint">
+      <Field
+        :label="meta('estopDebounceMs').label"
+        :hint="meta('estopDebounceMs').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('estopDebounceMs').details"
           :value="waterForm.estopDebounceMs ?? 0"
           @input="upd('estopDebounceMs', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('startupCleanFillTimeoutSeconds').label" :hint="meta('startupCleanFillTimeoutSeconds').hint">
+      <Field
+        :label="meta('startupCleanFillTimeoutSeconds').label"
+        :hint="meta('startupCleanFillTimeoutSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('startupCleanFillTimeoutSeconds').details"
           :value="waterForm.startupCleanFillTimeoutSeconds ?? 0"
           @input="upd('startupCleanFillTimeoutSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('startupSolutionFillTimeoutSeconds').label" :hint="meta('startupSolutionFillTimeoutSeconds').hint">
+      <Field
+        :label="meta('startupSolutionFillTimeoutSeconds').label"
+        :hint="meta('startupSolutionFillTimeoutSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('startupSolutionFillTimeoutSeconds').details"
           :value="waterForm.startupSolutionFillTimeoutSeconds ?? 0"
           @input="upd('startupSolutionFillTimeoutSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('startupPrepareRecirculationTimeoutSeconds').label" :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint">
+      <Field
+        :label="meta('startupPrepareRecirculationTimeoutSeconds').label"
+        :hint="meta('startupPrepareRecirculationTimeoutSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('startupPrepareRecirculationTimeoutSeconds').details"
           :value="waterForm.startupPrepareRecirculationTimeoutSeconds ?? 0"
           @input="upd('startupPrepareRecirculationTimeoutSeconds', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('startupCleanFillRetryCycles').label" :hint="meta('startupCleanFillRetryCycles').hint">
+      <Field
+        :label="meta('startupCleanFillRetryCycles').label"
+        :hint="meta('startupCleanFillRetryCycles').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('startupCleanFillRetryCycles').details"
           :value="waterForm.startupCleanFillRetryCycles ?? 0"
           @input="upd('startupCleanFillRetryCycles', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('cleanFillMinCheckDelayMs').label" :hint="meta('cleanFillMinCheckDelayMs').hint">
+      <Field
+        :label="meta('cleanFillMinCheckDelayMs').label"
+        :hint="meta('cleanFillMinCheckDelayMs').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('cleanFillMinCheckDelayMs').details"
           :value="waterForm.cleanFillMinCheckDelayMs ?? 0"
           @input="upd('cleanFillMinCheckDelayMs', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('solutionFillCleanMinCheckDelayMs').label" :hint="meta('solutionFillCleanMinCheckDelayMs').hint">
+      <Field
+        :label="meta('solutionFillCleanMinCheckDelayMs').label"
+        :hint="meta('solutionFillCleanMinCheckDelayMs').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('solutionFillCleanMinCheckDelayMs').details"
           :value="waterForm.solutionFillCleanMinCheckDelayMs ?? 0"
           @input="upd('solutionFillCleanMinCheckDelayMs', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('solutionFillSolutionMinCheckDelayMs').label" :hint="meta('solutionFillSolutionMinCheckDelayMs').hint">
+      <Field
+        :label="meta('solutionFillSolutionMinCheckDelayMs').label"
+        :hint="meta('solutionFillSolutionMinCheckDelayMs').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('solutionFillSolutionMinCheckDelayMs').details"
           :value="waterForm.solutionFillSolutionMinCheckDelayMs ?? 0"
           @input="upd('solutionFillSolutionMinCheckDelayMs', toInt($event))"
-        >
+        />
       </Field>
       <ToggleField
         :model-value="!!waterForm.recirculationStopOnSolutionMin"
@@ -263,13 +338,16 @@
         :title="meta('enableDrainControl').details"
         @update:model-value="(v) => upd('enableDrainControl', v)"
       />
-      <Field :label="meta('drainTargetPercent').label" :hint="meta('drainTargetPercent').hint">
+      <Field
+        :label="meta('drainTargetPercent').label"
+        :hint="meta('drainTargetPercent').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('drainTargetPercent').details"
           :value="waterForm.drainTargetPercent"
           @input="upd('drainTargetPercent', toNum($event))"
-        >
+        />
       </Field>
       <ToggleField
         :model-value="!!waterForm.valveSwitching"
@@ -287,21 +365,27 @@
         :title="meta('solutionChangeEnabled').details"
         @update:model-value="(v) => upd('solutionChangeEnabled', v)"
       />
-      <Field :label="meta('solutionChangeIntervalMinutes').label" :hint="meta('solutionChangeIntervalMinutes').hint">
+      <Field
+        :label="meta('solutionChangeIntervalMinutes').label"
+        :hint="meta('solutionChangeIntervalMinutes').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('solutionChangeIntervalMinutes').details"
           :value="waterForm.solutionChangeIntervalMinutes"
           @input="upd('solutionChangeIntervalMinutes', toInt($event))"
-        >
+        />
       </Field>
-      <Field :label="meta('solutionChangeDurationSeconds').label" :hint="meta('solutionChangeDurationSeconds').hint">
+      <Field
+        :label="meta('solutionChangeDurationSeconds').label"
+        :hint="meta('solutionChangeDurationSeconds').hint"
+      >
         <input
           v-bind="numAttrs"
           :title="meta('solutionChangeDurationSeconds').details"
           :value="waterForm.solutionChangeDurationSeconds"
           @input="upd('solutionChangeDurationSeconds', toInt($event))"
-        >
+        />
       </Field>
       <Field
         :label="meta('manualIrrigationSeconds').label"
@@ -312,7 +396,7 @@
           :title="meta('manualIrrigationSeconds').details"
           :value="waterForm.manualIrrigationSeconds"
           @input="upd('manualIrrigationSeconds', toInt($event))"
-        >
+        />
       </Field>
     </div>
 

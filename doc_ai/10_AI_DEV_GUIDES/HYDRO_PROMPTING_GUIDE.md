@@ -23,7 +23,7 @@ A practical checklist for crafting clear, project-aware prompts when working on 
 - **MQTT/transport and integrations:** enumerate topics, payload, QoS, and idempotency; clarify serialization, retries/timeouts, and offline/redelivery handling.
 - **Infrastructure and CI/CD:** name target environments, variables and secrets, Terraform/Ansible/Helm constraints, and commands to validate the pipeline; ask for rollback or mitigation steps.
 - **Firmware and devices:** name the board/controller, memory/power limits, exchange protocol (UART/CAN/MQTT), flashing steps, and bench/emulator tests.
-- **Documentation and specs:** define the target section, format (lists, tables, diagrams), language (RU/EN), and whether to mirror changes into `docs/`.
+- **Documentation and specs:** define the target section under `doc_ai/`, format (lists, tables, diagrams), language (RU/EN), and compatibility notes when protocols or data contracts change.
 
 ## Base prompt template
 Adapt as needed:

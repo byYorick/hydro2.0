@@ -3,7 +3,6 @@
     <div class="app-shell">
       <div class="min-h-screen text-[color:var(--text-primary)]">
         <div class="flex h-screen overflow-hidden">
-
           <!-- Desktop Sidebar -->
           <aside
             class="hidden lg:flex shrink-0 flex-col border-r border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] backdrop-blur-xl glass-panel transition-all duration-300 relative z-20"
@@ -16,9 +15,16 @@
             >
               <div class="h-7 w-7 shrink-0 rounded-lg bg-[linear-gradient(135deg,var(--accent-green),var(--accent-cyan))] shadow-[0_0_0_1px_var(--badge-success-border)]"></div>
               <Transition name="fade-slide">
-                <div v-if="!collapsed" class="min-w-0">
-                  <div class="text-sm font-semibold tracking-tight leading-none">hydro 2.0</div>
-                  <div class="text-[10px] uppercase tracking-[0.2em] text-[color:var(--text-dim)] mt-0.5">agronomy deck</div>
+                <div
+                  v-if="!collapsed"
+                  class="min-w-0"
+                >
+                  <div class="text-sm font-semibold tracking-tight leading-none">
+                    hydro 2.0
+                  </div>
+                  <div class="text-[10px] uppercase tracking-[0.2em] text-[color:var(--text-dim)] mt-0.5">
+                    agronomy deck
+                  </div>
                 </div>
               </Transition>
             </div>
@@ -43,9 +49,14 @@
                   <svg
                     class="h-4 w-4 transition-transform duration-300"
                     :class="collapsed ? 'rotate-180' : ''"
-                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
                   >
-                    <path d="M15 18l-6-6 6-6"/>
+                    <path d="M15 18l-6-6 6-6" />
                   </svg>
                 </button>
               </div>
@@ -69,12 +80,25 @@
                   class="p-2 rounded-md text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
                   @click="showMobileMenu = false"
                 >
-                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  <svg
+                    class="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
-              <nav class="p-4 space-y-1 overflow-y-auto" @click="showMobileMenu = false">
+              <nav
+                class="p-4 space-y-1 overflow-y-auto"
+                @click="showMobileMenu = false"
+              >
                 <RoleBasedNavigation />
               </nav>
             </div>
@@ -93,8 +117,18 @@
                   class="p-2 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
                   @click="showMobileMenu = !showMobileMenu"
                 >
-                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                  <svg
+                    class="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
                   </svg>
                 </button>
                 <span class="text-base font-semibold">hydro 2.0</span>
@@ -106,7 +140,10 @@
               <div class="glass-panel border border-[color:var(--border-muted)] px-3 py-1.5 rounded-xl shadow-[var(--shadow-card)]">
                 <Breadcrumbs />
               </div>
-              <Transition name="page" mode="out-in">
+              <Transition
+                name="page"
+                mode="out-in"
+              >
                 <div :key="$page.url">
                   <slot></slot>
                 </div>
@@ -115,7 +152,6 @@
             <CommandPalette />
             <ToastContainer />
             <MobileNavigation />
-
           </main>
 
           <aside class="hidden xl:flex w-80 shrink-0 border-l border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] glass-panel flex-col h-screen">

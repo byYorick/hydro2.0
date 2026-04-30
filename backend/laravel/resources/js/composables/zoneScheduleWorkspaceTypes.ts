@@ -175,6 +175,11 @@ export interface LaneHistoryPoint {
   /** Позиция метки на оси времени в процентах (0 — начало горизонта, 100 — его конец). */
   t: number
   s: LaneHistoryStatus
+  /** Исполнение из истории (не окно плана). */
+  kind?: 'executed' | 'planned'
+  execution_id?: string | null
+  /** ISO-время события на оси (для подсказок). */
+  at?: string | null
 }
 
 export interface LaneHistory {

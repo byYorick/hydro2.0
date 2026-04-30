@@ -47,7 +47,7 @@
         :checked="state.showHints"
         class="w-4 h-4 accent-brand"
         @change="setShowHints(($event.target as HTMLInputElement).checked)"
-      >
+      />
     </label>
 
     <label class="flex items-center justify-between gap-2 text-sm cursor-pointer">
@@ -57,7 +57,7 @@
         :checked="theme.isDark.value"
         class="w-4 h-4 accent-brand"
         @change="theme.toggleTheme()"
-      >
+      />
     </label>
 
     <div

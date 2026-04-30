@@ -33,13 +33,18 @@
         class="rounded-md border border-amber-400/60 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-900 dark:text-amber-100"
         data-testid="recipe-active-usage-warning"
       >
-        <div class="font-semibold mb-1">⚠ Рецепт активен в {{ activeUsage.count }} зон(е/ах)</div>
+        <div class="font-semibold mb-1">
+          ⚠ Рецепт активен в {{ activeUsage.count }} зон(е/ах)
+        </div>
         <div class="text-xs leading-relaxed">
           Сохранение создаст <b>новую DRAFT-ревизию</b> и опубликует её. Активные циклы продолжат работать
           на <b>текущей PUBLISHED-версии</b> до явного переключения через «Сменить ревизию» в зоне.
         </div>
         <ul class="mt-1.5 text-xs space-y-0.5">
-          <li v-for="item in activeUsage.active_cycles" :key="item.cycle_id">
+          <li
+            v-for="item in activeUsage.active_cycles"
+            :key="item.cycle_id"
+          >
             • Зона <b>{{ item.zone_name || `#${item.zone_id}` }}</b> — ревизия v{{ item.revision_number }} ({{ item.status }})
           </li>
         </ul>

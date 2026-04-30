@@ -96,6 +96,9 @@ class _MockTaskRepo:
     async def list_for_startup_recovery(self) -> list[AutomationTask]:
         return self._tasks
 
+    async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[dict]:
+        return []
+
     async def fail_for_recovery(self, *, task_id, error_code, error_message, now) -> AutomationTask:
         self.failed.append({"task_id": task_id, "error_code": error_code})
         # Return a failed version of the task

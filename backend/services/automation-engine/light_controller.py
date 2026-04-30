@@ -4,8 +4,8 @@ Light Controller - управление освещением и фотопери
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, time
-from common.db import fetch, create_zone_event
-from common.alerts import create_alert, AlertSource, AlertCode
+from common.db import fetch
+from alerts_manager import ensure_alert
 
 
 # Пороги для обнаружения света
@@ -232,42 +232,10 @@ async def check_and_control_lighting(
 
 async def ensure_light_failure_alert(zone_id: int) -> None:
     """
-    Создание/обновление алерта LIGHT_FAILURE.
+    Публикация LIGHT_FAILURE через единый lifecycle alert contract.
     """
-    # Проверяем, есть ли уже активный алерт
-    rows = await fetch(
-        """
-        SELECT id
-        FROM alerts
-        WHERE zone_id = $1 AND type = 'LIGHT_FAILURE' AND status = 'ACTIVE'
-        """,
+    await ensure_alert(
         zone_id,
+        "LIGHT_FAILURE",
+        {"message": "Light should be on but sensor readings indicate failure"},
     )
-    
-    if not rows:
-        # Создаем новый алерт
-        await create_alert(
-            zone_id=zone_id,
-            source=AlertSource.BIZ.value,
-            code=AlertCode.BIZ_LIGHT_FAILURE.value,
-            type='LIGHT_FAILURE',
-            details={'message': 'Light should be on but sensor readings indicate failure'}
-        )
-        # Создаем событие
-        await create_zone_event(
-            zone_id,
-            'LIGHT_FAILURE',
-            {
-                'message': 'Light should be on but sensor readings indicate failure'
-            }
-        )
-        # Создаем событие ALERT_CREATED
-        await create_zone_event(
-            zone_id,
-            'ALERT_CREATED',
-            {
-                'alert_type': 'LIGHT_FAILURE',
-                'message': 'Light should be on but sensor readings indicate failure'
-            }
-        )
-

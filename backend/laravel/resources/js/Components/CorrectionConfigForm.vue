@@ -11,7 +11,7 @@
           tone="brand"
         >
           <template #icon>
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand" />
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-brand"></span>
           </template>
           изменено в форме
         </Chip>
@@ -183,7 +183,7 @@
             >
               Экспорт YAML
             </button>
-            <div class="h-px bg-[var(--border-muted)]" />
+            <div class="h-px bg-[var(--border-muted)]"></div>
             <button
               type="button"
               :class="[menuItemClass, 'text-alert hover:bg-alert-soft']"
@@ -601,7 +601,9 @@
       >
         <div class="w-[min(960px,95vw)] max-h-[90vh] flex flex-col rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface-strong)] shadow-2xl overflow-hidden">
           <header class="flex items-center gap-3 px-4 py-3 border-b border-[var(--border-muted)]">
-            <h3 class="text-sm font-semibold text-[var(--text-primary)]">{{ diffTitle }}</h3>
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">
+              {{ diffTitle }}
+            </h3>
             <span class="text-[11px] font-mono text-[var(--text-dim)]">{{ diffCrumb }}</span>
             <button
               type="button"
@@ -634,7 +636,9 @@
                   :key="`b-${i}`"
                   :class="['flex gap-2 px-2 py-0.5', diffLineClass(line.t)]"
                 >
-                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">{{ line.n }}</div>
+                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">
+                    {{ line.n }}
+                  </div>
                   <pre class="flex-1 whitespace-pre-wrap break-all">{{ line.c }}</pre>
                 </div>
               </div>
@@ -650,7 +654,9 @@
                   :key="`a-${i}`"
                   :class="['flex gap-2 px-2 py-0.5', diffLineClass(line.t)]"
                 >
-                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">{{ line.n }}</div>
+                  <div class="w-8 text-right text-[var(--text-dim)] flex-shrink-0">
+                    {{ line.n }}
+                  </div>
                   <pre class="flex-1 whitespace-pre-wrap break-all">{{ line.c }}</pre>
                 </div>
               </div>
@@ -669,7 +675,7 @@
             >
               Закрыть
             </Button>
-            <div class="flex-1" />
+            <div class="flex-1"></div>
             <Button
               variant="secondary"
               @click="copyDiffText"
@@ -725,7 +731,7 @@
                 :class="[inputCls, 'min-h-[80px] resize-y']"
                 placeholder="Когда использовать этот пресет, какие цели"
                 data-testid="correction-config-new-preset-description"
-              />
+              ></textarea>
             </Field>
           </div>
           <footer class="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-muted)] justify-end">

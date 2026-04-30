@@ -2,187 +2,187 @@
   <Head title="Запуск цикла" />
   <AppLayout>
     <LaunchShell>
-    <template #topbar>
-      <LaunchTopBar
-        :user-email="userEmail"
-        :quick-jump-steps="stepperSteps"
-        @jump="onStepSelect"
-      >
-        <template
-          v-if="breadcrumbZoneName"
-          #breadcrumbs
+      <template #topbar>
+        <LaunchTopBar
+          :user-email="userEmail"
+          :quick-jump-steps="stepperSteps"
+          @jump="onStepSelect"
         >
-          <Link
-            :href="dashboardHref"
-            class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          <template
+            v-if="breadcrumbZoneName"
+            #breadcrumbs
           >
-            Dashboard
-          </Link>
-          <span class="text-[var(--text-dim)]">/</span>
-          <Link
-            :href="zonesHref"
-            class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          >
-            Зоны
-          </Link>
-          <span class="text-[var(--text-dim)]">/</span>
-          <span class="text-[var(--text-primary)] font-mono">{{ breadcrumbZoneName }}</span>
-          <span class="text-[var(--text-dim)]">/</span>
-          <span class="text-[var(--text-primary)]">Мастер запуска</span>
-        </template>
-      </LaunchTopBar>
-    </template>
+            <Link
+              :href="dashboardHref"
+              class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              Dashboard
+            </Link>
+            <span class="text-[var(--text-dim)]">/</span>
+            <Link
+              :href="zonesHref"
+              class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              Зоны
+            </Link>
+            <span class="text-[var(--text-dim)]">/</span>
+            <span class="text-[var(--text-primary)] font-mono">{{ breadcrumbZoneName }}</span>
+            <span class="text-[var(--text-dim)]">/</span>
+            <span class="text-[var(--text-primary)]">Мастер запуска</span>
+          </template>
+        </LaunchTopBar>
+      </template>
 
-    <template #stepper>
-      <LaunchStepper
-        v-if="stepperSteps.length > 0"
-        :steps="stepperSteps"
-        :active="activeIndex"
-        :completion="completion"
-        @select="onStepSelect"
-      />
-    </template>
+      <template #stepper>
+        <LaunchStepper
+          v-if="stepperSteps.length > 0"
+          :steps="stepperSteps"
+          :active="activeIndex"
+          :completion="completion"
+          @select="onStepSelect"
+        />
+      </template>
 
-    <div
-      v-if="manifestQuery.isLoading.value"
-      class="grid gap-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] p-4"
-      data-test="launch-manifest-skeleton"
-      aria-busy="true"
-    >
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <div class="h-3 w-24 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
-          <div class="mt-2 h-6 w-56 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
-        </div>
-        <div class="hidden h-7 w-28 animate-pulse rounded-full bg-[var(--bg-elevated)] sm:block"></div>
-      </div>
-      <div class="grid gap-3 lg:grid-cols-[1fr_320px]">
-        <div class="grid gap-3">
-          <div
-            v-for="i in 3"
-            :key="i"
-            class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"
-          ></div>
-        </div>
-        <div class="hidden grid gap-3 lg:grid">
-          <div class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
-          <div class="h-36 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-else-if="manifestQuery.isError.value"
-      class="px-4 py-3 rounded-md border border-alert bg-alert-soft text-sm text-alert flex items-center gap-2"
-    >
-      <span>Не удалось загрузить manifest: {{ (manifestQuery.error.value as Error)?.message }}</span>
-      <Button
-        size="sm"
-        variant="secondary"
-        @click="() => manifestQuery.refetch()"
+      <div
+        v-if="manifestQuery.isLoading.value"
+        class="grid gap-3 rounded-md border border-[var(--border-muted)] bg-[var(--bg-surface)] p-4"
+        data-test="launch-manifest-skeleton"
+        aria-busy="true"
       >
-        Повторить
-      </Button>
-    </div>
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="h-3 w-24 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
+            <div class="mt-2 h-6 w-56 animate-pulse rounded bg-[var(--bg-elevated)]"></div>
+          </div>
+          <div class="hidden h-7 w-28 animate-pulse rounded-full bg-[var(--bg-elevated)] sm:block"></div>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-[1fr_320px]">
+          <div class="grid gap-3">
+            <div
+              v-for="i in 3"
+              :key="i"
+              class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"
+            ></div>
+          </div>
+          <div class="hidden grid gap-3 lg:grid">
+            <div class="h-24 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
+            <div class="h-36 animate-pulse rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)]"></div>
+          </div>
+        </div>
+      </div>
 
-    <template v-else-if="manifest && stepperSteps.length > 0">
-      <StepHeader
-        :step="currentStepDef"
-        :index="activeIndex"
-        :total="stepperSteps.length"
-      />
-
-      <ZoneStep
-        v-if="currentStep === 'zone'"
-        :model-value="state.zone_id"
-        @update:model-value="onZoneSelected"
-      />
-
-      <RecipeStep
-        v-else-if="currentStep === 'recipe'"
-        :recipe-revision-id="state.recipe_revision_id"
-        :plant-id="state.plant_id"
-        :planting-at="state.planting_at"
-        :batch-label="state.batch_label"
-        :notes="state.notes"
-        :recipes="recipeOptions"
-        :plants="plantOptions"
-        :recipe-phases="(recipePhases as never)"
-        :errors="errors"
-        @update:recipe-revision-id="updateField('recipe_revision_id', $event)"
-        @update:plant-id="updateField('plant_id', $event)"
-        @update:planting-at="updateField('planting_at', $event)"
-        @update:batch-label="updateField('batch_label', $event)"
-        @update:notes="updateField('notes', $event)"
-        @refresh-plants="loadReferenceData"
-        @refresh-recipes="loadReferenceData"
-      />
-
-      <AutomationStep
-        v-else-if="currentStep === 'automation'"
-        :zone-id="state.zone_id"
-        :current-recipe-phase="currentRecipePhase"
-        :recipe-summary="recipeSummary"
-        @update:profile="onAutomationProfileUpdate"
-      />
-
-      <CalibrationStep
-        v-else-if="currentStep === 'calibration'"
-        :zone-id="state.zone_id"
-        :phase-targets="phaseTargetsForPid"
-        :readiness-blockers="readinessBlockers"
-        @calibration-updated="onCalibrationUpdated"
-      />
-
-      <PreviewStep
-        v-else-if="currentStep === 'preview'"
-        :payload-preview="state"
-        :errors="errorList"
-        :recipe-phases="recipePhases"
-        :automation-profile="automationProfile"
-        :available-nodes="availableNodesForPreview"
-        :current-recipe-phase="currentRecipePhase"
-        :recipe-name="recipeSummary?.name ?? null"
-        :recipe-revision-label="recipeSummary?.revisionLabel ?? null"
-        :zone-name="zoneNameById[state.zone_id ?? 0] ?? null"
-        :plant-name="plantNameById[state.plant_id ?? 0] ?? null"
-        :readiness-blockers="manifest.readiness.blockers"
-        :readiness-warnings="manifest.readiness.warnings"
-        :ae3-online="ae3Online"
-        @launch="handleSubmit"
+      <div
+        v-else-if="manifestQuery.isError.value"
+        class="px-4 py-3 rounded-md border border-alert bg-alert-soft text-sm text-alert flex items-center gap-2"
       >
-        <template #diff-preview>
-          <DiffPreview
-            :current="currentLogicProfile"
-            :next="mergedLogicProfile"
-          />
-        </template>
-      </PreviewStep>
-    </template>
+        <span>Не удалось загрузить manifest: {{ (manifestQuery.error.value as Error)?.message }}</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="() => manifestQuery.refetch()"
+        >
+          Повторить
+        </Button>
+      </div>
 
-    <template #footer>
-      <LaunchFooterNav
-        v-if="stepperSteps.length > 0"
-        :active="activeIndex"
-        :total="stepperSteps.length"
-        :completion="completion"
-        :can-launch="canLaunch"
-        :submitting="submitting"
-        :blocker-reason="footerBlockerReason"
-        :blockers-count="readinessBlockers.length"
-        @back="goBack"
-        @next="goNext"
-        @launch="handleSubmit"
-        @show-blockers="readinessBlockersOpen = true"
+      <template v-else-if="manifest && stepperSteps.length > 0">
+        <StepHeader
+          :step="currentStepDef"
+          :index="activeIndex"
+          :total="stepperSteps.length"
+        />
+
+        <ZoneStep
+          v-if="currentStep === 'zone'"
+          :model-value="state.zone_id"
+          @update:model-value="onZoneSelected"
+        />
+
+        <RecipeStep
+          v-else-if="currentStep === 'recipe'"
+          :recipe-revision-id="state.recipe_revision_id"
+          :plant-id="state.plant_id"
+          :planting-at="state.planting_at"
+          :batch-label="state.batch_label"
+          :notes="state.notes"
+          :recipes="recipeOptions"
+          :plants="plantOptions"
+          :recipe-phases="(recipePhases as never)"
+          :errors="errors"
+          @update:recipe-revision-id="updateField('recipe_revision_id', $event)"
+          @update:plant-id="updateField('plant_id', $event)"
+          @update:planting-at="updateField('planting_at', $event)"
+          @update:batch-label="updateField('batch_label', $event)"
+          @update:notes="updateField('notes', $event)"
+          @refresh-plants="loadReferenceData"
+          @refresh-recipes="loadReferenceData"
+        />
+
+        <AutomationStep
+          v-else-if="currentStep === 'automation'"
+          :zone-id="state.zone_id"
+          :current-recipe-phase="currentRecipePhase"
+          :recipe-summary="recipeSummary"
+          @update:profile="onAutomationProfileUpdate"
+        />
+
+        <CalibrationStep
+          v-else-if="currentStep === 'calibration'"
+          :zone-id="state.zone_id"
+          :phase-targets="phaseTargetsForPid"
+          :readiness-blockers="readinessBlockers"
+          @calibration-updated="onCalibrationUpdated"
+        />
+
+        <PreviewStep
+          v-else-if="currentStep === 'preview'"
+          :payload-preview="state"
+          :errors="errorList"
+          :recipe-phases="recipePhases"
+          :automation-profile="automationProfile"
+          :available-nodes="availableNodesForPreview"
+          :current-recipe-phase="currentRecipePhase"
+          :recipe-name="recipeSummary?.name ?? null"
+          :recipe-revision-label="recipeSummary?.revisionLabel ?? null"
+          :zone-name="zoneNameById[state.zone_id ?? 0] ?? null"
+          :plant-name="plantNameById[state.plant_id ?? 0] ?? null"
+          :readiness-blockers="manifest.readiness.blockers"
+          :readiness-warnings="manifest.readiness.warnings"
+          :ae3-online="ae3Online"
+          @launch="handleSubmit"
+        >
+          <template #diff-preview>
+            <DiffPreview
+              :current="currentLogicProfile"
+              :next="mergedLogicProfile"
+            />
+          </template>
+        </PreviewStep>
+      </template>
+
+      <template #footer>
+        <LaunchFooterNav
+          v-if="stepperSteps.length > 0"
+          :active="activeIndex"
+          :total="stepperSteps.length"
+          :completion="completion"
+          :can-launch="canLaunch"
+          :submitting="submitting"
+          :blocker-reason="footerBlockerReason"
+          :blockers-count="readinessBlockers.length"
+          @back="goBack"
+          @next="goNext"
+          @launch="handleSubmit"
+          @show-blockers="readinessBlockersOpen = true"
+        />
+      </template>
+      <BlockersDrawer
+        :open="readinessBlockersOpen"
+        :blockers="readinessBlockerContracts"
+        title="Readiness blockers"
+        @close="readinessBlockersOpen = false"
+        @navigate="onReadinessBlockerNavigate"
       />
-    </template>
-    <BlockersDrawer
-      :open="readinessBlockersOpen"
-      :blockers="readinessBlockerContracts"
-      title="Readiness blockers"
-      @close="readinessBlockersOpen = false"
-      @navigate="onReadinessBlockerNavigate"
-    />
     </LaunchShell>
   </AppLayout>
 </template>
@@ -197,10 +197,6 @@ import LaunchStepper from '@/Components/Launch/Shell/LaunchStepper.vue'
 import LaunchFooterNav from '@/Components/Launch/Shell/LaunchFooterNav.vue'
 import BlockersDrawer, { type BlockerContract } from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import StepHeader from '@/Components/Launch/Shell/StepHeader.vue'
-import type {
-  LaunchStep,
-  StepCompletion,
-} from '@/Components/Launch/Shell/types'
 import ZoneStep from '@/Components/Launch/ZoneStep.vue'
 import RecipeStep from '@/Components/Launch/RecipeStep.vue'
 import AutomationStep from '@/Components/Launch/AutomationStep.vue'

@@ -17,6 +17,9 @@ class _TaskRepoStub:
     async def list_for_startup_recovery(self) -> list[object]:
         return [object(), object(), object()]
 
+    async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[dict]:
+        return []
+
 
 @pytest.mark.asyncio
 async def test_startup_recovery_records_pass_and_task_outcome_metrics(monkeypatch) -> None:

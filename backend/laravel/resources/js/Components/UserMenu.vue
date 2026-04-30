@@ -4,7 +4,10 @@
     class="relative"
   >
     <!-- Collapsed: только аватар с tooltip -->
-    <div v-if="collapsed" class="relative group/user flex justify-center">
+    <div
+      v-if="collapsed"
+      class="relative group/user flex justify-center"
+    >
       <button
         class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-medium text-[color:var(--text-muted)] bg-[color:var(--bg-elevated)] hover:ring-2 hover:ring-[color:var(--accent-green)]/40 transition-all"
         :class="{ 'ring-2 ring-[color:var(--accent-green)]/40': open }"
@@ -30,15 +33,26 @@
         {{ userInitials }}
       </div>
       <div class="flex-1 min-w-0 text-left">
-        <div class="text-xs font-medium text-[color:var(--text-primary)] truncate">{{ user?.name }}</div>
-        <div class="text-[10px] text-[color:var(--text-muted)] truncate">{{ translateRole(user?.role) }}</div>
+        <div class="text-xs font-medium text-[color:var(--text-primary)] truncate">
+          {{ user?.name }}
+        </div>
+        <div class="text-[10px] text-[color:var(--text-muted)] truncate">
+          {{ translateRole(user?.role) }}
+        </div>
       </div>
       <svg
         class="w-3.5 h-3.5 shrink-0 text-[color:var(--text-muted)] transition-transform"
         :class="{ 'rotate-180': open }"
-        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
       >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M5 15l7-7 7 7"
+        />
       </svg>
     </button>
 

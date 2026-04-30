@@ -8,7 +8,7 @@ import axios, {
 } from 'axios'
 import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
-import type { ToastHandler } from '@/utils/apiClient'
+import type { ToastHandler } from '@/services/api'
 
 export type { ToastHandler }
 

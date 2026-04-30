@@ -48,7 +48,7 @@
                 v-if="rowStatus(row.key, true).pending"
                 #icon
               >
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse"></span>
               </template>
               {{ rowStatus(row.key, true).label }}
             </Chip>
@@ -67,7 +67,7 @@
                   <span
                     class="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent"
                     aria-hidden="true"
-                  />
+                  ></span>
                   Проверка…
                 </span>
                 <span v-else>Проверить</span>
@@ -86,7 +86,7 @@
                   <span
                     class="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent"
                     aria-hidden="true"
-                  />
+                  ></span>
                   Привязка…
                 </span>
                 <span v-else>Привязать</span>
@@ -170,7 +170,7 @@
                 v-if="rowStatus(row.key, false).pending"
                 #icon
               >
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse" />
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-warn animate-pulse"></span>
               </template>
               {{ rowStatus(row.key, false).label }}
             </Chip>
@@ -189,7 +189,7 @@
                   <span
                     class="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent"
                     aria-hidden="true"
-                  />
+                  ></span>
                   Проверка…
                 </span>
                 <span v-else>Проверить</span>
@@ -208,7 +208,7 @@
                   <span
                     class="inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent"
                     aria-hidden="true"
-                  />
+                  ></span>
                   Привязка…
                 </span>
                 <span v-else>Привязать</span>

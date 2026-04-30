@@ -1,6 +1,7 @@
 # AI_AGENTS_DETAILED_PLAN.md
 # Детальный план для ИИ‑агентов (масштаб: 10–20 теплиц, 1–5 зон в каждой)
-# Основано на AI_ASSISTANT_DEV_GUIDE.md и результатах AUDIT_REPORT / DEEP_BUGS_AND_ARCHITECTURE_ANALYSIS
+# Основано на AI_ASSISTANT_DEV_GUIDE.md, архивном `00_ARCHIVE/REPORTS/BACKEND_AUDIT_REPORT_2025_12_08.md`
+# и результатах DEEP_BUGS_AND_ARCHITECTURE_ANALYSIS
 
 ## 1. Цель и ограничения
 - Обработать 10–20 теплиц (суммарно 10–100 зон), без деградации latency и потери данных.
@@ -98,5 +99,4 @@
 1) Критика: race condition регистрации, advisory lock в PublishNodeConfigJob, optimistic/pessimistic locking, HMAC команд, rate limit/IP whitelist.
 2) Масштаб: adaptive concurrency + batch telemetry + алерты/метрики.
 3) Качество: Form Requests, Policies, Resources, тесты, документация.
-
 

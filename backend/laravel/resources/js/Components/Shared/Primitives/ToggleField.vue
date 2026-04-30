@@ -22,13 +22,13 @@
           'absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-[left] duration-150',
           modelValue ? 'left-[14px]' : 'left-0.5',
         ]"
-      />
+      ></span>
     </button>
     <span
       v-if="label"
       class="font-mono text-[11px] text-[var(--text-muted)]"
     >{{ label }}</span>
-    <slot />
+    <slot></slot>
   </label>
 </template>
 

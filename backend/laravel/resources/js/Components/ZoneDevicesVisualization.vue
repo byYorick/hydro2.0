@@ -142,7 +142,8 @@
                 />
               </div>
               
-              <!-- Иконка устройства -->
+              <!-- Иконка устройства: SVG из внутреннего whitelist типов -->
+              <!-- eslint-disable-next-line vue/no-v-html -->
               <div class="w-8 h-8 sm:w-10 sm:h-10 mb-1 text-[color:var(--text-dim)]" v-html="getDeviceIconSvg(device.type)"></div>
               
               <!-- Название устройства -->
@@ -176,6 +177,7 @@
           :href="`/devices/${device.id}`"
           class="flex items-center gap-1.5 px-2 py-1.5 hover:bg-[color:var(--bg-elevated)]/40 transition-colors"
         >
+          <!-- eslint-disable-next-line vue/no-v-html -->
           <span class="w-5 h-5 shrink-0 text-[color:var(--text-dim)]" v-html="getDeviceIconSvg(device.type)"></span>
           <div class="min-w-0 flex-1">
             <div class="text-[11px] font-semibold truncate text-[color:var(--text-primary)]">
@@ -199,15 +201,24 @@
           v-if="device.rssi != null || device.free_heap_bytes != null || device.uptime_seconds != null"
           class="border-t border-[color:var(--border-muted)] px-2 py-1 space-y-0.5"
         >
-          <div v-if="device.rssi != null" class="flex items-center justify-between font-mono text-[10px]">
+          <div
+            v-if="device.rssi != null"
+            class="flex items-center justify-between font-mono text-[10px]"
+          >
             <span class="text-[color:var(--text-dim)]">Wi-Fi</span>
             <span :class="rssiClass(device.rssi)">{{ device.rssi }} dBm</span>
           </div>
-          <div v-if="device.free_heap_bytes != null" class="flex items-center justify-between font-mono text-[10px]">
+          <div
+            v-if="device.free_heap_bytes != null"
+            class="flex items-center justify-between font-mono text-[10px]"
+          >
             <span class="text-[color:var(--text-dim)]">Heap</span>
             <span class="text-[color:var(--text-primary)]">{{ formatHeap(device.free_heap_bytes) }}</span>
           </div>
-          <div v-if="device.uptime_seconds != null" class="flex items-center justify-between font-mono text-[10px]">
+          <div
+            v-if="device.uptime_seconds != null"
+            class="flex items-center justify-between font-mono text-[10px]"
+          >
             <span class="text-[color:var(--text-dim)]">Uptime</span>
             <span class="text-[color:var(--text-primary)]">{{ formatUptime(device.uptime_seconds) }}</span>
           </div>
@@ -215,9 +226,19 @@
 
         <!-- Футер: FW + last_seen + кнопка -->
         <div class="mt-auto border-t border-[color:var(--border-muted)] px-2 py-1 flex items-center gap-2 text-[10px] text-[color:var(--text-dim)]">
-          <span v-if="device.fw_version" class="font-mono">v{{ device.fw_version }}</span>
-          <span v-if="device.last_seen_at" class="truncate">{{ formatLastSeen(device.last_seen_at) }}</span>
-          <div v-if="canManage" class="ml-auto shrink-0" @click.stop>
+          <span
+            v-if="device.fw_version"
+            class="font-mono"
+          >v{{ device.fw_version }}</span>
+          <span
+            v-if="device.last_seen_at"
+            class="truncate"
+          >{{ formatLastSeen(device.last_seen_at) }}</span>
+          <div
+            v-if="canManage"
+            class="ml-auto shrink-0"
+            @click.stop
+          >
             <button
               type="button"
               class="h-5 px-1.5 text-[10px] rounded border border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)] transition-colors"

@@ -110,7 +110,9 @@
           class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] p-3 text-sm"
         >
           <div class="flex items-center gap-2 font-medium">
-            <Chip :tone="recordTone(record.status)">{{ record.status }}</Chip>
+            <Chip :tone="recordTone(record.status)">
+              {{ record.status }}
+            </Chip>
             <span class="font-mono text-[var(--text-dim)] text-[11px]">{{ formatDate(record.created_at) }}</span>
           </div>
           <div class="text-[11px] text-[var(--text-dim)] mt-1.5 font-mono">

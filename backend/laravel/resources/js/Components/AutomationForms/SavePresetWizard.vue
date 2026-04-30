@@ -41,46 +41,88 @@
 
       <!-- Шаг 2: Обзор параметров -->
       <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-main)] p-3 space-y-2">
-        <div class="text-xs font-medium text-[color:var(--text-primary)]">Что будет сохранено:</div>
+        <div class="text-xs font-medium text-[color:var(--text-primary)]">
+          Что будет сохранено:
+        </div>
 
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-          <div class="text-[color:var(--text-muted)]">Тип системы</div>
-          <div class="text-[color:var(--text-primary)]">{{ irrigationSystemType }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Тип системы
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ irrigationSystemType }}
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Количество баков</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.tanksCount }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Количество баков
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ waterForm.tanksCount }}
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Профиль коррекции</div>
-          <div class="text-[color:var(--text-primary)]">{{ correctionProfileLabel }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Профиль коррекции
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ correctionProfileLabel }}
+          </div>
 
           <div class="mt-1 col-span-2 border-t border-[color:var(--border-muted)] pt-1 text-[10px] font-medium text-[color:var(--text-muted)]">
             Полив
           </div>
 
-          <div class="text-[color:var(--text-muted)]">Интервал полива</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.intervalMinutes }} мин</div>
+          <div class="text-[color:var(--text-muted)]">
+            Интервал полива
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ waterForm.intervalMinutes }} мин
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Длительность полива</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.durationSeconds }} сек</div>
+          <div class="text-[color:var(--text-muted)]">
+            Длительность полива
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ waterForm.durationSeconds }} сек
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Коррекция во время полива</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.correctionDuringIrrigation ? 'Да' : 'Нет' }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Коррекция во время полива
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ waterForm.correctionDuringIrrigation ? 'Да' : 'Нет' }}
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Стратегия решения</div>
-          <div class="text-[color:var(--text-primary)]">{{ waterForm.irrigationDecisionStrategy ?? 'task' }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Стратегия решения
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ waterForm.irrigationDecisionStrategy ?? 'task' }}
+          </div>
 
           <div class="mt-1 col-span-2 border-t border-[color:var(--border-muted)] pt-1 text-[10px] font-medium text-[color:var(--text-muted)]">
             Таймауты запуска
           </div>
 
-          <div class="text-[color:var(--text-muted)]">Заполнение чистой воды</div>
-          <div class="text-[color:var(--text-primary)]">{{ formatTimeout(waterForm.startupCleanFillTimeoutSeconds) }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Заполнение чистой воды
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ formatTimeout(waterForm.startupCleanFillTimeoutSeconds) }}
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Заполнение раствора</div>
-          <div class="text-[color:var(--text-primary)]">{{ formatTimeout(waterForm.startupSolutionFillTimeoutSeconds) }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Заполнение раствора
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ formatTimeout(waterForm.startupSolutionFillTimeoutSeconds) }}
+          </div>
 
-          <div class="text-[color:var(--text-muted)]">Рециркуляция</div>
-          <div class="text-[color:var(--text-primary)]">{{ formatTimeout(waterForm.startupPrepareRecirculationTimeoutSeconds) }}</div>
+          <div class="text-[color:var(--text-muted)]">
+            Рециркуляция
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ formatTimeout(waterForm.startupPrepareRecirculationTimeoutSeconds) }}
+          </div>
         </div>
       </div>
 

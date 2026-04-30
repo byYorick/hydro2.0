@@ -11,12 +11,28 @@
     >
       <div class="flex items-center gap-1.5">
         <span class="text-xs font-semibold text-[color:var(--text-primary)]">Инженерная диагностика</span>
-        <Badge variant="secondary" size="sm">инженер/адм.</Badge>
-        <div v-if="diagnostics" class="flex items-center gap-1">
-          <Badge v-if="diagnostics.summary.overdue_tasks_total > 0" variant="warning" size="sm">
+        <Badge
+          variant="secondary"
+          size="sm"
+        >
+          инженер/адм.
+        </Badge>
+        <div
+          v-if="diagnostics"
+          class="flex items-center gap-1"
+        >
+          <Badge
+            v-if="diagnostics.summary.overdue_tasks_total > 0"
+            variant="warning"
+            size="sm"
+          >
             просрочено {{ diagnostics.summary.overdue_tasks_total }}
           </Badge>
-          <Badge v-if="diagnostics.summary.stale_tasks_total > 0" variant="danger" size="sm">
+          <Badge
+            v-if="diagnostics.summary.stale_tasks_total > 0"
+            variant="danger"
+            size="sm"
+          >
             устарело {{ diagnostics.summary.stale_tasks_total }}
           </Badge>
         </div>
@@ -24,9 +40,16 @@
       <svg
         class="h-3.5 w-3.5 shrink-0 text-[color:var(--text-dim)] transition-transform duration-200"
         :class="open ? 'rotate-180' : ''"
-        viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
       >
-        <path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path
+          d="M4 6l4 4 4-4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
       </svg>
     </button>
 
@@ -39,8 +62,10 @@
       leave-from-class="opacity-100 max-h-[2000px]"
       leave-to-class="opacity-0 max-h-0"
     >
-      <div v-if="open" class="border-t border-[color:var(--border-muted)] p-2 md:p-3 space-y-2">
-
+      <div
+        v-if="open"
+        class="border-t border-[color:var(--border-muted)] p-2 md:p-3 space-y-2"
+      >
         <p
           v-if="diagnosticsError"
           class="rounded-md border border-amber-200/60 bg-amber-50/40 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-400"
@@ -48,18 +73,46 @@
           {{ diagnosticsError }}
         </p>
 
-        <div v-else-if="diagnosticsLoading && !diagnostics" class="text-xs text-[color:var(--text-dim)]">
+        <div
+          v-else-if="diagnosticsLoading && !diagnostics"
+          class="text-xs text-[color:var(--text-dim)]"
+        >
           Загружаем диагностику...
         </div>
 
         <template v-else-if="diagnostics">
           <!-- Счётчики -->
           <div class="flex flex-wrap gap-1">
-            <Badge variant="info" size="sm">отслеживается {{ diagnostics.summary.tracked_tasks_total }}</Badge>
-            <Badge variant="success" size="sm">активно {{ diagnostics.summary.active_tasks_total }}</Badge>
-            <Badge variant="warning" size="sm">просрочено {{ diagnostics.summary.overdue_tasks_total }}</Badge>
-            <Badge variant="danger" size="sm">устарело {{ diagnostics.summary.stale_tasks_total }}</Badge>
-            <Badge variant="secondary" size="sm">логи {{ diagnostics.summary.recent_logs_total }}</Badge>
+            <Badge
+              variant="info"
+              size="sm"
+            >
+              отслеживается {{ diagnostics.summary.tracked_tasks_total }}
+            </Badge>
+            <Badge
+              variant="success"
+              size="sm"
+            >
+              активно {{ diagnostics.summary.active_tasks_total }}
+            </Badge>
+            <Badge
+              variant="warning"
+              size="sm"
+            >
+              просрочено {{ diagnostics.summary.overdue_tasks_total }}
+            </Badge>
+            <Badge
+              variant="danger"
+              size="sm"
+            >
+              устарело {{ diagnostics.summary.stale_tasks_total }}
+            </Badge>
+            <Badge
+              variant="secondary"
+              size="sm"
+            >
+              логи {{ diagnostics.summary.recent_logs_total }}
+            </Badge>
           </div>
 
           <div class="grid gap-2 xl:grid-cols-2">
@@ -77,7 +130,10 @@
               >
                 Пусто.
               </div>
-              <div v-else class="space-y-1">
+              <div
+                v-else
+                class="space-y-1"
+              >
                 <div
                   v-for="task in diagnostics.dispatcher_tasks"
                   :key="task.task_id"
@@ -85,7 +141,12 @@
                 >
                   <div class="flex flex-wrap items-center gap-1">
                     <span class="font-mono text-[11px] font-semibold text-[color:var(--text-primary)]">{{ task.task_id }}</span>
-                    <Badge :variant="statusVariant(task.status)" size="sm">{{ statusLabel(task.status) }}</Badge>
+                    <Badge
+                      :variant="statusVariant(task.status)"
+                      size="sm"
+                    >
+                      {{ statusLabel(task.status) }}
+                    </Badge>
                     <span class="text-[10px] text-[color:var(--text-dim)]">{{ laneLabel(task.task_type) }}</span>
                   </div>
                   <p class="mt-0.5 text-[10px] text-[color:var(--text-muted)]">
@@ -112,7 +173,10 @@
               >
                 Пусто.
               </div>
-              <div v-else class="space-y-1">
+              <div
+                v-else
+                class="space-y-1"
+              >
                 <div
                   v-for="log in diagnostics.recent_logs"
                   :key="log.log_id"
@@ -122,7 +186,12 @@
                     <span class="font-mono text-[11px] font-semibold text-[color:var(--text-primary)] truncate">
                       {{ log.task_name ?? 'планировщик' }}
                     </span>
-                    <Badge :variant="statusVariant(log.status)" size="sm">{{ statusLabel(log.status) }}</Badge>
+                    <Badge
+                      :variant="statusVariant(log.status)"
+                      size="sm"
+                    >
+                      {{ statusLabel(log.status) }}
+                    </Badge>
                   </div>
                   <span class="text-[10px] text-[color:var(--text-muted)] shrink-0">
                     {{ formatDateTime(log.created_at) }}

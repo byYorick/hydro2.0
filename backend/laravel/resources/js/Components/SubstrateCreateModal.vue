@@ -1,18 +1,35 @@
 <template>
-  <Modal :open="open" title="Создание субстрата" size="large" @close="$emit('close')">
+  <Modal
+    :open="open"
+    title="Создание субстрата"
+    size="large"
+    @close="$emit('close')"
+  >
     <div class="space-y-4 text-[color:var(--text-primary)]">
       <!-- Основное -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Основное</div>
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+          Основное
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Код (английский) <span class="text-red-500">*</span></label>
-            <input v-model="form.code" class="input-field" placeholder="coco_perlite_70_30" />
-            <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">Уникальный код, латиница + цифры + _</p>
+            <input
+              v-model="form.code"
+              class="input-field"
+              placeholder="coco_perlite_70_30"
+            />
+            <p class="text-[11px] text-[color:var(--text-muted)] mt-0.5">
+              Уникальный код, латиница + цифры + _
+            </p>
           </div>
           <div>
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-red-500">*</span></label>
-            <input v-model="form.name" class="input-field" placeholder="Кокос + Перлит 70/30" />
+            <input
+              v-model="form.name"
+              class="input-field"
+              placeholder="Кокос + Перлит 70/30"
+            />
           </div>
         </div>
       </div>
@@ -20,34 +37,94 @@
       <!-- Состав -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Состав компонентов</div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+            Состав компонентов
+          </div>
           <div class="flex items-center gap-3">
-            <div class="text-sm font-bold" :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'">
+            <div
+              class="text-sm font-bold"
+              :class="Math.abs(ratioSum - 100) <= 0.01 ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--badge-warning-text)]'"
+            >
               {{ ratioSum.toFixed(1) }}%
             </div>
-            <button type="button" class="soft-btn" title="Привести сумму к 100%" @click="normalizeComponents">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <button
+              type="button"
+              class="soft-btn"
+              title="Привести сумму к 100%"
+              @click="normalizeComponents"
+            >
+              <svg
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
               Нормализовать
             </button>
-            <button type="button" class="soft-btn" title="Добавить компонент" @click="addComponent">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <button
+              type="button"
+              class="soft-btn"
+              title="Добавить компонент"
+              @click="addComponent"
+            >
+              <svg
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ><line
+                x1="12"
+                y1="5"
+                x2="12"
+                y2="19"
+              /><line
+                x1="5"
+                y1="12"
+                x2="19"
+                y2="12"
+              /></svg>
               Компонент
             </button>
           </div>
         </div>
 
-        <div v-for="(comp, idx) in form.components" :key="idx" class="grid grid-cols-[1fr_1fr_80px_auto] gap-2 items-end">
+        <div
+          v-for="(comp, idx) in form.components"
+          :key="idx"
+          class="grid grid-cols-[1fr_1fr_80px_auto] gap-2 items-end"
+        >
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Код</label>
-            <input v-model="comp.name" class="input-field !text-xs" placeholder="coco" />
+            <input
+              v-model="comp.name"
+              class="input-field !text-xs"
+              placeholder="coco"
+            />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5">Название</label>
-            <input v-model="comp.label" class="input-field !text-xs" placeholder="Кокос" />
+            <input
+              v-model="comp.label"
+              class="input-field !text-xs"
+              placeholder="Кокос"
+            />
           </div>
           <div>
             <label class="block text-[10px] text-[color:var(--text-muted)] mb-0.5 text-center">Доля, %</label>
-            <input v-model.number="comp.ratio_pct" type="number" min="0" max="100" step="0.1" class="input-field hide-spin !text-xs text-center" />
+            <input
+              v-model.number="comp.ratio_pct"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              class="input-field hide-spin !text-xs text-center"
+            />
           </div>
           <button
             v-if="form.components.length > 1"
@@ -55,19 +132,36 @@
             class="h-[2.6rem] px-2 text-sm text-[color:var(--text-muted)] hover:text-red-500"
             title="Удалить компонент"
             @click="removeComponent(idx)"
-          >✕</button>
+          >
+            ✕
+          </button>
           <div v-else></div>
         </div>
 
-        <p class="text-[11px] text-[color:var(--text-muted)]">Сумма долей всех компонентов должна быть 100%</p>
+        <p class="text-[11px] text-[color:var(--text-muted)]">
+          Сумма долей всех компонентов должна быть 100%
+        </p>
       </div>
 
       <!-- Совместимость -->
       <div class="rounded-md border border-[color:var(--border-muted)] p-3 space-y-3">
-        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">Совместимые системы полива</div>
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-dim)]">
+          Совместимые системы полива
+        </div>
         <div class="flex flex-wrap gap-2">
-          <label v-for="sys in SYSTEM_OPTIONS" :key="sys.value" class="flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] px-2 py-1 cursor-pointer text-xs hover:bg-[color:var(--bg-muted)]" :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--accent-green)]': form.applicable_systems.includes(sys.value) }">
-            <input type="checkbox" :value="sys.value" :checked="form.applicable_systems.includes(sys.value)" @change="toggleSystem(sys.value)" class="w-3.5 h-3.5" />
+          <label
+            v-for="sys in SYSTEM_OPTIONS"
+            :key="sys.value"
+            class="flex items-center gap-1.5 rounded-md border border-[color:var(--border-muted)] px-2 py-1 cursor-pointer text-xs hover:bg-[color:var(--bg-muted)]"
+            :class="{ 'bg-emerald-50 dark:bg-emerald-900/20 border-[color:var(--accent-green)]': form.applicable_systems.includes(sys.value) }"
+          >
+            <input
+              type="checkbox"
+              :value="sys.value"
+              :checked="form.applicable_systems.includes(sys.value)"
+              class="w-3.5 h-3.5"
+              @change="toggleSystem(sys.value)"
+            />
             {{ sys.label }}
           </label>
         </div>
@@ -76,12 +170,21 @@
       <!-- Заметки -->
       <div>
         <label class="block text-xs text-[color:var(--text-muted)] mb-1">Заметки</label>
-        <textarea v-model="form.notes" rows="2" class="input-field !h-auto !py-2" placeholder="Например: перед посадкой замочить на 12 часов"></textarea>
+        <textarea
+          v-model="form.notes"
+          rows="2"
+          class="input-field !h-auto !py-2"
+          placeholder="Например: перед посадкой замочить на 12 часов"
+        ></textarea>
       </div>
     </div>
 
     <template #footer>
-      <Button size="sm" :disabled="!canSubmit || saving" @click="submit">
+      <Button
+        size="sm"
+        :disabled="!canSubmit || saving"
+        @click="submit"
+      >
         {{ saving ? 'Создание...' : 'Создать' }}
       </Button>
     </template>

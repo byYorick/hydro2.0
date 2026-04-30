@@ -34,7 +34,10 @@
       </div>
     </div>
     
-    <ChartBase :option="option" :dark="isDark" />
+    <ChartBase
+      :option="option"
+      :dark="isDark"
+    />
   </Card>
 </template>
 

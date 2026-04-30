@@ -1,10 +1,14 @@
 <template>
   <div class="space-y-2">
-
     <!-- Компактная шапка -->
     <div class="flex flex-wrap items-center gap-1.5 px-1">
       <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">Алерты</span>
-      <Badge variant="danger" size="sm">{{ filteredAlerts.length }}</Badge>
+      <Badge
+        variant="danger"
+        size="sm"
+      >
+        {{ filteredAlerts.length }}
+      </Badge>
       <div class="mx-1 h-3.5 w-px bg-[color:var(--border-muted)]"></div>
       <button
         v-for="status in statusOptions"
@@ -37,7 +41,10 @@
         Алерты по текущим фильтрам не найдены
       </div>
 
-      <div v-else-if="useVirtual" class="h-[calc(100vh-260px)]">
+      <div
+        v-else-if="useVirtual"
+        class="h-[calc(100vh-260px)]"
+      >
         <VirtualList
           :items="filteredAlerts"
           :item-size="96"
@@ -57,7 +64,10 @@
         </VirtualList>
       </div>
 
-      <div v-else class="max-h-[calc(100vh-260px)] space-y-0.5 overflow-y-auto pr-0.5">
+      <div
+        v-else
+        class="max-h-[calc(100vh-260px)] space-y-0.5 overflow-y-auto pr-0.5"
+      >
         <button
           v-for="item in filteredAlerts"
           :key="item.id"

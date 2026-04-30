@@ -24,7 +24,7 @@
           :value="lightingForm.luxDay"
           :disabled="!lightingForm.enabled"
           @input="upd('luxDay', toNum($event))"
-        >
+        />
       </Field>
       <Field label="luxNight">
         <input
@@ -32,7 +32,7 @@
           :value="lightingForm.luxNight"
           :disabled="!lightingForm.enabled"
           @input="upd('luxNight', toNum($event))"
-        >
+        />
       </Field>
       <Field label="hoursOn">
         <input
@@ -40,7 +40,7 @@
           :value="lightingForm.hoursOn"
           :disabled="!lightingForm.enabled"
           @input="upd('hoursOn', toNum($event))"
-        >
+        />
       </Field>
       <Field label="intervalMinutes">
         <input
@@ -48,7 +48,7 @@
           :value="lightingForm.intervalMinutes"
           :disabled="!lightingForm.enabled"
           @input="upd('intervalMinutes', toInt($event))"
-        >
+        />
       </Field>
       <Field label="scheduleStart">
         <input
@@ -57,7 +57,7 @@
           :disabled="!lightingForm.enabled"
           placeholder="06:00"
           @input="upd('scheduleStart', toStr($event))"
-        >
+        />
       </Field>
       <Field label="scheduleEnd">
         <input
@@ -66,7 +66,7 @@
           :disabled="!lightingForm.enabled"
           placeholder="22:00"
           @input="upd('scheduleEnd', toStr($event))"
-        >
+        />
       </Field>
       <Field label="manualIntensity">
         <input
@@ -74,7 +74,7 @@
           :value="lightingForm.manualIntensity"
           :disabled="!lightingForm.enabled"
           @input="upd('manualIntensity', toNum($event))"
-        >
+        />
       </Field>
       <Field label="manualDurationHours">
         <input
@@ -82,7 +82,7 @@
           :value="lightingForm.manualDurationHours"
           :disabled="!lightingForm.enabled"
           @input="upd('manualDurationHours', toNum($event))"
-        >
+        />
       </Field>
     </div>
 

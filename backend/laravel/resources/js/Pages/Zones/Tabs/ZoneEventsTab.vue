@@ -1,10 +1,17 @@
 <template>
-  <div class="space-y-2" data-testid="zone-events-list">
-
+  <div
+    class="space-y-2"
+    data-testid="zone-events-list"
+  >
     <!-- Компактная шапка: заголовок + пилюли + поиск + CSV в одну строку -->
     <div class="flex flex-wrap items-center gap-1.5 px-1">
       <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">События</span>
-      <Badge variant="info" size="sm">{{ filteredEvents.length }}</Badge>
+      <Badge
+        variant="info"
+        size="sm"
+      >
+        {{ filteredEvents.length }}
+      </Badge>
       <div class="mx-1 h-3.5 w-px bg-[color:var(--border-muted)]"></div>
       <button
         v-for="kind in kindOptions"
@@ -43,7 +50,10 @@
         Нет событий по текущим фильтрам
       </div>
 
-      <div v-else class="max-h-[calc(100vh-260px)] space-y-1.5 overflow-y-auto pr-0.5">
+      <div
+        v-else
+        class="max-h-[calc(100vh-260px)] space-y-1.5 overflow-y-auto pr-0.5"
+      >
         <div
           v-for="group in groupedEvents"
           :key="group.id"
@@ -73,7 +83,10 @@
               </span>
             </div>
             <div class="flex shrink-0 items-center gap-2 text-[10px] text-[color:var(--text-muted)]">
-              <span v-if="group.subtitle" class="hidden truncate sm:inline max-w-[140px]">
+              <span
+                v-if="group.subtitle"
+                class="hidden truncate sm:inline max-w-[140px]"
+              >
                 {{ group.subtitle }}
               </span>
               <span>{{ formatGroupTimestamp(group.latestOccurredAt) }}</span>
@@ -81,7 +94,10 @@
           </div>
 
           <!-- Строки событий -->
-          <div v-if="!isGroupCollapsed(group.id)" class="divide-y divide-[color:var(--border-muted)]/50">
+          <div
+            v-if="!isGroupCollapsed(group.id)"
+            class="divide-y divide-[color:var(--border-muted)]/50"
+          >
             <EventRow
               v-for="item in group.events"
               :key="item.id"

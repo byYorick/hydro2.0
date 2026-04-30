@@ -1,6 +1,5 @@
 <template>
   <div class="space-y-2">
-
     <!-- Шапка: заголовок + кнопка калибровки -->
     <div class="flex items-center gap-1.5 px-1">
       <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">Устройства</span>

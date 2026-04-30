@@ -1,5 +1,4 @@
 import type {
-  CorrectionCatalogField,
   CorrectionCatalogSection,
   CorrectionPhase,
 } from '@/types/CorrectionConfig'
@@ -87,8 +86,12 @@ export function useCorrectionDiff() {
     const buckets = new Map<string, { section: string; label: string; phase: string; items: CorrectionDiff[] }>()
     for (const d of diffs) {
       const key = `${d.phase}::${d.section}`
-      if (!buckets.has(key)) buckets.set(key, { section: d.section, label: d.sectionLabel, phase: d.phase, items: [] })
-      buckets.get(key)!.items.push(d)
+      let row = buckets.get(key)
+      if (!row) {
+        row = { section: d.section, label: d.sectionLabel, phase: d.phase, items: [] }
+        buckets.set(key, row)
+      }
+      row.items.push(d)
     }
     return Array.from(buckets.values())
   }

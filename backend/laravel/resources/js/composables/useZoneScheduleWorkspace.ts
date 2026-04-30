@@ -105,8 +105,10 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
     return labels
   })
-  const attentionItems = computed(() => {
-    const items: Array<{ tone: 'danger' | 'warning' | 'info', title: string, detail: string | null }> = []
+  type AttentionEntry = { tone: 'danger' | 'warning' | 'info', title: string, detail: string | null }
+
+  const attentionAlerts = computed((): AttentionEntry[] => {
+    const items: AttentionEntry[] = []
 
     if (latestFailure.value) {
       const failureMessage = resolveHumanErrorMessage({
@@ -161,19 +163,37 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     if (activeRun.value && automationState.value?.state_label) {
       const st = automationState.value.state_details
       const failed = Boolean(st?.failed)
-      const headline = failed
-        ? (asNonEmptyString(st?.human_error_message)
+      if (failed) {
+        const headline = asNonEmptyString(st?.human_error_message)
           ?? asNonEmptyString(st?.error_message)
-          ?? automationState.value.state_label)
-        : automationState.value.state_label
-      items.push({
-        tone: failed ? 'danger' : 'info',
-        title: failed ? `Сбой автоматики: ${headline}` : `Сейчас выполняется: ${headline}`,
-        detail: activeRun.value.current_stage || automationState.value.current_stage || null,
-      })
+          ?? automationState.value.state_label
+        items.push({
+          tone: 'danger',
+          title: `Сбой автоматики: ${headline}`,
+          detail: activeRun.value.current_stage || automationState.value.current_stage || null,
+        })
+      }
     }
 
     return items.slice(0, 4)
+  })
+
+  const attentionStatus = computed((): AttentionEntry[] => {
+    if (!activeRun.value || !automationState.value?.state_label) {
+      return []
+    }
+    const st = automationState.value.state_details
+    const failed = Boolean(st?.failed)
+    if (failed) {
+      return []
+    }
+    return [
+      {
+        tone: 'info',
+        title: `Сейчас выполняется: ${automationState.value.state_label}`,
+        detail: activeRun.value.current_stage || automationState.value.current_stage || null,
+      },
+    ]
   })
   const condensedTimeline = computed<TimelineDisplayItem[]>(() => collapseTimeline(selectedExecution.value?.timeline ?? []))
 
@@ -874,7 +894,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     nextExecutableWindows,
     configOnlyLanes,
     activeProcessLabels,
-    attentionItems,
+    attentionAlerts,
+    attentionStatus,
     condensedTimeline,
     fetchWorkspace,
     fetchAutomationState,

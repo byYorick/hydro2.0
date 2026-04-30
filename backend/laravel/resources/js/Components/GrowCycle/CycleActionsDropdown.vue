@@ -1,13 +1,26 @@
 <template>
-  <Dropdown align="right" width="48">
+  <Dropdown
+    align="right"
+    width="48"
+  >
     <template #trigger>
       <button
         type="button"
         class="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[color:var(--text-primary)] transition-colors hover:bg-[color:var(--bg-elevated)] hover:border-[color:var(--border-strong)]"
       >
         Действия
-        <svg class="h-3 w-3 text-[color:var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        <svg
+          class="h-3 w-3 text-[color:var(--text-muted)]"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
     </template>
