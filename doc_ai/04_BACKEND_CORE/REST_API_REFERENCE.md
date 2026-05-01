@@ -326,7 +326,7 @@ Breaking-change: обратная совместимость со старыми
 |-------|---------------------------------|------|-------------------------------------------|
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
-| GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
+| GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler: `laravel_scheduler_dispatches_total`, histogram `laravel_scheduler_cycle_duration_seconds`, gauges `laravel_scheduler_active_tasks_count`, `laravel_scheduler_pending_intents_count`, `laravel_scheduler_oldest_pending_intent_age_seconds`, `laravel_scheduler_dispatch_cycle_overrun_seconds` (p99 cycle − `dispatch_interval_sec`), counter `ae3_zone_config_auto_reverts_total`; counter/histogram читаются из персистентных aggregate tables, а не из `scheduler_logs` |
 | GET | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Получить system authority document |
 | PUT | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Обновить system authority document |
 | GET | /api/automation-configs/system/0/{namespace}/history | auth:sanctum (admin) | История версий system authority document |

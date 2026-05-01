@@ -24,6 +24,11 @@
 
 ### 3.1.1. Конфигурация (dev/prod)
 - Laravel env: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1` для активного dispatch.
+- Операционные параметры tick/lock (пример значений по умолчанию в `config/services.php`):
+  - `AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC` — целевой шаг dispatcher (согласовать с частотой регистрации команды в `routes/console.php`).
+  - `AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_PARALLELISM` — параллельные HTTP-вызовы AE в одном batch.
+  - `AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC` — нижняя граница TTL Cache-lock; фактический TTL не ниже `max(…, p99 cycle + margin)`.
+  - `AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_MARGIN_SEC` — запас к p99 длительности цикла scheduler для расчёта lock TTL.
 - Синхронизация токенов ingress с automation-engine:
   - `AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=<token>`
   - `SCHEDULER_API_TOKEN=<тот_же_token>`

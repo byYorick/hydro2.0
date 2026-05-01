@@ -84,9 +84,29 @@ Schedule::command('alerts:dlq-replay --older-than-hours=24')
 // MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
 // Команда будит зону в automation-engine через /zones/{id}/start-cycle.
 // Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
-Schedule::command('automation:dispatch-schedules')
-    ->everyMinute()
-    ->withoutOverlapping(1)
+// Частота tick синхронизирована с AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC (config services.automation_engine).
+$automationDispatchSchedules = Schedule::command('automation:dispatch-schedules');
+$dispatchIntervalSec = max(10, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60));
+if ($dispatchIntervalSec <= 10) {
+    $automationDispatchSchedules->everyTenSeconds();
+} elseif ($dispatchIntervalSec <= 15) {
+    $automationDispatchSchedules->everyFifteenSeconds();
+} elseif ($dispatchIntervalSec <= 20) {
+    $automationDispatchSchedules->everyTwentySeconds();
+} elseif ($dispatchIntervalSec <= 30) {
+    $automationDispatchSchedules->everyThirtySeconds();
+} elseif ($dispatchIntervalSec <= 60) {
+    $automationDispatchSchedules->everyMinute();
+} else {
+    $everyMinutes = max(1, (int) ceil($dispatchIntervalSec / 60));
+    $automationDispatchSchedules->cron(sprintf('*/%d * * * *', $everyMinutes));
+}
+// Mutex только из config (без БД/p99 на bootstrap). Фактическая исключительность длинных циклов — Cache-lock
+// внутри команды с эффективным TTL из AutomationRuntimeConfigService::schedulerConfig().
+$configuredLockTtlSec = max(10, (int) config('services.automation_engine.scheduler_lock_ttl_sec', 55));
+$dispatchScheduleMutexMinutes = max(1, (int) ceil($configuredLockTtlSec / 60));
+$automationDispatchSchedules
+    ->withoutOverlapping($dispatchScheduleMutexMinutes)
     ->onOneServer()
     ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
     ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');

@@ -148,6 +148,33 @@ groups:
           summary: "Laravel scheduler active task backlog is high"
           description: "Active scheduler tasks are {{ $value }} (threshold: 20). Possible stuck reconciliation or automation slowdown."
 
+      - alert: LaravelSchedulerPendingIntentsBacklog
+        expr: (laravel_scheduler_pending_intents_count or vector(0)) > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Laravel scheduler has a backlog of pending intents"
+          description: "Pending zone_automation_intents count is {{ $value }} (threshold: 10) for 15m. Check AE3/worker and DB NOTIFY path."
+
+      - alert: LaravelSchedulerOldestPendingIntentStale
+        expr: (laravel_scheduler_oldest_pending_intent_age_seconds or vector(0)) > 600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest pending scheduler intent is stale"
+          description: "Age of oldest pending intent is {{ $value }}s (threshold: 600s). Intents are not being claimed/completed."
+
+      - alert: LaravelSchedulerDispatchCycleStructuralLag
+        expr: (laravel_scheduler_dispatch_cycle_overrun_seconds or vector(0)) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler cycle p99 outruns configured dispatch tick"
+          description: "p99 cycle duration exceeds dispatch_interval by {{ $value }}s (threshold: 30s). Consider wider tick, parallelism, or AE capacity."
+
   - name: ae3_runtime_alerts
     interval: 30s
     rules:

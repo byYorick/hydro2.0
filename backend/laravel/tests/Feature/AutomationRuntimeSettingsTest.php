@@ -210,6 +210,16 @@ class AutomationRuntimeSettingsTest extends TestCase
         $this->assertSame(10, $schedulerConfig['lock_ttl_margin_sec']);
     }
 
+    public function test_scheduler_mutex_expiry_minutes_follows_effective_lock_ttl(): void
+    {
+        Config::set('services.automation_engine.scheduler_lock_ttl_sec', 130);
+        Config::set('services.automation_engine.scheduler_lock_ttl_margin_sec', 10);
+
+        $minutes = app(AutomationRuntimeConfigService::class)->schedulerMutexExpiryMinutes();
+
+        $this->assertSame(3, $minutes);
+    }
+
     /**
      * @param  array<int, array<string, mixed>>|null  $sections
      * @return array<string, mixed>|null

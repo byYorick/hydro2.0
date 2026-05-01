@@ -471,6 +471,18 @@ class AutomationRuntimeConfigService
     }
 
     /**
+     * TTL mutex для {@see \Illuminate\Console\Scheduling\Event::withoutOverlapping()} (минуты).
+     * Должен быть не меньше ceil(effective lock_ttl_sec из {@see self::schedulerConfig()} / 60), иначе
+     * следующий tick расписания может стартовать до истечения Cache-lock dispatch.
+     */
+    public function schedulerMutexExpiryMinutes(): int
+    {
+        $ttlSec = (int) ($this->schedulerConfig()['lock_ttl_sec'] ?? 60);
+
+        return max(1, (int) ceil($ttlSec / 60));
+    }
+
+    /**
      * @return array{generated_at: string, sections: array<int, array<string, mixed>>}
      */
     public function settingsSnapshot(): array

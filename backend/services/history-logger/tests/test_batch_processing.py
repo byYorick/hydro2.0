@@ -207,7 +207,7 @@ async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors()
 
 @pytest.mark.asyncio
 async def test_filter_existing_sensor_ids_casts_bigint_array():
-    with patch('telemetry_processing.fetch') as mock_fetch:
+    with patch('telemetry.helpers.fetch') as mock_fetch:
         mock_fetch.return_value = [{'id': 101}]
 
         result = await tp._filter_existing_sensor_ids([101])
