@@ -107,7 +107,7 @@
               v-model="form.source_url"
               type="url"
               class="input-field"
-              placeholder="https://..."
+              placeholder="example.test/product"
             />
           </div>
 

@@ -108,7 +108,7 @@ export default defineConfig(({ mode }) => {
         },
         plugins: [
             laravel({
-                input: 'resources/js/app.js',
+                input: ['resources/js/app.js', 'resources/css/error-pages.css'],
                 refresh: [
                     'resources/views/**',
                     'resources/js/**',

@@ -19,23 +19,19 @@ defineProps({
         required: true,
     },
 });
-
-function handleImageError() {
-    document.getElementById('screenshot-container')?.classList.add('!hidden');
-    document.getElementById('docs-card')?.classList.add('!row-span-1');
-    document.getElementById('docs-card-content')?.classList.add('!flex-row');
-    document.getElementById('background')?.classList.add('!hidden');
-}
 </script>
 
 <template>
   <Head title="Welcome" />
-  <div class="bg-[color:var(--bg-main)] text-[color:var(--text-dim)]">
-    <img
-      id="background"
-      class="absolute -left-20 top-0 max-w-[877px]"
-      src="https://laravel.com/assets/img/welcome/background.svg"
-    />
+  <div class="relative bg-[color:var(--bg-main)] text-[color:var(--text-dim)]">
+    <div
+      class="pointer-events-none absolute -left-20 top-0 h-[min(520px,85vh)] w-[min(820px,140vw)] max-w-none opacity-[0.35]"
+      aria-hidden="true"
+    >
+      <div
+        class="h-full w-full bg-[radial-gradient(ellipse_80%_60%_at_15%_20%,rgba(47,158,93,0.28),transparent),radial-gradient(ellipse_70%_50%_at_85%_30%,rgba(43,154,159,0.22),transparent),radial-gradient(ellipse_60%_40%_at_50%_90%,rgba(107,207,92,0.12),transparent)]"
+      />
+    </div>
     <div
       class="relative flex min-h-screen flex-col items-center justify-center selection:bg-[color:var(--accent-green)] selection:text-[color:var(--btn-primary-text)]"
     >
@@ -89,26 +85,31 @@ function handleImageError() {
 
         <main class="mt-6">
           <div class="grid gap-6 lg:grid-cols-2 lg:gap-8">
-            <a
-              id="docs-card"
-              href="https://laravel.com/docs"
+            <Link
+              href="/"
               class="flex flex-col items-start gap-6 overflow-hidden rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] transition duration-300 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:ring-[color:var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] md:row-span-3 lg:p-10 lg:pb-10"
             >
               <div
-                id="screenshot-container"
                 class="relative flex w-full flex-1 items-stretch"
               >
-                <img
-                  src="https://laravel.com/assets/img/welcome/docs-light.svg"
-                  alt="Laravel documentation screenshot"
-                  class="aspect-video h-full w-full flex-1 rounded-[10px] object-cover object-top drop-shadow-[0px_4px_34px_rgba(0,0,0,0.06)]"
-                  @error="handleImageError"
-                />
-                <img
-                  src="https://laravel.com/assets/img/welcome/docs-dark.svg"
-                  alt="Laravel documentation screenshot"
-                  class="hidden aspect-video h-full w-full flex-1 rounded-[10px] object-cover object-top drop-shadow-[0px_4px_34px_rgba(0,0,0,0.25)]"
-                />
+                <div
+                  class="flex aspect-video h-full w-full flex-1 flex-col items-center justify-center gap-4 rounded-[10px] bg-gradient-to-br from-[color:var(--bg-elevated)] via-[color:var(--bg-surface-strong)] to-[color:var(--badge-success-bg)] p-8 ring-1 ring-[color:var(--border-muted)] drop-shadow-[0px_4px_34px_rgba(0,0,0,0.06)] dark:drop-shadow-[0px_4px_34px_rgba(0,0,0,0.25)]"
+                >
+                  <svg
+                    class="h-16 w-16 shrink-0 text-[color:var(--accent-green)] opacity-90 sm:h-20 sm:w-20"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="1.25"
+                    aria-hidden="true"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                  </svg>
+                  <p class="max-w-sm text-center text-sm font-medium text-[color:var(--text-muted)]">
+                    Документация Laravel — без внешних превью, только локальные стили.
+                  </p>
+                </div>
                 <div
                   class="absolute -bottom-16 -left-16 h-40 w-[calc(100%+8rem)] bg-gradient-to-b from-transparent via-[color:var(--bg-surface-strong)] to-[color:var(--bg-surface-strong)]"
                 ></div>
@@ -117,10 +118,9 @@ function handleImageError() {
               <div
                 class="relative flex items-center gap-6 lg:items-end"
               >
-                <div
-                  id="docs-card-content"
-                  class="flex items-start gap-6 lg:flex-col"
-                >
+              <div
+                class="flex items-start gap-6 lg:flex-col"
+              >
                   <div
                     class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
                   >
@@ -174,10 +174,10 @@ function handleImageError() {
                   />
                 </svg>
               </div>
-            </a>
+            </Link>
 
-            <a
-              href="https://laracasts.com"
+            <Link
+              href="/"
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] transition duration-300 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:ring-[color:var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] lg:pb-10"
             >
               <div
@@ -226,10 +226,10 @@ function handleImageError() {
                   d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
                 />
               </svg>
-            </a>
+            </Link>
 
-            <a
-              href="https://laravel-news.com"
+            <Link
+              href="/"
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] transition duration-300 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:ring-[color:var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] lg:pb-10"
             >
               <div
@@ -284,7 +284,7 @@ function handleImageError() {
                   d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75"
                 />
               </svg>
-            </a>
+            </Link>
 
             <div
               class="flex items-start gap-4 rounded-lg bg-[color:var(--bg-surface)] p-6 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--border-muted)] text-[color:var(--text-muted)] lg:pb-10"
@@ -316,53 +316,20 @@ function handleImageError() {
                 <p class="mt-4 text-sm/relaxed">
                   Laravel's robust library of first-party
                   tools and libraries, such as
-                  <a
-                    href="https://forge.laravel.com"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Forge</a>,
-                  <a
-                    href="https://vapor.laravel.com"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Vapor</a>,
-                  <a
-                    href="https://nova.laravel.com"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Nova</a>,
-                  <a
-                    href="https://envoyer.io"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Envoyer</a>, and
-                  <a
-                    href="https://herd.laravel.com"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Herd</a>
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Forge</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Vapor</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Nova</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Envoyer</span>, and
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Herd</span>
                   help you take your projects to the next
                   level. Pair them with powerful open source
                   libraries like
-                  <a
-                    href="https://laravel.com/docs/billing"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Cashier</a>,
-                  <a
-                    href="https://laravel.com/docs/dusk"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Dusk</a>,
-                  <a
-                    href="https://laravel.com/docs/broadcasting"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Echo</a>,
-                  <a
-                    href="https://laravel.com/docs/horizon"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Horizon</a>,
-                  <a
-                    href="https://laravel.com/docs/sanctum"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Sanctum</a>,
-                  <a
-                    href="https://laravel.com/docs/telescope"
-                    class="rounded-sm underline text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring)]"
-                  >Telescope</a>, and more.
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Cashier</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Dusk</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Echo</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Horizon</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Sanctum</span>,
+                  <span class="font-medium text-[color:var(--accent-cyan)]">Telescope</span>, and more.
                 </p>
               </div>
             </div>

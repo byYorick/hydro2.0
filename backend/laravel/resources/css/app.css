@@ -1,6 +1,7 @@
 /* Vue Virtual Scroller styles */
 @import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+
+/* Шрифты только локально (@font-face ниже). Внешние @import запрещены — блокируют парсинг CSS и дают CLS при холодном старте. */
 
 /* IBM Plex Sans — основной UI-шрифт. Подмножества latin + cyrillic. */
 @font-face {
@@ -237,7 +238,7 @@ body {
   background-color: var(--bg-main);
   background-image: var(--bg-pattern);
   color: var(--text-primary);
-  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'IBM Plex Sans', 'Figtree', ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0.01em;
 }
 

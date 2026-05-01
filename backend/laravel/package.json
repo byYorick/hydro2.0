@@ -3,7 +3,8 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "vite build",
+        "vendor:swagger-ui": "node scripts/vendor-swagger-ui.mjs",
+        "build": "npm run vendor:swagger-ui && vite build",
         "typecheck": "vue-tsc --noEmit",
         "lint": "eslint . --ext .ts,.tsx,.vue && npm run lint:api-boundary",
         "lint:api-boundary": "bash ./scripts/check-frontend-api-boundary.sh",
@@ -14,6 +15,7 @@
         "e2e:browser": "playwright test --config=tests/e2e/browser/playwright.config.ts",
         "e2e:browser:ui": "playwright test --ui --config=tests/e2e/browser/playwright.config.ts"
     },
+    "postinstall": "node scripts/vendor-swagger-ui.mjs",
     "devDependencies": {
         "@inertiajs/vue3": "^2.0.0",
         "@playwright/test": "^1.56.1",
@@ -37,6 +39,7 @@
         "jsdom": "^27.2.0",
         "laravel-vite-plugin": "^1.0",
         "postcss": "^8.4.31",
+        "swagger-ui-dist": "^5.31.0",
         "tailwindcss": "^3.2.1",
         "typescript": "^5.3.3",
         "vite": "^5.0",

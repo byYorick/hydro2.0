@@ -32,7 +32,7 @@
                 radial-gradient(at 100% 100%, rgba(210, 156, 47, 0.06) 0px, transparent 50%),
                 var(--bg);
             color: var(--text);
-            font-family: "Manrope", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             overflow-x: hidden;
         }
         .page { position: relative; min-height: 100vh; isolation: isolate; }

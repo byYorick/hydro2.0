@@ -1,0 +1,2 @@
+/* Стили для Blade error pages (404 и т.д.) без CDN: тот же Tailwind + локальные шрифты, что и у Inertia. */
+@import './app.css';
