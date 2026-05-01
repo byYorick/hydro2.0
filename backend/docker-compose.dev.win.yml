@@ -56,7 +56,8 @@ services:
       - APP_DEBUG=1
       - APP_KEY=${APP_KEY:-base64:Go+le0yjTxoJWvbMib0hJTWXbzUdG00oeQpEVdNwUyc=}
       - SESSION_DRIVER=file
-      - CACHE_DRIVER=file
+      - CACHE_DRIVER=redis
+      - CACHE_STORE=redis
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=debug
       - BROADCAST_CONNECTION=reverb

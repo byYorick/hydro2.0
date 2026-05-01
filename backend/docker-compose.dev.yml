@@ -81,8 +81,9 @@ services:
       - APP_PACKAGES_CACHE=/tmp/laravel-packages-local.php
       - APP_EVENTS_CACHE=/tmp/laravel-events-local.php
       - SESSION_DRIVER=file
-      - CACHE_DRIVER=file
-      - CACHE_STORE=file
+      # file-cache + bind-mount часто ломается (нет прав mkdir на data/*/*); Redis уже в стеке — как в prod
+      - CACHE_DRIVER=redis
+      - CACHE_STORE=redis
       - SESSION_SAME_SITE=lax
       - SESSION_SECURE_COOKIE=false
       - LOG_CHANNEL=stderr
