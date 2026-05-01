@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, usePage } from '@inertiajs/vue3'
 import ToastContainer from '@/Components/ToastContainer.vue'
 import { route } from '@/utils/route'
 import { useInertiaForm } from '@/composables/useInertiaForm'
@@ -11,6 +11,22 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const page = usePage<{ appName?: string }>()
+const appName = computed(() => page.props.appName ?? 'Автоматика теплицы')
+const brandInitials = computed(() => {
+  const parts = appName.value.trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    const a = parts[0]?.[0]
+    const b = parts[1]?.[0]
+    if (a && b) {
+      return (a + b).toUpperCase()
+    }
+  }
+
+  const single = parts[0] ?? appName.value
+  return single.slice(0, 2).toUpperCase() || 'АТ'
+})
 
 interface LoginFormData {
   email: string
@@ -131,9 +147,9 @@ function togglePasswordVisibility(): void {
           <div class="relative z-10">
             <div class="mb-8 flex items-center gap-3">
               <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/18 backdrop-blur-md ring-1 ring-white/20">
-                <span class="text-sm font-extrabold tracking-[0.22em] text-white">GI</span>
+                <span class="text-sm font-extrabold tracking-[0.22em] text-white">{{ brandInitials }}</span>
               </div>
-              <span class="font-semibold tracking-tight text-[1.35rem]">Greenhouse Intelligence</span>
+              <span class="font-semibold tracking-tight text-[1.35rem]">{{ appName }}</span>
             </div>
 
             <h1 class="max-w-xl font-semibold leading-[1.04] tracking-tight text-[clamp(2.8rem,4vw,4.8rem)]">
@@ -167,7 +183,7 @@ function togglePasswordVisibility(): void {
 
           <div class="pointer-events-none absolute -bottom-20 -right-12 z-0 opacity-10">
             <div class="select-none text-[18rem] font-black leading-none tracking-tight">
-              GI
+              {{ brandInitials }}
             </div>
           </div>
         </aside>
@@ -176,9 +192,9 @@ function togglePasswordVisibility(): void {
           <div class="mb-8 flex justify-center lg:hidden">
             <div class="flex items-center gap-3 text-[#0b6148]">
               <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b6148] text-white shadow-[0_14px_28px_rgba(11,97,72,0.18)]">
-                <span class="text-sm font-extrabold tracking-[0.22em]">GI</span>
+                <span class="text-sm font-extrabold tracking-[0.22em]">{{ brandInitials }}</span>
               </div>
-              <span class="font-semibold tracking-tight text-xl">Greenhouse Intelligence</span>
+              <span class="font-semibold tracking-tight text-xl">{{ appName }}</span>
             </div>
           </div>
 

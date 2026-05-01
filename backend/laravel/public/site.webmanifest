@@ -1,0 +1,25 @@
+{
+  "name": "Автоматика теплицы",
+  "short_name": "Теплица",
+  "description": "Панель управления гидропонной теплицей",
+  "lang": "ru",
+  "dir": "ltr",
+  "display": "standalone",
+  "start_url": "/",
+  "theme_color": "#0b6148",
+  "background_color": "#070b10",
+  "icons": [
+    {
+      "src": "/favicon.svg?v=3",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.ico?v=3",
+      "sizes": "32x32 16x16",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}

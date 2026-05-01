@@ -21,10 +21,13 @@ import { clickOutside } from './directives/clickOutside';
 const { showToast: __bootstrapShowToast } = useToast();
 setToastHandler(__bootstrapShowToast);
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'Автоматика теплицы';
 
 createInertiaApp({
-    title: (title) => `${title} - ${appName}`,
+    title: (title) => {
+        const t = typeof title === 'string' ? title.trim() : '';
+        return t ? `${t} — ${appName}` : appName;
+    },
     resolve: (name) =>
         resolvePageComponent(
             `./Pages/${name}.vue`,

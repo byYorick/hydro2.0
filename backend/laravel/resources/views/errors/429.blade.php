@@ -2,9 +2,9 @@
 <html lang="ru">
 <head>
     @php
-        $brandName = config('app.name', 'Greenhouse Intelligence');
+        $brandName = config('app.name', 'Автоматика теплицы');
         if ($brandName === 'Laravel') {
-            $brandName = 'Greenhouse Intelligence';
+            $brandName = 'Автоматика теплицы';
         }
     @endphp
     <meta charset="UTF-8">

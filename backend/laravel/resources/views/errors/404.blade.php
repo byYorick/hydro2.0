@@ -4,9 +4,9 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     @php
-        $brandName = config('app.name', 'Greenhouse Intelligence');
+        $brandName = config('app.name', 'Автоматика теплицы');
         if ($brandName === 'Laravel') {
-            $brandName = 'Greenhouse Intelligence';
+            $brandName = 'Автоматика теплицы';
         }
     @endphp
     <title>404 — {{ $brandName }}</title>

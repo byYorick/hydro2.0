@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Росток">
+  <rect width="32" height="32" rx="7" fill="#0b6148"/>
+  <!-- Два отдельных листа (не смыкаются сверху — не похоже на шляпку гриба) -->
+  <ellipse cx="10.25" cy="11.5" rx="4.75" ry="7.25" transform="rotate(-40 10.25 11.5)" fill="#81c784"/>
+  <ellipse cx="21.75" cy="11.5" rx="4.75" ry="7.25" transform="rotate(40 21.75 11.5)" fill="#a5d6a7"/>
+  <!-- Стебель поверх оснований листьев -->
+  <rect x="14" y="15" width="4" height="12" rx="2" fill="#eceff1"/>
+</svg>
