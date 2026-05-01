@@ -361,6 +361,14 @@ class SchedulerCycleServiceTest extends TestCase
             'status' => GrowCycleStatus::RUNNING,
         ]);
 
+        DB::table('zone_workflow_state')->updateOrInsert(
+            ['zone_id' => $zone->id],
+            [
+                'workflow_phase' => 'ready',
+                'updated_at' => now(),
+            ],
+        );
+
         return [$zone, $cycle];
     }
 

@@ -70,11 +70,10 @@ final class LightingScheduleParser
             ? ScheduleSpecHelper::parseTimeSpec((string) $lightingConfig['start_time'])
             : null;
         if ($photoperiodHours !== null && $startFromConfig !== null && is_numeric($photoperiodHours)) {
-            // start_time хранится как локальное время теплицы (HH:MM:SS). Парсим
-            // его в TZ теплицы, добавляем photoperiod и конвертируем end в UTC-
-            // эквивалент. Если TZ не определён — fallback на UTC (старое
-            // поведение, сохраняет backward compat).
-            $tz = $this->resolveZoneTimezone($zoneId) ?? 'UTC';
+            $tz = $this->resolveZoneTimezone($zoneId);
+            if ($tz === null) {
+                return null;
+            }
             $startDt = CarbonImmutable::createFromFormat(
                 'Y-m-d H:i:s',
                 $nowUtc->setTimezone($tz)->toDateString().' '.$startFromConfig,

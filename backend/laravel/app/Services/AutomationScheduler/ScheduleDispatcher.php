@@ -6,6 +6,8 @@ use App\Services\AutomationConfigDocumentService;
 use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -38,15 +40,141 @@ class ScheduleDispatcher
         ScheduleCycleContext $context,
         callable $writeLog,
     ): array {
+        $results = $this->dispatchBatch(
+            jobs: [[
+                'zoneId' => $zoneId,
+                'schedule' => $schedule,
+                'triggerTime' => $triggerTime,
+                'scheduleKey' => $scheduleKey,
+            ]],
+            context: $context,
+            writeLog: $writeLog,
+        );
+
+        return $results[0] ?? [
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'dispatch_batch_result_missing',
+        ];
+    }
+
+    /**
+     * @param  array<int, array{
+     *     zoneId:int,
+     *     schedule:ScheduleItem,
+     *     triggerTime:CarbonImmutable,
+     *     scheduleKey:string
+     * }>  $jobs
+     * @return array<int, array{dispatched: bool, retryable: bool, reason: string}>
+     */
+    public function dispatchBatch(
+        array $jobs,
+        ScheduleCycleContext $context,
+        callable $writeLog,
+    ): array {
+        $results = [];
+        $preparedByIndex = [];
+
+        foreach ($jobs as $index => $job) {
+            $prepared = $this->prepareDispatch(
+                zoneId: (int) $job['zoneId'],
+                schedule: $job['schedule'],
+                triggerTime: $job['triggerTime'],
+                scheduleKey: (string) $job['scheduleKey'],
+                context: $context,
+                writeLog: $writeLog,
+            );
+            if (! (bool) ($prepared['ready'] ?? false)) {
+                $results[$index] = $prepared['result'];
+                continue;
+            }
+            $preparedByIndex[$index] = $prepared;
+        }
+
+        if ($preparedByIndex === []) {
+            ksort($results);
+
+            return $results;
+        }
+
+        $responses = [];
+        try {
+            $poolResults = Http::pool(function (Pool $pool) use ($preparedByIndex): void {
+                foreach ($preparedByIndex as $index => $prepared) {
+                    $pool
+                        ->as((string) $index)
+                        ->acceptJson()
+                        ->timeout($prepared['timeout_sec'])
+                        ->withHeaders($prepared['headers'])
+                        ->post($prepared['url'], $prepared['request_payload']);
+                }
+            });
+
+            foreach ($preparedByIndex as $index => $_prepared) {
+                $responses[$index] = [
+                    'response' => $poolResults[(string) $index] ?? null,
+                    'error' => null,
+                ];
+            }
+        } catch (\Throwable $poolError) {
+            foreach ($preparedByIndex as $index => $prepared) {
+                try {
+                    $response = Http::acceptJson()
+                        ->timeout($prepared['timeout_sec'])
+                        ->withHeaders($prepared['headers'])
+                        ->post($prepared['url'], $prepared['request_payload']);
+                    $responses[$index] = [
+                        'response' => $response,
+                        'error' => null,
+                    ];
+                } catch (ConnectionException $e) {
+                    $responses[$index] = [
+                        'response' => null,
+                        'error' => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        foreach ($preparedByIndex as $index => $prepared) {
+            /** @var Response|null $response */
+            $response = $responses[$index]['response'] ?? null;
+            $results[$index] = $this->finalizePreparedDispatch(
+                prepared: $prepared,
+                response: $response,
+                connectionErrorMessage: $responses[$index]['error'] ?? null,
+                writeLog: $writeLog,
+            );
+        }
+
+        ksort($results);
+
+        return $results;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function prepareDispatch(
+        int $zoneId,
+        ScheduleItem $schedule,
+        CarbonImmutable $triggerTime,
+        string $scheduleKey,
+        ScheduleCycleContext $context,
+        callable $writeLog,
+    ): array {
         $cfg = $context->cfg;
         $headers = $context->headers;
-
         $taskType = $schedule->taskType;
+
         if (! in_array($taskType, SchedulerConstants::SUPPORTED_TASK_TYPES, true)) {
             return [
-                'dispatched' => false,
-                'retryable' => false,
-                'reason' => 'unsupported_task_type',
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => false,
+                    'reason' => 'unsupported_task_type',
+                ],
             ];
         }
 
@@ -63,9 +191,12 @@ class ScheduleDispatcher
             );
 
             return [
-                'dispatched' => false,
-                'retryable' => false,
-                'reason' => 'ae3_task_type_not_supported',
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => false,
+                    'reason' => 'ae3_task_type_not_supported',
+                ],
             ];
         }
 
@@ -76,9 +207,12 @@ class ScheduleDispatcher
             writeLog: $writeLog,
         )) {
             return [
-                'dispatched' => false,
-                'retryable' => true,
-                'reason' => 'schedule_busy',
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => true,
+                    'reason' => 'schedule_busy',
+                ],
             ];
         }
 
@@ -100,15 +234,17 @@ class ScheduleDispatcher
             );
 
             return [
-                'dispatched' => false,
-                'retryable' => true,
-                'reason' => self::ZONE_SETUP_PENDING_REASON,
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => true,
+                    'reason' => self::ZONE_SETUP_PENDING_REASON,
+                ],
             ];
         }
 
         $taskName = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
         $payload = $schedule->payload;
-
         $scheduledForIso = SchedulerRuntimeHelper::toIso($triggerTime);
         $correlationAnchor = $scheduledForIso;
         if (is_string($payload['catchup_original_trigger_time'] ?? null)) {
@@ -151,9 +287,12 @@ class ScheduleDispatcher
             ]);
 
             return [
-                'dispatched' => false,
-                'retryable' => true,
-                'reason' => 'intent_upsert_failed',
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => true,
+                    'reason' => 'intent_upsert_failed',
+                ],
             ];
         }
 
@@ -172,21 +311,61 @@ class ScheduleDispatcher
             $endpoint = '/start-lighting-tick';
         }
 
-        try {
-            $response = Http::acceptJson()
-                ->timeout($cfg['timeout_sec'])
-                ->withHeaders($headers)
-                ->post($cfg['api_url'].'/zones/'.$zoneId.$endpoint, $requestPayload);
-        } catch (ConnectionException $e) {
+        return [
+            'ready' => true,
+            'zone_id' => $zoneId,
+            'task_type' => $taskType,
+            'task_name' => $taskName,
+            'schedule_key' => $scheduleKey,
+            'correlation_id' => $correlationId,
+            'scheduled_for_iso' => $scheduledForIso,
+            'due_at_iso' => $dueAtIso,
+            'expires_at_iso' => $expiresAtIso,
+            'accepted_at' => $acceptedAt,
+            'due_at' => $dueAt,
+            'expires_at' => $expiresAt,
+            'intent_snapshot' => $intentSnapshot,
+            'timeout_sec' => $cfg['timeout_sec'],
+            'active_task_ttl_sec' => $cfg['active_task_ttl_sec'],
+            'headers' => $headers,
+            'url' => $cfg['api_url'].'/zones/'.$zoneId.$endpoint,
+            'request_payload' => $requestPayload,
+        ];
+    }
+
+    /**
+     * @return array{dispatched: bool, retryable: bool, reason: string}
+     */
+    private function finalizePreparedDispatch(
+        array $prepared,
+        ?Response $response,
+        ?string $connectionErrorMessage,
+        callable $writeLog,
+    ): array {
+        $zoneId = (int) $prepared['zone_id'];
+        $taskType = (string) $prepared['task_type'];
+        $taskName = (string) $prepared['task_name'];
+        $scheduleKey = (string) $prepared['schedule_key'];
+        $correlationId = (string) $prepared['correlation_id'];
+
+        if ($connectionErrorMessage !== null) {
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
                 'error' => 'connection_error',
-                'message' => $e->getMessage(),
+                'message' => $connectionErrorMessage,
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
 
+            return [
+                'dispatched' => false,
+                'retryable' => true,
+                'reason' => 'connection_error',
+            ];
+        }
+
+        if (! $response instanceof Response) {
             return [
                 'dispatched' => false,
                 'retryable' => true,
@@ -266,9 +445,9 @@ class ScheduleDispatcher
         $body = $response->json();
         $data = is_array($body) ? ($body['data'] ?? null) : null;
         $taskIdentity = $this->resolveSubmittedTaskIdentity(
-            zoneId: $zoneId,
+            zoneId: (int) $prepared['zone_id'],
             responseTaskId: is_array($data) ? trim((string) ($data['task_id'] ?? '')) : '',
-            intentId: isset($intentSnapshot['intent_id']) ? (int) $intentSnapshot['intent_id'] : null,
+            intentId: isset($prepared['intent_snapshot']['intent_id']) ? (int) $prepared['intent_snapshot']['intent_id'] : null,
         );
         $taskId = $taskIdentity['task_id'];
         $apiTaskStatus = is_array($data)
@@ -306,12 +485,12 @@ class ScheduleDispatcher
             $terminalDetails = [
                 'terminal_on_submit' => true,
                 'is_duplicate' => $isDuplicate,
-                'scheduled_for' => $scheduledForIso,
-                'due_at' => $dueAtIso,
-                'expires_at' => $expiresAtIso,
+                'scheduled_for' => $prepared['scheduled_for_iso'],
+                'due_at' => $prepared['due_at_iso'],
+                'expires_at' => $prepared['expires_at_iso'],
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
-                'accepted_at' => SchedulerRuntimeHelper::toIso($acceptedAt),
+                'accepted_at' => SchedulerRuntimeHelper::toIso($prepared['accepted_at']),
             ];
             $writeLog($taskName, $logStatus, [
                 'zone_id' => $zoneId,
@@ -327,9 +506,9 @@ class ScheduleDispatcher
                 scheduleKey: $scheduleKey,
                 correlationId: $correlationId,
                 status: $normalizedStatus,
-                acceptedAt: $acceptedAt,
-                dueAt: $dueAt,
-                expiresAt: $expiresAt,
+                acceptedAt: $prepared['accepted_at'],
+                dueAt: $prepared['due_at'],
+                expiresAt: $prepared['expires_at'],
                 details: $terminalDetails,
             );
 
@@ -342,13 +521,13 @@ class ScheduleDispatcher
 
         $acceptedDetails = [
             'deduplicated' => $isDuplicate,
-            'intent_id' => $intentSnapshot['intent_id'] ?? null,
-            'scheduled_for' => $scheduledForIso,
-            'due_at' => $dueAtIso,
-            'expires_at' => $expiresAtIso,
+            'intent_id' => $prepared['intent_snapshot']['intent_id'] ?? null,
+            'scheduled_for' => $prepared['scheduled_for_iso'],
+            'due_at' => $prepared['due_at_iso'],
+            'expires_at' => $prepared['expires_at_iso'],
             'schedule_key' => $scheduleKey,
             'correlation_id' => $correlationId,
-            'accepted_at' => SchedulerRuntimeHelper::toIso($acceptedAt),
+            'accepted_at' => SchedulerRuntimeHelper::toIso($prepared['accepted_at']),
         ];
 
         $writeLog($taskName, 'accepted', [
@@ -365,9 +544,9 @@ class ScheduleDispatcher
             scheduleKey: $scheduleKey,
             correlationId: $correlationId,
             status: $taskStatus,
-            acceptedAt: $acceptedAt,
-            dueAt: $dueAt,
-            expiresAt: $expiresAt,
+            acceptedAt: $prepared['accepted_at'],
+            dueAt: $prepared['due_at'],
+            expiresAt: $prepared['expires_at'],
             details: $acceptedDetails,
         );
 
@@ -377,9 +556,9 @@ class ScheduleDispatcher
                 'task_id' => $taskId,
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
-                'accepted_at' => SchedulerRuntimeHelper::toIso($acceptedAt),
+                'accepted_at' => SchedulerRuntimeHelper::toIso($prepared['accepted_at']),
             ],
-            now()->addSeconds($cfg['active_task_ttl_sec']),
+            now()->addSeconds((int) ($prepared['active_task_ttl_sec'] ?? 180)),
         );
 
         return [

@@ -8,7 +8,6 @@ use App\Services\AutomationScheduler\ActiveTaskPoller;
 use App\Services\AutomationScheduler\ActiveTaskStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -95,9 +94,19 @@ class ActiveTaskPollerTest extends TestCase
         $this->assertTrue($busyness[$scheduleKey]);
     }
 
-    public function test_reconcile_pending_active_tasks_reads_ae3_status_from_canonical_internal_api(): void
+    public function test_reconcile_pending_active_tasks_reads_ae3_status_from_intent_db(): void
     {
         $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-completed-'.$zone->id,
+            'status' => 'completed',
+            'completed_at' => now()->subSecond(),
+            'created_at' => now()->subMinute(),
+            'updated_at' => now()->subSecond(),
+        ]);
         $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
         DB::table('laravel_scheduler_active_tasks')->insert([
             'task_id' => '321',
@@ -109,30 +118,14 @@ class ActiveTaskPollerTest extends TestCase
             'accepted_at' => now(),
             'due_at' => now()->addSeconds(30),
             'expires_at' => now()->addMinutes(5),
-            'details' => json_encode(['task_id' => '321'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'details' => json_encode(['task_id' => '321', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
-
-        Http::fake([
-            'http://automation-engine:9405/internal/tasks/321' => Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'task_id' => 321,
-                    'zone_id' => $zone->id,
-                    'task_type' => 'cycle_start',
-                    'status' => 'completed',
-                ],
-            ], 200),
         ]);
 
         $poller = new ActiveTaskPoller(new ActiveTaskStore);
         $busyness = $poller->reconcilePendingActiveTasks(
             cfg: [
-                'api_url' => 'http://automation-engine:9405',
-                'timeout_sec' => 2.0,
-                'scheduler_id' => 'laravel-scheduler',
-                'token' => 'test-token',
                 'active_task_poll_batch' => 50,
                 'active_task_ttl_sec' => 180,
             ],
@@ -145,12 +138,21 @@ class ActiveTaskPollerTest extends TestCase
             'task_id' => '321',
             'status' => 'completed',
         ]);
-        Http::assertSentCount(1);
     }
 
     public function test_reconcile_pending_active_tasks_keeps_ae3_task_busy_while_waiting_command(): void
     {
         $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-running-'.$zone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinute(),
+            'created_at' => now()->subMinutes(2),
+            'updated_at' => now()->subSecond(),
+        ]);
         $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
         DB::table('laravel_scheduler_active_tasks')->insert([
             'task_id' => '654',
@@ -162,30 +164,14 @@ class ActiveTaskPollerTest extends TestCase
             'accepted_at' => now(),
             'due_at' => now()->addSeconds(30),
             'expires_at' => now()->addMinutes(5),
-            'details' => json_encode(['task_id' => '654'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'details' => json_encode(['task_id' => '654', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
-
-        Http::fake([
-            'http://automation-engine:9405/internal/tasks/654' => Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'task_id' => 654,
-                    'zone_id' => $zone->id,
-                    'task_type' => 'cycle_start',
-                    'status' => 'waiting_command',
-                ],
-            ], 200),
         ]);
 
         $poller = new ActiveTaskPoller(new ActiveTaskStore);
         $busyness = $poller->reconcilePendingActiveTasks(
             cfg: [
-                'api_url' => 'http://automation-engine:9405',
-                'timeout_sec' => 2.0,
-                'scheduler_id' => 'laravel-scheduler',
-                'token' => 'test-token',
                 'active_task_poll_batch' => 50,
                 'active_task_ttl_sec' => 180,
             ],
@@ -200,7 +186,7 @@ class ActiveTaskPollerTest extends TestCase
         ]);
     }
 
-    public function test_reconcile_pending_active_tasks_keeps_ae3_task_busy_when_not_found_before_expiry(): void
+    public function test_reconcile_pending_active_tasks_keeps_ae3_task_busy_without_intent_id_before_expiry(): void
     {
         $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
         $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
@@ -219,22 +205,9 @@ class ActiveTaskPollerTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        Http::fake([
-            'http://automation-engine:9405/internal/tasks/777' => Http::response([
-                'detail' => [
-                    'error' => 'task_not_found',
-                    'task_id' => 777,
-                ],
-            ], 404),
-        ]);
-
         $poller = new ActiveTaskPoller(new ActiveTaskStore);
         $busyness = $poller->reconcilePendingActiveTasks(
             cfg: [
-                'api_url' => 'http://automation-engine:9405',
-                'timeout_sec' => 2.0,
-                'scheduler_id' => 'laravel-scheduler',
-                'token' => 'test-token',
                 'active_task_poll_batch' => 50,
                 'active_task_ttl_sec' => 180,
             ],
@@ -281,18 +254,6 @@ class ActiveTaskPollerTest extends TestCase
             'details' => json_encode(['task_id' => '888', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now()->subMinutes(12),
             'updated_at' => now()->subMinutes(12),
-        ]);
-
-        Http::fake([
-            'http://automation-engine:9405/internal/tasks/888' => Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'task_id' => 888,
-                    'zone_id' => $zone->id,
-                    'task_type' => 'cycle_start',
-                    'status' => 'completed',
-                ],
-            ], 200),
         ]);
 
         $poller = new ActiveTaskPoller(new ActiveTaskStore);
@@ -351,18 +312,6 @@ class ActiveTaskPollerTest extends TestCase
             'details' => json_encode(['task_id' => '889', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now()->subMinutes(6),
             'updated_at' => now()->subMinutes(6),
-        ]);
-
-        Http::fake([
-            'http://automation-engine:9405/internal/tasks/889' => Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'task_id' => 889,
-                    'zone_id' => $zone->id,
-                    'task_type' => 'cycle_start',
-                    'status' => 'waiting_command',
-                ],
-            ], 200),
         ]);
 
         $poller = new ActiveTaskPoller(new ActiveTaskStore);

@@ -10,13 +10,23 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from auth import _auth_ingest
 from command_service import (
     _create_command_payload,
+    _get_gh_uid_from_zone_id,
     _get_zone_uid_from_id,
+    publish_command_mqtt,
     publish_config_mqtt,
     publish_config_temp_mqtt,
 )
-from common.db import fetch
+from common.commands import mark_command_send_failed, mark_command_sent
+from common.db import execute, fetch
+from common.db import create_zone_event
+from common.env import get_settings
+from common.infra_alerts import send_infra_alert
 from common.mqtt import get_mqtt_client
 from common.trace_context import set_trace_id
+from commands import alerts as alerts_module
+from commands import lifecycle as lifecycle_module
+from commands import publisher as publisher_module
+from commands import resolution as resolution_module
 from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
 from commands.resolution import (
@@ -30,10 +40,39 @@ from commands.validation import (
     validate_command_request_contract,
 )
 from models import CommandRequest, NodeConfigPublishRequest
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Backward-compat exports for legacy tests/imports that patch symbols from
+# this module directly.
+async def _ensure_command_for_publish(**kwargs):
+    _sync_legacy_dependency_overrides()
+    original_fetch = lifecycle_module.fetch
+    original_execute = lifecycle_module.execute
+    lifecycle_module.fetch = fetch
+    lifecycle_module.execute = execute
+    try:
+        return await ensure_command_for_publish(**kwargs)
+    finally:
+        lifecycle_module.fetch = original_fetch
+        lifecycle_module.execute = original_execute
+
+
+def _sync_legacy_dependency_overrides() -> None:
+    """Keep refactored command modules patchable via ``command_routes.*`` symbols."""
+    lifecycle_module.fetch = fetch
+    lifecycle_module.execute = execute
+    resolution_module.fetch = fetch
+    resolution_module.get_settings = get_settings
+    resolution_module._get_gh_uid_from_zone_id = _get_gh_uid_from_zone_id
+    resolution_module._get_zone_uid_from_id = _get_zone_uid_from_id
+    alerts_module.send_infra_alert = send_infra_alert
+    alerts_module.create_zone_event = create_zone_event
+    publisher_module.get_mqtt_client = get_mqtt_client
+    publisher_module.publish_command_mqtt = publish_command_mqtt
+    publisher_module.mark_command_sent = mark_command_sent
+    publisher_module.mark_command_send_failed = mark_command_send_failed
 
 
 def _log_config_publish_context(
@@ -64,6 +103,7 @@ async def publish_node_config(
     req: NodeConfigPublishRequest = Body(...),
 ):
     """Publish NodeConfig в MQTT. Требует greenhouse_uid + zone_id/zone_uid."""
+    _sync_legacy_dependency_overrides()
     _auth_ingest(request)
 
     if not req.zone_id and not req.zone_uid:
@@ -191,6 +231,7 @@ async def _publish_command_core(
     Route-handler'ы отличаются только тем, ОТКУДА берутся ``zone_id/node_uid/channel``
     (path vs body), и что они валидируют на входе. Этот helper централизует всё остальное.
     """
+    _sync_legacy_dependency_overrides()
     validate_command_request_contract(req)
 
     node_id = await require_node_assigned_to_zone(node_uid, zone_id)

@@ -10,6 +10,7 @@ use App\Services\AutomationScheduler\SchedulerConstants;
 use App\Services\AutomationScheduler\SchedulerMetricsStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -20,6 +21,9 @@ class SchedulerMetricsControllerTest extends TestCase
 
     public function test_metrics_endpoint_renders_prometheus_scheduler_metrics(): void
     {
+        Carbon::setTestNow(CarbonImmutable::parse('2026-03-12 12:00:00', 'UTC'));
+        Config::set('services.automation_engine.scheduler_dispatch_interval_sec', 1);
+
         $zone = Zone::factory()->create([
             'status' => 'online',
             'automation_runtime' => 'ae3',
@@ -99,7 +103,36 @@ class SchedulerMetricsControllerTest extends TestCase
             $body,
         );
         $this->assertStringContainsString('laravel_scheduler_active_tasks_count 1', $body);
+        DB::table('zone_automation_intents')->insert([
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'IRRIGATE_ONCE',
+                'payload' => json_encode(['source' => 'test']),
+                'idempotency_key' => 'intent-pending-1',
+                'status' => 'pending',
+                'created_at' => CarbonImmutable::now('UTC')->subSeconds(120),
+                'updated_at' => CarbonImmutable::now('UTC')->subSeconds(120),
+            ],
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'IRRIGATE_ONCE',
+                'payload' => json_encode(['source' => 'test']),
+                'idempotency_key' => 'intent-pending-2',
+                'status' => 'pending',
+                'created_at' => CarbonImmutable::now('UTC')->subSeconds(30),
+                'updated_at' => CarbonImmutable::now('UTC')->subSeconds(30),
+            ],
+        ]);
+
+        $responseWithLag = $this->get('/api/system/scheduler/metrics');
+        $responseWithLag->assertOk();
+        $bodyWithLag = $responseWithLag->getContent();
+        $this->assertIsString($bodyWithLag);
+        $this->assertStringContainsString('laravel_scheduler_pending_intents_count 2', $bodyWithLag);
+        $this->assertMatchesRegularExpression('/laravel_scheduler_oldest_pending_intent_age_seconds\s+1[0-9]{2}(\.0+)?/', $bodyWithLag);
+        $this->assertStringContainsString('laravel_scheduler_dispatch_cycle_overrun_seconds 0', $bodyWithLag);
         $this->assertStringNotContainsString('999', $body);
+        Carbon::setTestNow();
     }
 
     public function test_metrics_endpoint_renders_zone_config_auto_reverts_counter(): void

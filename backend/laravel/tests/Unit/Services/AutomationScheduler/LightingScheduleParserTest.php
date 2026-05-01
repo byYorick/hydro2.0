@@ -2,17 +2,25 @@
 
 namespace Tests\Unit\Services\AutomationScheduler;
 
+use App\Models\Greenhouse;
+use App\Models\Zone;
 use App\Services\AutomationScheduler\LightingScheduleParser;
 use Carbon\CarbonImmutable;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class LightingScheduleParserTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_parse_supports_photoperiod_plus_start_time(): void
     {
+        $greenhouse = Greenhouse::factory()->create(['timezone' => 'Europe/Moscow']);
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+
         $parser = new LightingScheduleParser;
         $items = $parser->parse(
-            zoneId: 12,
+            zoneId: $zone->id,
             lightingConfig: [
                 'start_time' => '08:00',
                 'photoperiod_hours' => 10,
@@ -25,6 +33,29 @@ class LightingScheduleParserTest extends TestCase
         $this->assertCount(1, $items);
         $this->assertSame('08:00:00', $items[0]->startTime);
         $this->assertSame('18:00:00', $items[0]->endTime);
+        $this->assertSame(90, $items[0]->intervalSec);
+    }
+
+    public function test_parse_skips_photoperiod_window_when_zone_timezone_is_missing(): void
+    {
+        $greenhouse = Greenhouse::factory()->create(['timezone' => null]);
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+
+        $parser = new LightingScheduleParser;
+        $items = $parser->parse(
+            zoneId: $zone->id,
+            lightingConfig: [
+                'start_time' => '08:00',
+                'photoperiod_hours' => 10,
+                'interval_sec' => 90,
+            ],
+            lightingScheduleSpec: null,
+            nowUtc: CarbonImmutable::parse('2026-03-03 00:00:00', 'UTC'),
+        );
+
+        $this->assertCount(1, $items);
+        $this->assertNull($items[0]->startTime);
+        $this->assertNull($items[0]->endTime);
         $this->assertSame(90, $items[0]->intervalSec);
     }
 

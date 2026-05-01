@@ -35,6 +35,7 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         http_client_timeout_sec=10.0,
         worker_owner="test-worker",
         max_task_execution_sec=900,
+        max_parallel_tasks=4,
     )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)

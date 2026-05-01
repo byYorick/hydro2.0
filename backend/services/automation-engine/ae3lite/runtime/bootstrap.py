@@ -143,6 +143,7 @@ def build_ae3_runtime_bundle(
         logger=logger,
         lease_ttl_sec=config.lease_ttl_sec,
         max_task_execution_sec=config.max_task_execution_sec,
+        max_parallel_tasks=config.max_parallel_tasks,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
         task_repository=task_repository,

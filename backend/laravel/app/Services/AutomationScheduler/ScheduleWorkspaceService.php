@@ -5,7 +5,6 @@ namespace App\Services\AutomationScheduler;
 use App\Models\Zone;
 use App\Services\AutomationRuntimeConfigService;
 use Carbon\CarbonImmutable;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -327,8 +326,8 @@ class ScheduleWorkspaceService
                         : [];
                 }
             }
-        } catch (ConnectionException|\Throwable $e) {
-            Log::warning('ScheduleWorkspaceService: control-mode snapshot unavailable, using fallback', [
+        } catch (\Throwable $e) {
+            Log::warning('ScheduleWorkspaceService: control-mode snapshot unavailable', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);

@@ -49,6 +49,12 @@ final class SchedulerConstants
 
     public const METRIC_ACTIVE_TASKS_COUNT = 'laravel_scheduler_active_tasks_count';
 
+    public const METRIC_PENDING_INTENTS_COUNT = 'laravel_scheduler_pending_intents_count';
+
+    public const METRIC_OLDEST_PENDING_INTENT_AGE_SECONDS = 'laravel_scheduler_oldest_pending_intent_age_seconds';
+
+    public const METRIC_DISPATCH_CYCLE_OVERRUN_SECONDS = 'laravel_scheduler_dispatch_cycle_overrun_seconds';
+
     public const METRIC_ZONE_CONFIG_AUTO_REVERTS_TOTAL = 'ae3_zone_config_auto_reverts_total';
 
     /** @var list<float> */

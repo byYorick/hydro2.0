@@ -7,9 +7,7 @@ use App\Models\SchedulerLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class ActiveTaskPoller
 {
@@ -33,6 +31,7 @@ class ActiveTaskPoller
         }
 
         $now = SchedulerRuntimeHelper::nowUtc();
+        $prefetchedStatuses = $this->prefetchAe3IntentStatuses($pendingTasks);
         /** @var array<string, bool> $busyness */
         $busyness = [];
 
@@ -52,6 +51,7 @@ class ActiveTaskPoller
                 cfg: $cfg,
                 now: $now,
                 writeLog: $writeLog,
+                prefetchedStatuses: $prefetchedStatuses,
             );
 
             if ($scheduleKey === '') {
@@ -137,6 +137,7 @@ class ActiveTaskPoller
         array $cfg,
         CarbonImmutable $now,
         callable $writeLog,
+        array $prefetchedStatuses = [],
     ): bool {
         $taskId = trim((string) $task->task_id);
         if ($taskId === '') {
@@ -155,7 +156,9 @@ class ActiveTaskPoller
             $isExpired = $expiresAt->lt($now);
         }
 
-        $status = $this->fetchTaskStatus($task, $taskId, $cfg);
+        $status = array_key_exists($taskId, $prefetchedStatuses)
+            ? $prefetchedStatuses[$taskId]
+            : $this->fetchTaskStatus($task, $taskId, $cfg);
         // 404 before expiry can be transient read-model lag. Keep task busy until deadline.
         if ($status === 'not_found' && ! $isExpired) {
             $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
@@ -242,6 +245,91 @@ class ActiveTaskPoller
         $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
 
         return true;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, LaravelSchedulerActiveTask>  $pendingTasks
+     * @return array<string, string|null> map task_id => normalized status
+     */
+    private function prefetchAe3IntentStatuses(\Illuminate\Support\Collection $pendingTasks): array
+    {
+        /** @var array<string, int> $taskIntent */
+        $taskIntent = [];
+        /** @var array<string, int> $taskZone */
+        $taskZone = [];
+        /** @var array<int, true> $intentIds */
+        $intentIds = [];
+
+        foreach ($pendingTasks as $task) {
+            if (! $task instanceof LaravelSchedulerActiveTask) {
+                continue;
+            }
+            if ($this->resolveAutomationRuntime((int) $task->zone_id, 'laravel scheduler task') !== 'ae3') {
+                continue;
+            }
+            $taskId = trim((string) $task->task_id);
+            if ($taskId === '') {
+                continue;
+            }
+            $intentId = $this->resolveIntentIdForTask($task);
+            if ($intentId <= 0) {
+                continue;
+            }
+            $taskIntent[$taskId] = $intentId;
+            $taskZone[$taskId] = (int) $task->zone_id;
+            $intentIds[$intentId] = true;
+        }
+
+        if ($taskIntent === []) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('zone_automation_intents')
+                ->whereIn('id', array_keys($intentIds))
+                ->get(['id', 'zone_id', 'status']);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to prefetch zone_automation_intents statuses for scheduler poll', [
+                'intent_count' => count($intentIds),
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+
+            return [];
+        }
+
+        /** @var array<string, string> $intentStatus */
+        $intentStatus = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row->id ?? 0);
+            $zoneId = (int) ($row->zone_id ?? 0);
+            if ($id <= 0 || $zoneId <= 0) {
+                continue;
+            }
+            $normalized = match (strtolower(trim((string) ($row->status ?? '')))) {
+                'pending', 'claimed', 'running', 'waiting_command' => 'accepted',
+                'completed' => 'completed',
+                'failed' => 'failed',
+                'cancelled' => 'cancelled',
+                default => null,
+            };
+            if ($normalized !== null) {
+                $intentStatus[$id.'|'.$zoneId] = $normalized;
+            }
+        }
+
+        /** @var array<string, string> $result */
+        $result = [];
+        foreach ($taskIntent as $taskId => $intentId) {
+            $zoneId = (int) ($taskZone[$taskId] ?? 0);
+            if ($zoneId <= 0) {
+                continue;
+            }
+            $key = $intentId.'|'.$zoneId;
+            $result[$taskId] = $intentStatus[$key] ?? 'not_found';
+        }
+
+        return $result;
     }
 
     private function resolveActiveTaskIdFromCache(string $cacheKey): string
@@ -362,16 +450,14 @@ class ActiveTaskPoller
             return $this->fetchIntentStatusFromDb($intentId, (int) $task->zone_id);
         }
 
-        // Fallback: HTTP request to AE (for tasks created before intent_id was stored in details).
-        if (! app()->environment('testing')) {
-            Log::debug('AE3 status poll via HTTP fallback (no intent_id in details)', [
-                'task_id' => $taskId,
-                'zone_id' => (int) $task->zone_id,
-                'schedule_key' => (string) $task->schedule_key,
-            ]);
-        }
+        Log::warning('AE3 scheduler task has no intent_id in details; marking as not_found', [
+            'task_id' => $taskId,
+            'zone_id' => (int) $task->zone_id,
+            'task_type' => (string) $task->task_type,
+            'schedule_key' => (string) $task->schedule_key,
+        ]);
 
-        return $this->fetchAe3StatusViaHttp($task, $taskId, $cfg);
+        return 'not_found';
     }
 
     private function fetchIntentStatusFromDb(int $intentId, int $zoneId): ?string
@@ -402,82 +488,6 @@ class ActiveTaskPoller
             'cancelled' => 'cancelled',
             default => null,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $cfg
-     */
-    private function fetchAe3StatusViaHttp(
-        LaravelSchedulerActiveTask $task,
-        string $taskId,
-        array $cfg,
-    ): ?string {
-        $apiUrl = rtrim((string) ($cfg['api_url'] ?? ''), '/');
-        if ($apiUrl === '') {
-            return null;
-        }
-
-        try {
-            $response = Http::acceptJson()
-                ->timeout(max(1.0, (float) ($cfg['timeout_sec'] ?? 2.0)))
-                ->withHeaders($this->automationEngineHeaders($cfg))
-                ->get($apiUrl.'/internal/tasks/'.$taskId);
-        } catch (\Throwable $e) {
-            Log::warning('Failed to poll AE3 canonical task status from automation-engine', [
-                'task_id' => $taskId,
-                'zone_id' => (int) $task->zone_id,
-                'error' => $e->getMessage(),
-                'exception_type' => get_class($e),
-            ]);
-
-            return null;
-        }
-
-        if ($response->status() === 404) {
-            return 'not_found';
-        }
-        if (! $response->successful()) {
-            Log::warning('Unexpected AE3 canonical task status response', [
-                'task_id' => $taskId,
-                'zone_id' => (int) $task->zone_id,
-                'status_code' => $response->status(),
-                'response' => $response->body(),
-            ]);
-
-            return null;
-        }
-
-        $body = $response->json();
-        $data = is_array($body) ? ($body['data'] ?? null) : null;
-        $status = is_array($data) ? strtolower(trim((string) ($data['status'] ?? ''))) : '';
-
-        return match ($status) {
-            'pending', 'claimed', 'running', 'waiting_command' => 'accepted',
-            'completed' => 'completed',
-            'failed' => 'failed',
-            'cancelled' => 'cancelled',
-            default => null,
-        };
-    }
-
-    /**
-     * @param  array<string, mixed>  $cfg
-     * @return array<string, string>
-     */
-    private function automationEngineHeaders(array $cfg): array
-    {
-        $headers = [
-            'Accept' => 'application/json',
-            'X-Trace-Id' => Str::lower((string) Str::uuid()),
-            'X-Scheduler-Id' => (string) ($cfg['scheduler_id'] ?? 'laravel-scheduler'),
-        ];
-
-        $token = trim((string) ($cfg['token'] ?? ''));
-        if ($token !== '') {
-            $headers['Authorization'] = 'Bearer '.$token;
-        }
-
-        return $headers;
     }
 
     private function resolveIntentIdForTask(LaravelSchedulerActiveTask $task): int

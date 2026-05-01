@@ -2,13 +2,17 @@
 
 namespace App\Services\AutomationScheduler;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\AutomationRuntimeConfigService;
 
 class SchedulerPrometheusMetricsExporter
 {
     public function __construct(
         private readonly ActiveTaskStore $activeTaskStore,
+        private readonly SchedulerMetricsStore $schedulerMetricsStore,
+        private readonly AutomationRuntimeConfigService $runtimeConfig,
     ) {}
 
     public function render(): string
@@ -19,6 +23,8 @@ class SchedulerPrometheusMetricsExporter
             ...$this->renderCycleDurationHistogram(),
             '',
             ...$this->renderActiveTasksGauge(),
+            '',
+            ...$this->renderIntentLagGauges(),
             '',
             ...$this->renderZoneConfigAutoRevertsCounter(),
             '',
@@ -200,6 +206,58 @@ class SchedulerPrometheusMetricsExporter
         }
 
         return $lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function renderIntentLagGauges(): array
+    {
+        $pendingMetric = SchedulerConstants::METRIC_PENDING_INTENTS_COUNT;
+        $oldestAgeMetric = SchedulerConstants::METRIC_OLDEST_PENDING_INTENT_AGE_SECONDS;
+        $overrunMetric = SchedulerConstants::METRIC_DISPATCH_CYCLE_OVERRUN_SECONDS;
+
+        $pendingCount = 0;
+        $oldestPendingAgeSeconds = 0.0;
+        if (Schema::hasTable('zone_automation_intents')) {
+            $pendingCount = (int) DB::table('zone_automation_intents')
+                ->where('status', 'pending')
+                ->count();
+            $oldestPendingAt = DB::table('zone_automation_intents')
+                ->where('status', 'pending')
+                ->min('created_at');
+            if ($oldestPendingAt !== null) {
+                try {
+                    if ($oldestPendingAt instanceof \DateTimeInterface) {
+                        $oldestTs = CarbonImmutable::instance($oldestPendingAt)->utc()->setMicroseconds(0);
+                    } else {
+                        $oldestTs = CarbonImmutable::parse((string) $oldestPendingAt, 'UTC')->setMicroseconds(0);
+                    }
+                    $oldestPendingAgeSeconds = max(
+                        0.0,
+                        (float) (SchedulerRuntimeHelper::nowUtc()->getTimestamp() - $oldestTs->getTimestamp()),
+                    );
+                } catch (\Throwable) {
+                    $oldestPendingAgeSeconds = 0.0;
+                }
+            }
+        }
+
+        $dispatchIntervalSec = max(1, (int) ($this->runtimeConfig->schedulerConfig()['dispatch_interval_sec'] ?? 60));
+        $p99CycleDurationSec = $this->schedulerMetricsStore->estimateCycleDurationP99('start_cycle') ?? 0.0;
+        $dispatchCycleOverrun = max(0.0, $p99CycleDurationSec - $dispatchIntervalSec);
+
+        return [
+            '# HELP '.$pendingMetric.' Current number of scheduler intents in pending status.',
+            '# TYPE '.$pendingMetric.' gauge',
+            $this->renderMetricLine($pendingMetric, [], $pendingCount),
+            '# HELP '.$oldestAgeMetric.' Age in seconds of the oldest pending scheduler intent.',
+            '# TYPE '.$oldestAgeMetric.' gauge',
+            $this->renderMetricLine($oldestAgeMetric, [], $oldestPendingAgeSeconds),
+            '# HELP '.$overrunMetric.' Positive difference between p99 scheduler cycle duration and dispatch interval.',
+            '# TYPE '.$overrunMetric.' gauge',
+            $this->renderMetricLine($overrunMetric, [], $dispatchCycleOverrun),
+        ];
     }
 
     /**

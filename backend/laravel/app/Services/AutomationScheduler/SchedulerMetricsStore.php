@@ -88,6 +88,43 @@ class SchedulerMetricsStore
         }
     }
 
+    public function estimateCycleDurationP99(string $dispatchMode = 'start_cycle'): ?float
+    {
+        if (
+            ! Schema::hasTable('laravel_scheduler_cycle_duration_aggregates')
+            || ! Schema::hasTable('laravel_scheduler_cycle_duration_bucket_counts')
+        ) {
+            return null;
+        }
+
+        $mode = trim($dispatchMode) !== '' ? trim($dispatchMode) : 'start_cycle';
+        $aggregate = DB::table('laravel_scheduler_cycle_duration_aggregates')
+            ->where('dispatch_mode', $mode)
+            ->first(['sample_count']);
+        $sampleCount = max(0, (int) ($aggregate->sample_count ?? 0));
+        if ($sampleCount <= 0) {
+            return null;
+        }
+
+        $rank = (int) ceil($sampleCount * 0.99);
+        $rank = max(1, $rank);
+        $rows = DB::table('laravel_scheduler_cycle_duration_bucket_counts')
+            ->where('dispatch_mode', $mode)
+            ->orderByRaw('bucket_le::double precision')
+            ->get(['bucket_le', 'sample_count']);
+
+        foreach ($rows as $row) {
+            $bucketCount = max(0, (int) ($row->sample_count ?? 0));
+            if ($bucketCount >= $rank) {
+                $bucket = (float) ($row->bucket_le ?? 0.0);
+
+                return max(0.0, $bucket);
+            }
+        }
+
+        return null;
+    }
+
     private function formatMetricValue(float $value): string
     {
         $formatted = rtrim(rtrim(number_format($value, 6, '.', ''), '0'), '.');

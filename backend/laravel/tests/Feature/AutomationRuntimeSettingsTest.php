@@ -7,6 +7,7 @@ use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
 use Inertia\Testing\AssertableInertia;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
 use Tests\RefreshDatabase;
@@ -181,6 +182,32 @@ class AutomationRuntimeSettingsTest extends TestCase
 
         $this->assertSame(900, $schedulerConfig['expires_after_sec']);
         $this->assertSame(1800, $schedulerConfig['hard_stale_after_sec']);
+    }
+
+    public function test_scheduler_config_enforces_lock_ttl_from_p99_cycle_duration_plus_margin(): void
+    {
+        Config::set('services.automation_engine.scheduler_lock_ttl_sec', 30);
+        Config::set('services.automation_engine.scheduler_lock_ttl_margin_sec', 10);
+
+        DB::table('laravel_scheduler_cycle_duration_aggregates')->insert([
+            'dispatch_mode' => 'start_cycle',
+            'sample_count' => 100,
+            'sample_sum' => 1200,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('laravel_scheduler_cycle_duration_bucket_counts')->insert([
+            'dispatch_mode' => 'start_cycle',
+            'bucket_le' => '120',
+            'sample_count' => 99,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $schedulerConfig = app(AutomationRuntimeConfigService::class)->schedulerConfig();
+
+        $this->assertSame(130, $schedulerConfig['lock_ttl_sec']);
+        $this->assertSame(10, $schedulerConfig['lock_ttl_margin_sec']);
     }
 
     /**

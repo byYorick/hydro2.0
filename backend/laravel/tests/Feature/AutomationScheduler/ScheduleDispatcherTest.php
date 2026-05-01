@@ -315,6 +315,97 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertNull($row->payload);
     }
 
+    public function test_dispatch_batch_processes_multiple_jobs_in_parallel_pool_path(): void
+    {
+        $zoneA = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+        $zoneB = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zoneA->id.'/start-cycle' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '6101',
+                    'zone_id' => $zoneA->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200),
+            'http://automation-engine:9405/zones/'.$zoneB->id.'/start-cycle' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '6102',
+                    'zone_id' => $zoneB->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-04-05 10:00:00', 'UTC');
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [],
+        );
+
+        $scheduleA = new ScheduleItem(zoneId: $zoneA->id, taskType: 'diagnostics', intervalSec: 1800);
+        $scheduleB = new ScheduleItem(zoneId: $zoneB->id, taskType: 'diagnostics', intervalSec: 1800);
+        $logs = [];
+
+        $results = $dispatcher->dispatchBatch(
+            jobs: [
+                [
+                    'zoneId' => $zoneA->id,
+                    'schedule' => $scheduleA,
+                    'triggerTime' => $triggerTime,
+                    'scheduleKey' => $scheduleA->scheduleKey,
+                ],
+                [
+                    'zoneId' => $zoneB->id,
+                    'schedule' => $scheduleB,
+                    'triggerTime' => $triggerTime,
+                    'scheduleKey' => $scheduleB->scheduleKey,
+                ],
+            ],
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertCount(2, $results);
+        $this->assertSame('accepted', $results[0]['reason']);
+        $this->assertSame('accepted', $results[1]['reason']);
+        $this->assertTrue($results[0]['dispatched']);
+        $this->assertTrue($results[1]['dispatched']);
+        Http::assertSentCount(2);
+        $this->assertNotEmpty($logs);
+    }
+
     public function test_dispatch_preserves_zone_busy_reason_for_backpressure_metrics(): void
     {
         $zone = Zone::factory()->create([

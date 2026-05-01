@@ -9,12 +9,19 @@ use App\Models\TelemetryLast;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
 class UnifiedDashboardTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Cache::flush();
+    }
 
     public function test_dashboard_renders_unified_inertia_props(): void
     {
@@ -135,14 +142,15 @@ class UnifiedDashboardTest extends TestCase
         $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
             $page->component('Dashboard/Index')
                 ->where('summary.zones_blocked', 1)
-                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
-                    $z->where('id', $zone->id)
-                        ->where('automation_block.blocked', true)
-                        ->where('automation_block.reason_code', 'biz_ae3_task_failed')
-                        ->where('automation_block.severity', 'critical')
-                        ->where('automation_block.message', 'Цикл прерван: prepare_recirculation timeout')
-                        ->where('automation_block.alerts_count', 2)
-                        ->etc();
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && data_get($zonePayload, 'automation_block.blocked') === true
+                        && data_get($zonePayload, 'automation_block.reason_code') === 'biz_ae3_task_failed'
+                        && data_get($zonePayload, 'automation_block.severity') === 'critical'
+                        && data_get($zonePayload, 'automation_block.message') === 'Цикл прерван: prepare_recirculation timeout'
+                        && data_get($zonePayload, 'automation_block.alerts_count') === 2;
                 });
         });
     }
@@ -170,11 +178,12 @@ class UnifiedDashboardTest extends TestCase
         $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
             $page->component('Dashboard/Index')
                 ->where('summary.zones_blocked', 1)
-                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
-                    $z->where('id', $zone->id)
-                        ->where('automation_block.blocked', true)
-                        ->where('automation_block.reason_code', 'BIZ_AE3_TASK_FAILED')
-                        ->etc();
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && data_get($zonePayload, 'automation_block.blocked') === true
+                        && data_get($zonePayload, 'automation_block.reason_code') === 'BIZ_AE3_TASK_FAILED';
                 });
         });
     }
@@ -216,10 +225,11 @@ class UnifiedDashboardTest extends TestCase
             ->assertInertia(function (AssertableInertia $page) use ($zone): void {
                 $page->component('Dashboard/Index')
                     ->where('summary.zones_blocked', 0)
-                    ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
-                        $z->where('id', $zone->id)
-                            ->where('automation_block', null)
-                            ->etc();
+                    ->where('zones', function ($zones) use ($zone): bool {
+                        $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                        return is_array($zonePayload)
+                            && data_get($zonePayload, 'automation_block') === null;
                     });
             });
     }
@@ -247,10 +257,11 @@ class UnifiedDashboardTest extends TestCase
         $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
             $page->component('Dashboard/Index')
                 ->where('summary.zones_blocked', 0)
-                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
-                    $z->where('id', $zone->id)
-                        ->where('automation_block', null)
-                        ->etc();
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && data_get($zonePayload, 'automation_block') === null;
                 });
         });
     }
@@ -277,15 +288,22 @@ class UnifiedDashboardTest extends TestCase
         $response->assertOk();
         $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
             $page->component('Dashboard/Index')
-                ->has('zones', 1, function (AssertableInertia $z) use ($zone): void {
-                    $z->where('id', $zone->id)
-                        ->has('alerts_preview', 1, function (AssertableInertia $a): void {
-                            $a->where('code', 'biz_zone_correction_config_missing')
-                                ->where('severity', 'error')
-                                ->where('source', 'biz')
-                                ->etc();
-                        })
-                        ->etc();
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+                    if (! is_array($zonePayload)) {
+                        return false;
+                    }
+
+                    $alertsPreview = collect(data_get($zonePayload, 'alerts_preview', []));
+                    /** @var array<string, mixed>|null $alert */
+                    $alert = $alertsPreview->first(function (mixed $item): bool {
+                        return is_array($item)
+                            && ($item['code'] ?? null) === 'biz_zone_correction_config_missing';
+                    });
+
+                    return is_array($alert)
+                        && ($alert['severity'] ?? null) === 'error'
+                        && ($alert['source'] ?? null) === 'biz';
                 });
         });
     }

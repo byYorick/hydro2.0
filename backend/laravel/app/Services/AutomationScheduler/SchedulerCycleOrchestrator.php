@@ -180,6 +180,62 @@ class SchedulerCycleOrchestrator
             );
             /** @var array<int, CarbonImmutable> $zoneCursorCache */
             $zoneCursorCache = [];
+            /** @var array<int, array{zoneId:int,schedule:ScheduleItem,triggerTime:CarbonImmutable,scheduleKey:string,taskType:string}> $batchDispatchJobs */
+            $batchDispatchJobs = [];
+            $dispatchParallelism = max(1, (int) ($cfg['dispatch_parallelism'] ?? 8));
+
+            $flushBatchDispatchJobs = function () use (
+                &$batchDispatchJobs,
+                $dispatchParallelism,
+                $context,
+                &$attemptedDispatches,
+                &$successfulDispatches,
+                &$dispatchMetrics
+            ): void {
+                if ($batchDispatchJobs === []) {
+                    return;
+                }
+
+                foreach (array_chunk($batchDispatchJobs, $dispatchParallelism, true) as $chunk) {
+                    $jobs = [];
+                    foreach ($chunk as $job) {
+                        $jobs[] = [
+                            'zoneId' => $job['zoneId'],
+                            'schedule' => $job['schedule'],
+                            'triggerTime' => $job['triggerTime'],
+                            'scheduleKey' => $job['scheduleKey'],
+                        ];
+                    }
+
+                    $results = $this->scheduleDispatcher->dispatchBatch(
+                        jobs: $jobs,
+                        context: $context,
+                        writeLog: function (string $taskName, string $status, array $details): void {
+                            $this->writeSchedulerLog($taskName, $status, $details);
+                        },
+                    );
+
+                    foreach (array_values($chunk) as $idx => $chunkJob) {
+                        $attemptedDispatches++;
+                        $dispatchResult = $results[$idx] ?? [
+                            'dispatched' => false,
+                            'retryable' => true,
+                            'reason' => 'dispatch_batch_result_missing',
+                        ];
+                        $this->incrementDispatchMetric(
+                            $dispatchMetrics,
+                            $chunkJob['zoneId'],
+                            $chunkJob['taskType'],
+                            $dispatchResult,
+                        );
+                        if ((bool) ($dispatchResult['dispatched'] ?? false)) {
+                            $successfulDispatches++;
+                        }
+                    }
+                }
+
+                $batchDispatchJobs = [];
+            };
 
             foreach ($schedules as $schedule) {
                 if (! $schedule instanceof ScheduleItem) {
@@ -216,26 +272,23 @@ class SchedulerCycleOrchestrator
 
                 if ($intervalSec > 0) {
                     if ($this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)) {
-                        $attemptedDispatches++;
-                        $dispatchResult = $this->scheduleDispatcher->dispatch(
-                            zoneId: $zoneId,
-                            schedule: $schedule,
-                            triggerTime: $now,
-                            scheduleKey: $scheduleKey,
-                            context: $context,
-                            writeLog: function (string $taskName, string $status, array $details): void {
-                                $this->writeSchedulerLog($taskName, $status, $details);
-                            },
-                        );
-                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
-                        if ($dispatchResult['dispatched']) {
-                            $successfulDispatches++;
-                            $executedKeys[$scheduleKey] = true;
-                        }
+                        $executedKeys[$scheduleKey] = true;
+                        $batchDispatchJobs[] = [
+                            'zoneId' => $zoneId,
+                            'schedule' => $schedule,
+                            'triggerTime' => $now,
+                            'scheduleKey' => $scheduleKey,
+                            'taskType' => $taskType,
+                        ];
+                    }
+                    if (count($batchDispatchJobs) >= $dispatchParallelism) {
+                        $flushBatchDispatchJobs();
                     }
 
                     continue;
                 }
+
+                $flushBatchDispatchJobs();
 
                 $scheduleTime = $schedule->time;
                 if (is_string($scheduleTime) && $scheduleTime !== '') {
@@ -269,16 +322,23 @@ class SchedulerCycleOrchestrator
                         }
 
                         $attemptedDispatches++;
-                        $dispatchResult = $this->scheduleDispatcher->dispatch(
-                            zoneId: $zoneId,
-                            schedule: $dispatchSchedule,
-                            triggerTime: $dispatchTrigger,
-                            scheduleKey: $scheduleKey,
+                        $dispatchResults = $this->scheduleDispatcher->dispatchBatch(
+                            jobs: [[
+                                'zoneId' => $zoneId,
+                                'schedule' => $dispatchSchedule,
+                                'triggerTime' => $dispatchTrigger,
+                                'scheduleKey' => $scheduleKey,
+                            ]],
                             context: $context,
                             writeLog: function (string $taskName, string $status, array $details): void {
                                 $this->writeSchedulerLog($taskName, $status, $details);
                             },
                         );
+                        $dispatchResult = $dispatchResults[0] ?? [
+                            'dispatched' => false,
+                            'retryable' => true,
+                            'reason' => 'dispatch_batch_result_missing',
+                        ];
                         $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
                         if ($dispatchResult['dispatched']) {
                             $successfulDispatches++;
@@ -307,20 +367,15 @@ class SchedulerCycleOrchestrator
                     $desiredNow = $this->finalizer->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
                     $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
                     if ($desiredNow !== $desiredLast) {
-                        $attemptedDispatches++;
-                        $dispatchResult = $this->scheduleDispatcher->dispatch(
-                            zoneId: $zoneId,
-                            schedule: $schedule,
-                            triggerTime: $now,
-                            scheduleKey: $scheduleKey,
-                            context: $context,
-                            writeLog: function (string $taskName, string $status, array $details): void {
-                                $this->writeSchedulerLog($taskName, $status, $details);
-                            },
-                        );
-                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
-                        if ($dispatchResult['dispatched']) {
-                            $successfulDispatches++;
+                        $batchDispatchJobs[] = [
+                            'zoneId' => $zoneId,
+                            'schedule' => $schedule,
+                            'triggerTime' => $now,
+                            'scheduleKey' => $scheduleKey,
+                            'taskType' => $taskType,
+                        ];
+                        if (count($batchDispatchJobs) >= $dispatchParallelism) {
+                            $flushBatchDispatchJobs();
                         }
                     }
                     $executedKeys[$scheduleKey] = true;
@@ -330,6 +385,8 @@ class SchedulerCycleOrchestrator
 
                 $triggerlessCount++;
             }
+
+            $flushBatchDispatchJobs();
 
             $zonesPendingTimeRetry = 0;
             foreach ($zoneNow as $zoneId => $now) {

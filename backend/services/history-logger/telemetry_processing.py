@@ -35,10 +35,11 @@ from telemetry.anomaly_alerts import (
     emit_telemetry_anomaly_alert as _emit_telemetry_anomaly_alert,
     emit_telemetry_anomaly_resolved_alert as _emit_telemetry_anomaly_resolved_alert,
 )
+from telemetry import anomaly_alerts as telemetry_anomaly_module
 from telemetry.ingress import (
     REDIS_PUSH_MAX_RETRIES,
     REDIS_PUSH_RETRY_BACKOFF_BASE,
-    handle_telemetry,
+    handle_telemetry as _handle_telemetry_impl,
     push_with_retry as _push_with_retry,
 )
 from telemetry.helpers import (
@@ -56,6 +57,7 @@ from telemetry.helpers import (
     parse_node_info as _parse_node_info,
     to_timestamp_ms as _to_timestamp_ms,
 )
+from telemetry import helpers as telemetry_helpers_module
 from utils import (
     MAX_PAYLOAD_SIZE,
     _calculate_broadcast_backoff,
@@ -68,6 +70,31 @@ from utils import (
 )
 
 logger = logging.getLogger(__name__)
+_anomaly_alert_last_sent = telemetry_anomaly_module._anomaly_alert_last_sent
+_anomaly_resolved_last_sent = telemetry_anomaly_module._anomaly_resolved_last_sent
+
+
+def _sync_telemetry_ingress_overrides() -> None:
+    """Сохраняет patch-совместимость тестов через ``telemetry_processing.*``."""
+    from telemetry import ingress as telemetry_ingress_module
+
+    telemetry_ingress_module.TELEM_RECEIVED = TELEM_RECEIVED
+    telemetry_ingress_module.TELEMETRY_DROPPED = TELEMETRY_DROPPED
+    telemetry_ingress_module.REDIS_OPERATION_DURATION = REDIS_OPERATION_DURATION
+    telemetry_ingress_module.logger = logger
+    telemetry_ingress_module.push_with_retry = _push_with_retry
+
+
+def _sync_telemetry_runtime_overrides() -> None:
+    telemetry_helpers_module.fetch = fetch
+    telemetry_anomaly_module.send_infra_alert = send_infra_alert
+    telemetry_anomaly_module.send_infra_resolved_alert = send_infra_resolved_alert
+
+
+async def handle_telemetry(topic: str, payload: bytes) -> None:
+    _sync_telemetry_ingress_overrides()
+    _sync_telemetry_runtime_overrides()
+    await _handle_telemetry_impl(topic, payload)
 
 SIMULATION_TELEMETRY_EVENTS_ENABLED = os.getenv("SIMULATION_TELEMETRY_EVENTS", "0") in ("1", "true", "True", "yes", "Yes")
 SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC = float(os.getenv("SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC", "10"))
@@ -455,6 +482,7 @@ async def refresh_caches() -> None:
 
 async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
     """Обработать батч телеметрии и записать в БД."""
+    _sync_telemetry_runtime_overrides()
     if not samples:
         return
 

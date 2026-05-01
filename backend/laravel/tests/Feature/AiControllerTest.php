@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
+use Laravel\Sanctum\Sanctum;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -22,8 +23,6 @@ class AiControllerTest extends TestCase
 
     private User $user;
 
-    private string $token;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -31,11 +30,7 @@ class AiControllerTest extends TestCase
             'password' => 'password',
             'role' => 'operator',
         ]);
-        $response = $this->postJson('/api/auth/login', [
-            'email' => $this->user->email,
-            'password' => 'password',
-        ]);
-        $this->token = $response->json('data.token');
+        Sanctum::actingAs($this->user);
     }
 
     public function test_predict_endpoint(): void
@@ -64,12 +59,11 @@ class AiControllerTest extends TestCase
             ]);
         }
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/ai/predict', [
-                'zone_id' => $zone->id,
-                'metric_type' => 'PH',
-                'horizon_minutes' => 60,
-            ]);
+        $response = $this->postJson('/api/ai/predict', [
+            'zone_id' => $zone->id,
+            'metric_type' => 'PH',
+            'horizon_minutes' => 60,
+        ]);
 
         $response->assertOk()
             ->assertJsonStructure([
@@ -91,12 +85,11 @@ class AiControllerTest extends TestCase
     {
         $zone = Zone::factory()->create();
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/ai/predict', [
-                'zone_id' => $zone->id,
-                'metric_type' => 'PH',
-                'horizon_minutes' => 60,
-            ]);
+        $response = $this->postJson('/api/ai/predict', [
+            'zone_id' => $zone->id,
+            'metric_type' => 'PH',
+            'horizon_minutes' => 60,
+        ]);
 
         $response->assertStatus(422)
             ->assertJson([
@@ -158,10 +151,9 @@ class AiControllerTest extends TestCase
             'last_quality' => 'GOOD',
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/ai/explain_zone', [
-                'zone_id' => $zone->id,
-            ]);
+        $response = $this->postJson('/api/ai/explain_zone', [
+            'zone_id' => $zone->id,
+        ]);
 
         $response->assertOk()
             ->assertJsonStructure([
@@ -234,10 +226,9 @@ class AiControllerTest extends TestCase
             'last_quality' => 'GOOD',
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/ai/recommend', [
-                'zone_id' => $zone->id,
-            ]);
+        $response = $this->postJson('/api/ai/recommend', [
+            'zone_id' => $zone->id,
+        ]);
 
         $response->assertOk()
             ->assertJsonStructure([
@@ -259,8 +250,7 @@ class AiControllerTest extends TestCase
         $zone1 = Zone::factory()->create(['status' => 'RUNNING']);
         $zone2 = Zone::factory()->create(['status' => 'online']);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/ai/diagnostics');
+        $response = $this->postJson('/api/ai/diagnostics');
 
         $response->assertOk()
             ->assertJsonStructure([

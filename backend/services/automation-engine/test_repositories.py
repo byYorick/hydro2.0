@@ -83,38 +83,41 @@ async def test_zone_repository_get_active_zones():
 
 
 @pytest.mark.asyncio
-async def test_zone_repository_get_zone_data_batch():
-    """Test getting all zone data in batch."""
-    repo = ZoneRepository()
-    
-    # Проверяем, есть ли метод (может быть в другой версии)
-    if not hasattr(repo, 'get_zone_data_batch'):
-        pytest.skip("get_zone_data_batch method not implemented")
-    
-    with patch("repositories.zone_repository.fetch") as mock_fetch:
-        mock_fetch.return_value = [{
-            "zone_id": 1,
-            "recipe_id": 10,
-            "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
-            "phase_name": "Germination",
-            "metric_type": "PH",
-            "value": 6.3,
-            "node_id": 100,
-            "node_uid": "nd-irrig-1",
-            "node_type": "irrig",
-            "channel": "default",
-            "capabilities": {"ph_control": True},
-        }]
-        
+async def test_recipe_repository_get_zone_data_batch():
+    """get_zone_data_batch живёт на RecipeRepository (агрегат recipe+telemetry+nodes)."""
+    repo = RecipeRepository()
+
+    zone_info = {
+        "zone_id": 1,
+        "capabilities": {"ph_control": True},
+        "current_phase_index": 0,
+        "targets": {"ph": 6.5, "ec": 1.8},
+        "phase_name": "Germination",
+    }
+    telemetry_raw = {"PH": {"value": 6.3, "updated_at": "2024-01-01T12:00:00"}}
+    nodes_list = [
+        {"id": 100, "uid": "nd-irrig-1", "type": "irrig", "channel": "default"},
+    ]
+
+    with patch("repositories.recipe_repository.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = [
+            {
+                "zone_info": zone_info,
+                "telemetry": telemetry_raw,
+                "nodes": nodes_list,
+            },
+        ]
+
         result = await repo.get_zone_data_batch(1)
-        
+
         assert "recipe_info" in result
         assert "telemetry" in result
         assert "nodes" in result
         assert "capabilities" in result
         assert result["recipe_info"]["zone_id"] == 1
         assert result["telemetry"]["PH"] == 6.3
+        assert "irrig:default" in result["nodes"]
+        assert result["nodes"]["irrig:default"]["node_uid"] == "nd-irrig-1"
 
 
 @pytest.mark.asyncio

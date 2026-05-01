@@ -32,6 +32,7 @@ class Ae3RuntimeConfig:
     http_client_timeout_sec: float
     worker_owner: str
     max_task_execution_sec: int
+    max_parallel_tasks: int
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -82,6 +83,7 @@ class Ae3RuntimeConfig:
             http_client_timeout_sec=max(0.1, float(os.getenv("AE_HTTP_CLIENT_TIMEOUT_SEC", "10.0"))),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
             max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
+            max_parallel_tasks=max(1, int(os.getenv("AE_MAX_PARALLEL_TASKS", "4"))),
         )
 
     def validate(self) -> None:

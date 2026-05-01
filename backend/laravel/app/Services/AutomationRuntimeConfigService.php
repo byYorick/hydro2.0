@@ -2,12 +2,17 @@
 
 namespace App\Services;
 
+use App\Services\AutomationScheduler\SchedulerMetricsStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 
 class AutomationRuntimeConfigService
 {
+    public function __construct(
+        private readonly SchedulerMetricsStore $schedulerMetricsStore,
+    ) {}
+
     private const KNOWN_CATCHUP_POLICIES = ['replay_limited', 'skip'];
     private const DEFAULT_AUTOMATION_ENGINE_API_URL = 'http://automation-engine:9405';
 
@@ -209,6 +214,20 @@ class AutomationRuntimeConfigService
             'min' => 10,
             'unit' => 'sec',
         ],
+        'automation_engine.scheduler_dispatch_parallelism' => [
+            'section_key' => 'scheduler_runtime',
+            'section_title' => 'Laravel scheduler runtime',
+            'item_key' => 'scheduler_dispatch_parallelism',
+            'label' => 'dispatch_parallelism',
+            'description' => 'Максимальное количество параллельных HTTP dispatch в одном batch.',
+            'config_path' => 'services.automation_engine.scheduler_dispatch_parallelism',
+            'default' => 8,
+            'type' => 'int',
+            'input_type' => 'number',
+            'editable' => true,
+            'min' => 1,
+            'max' => 100,
+        ],
         'automation_engine.scheduler_lock_key' => [
             'section_key' => 'scheduler_catchup_and_lock',
             'section_title' => 'Catchup, lock и cursor',
@@ -233,6 +252,20 @@ class AutomationRuntimeConfigService
             'input_type' => 'number',
             'editable' => true,
             'min' => 10,
+            'unit' => 'sec',
+        ],
+        'automation_engine.scheduler_lock_ttl_margin_sec' => [
+            'section_key' => 'scheduler_catchup_and_lock',
+            'section_title' => 'Catchup, lock и cursor',
+            'item_key' => 'scheduler_lock_ttl_margin_sec',
+            'label' => 'lock_ttl_margin_sec',
+            'description' => 'Запас к p99 cycle duration для расчёта lock TTL.',
+            'config_path' => 'services.automation_engine.scheduler_lock_ttl_margin_sec',
+            'default' => 10,
+            'type' => 'int',
+            'input_type' => 'number',
+            'editable' => true,
+            'min' => 1,
             'unit' => 'sec',
         ],
         'automation_engine.scheduler_active_task_ttl_sec' => [
@@ -404,6 +437,12 @@ class AutomationRuntimeConfigService
         if (! in_array($catchupPolicy, self::KNOWN_CATCHUP_POLICIES, true)) {
             $catchupPolicy = 'replay_limited';
         }
+        $configuredLockTtlSec = max(10, $this->intValue('automation_engine.scheduler_lock_ttl_sec', 55));
+        $lockTtlMarginSec = max(1, $this->intValue('automation_engine.scheduler_lock_ttl_margin_sec', 10));
+        $p99CycleDurationSec = $this->schedulerMetricsStore->estimateCycleDurationP99('start_cycle');
+        $lockTtlFromP99 = $p99CycleDurationSec === null
+            ? 0
+            : (int) ceil(max(0.0, $p99CycleDurationSec) + $lockTtlMarginSec);
 
         return [
             'api_url' => rtrim($this->stringValue('automation_engine.api_url', self::DEFAULT_AUTOMATION_ENGINE_API_URL), '/'),
@@ -419,8 +458,10 @@ class AutomationRuntimeConfigService
             'catchup_max_windows' => max(1, $this->intValue('automation_engine.scheduler_catchup_max_windows', 3)),
             'catchup_rate_limit_per_cycle' => max(1, $this->intValue('automation_engine.scheduler_catchup_rate_limit_per_cycle', 20)),
             'dispatch_interval_sec' => max(10, $this->intValue('automation_engine.scheduler_dispatch_interval_sec', 60)),
+            'dispatch_parallelism' => max(1, $this->intValue('automation_engine.scheduler_dispatch_parallelism', 8)),
             'lock_key' => $this->stringValue('automation_engine.scheduler_lock_key', 'automation:dispatch-schedules'),
-            'lock_ttl_sec' => max(10, $this->intValue('automation_engine.scheduler_lock_ttl_sec', 55)),
+            'lock_ttl_sec' => max(10, $configuredLockTtlSec, $lockTtlFromP99),
+            'lock_ttl_margin_sec' => $lockTtlMarginSec,
             'active_task_ttl_sec' => max(30, $this->intValue('automation_engine.scheduler_active_task_ttl_sec', $expiresAfterSec)),
             'active_task_retention_days' => max(1, $this->intValue('automation_engine.scheduler_active_task_retention_days', 60)),
             'active_task_cleanup_batch' => max(1, $this->intValue('automation_engine.scheduler_active_task_cleanup_batch', 500)),
@@ -680,7 +721,9 @@ class AutomationRuntimeConfigService
             'automation_engine.scheduler_catchup_max_windows' => $schedulerConfig['catchup_max_windows'],
             'automation_engine.scheduler_catchup_rate_limit_per_cycle' => $schedulerConfig['catchup_rate_limit_per_cycle'],
             'automation_engine.scheduler_dispatch_interval_sec' => $schedulerConfig['dispatch_interval_sec'],
+            'automation_engine.scheduler_dispatch_parallelism' => $schedulerConfig['dispatch_parallelism'],
             'automation_engine.scheduler_lock_ttl_sec' => $schedulerConfig['lock_ttl_sec'],
+            'automation_engine.scheduler_lock_ttl_margin_sec' => $schedulerConfig['lock_ttl_margin_sec'],
             'automation_engine.scheduler_active_task_ttl_sec' => $schedulerConfig['active_task_ttl_sec'],
             'automation_engine.scheduler_active_task_retention_days' => $schedulerConfig['active_task_retention_days'],
             'automation_engine.scheduler_active_task_cleanup_batch' => $schedulerConfig['active_task_cleanup_batch'],
