@@ -2,220 +2,339 @@
   <AppLayout>
     <section class="ui-hero p-5 space-y-4 mb-4">
       <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-        fertigation guide
+        documentation
       </p>
       <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
-        Документация по калибровке и дозированию EC/pH
+        Документация
       </h1>
       <p class="text-sm text-[color:var(--text-muted)]">
-        Практический регламент для клубники на капле (осмос), схема pH (кислота/щёлочь) + EC A/B/C/D.
+        Вложенная библиотека: обзор и РФ → вода/раствор → субстрат → системы → справочники; отдельно — регламент фертигации для клубники на капле.
       </p>
+
+      <div class="flex flex-wrap gap-2 pt-1">
+        <button
+          type="button"
+          class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border"
+          :class="activeTab === 'library'
+            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)]'
+            : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'"
+          @click="activeTab = 'library'"
+        >
+          Библиотека знаний
+        </button>
+        <button
+          type="button"
+          class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border"
+          :class="activeTab === 'fertigation'
+            ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)]'
+            : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'"
+          @click="activeTab = 'fertigation'"
+        >
+          Регламент фертигации (клубника)
+        </button>
+      </div>
     </section>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        1) Калибровка насосов и коэффициента k
-      </h2>
-      <div class="text-xs text-[color:var(--text-muted)] space-y-1">
-        <p>Цель: получить гидравлическую производительность насоса (`ml_per_sec`) и вклад в EC (`k`, mS/cm на мл/л).</p>
-        <p>Рекомендуемый тест: чистая вода 10-20 л, температура стабильная, интенсивное перемешивание 2-3 минуты после каждой дозы.</p>
-      </div>
-      <pre class="mt-3 rounded-lg bg-[color:var(--bg-elevated)] p-3 text-xs overflow-auto"><code>ml_per_sec = actual_ml / duration_sec
-delta_ec = ec_after - ec_before
-ml_per_l = actual_ml / test_volume_l
-k = delta_ec / ml_per_l</code></pre>
-      <div class="text-xs text-[color:var(--text-muted)] mt-3 space-y-1">
-        <p>Если `EC_base` нестабилен, фиксируйте `ec_before` перед каждым тестом и делайте минимум 3 повтора на насос.</p>
-        <p>Перекалибровка: при смене партии удобрений, после обслуживания насоса, и планово 1 раз в 2-4 недели.</p>
-      </div>
-    </Card>
+    <template v-if="activeTab === 'library'">
+      <Card class="mb-4 border-amber-500/20 dark:border-amber-400/25">
+        <p class="text-xs text-[color:var(--text-muted)] leading-relaxed">
+          <span class="font-semibold text-[color:var(--text-primary)]">Дисклеймер:</span>
+          материалы — обобщение открытых руководств. Цели EC/pH/полива зависят от сорта, климата в теплице, PAR/VPD и качества воды.
+          Российские учебные тексты и статьи могут быть привязаны к конкретной технологии года выпуска — всегда проверяйте измерениями в вашей зоне.
+        </p>
+      </Card>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        2) Что такое ΔEC
-      </h2>
-      <pre class="rounded-lg bg-[color:var(--bg-elevated)] p-3 text-xs overflow-auto"><code>delta_ec = ec_target - ec_base</code></pre>
-      <div class="text-xs text-[color:var(--text-muted)] mt-3 space-y-1">
-        <p>`ec_base` — EC исходной воды/бака до внесения удобрений.</p>
-        <p>Для осмоса обычно низкое `ec_base`, но измерение перед каждым циклом обязательно.</p>
-      </div>
-    </Card>
+      <div class="flex flex-col md:flex-row gap-4 items-start mb-4">
+        <!-- Вертикальные вкладки слева -->
+        <aside
+          class="w-full md:w-56 lg:w-60 shrink-0 md:sticky md:top-4 md:max-h-[calc(100vh-5rem)] md:overflow-y-auto z-10"
+        >
+          <Card class="p-2">
+            <p class="px-2 py-1.5 text-[10px] uppercase tracking-wider text-[color:var(--text-dim)]">
+              Разделы библиотеки
+            </p>
+            <nav
+              class="flex flex-col gap-0.5"
+              aria-label="Разделы документации"
+            >
+              <button
+                v-for="sec in LIBRARY_SECTION_TABS"
+                :key="sec.id"
+                type="button"
+                class="w-full rounded-lg px-2.5 py-2 text-left transition-colors border border-transparent"
+                :class="librarySection === sec.id
+                  ? 'bg-[color:var(--bg-elevated)] border-[color:var(--accent-green)] text-[color:var(--text-primary)] shadow-[inset_3px_0_0_var(--accent-green)]'
+                  : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]/60 hover:text-[color:var(--text-primary)]'"
+                @click="librarySection = sec.id"
+              >
+                <span class="block text-xs font-semibold leading-snug">{{ sec.label }}</span>
+                <span class="block text-[10px] text-[color:var(--text-dim)] mt-0.5 leading-snug">{{ sec.hint }}</span>
+              </button>
+            </nav>
+          </Card>
+        </aside>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        3) Режимы расчёта дозирования
-      </h2>
-      <div class="text-xs text-[color:var(--text-muted)] space-y-2">
-        <p><span class="font-semibold text-[color:var(--text-primary)]">A. По долям ΔEC:</span> задаются доли `pA..pD` (сумма = 1.0), затем считаются дозы через `k`.</p>
-      </div>
-      <pre class="mt-2 rounded-lg bg-[color:var(--bg-elevated)] p-3 text-xs overflow-auto"><code>delta_ec_i = p_i * delta_ec
-x_i (ml/l) = delta_ec_i / k_i
-M_i (ml на бак) = x_i * V</code></pre>
-      <div class="text-xs text-[color:var(--text-muted)] mt-3 space-y-1">
-        <p><span class="font-semibold text-[color:var(--text-primary)]">B. Ratio + EC PID:</span> PID задаёт интенсивность коррекции по ошибке EC, а доли компонентов распределяют вклад между насосами.</p>
-        <p><span class="font-semibold text-[color:var(--text-primary)]">C. По элементам (ppm):</span> целевые ppm N/K/Ca/Mg/Fe переводятся в дозы солей (расчёт ведётся через матрицу состава солей).</p>
-      </div>
-    </Card>
+        <!-- Контент выбранного раздела -->
+        <div class="flex-1 min-w-0 space-y-4">
+          <p class="text-[11px] text-[color:var(--text-dim)] leading-relaxed px-0.5">
+            {{ currentSectionMeta?.hint }}
+          </p>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        4) Стартовые доли для клубники
-      </h2>
-      <div class="text-xs text-[color:var(--text-muted)] space-y-1">
-        <p>Вега (A:Ca, B:NPK, C:MgSO4, D:Micro+Fe): `0.32 / 0.48 / 0.17 / 0.03`.</p>
-        <p>Плодоношение: `0.36 / 0.42 / 0.19 / 0.03`.</p>
-        <p>Микро (D) обычно 1-3% от ΔEC.</p>
-        <p>Tipburn/дефицит Ca: увеличить A. Межжилковый хлороз: увеличить C и/или D. Плохая плотность/вкус ягоды: проверить баланс K/Ca и дренаж.</p>
-      </div>
-    </Card>
+          <!-- Поиск: не показываем на справочниках (там отдельный фильтр таблицы) -->
+          <Card
+            v-if="librarySection !== 'references'"
+          >
+            <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Поиск в этом разделе</label>
+            <input
+              v-model="query"
+              type="search"
+              placeholder="Например: EC, дренаж, КиберЛенинка…"
+              class="w-full rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
+            >
+          </Card>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        5) Практические правила смешивания
-      </h2>
-      <ul class="list-disc pl-5 text-xs text-[color:var(--text-muted)] space-y-1">
-        <li>Кальций держать отдельно от фосфатов и сульфатов в маточниках.</li>
-        <li>MgSO4 отдельно от кальциевого маточника.</li>
-        <li>Микро/Fe (хелаты) отдельной линией, с контролем pH рабочего раствора.</li>
-        <li>Для капли по клубнике держать pH раствора 5.3-5.8 (особенно при pH субстрата около 7.8).</li>
-        <li>Использовать задержку между дозами и промежуточный re-check EC.</li>
-      </ul>
-    </Card>
+          <!-- Вкладка: Обзор и Россия -->
+          <template v-if="librarySection === 'intro'">
+        <Card class="mb-4">
+          <h2 class="text-sm font-semibold text-[color:var(--text-primary)] mb-3">
+            {{ RUSSIAN_SEGMENT_OVERVIEW.title }}
+          </h2>
+          <div class="space-y-3 text-xs text-[color:var(--text-muted)] leading-relaxed">
+            <p
+              v-for="(para, pi) in RUSSIAN_SEGMENT_OVERVIEW.paragraphs"
+              :key="pi"
+            >
+              {{ para }}
+            </p>
+          </div>
+        </Card>
+        <TopicCardGrid
+          v-if="filteredSectionTopics.length > 0"
+          :topics="filteredSectionTopics"
+        />
+        <Card
+          v-if="filteredSectionTopics.length === 0"
+          class="mb-4"
+        >
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Ничего не найдено в этом разделе.
+          </p>
+        </Card>
+      </template>
 
-    <Card class="mb-4">
-      <h2 class="text-sm font-semibold mb-2">
-        6) Чек-лист калибровки
-      </h2>
-      <ul class="list-disc pl-5 text-xs text-[color:var(--text-muted)] space-y-1">
-        <li>Зафиксировать: `test_volume_l`, `ec_before`, `temperature_c`.</li>
-        <li>Запустить насос на фиксированное время (обычно 20-60 сек).</li>
-        <li>Измерить фактический объём (`actual_ml`).</li>
-        <li>После перемешивания измерить `ec_after`.</li>
-        <li>Сохранить калибровку и повторить не менее 3 раз для каждого насоса.</li>
-        <li>Взять медиану по `ml_per_sec` и `k` как рабочее значение.</li>
-      </ul>
-    </Card>
+      <!-- Вкладки с темами (раствор, субстрат, системы) -->
+      <template v-else-if="librarySection !== 'references'">
+        <TopicCardGrid
+          v-if="filteredSectionTopics.length > 0"
+          :topics="filteredSectionTopics"
+        />
+        <Card
+          v-if="filteredSectionTopics.length === 0"
+          class="mb-4"
+        >
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Ничего не найдено. Измените поисковый запрос.
+          </p>
+        </Card>
+      </template>
 
-    <Card>
-      <h2 class="text-sm font-semibold mb-2">
-        7) Пример расчёта
-      </h2>
-      <div class="text-xs text-[color:var(--text-muted)] mb-3">
-        `EC_base=0.1`, `EC_target=2.0`, `V=100 л`, значит `ΔEC=1.9`.
+      <!-- Справочники -->
+      <template v-else>
+        <Card class="mb-4">
+          <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Фильтр культуры</label>
+          <input
+            v-model="cropQuery"
+            type="search"
+            placeholder="Начните вводить название…"
+            class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
+          >
+        </Card>
+
+        <Card class="mb-4">
+          <h2 class="text-sm font-semibold mb-2 text-[color:var(--text-primary)]">
+            Ориентиры EC и pH по культурам (международная таблица)
+          </h2>
+          <p class="text-xs text-[color:var(--text-muted)] mb-3 leading-relaxed">
+            Значения по Oklahoma State University Extension. Для перекрёстной проверки с российскими ориентирами см. карточки раздела «Вода и раствор» и каталог РФ ниже.
+          </p>
+          <div class="overflow-auto rounded-lg border border-[color:var(--border-muted)]">
+            <table class="w-full border-collapse text-xs">
+              <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
+                <tr>
+                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                    Культура
+                  </th>
+                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                    EC, mS/cm
+                  </th>
+                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                    pH
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in filteredCrops"
+                  :key="row.cropEn"
+                  class="border-b border-[color:var(--border-muted)] last:border-0"
+                >
+                  <td class="px-3 py-2 text-[color:var(--text-primary)]">
+                    {{ row.cropRu }}
+                    <span class="text-[color:var(--text-dim)]">({{ row.cropEn }})</span>
+                  </td>
+                  <td class="px-3 py-2 text-[color:var(--text-muted)]">
+                    {{ row.ecRange }}
+                  </td>
+                  <td class="px-3 py-2 text-[color:var(--text-muted)]">
+                    {{ row.phRange }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p
+            v-if="filteredCrops.length === 0"
+            class="text-sm text-[color:var(--text-muted)] mt-3"
+          >
+            Нет совпадений по фильтру.
+          </p>
+          <p class="text-[11px] text-[color:var(--text-dim)] mt-3">
+            Первоисточник:
+            <a
+              :href="CROP_TABLE_SOURCE.url"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ CROP_TABLE_SOURCE.label }}</a>
+          </p>
+        </Card>
+
+        <Card class="mb-4">
+          <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+            Российские открытые материалы
+          </h2>
+          <ul class="space-y-3">
+            <li
+              v-for="(g, gi) in AUTHORITATIVE_RUSSIAN_GUIDES"
+              :key="gi"
+              class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+            >
+              <a
+                :href="g.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+              >{{ g.title }}</a>
+              <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
+              <p class="mt-1 leading-relaxed">
+                {{ g.note }}
+              </p>
+            </li>
+          </ul>
+        </Card>
+
+        <Card>
+          <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+            Международные extension-руководства
+          </h2>
+          <ul class="space-y-3">
+            <li
+              v-for="(g, gi) in AUTHORITATIVE_EXTERNAL_GUIDES"
+              :key="gi"
+              class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+            >
+              <a
+                :href="g.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+              >{{ g.title }}</a>
+              <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
+              <p class="mt-1 leading-relaxed">
+                {{ g.note }}
+              </p>
+            </li>
+          </ul>
+        </Card>
+      </template>
+        </div>
       </div>
-      <div class="overflow-auto rounded-lg border border-[color:var(--border-muted)]">
-        <table class="w-full border-collapse text-xs">
-          <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
-            <tr>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                Насос
-              </th>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                k (mS/(ml/L))
-              </th>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                p
-              </th>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                ΔEC_i
-              </th>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                мл/л
-              </th>
-              <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                мл на 100 л
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">
-                A (Ca)
-              </td>
-              <td class="px-3 py-2">
-                0.62
-              </td>
-              <td class="px-3 py-2">
-                0.32
-              </td>
-              <td class="px-3 py-2">
-                0.608
-              </td>
-              <td class="px-3 py-2">
-                0.981
-              </td>
-              <td class="px-3 py-2">
-                98.1
-              </td>
-            </tr>
-            <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">
-                B (NPK)
-              </td>
-              <td class="px-3 py-2">
-                0.85
-              </td>
-              <td class="px-3 py-2">
-                0.48
-              </td>
-              <td class="px-3 py-2">
-                0.912
-              </td>
-              <td class="px-3 py-2">
-                1.073
-              </td>
-              <td class="px-3 py-2">
-                107.3
-              </td>
-            </tr>
-            <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">
-                C (MgSO4)
-              </td>
-              <td class="px-3 py-2">
-                0.50
-              </td>
-              <td class="px-3 py-2">
-                0.17
-              </td>
-              <td class="px-3 py-2">
-                0.323
-              </td>
-              <td class="px-3 py-2">
-                0.646
-              </td>
-              <td class="px-3 py-2">
-                64.6
-              </td>
-            </tr>
-            <tr>
-              <td class="px-3 py-2">
-                D (Micro+Fe)
-              </td>
-              <td class="px-3 py-2">
-                0.30
-              </td>
-              <td class="px-3 py-2">
-                0.03
-              </td>
-              <td class="px-3 py-2">
-                0.057
-              </td>
-              <td class="px-3 py-2">
-                0.190
-              </td>
-              <td class="px-3 py-2">
-                19.0
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
+    </template>
+
+    <template v-else>
+      <section class="mb-4">
+        <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)] mb-2">
+          fertigation guide
+        </p>
+        <p class="text-sm text-[color:var(--text-muted)] mb-4">
+          Практический регламент для клубники на капле (осмос), схема pH (кислота/щёлочь) + EC A/B/C/D.
+        </p>
+        <FertigationGuidePanel />
+      </section>
+    </template>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
+import FertigationGuidePanel from '@/Components/Documentation/FertigationGuidePanel.vue'
+import TopicCardGrid from '@/Components/Documentation/TopicCardGrid.vue'
+import {
+  AUTHORITATIVE_EXTERNAL_GUIDES,
+  AUTHORITATIVE_RUSSIAN_GUIDES,
+  CROP_EC_PH_REFERENCE,
+  CROP_TABLE_SOURCE,
+  KNOWLEDGE_CATEGORY_LABELS,
+  LIBRARY_SECTION_TABS,
+  RUSSIAN_SEGMENT_OVERVIEW,
+  topicsForLibrarySection,
+  type LibrarySectionId,
+} from '@/data/documentationKnowledgeLibrary'
+
+const activeTab = ref<'library' | 'fertigation'>('library')
+const librarySection = ref<LibrarySectionId>('intro')
+const query = ref('')
+const cropQuery = ref('')
+
+const currentSectionMeta = computed(() =>
+  LIBRARY_SECTION_TABS.find(s => s.id === librarySection.value),
+)
+
+watch(librarySection, () => {
+  query.value = ''
+})
+
+function topicMatchesQuery(topic: ReturnType<typeof topicsForLibrarySection>[number], q: string): boolean {
+  if (!q.trim()) {
+    return true
+  }
+  const needle = q.trim().toLowerCase()
+  const hay = [
+    topic.title,
+    topic.summary,
+    ...topic.points,
+    KNOWLEDGE_CATEGORY_LABELS[topic.category],
+    ...topic.sources.map(s => `${s.label} ${s.url}`),
+  ].join('\n').toLowerCase()
+  return hay.includes(needle)
+}
+
+const filteredSectionTopics = computed(() => {
+  const base = topicsForLibrarySection(librarySection.value)
+  return base.filter(t => topicMatchesQuery(t, query.value))
+})
+
+const filteredCrops = computed(() => {
+  const q = cropQuery.value.trim().toLowerCase()
+  if (!q) {
+    return CROP_EC_PH_REFERENCE
+  }
+  return CROP_EC_PH_REFERENCE.filter(
+    r =>
+      r.cropRu.toLowerCase().includes(q)
+      || r.cropEn.toLowerCase().includes(q),
+  )
+})
 </script>

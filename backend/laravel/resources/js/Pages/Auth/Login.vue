@@ -13,20 +13,17 @@ interface Props {
 const props = defineProps<Props>()
 
 const page = usePage<{ appName?: string }>()
-const appName = computed(() => page.props.appName ?? 'Автоматика теплицы')
-const brandInitials = computed(() => {
-  const parts = appName.value.trim().split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) {
-    const a = parts[0]?.[0]
-    const b = parts[1]?.[0]
-    if (a && b) {
-      return (a + b).toUpperCase()
-    }
-  }
 
-  const single = parts[0] ?? appName.value
-  return single.slice(0, 2).toUpperCase() || 'АТ'
+/** Имя в шапке: не показываем дефолтный Laravel из .env */
+const appName = computed(() => {
+  const raw = (page.props.appName ?? '').trim()
+  if (!raw || raw === 'Laravel') {
+    return 'Автоматика теплицы'
+  }
+  return raw
 })
+
+const faviconSrc = '/favicon.svg?v=3'
 
 interface LoginFormData {
   email: string
@@ -135,7 +132,7 @@ function togglePasswordVisibility(): void {
         class="grid w-full overflow-hidden rounded-[2rem] bg-[rgba(255,255,255,0.8)] shadow-[0_24px_70px_rgba(19,32,20,0.14)] ring-1 ring-[rgba(188,200,182,0.42)] backdrop-blur-xl lg:grid-cols-[1.08fr_0.92fr]"
       >
         <aside
-          class="relative hidden min-h-[720px] flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+          class="relative hidden min-h-[min(100vh-2rem,720px)] flex-col justify-between overflow-hidden p-10 text-white sm:p-12 lg:flex"
           style="background: linear-gradient(135deg, #0b6148 0%, #2f7b60 100%);"
         >
           <div
@@ -146,65 +143,77 @@ function togglePasswordVisibility(): void {
 
           <div class="relative z-10">
             <div class="mb-8 flex items-center gap-3">
-              <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/18 backdrop-blur-md ring-1 ring-white/20">
-                <span class="text-sm font-extrabold tracking-[0.22em] text-white">{{ brandInitials }}</span>
+              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/25">
+                <img
+                  :src="faviconSrc"
+                  alt=""
+                  width="32"
+                  height="32"
+                  class="h-8 w-8 rounded-md"
+                  decoding="async"
+                />
               </div>
-              <span class="font-semibold tracking-tight text-[1.35rem]">{{ appName }}</span>
+              <span class="font-semibold tracking-tight text-[1.35rem] leading-snug">{{ appName }}</span>
             </div>
 
-            <h1 class="max-w-xl font-semibold leading-[1.04] tracking-tight text-[clamp(2.8rem,4vw,4.8rem)]">
-              Точное земледелие для устойчивого будущего.
+            <h1 class="max-w-xl font-semibold leading-[1.04] tracking-tight text-[clamp(2.2rem,3.5vw,3.75rem)]">
+              Управление теплицей и зонами в одном месте
             </h1>
-            <p class="mt-6 max-w-md text-lg font-medium text-white/78">
-              Мониторинг зон в реальном времени с управлением теплицей, автоматизацией и телеметрией в одном интерфейсе.
+            <p class="mt-5 max-w-md text-base font-medium text-white/80 sm:text-lg">
+              Телеметрия, автоматизация полива и климата, рецепты и узлы — без лишнего шума в интерфейсе.
             </p>
           </div>
 
-          <div class="relative z-10 flex flex-wrap gap-10">
+          <div class="relative z-10 flex flex-wrap gap-x-10 gap-y-6 border-t border-white/15 pt-8">
             <div>
               <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">
-                Статус
+                Режим
               </p>
               <div class="flex items-center gap-2">
-                <span class="h-2 w-2 rounded-full bg-[#aad0b1] shadow-[0_0_0_6px_rgba(170,208,177,0.15)]"></span>
-                <span class="text-sm font-semibold">Системы в норме</span>
+                <span class="h-2 w-2 shrink-0 rounded-full bg-[#aad0b1] shadow-[0_0_0_6px_rgba(170,208,177,0.15)]"></span>
+                <span class="text-sm font-semibold leading-snug">Мониторинг и управление</span>
               </div>
             </div>
 
             <div>
               <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">
-                Активные узлы
+                Охват
               </p>
-              <p class="text-sm font-semibold">
-                1 248 датчиков
+              <p class="text-sm font-semibold leading-snug">
+                Зоны · узлы · события
               </p>
             </div>
           </div>
 
-          <div class="pointer-events-none absolute -bottom-20 -right-12 z-0 opacity-10">
-            <div class="select-none text-[18rem] font-black leading-none tracking-tight">
-              {{ brandInitials }}
-            </div>
+          <div class="pointer-events-none absolute -bottom-16 -right-8 z-0 opacity-[0.08] select-none sm:-bottom-20 sm:-right-12">
+            <img :src="faviconSrc" alt="" width="240" height="240" class="h-56 w-56 sm:h-64 sm:w-64" />
           </div>
         </aside>
 
         <div class="flex flex-col justify-center bg-[rgba(255,255,255,0.92)] px-6 py-10 sm:px-10 lg:px-12 xl:px-16">
           <div class="mb-8 flex justify-center lg:hidden">
-            <div class="flex items-center gap-3 text-[#0b6148]">
-              <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b6148] text-white shadow-[0_14px_28px_rgba(11,97,72,0.18)]">
-                <span class="text-sm font-extrabold tracking-[0.22em]">{{ brandInitials }}</span>
+            <div class="flex max-w-full items-center gap-3 text-[#0b6148]">
+              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white shadow-[0_8px_24px_rgba(11,97,72,0.12)] ring-1 ring-[#0b6148]/10">
+                <img
+                  :src="faviconSrc"
+                  alt=""
+                  width="32"
+                  height="32"
+                  class="h-8 w-8 rounded-md"
+                  decoding="async"
+                />
               </div>
-              <span class="font-semibold tracking-tight text-xl">{{ appName }}</span>
+              <span class="min-w-0 font-semibold tracking-tight text-lg leading-snug sm:text-xl">{{ appName }}</span>
             </div>
           </div>
 
           <div class="mx-auto w-full max-w-xl">
-            <div class="mb-10">
-              <h2 class="font-semibold tracking-tight text-[#191c1e] text-[clamp(2rem,2.4vw,2.75rem)]">
+            <div class="mb-9">
+              <h2 class="font-semibold tracking-tight text-[#191c1e] text-[clamp(1.75rem,2.2vw,2.5rem)]">
                 С возвращением
               </h2>
-              <p class="mt-2 text-base font-medium text-[#566456]">
-                Войдите в панель управления вашей лабораторией
+              <p class="mt-2 text-base font-medium leading-relaxed text-[#566456]">
+                Войдите в панель управления теплицей
               </p>
             </div>
 
@@ -235,7 +244,7 @@ function togglePasswordVisibility(): void {
                   class="px-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#566456]"
                   for="email"
                 >
-                  Корпоративная почта
+                  Электронная почта
                 </label>
                 <div class="relative group">
                   <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
@@ -261,7 +270,7 @@ function togglePasswordVisibility(): void {
                     autocomplete="username"
                     required
                     autofocus
-                    placeholder="name@precisionlabs.org"
+                    placeholder="email@пример.ru"
                     :class="fieldClass('email')"
                   />
                 </div>
@@ -273,7 +282,7 @@ function togglePasswordVisibility(): void {
                     class="text-[10px] font-bold uppercase tracking-[0.3em] text-[#566456]"
                     for="password"
                   >
-                    Токен безопасности
+                    Пароль
                   </label>
                   <Link
                     v-if="props.canResetPassword"
