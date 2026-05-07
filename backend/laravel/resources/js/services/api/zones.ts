@@ -6,6 +6,11 @@
  */
 import type { Zone } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
+import type {
+  SensorCalibration,
+  SensorCalibrationOverview,
+  SensorCalibrationStartResult,
+} from '@/types/SensorCalibration'
 import { apiGet, apiPost, apiPostVoid, apiPut } from './_client'
 
 export interface ZoneCreatePayload {
@@ -114,28 +119,31 @@ export const zonesApi = {
   },
 
   // ─── Sensor calibrations ─────────────────────────────────────────────────
-  sensorCalibrationStatus(zoneId: number): Promise<unknown> {
-    return apiGet<unknown>(`/zones/${zoneId}/sensor-calibrations/status`)
+  sensorCalibrationStatus(zoneId: number): Promise<SensorCalibrationOverview[]> {
+    return apiGet<SensorCalibrationOverview[]>(`/zones/${zoneId}/sensor-calibrations/status`)
   },
 
-  sensorCalibrationsList(zoneId: number, params?: Record<string, unknown>): Promise<unknown> {
-    return apiGet<unknown>(`/zones/${zoneId}/sensor-calibrations`, { params })
+  sensorCalibrationsList(zoneId: number, params?: Record<string, unknown>): Promise<SensorCalibration[]> {
+    return apiGet<SensorCalibration[]>(`/zones/${zoneId}/sensor-calibrations`, { params })
   },
 
-  sensorCalibration(zoneId: number, calibrationId: number): Promise<unknown> {
-    return apiGet<unknown>(`/zones/${zoneId}/sensor-calibrations/${calibrationId}`)
+  sensorCalibration(zoneId: number, calibrationId: number): Promise<SensorCalibration> {
+    return apiGet<SensorCalibration>(`/zones/${zoneId}/sensor-calibrations/${calibrationId}`)
   },
 
-  sensorCalibrationStart(zoneId: number, payload: Record<string, unknown>): Promise<unknown> {
-    return apiPost<unknown>(`/zones/${zoneId}/sensor-calibrations`, payload)
+  sensorCalibrationStart(
+    zoneId: number,
+    payload: { node_channel_id: number; sensor_type: 'ph' | 'ec' },
+  ): Promise<SensorCalibrationStartResult> {
+    return apiPost<SensorCalibrationStartResult>(`/zones/${zoneId}/sensor-calibrations`, payload)
   },
 
   sensorCalibrationAddPoint(
     zoneId: number,
     calibrationId: number,
-    payload: Record<string, unknown>,
-  ): Promise<unknown> {
-    return apiPost<unknown>(
+    payload: { stage: 1 | 2; reference_value: number },
+  ): Promise<SensorCalibration> {
+    return apiPost<SensorCalibration>(
       `/zones/${zoneId}/sensor-calibrations/${calibrationId}/point`,
       payload,
     )

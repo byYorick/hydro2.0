@@ -8,9 +8,10 @@ use App\Models\SensorCalibration;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\SensorCalibrationCommandService;
+use App\Support\SensorCalibrationFirmwareChannel;
 use DomainException;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +20,7 @@ class SensorCalibrationController extends Controller
 {
     public function __construct(
         private readonly SensorCalibrationCommandService $commandService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request, Zone $zone): JsonResponse
     {
@@ -99,6 +99,8 @@ class SensorCalibrationController extends Controller
                 'calibration_status' => $status,
                 'has_active_session' => $activeCalibrationId !== null,
                 'active_calibration_id' => $activeCalibrationId,
+                'calibration_channel_contract_ok' => $this->calibrationChannelContractOk((string) $row->sensor_type, (string) $row->channel),
+                'calibration_channel_expected' => SensorCalibrationFirmwareChannel::canonicalForSensorType((string) $row->sensor_type),
             ];
         })->values();
 
@@ -130,7 +132,14 @@ class SensorCalibrationController extends Controller
             'sensor_type' => ['required', 'string', 'in:ph,ec'],
         ]);
 
-        $channel = $this->resolveSensorChannel($zone, (int) $data['node_channel_id'], (string) $data['sensor_type']);
+        try {
+            $channel = $this->resolveSensorChannel($zone, (int) $data['node_channel_id'], (string) $data['sensor_type']);
+        } catch (DomainException $exception) {
+            return $this->unprocessableCalibrationResponse(
+                $exception->getMessage(),
+                'sensor_calibration_channel_contract',
+            );
+        }
         try {
             $calibration = DB::transaction(function () use ($request, $zone, $channel, $data) {
                 NodeChannel::query()
@@ -158,7 +167,10 @@ class SensorCalibrationController extends Controller
                 ]);
             }, 3);
         } catch (DomainException $exception) {
-            return $this->unprocessableCalibrationResponse($exception->getMessage());
+            return $this->unprocessableCalibrationResponse(
+                $exception->getMessage(),
+                $this->mapSensorCalibrationErrorCode($exception),
+            );
         } catch (QueryException $exception) {
             if ($this->isActiveCalibrationConstraintViolation($exception)) {
                 return $this->unprocessableCalibrationResponse('An active sensor calibration session already exists for this channel.');
@@ -214,6 +226,11 @@ class SensorCalibrationController extends Controller
                     abort(422, 'Sensor calibration channel not found');
                 }
 
+                SensorCalibrationFirmwareChannel::assertMatchesFirmware(
+                    $channel,
+                    (string) $lockedCalibration->sensor_type,
+                );
+
                 return $this->commandService->submitPoint(
                     calibration: $lockedCalibration,
                     channel: $channel,
@@ -223,7 +240,10 @@ class SensorCalibrationController extends Controller
                 );
             }, 3);
         } catch (DomainException $exception) {
-            return $this->unprocessableCalibrationResponse($exception->getMessage());
+            return $this->unprocessableCalibrationResponse(
+                $exception->getMessage(),
+                $this->mapSensorCalibrationErrorCode($exception),
+            );
         }
 
         return response()->json([
@@ -278,6 +298,8 @@ class SensorCalibrationController extends Controller
         if ($resolvedType !== $sensorType) {
             abort(422, 'node_channel_id does not match the requested sensor_type');
         }
+
+        SensorCalibrationFirmwareChannel::assertMatchesFirmware($channel, $sensorType);
 
         return $channel;
     }
@@ -337,15 +359,22 @@ class SensorCalibrationController extends Controller
             $min = (float) $settings['ph_reference_min'];
             $max = (float) $settings['ph_reference_max'];
             if ($referenceValue < $min || $referenceValue > $max) {
-                abort(422, "reference_value must be within [{$min}, {$max}]");
+                throw new DomainException("reference_value must be within [{$min}, {$max}]");
             }
 
             return;
         }
 
         $max = (int) $settings['ec_tds_reference_max'];
-        if ($referenceValue <= 0 || $referenceValue > $max) {
-            abort(422, "reference_value must be within (0, {$max}]");
+        if ($referenceValue > 0 && $referenceValue <= 25) {
+            throw new DomainException(
+                'EC reference_value must be TDS in ppm (not mS/cm). Values ≤25 are usually mS/cm by mistake; typical calibration solutions are hundreds–thousands ppm.'
+            );
+        }
+
+        $minTds = 50;
+        if ($referenceValue < $minTds || $referenceValue > $max) {
+            throw new DomainException("reference_value must be TDS ppm within [{$minTds}, {$max}]");
         }
     }
 
@@ -372,12 +401,41 @@ class SensorCalibrationController extends Controller
         return str_contains($message, 'uniq_sensor_cal_active_channel');
     }
 
-    private function unprocessableCalibrationResponse(string $message): JsonResponse
+    private function calibrationChannelContractOk(string $sensorType, string $channelUid): bool
     {
-        return response()->json([
+        if (! in_array($sensorType, ['ph', 'ec'], true)) {
+            return false;
+        }
+
+        return strtolower(trim($channelUid)) === SensorCalibrationFirmwareChannel::canonicalForSensorType($sensorType);
+    }
+
+    private function mapSensorCalibrationErrorCode(DomainException $exception): ?string
+    {
+        $message = $exception->getMessage();
+
+        return match (true) {
+            str_contains($message, 'Rename the channel') => 'sensor_calibration_channel_contract',
+            str_contains($message, 'Firmware contract') => 'sensor_calibration_channel_contract',
+            str_contains($message, 'active sensor calibration session already exists') => 'sensor_calibration_active_session',
+            str_contains($message, 'mS/cm by mistake'), str_contains($message, 'not mS/cm') => 'ec_reference_likely_ms_cm',
+            str_contains($message, 'TDS ppm within') => 'ec_reference_range',
+            str_contains($message, 'reference_value must be within [') => 'ph_reference_range',
+            default => null,
+        };
+    }
+
+    private function unprocessableCalibrationResponse(string $message, ?string $errorCode = null): JsonResponse
+    {
+        $body = [
             'status' => 'error',
             'message' => $message,
-        ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        ];
+        if ($errorCode !== null) {
+            $body['error_code'] = $errorCode;
+        }
+
+        return response()->json($body, Response::HTTP_UNPROCESSABLE_ENTITY);
     }
 
     private function serializeCalibration(SensorCalibration $calibration): array

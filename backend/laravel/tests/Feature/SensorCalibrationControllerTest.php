@@ -8,8 +8,8 @@ use App\Models\NodeChannel;
 use App\Models\SensorCalibration;
 use App\Models\User;
 use App\Models\Zone;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\RefreshDatabase;
@@ -56,7 +56,19 @@ class SensorCalibrationControllerTest extends TestCase
         $this->postJson("/api/zones/{$zone->id}/sensor-calibrations", [
             'node_channel_id' => $channel->id,
             'sensor_type' => 'ph',
-        ])->assertStatus(422);
+        ])->assertStatus(422)
+            ->assertJsonPath('error_code', 'sensor_calibration_active_session');
+    }
+
+    public function test_create_rejects_legacy_channel_uid_that_does_not_match_firmware(): void
+    {
+        [$zone, $channel] = $this->makeSensorChannel('ph', 'PH');
+
+        $this->postJson("/api/zones/{$zone->id}/sensor-calibrations", [
+            'node_channel_id' => $channel->id,
+            'sensor_type' => 'ph',
+        ])->assertStatus(422)
+            ->assertJsonPath('error_code', 'sensor_calibration_channel_contract');
     }
 
     public function test_database_enforces_single_active_session_per_channel(): void
@@ -113,6 +125,24 @@ class SensorCalibrationControllerTest extends TestCase
         });
     }
 
+    public function test_submit_point_rejects_ec_reference_that_looks_like_ms_cm(): void
+    {
+        [$zone, $channel] = $this->makeSensorChannel('ec_sensor', 'EC');
+        $calibration = SensorCalibration::query()->create([
+            'zone_id' => $zone->id,
+            'node_channel_id' => $channel->id,
+            'sensor_type' => 'ec',
+            'status' => SensorCalibration::STATUS_STARTED,
+            'calibrated_by' => auth()->id(),
+        ]);
+
+        $this->postJson("/api/zones/{$zone->id}/sensor-calibrations/{$calibration->id}/point", [
+            'stage' => 1,
+            'reference_value' => 2.1,
+        ])->assertStatus(422)
+            ->assertJsonPath('error_code', 'ec_reference_likely_ms_cm');
+    }
+
     public function test_submit_point_rejects_offline_node(): void
     {
         [$zone, $channel] = $this->makeSensorChannel('ph_sensor', 'PH');
@@ -157,6 +187,25 @@ class SensorCalibrationControllerTest extends TestCase
 
         $this->assertSame('warning', $ph['calibration_status']);
         $this->assertSame('never', $ec['calibration_status']);
+        $this->assertTrue($ph['calibration_channel_contract_ok']);
+        $this->assertTrue($ec['calibration_channel_contract_ok']);
+        $this->assertSame('ph_sensor', $ph['calibration_channel_expected']);
+        $this->assertSame('ec_sensor', $ec['calibration_channel_expected']);
+    }
+
+    public function test_status_flags_non_canonical_channel_uids(): void
+    {
+        [$zone] = $this->makeSensorChannel('ph_sensor', 'PH');
+        [, $aux] = $this->makeSensorChannel('ph_sensor_aux', 'PH', $zone);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/sensor-calibrations/status");
+
+        $response->assertOk();
+        $items = collect($response->json('data'));
+        $row = $items->firstWhere('node_channel_id', $aux->id);
+        $this->assertNotNull($row);
+        $this->assertFalse($row['calibration_channel_contract_ok']);
+        $this->assertSame('ph_sensor', $row['calibration_channel_expected']);
     }
 
     public function test_status_includes_active_calibration_id_for_channel(): void

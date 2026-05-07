@@ -48,6 +48,20 @@ describe('CalibrationReadinessBar', () => {
     expect(pumpBtn).toBeTruthy()
   })
 
+  it('emits open-sensor-wizard for secondary sensor button', async () => {
+    const w = mount(CalibrationReadinessBar, {
+      props: {
+        contracts: [passed],
+        summary: { passed: 1, total: 1, blockers: 0 },
+      },
+    })
+    const sensorBtn = w
+      .findAll('button')
+      .find((b) => b.text().includes('Калибровка сенсоров'))!
+    await sensorBtn.trigger('click')
+    expect(w.emitted('open-sensor-wizard')).toBeTruthy()
+  })
+
   it('emits open-pump-wizard', async () => {
     const w = mount(CalibrationReadinessBar, {
       props: {
