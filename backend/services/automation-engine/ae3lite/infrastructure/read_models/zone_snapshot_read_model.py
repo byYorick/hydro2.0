@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from typing import Any, Dict, List, Mapping, Optional
 
 from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
@@ -17,6 +18,31 @@ from .effective_targets_sql_utils import (
     merge_recursive,
     merge_runtime_profile,
 )
+
+
+def _node_freshness_fallback_sec() -> int:
+    """Окно (сек) для fallback по last_seen_at, если ``nodes.status`` ещё не обновлён.
+
+    Должно перекрывать ``NODE_OFFLINE_TIMEOUT_SEC + NODE_OFFLINE_CHECK_INTERVAL_SEC``
+    (history-logger). Default 180 = 120 (heartbeat timeout) + 60 (sweep interval).
+    """
+    try:
+        return max(1, int(os.getenv("AE3_NODE_FRESHNESS_FALLBACK_SEC", "180")))
+    except (TypeError, ValueError):
+        return 180
+
+
+def _node_persistent_dead_sec() -> int:
+    """Возраст ``last_seen_at``, после которого нода считается persistently dead.
+
+    При попадании в snapshot diagnostics такая нода переводит SnapshotBuildError
+    в немедленный fail-closed без retry (см. ExecuteTaskUseCase).
+    Default 600 секунд (10 минут).
+    """
+    try:
+        return max(60, int(os.getenv("AE3_NODE_PERSISTENT_DEAD_SEC", "600")))
+    except (TypeError, ValueError):
+        return 600
 
 
 class PgZoneSnapshotReadModel:
@@ -225,6 +251,7 @@ class PgZoneSnapshotReadModel:
                 correction_config_row = self._bundle_correction_config_row(zone_bundle)
                 process_calibration_rows = self._bundle_process_calibration_rows(zone_bundle)
 
+                freshness_sec = _node_freshness_fallback_sec()
                 actuator_rows = await conn.fetch(
                     """
                     SELECT
@@ -265,13 +292,49 @@ class PgZoneSnapshotReadModel:
                         LIMIT 1
                     ) pc ON TRUE
                     WHERE n.zone_id = $1
-                      AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
+                      AND (
+                          LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
+                          OR COALESCE(n.last_seen_at, n.last_heartbeat_at, n.updated_at)
+                                 >= NOW() - ($2 * INTERVAL '1 second')
+                      )
                       AND UPPER(TRIM(COALESCE(nc.type, ''))) IN ('ACTUATOR', 'SERVICE')
                       AND COALESCE(nc.is_active, TRUE) = TRUE
                     ORDER BY n.id ASC, nc.id ASC
                     """,
                     zone_id,
+                    freshness_sec,
                 )
+
+                zone_nodes_diag_rows: List[Mapping[str, Any]] = []
+                if not actuator_rows:
+                    zone_nodes_diag_rows = await conn.fetch(
+                        """
+                        SELECT
+                            n.uid AS node_uid,
+                            LOWER(COALESCE(n.type, '')) AS node_type,
+                            LOWER(TRIM(COALESCE(n.status, ''))) AS status,
+                            EXTRACT(
+                                EPOCH FROM (
+                                    NOW() - COALESCE(
+                                        n.last_seen_at,
+                                        n.last_heartbeat_at,
+                                        n.updated_at
+                                    )
+                                )
+                            )::BIGINT AS last_seen_age_sec,
+                            COUNT(nc.id) FILTER (
+                                WHERE UPPER(TRIM(COALESCE(nc.type, ''))) IN ('ACTUATOR', 'SERVICE')
+                                  AND COALESCE(nc.is_active, TRUE) = TRUE
+                            ) AS active_actuator_count
+                        FROM nodes n
+                        LEFT JOIN node_channels nc
+                            ON nc.node_id = n.id
+                        WHERE n.zone_id = $1
+                        GROUP BY n.id
+                        ORDER BY n.id ASC
+                        """,
+                        zone_id,
+                    )
 
         command_plans = profile_row.get("command_plans")
         if not isinstance(command_plans, Mapping) or not command_plans:
@@ -317,6 +380,10 @@ class PgZoneSnapshotReadModel:
             raise SnapshotBuildError(
                 f"У зоны {zone_id} отсутствуют online actuator channels",
                 code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+                details=self._build_no_actuators_diagnostics(
+                    zone_id=zone_id,
+                    diag_rows=zone_nodes_diag_rows,
+                ),
             )
 
         return ZoneSnapshot(
@@ -345,6 +412,62 @@ class PgZoneSnapshotReadModel:
                 else None
             ),
         )
+
+    @staticmethod
+    def _build_no_actuators_diagnostics(
+        *,
+        zone_id: int,
+        diag_rows: List[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        """Собирает per-node breakdown для ``AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS``.
+
+        Используется ExecuteTaskUseCase, чтобы:
+          1) обогатить runtime-event'ы и алерт ``biz_ae3_task_failed``;
+          2) различать transient (нода вернётся) и persistent (мертва) outage —
+             persistently_offline_uids → fail-closed без retry.
+        """
+        persistent_threshold = _node_persistent_dead_sec()
+        zone_nodes: List[Dict[str, Any]] = []
+        persistently_offline_uids: List[str] = []
+        transiently_offline_uids: List[str] = []
+
+        for row in diag_rows:
+            uid = str(row.get("node_uid") or "").strip()
+            if not uid:
+                continue
+            node_type = str(row.get("node_type") or "").strip().lower() or None
+            status = str(row.get("status") or "").strip().lower() or None
+            try:
+                last_seen_age_sec = int(row.get("last_seen_age_sec")) if row.get("last_seen_age_sec") is not None else None
+            except (TypeError, ValueError):
+                last_seen_age_sec = None
+            try:
+                active_actuator_count = int(row.get("active_actuator_count") or 0)
+            except (TypeError, ValueError):
+                active_actuator_count = 0
+
+            zone_nodes.append({
+                "uid": uid,
+                "type": node_type,
+                "status": status,
+                "last_seen_age_sec": last_seen_age_sec,
+                "active_actuator_count": active_actuator_count,
+            })
+
+            if status == "online":
+                continue
+            if last_seen_age_sec is not None and last_seen_age_sec >= persistent_threshold:
+                persistently_offline_uids.append(uid)
+            else:
+                transiently_offline_uids.append(uid)
+
+        return {
+            "zone_id": int(zone_id),
+            "zone_nodes": zone_nodes,
+            "persistently_offline_uids": persistently_offline_uids,
+            "transiently_offline_uids": transiently_offline_uids,
+            "persistent_dead_threshold_sec": persistent_threshold,
+        }
 
     @staticmethod
     def _bundle_override_rows(cycle_bundle: Any) -> List[Mapping[str, Any]]:

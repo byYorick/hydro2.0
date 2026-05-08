@@ -388,6 +388,48 @@ Planner:
 3. Если snapshot не может быть собран консистентно, task завершается fail-closed.
 4. Hardcoded default targets запрещены.
 5. Stale critical telemetry должна приводить к fail-closed.
+
+### 5.4 Определение online actuator channels
+
+Поле `nodes.status` обновляется фоновой задачей `monitor_offline_nodes` (history-logger) с интервалом `NODE_OFFLINE_CHECK_INTERVAL_SEC=60s` и порогом `NODE_OFFLINE_TIMEOUT_SEC=120s`. Чтобы устранить ложно-отрицательные срабатывания при кратковременных drift-ах, фильтр `actuator_rows` в `PgZoneSnapshotReadModel` использует комбинацию:
+
+```sql
+LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
+OR COALESCE(n.last_seen_at, n.last_heartbeat_at, n.updated_at)
+       >= NOW() - (AE3_NODE_FRESHNESS_FALLBACK_SEC * INTERVAL '1 second')
+```
+
+`AE3_NODE_FRESHNESS_FALLBACK_SEC` (default `180`) обязан быть ≥ `NODE_OFFLINE_TIMEOUT_SEC + NODE_OFFLINE_CHECK_INTERVAL_SEC`.
+
+Если выборка пуста, выполняется отдельный диагностический запрос по всем нодам зоны (`status`, `last_seen_age_sec`, `active_actuator_count`) и результат прокидывается в `SnapshotBuildError.details`:
+
+```json
+{
+  "zone_id": 1,
+  "zone_nodes": [
+    {"uid": "nd-irrig-1", "type": "irrig", "status": "offline", "last_seen_age_sec": 145, "active_actuator_count": 6}
+  ],
+  "persistently_offline_uids": [],
+  "transiently_offline_uids": ["nd-irrig-1"],
+  "persistent_dead_threshold_sec": 600
+}
+```
+
+`ExecuteTaskUseCase` использует этот breakdown:
+
+1. Если `persistently_offline_uids` непуст (узел давно мёртв, `last_seen_age_sec ≥ AE3_NODE_PERSISTENT_DEAD_SEC`) — задача fail-closed с кодом `ae3_snapshot_required_node_persistently_offline` без retry.
+2. Иначе срабатывает transient retry (`SNAPSHOT_TRANSIENT_RETRY_SEC=10s`, бюджет `AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC=600s`); breakdown пробрасывается в `AE_SNAPSHOT_RETRY_SCHEDULED` / `AE_SNAPSHOT_RETRY_EXHAUSTED` events и в `infra_ae3_snapshot_retry_*` алерты.
+
+Дополнительно для two-tank-топологий (`two_tank`, `two_tank_drip_substrate_trays`) `ExecuteTaskUseCase._verify_topology_required_node_types` после загрузки snapshot проверяет, что среди actuator'ов представлены все требуемые `node_type` ∈ `{irrig, ph, ec}`. При отсутствии — fail-closed с конкретным кодом `ae3_snapshot_required_node_type_missing` и `details.missing_node_types`, без retry.
+
+Канонические env-переменные:
+
+| ENV | Default | Семантика |
+|-----|---------|-----------|
+| `AE3_NODE_FRESHNESS_FALLBACK_SEC` | `180` | Окно «нода ещё считается живой по `last_seen_at`», если `nodes.status` ещё не успел обновиться |
+| `AE3_NODE_PERSISTENT_DEAD_SEC` | `600` | Возраст `last_seen_at`, после которого нода persistently dead → fail-closed без retry |
+| `AE3_SNAPSHOT_TRANSIENT_RETRY_SEC` | `10` | Интервал retry'а после transient snapshot gap |
+| `AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC` | `600` | Бюджет (wall-clock) retry'а transient snapshot gap |
 6. `zone.correction.payload.resolved_config` для AE3 correction runtime считается полным обязательным контрактом:
    отсутствие required field в `runtime/timing/dosing/retry/tolerance/controllers/safety`
    должно приводить к fail-closed, без silent fallback на catalog defaults или устаревшие

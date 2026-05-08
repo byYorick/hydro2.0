@@ -35,8 +35,11 @@ NODE_STALE_ONLINE_THRESHOLD_SEC = max(1, int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC
 SNAPSHOT_TRANSIENT_RETRY_SEC = max(1, int(os.getenv("AE3_SNAPSHOT_TRANSIENT_RETRY_SEC", "10")))
 SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
     SNAPSHOT_TRANSIENT_RETRY_SEC,
-    int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "90")),
+    int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "600")),
 )
+NODE_PERSISTENT_DEAD_SEC = max(60, int(os.getenv("AE3_NODE_PERSISTENT_DEAD_SEC", "600")))
+TWO_TANK_TOPOLOGIES = frozenset({"two_tank", "two_tank_drip_substrate_trays"})
+TWO_TANK_REQUIRED_NODE_TYPES = frozenset({"irrig", "ph", "ec"})
 SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
 SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
 COMMAND_SEND_RETRY_SEC = max(1, int(os.getenv("AE3_COMMAND_SEND_RETRY_SEC", "8")))
@@ -105,6 +108,7 @@ class ExecuteTaskUseCase:
         start_observability_emitted = False
         try:
             snapshot = await self._zone_snapshot_read_model.load(zone_id=running_task.zone_id)
+            self._verify_topology_required_node_types(task=running_task, snapshot=snapshot)
             plan = self._planner.build(task=running_task, snapshot=snapshot)
             running_task = await self._lock_irrigation_decision_snapshot_if_needed(
                 task=running_task,
@@ -238,6 +242,7 @@ class ExecuteTaskUseCase:
             snapshot_error_code = str(
                 getattr(exc, "code", ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED) or ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
             )
+            snapshot_details = exc.details if isinstance(getattr(exc, "details", None), Mapping) else {}
             if first_run and not start_observability_emitted:
                 self._emit_start_readiness_failed(
                     task=running_task,
@@ -258,6 +263,32 @@ class ExecuteTaskUseCase:
                     type(exc).__name__,
                 )
                 return terminal_task
+
+            persistent_uids = list(snapshot_details.get("persistently_offline_uids") or [])
+            if (
+                snapshot_error_code == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
+                and persistent_uids
+            ):
+                logger.error(
+                    "AE3 snapshot persistent dead nodes (no retry): zone_id=%s task_id=%s persistently_offline_uids=%s",
+                    running_task.zone_id,
+                    running_task.id,
+                    persistent_uids,
+                )
+                await self._attempt_fail_safe_shutdown(
+                    task=running_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                    now=now,
+                )
+                return await self._fail_closed(
+                    task=running_task,
+                    owner=owner,
+                    error_code=ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE,
+                    error_message=str(exc),
+                    now=now,
+                    extra_details=dict(snapshot_details),
+                )
 
             retried_task = await self._retry_transient_snapshot_gap(
                 task=running_task,
@@ -289,6 +320,7 @@ class ExecuteTaskUseCase:
                 error_code=snapshot_error_code,
                 error_message=str(exc),
                 now=now,
+                extra_details=dict(snapshot_details) if snapshot_details else None,
             )
         except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
             if first_run and not start_observability_emitted and isinstance(exc, PlannerConfigurationError):
@@ -481,6 +513,7 @@ class ExecuteTaskUseCase:
         if not self._is_transient_snapshot_gap(task=task, error_code=snapshot_error_code):
             return None
 
+        snapshot_details = error.details if isinstance(getattr(error, "details", None), Mapping) else {}
         stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
         stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
         details = {
@@ -495,6 +528,14 @@ class ExecuteTaskUseCase:
             "stage_age_sec": stage_age_sec,
             "max_stage_age_sec": SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC,
         }
+        for key in (
+            "zone_nodes",
+            "persistently_offline_uids",
+            "transiently_offline_uids",
+            "persistent_dead_threshold_sec",
+        ):
+            if key in snapshot_details:
+                details[key] = snapshot_details[key]
 
         if stage_age_sec >= SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC:
             final_message = (
@@ -577,8 +618,42 @@ class ExecuteTaskUseCase:
     def _is_transient_snapshot_gap(self, *, task: Any, error_code: str) -> bool:
         topology = str(getattr(task, "topology", "") or "").strip().lower()
         return (
-            topology in {"two_tank", "two_tank_drip_substrate_trays"}
+            topology in TWO_TANK_TOPOLOGIES
             and str(error_code or "").strip() == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
+        )
+
+    def _verify_topology_required_node_types(self, *, task: Any, snapshot: Any) -> None:
+        """Проверяет наличие actuator-нод обязательных типов для текущей топологии.
+
+        Для two-tank-топологий обязательны ``irrig`` (клапаны/насос полива),
+        ``ph`` и ``ec`` (дозирующие насосы коррекции). Если хотя бы один
+        ``node_type`` не представлен ни одним actuator'ом — fail-closed
+        с конкретным кодом ``ae3_snapshot_required_node_type_missing``,
+        чтобы оператор не получал общую ошибку «no online actuator channels».
+        """
+        topology = str(getattr(task, "topology", "") or "").strip().lower()
+        if topology not in TWO_TANK_TOPOLOGIES:
+            return
+        actuators = getattr(snapshot, "actuators", ()) or ()
+        present_types = {
+            str(getattr(actuator, "node_type", "") or "").strip().lower()
+            for actuator in actuators
+        }
+        present_types.discard("")
+        missing = sorted(TWO_TANK_REQUIRED_NODE_TYPES - present_types)
+        if not missing:
+            return
+        zone_id = int(getattr(snapshot, "zone_id", 0) or 0) or int(getattr(task, "zone_id", 0) or 0)
+        raise SnapshotBuildError(
+            f"У зоны {zone_id} нет actuator-нод требуемых типов: {missing}",
+            code=ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING,
+            details={
+                "zone_id": zone_id,
+                "topology": topology,
+                "missing_node_types": missing,
+                "present_node_types": sorted(present_types),
+                "required_node_types": sorted(TWO_TANK_REQUIRED_NODE_TYPES),
+            },
         )
 
     def _stage_age_sec(self, *, stage_entered_at: datetime | None, now: datetime) -> int:
@@ -893,12 +968,18 @@ class ExecuteTaskUseCase:
         error_code: str,
         error_message: str,
         now: datetime,
+        extra_details: Mapping[str, Any] | None = None,
     ) -> Any:
-        extra_details = await self._build_failure_observability_details(
+        extra_details = dict(extra_details) if isinstance(extra_details, Mapping) else {}
+        timeout_observability = await self._build_failure_observability_details(
             task=task,
             error_code=error_code,
             now=now,
         )
+        if isinstance(timeout_observability, Mapping):
+            for key, value in timeout_observability.items():
+                if key not in extra_details:
+                    extra_details[key] = value
         zone_id = int(getattr(task, "zone_id", 0) or 0)
         task_still_exists = await self._task_still_exists(task=task)
         if task_still_exists:

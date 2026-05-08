@@ -46,6 +46,18 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 6. `snapshot_created_at`
 7. `snapshot_cmd_id`
 8. `snapshot_source_event_type`
+9. `zone_nodes`
+10. `persistently_offline_uids`
+11. `transiently_offline_uids`
+12. `persistent_dead_threshold_sec`
+13. `missing_node_types`
+14. `present_node_types`
+15. `required_node_types`
+
+Поля `zone_nodes`/`persistently_offline_uids`/`transiently_offline_uids` используются
+в snapshot availability observability (`AE_SNAPSHOT_RETRY_SCHEDULED`,
+`AE_SNAPSHOT_RETRY_EXHAUSTED`, `AE_TASK_FAILED`) и считаются backward-compatible
+расширением payload.
 
 ## 3. Causal Link Rules
 
