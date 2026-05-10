@@ -12,6 +12,19 @@
         Рекомендуемые значения: {{ defaults.point_1_value }} и {{ defaults.point_2_value }}.
       </div>
       <div
+        v-if="overview.sensor_type === 'ph'"
+        class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)] space-y-2"
+      >
+        <p class="font-medium text-[color:var(--text-muted)]">
+          Trema pH (I2C), iArduino
+        </p>
+        <ul class="list-disc pl-4 space-y-1">
+          <li>Двухточечная калибровка: два разных буфера (часто ~4.01 и ~9.18 по документации модуля).</li>
+          <li>Держите электрод в каждом буфере несколько минут до стабилизации, между точками промывайте дистиллятом.</li>
+          <li>Команда на узле дождётся завершения этапа на модуле; при ошибке расчёта на модуле вернётся ERROR.</li>
+        </ul>
+      </div>
+      <div
         v-if="sessionLoading"
         class="text-xs text-[color:var(--text-dim)]"
       >
@@ -168,6 +181,14 @@ const emit = defineEmits<{
 }>()
 
 function fieldHelp(key: 'point_1_reference' | 'point_2_reference'): string {
+  if (props.overview.sensor_type === 'ph') {
+    if (key === 'point_1_reference') {
+      return 'Эталон pH первого буфера (Trema I2C: обычно кислый, напр. 4.01; перед отправкой дайте электроду стабилизироваться в растворе).'
+    }
+
+    return 'Эталон pH второго буфера (обычно щелочной, напр. 9.18; значение должно заметно отличаться от первой точки).'
+  }
+
   if (key === 'point_1_reference') {
     return 'Эталонное значение для первой точки калибровки. Обычно это lower reference из системных настроек текущего типа сенсора.'
   }

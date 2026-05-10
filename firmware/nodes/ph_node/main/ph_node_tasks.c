@@ -145,12 +145,8 @@ static void task_sensors(void *pvParameters) {
                     model.ph_value = NAN;
                     
                     if (i2c_bus_ok) {
-                        // Проверяем подключение I2C - пытаемся прочитать model ID
-                        uint8_t reg_model = REG_MODEL;
-                        uint8_t model_id = 0;
-                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, &model_id, 1, 200);
-                        
-                        if (i2c_err == ESP_OK && model_id == 0x1A) {
+                        /* Полная проверка заголовка как iarduino_I2C_pH (model/address/chip) */
+                        if (trema_ph_probe_presence()) {
                             model.sensor_status.i2c_connected = true;
                             
                             // Если датчик подключен, пытаемся прочитать значение
@@ -183,18 +179,15 @@ static void task_sensors(void *pvParameters) {
                                 strncpy(model.sensor_status.error_msg, "Not init", sizeof(model.sensor_status.error_msg) - 1);
                             }
                         } else {
-                            // I2C ошибка - датчик не отвечает
                             model.sensor_status.i2c_connected = false;
                             model.sensor_status.has_error = true;
                             model.sensor_status.using_stub = true;
-                            model.ph_value = NAN;  // Устанавливаем NaN
-                            if (i2c_err == ESP_ERR_INVALID_STATE || i2c_err == ESP_ERR_TIMEOUT) {
-                                strncpy(model.sensor_status.error_msg, "I2C NACK", sizeof(model.sensor_status.error_msg) - 1);
-                            } else if (i2c_err == ESP_ERR_NOT_FOUND) {
-                                strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
-                            } else {
-                                strncpy(model.sensor_status.error_msg, "I2C Error", sizeof(model.sensor_status.error_msg) - 1);
-                            }
+                            model.ph_value = NAN;
+                            strncpy(
+                                model.sensor_status.error_msg,
+                                "pH module probe fail",
+                                sizeof(model.sensor_status.error_msg) - 1
+                            );
                         }
                     } else {
                         // I2C шина не инициализирована
@@ -368,7 +361,7 @@ void ph_node_publish_telemetry(void) {
     }
     
     // Initialize sensor if not initialized
-    if (!trema_ph_is_initialized() && i2c_bus_is_initialized()) {
+    if (!trema_ph_is_initialized() && i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         if (trema_ph_init()) {
             ESP_LOGI(TAG, "Trema pH sensor initialized");
         }

@@ -38,6 +38,14 @@ extern "C" {
 #define PH_NODE_I2C_BUS_1_SCL        19  // ESP32 альтернативный SCL
 #define PH_NODE_I2C_CLOCK_SPEED      100000
 
+/**
+ * Отладка Trema pH (I2C): 1 = каждый шаг чтения/инициализации в ESP_LOGI (шумно каждые 3 с).
+ * 0 = шаги только в ESP_LOGD — в мониторе: esp_log_level_set("trema_ph", ESP_LOG_DEBUG)
+ */
+#ifndef PH_NODE_TREMA_PH_I2C_TRACE_INFO
+#define PH_NODE_TREMA_PH_I2C_TRACE_INFO 0
+#endif
+
 // OLED defaults
 #define PH_NODE_OLED_I2C_ADDRESS    0x3C
 #define PH_NODE_OLED_UPDATE_INTERVAL_MS 1500

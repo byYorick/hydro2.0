@@ -589,13 +589,18 @@ static esp_err_t handle_test_sensor(
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (strcmp(channel, "ph_sensor") == 0) {
-        if (!i2c_bus_is_initialized()) {
+    const char *sensor_ch = ph_node_canonicalize_sensor_channel(channel);
+    if (!sensor_ch) {
+        sensor_ch = channel;
+    }
+
+    if (strcmp(sensor_ch, "ph_sensor") == 0) {
+        if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
             *response = node_command_handler_create_response(
                 NULL,
                 "ERROR",
                 "i2c_not_initialized",
-                "I2C bus is not initialized",
+                "I2C bus 1 (pH sensor) is not initialized",
                 NULL
             );
             return ESP_ERR_INVALID_STATE;
@@ -677,7 +682,7 @@ static esp_err_t handle_test_sensor(
         return ESP_OK;
     }
 
-    if (strcmp(channel, "solution_temp_c") == 0) {
+    if (strcmp(sensor_ch, "solution_temp_c") == 0) {
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -707,7 +712,7 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
     }
 
     // Инициализация сенсора, если не инициализирован
-    if (!trema_ph_is_initialized() && i2c_bus_is_initialized()) {
+    if (!trema_ph_is_initialized() && i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         if (trema_ph_init()) {
             ESP_LOGI(TAG, "Trema pH sensor initialized");
         }

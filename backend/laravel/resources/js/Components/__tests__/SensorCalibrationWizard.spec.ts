@@ -51,8 +51,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_channel_expected: 'ec_sensor',
         },
         settings: {
-          ph_point_1_value: 7,
-          ph_point_2_value: 4,
+          ph_point_1_value: 4.01,
+          ph_point_2_value: 9.18,
           ec_point_1_tds: 1413,
           ec_point_2_tds: 2764,
           ph_reference_min: 0,
@@ -60,6 +60,7 @@ describe('SensorCalibrationWizard', () => {
           ec_tds_reference_max: 10000,
           reminder_days: 30,
           critical_days: 45,
+          command_timeout_sec: 10,
         },
       },
       global: {
@@ -86,7 +87,7 @@ describe('SensorCalibrationWizard', () => {
       node_channel_id: 101,
       sensor_type: 'ph',
       status: 'point_1_pending',
-      point_1_reference: 7,
+      point_1_reference: 4.01,
       point_1_command_id: 'cmd-1',
       point_1_sent_at: '2026-03-13T10:00:00.000Z',
       point_1_result: null,
@@ -124,8 +125,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_channel_expected: 'ph_sensor',
         },
         settings: {
-          ph_point_1_value: 7,
-          ph_point_2_value: 4,
+          ph_point_1_value: 4.01,
+          ph_point_2_value: 9.18,
           ec_point_1_tds: 1413,
           ec_point_2_tds: 2764,
           ph_reference_min: 0,
@@ -133,6 +134,7 @@ describe('SensorCalibrationWizard', () => {
           ec_tds_reference_max: 10000,
           reminder_days: 30,
           critical_days: 45,
+          command_timeout_sec: 10,
         },
       },
       global: {
@@ -148,6 +150,7 @@ describe('SensorCalibrationWizard', () => {
     expect(getCalibrationMock).toHaveBeenCalledWith(42)
     expect(startCalibrationMock).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('point_1_pending')
+    expect(document.body.textContent).toContain('Trema pH')
     expect(document.body.textContent).not.toContain('Начать калибровку')
 
     wrapper.unmount()
@@ -160,12 +163,12 @@ describe('SensorCalibrationWizard', () => {
       node_channel_id: 101,
       sensor_type: 'ph',
       status: 'point_2_pending',
-      point_1_reference: 7,
+      point_1_reference: 4.01,
       point_1_command_id: 'cmd-1',
       point_1_sent_at: '2026-03-13T10:00:00.000Z',
       point_1_result: 'DONE',
       point_1_error: null,
-      point_2_reference: 4,
+      point_2_reference: 9.18,
       point_2_command_id: 'cmd-2',
       point_2_sent_at: '2026-03-13T10:05:00.000Z',
       point_2_result: 'DONE',
@@ -198,8 +201,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_channel_expected: 'ph_sensor',
         },
         settings: {
-          ph_point_1_value: 7,
-          ph_point_2_value: 4,
+          ph_point_1_value: 4.01,
+          ph_point_2_value: 9.18,
           ec_point_1_tds: 1413,
           ec_point_2_tds: 2764,
           ph_reference_min: 0,
@@ -207,6 +210,7 @@ describe('SensorCalibrationWizard', () => {
           ec_tds_reference_max: 10000,
           reminder_days: 30,
           critical_days: 45,
+          command_timeout_sec: 10,
         },
       },
       global: {

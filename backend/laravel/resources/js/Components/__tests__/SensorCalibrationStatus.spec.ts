@@ -40,8 +40,8 @@ describe('SensorCalibrationStatus', () => {
       props: {
         zoneId: 1,
         settings: {
-          ph_point_1_value: 7,
-          ph_point_2_value: 4,
+          ph_point_1_value: 4.01,
+          ph_point_2_value: 9.18,
           ec_point_1_tds: 1413,
           ec_point_2_tds: 2764,
           ph_reference_min: 0,
@@ -49,6 +49,7 @@ describe('SensorCalibrationStatus', () => {
           ec_tds_reference_max: 10000,
           reminder_days: 30,
           critical_days: 45,
+          command_timeout_sec: 10,
         },
       },
       global: {

@@ -380,6 +380,20 @@ export function useZoneShowPage() {
     subscribeTelemetryRealtime(newZoneId)
   })
 
+  /**
+   * Список устройств приходит только из SSR/Inertia props; без перезагрузки он не
+   * синхронизируется с БД при переключении вкладок (в отличие от телеметрии по WS).
+   */
+  watch(
+    () => activeTab.value,
+    (tab) => {
+      if (tab !== 'devices' || !zoneId.value) {
+        return
+      }
+      reloadZonePageProps(['devices'])
+    },
+  )
+
   return {
     zoneTabs,
     activeTab,

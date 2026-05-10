@@ -239,7 +239,7 @@ class LiteAutomationSeeder extends Seeder
     }
 
     /**
-     * @return array<string, array{type: string, name: string, sensor_channels: array<int, array{channel: string, metric: string, unit: string}>, actuator_channels: array<int, array{channel: string, metric: string, unit: string, data_type?: string}>}>
+     * @return array<string, array{type: string, name: string, sensor_channels: array<int, array{channel: string, metric: string, unit: string}>, actuator_channels: array<int, array{channel: string, metric: string, unit: string, data_type?: string, actuator_type?: string}>}>
      */
     private function nodeTemplates(): array
     {
@@ -264,6 +264,7 @@ class LiteAutomationSeeder extends Seeder
                 ],
                 'actuator_channels' => [
                     ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'storage_state', 'metric' => 'SERVICE', 'unit' => '', 'data_type' => 'boolean', 'actuator_type' => 'SYSTEM'],
                 ],
             ],
             'ph' => [
@@ -399,13 +400,18 @@ class LiteAutomationSeeder extends Seeder
         foreach ($actuatorChannels as $channel) {
             $allChannels[] = $channel['channel'];
 
+            $actuatorConfig = ['data_type' => $channel['data_type'] ?? 'boolean'];
+            if (! empty($channel['actuator_type'])) {
+                $actuatorConfig['actuator_type'] = $channel['actuator_type'];
+            }
+
             NodeChannel::updateOrCreate(
                 ['node_id' => $node->id, 'channel' => $channel['channel']],
                 [
                     'type' => 'actuator',
                     'metric' => $channel['metric'],
                     'unit' => $channel['unit'],
-                    'config' => ['data_type' => $channel['data_type'] ?? 'boolean'],
+                    'config' => $actuatorConfig,
                 ]
             );
         }

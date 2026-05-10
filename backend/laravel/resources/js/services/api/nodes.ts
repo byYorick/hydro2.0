@@ -8,6 +8,7 @@
  *   POST  /api/nodes/:id/lifecycle/transition — сменить lifecycle-состояние
  */
 import type { Device } from '@/types'
+import { normalizePaginatedList } from '@/utils/apiHelpers'
 import { apiGet, apiPatch, apiPost, apiDelete } from './_client'
 
 export interface NodesListParams {
@@ -43,8 +44,9 @@ export interface NodeLiveMqttStatusData {
 }
 
 export const nodesApi = {
-  list(params?: NodesListParams): Promise<Device[]> {
-    return apiGet<Device[]>('/nodes', { params })
+  async list(params?: NodesListParams): Promise<Device[]> {
+    const response = await apiGet<unknown>('/nodes', { params })
+    return normalizePaginatedList<Device>(response)
   },
 
   update(nodeId: number, payload: NodeUpdatePayload): Promise<Device> {

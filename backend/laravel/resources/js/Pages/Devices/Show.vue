@@ -134,16 +134,116 @@
           />
         </svg>
         <span class="text-sm">Устройство не привязано к зоне</span>
+        <p
+          v-if="isPhNodeDevice"
+          class="text-xs mt-2 text-[color:var(--badge-warning-text)] opacity-90"
+        >
+          Калибровка pH доступна после привязки к зоне — используется тот же мастер, что в Launch.
+        </p>
       </div>
     </Card>
 
-    <!-- Графики телеметрии для сенсорных каналов (раздельно) -->
+    <!-- Калибровка pH: тот же drawer, что Launch → калибровка → сенсоры -->
+    <Card
+      v-if="showPhSensorCalibrationSection"
+      class="mb-3"
+    >
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="min-w-0 space-y-1">
+          <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Калибровка pH
+          </div>
+          <p class="text-xs text-[color:var(--text-muted)]">
+            Двухточечная калибровка буферами; offset/slope хранятся в AE3. Тот же поток, что в
+            <Link
+              :href="`/launch/${linkedZoneId}`"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+            >Launch</Link>
+            → калибровка сенсоров.
+          </p>
+          <div
+            v-if="sensorCalibStatusLoading"
+            class="text-xs text-[color:var(--text-dim)]"
+          >
+            Загрузка статуса…
+          </div>
+          <div
+            v-else-if="phSensorCalibrationItems.length === 0"
+            class="text-xs text-[color:var(--badge-warning-text)] rounded-md border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2 py-1.5"
+          >
+            Канал pH этой ноды не найден в статусе зоны. Проверьте привязку и наличие сенсора
+            <span class="font-mono">ph_sensor</span>
+            для узла
+            <span class="font-mono">{{ device.uid || device.id }}</span>.
+          </div>
+          <ul
+            v-else
+            class="flex flex-col gap-2 mt-1"
+          >
+            <li
+              v-for="it in phSensorCalibrationItems"
+              :key="it.node_channel_id"
+              class="flex flex-wrap items-center gap-2 text-xs"
+            >
+              <span class="font-mono text-[color:var(--text-muted)]">{{ it.channel_uid }}</span>
+              <Badge :variant="phCalibrationStatusVariant(it.calibration_status)">
+                {{ it.calibration_status }}
+              </Badge>
+              <span
+                v-if="it.last_calibrated_at"
+                class="text-[color:var(--text-dim)]"
+              >
+                {{ formatCalibrationDate(it.last_calibrated_at) }}
+              </span>
+              <Button
+                v-if="canCalibratePhSensors"
+                size="sm"
+                variant="outline"
+                class="sm:ml-auto"
+                @click="openPhSensorCalibrationDrawer(it.node_channel_id)"
+              >
+                Калибровать
+              </Button>
+            </li>
+          </ul>
+          <p
+            v-if="!canCalibratePhSensors"
+            class="text-[11px] text-[color:var(--text-dim)]"
+          >
+            Запуск калибровки — роли operator / agronomist / engineer / admin.
+          </p>
+        </div>
+        <div class="flex shrink-0 gap-2">
+          <Button
+            v-if="canCalibratePhSensors && phSensorCalibrationItems.length > 0"
+            size="sm"
+            variant="primary"
+            @click="openPhSensorCalibrationDrawer(null)"
+          >
+            Открыть калибровку
+          </Button>
+        </div>
+      </div>
+    </Card>
+
+    <SensorCalibrationDrawer
+      v-if="linkedZoneId != null"
+      :show="phSensorCalibrationDrawerOpen"
+      :zone-id="linkedZoneId"
+      :settings="sensorCalibrationSettings"
+      :items="phSensorCalibrationItems"
+      :initial-channel-id="phCalibrationInitialChannelId"
+      @close="onPhSensorCalibrationClose"
+      @session-finished="onPhSensorCalibrationSessionFinished"
+    />
+
+    <!-- Графики телеметрии: прочие сенсоры по одному; уровни воды — один общий график -->
     <div
       v-if="sensorChannels.length > 0"
       class="mb-3 space-y-3"
     >
       <template
-        v-for="(channel, index) in sensorChannels"
+        v-for="(channel, index) in nonWaterSensorChannels"
         :key="channel?.channel || index"
       >
         <MultiSeriesTelemetryChart
@@ -154,6 +254,13 @@
           @time-range-change="onChartTimeRangeChange"
         />
       </template>
+      <MultiSeriesTelemetryChart
+        v-if="waterLevelSensorChannels.length > 0"
+        title="Уровень воды"
+        :series="getWaterLevelSeries()"
+        :time-range="chartTimeRange"
+        @time-range-change="onChartTimeRangeChange"
+      />
       <Card
         v-if="sensorChannels.length > 0 && !hasChartData"
         class="text-center text-sm text-[color:var(--text-dim)] py-8"
@@ -239,18 +346,23 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
+import SensorCalibrationDrawer from '@/Components/Launch/Calibration/SensorCalibrationDrawer.vue'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
+import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { api } from '@/services/api'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
+import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 
 interface PageProps {
   device?: Device
+  auth?: { user?: { role?: string } }
   [key: string]: any
 }
 
@@ -287,6 +399,119 @@ const zoneAssignmentTitle = computed(() => {
 
   return 'Устройство не привязано к зоне'
 })
+
+const userRole = computed(() => page.props.auth?.user?.role ?? 'viewer')
+const canCalibratePhSensors = computed(() =>
+  ['operator', 'admin', 'agronomist', 'engineer'].includes(userRole.value),
+)
+
+const isPhNodeDevice = computed(() => {
+  const t = String(device.value.type || '').toLowerCase()
+  if (t === 'ph' || t === 'ph_node' || t.endsWith('ph_node')) {
+    return true
+  }
+  return channels.value.some((ch) => {
+    if ((ch.type || '').toString().toLowerCase() !== 'sensor') {
+      return false
+    }
+    const m = String(ch.metric || '').toUpperCase()
+    const c = String(ch.channel || '').toLowerCase()
+    return m === 'PH' || c === 'ph_sensor'
+  })
+})
+
+const showPhSensorCalibrationSection = computed(
+  () => isPhNodeDevice.value && linkedZoneId.value !== null,
+)
+
+const sensorCalibrationSettings = useSensorCalibrationSettings()
+const zoneSensorCalibrationStatus = ref<SensorCalibrationOverview[]>([])
+const sensorCalibStatusLoading = ref(false)
+const phSensorCalibrationDrawerOpen = ref(false)
+const phCalibrationInitialChannelId = ref<number | null>(null)
+
+const phSensorCalibrationItems = computed((): SensorCalibrationOverview[] => {
+  const uid = device.value.uid != null && String(device.value.uid).trim() !== ''
+    ? String(device.value.uid).trim()
+    : null
+  const phChannels = new Set(
+    channels.value
+      .filter((ch) => {
+        if ((ch.type || '').toString().toLowerCase() !== 'sensor') {
+          return false
+        }
+        const m = String(ch.metric || '').toUpperCase()
+        const c = String(ch.channel || '').toLowerCase()
+        return m === 'PH' || c === 'ph_sensor'
+      })
+      .map((ch) => String(ch.channel || '')),
+  )
+
+  return zoneSensorCalibrationStatus.value.filter((it) => {
+    if (it.sensor_type !== 'ph') {
+      return false
+    }
+    if (uid && it.node_uid) {
+      return it.node_uid === uid
+    }
+    if (phChannels.size > 0) {
+      return phChannels.has(it.channel_uid)
+    }
+    return false
+  })
+})
+
+async function loadPhSensorCalibrationStatus(): Promise<void> {
+  const zid = linkedZoneId.value
+  if (!zid || !isPhNodeDevice.value) {
+    zoneSensorCalibrationStatus.value = []
+    return
+  }
+  sensorCalibStatusLoading.value = true
+  try {
+    zoneSensorCalibrationStatus.value = await api.zones.sensorCalibrationStatus(zid)
+  } catch (err) {
+    logger.warn('[Devices/Show] sensor calibration status failed', err)
+    zoneSensorCalibrationStatus.value = []
+  } finally {
+    sensorCalibStatusLoading.value = false
+  }
+}
+
+function phCalibrationStatusVariant(
+  status: SensorCalibrationOverview['calibration_status'],
+): BadgeVariant {
+  switch (status) {
+    case 'ok':
+      return 'success'
+    case 'warning':
+      return 'warning'
+    case 'critical':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+}
+
+function formatCalibrationDate(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('ru-RU')
+}
+
+function openPhSensorCalibrationDrawer(channelId: number | null): void {
+  phCalibrationInitialChannelId.value = channelId
+  phSensorCalibrationDrawerOpen.value = true
+}
+
+function onPhSensorCalibrationClose(): void {
+  phSensorCalibrationDrawerOpen.value = false
+  phCalibrationInitialChannelId.value = null
+}
+
+async function onPhSensorCalibrationSessionFinished(_outcome: SensorCalibrationSessionOutcome): Promise<void> {
+  await loadPhSensorCalibrationStatus()
+}
+
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
@@ -325,13 +550,34 @@ const getMetricPriority = (metric: string): number => {
 // Сортируем так, чтобы температура была первой, влажность второй
 const sensorChannels = computed(() => {
   const sensors = channels.value.filter(ch => (ch.type || '').toString().toLowerCase() === 'sensor')
-  
+
   return sensors.sort((a, b) => {
     const aMetric = getMetricFromChannel(a)
     const bMetric = getMetricFromChannel(b)
     return getMetricPriority(aMetric) - getMetricPriority(bMetric)
   })
 })
+
+function isWaterLevelSensorChannel(channel: DeviceChannel): boolean {
+  const metric = String(channel.metric || '').toUpperCase()
+  if (metric.includes('WATER_LEVEL') || metric === 'LEVEL') {
+    return true
+  }
+  const id = String(channel.channel || '').toLowerCase()
+  return id.startsWith('level_')
+}
+
+/** Каналы уровня воды — на отдельном объединённом графике */
+const waterLevelSensorChannels = computed(() =>
+  sensorChannels.value
+    .filter(isWaterLevelSensorChannel)
+    .sort((a, b) => String(a.channel).localeCompare(String(b.channel))),
+)
+
+/** Остальные сенсоры — по-прежнему отдельные графики */
+const nonWaterSensorChannels = computed(() =>
+  sensorChannels.value.filter((ch) => !isWaterLevelSensorChannel(ch)),
+)
 
 // Каналы из NodeConfig (приоритетнее данных из БД)
 const configChannels = computed(() => {
@@ -379,6 +625,16 @@ const METRIC_COLORS = computed<Record<string, string>>(() => {
   }
 })
 
+/** Разные оттенки для нескольких датчиков уровня на одном графике (контраст в light/dark) */
+const WATER_LEVEL_SERIES_COLORS = computed(() => [
+  resolveCssColor('--accent-amber', '#f59e0b'),
+  resolveCssColor('--accent-cyan', '#22d3ee'),
+  resolveCssColor('--chart-series-magenta', '#e879f9'),
+  resolveCssColor('--accent-green', '#34d399'),
+  resolveCssColor('--accent-red', '#f87171'),
+  resolveCssColor('--accent-lime', '#a3e635'),
+])
+
 const METRIC_LABELS: Record<string, string> = {
   'TEMPERATURE': 'Температура',
   'HUMIDITY': 'Влажность',
@@ -393,6 +649,9 @@ const METRIC_NORMALIZATION: Record<string, string> = {
   'CO2': 'CO2',
   'PH': 'PH',
   'EC': 'EC',
+  'WATER_LEVEL': 'WATER_LEVEL',
+  /** В БД `sensors.type` канонический WATER_LEVEL (см. history-logger `infer_sensor_type`). */
+  'WATER_LEVEL_SWITCH': 'WATER_LEVEL',
 }
 
 // Утилиты для работы с метриками
@@ -468,10 +727,46 @@ function getChartTitleForChannel(channel: DeviceChannel | undefined): string {
   if (!channel) {
     return 'Телеметрия'
   }
-  
+
   const metric = getMetricFromChannel(channel)
   const label = getMetricLabel(metric, channel.channel)
   return `${label}${channel.unit ? ` (${channel.unit})` : ''}`
+}
+
+function getWaterLevelChannelLabel(channel: DeviceChannel): string {
+  const name = channel.name != null && String(channel.name).trim() !== ''
+    ? String(channel.name).trim()
+    : ''
+  if (name) {
+    return name
+  }
+  const raw = String(channel.channel || '')
+  const tail = raw.replace(/^level_/i, '')
+  const pretty = tail
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
+  return pretty || raw || 'Уровень'
+}
+
+/** Несколько серий уровня воды на одном графике (контрастные цвета) */
+function getWaterLevelSeries() {
+  const palette = WATER_LEVEL_SERIES_COLORS.value
+  return waterLevelSensorChannels.value.map((channel, idx) => {
+    const data = chartDataByChannel.value[channel.channel] || []
+    const color = palette[idx % palette.length]
+    const unit = channel.unit ? String(channel.unit) : ''
+    const label = `${getWaterLevelChannelLabel(channel)}${unit ? ` (${unit})` : ''}`
+    return {
+      name: channel.channel,
+      label,
+      color,
+      data,
+      currentValue: getCurrentValue(data),
+      yAxisIndex: 0,
+    }
+  })
 }
 
 // История просмотров
@@ -658,7 +953,10 @@ onMounted(() => {
   loadAllCharts().catch((error) => {
     logger.error('[Devices/Show] Error loading charts on mount:', error)
   })
-  
+  loadPhSensorCalibrationStatus().catch((error) => {
+    logger.error('[Devices/Show] Error loading pH sensor calibration status on mount:', error)
+  })
+
   // Подписываемся на WebSocket обновления телеметрии
   try {
     unsubscribeTelemetryFn = subscribeTelemetry(handleTelemetryUpdate)
@@ -666,6 +964,15 @@ onMounted(() => {
     logger.error('[Devices/Show] Error subscribing to telemetry:', error)
   }
 })
+
+watch(
+  [linkedZoneId, () => device.value.id, isPhNodeDevice],
+  () => {
+    loadPhSensorCalibrationStatus().catch((error) => {
+      logger.error('[Devices/Show] Error reloading pH sensor calibration status:', error)
+    })
+  },
+)
 
 // Отписываемся при размонтировании
 onUnmounted(() => {
@@ -709,6 +1016,9 @@ watch(device, (newDevice, oldDevice) => {
     // Загружаем данные только при смене устройства
     loadAllCharts().catch((error) => {
       logger.error('[Devices/Show] Error loading charts on device change:', error)
+    })
+    loadPhSensorCalibrationStatus().catch((error) => {
+      logger.error('[Devices/Show] Error loading pH calibration status on device change:', error)
     })
   }
   // Не перезагружаем графики при других изменениях устройства (например, статус)

@@ -7,6 +7,7 @@
  *   GET  /api/greenhouse-types      — справочник типов (read-only lookup)
  */
 import type { Greenhouse } from '@/types'
+import { normalizePaginatedList } from '@/utils/apiHelpers'
 import { apiGet, apiPost } from './_client'
 
 export interface GreenhouseType {
@@ -27,8 +28,9 @@ export interface GreenhouseCreatePayload {
 }
 
 export const greenhousesApi = {
-  list(): Promise<Greenhouse[]> {
-    return apiGet<Greenhouse[]>('/greenhouses')
+  async list(): Promise<Greenhouse[]> {
+    const response = await apiGet<unknown>('/greenhouses')
+    return normalizePaginatedList<Greenhouse>(response)
   },
 
   create(payload: GreenhouseCreatePayload): Promise<Greenhouse> {

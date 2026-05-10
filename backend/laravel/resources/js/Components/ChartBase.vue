@@ -78,9 +78,12 @@ const initChart = (): void => {
 }
 
 const onResize = () => {
-  if (chart && el.value) {
-    chart.resize()
-  }
+  // rAF снимает ложные «ResizeObserver loop» при каскаде resize → setOption
+  requestAnimationFrame(() => {
+    if (chart && el.value) {
+      chart.resize()
+    }
+  })
 }
 
 onMounted(() => {

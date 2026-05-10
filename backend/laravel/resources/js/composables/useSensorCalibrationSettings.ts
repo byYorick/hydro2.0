@@ -6,15 +6,15 @@ const authoritySensorCalibrationSettings = ref<Partial<SensorCalibrationSettings
 let authoritySensorCalibrationSettingsRequest: Promise<void> | null = null
 
 export const DEFAULT_SENSOR_CALIBRATION_SETTINGS: SensorCalibrationSettings = {
-  ph_point_1_value: 7,
-  ph_point_2_value: 4.01,
+  ph_point_1_value: 4.01,
+  ph_point_2_value: 9.18,
   ec_point_1_tds: 1413,
   ec_point_2_tds: 707,
   reminder_days: 30,
   critical_days: 90,
   command_timeout_sec: 10,
   ph_reference_min: 1,
-  ph_reference_max: 12,
+  ph_reference_max: 14,
   ec_tds_reference_max: 10000,
 }
 

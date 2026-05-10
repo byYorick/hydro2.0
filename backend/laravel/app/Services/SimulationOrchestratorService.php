@@ -747,6 +747,7 @@ class SimulationOrchestratorService
             ['channel' => 'soil_moisture', 'type' => 'SENSOR', 'metric' => 'SOIL_MOISTURE', 'unit' => '%', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'flow_present', 'type' => 'SENSOR', 'metric' => 'FLOW_RATE', 'unit' => '', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'pump_bus_current', 'type' => 'SENSOR', 'metric' => 'PUMP_CURRENT', 'unit' => 'mA', 'config' => ['poll_interval_ms' => 500]],
+            ['channel' => 'storage_state', 'type' => 'ACTUATOR', 'metric' => 'SERVICE', 'unit' => '', 'config' => ['actuator_type' => 'SYSTEM']],
         ]);
         $this->ensureSimulationNodeChannels($phNode, [
             ['channel' => 'system', 'type' => 'SERVICE', 'metric' => 'SERVICE', 'unit' => ''],

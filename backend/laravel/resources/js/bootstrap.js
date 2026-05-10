@@ -340,6 +340,11 @@ if (typeof window !== 'undefined' && !window.__bootstrapHandlers) {
 }
 
 const errorHandler = (event) => {
+  const message = String(event?.message || '')
+  // Браузерный шум от ECharts/ResizeObserver: не ошибка приложения, не логируем как ERROR
+  if (message.includes('ResizeObserver loop completed with undelivered notifications')) {
+    return
+  }
   // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
   // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
   logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });

@@ -56,6 +56,19 @@ const char *ph_node_canonicalize_actuator_channel(const char *name) {
     return name;
 }
 
+const char *ph_node_canonicalize_sensor_channel(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+    if (strcmp(name, "ph") == 0) {
+        return "ph_sensor";
+    }
+    if (strcmp(name, "solution_temp") == 0 || strcmp(name, "temp_water") == 0 || strcmp(name, "water_temp_c") == 0) {
+        return "solution_temp_c";
+    }
+    return name;
+}
+
 const ph_node_actuator_channel_t *ph_node_find_actuator_channel(const char *name) {
     const char *canonical = ph_node_canonicalize_actuator_channel(name);
     if (canonical == NULL) {

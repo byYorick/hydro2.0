@@ -40,7 +40,8 @@ class SensorCalibrationControllerTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.calibration.status', 'started');
-        $this->assertEquals(7.0, $response->json('data.defaults.point_1_value'));
+        $this->assertEquals(4.01, $response->json('data.defaults.point_1_value'));
+        $this->assertEquals(9.18, $response->json('data.defaults.point_2_value'));
     }
 
     public function test_create_prevents_duplicate_active_session(): void
@@ -108,12 +109,12 @@ class SensorCalibrationControllerTest extends TestCase
 
         $response = $this->postJson("/api/zones/{$zone->id}/sensor-calibrations/{$calibration->id}/point", [
             'stage' => 1,
-            'reference_value' => 7.0,
+            'reference_value' => 4.01,
         ]);
 
         $response->assertOk()
             ->assertJsonPath('data.status', SensorCalibration::STATUS_POINT_1_PENDING);
-        $this->assertEquals(7.0, $response->json('data.point_1_reference'));
+        $this->assertEquals(4.01, $response->json('data.point_1_reference'));
 
         $this->assertNotNull($calibration->fresh()->point_1_command_id);
 
@@ -121,8 +122,27 @@ class SensorCalibrationControllerTest extends TestCase
             return $request->url() === 'http://history-logger:9300/commands'
                 && $request['cmd'] === 'calibrate'
                 && $request['params']['stage'] === 1
-                && $request['params']['known_ph'] === 7.0;
+                && $request['params']['known_ph'] === 4.01;
         });
+    }
+
+    public function test_submit_point_2_rejects_reference_too_close_to_point_1(): void
+    {
+        [$zone, $channel] = $this->makeSensorChannel('ph_sensor', 'PH');
+        $calibration = SensorCalibration::query()->create([
+            'zone_id' => $zone->id,
+            'node_channel_id' => $channel->id,
+            'sensor_type' => 'ph',
+            'status' => SensorCalibration::STATUS_POINT_1_DONE,
+            'point_1_reference' => 4.01,
+            'calibrated_by' => auth()->id(),
+        ]);
+
+        $this->postJson("/api/zones/{$zone->id}/sensor-calibrations/{$calibration->id}/point", [
+            'stage' => 2,
+            'reference_value' => 4.03,
+        ])->assertStatus(422)
+            ->assertJsonPath('error_code', 'ph_reference_points_not_distinct');
     }
 
     public function test_submit_point_rejects_ec_reference_that_looks_like_ms_cm(): void
@@ -158,7 +178,7 @@ class SensorCalibrationControllerTest extends TestCase
 
         $this->postJson("/api/zones/{$zone->id}/sensor-calibrations/{$calibration->id}/point", [
             'stage' => 1,
-            'reference_value' => 7.0,
+            'reference_value' => 4.01,
         ])->assertStatus(422)
             ->assertJsonPath('message', "Node {$channel->node->uid} is offline; sensor calibration command cannot be sent.");
     }

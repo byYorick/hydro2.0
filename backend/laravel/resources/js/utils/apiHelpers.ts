@@ -112,3 +112,21 @@ export function extractDataWithFallback<T = unknown>(response: unknown, fallback
   const data = extractData<T>(response)
   return data !== null && data !== undefined ? data : fallback
 }
+
+/**
+ * Laravel index часто отдаёт `{ status, data: LengthAwarePaginator }`; после `extractData`
+ * остаётся объект `{ current_page, data: T[], … }` (в т.ч. с полями `null`).
+ * Для `v-for` и типизированных `Promise<T[]>` нужен массив элементов из `data`.
+ */
+export function normalizePaginatedList<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[]
+  }
+  if (payload !== null && typeof payload === 'object' && 'data' in payload) {
+    const inner = (payload as { data: unknown }).data
+    if (Array.isArray(inner)) {
+      return inner as T[]
+    }
+  }
+  return []
+}

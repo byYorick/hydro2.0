@@ -576,7 +576,12 @@ static esp_err_t handle_test_sensor(
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (strcmp(channel, "ec_sensor") != 0) {
+    const char *sensor_ch = ec_node_canonicalize_sensor_channel(channel);
+    if (!sensor_ch) {
+        sensor_ch = channel;
+    }
+
+    if (strcmp(sensor_ch, "ec_sensor") != 0) {
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",

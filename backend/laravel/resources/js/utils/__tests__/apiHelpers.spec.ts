@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   extractData,
   extractDataWithFallback,
+  normalizePaginatedList,
   normalizeResponse,
 } from '../apiHelpers'
 
@@ -27,5 +28,18 @@ describe('apiHelpers', () => {
     expect(extractDataWithFallback<number>(undefined, 10)).toBe(10)
     expect(extractDataWithFallback<number>(null, 10)).toBe(10)
     expect(extractDataWithFallback<number>({ data: 5 }, 10)).toBe(5)
+  })
+
+  it('normalizePaginatedList извлекает data из Laravel paginator', () => {
+    expect(
+      normalizePaginatedList<{ id: number }>({
+        current_page: 1,
+        data: [{ id: 1 }],
+        next_page_url: null,
+        total: 1,
+      }),
+    ).toEqual([{ id: 1 }])
+    expect(normalizePaginatedList<number>([2, 3])).toEqual([2, 3])
+    expect(normalizePaginatedList<number>({ foo: 1 })).toEqual([])
   })
 })

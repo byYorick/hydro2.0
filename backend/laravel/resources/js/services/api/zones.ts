@@ -5,6 +5,7 @@
  * Composables/stores импортируют `api.zones`, а не `apiClient` напрямую.
  */
 import type { Zone } from '@/types'
+import { normalizePaginatedList } from '@/utils/apiHelpers'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type {
   SensorCalibration,
@@ -30,8 +31,9 @@ export const zonesApi = {
   /**
    * Список всех зон текущего пользователя/теплицы.
    */
-  list(params?: ZonesListParams): Promise<Zone[]> {
-    return apiGet<Zone[]>('/zones', { params })
+  async list(params?: ZonesListParams): Promise<Zone[]> {
+    const response = await apiGet<unknown>('/zones', { params })
+    return normalizePaginatedList<Zone>(response)
   },
 
   /**

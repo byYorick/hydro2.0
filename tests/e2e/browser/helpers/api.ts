@@ -328,10 +328,12 @@ export class APITestHelper {
         'first_seen_at' => now(),
       ]);
       foreach (['main_pump', 'force_irrigation', 'storage_state', 'drain'] as $channel) {
+        $config = $channel === 'storage_state' ? ['actuator_type' => 'SYSTEM'] : null;
         \\App\\Models\\NodeChannel::query()->create([
           'node_id' => $node->id,
           'channel' => $channel,
-          'type' => $channel === 'storage_state' ? 'SENSOR' : 'ACTUATOR',
+          'type' => 'ACTUATOR',
+          'config' => $config,
           'is_active' => true,
           'last_seen_at' => now(),
         ]);

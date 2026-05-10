@@ -52,6 +52,16 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
 
 const size_t EC_NODE_ACTUATOR_CHANNELS_COUNT = sizeof(EC_NODE_ACTUATOR_CHANNELS) / sizeof(EC_NODE_ACTUATOR_CHANNELS[0]);
 
+const char *ec_node_canonicalize_sensor_channel(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+    if (strcmp(name, "ec") == 0) {
+        return "ec_sensor";
+    }
+    return name;
+}
+
 const ec_node_actuator_channel_t *ec_node_find_actuator_channel(const char *name) {
     if (name == NULL) {
         return NULL;

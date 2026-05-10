@@ -14,6 +14,7 @@ export type SensorCalibrationApiErrorCode =
   | 'ec_reference_likely_ms_cm'
   | 'ec_reference_range'
   | 'ph_reference_range'
+  | 'ph_reference_points_not_distinct'
 
 export type SensorCalibrationStatus =
   | 'started'

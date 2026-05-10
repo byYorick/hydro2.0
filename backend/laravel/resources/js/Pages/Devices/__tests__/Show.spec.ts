@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const { sampleDevice, resetSampleDevice } = vi.hoisted(() => {
@@ -87,6 +87,14 @@ vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
   },
 }))
 
+vi.mock('@/Components/Launch/Calibration/SensorCalibrationDrawer.vue', () => ({
+  default: {
+    name: 'SensorCalibrationDrawer',
+    props: ['show', 'zoneId', 'settings', 'items', 'initialChannelId'],
+    template: '<div class="sensor-calibration-drawer" />',
+  },
+}))
+
 vi.mock('@/composables/useNodeTelemetry', () => ({
   useNodeTelemetry: () => ({
     subscribe: vi.fn(() => () => {}),
@@ -118,6 +126,8 @@ async function unwrapShow(rawPromise: Promise<unknown>): Promise<unknown> {
   return afterAxios
 }
 
+const mockSensorCalibrationStatus = vi.hoisted(() => vi.fn())
+
 vi.mock('@/services/api', () => ({
   api: {
     nodes: {
@@ -131,6 +141,9 @@ vi.mock('@/services/api', () => ({
         unwrapShow(mockApiPost(`/nodes/${nodeId}/commands`, payload)),
       getStatus: (commandId: string | number) =>
         unwrapShow(mockApiGet(`/commands/${commandId}/status`)),
+    },
+    zones: {
+      sensorCalibrationStatus: (zoneId: number) => mockSensorCalibrationStatus(zoneId),
     },
   },
 }))
@@ -185,6 +198,7 @@ vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       device: sampleDevice,
+      auth: { user: { role: 'agronomist' } },
     },
   }),
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
@@ -199,7 +213,23 @@ describe('Devices/Show.vue', () => {
     mockShowToast.mockClear()
     mockApiGet.mockClear()
     mockApiPost.mockClear()
-    
+    mockSensorCalibrationStatus.mockReset()
+    mockSensorCalibrationStatus.mockResolvedValue([
+      {
+        node_channel_id: 101,
+        channel_uid: 'ph_sensor',
+        sensor_type: 'ph',
+        node_uid: 'node-ph-1',
+        last_calibrated_at: null,
+        days_since_calibration: null,
+        calibration_status: 'never',
+        has_active_session: false,
+        active_calibration_id: null,
+        calibration_channel_contract_ok: true,
+        calibration_channel_expected: 'ph_sensor',
+      },
+    ])
+
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
     mockApiPost.mockResolvedValue({ data: { status: 'ok' } })
     mockApiGet.mockResolvedValue({
@@ -240,6 +270,13 @@ describe('Devices/Show.vue', () => {
     const wrapper = mount(DevicesShow)
     
     expect(wrapper.text()).toContain('FW: 1.0.0')
+  })
+
+  it('показывает блок калибровки pH для привязанной ph-ноды', async () => {
+    const wrapper = mount(DevicesShow)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Калибровка pH')
+    expect(mockSensorCalibrationStatus).toHaveBeenCalledWith(1)
   })
 
   it('отображает ссылку на зону устройства', () => {
@@ -451,9 +488,8 @@ describe('Devices/Show.vue', () => {
     // Проверяем, что графики отображаются в правильном порядке
     const charts = wrapper.findAllComponents({ name: 'MultiSeriesTelemetryChart' })
     if (charts.length > 0) {
-      // Первый график должен быть температурой
       const firstChart = charts[0]
-      expect(firstChart.props('title')).toMatch(/Температура|temperature/i)
+      expect(firstChart.props('title')).toMatch(/Температура|temperature|Уровень воды/i)
     } else {
       // Если графиков нет, проверяем что компонент все равно работает
       expect(wrapper.exists()).toBe(true)

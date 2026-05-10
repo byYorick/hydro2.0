@@ -173,7 +173,11 @@ esp_err_t ph_node_init_step_ph_sensor(ph_node_init_context_t *ctx,
                                       ph_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 4/8] pH Sensor init...");
-    
+
+#if PH_NODE_TREMA_PH_I2C_TRACE_INFO
+    trema_ph_set_read_trace_verbose(true);
+#endif
+
     if (result) {
         result->component_name = "ph_sensor";
         result->component_initialized = false;

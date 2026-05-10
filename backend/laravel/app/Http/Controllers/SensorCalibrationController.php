@@ -220,6 +220,12 @@ class SensorCalibrationController extends Controller
                     referenceValue: $referenceValue,
                     settings: $settings,
                 );
+                $this->assertDistinctPhCalibrationSecondPoint(
+                    sensorType: $lockedCalibration->sensor_type,
+                    stage: $stage,
+                    referenceValue: $referenceValue,
+                    pointOneReference: $lockedCalibration->point_1_reference,
+                );
 
                 $channel = $lockedCalibration->nodeChannel;
                 if (! $channel) {
@@ -378,6 +384,24 @@ class SensorCalibrationController extends Controller
         }
     }
 
+    private function assertDistinctPhCalibrationSecondPoint(
+        string $sensorType,
+        int $stage,
+        float $referenceValue,
+        mixed $pointOneReference,
+    ): void {
+        if ($sensorType !== 'ph' || $stage !== 2 || $pointOneReference === null) {
+            return;
+        }
+
+        $first = (float) $pointOneReference;
+        if (abs($referenceValue - $first) < 0.05) {
+            throw new DomainException(
+                'Вторая точка pH-калибровки должна отличаться от первой минимум на 0.05 pH (модуль Trema требует два разных эталонных буфера).'
+            );
+        }
+    }
+
     private function assertPointSubmissionAllowed(SensorCalibration $calibration, int $stage): void
     {
         if ($calibration->isTerminal()) {
@@ -421,6 +445,7 @@ class SensorCalibrationController extends Controller
             str_contains($message, 'mS/cm by mistake'), str_contains($message, 'not mS/cm') => 'ec_reference_likely_ms_cm',
             str_contains($message, 'TDS ppm within') => 'ec_reference_range',
             str_contains($message, 'reference_value must be within [') => 'ph_reference_range',
+            str_contains($message, 'Вторая точка pH-калибровки должна отличаться') => 'ph_reference_points_not_distinct',
             default => null,
         };
     }

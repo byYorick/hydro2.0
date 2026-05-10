@@ -53,10 +53,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - `pump_main` -> `GPIO25`
 - `valve_clean_fill` -> `GPIO26`
-- `valve_clean_supply` -> `GPIO27`
-- `valve_solution_fill` -> `GPIO32`
-- `valve_solution_supply` -> `GPIO33`
-- `valve_irrigation` -> `GPIO14`
+- `valve_clean_supply` -> `GPIO32`
+- `valve_solution_fill` -> `GPIO33`
+- `valve_solution_supply` -> `GPIO14`
+- `valve_irrigation` -> `GPIO27`
 - `level_clean_min` -> `GPIO16`
 - `level_clean_max` -> `GPIO17`
 - `level_solution_min` -> `GPIO18`

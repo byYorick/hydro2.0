@@ -21,8 +21,23 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-// Default I2C address for the pH sensor
+// Default I2C address for the pH sensor (7-bit; в примерах iarduino встречается 0x09 и 0x0A)
 #define TREMA_PH_ADDR 0x0A
+
+/**
+ * @brief Задать 7-bit I²C адрес модуля до/между инициализациями (если модуль не на 0x0A).
+ */
+void trema_ph_set_i2c_address(uint8_t addr_7bit);
+
+/**
+ * @brief Текущий 7-bit I²C адрес драйвера.
+ */
+uint8_t trema_ph_get_i2c_address(void);
+
+/** Идентификатор модели и линейки чипа — как в iarduino_I2C_pH.h v1.2.3 (tre.ru / GitHub) */
+#define TREMA_PH_MODEL_ID       0x1A
+#define TREMA_PH_CHIP_ID_FLASH  0x3C
+#define TREMA_PH_CHIP_ID_METRO  0xC3
 
 // Register addresses
 #define REG_PH_KNOWN_PH     0x0A  // Known pH value for calibration (2 bytes)
@@ -31,11 +46,13 @@ extern "C" {
 #define REG_PH_ERROR        0x1F  // Error flags
 #define REG_MODEL           0x04  // Model ID register
 
-// Error flags
+// Error flags (REG_PH_ERROR)
 #define PH_FLG_STAB_ERR     0x02  // Stability error flag
 #define PH_FLG_CALC_ERR     0x01  // Calibration error flag
 
-// Calibration bits
+// Calibration control (REG_PH_CALIBRATION): status bits + command bits
+#define PH_FLG_STATUS_1     0x40  // Stage 1 calibration in progress / done (iarduino)
+#define PH_FLG_STATUS_2     0x80  // Stage 2 calibration in progress / done (iarduino)
 #define PH_BIT_CALC_1       0x01  // Start calibration stage 1
 #define PH_BIT_CALC_2       0x02  // Start calibration stage 2
 #define PH_CODE_CALC_SAVE   0x24  // Calibration save code
@@ -115,6 +132,20 @@ bool trema_ph_is_initialized(void);
  * @return true if sensor responded with expected model ID, false otherwise
  */
 bool trema_ph_log_connection_status(void);
+
+/**
+ * @brief Быстрая проверка наличия модуля по правилам iarduino (REG_MODEL..CHIP_ID, 4 байта).
+ * Не требует успешного trema_ph_init().
+ */
+bool trema_ph_probe_presence(void);
+
+/**
+ * @brief Подробные шаги чтения/инициализации в лог.
+ *
+ * @param verbose true — шаги через ESP_LOGI (каждый опрос, шумно).
+ *                false — шаги только ESP_LOGD (нужен esp_log_level_set("trema_ph", ESP_LOG_DEBUG)).
+ */
+void trema_ph_set_read_trace_verbose(bool verbose);
 
 #ifdef __cplusplus
 }

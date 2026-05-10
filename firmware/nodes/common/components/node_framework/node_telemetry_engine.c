@@ -88,7 +88,10 @@ static const char *channel_to_metric_type(const char *channel, metric_type_t typ
     if (strcmp(channel, "flow_present") == 0) {
         return "FLOW_RATE";
     }
-    if (strcmp(channel, "solution_temp_c") == 0) {
+    /* Температура раствора: один metric_type для канонического и альтернативных id сегмента топика
+       (см. digital-twin/sim_world и NODE_CHANNELS_REFERENCE — firmware channel solution_temp_c). */
+    if (strcmp(channel, "solution_temp_c") == 0 || strcmp(channel, "solution_temp") == 0 ||
+        strcmp(channel, "temp_water") == 0 || strcmp(channel, "water_temp_c") == 0) {
         return "TEMPERATURE";
     }
     
