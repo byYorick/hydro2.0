@@ -63,11 +63,17 @@ const defaultZoneReloadProps = [
 
 export interface ZonePageStateDeps {
   reloadZoneAfterCommand: (zoneId: number, only: string[]) => void
-  updateCommandStatus: (commandId: string | number, status: CommandStatus, message?: string) => void
+  updateCommandStatus: (commandId: string | number, status: CommandStatus, message?: string, errorCode?: string | null) => void
   reloadZone: (zoneId: number, only: string[]) => void
   subscribeToZoneCommands: (
     zoneId: number,
-    callback: (event: { commandId: string | number; status: CommandStatus; message?: string }) => void
+    callback: (event: {
+      commandId: string | number
+      status: CommandStatus
+      message?: string
+      error?: string
+      errorCode?: string
+    }) => void
   ) => () => void
 }
 
@@ -504,7 +510,10 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     cleanupZoneRealtimeSubscriptions()
 
     unsubscribeZoneCommands = subscribeToZoneCommands(targetZoneId, (commandEvent) => {
-      updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
+      const detail = commandEvent.error?.trim()
+        ? commandEvent.error
+        : commandEvent.message
+      updateCommandStatus(commandEvent.commandId, commandEvent.status, detail, commandEvent.errorCode ?? null)
       const finalStatuses = ['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED']
       if (finalStatuses.includes(commandEvent.status)) {
         reloadZoneAfterCommand(targetZoneId, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])

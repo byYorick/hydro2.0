@@ -261,7 +261,8 @@ export function useCommands(showToast?: ToastHandler) {
   function updateCommandStatus(
     commandId: number | string,
     status: CommandStatus,
-    message: string | null = null
+    message: string | null = null,
+    errorCode: string | null = null
   ): void {
     const normalizedStatus = normalizeStatus(status)
     if (pendingCommands.value.has(commandId)) {
@@ -271,7 +272,11 @@ export function useCommands(showToast?: ToastHandler) {
       }
       command.status = normalizedStatus
       if (message) {
-        command.message = resolveHumanErrorMessage({ message }, message) || message
+        command.message =
+          resolveHumanErrorMessage(
+            { code: errorCode, message },
+            message,
+          ) || message
       }
       pendingCommands.value.set(commandId, command)
       
@@ -279,7 +284,11 @@ export function useCommands(showToast?: ToastHandler) {
       if (['DONE', 'NO_EFFECT'].includes(normalizedStatus) && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus) && showToast) {
-        const detail = resolveHumanErrorMessage({ message }, 'Неизвестная ошибка') || 'Неизвестная ошибка'
+        const detail =
+          resolveHumanErrorMessage(
+            { code: errorCode, message: message ?? undefined },
+            'Неизвестная ошибка',
+          ) || 'Неизвестная ошибка'
         showToast(`Команда "${command.type}" завершилась с ошибкой: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }

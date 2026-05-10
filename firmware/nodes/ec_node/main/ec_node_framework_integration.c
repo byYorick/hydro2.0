@@ -1402,6 +1402,19 @@ static void ec_node_signal_pump_queue_process(void) {
 }
 
 static cJSON *ec_node_create_pump_failed_response(const char *cmd_id, const char *channel, esp_err_t err) {
+    char detail_buf[256];
+    const char *ina_code = NULL;
+    if (channel != NULL &&
+        pump_driver_describe_last_start_fault(channel, err, detail_buf, sizeof(detail_buf), &ina_code) == ESP_OK) {
+        return node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            ina_code,
+            detail_buf,
+            NULL
+        );
+    }
+
     const char *error_code = "pump_error";
     const char *error_message = "Failed to run pump";
 

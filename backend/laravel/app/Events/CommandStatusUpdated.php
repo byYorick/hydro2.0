@@ -26,6 +26,8 @@ class CommandStatusUpdated implements ShouldBroadcast
 
     public ?string $error;
 
+    public ?string $errorCode;
+
     public ?int $zoneId;
 
     public int $eventId;
@@ -37,12 +39,14 @@ class CommandStatusUpdated implements ShouldBroadcast
         string $status,
         ?string $message = null,
         ?string $error = null,
-        ?int $zoneId = null
+        ?int $zoneId = null,
+        ?string $errorCode = null
     ) {
         $this->commandId = $commandId;
         $this->status = $status;
         $this->message = $message;
         $this->error = $error;
+        $this->errorCode = $errorCode;
         $this->zoneId = $zoneId;
         
         // Генерируем event_id и server_ts для reconciliation
@@ -83,6 +87,7 @@ class CommandStatusUpdated implements ShouldBroadcast
             'status' => $this->status,
             'message' => $this->message,
             'error' => $this->error,
+            'errorCode' => $this->errorCode,
             'zoneId' => $this->zoneId,
             'event_id' => $this->eventId,
             'server_ts' => $this->serverTs,
@@ -106,6 +111,7 @@ class CommandStatusUpdated implements ShouldBroadcast
                     'status' => $this->status,
                     'message' => $this->message,
                     'error' => $this->error,
+                    'error_code' => $this->errorCode,
                 ],
                 eventId: $this->eventId,
                 serverTs: $this->serverTs

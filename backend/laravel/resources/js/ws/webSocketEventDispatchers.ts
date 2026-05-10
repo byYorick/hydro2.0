@@ -1,4 +1,5 @@
 import { logger } from '@/utils/logger'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import {
   getSnapshotServerTs,
   isStaleSnapshotEvent,
@@ -26,6 +27,8 @@ interface RawCommandPayload extends WsEventPayload {
   status?: string
   message?: string
   error?: string
+  errorCode?: string
+  error_code?: string
   zoneId?: number | string
   zone_id?: number | string
   server_ts?: number | string | null
@@ -144,14 +147,17 @@ function normalizeCommandPayload(
   status: CommandStatus
   message: string | undefined
   error: string | undefined
+  errorCode: string | undefined
   zoneId: number | undefined
 } {
   const rawStatus = isFailure ? (payload.status ?? 'ERROR') : (payload.status ?? 'UNKNOWN')
+  const errorCodeRaw = payload.errorCode ?? payload.error_code
   return {
     commandId: payload?.commandId ?? payload?.command_id,
     status: normalizeCommandStatus(rawStatus),
     message: typeof payload.message === 'string' ? payload.message : undefined,
     error: typeof payload.error === 'string' ? payload.error : undefined,
+    errorCode: typeof errorCodeRaw === 'string' && errorCodeRaw.trim() !== '' ? errorCodeRaw : undefined,
     zoneId,
   }
 }
@@ -290,11 +296,13 @@ export function createWebSocketEventDispatchers({
       }
 
       if (isFailure && subscription.showToast) {
-        subscription.showToast(
-          `Команда завершилась с ошибкой: ${normalized.message || 'Ошибка'}`,
-          'error',
-          5000
-        )
+        const rawDetail = normalized.error?.trim() || normalized.message || 'Ошибка'
+        const detail =
+          resolveHumanErrorMessage(
+            { code: normalized.errorCode ?? null, message: rawDetail },
+            rawDetail,
+          ) || rawDetail
+        subscription.showToast(`Команда завершилась с ошибкой: ${detail}`, 'error', 5000)
       }
     })
   }

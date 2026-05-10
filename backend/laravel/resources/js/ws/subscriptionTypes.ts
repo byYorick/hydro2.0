@@ -41,6 +41,7 @@ export type ZoneCommandHandler = (event: {
   status: CommandStatus
   message?: string
   error?: string
+  errorCode?: string
   zoneId?: number
 }) => void
 

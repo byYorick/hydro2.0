@@ -19,6 +19,7 @@
 #include "freertos/timers.h"
 #include <string.h>
 #include "cJSON.h"
+#include <stdio.h>
 
 static const char *TAG = "pump_driver";
 
@@ -764,6 +765,8 @@ esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
         s_ina_status.last_read_overcurrent = false;
         s_ina_status.last_read_undercurrent = false;
         s_ina_status.last_current_ma = 0.0f;
+        s_ina_status.expected_min_ma = 0.0f;
+        s_ina_status.expected_max_ma = 0.0f;
         return ESP_OK;
     }
     
@@ -779,6 +782,8 @@ esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize INA209: %s", esp_err_to_name(err));
         s_ina209_enabled = false;
+        s_ina_status.expected_min_ma = 0.0f;
+        s_ina_status.expected_max_ma = 0.0f;
     } else {
         ESP_LOGI(TAG, "INA209 configured: min=%.2f mA, max=%.2f mA",
                 config->min_bus_current_on, config->max_bus_current_on);
@@ -787,10 +792,62 @@ esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
         s_ina_status.last_read_overcurrent = false;
         s_ina_status.last_read_undercurrent = false;
         s_ina_status.last_current_ma = 0.0f;
+        s_ina_status.expected_min_ma = config->min_bus_current_on;
+        s_ina_status.expected_max_ma = config->max_bus_current_on;
     }
     
     xSemaphoreGive(s_mutex);
     return err;
+}
+
+esp_err_t pump_driver_describe_last_start_fault(const char *channel_name,
+                                                  esp_err_t err,
+                                                  char *out,
+                                                  size_t out_len,
+                                                  const char **out_error_code) {
+    if (channel_name == NULL || out == NULL || out_len == 0 || out_error_code == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *out_error_code = "pump_error";
+    out[0] = '\0';
+
+    if (!s_ina209_enabled) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (err == ESP_ERR_INVALID_SIZE && s_ina_status.last_read_valid && s_ina_status.last_read_overcurrent) {
+        *out_error_code = "pump_current_over_range";
+        snprintf(out, out_len,
+                 "Measured %.2f mA, expected %.2f-%.2f mA (overcurrent). Channel: %s",
+                 (double)s_ina_status.last_current_ma,
+                 (double)s_ina_status.expected_min_ma,
+                 (double)s_ina_status.expected_max_ma,
+                 channel_name);
+        return ESP_OK;
+    }
+
+    if (err == ESP_ERR_INVALID_RESPONSE) {
+        if (s_ina_status.last_read_valid && s_ina_status.last_read_undercurrent) {
+            *out_error_code = "pump_current_under_range";
+            snprintf(out, out_len,
+                     "Measured %.2f mA, expected %.2f-%.2f mA (undercurrent). Channel: %s",
+                     (double)s_ina_status.last_current_ma,
+                     (double)s_ina_status.expected_min_ma,
+                     (double)s_ina_status.expected_max_ma,
+                     channel_name);
+            return ESP_OK;
+        }
+        if (!s_ina_status.last_read_valid) {
+            *out_error_code = "pump_ina_read_failed";
+            snprintf(out, out_len,
+                     "INA209 read failed while validating pump current. Channel: %s",
+                     channel_name);
+            return ESP_OK;
+        }
+    }
+
+    return ESP_ERR_NOT_FOUND;
 }
 
 // Внутренние функции
@@ -859,6 +916,8 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         s_ina_status.last_read_overcurrent = false;
         s_ina_status.last_read_undercurrent = false;
         s_ina_status.last_current_ma = 0.0f;
+        s_ina_status.expected_min_ma = s_ina209_config.min_bus_current_on;
+        s_ina_status.expected_max_ma = s_ina209_config.max_bus_current_on;
 
         err = ina209_read(&reading);
         if (err == ESP_OK && reading.valid) {
@@ -1140,6 +1199,10 @@ esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapsho
     snapshot->channel_count = out_index;
     snapshot->ina_status = s_ina_status;
     snapshot->ina_status.enabled = s_ina209_enabled && snapshot->ina_status.enabled;
+    if (s_ina209_enabled) {
+        snapshot->ina_status.expected_min_ma = s_ina209_config.min_bus_current_on;
+        snapshot->ina_status.expected_max_ma = s_ina209_config.max_bus_current_on;
+    }
 
     xSemaphoreGive(s_mutex);
     return ESP_OK;

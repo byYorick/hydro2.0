@@ -174,6 +174,7 @@ class EventBroadcastTest extends TestCase
         $this->assertSame(Command::STATUS_ERROR, $payload['status']);
         $this->assertSame('Ошибка выполнения', $payload['message']);
         $this->assertSame('Timeout', $payload['error']);
+        $this->assertNull($payload['errorCode'] ?? null);
         $this->assertSame(12, $payload['zoneId']);
         $this->assertArrayHasKey('event_id', $payload);
         $this->assertArrayHasKey('server_ts', $payload);

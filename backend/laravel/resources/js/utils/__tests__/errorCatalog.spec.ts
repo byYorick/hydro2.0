@@ -81,4 +81,29 @@ describe('errorCatalog', () => {
       message: 'Task 41 has no ae_command for recovery',
     })).toBe('У задачи отсутствует связанная ae_command для recovery.')
   })
+
+  it('переводит детальное сообщение INA насоса (недоток) с сохранением чисел', () => {
+    const msg =
+      'Measured 0.50 mA, expected 50.00-500.00 mA (undercurrent). Channel: ph_pump'
+    const ru = resolveHumanErrorMessage({
+      code: 'pump_current_under_range',
+      message: msg,
+    })
+    expect(ru).toContain('0.50')
+    expect(ru).toContain('50.00')
+    expect(ru).toContain('500.00')
+    expect(ru).toContain('ph_pump')
+  })
+
+  it('переводит стандартное сообщение Axios о HTTP-статусе', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Request failed with status code 419',
+    })).toContain('419')
+  })
+
+  it('без перевода возвращает исходный текст сообщения API', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Node registration rate limit exceeded',
+    })).toBe('Node registration rate limit exceeded')
+  })
 })

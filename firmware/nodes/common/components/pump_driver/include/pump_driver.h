@@ -18,9 +18,9 @@
 #define PUMP_DRIVER_H
 
 #include "esp_err.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -194,6 +194,8 @@ typedef struct {
     bool last_read_overcurrent;
     bool last_read_undercurrent;
     float last_current_ma;
+    float expected_min_ma;
+    float expected_max_ma;
 } pump_driver_ina_status_t;
 
 /**
@@ -230,6 +232,24 @@ esp_err_t pump_driver_get_cooldown_remaining(const char *channel_name, uint32_t 
  * @return esp_err_t ESP_OK при успехе, ESP_ERR_NOT_FOUND если канал не найден
  */
 esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_channel_health_t *stats);
+
+/**
+ * @brief Сформировать человекочитаемое описание последнего отказа запуска насоса (INA209).
+ *
+ * Вызывать сразу после неуспешного pump_driver_run / pump_driver_set_state(..., true) в той же задаче.
+ *
+ * @param channel_name Имя канала насоса
+ * @param err Код ошибки, возвращённый pump_driver
+ * @param out Буфер для англоязычного сообщения (стабильный формат для бэкенда/UI)
+ * @param out_len Размер буфера
+ * @param out_error_code Указатель на строковый литерал error_code для MQTT (не освобождать)
+ * @return ESP_OK если сформировано INA-описание; ESP_ERR_NOT_FOUND — использовать общий fallback
+ */
+esp_err_t pump_driver_describe_last_start_fault(const char *channel_name,
+                                                esp_err_t err,
+                                                char *out,
+                                                size_t out_len,
+                                                const char **out_error_code);
 
 #ifdef __cplusplus
 }

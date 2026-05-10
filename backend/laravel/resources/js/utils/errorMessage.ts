@@ -7,6 +7,20 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return null
 }
 
+export function pickApiMessageFromPayload(data: Record<string, unknown> | null): string | null {
+  if (!data) {
+    return null
+  }
+  const keys = ['message', 'error', 'detail', 'details'] as const
+  for (const key of keys) {
+    const value = data[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return null
+}
+
 function firstValidationError(errors: unknown): string | null {
   const record = asRecord(errors)
   if (!record) {
@@ -36,11 +50,11 @@ export function extractHumanErrorMessage(error: unknown, fallback = 'Произ�
     return validation
   }
 
-  const apiMessage = data?.message
+  const apiMessage = pickApiMessageFromPayload(data)
   const apiCode = typeof data?.code === 'string' ? data.code : null
   const localizedApiMessage = resolveHumanErrorMessage({
     code: apiCode,
-    message: typeof apiMessage === 'string' ? apiMessage : null,
+    message: apiMessage,
   })
   if (localizedApiMessage) {
     return localizedApiMessage
@@ -51,6 +65,9 @@ export function extractHumanErrorMessage(error: unknown, fallback = 'Произ�
   }
   if (status === 404) {
     return 'Запрошенный ресурс не найден'
+  }
+  if (status === 419) {
+    return 'Сессия устарела. Обновите страницу и повторите действие.'
   }
   if (status === 422) {
     return 'Ошибка валидации данных'

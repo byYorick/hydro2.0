@@ -26,6 +26,7 @@ class CommandStatusUpdatedTest extends TestCase
         $this->assertEquals('completed', $data['status']);
         $this->assertEquals('OK', $data['message']);
         $this->assertNull($data['error']);
+        $this->assertNull($data['errorCode'] ?? null);
         $this->assertEquals(7, $data['zoneId']);
         // Проверяем наличие новых полей для reconciliation
         $this->assertArrayHasKey('event_id', $data);
@@ -51,6 +52,7 @@ class CommandStatusUpdatedTest extends TestCase
         $this->assertEquals('failed', $data['status']);
         $this->assertNull($data['message']);
         $this->assertEquals('Timeout', $data['error']);
+        $this->assertNull($data['errorCode'] ?? null);
         $this->assertNull($data['zoneId']);
         // Проверяем наличие новых полей для reconciliation
         $this->assertArrayHasKey('event_id', $data);

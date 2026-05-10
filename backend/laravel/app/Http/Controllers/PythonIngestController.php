@@ -411,7 +411,11 @@ class PythonIngestController extends Controller
         }
 
         $zoneId = $command->zone_id;
-        $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
+        $errorCodeRaw = $details['error_code'] ?? null;
+        $errorCode = is_string($errorCodeRaw) && $errorCodeRaw !== '' ? $errorCodeRaw : null;
+        $errorMessageRaw = $details['error_message'] ?? null;
+        $errorMessage = is_string($errorMessageRaw) && $errorMessageRaw !== '' ? $errorMessageRaw : null;
+        $broadcastError = $errorMessage ?? $errorCode;
         $message = $details['message'] ?? null;
 
         if (in_array($eventStatus, [
@@ -424,17 +428,19 @@ class PythonIngestController extends Controller
             event(new \App\Events\CommandFailed(
                 commandId: $command->cmd_id,
                 message: $message ?? 'Command failed',
-                error: $errorMessage,
+                error: $broadcastError,
                 status: $eventStatus,
-                zoneId: $zoneId
+                zoneId: $zoneId,
+                errorCode: $errorCode
             ));
         } else {
             event(new \App\Events\CommandStatusUpdated(
                 commandId: $command->cmd_id,
                 status: $eventStatus,
                 message: $message ?? 'Command status updated',
-                error: $errorMessage,
-                zoneId: $zoneId
+                error: $broadcastError,
+                zoneId: $zoneId,
+                errorCode: $errorCode
             ));
         }
 

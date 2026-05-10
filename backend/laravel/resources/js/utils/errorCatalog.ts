@@ -241,6 +241,62 @@ export function isLocalizedErrorMessage(message?: string | null): boolean {
   return /[А-Яа-яЁё]/u.test(String(message ?? ''))
 }
 
+function translateAxiosFailedStatusMessage(message: string): string | null {
+  const m = message.match(/^Request failed with status code (\d{3})$/i)
+  if (!m) {
+    return null
+  }
+  const http = Number(m[1])
+  if (http === 400) {
+    return 'Некорректный запрос (HTTP 400).'
+  }
+  if (http === 401) {
+    return 'Требуется авторизация (HTTP 401).'
+  }
+  if (http === 403) {
+    return 'Доступ запрещён (HTTP 403).'
+  }
+  if (http === 404) {
+    return 'Ресурс не найден (HTTP 404).'
+  }
+  if (http === 419) {
+    return 'Сессия устарела (HTTP 419). Обновите страницу и повторите действие.'
+  }
+  if (http === 422) {
+    return 'Ошибка валидации данных (HTTP 422).'
+  }
+  if (http === 429) {
+    return 'Слишком много запросов (HTTP 429). Подождите и повторите.'
+  }
+  if (http >= 500) {
+    return `Ошибка сервера (HTTP ${http}). Попробуйте позже или проверьте логи бэкенда.`
+  }
+  return `Запрос отклонён (HTTP ${http}).`
+}
+
+function translatePumpInaFaultMessage(message: string): string | null {
+  const under = message.match(
+    /^Measured ([\d.]+) mA, expected ([\d.]+)-([\d.]+) mA \(undercurrent\)\. Channel: (.+)$/i,
+  )
+  if (under) {
+    return `Недостаточный ток насоса: измерено ${under[1]} мА, допустимо ${under[2]}–${under[3]} мА (недоток). Канал: ${under[4]}. Проверьте питание, цепь насоса и калибровку INA209; при необходимости измените currentMin/currentMax в NodeConfig.`
+  }
+
+  const over = message.match(
+    /^Measured ([\d.]+) mA, expected ([\d.]+)-([\d.]+) mA \(overcurrent\)\. Channel: (.+)$/i,
+  )
+  if (over) {
+    return `Переток насоса: измерено ${over[1]} мА, допустимо ${over[2]}–${over[3]} мА. Канал: ${over[4]}. Проверьте нагрузку, заклинивание и пороги currentMin/currentMax.`
+  }
+
+  const inaFail = message.match(/^INA209 read failed while validating pump current\. Channel: (.+)$/i)
+  if (inaFail) {
+    return `Не удалось прочитать ток с INA209 при проверке насоса. Канал: ${inaFail[1]}. Проверьте I2C, питание датчика и обрыв шунта.`
+  }
+
+  return null
+}
+
 export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: string | null): string | null {
   const humanMessage = typeof input.humanMessage === 'string' ? input.humanMessage.trim() : ''
   if (humanMessage) {
@@ -250,6 +306,17 @@ export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: stri
   const message = typeof input.message === 'string' ? input.message.trim() : ''
   if (message && isLocalizedErrorMessage(message)) {
     return message
+  }
+
+  if (message) {
+    const pumpFaultRu = translatePumpInaFaultMessage(message)
+    if (pumpFaultRu) {
+      return pumpFaultRu
+    }
+    const axiosRu = translateAxiosFailedStatusMessage(message)
+    if (axiosRu) {
+      return axiosRu
+    }
   }
 
   const normalizedCode = normalizeErrorCode(input.code)
@@ -274,7 +341,8 @@ export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: stri
   }
 
   if (message) {
-    return fallback ?? 'Произошла ошибка сервиса. Проверьте логи и повторите попытку.'
+    // Нет перевода в каталоге — показываем исходный текст API/исключения (полезнее общей фразы).
+    return message
   }
 
   return fallback ?? null

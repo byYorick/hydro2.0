@@ -58,7 +58,8 @@ class CommandObserver
                         message: 'Command failed',
                         error: $command->error_message ?? ($command->failed_at ? 'Command execution failed' : null),
                         status: $newStatus,
-                        zoneId: $command->zone_id
+                        zoneId: $command->zone_id,
+                        errorCode: $command->error_code
                     ));
                 } else {
                     // Отправляем событие об обновлении статуса

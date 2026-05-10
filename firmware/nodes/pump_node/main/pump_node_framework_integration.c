@@ -74,16 +74,20 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     } else {
         const char *error_code = "pump_driver_failed";
         const char *error_message = esp_err_to_name(err);
-        
-        // Определяем тип ошибки на основе кода ошибки
-        if (err == ESP_ERR_INVALID_RESPONSE) {
+        char detail_buf[256];
+        const char *ina_code = NULL;
+
+        if (pump_driver_describe_last_start_fault(channel, err, detail_buf, sizeof(detail_buf), &ina_code) == ESP_OK) {
+            error_code = ina_code;
+            error_message = detail_buf;
+        } else if (err == ESP_ERR_INVALID_RESPONSE) {
             error_code = "current_not_detected";
             error_message = "Pump started but no current detected";
         } else if (err == ESP_ERR_INVALID_SIZE) {
             error_code = "overcurrent";
             error_message = "Pump current exceeds safe limit";
         }
-        
+
         *response = node_command_handler_create_response(NULL, "ERROR", error_code, error_message, NULL);
     }
     
