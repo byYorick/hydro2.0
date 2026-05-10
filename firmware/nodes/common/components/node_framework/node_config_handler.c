@@ -174,6 +174,84 @@ static bool configs_equal_ignoring_connectivity(const cJSON *a, const cJSON *b) 
 }
 
 /**
+ * Локальные calibration.ph/ec живут на устройстве; Laravel-снимок NodeConfig часто без этого блока.
+ * Без слияния MQTT-config перезаписывает NVS и следующий config_report приходит без calibration.* —
+ * UI зависает в awaiting_config_report после успешной команды calibrate.
+ */
+static bool calibration_nested_nonempty_object(const cJSON *calibration_root, const char *sensor_key) {
+    if (calibration_root == NULL || sensor_key == NULL) {
+        return false;
+    }
+
+    const cJSON *block = cJSON_GetObjectItem(calibration_root, sensor_key);
+    return cJSON_IsObject(block) && block->child != NULL;
+}
+
+static void preserve_sensor_calibration_from_previous(cJSON *incoming, const cJSON *previous) {
+    if (incoming == NULL || previous == NULL) {
+        return;
+    }
+
+    const cJSON *prev_cal = cJSON_GetObjectItem(previous, "calibration");
+    if (!cJSON_IsObject(prev_cal)) {
+        return;
+    }
+
+    const bool prev_ph = calibration_nested_nonempty_object(prev_cal, "ph");
+    const bool prev_ec = calibration_nested_nonempty_object(prev_cal, "ec");
+
+    if (!prev_ph && !prev_ec) {
+        return;
+    }
+
+    cJSON *inc_cal = cJSON_GetObjectItem(incoming, "calibration");
+    if (inc_cal != NULL && !cJSON_IsObject(inc_cal)) {
+        cJSON_DeleteItemFromObject(incoming, "calibration");
+        inc_cal = NULL;
+    }
+
+    if (!cJSON_IsObject(inc_cal)) {
+        cJSON *dup_root = cJSON_Duplicate(prev_cal, 1);
+        if (dup_root != NULL) {
+            cJSON_AddItemToObject(incoming, "calibration", dup_root);
+            ESP_LOGI(TAG,
+                     "Preserved entire calibration{} from previous NodeConfig (incoming had none/non-object)");
+        }
+        return;
+    }
+
+    bool merged = false;
+
+    if (prev_ph && !calibration_nested_nonempty_object(inc_cal, "ph")) {
+        const cJSON *pph = cJSON_GetObjectItem(prev_cal, "ph");
+        if (cJSON_IsObject(pph)) {
+            cJSON *dup = cJSON_Duplicate(pph, 1);
+            if (dup != NULL) {
+                cJSON_DeleteItemFromObject(inc_cal, "ph");
+                cJSON_AddItemToObject(inc_cal, "ph", dup);
+                merged = true;
+            }
+        }
+    }
+
+    if (prev_ec && !calibration_nested_nonempty_object(inc_cal, "ec")) {
+        const cJSON *pec = cJSON_GetObjectItem(prev_cal, "ec");
+        if (cJSON_IsObject(pec)) {
+            cJSON *dup = cJSON_Duplicate(pec, 1);
+            if (dup != NULL) {
+                cJSON_DeleteItemFromObject(inc_cal, "ec");
+                cJSON_AddItemToObject(inc_cal, "ec", dup);
+                merged = true;
+            }
+        }
+    }
+
+    if (merged) {
+        ESP_LOGI(TAG, "Merged calibration.ph/ec from previous NodeConfig into incoming MQTT config");
+    }
+}
+
+/**
  * @brief Внутренняя функция обработки конфига (вызывается из задачи)
  */
 static void node_config_handler_process_internal(
@@ -615,6 +693,8 @@ esp_err_t node_config_handler_apply_with_result(
     if (config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    preserve_sensor_calibration_from_previous((cJSON *) config, previous_config);
 
     esp_err_t first_err = ESP_OK;
 

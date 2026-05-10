@@ -308,6 +308,52 @@ class SensorCalibrationControllerTest extends TestCase
         $this->assertTrue((bool) data_get($calibration->meta, 'awaiting_config_report'));
     }
 
+    public function test_command_ack_done_completes_when_node_config_already_has_calibration(): void
+    {
+        [$zone, $channel] = $this->makeSensorChannel('ph_sensor', 'PH');
+        $node = $channel->node;
+        $this->assertNotNull($node);
+        $node->config = [
+            'calibration' => [
+                'ph' => [
+                    'point1' => ['raw' => 4000, 'value' => 4.0],
+                    'point2' => ['raw' => 9180, 'value' => 9.18],
+                ],
+            ],
+        ];
+        $node->save();
+
+        $calibration = SensorCalibration::query()->create([
+            'zone_id' => $zone->id,
+            'node_channel_id' => $channel->id,
+            'sensor_type' => 'ph',
+            'status' => SensorCalibration::STATUS_POINT_2_PENDING,
+            'point_2_command_id' => 'cmd-cal-race',
+        ]);
+
+        Command::query()->create([
+            'zone_id' => $zone->id,
+            'node_id' => $channel->node_id,
+            'channel' => $channel->channel,
+            'cmd' => 'calibrate',
+            'status' => Command::STATUS_ACK,
+            'cmd_id' => 'cmd-cal-race',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer ingest-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-cal-race',
+                'status' => 'DONE',
+            ])
+            ->assertOk();
+
+        $calibration->refresh();
+        $this->assertSame(SensorCalibration::STATUS_COMPLETED, $calibration->status);
+        $this->assertNotNull($calibration->completed_at);
+        $this->assertFalse((bool) data_get($calibration->meta, 'awaiting_config_report'));
+        $this->assertTrue((bool) data_get($calibration->meta, 'persisted_via_config_report'));
+    }
+
     public function test_non_done_terminal_command_statuses_map_to_failed(): void
     {
         [$zone, $channel] = $this->makeSensorChannel('ec_sensor', 'EC');

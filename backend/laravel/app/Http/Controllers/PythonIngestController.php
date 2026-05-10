@@ -787,7 +787,79 @@ class PythonIngestController extends Controller
                 }
                 $calibration->meta = $meta;
                 $calibration->save();
+
+                if ($status === Command::STATUS_DONE) {
+                    $this->tryFinalizeSensorCalibrationFromPersistedNodeConfig($calibration);
+                }
             }
         }
+    }
+
+    /**
+     * Закрывает сессию, если в БД уже лежит NodeConfig с непустым calibration.{ph|ec}.
+     *
+     * Устраняет гонку: history-logger обрабатывает MQTT config_report и обновляет nodes.config
+     * раньше, чем ingest command_response выставляет point_2_result=DONE — тогда HL не находит
+     * строк для финализации и второго config_report нет.
+     */
+    private function tryFinalizeSensorCalibrationFromPersistedNodeConfig(SensorCalibration $calibration): void
+    {
+        if ($calibration->status !== SensorCalibration::STATUS_POINT_2_PENDING) {
+            return;
+        }
+        if ($calibration->point_2_result !== Command::STATUS_DONE) {
+            return;
+        }
+        $meta = is_array($calibration->meta) ? $calibration->meta : [];
+        if (empty($meta['awaiting_config_report'])) {
+            return;
+        }
+        if (! empty($meta['persisted_via_config_report'])) {
+            return;
+        }
+
+        $calibration->loadMissing('nodeChannel.node');
+        $nodeId = $calibration->nodeChannel?->node_id;
+        if ($nodeId === null) {
+            return;
+        }
+
+        $node = DeviceNode::query()->select(['id', 'config'])->whereKey($nodeId)->first();
+        if ($node === null) {
+            return;
+        }
+
+        $config = $node->config;
+        if (! is_array($config)) {
+            return;
+        }
+
+        $calBlock = $config['calibration'] ?? null;
+        if (! is_array($calBlock)) {
+            return;
+        }
+
+        $sensorKey = strtolower((string) $calibration->sensor_type);
+        $payloadCal = $calBlock[$sensorKey] ?? $calBlock[strtoupper($sensorKey)] ?? null;
+        if (! is_array($payloadCal) || count($payloadCal) === 0) {
+            return;
+        }
+
+        $meta['awaiting_config_report'] = false;
+        $meta['persisted_via_config_report'] = true;
+        $meta['persisted_at'] = now()->toIso8601String();
+
+        $calibration->forceFill([
+            'status' => SensorCalibration::STATUS_COMPLETED,
+            'completed_at' => now(),
+            'meta' => $meta,
+        ]);
+        $calibration->save();
+
+        Log::info('Sensor calibration completed from nodes.config (config_report likely processed before command ack)', [
+            'sensor_calibration_id' => $calibration->id,
+            'node_id' => $nodeId,
+            'sensor_type' => $sensorKey,
+        ]);
     }
 }
