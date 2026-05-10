@@ -21,7 +21,7 @@
 
 static const char *TAG = "trema_ph";
 
-/** 7-bit адрес на шине (можно сменить через trema_ph_set_i2c_address; init перебирает 0x0A/0x09) */
+/** 7-bit адрес на шине (trema_ph_set_i2c_address; discovery: предпочтительный + 0x09 и 0x0A по wiki iarduino) */
 static uint8_t s_ph_i2c_addr_7bit = TREMA_PH_ADDR;
 
 static bool trema_ph_addr_valid(uint8_t a)
@@ -108,9 +108,26 @@ static void trema_ph_mutex_give(void)
 
 /** Повторы чтения pH при отказе: вне диапазона / 0xFFFF / STAB_ERR при «летающем» сыром значении */
 #define TREMA_PH_SAMPLE_ATTEMPTS       4
-#define TREMA_PH_SAMPLE_RETRY_DELAY_MS 80U
+/** После soft reset при 0xFFFF — дополнительные попытки в том же вызове trema_ph_read */
+#define TREMA_PH_SAMPLE_ATTEMPTS_RECOVERY 3
+#define TREMA_PH_SAMPLE_RETRY_DELAY_MS 120U
+#define TREMA_PH_RECOVERY_POST_RESET_MS 100U
 /** Макс. REG_PH_pH в тысячных для 14.000 pH (iarduino) */
 #define TREMA_PH_RAW_THOUSANDTHS_MAX   14000U
+
+/** Wiki iarduino: getStability / нормализация показаний — только при прошивке модуля ≥ 6 */
+#define TREMA_PH_FW_STABILITY_SUPPORTED_MIN 6U
+/** Пауза после soft reset в init — даём STM32 на модуле выйти на режим измерений */
+#define TREMA_PH_POST_INIT_RESET_DELAY_MS 50U
+
+/**
+ * Программный reset модуля (REG_BITS_0 как iarduino) + recovery при 0xFFFF.
+ * Временно выключено по умолчанию: сброс мешал калибровке (сбрасывает процесс на модуле).
+ * Включить: -DTREMA_PH_ENABLE_SOFT_RESET=1 в compile options или здесь заменить на 1.
+ */
+#ifndef TREMA_PH_ENABLE_SOFT_RESET
+#define TREMA_PH_ENABLE_SOFT_RESET 0
+#endif
 
 // Stub values for when sensor is not connected
 static bool use_stub_values = false;
@@ -125,6 +142,13 @@ static uint8_t data[4];
 
 // Sensor initialization flag
 static bool sensor_initialized = false;
+
+/** Соответствует REG_PH_ERROR того же цикла чтения, что и принятое значение pH */
+static bool s_last_read_stability_known;
+static bool s_last_read_stable;
+/** Байт версии прошивки из заголовка (REG_MODEL+1); 0 — init ещё не успешен */
+static uint8_t s_module_fw_version;
+static bool s_wiki_measurement_hint_logged;
 
 static void trema_ph_suppress_i2c_logs(void)
 {
@@ -267,8 +291,8 @@ static bool trema_ph_validate_module_header(const uint8_t hdr[4])
 }
 
 /**
- * Чтение заголовка: сначала выбранный 7-bit адрес, затем без дубликатов 0x0A и 0x09 (примеры iarduino).
- * При успехе оставляет s_ph_i2c_addr_7bit на рабочем адресе; при полном провале восстанавливает исходный.
+ * Чтение заголовка: сначала выбранный 7-bit адрес, затем без дубликатов 0x09 и 0x0A
+ * (заводской адрес FLASH-I2C pH — 0x09, см. wiki.iarduino.ru/page/ph-i2c).
  */
 static esp_err_t trema_ph_read_header_with_discovery(uint8_t hdr[4])
 {
@@ -276,7 +300,7 @@ static esp_err_t trema_ph_read_header_with_discovery(uint8_t hdr[4])
     uint8_t try_list[3];
     size_t n_try = 0;
     try_list[n_try++] = preferred;
-    const uint8_t common[] = { 0x0A, 0x09 };
+    const uint8_t common[] = { 0x09, 0x0A };
     for (size_t ci = 0; ci < 2 && n_try < 3; ci++) {
         bool dup = false;
         for (size_t j = 0; j < n_try; j++) {
@@ -326,7 +350,7 @@ bool trema_ph_init(void)
 
     trema_ph_suppress_i2c_logs();
     uint8_t hdr[4];
-    TREMA_TRACE_INIT("read header REG_MODEL..CHIP_ID (discovery 0x%02X/0x09↔0x0A)", s_ph_i2c_addr_7bit);
+    TREMA_TRACE_INIT("read header REG_MODEL..CHIP_ID (discovery 0x%02X / 0x09|0x0A)", s_ph_i2c_addr_7bit);
     esp_err_t err = trema_ph_read_header_with_discovery(hdr);
     if (err != ESP_OK) {
         trema_ph_report_missing(err);
@@ -335,18 +359,30 @@ bool trema_ph_init(void)
     }
     TREMA_TRACE_INIT("header bytes: M=0x%02X V=0x%02X A=0x%02X C=0x%02X addr_7bit=0x%02X", hdr[0], hdr[1], hdr[2],
                      hdr[3], s_ph_i2c_addr_7bit);
+    s_module_fw_version = hdr[1];
+#if TREMA_PH_ENABLE_SOFT_RESET
     /* Как iarduino _begin(): сбрасываем модуль в дефолты; результат reset там не проверяется */
     if (!trema_ph_soft_reset_hw()) {
         ESP_LOGW(TAG, "pH sensor soft reset after probe failed (continuing init like iarduino)");
     }
+    vTaskDelay(pdMS_TO_TICKS(TREMA_PH_POST_INIT_RESET_DELAY_MS));
+    TREMA_TRACE_INIT("post-reset delay %ums done", (unsigned)TREMA_PH_POST_INIT_RESET_DELAY_MS);
+#else
     vTaskDelay(pdMS_TO_TICKS(5));
-    TREMA_TRACE_INIT("post-reset delay 5ms done");
+    TREMA_TRACE_INIT("post-probe 5ms (TREMA_PH_ENABLE_SOFT_RESET=0, без soft reset)");
+#endif
 
     sensor_initialized = true;
     use_stub_values = false;
     s_missing_reported = false;
     s_last_missing_err = ESP_OK;
     ESP_LOGI(TAG, "pH sensor OK (fw=%u, chip=0x%02X)", (unsigned)hdr[1], hdr[3]);
+    if (!s_wiki_measurement_hint_logged) {
+        s_wiki_measurement_hint_logged = true;
+        ESP_LOGI(TAG,
+                 "pH измерения (wiki iarduino): полное погружение щупа; после погружения выдержка ≥1 мин до "
+                 "замеров; гальваническая развязка I²C/питания при совместной работе с TDS/другими электродами");
+    }
     ok = true;
 out:
     trema_ph_mutex_give();
@@ -362,6 +398,7 @@ bool trema_ph_read(float *ph)
 
     trema_ph_mutex_take();
     bool ok = false;
+    s_last_read_stability_known = false;
     TREMA_TRACE_READ("--- begin read ---");
 
     if (!sensor_initialized) {
@@ -391,108 +428,141 @@ bool trema_ph_read(float *ph)
     uint8_t last_err_flags = 0;
     bool had_transport_err = false;
     esp_err_t last_xfer_err = ESP_OK;
+    bool had_sentinel = false;
+    bool recovery_done = false;
+    const int read_phases = TREMA_PH_ENABLE_SOFT_RESET ? 2 : 1;
 
-    for (int sample_try = 0; sample_try < TREMA_PH_SAMPLE_ATTEMPTS; sample_try++) {
-        if (sample_try > 0) {
-            trema_ph_invalidate_ph_read_cache();
-            vTaskDelay(pdMS_TO_TICKS(TREMA_PH_SAMPLE_RETRY_DELAY_MS));
-            TREMA_TRACE_READ("sample retry %d/%d", sample_try + 1, TREMA_PH_SAMPLE_ATTEMPTS);
-        }
-
-        err = ESP_ERR_NOT_FOUND;
-        bool cache_allowed = (sample_try == 0 && i2c_cache_is_initialized());
-        bool from_cache_hit = false;
-
-        if (cache_allowed) {
-            err = i2c_cache_get(I2C_BUS_1, s_ph_i2c_addr_7bit, &reg_ph, 1, ph_bytes, 2, 500);
-            if (err == ESP_OK) {
-                from_cache_hit = true;
-                TREMA_TRACE_READ("cache HIT reg=0x%02X bytes %02X %02X", reg_ph, ph_bytes[0], ph_bytes[1]);
-            } else {
-                TREMA_TRACE_READ("cache MISS (%s), I2C read", esp_err_to_name(err));
+    for (int phase = 0; phase < read_phases && !ok; phase++) {
+        int max_try = TREMA_PH_SAMPLE_ATTEMPTS;
+        if (phase == 1) {
+            if (!had_sentinel && last_raw != 0xFFFFU) {
+                break;
             }
-        } else {
-            TREMA_TRACE_READ("I2C only (no cache) reg=0x%02X", reg_ph);
+            ESP_LOGI(TAG,
+                     "[pH read] recovery: soft reset модуля после 0xFFFF/шины, ещё %d попыток",
+                     TREMA_PH_SAMPLE_ATTEMPTS_RECOVERY);
+            trema_ph_soft_reset_hw();
+            vTaskDelay(pdMS_TO_TICKS(TREMA_PH_RECOVERY_POST_RESET_MS));
+            trema_ph_invalidate_ph_read_cache();
+            recovery_done = true;
+            max_try = TREMA_PH_SAMPLE_ATTEMPTS_RECOVERY;
         }
 
-        if (err != ESP_OK) {
-            err = trema_ph_read_registers(reg_ph, ph_bytes, 2);
-            from_cache_hit = false;
+        for (int sample_try = 0; sample_try < max_try; sample_try++) {
+            if (sample_try > 0 || phase > 0) {
+                trema_ph_invalidate_ph_read_cache();
+                vTaskDelay(pdMS_TO_TICKS(TREMA_PH_SAMPLE_RETRY_DELAY_MS));
+                TREMA_TRACE_READ("sample retry phase=%d %d/%d", phase, sample_try + 1, max_try);
+            }
+
+            err = ESP_ERR_NOT_FOUND;
+            bool cache_allowed = (phase == 0 && sample_try == 0 && i2c_cache_is_initialized());
+            bool from_cache_hit = false;
+
+            if (cache_allowed) {
+                err = i2c_cache_get(I2C_BUS_1, s_ph_i2c_addr_7bit, &reg_ph, 1, ph_bytes, 2, 500);
+                if (err == ESP_OK) {
+                    from_cache_hit = true;
+                    TREMA_TRACE_READ("cache HIT reg=0x%02X bytes %02X %02X", reg_ph, ph_bytes[0], ph_bytes[1]);
+                } else {
+                    TREMA_TRACE_READ("cache MISS (%s), I2C read", esp_err_to_name(err));
+                }
+            } else {
+                TREMA_TRACE_READ("I2C only (no cache) reg=0x%02X", reg_ph);
+            }
+
             if (err != ESP_OK) {
-                ESP_LOGD(TAG, "[pH read] REG_PH_pH I2C err=%s (try %d)", esp_err_to_name(err), sample_try + 1);
+                err = trema_ph_read_registers(reg_ph, ph_bytes, 2);
+                from_cache_hit = false;
+                if (err != ESP_OK) {
+                    ESP_LOGD(TAG, "[pH read] REG_PH_pH I2C err=%s (phase %d try %d)", esp_err_to_name(err), phase,
+                             sample_try + 1);
+                    had_transport_err = true;
+                    last_xfer_err = err;
+                    continue;
+                }
+                TREMA_TRACE_READ("I2C raw %02X %02X", ph_bytes[0], ph_bytes[1]);
+            }
+
+            if (from_cache_hit) {
+                /* при HIT не было trema_ph_read_registers для REG_PH — пауза перед REG_ERROR как в iarduino */
+                esp_rom_delay_us(500);
+            }
+
+            uint8_t err_byte = 0;
+            esp_err_t e2 = trema_ph_read_error_byte(&err_byte);
+            if (e2 != ESP_OK) {
+                ESP_LOGD(TAG, "[pH read] REG_PH_ERROR read err=%s (phase %d try %d)", esp_err_to_name(e2), phase,
+                         sample_try + 1);
                 had_transport_err = true;
-                last_xfer_err = err;
+                last_xfer_err = e2;
                 continue;
             }
-            TREMA_TRACE_READ("I2C raw %02X %02X", ph_bytes[0], ph_bytes[1]);
-        }
 
-        if (from_cache_hit) {
-            /* при HIT не было trema_ph_read_registers для REG_PH — пауза перед REG_ERROR как в iarduino */
-            esp_rom_delay_us(500);
-        }
+            uint16_t pH_raw = ((uint16_t)ph_bytes[1] << 8) | ph_bytes[0];
+            last_raw = pH_raw;
+            last_err_flags = err_byte;
+            float ph_val = (float)pH_raw * 0.001f;
+            TREMA_TRACE_READ("decode raw=0x%04X err_reg=0x%02X -> pH=%.4f", (unsigned)pH_raw, err_byte, (double)ph_val);
 
-        uint8_t err_byte = 0;
-        esp_err_t e2 = trema_ph_read_error_byte(&err_byte);
-        if (e2 != ESP_OK) {
-            ESP_LOGD(TAG, "[pH read] REG_PH_ERROR read err=%s (try %d)", esp_err_to_name(e2), sample_try + 1);
-            had_transport_err = true;
-            last_xfer_err = e2;
-            continue;
-        }
+            bool stab_bad = (err_byte & PH_FLG_STAB_ERR) != 0;
+            bool sentinel = (pH_raw == 0xFFFFU);
+            bool raw_high = (pH_raw > TREMA_PH_RAW_THOUSANDTHS_MAX);
 
-        uint16_t pH_raw = ((uint16_t)ph_bytes[1] << 8) | ph_bytes[0];
-        last_raw = pH_raw;
-        last_err_flags = err_byte;
-        float ph_val = (float)pH_raw * 0.001f;
-        TREMA_TRACE_READ("decode raw=0x%04X err_reg=0x%02X -> pH=%.4f", (unsigned)pH_raw, err_byte, (double)ph_val);
-
-        bool stab_bad = (err_byte & PH_FLG_STAB_ERR) != 0;
-        bool sentinel = (pH_raw == 0xFFFFU);
-        bool raw_high = (pH_raw > TREMA_PH_RAW_THOUSANDTHS_MAX);
-
-        if (sentinel) {
-            ESP_LOGD(TAG, "[pH read] raw=0xFFFF (часто открытая шина/I2C); try %d", sample_try + 1);
-            continue;
-        }
-        if (raw_high || ph_val < 0.0f || ph_val > 14.0f) {
-            ESP_LOGD(TAG, "[pH read] сырое вне 0..14 pH (сырые тысячные >%u или pH=%.3f); щуп в воздухе или переходный процесс; try %d",
-                     (unsigned)TREMA_PH_RAW_THOUSANDTHS_MAX, (double)ph_val, sample_try + 1);
-            if (stab_bad) {
-                ESP_LOGD(TAG, "[pH read] также STAB_ERR");
+            if (sentinel) {
+                had_sentinel = true;
+                ESP_LOGD(TAG, "[pH read] raw=0xFFFF (часто открытая шина/I2C); phase %d try %d", phase, sample_try + 1);
+                continue;
             }
-            continue;
-        }
-
-        /* 0..14 и не 0xFFFF: допускаем при STAB_ERR (Arduino getPH не блокирует по стабильности) */
-        *ph = ph_val;
-        if (i2c_cache_is_initialized() && !from_cache_hit) {
-            i2c_cache_put(I2C_BUS_1, s_ph_i2c_addr_7bit, &reg_ph, 1, ph_bytes, 2, 500);
-            TREMA_TRACE_READ("cache PUT после валидации (I2C)");
-        }
-
-        use_stub_values = false;
-        s_missing_reported = false;
-        s_last_missing_err = ESP_OK;
-        TREMA_TRACE_READ("SUCCESS pH=%.4f", (double)*ph);
-        #ifdef __has_include
-            #if __has_include("diagnostics.h")
-                #include "diagnostics.h"
-                if (diagnostics_is_initialized()) {
-                    diagnostics_update_sensor_metrics("ph_sensor", true);
+            if (raw_high || ph_val < 0.0f || ph_val > 14.0f) {
+                ESP_LOGD(TAG,
+                         "[pH read] сырое вне 0..14 pH (сырые тысячные >%u или pH=%.3f); щуп в воздухе или переходный "
+                         "процесс; phase %d try %d",
+                         (unsigned)TREMA_PH_RAW_THOUSANDTHS_MAX, (double)ph_val, phase, sample_try + 1);
+                if (stab_bad) {
+                    ESP_LOGD(TAG, "[pH read] также STAB_ERR");
                 }
+                continue;
+            }
+
+            /* 0..14 и не 0xFFFF: допускаем при STAB_ERR (Arduino getPH не блокирует по стабильности) */
+            *ph = ph_val;
+            if (s_module_fw_version >= TREMA_PH_FW_STABILITY_SUPPORTED_MIN) {
+                s_last_read_stable = (err_byte & PH_FLG_STAB_ERR) == 0;
+            } else {
+                /* Wiki: getStability / нормализация — только FW ≥ 6; биты для старых прошивок не используем */
+                s_last_read_stable = true;
+            }
+            s_last_read_stability_known = true;
+            if (i2c_cache_is_initialized() && !from_cache_hit) {
+                i2c_cache_put(I2C_BUS_1, s_ph_i2c_addr_7bit, &reg_ph, 1, ph_bytes, 2, 500);
+                TREMA_TRACE_READ("cache PUT после валидации (I2C)");
+            }
+
+            use_stub_values = false;
+            s_missing_reported = false;
+            s_last_missing_err = ESP_OK;
+            TREMA_TRACE_READ("SUCCESS pH=%.4f", (double)*ph);
+            #ifdef __has_include
+                #if __has_include("diagnostics.h")
+                    #include "diagnostics.h"
+                    if (diagnostics_is_initialized()) {
+                        diagnostics_update_sensor_metrics("ph_sensor", true);
+                    }
+                #endif
             #endif
-        #endif
-        ok = true;
-        goto out;
+            ok = true;
+            goto out;
+        }
     }
 
     /* Все попытки исчерпаны */
     trema_ph_invalidate_ph_read_cache();
     ESP_LOGW(TAG,
-             "[pH read] FAIL после %d попыток: последний raw=0x%04X (%.3f pH) REG_PH_ERROR=0x%02X%s%s — опустите щуп в раствор, "
-             "проверьте калибровку и I²C (подтяжки, длина провода)",
-             TREMA_PH_SAMPLE_ATTEMPTS, (unsigned)last_raw, (double)((float)last_raw * 0.001f), last_err_flags,
+             "[pH read] FAIL после всех попыток%s: последний raw=0x%04X (%.3f pH) REG_PH_ERROR=0x%02X%s%s — щуп в раствор "
+             "(полное погружение), калибровка, I²C 100 кГц и подтяжки; после погружения ≥1 мин до замеров; гальваническая "
+             "развязка при работе с TDS/общим питанием (wiki iarduino ph-i2c)",
+             recovery_done ? " (+recovery)" : "", (unsigned)last_raw, (double)((float)last_raw * 0.001f), last_err_flags,
              (last_err_flags & PH_FLG_STAB_ERR) ? " STAB_ERR" : "",
              (last_err_flags & PH_FLG_CALC_ERR) ? " CALC_ERR" : "");
     if (had_transport_err && last_xfer_err != ESP_OK) {
@@ -663,6 +733,12 @@ bool trema_ph_get_calibration_result(void)
     
     // Return true if calibration error flag is NOT set
     ok = !(data[0] & PH_FLG_CALC_ERR);
+    if (!ok) {
+        ESP_LOGW(TAG,
+                 "REG_PH_ERROR=0x%02X after cal attempt: CALC_ERR%s",
+                 (unsigned)data[0],
+                 (data[0] & PH_FLG_STAB_ERR) ? ", STAB_ERR" : "");
+    }
 out:
     trema_ph_mutex_give();
     return ok;
@@ -678,6 +754,11 @@ bool trema_ph_get_stability(void)
     }
     
     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        goto out;
+    }
+
+    if (s_module_fw_version > 0 && s_module_fw_version < TREMA_PH_FW_STABILITY_SUPPORTED_MIN) {
+        ok = true;
         goto out;
     }
 
@@ -700,6 +781,19 @@ bool trema_ph_get_stability(void)
 out:
     trema_ph_mutex_give();
     return ok;
+}
+
+bool trema_ph_get_last_read_stability(void)
+{
+    trema_ph_mutex_take();
+    bool out = s_last_read_stability_known && s_last_read_stable;
+    trema_ph_mutex_give();
+    return out;
+}
+
+uint8_t trema_ph_get_firmware_version(void)
+{
+    return s_module_fw_version;
 }
 
 bool trema_ph_wait_for_stable_reading(uint32_t timeout_ms)

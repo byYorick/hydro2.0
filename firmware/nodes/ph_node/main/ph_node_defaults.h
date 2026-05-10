@@ -31,7 +31,7 @@ extern "C" {
 #define PH_NODE_SOLUTION_TEMP_POLL_INTERVAL_MS 5000
 #define PH_NODE_SOLUTION_TEMP_PRECISION        1
 
-// I2C bus defaults
+// I2C bus defaults (Trema pH FLASH-I2C: wiki iarduino — шина 100 кГц, заводской адрес 0x09)
 #define PH_NODE_I2C_BUS_0_SDA        21  // ESP32 стандартный SDA (OLED + INA209)
 #define PH_NODE_I2C_BUS_0_SCL        22  // ESP32 стандартный SCL
 #define PH_NODE_I2C_BUS_1_SDA        18  // ESP32 альтернативный SDA (pH sensor)

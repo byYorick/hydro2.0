@@ -238,6 +238,10 @@ services:
         condition: service_healthy
     ports:
       - "9000:9000"
+    # Dev: код с хоста (без пересборки образа); общий пакет common — как в Dockerfile
+    volumes:
+      - ./services/mqtt-bridge:/app
+      - ./services/common:/app/common
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 10s
@@ -287,6 +291,9 @@ services:
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
+    volumes:
+      - ./services/history-logger:/app
+      - ./services/common:/app/common
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 10s

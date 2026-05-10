@@ -18,6 +18,7 @@
 #define MQTT_MANAGER_H
 
 #include "esp_err.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_event.h"
@@ -207,6 +208,13 @@ esp_err_t mqtt_manager_publish_diagnostics(const char *data);
  * @return true если подключен
  */
 bool mqtt_manager_is_connected(void);
+
+/**
+ * @brief Текущий broker из конфигурации mqtt_manager_init (без парсинга NVS JSON).
+ *
+ * Для OLED/UI; не вызывает блокировок и не трогает MQTT-сессию.
+ */
+esp_err_t mqtt_manager_get_broker(char *host, size_t host_size, uint16_t *port);
 
 /**
  * @brief Получить текущую информацию об узле для формирования топиков

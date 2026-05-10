@@ -18,6 +18,7 @@
 #include "pump_driver.h"
 #include "trema_ph.h"
 #include "mqtt_manager.h"
+#include "node_utils.h"
 #include "config_storage.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
@@ -32,8 +33,147 @@
 #include <strings.h>
 #include <math.h>
 #include <float.h>
+#include <stdio.h>
 
 static const char *TAG = "ph_node_fw";
+
+/**
+ * Записать эталон стадии калибровки в NodeConfig (NVS).
+ * Публикацию config_report см. ph_node_publish_config_report_resilient() — бэкенд ждёт MQTT с непустым calibration.ph.
+ */
+static esp_err_t ph_node_merge_ph_calibration_into_nvs(uint8_t stage, float known_ph)
+{
+    if (stage != 1 && stage != 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char buf[CONFIG_STORAGE_MAX_JSON_SIZE];
+    esp_err_t err = config_storage_get_json(buf, sizeof(buf));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "persist ph cal: config_storage_get_json failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    cJSON *root = cJSON_Parse(buf);
+    if (root == NULL) {
+        ESP_LOGW(TAG, "persist ph cal: JSON parse failed");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    cJSON *cal = cJSON_GetObjectItem(root, "calibration");
+    if (cal == NULL || !cJSON_IsObject(cal)) {
+        cJSON_DeleteItemFromObject(root, "calibration");
+        cal = cJSON_CreateObject();
+        if (cal == NULL) {
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(root, "calibration", cal);
+    }
+
+    cJSON *ph = cJSON_GetObjectItem(cal, "ph");
+    if (ph == NULL || !cJSON_IsObject(ph)) {
+        cJSON_DeleteItemFromObject(cal, "ph");
+        ph = cJSON_CreateObject();
+        if (ph == NULL) {
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(cal, "ph", ph);
+    }
+
+    char point_key[12];
+    snprintf(point_key, sizeof(point_key), "point%u", (unsigned)stage);
+
+    cJSON *pt_obj = cJSON_CreateObject();
+    if (pt_obj == NULL) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddNumberToObject(pt_obj, "value", (double)known_ph);
+    cJSON_AddNumberToObject(pt_obj, "raw", (double)lrintf(known_ph * 1000.0f));
+
+    cJSON_DeleteItemFromObject(ph, point_key);
+    cJSON_AddItemToObject(ph, point_key, pt_obj);
+
+    char *out = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (out == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_save(out, strlen(out));
+    free(out);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "persist ph cal: config_storage_save failed: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
+static TaskHandle_t s_ph_cfg_rpt_retry_handle = NULL;
+
+static void ph_node_config_report_retry_task(void *arg)
+{
+    (void)arg;
+    for (int attempt = 0; attempt < 36; attempt++) {
+        vTaskDelay(pdMS_TO_TICKS(2500));
+        if (!mqtt_manager_is_connected()) {
+            continue;
+        }
+        if (node_utils_publish_config_report() == ESP_OK) {
+            ESP_LOGI(TAG, "config_report deferred publish succeeded (attempt %d)", attempt + 1);
+            break;
+        }
+    }
+    s_ph_cfg_rpt_retry_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static void ph_node_spawn_config_report_retry_task(void)
+{
+    if (s_ph_cfg_rpt_retry_handle != NULL) {
+        return;
+    }
+    BaseType_t r = xTaskCreate(
+        ph_node_config_report_retry_task,
+        "ph_cfg_rpt_retry",
+        4096,
+        NULL,
+        3,
+        &s_ph_cfg_rpt_retry_handle);
+    if (r != pdPASS) {
+        s_ph_cfg_rpt_retry_handle = NULL;
+        ESP_LOGW(TAG, "ph_cfg_rpt_retry: xTaskCreate failed");
+    } else {
+        ESP_LOGI(TAG, "config_report: background retry task started");
+    }
+}
+
+/** Несколько быстрых попыток (mutex телеметрии / MQTT) + фоновые повторы до ~90 с. */
+static esp_err_t ph_node_publish_config_report_resilient(void)
+{
+    const int quick_attempts = 16;
+    const uint32_t delay_ms = 350;
+
+    for (int i = 0; i < quick_attempts; i++) {
+        if (!mqtt_manager_is_connected()) {
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            continue;
+        }
+        esp_err_t e = node_utils_publish_config_report();
+        if (e == ESP_OK) {
+            return ESP_OK;
+        }
+        ESP_LOGD(TAG, "config_report publish try %d/%d: %s", i + 1, quick_attempts, esp_err_to_name(e));
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    }
+
+    ESP_LOGW(TAG, "config_report: quick publish failed; scheduling background retries");
+    ph_node_spawn_config_report_retry_task();
+    return ESP_ERR_TIMEOUT;
+}
+
 static bool s_ph_sensor_error_active = false;
 static bool s_sensor_mode_active = false;
 
@@ -88,14 +228,12 @@ static void ph_node_test_done_timer_cb(TimerHandle_t timer);
 static ph_node_test_entry_t *ph_node_get_test_entry(const char *channel, bool create);
 static void ph_node_schedule_test_done(const char *channel, const char *cmd_id, uint32_t duration_ms,
                                        float current_ma, bool current_valid);
-static void ph_node_cancel_test_done(const char *channel, bool clear_cmd_id);
 static void ph_node_get_last_pump_current(float *current_ma, bool *current_valid);
 static bool ph_node_any_pump_running(void);
 static bool ph_node_is_channel_in_cooldown(const char *channel, uint32_t *remaining_ms);
 static bool ph_node_pump_queue_push(const ph_node_pump_cmd_t *cmd);
 static bool ph_node_pump_queue_pop(ph_node_pump_cmd_t *cmd);
 static size_t ph_node_pump_queue_count(void);
-static size_t ph_node_pump_queue_remove_channel(const char *channel);
 static void ph_node_process_pump_queue(void);
 static void ph_node_schedule_pump_retry(uint32_t delay_ms);
 static void ph_node_pump_retry_timer_cb(TimerHandle_t timer);
@@ -553,6 +691,29 @@ static esp_err_t handle_calibrate_ph(
 
     // Выполнение калибровки
     if (trema_ph_calibrate(stage, known_ph)) {
+        esp_err_t persist_err = ph_node_merge_ph_calibration_into_nvs(stage, known_ph);
+        if (persist_err != ESP_OK) {
+            ESP_LOGE(TAG,
+                     "pH Trema calibrated but NodeConfig (NVS) update failed (stage %u): %s",
+                     (unsigned)stage,
+                     esp_err_to_name(persist_err));
+            *response = node_command_handler_create_response(
+                NULL,
+                "ERROR",
+                "calibration_nvs_sync_failed",
+                "Failed to persist calibration into NodeConfig (NVS)",
+                NULL
+            );
+            return ESP_FAIL;
+        }
+        if (stage == 2) {
+            esp_err_t pub_err = ph_node_publish_config_report_resilient();
+            if (pub_err != ESP_OK) {
+                ESP_LOGW(TAG,
+                         "config_report not sent immediately (deferred retries active): %s",
+                         esp_err_to_name(pub_err));
+            }
+        }
         *response = node_command_handler_create_response(
             NULL,
             "DONE",
@@ -657,7 +818,7 @@ static esp_err_t handle_test_sensor(
         }
 
         int32_t raw_value = (int32_t)(ph_value * 1000.0f);
-        bool is_stable = trema_ph_get_stability();
+        bool is_stable = trema_ph_get_last_read_stability();
 
         cJSON *extra = cJSON_CreateObject();
         if (extra) {
@@ -738,7 +899,7 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
             using_stub = true;
         } else {
             raw_value = (int32_t)(ph_value * 1000);  // Raw value в тысячных
-            is_stable = trema_ph_get_stability();
+            is_stable = trema_ph_get_last_read_stability();
             s_ph_sensor_error_active = false;
         }
     } else {
@@ -749,6 +910,15 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
         ph_value = 6.5f;
         using_stub = true;
     }
+
+    ESP_LOGI(
+        TAG,
+        "pH update: %.3f pH (raw=%ld, stub=%s, stable=%s)",
+        (double)ph_value,
+        (long)raw_value,
+        using_stub ? "yes" : "no",
+        is_stable ? "yes" : "no"
+    );
 
     // Публикация через node_telemetry_engine
     esp_err_t err = node_telemetry_publish_sensor(
@@ -1055,20 +1225,6 @@ static void ph_node_schedule_test_done(const char *channel, const char *cmd_id, 
     }
 }
 
-static void ph_node_cancel_test_done(const char *channel, bool clear_cmd_id) {
-    ph_node_test_entry_t *entry = ph_node_get_test_entry(channel, false);
-    if (!entry) {
-        return;
-    }
-
-    if (entry->timer) {
-        xTimerStop(entry->timer, 0);
-    }
-    if (clear_cmd_id) {
-        entry->cmd_id[0] = '\0';
-    }
-}
-
 static void ph_node_get_last_pump_current(float *current_ma, bool *current_valid) {
     if (current_ma) {
         *current_ma = 0.0f;
@@ -1176,41 +1332,6 @@ static size_t ph_node_pump_queue_count(void) {
     size_t count = s_pump_queue_count;
     xSemaphoreGive(s_pump_queue_mutex);
     return count;
-}
-
-static size_t ph_node_pump_queue_remove_channel(const char *channel) {
-    if (!channel || !s_pump_queue_mutex) {
-        return 0;
-    }
-    if (xSemaphoreTake(s_pump_queue_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return 0;
-    }
-
-    ph_node_pump_cmd_t new_queue[PH_NODE_PUMP_QUEUE_MAX] = {0};
-    size_t new_count = 0;
-    size_t removed = 0;
-
-    for (size_t i = 0; i < s_pump_queue_count; i++) {
-        size_t idx = (s_pump_queue_head + i) % PH_NODE_PUMP_QUEUE_MAX;
-        if (strncmp(s_pump_queue[idx].channel_name, channel, PH_NODE_MAX_CHANNEL_NAME_LEN) == 0) {
-            removed++;
-            continue;
-        }
-        if (new_count < PH_NODE_PUMP_QUEUE_MAX) {
-            new_queue[new_count++] = s_pump_queue[idx];
-        }
-    }
-
-    memset(s_pump_queue, 0, sizeof(s_pump_queue));
-    for (size_t i = 0; i < new_count; i++) {
-        s_pump_queue[i] = new_queue[i];
-    }
-    s_pump_queue_head = 0;
-    s_pump_queue_tail = new_count % PH_NODE_PUMP_QUEUE_MAX;
-    s_pump_queue_count = new_count;
-
-    xSemaphoreGive(s_pump_queue_mutex);
-    return removed;
 }
 
 static void ph_node_process_pump_queue(void) {

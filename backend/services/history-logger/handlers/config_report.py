@@ -202,8 +202,16 @@ def _extract_persisted_sensor_calibration_types(config: Dict[str, Any]) -> set[s
         return set()
 
     persisted: set[str] = set()
-    for sensor_type in ("ph", "ec"):
-        if isinstance(calibration.get(sensor_type), dict) and calibration.get(sensor_type):
+    # Канон — lowercase; на всякий случай принимаем и верхний регистр из прошивок/редакторов.
+    aliases = (
+        ("ph", "ph"),
+        ("PH", "ph"),
+        ("ec", "ec"),
+        ("EC", "ec"),
+    )
+    for key, sensor_type in aliases:
+        block = calibration.get(key)
+        if isinstance(block, dict) and len(block) > 0:
             persisted.add(sensor_type)
     return persisted
 
@@ -212,8 +220,6 @@ async def _complete_sensor_calibrations_after_config_report(
     node_id: int, config: Dict[str, Any]
 ) -> None:
     persisted_sensor_types = _extract_persisted_sensor_calibration_types(config)
-    if not persisted_sensor_types:
-        return
 
     rows = await fetch(
         """
@@ -227,6 +233,19 @@ async def _complete_sensor_calibrations_after_config_report(
         node_id,
     )
     if not rows:
+        return
+
+    if not persisted_sensor_types:
+        calibration_block = config.get("calibration")
+        cal_keys = (
+            list(calibration_block.keys()) if isinstance(calibration_block, dict) else []
+        )
+        logger.warning(
+            "[CONFIG_REPORT] sensor_calibration finalize skipped: no non-empty calibration.ph/ec in payload "
+            "(node_id=%s calibration_keys=%s). Sessions waiting for config_report will stay pending.",
+            node_id,
+            cal_keys,
+        )
         return
 
     completed_ids: list[int] = []

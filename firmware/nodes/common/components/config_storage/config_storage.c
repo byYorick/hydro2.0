@@ -714,8 +714,7 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
-    
-    ESP_LOGI(TAG, "config_storage_get_mqtt: Parsing config JSON (%zu bytes)", strlen(s_config_json));
+
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
         ESP_LOGE(TAG, "config_storage_get_mqtt: Failed to parse config JSON");
@@ -730,9 +729,7 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
-    
-    ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT section found, extracting fields");
-    
+
     // Заполнение структуры с значениями по умолчанию
     memset(mqtt, 0, sizeof(config_storage_mqtt_t));
     
@@ -741,8 +738,6 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         if (item->valuestring && strlen(item->valuestring) > 0) {
             strncpy(mqtt->host, item->valuestring, sizeof(mqtt->host) - 1);
             mqtt->host[sizeof(mqtt->host) - 1] = '\0';
-            ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT host='%s' (len=%zu)", 
-                    mqtt->host, strlen(mqtt->host));
         } else {
             ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT host field is empty string");
         }

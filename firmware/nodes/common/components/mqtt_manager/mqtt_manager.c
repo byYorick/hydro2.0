@@ -727,6 +727,20 @@ bool mqtt_manager_is_connected(void) {
     return s_is_connected;
 }
 
+esp_err_t mqtt_manager_get_broker(char *host, size_t host_size, uint16_t *port) {
+    if (host == NULL || host_size == 0 || port == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_config.host == NULL || s_config.host[0] == '\0' || s_config.port == 0) {
+        host[0] = '\0';
+        *port = 0;
+        return ESP_ERR_INVALID_STATE;
+    }
+    strlcpy(host, s_config.host, host_size);
+    *port = s_config.port;
+    return ESP_OK;
+}
+
 uint32_t mqtt_manager_get_reconnect_count(void) {
     return s_reconnect_count;
 }

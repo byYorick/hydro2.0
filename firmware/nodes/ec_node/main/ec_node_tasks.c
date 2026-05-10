@@ -107,10 +107,11 @@ static void task_sensors(void *pvParameters) {
                     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
                         strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
                     }
-                    config_storage_mqtt_t mqtt_cfg = {0};
-                    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
-                        strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
-                        model.mqtt_port = mqtt_cfg.port;
+                    char mqtt_host_buf[sizeof(model.mqtt_host)] = {0};
+                    uint16_t mqtt_port_val = 0;
+                    if (mqtt_manager_get_broker(mqtt_host_buf, sizeof(mqtt_host_buf), &mqtt_port_val) == ESP_OK) {
+                        strncpy(model.mqtt_host, mqtt_host_buf, sizeof(model.mqtt_host) - 1);
+                        model.mqtt_port = mqtt_port_val;
                     }
                     
                     // Get current EC value and sensor status (EC-специфичная логика)

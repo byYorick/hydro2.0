@@ -2,6 +2,7 @@
 Интеграционные тесты для проверки синхронизации форматов между прошивками и history-logger.
 Проверяет полный цикл обработки сообщений от прошивок.
 """
+import logging
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
@@ -191,6 +192,68 @@ class TestConfigReportFormatSync:
             assert args[1] == 42
             assert args[2]["awaiting_config_report"] is False
             assert args[2]["persisted_via_config_report"] is True
+
+    @pytest.mark.asyncio
+    async def test_complete_sensor_calibrations_accepts_uppercase_ph_calibration(self):
+        """Непустой блок calibration.PH (верхний регистр) должен финализировать ph-сессию."""
+        from mqtt_handlers import _complete_sensor_calibrations_after_config_report
+
+        with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, patch(
+            "mqtt_handlers.execute", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_fetch.return_value = [
+                {
+                    "id": 43,
+                    "sensor_type": "ph",
+                    "meta": {"awaiting_config_report": True},
+                }
+            ]
+
+            await _complete_sensor_calibrations_after_config_report(
+                8,
+                {
+                    "calibration": {
+                        "PH": {
+                            "point1": {"raw": 1000, "value": 4.0},
+                            "point2": {"raw": 2000, "value": 7.0},
+                        }
+                    }
+                },
+            )
+
+            mock_fetch.assert_awaited_once()
+            mock_execute.assert_awaited_once()
+            args = mock_execute.await_args.args
+            assert args[1] == 43
+            assert args[2]["awaiting_config_report"] is False
+
+    @pytest.mark.asyncio
+    async def test_complete_sensor_calibrations_warns_when_pending_but_empty_calibration(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """При ожидающих сессиях и пустом calibration в payload — warning, без UPDATE."""
+        from mqtt_handlers import _complete_sensor_calibrations_after_config_report
+
+        with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, patch(
+            "mqtt_handlers.execute", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_fetch.return_value = [
+                {
+                    "id": 44,
+                    "sensor_type": "ph",
+                    "meta": {"awaiting_config_report": True},
+                }
+            ]
+
+            with caplog.at_level(logging.WARNING):
+                await _complete_sensor_calibrations_after_config_report(
+                    9, {"calibration": {}}
+                )
+
+            mock_fetch.assert_awaited_once()
+            mock_execute.assert_not_awaited()
+            assert "sensor_calibration finalize skipped" in caplog.text
+            assert "calibration_keys=[]" in caplog.text
 
     @pytest.mark.asyncio
     async def test_handle_config_report_fills_default_relay_type_for_relay_actuators(self):

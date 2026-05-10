@@ -82,10 +82,10 @@
                   <span class="font-medium text-[var(--text-primary)]">1.</span> Подготовка → старт сессии
                 </li>
                 <li class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] px-2 py-1.5">
-                  <span class="font-medium text-[var(--text-primary)]">2.</span> Точка 1 (lower ref)
+                  <span class="font-medium text-[var(--text-primary)]">2.</span> {{ step2SidebarLabel }}
                 </li>
                 <li class="rounded-md border border-[var(--border-muted)] bg-[var(--bg-elevated)] px-2 py-1.5">
-                  <span class="font-medium text-[var(--text-primary)]">3.</span> Точка 2 (upper ref)
+                  <span class="font-medium text-[var(--text-primary)]">3.</span> {{ step3SidebarLabel }}
                 </li>
               </ol>
             </aside>
@@ -116,7 +116,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Ic from '@/Components/Icons/Ic.vue'
 import SensorCalibrationWizardCore from '@/Components/SensorCalibrationWizardCore.vue'
 import { Chip } from '@/Components/Shared/Primitives'
@@ -144,6 +144,20 @@ const emit = defineEmits<{
 }>()
 
 const selectedOverview = ref<SensorCalibrationOverview | null>(null)
+
+const step2SidebarLabel = computed(() => {
+  const t = selectedOverview.value?.sensor_type
+  if (t === 'ph') return 'Точка 1 — кислый буфер'
+  if (t === 'ec') return 'Точка 1 — меньший эталон TDS'
+  return 'Точка 1'
+})
+
+const step3SidebarLabel = computed(() => {
+  const t = selectedOverview.value?.sensor_type
+  if (t === 'ph') return 'Точка 2 — щелочной буфер'
+  if (t === 'ec') return 'Точка 2 — больший эталон TDS'
+  return 'Точка 2'
+})
 
 function statusTone(status: SensorCalibrationOverview['calibration_status']): ChipTone {
   if (status === 'ok') return 'growth'

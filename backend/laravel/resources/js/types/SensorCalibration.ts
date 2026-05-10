@@ -45,6 +45,7 @@ export interface SensorCalibration {
   calibrated_by: number | null
   calibrated_by_name?: string | null
   notes: string | null
+  /** Служебные поля: awaiting_config_report, point_1_error_code, point_2_error_code (код от узла при ERROR) и т.д. */
   meta: Record<string, unknown>
   node_channel?: {
     id: number

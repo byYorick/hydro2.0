@@ -126,10 +126,11 @@ static void task_sensors(void *pvParameters) {
                     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
                         strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
                     }
-                    config_storage_mqtt_t mqtt_cfg = {0};
-                    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
-                        strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
-                        model.mqtt_port = mqtt_cfg.port;
+                    char mqtt_host_buf[sizeof(model.mqtt_host)] = {0};
+                    uint16_t mqtt_port_val = 0;
+                    if (mqtt_manager_get_broker(mqtt_host_buf, sizeof(mqtt_host_buf), &mqtt_port_val) == ESP_OK) {
+                        strncpy(model.mqtt_host, mqtt_host_buf, sizeof(model.mqtt_host) - 1);
+                        model.mqtt_port = mqtt_port_val;
                     }
                     
                     // Get current pH value and sensor status (pH-специфичная логика)
@@ -384,14 +385,23 @@ void ph_node_publish_telemetry(void) {
             using_stub = true;
         } else {
             raw_value = (int32_t)(ph_value * 1000);  // Raw value in thousandths
-            is_stable = trema_ph_get_stability();
+            is_stable = trema_ph_get_last_read_stability();
         }
     } else {
         ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
         ph_value = 6.5f;
         using_stub = true;
     }
-    
+
+    ESP_LOGI(
+        TAG,
+        "pH update: %.3f pH (raw=%ld, stub=%s, stable=%s)",
+        (double)ph_value,
+        (long)raw_value,
+        using_stub ? "yes" : "no",
+        is_stable ? "yes" : "no"
+    );
+
     // Публикация через node_telemetry_engine (унифицированный API)
     esp_err_t err = node_telemetry_publish_sensor(
         "ph_sensor",

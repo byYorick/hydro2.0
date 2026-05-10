@@ -343,6 +343,7 @@ class SensorCalibrationControllerTest extends TestCase
         $this->assertSame(SensorCalibration::STATUS_FAILED, $calibration->status);
         $this->assertSame('TIMEOUT', $calibration->point_1_result);
         $this->assertSame('timed out', $calibration->point_1_error);
+        $this->assertSame('TIMEOUT', data_get($calibration->meta, 'point_1_error_code'));
         $this->assertNotNull($calibration->completed_at);
     }
 

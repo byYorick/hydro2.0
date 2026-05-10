@@ -21,11 +21,11 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-// Default I2C address for the pH sensor (7-bit; в примерах iarduino встречается 0x09 и 0x0A)
-#define TREMA_PH_ADDR 0x0A
+// 7-bit адрес по умолчанию — 0x09 (datasheet/wiki iarduino FLASH-I2C pH); 0x0A — встречается у части плат
+#define TREMA_PH_ADDR 0x09
 
 /**
- * @brief Задать 7-bit I²C адрес модуля до/между инициализациями (если модуль не на 0x0A).
+ * @brief Задать 7-bit I²C адрес модуля до/между инициализациями (если отличается от TREMA_PH_ADDR).
  */
 void trema_ph_set_i2c_address(uint8_t addr_7bit);
 
@@ -33,6 +33,13 @@ void trema_ph_set_i2c_address(uint8_t addr_7bit);
  * @brief Текущий 7-bit I²C адрес драйвера.
  */
 uint8_t trema_ph_get_i2c_address(void);
+
+/**
+ * @brief Версия прошивки модуля (байт из заголовка REG_MODEL+1), 0 если ещё не было успешного init.
+ *
+ * См. wiki iarduino: нормализация/getStability — с FW ≥ 6.
+ */
+uint8_t trema_ph_get_firmware_version(void);
 
 /** Идентификатор модели и линейки чипа — как в iarduino_I2C_pH.h v1.2.3 (tre.ru / GitHub) */
 #define TREMA_PH_MODEL_ID       0x1A
@@ -95,6 +102,14 @@ bool trema_ph_get_calibration_result(void);
  * @return true if measurement is stable, false otherwise
  */
 bool trema_ph_get_stability(void);
+
+/**
+ * @brief Стабильность для последнего успешного trema_ph_read (тот же кадр, что REG_PH_pH + REG_PH_ERROR).
+ *
+ * Для телеметрии предпочтительнее, чем отдельный trema_ph_get_stability(), чтобы не было гонки по I²C.
+ * Если успешного чтения ещё не было — возвращает false.
+ */
+bool trema_ph_get_last_read_stability(void);
 
 /**
  * @brief Wait for stable measurement

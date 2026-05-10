@@ -741,14 +741,23 @@ class PythonIngestController extends Controller
             }
 
             if ($calibration->point_1_command_id === $commandId) {
+                $meta = is_array($calibration->meta) ? $calibration->meta : [];
                 $calibration->point_1_result = $status;
                 $calibration->point_1_error = $status === Command::STATUS_DONE ? null : (string) ($errorMessage ?? $status);
                 if ($status === Command::STATUS_DONE) {
+                    unset($meta['point_1_error_code']);
                     $calibration->status = SensorCalibration::STATUS_POINT_1_DONE;
                 } else {
+                    $code = isset($details['error_code']) ? (string) $details['error_code'] : '';
+                    if ($code !== '') {
+                        $meta['point_1_error_code'] = $code;
+                    } else {
+                        unset($meta['point_1_error_code']);
+                    }
                     $calibration->status = SensorCalibration::STATUS_FAILED;
                     $calibration->completed_at = now();
                 }
+                $calibration->meta = $meta;
                 $calibration->save();
 
                 continue;
@@ -759,6 +768,7 @@ class PythonIngestController extends Controller
                 $calibration->point_2_error = $status === Command::STATUS_DONE ? null : (string) ($errorMessage ?? $status);
                 $meta = is_array($calibration->meta) ? $calibration->meta : [];
                 if ($status === Command::STATUS_DONE) {
+                    unset($meta['point_2_error_code']);
                     $meta['awaiting_config_report'] = true;
                     $meta['persisted_via_config_report'] = false;
                     $meta['point_2_acknowledged_at'] = now()->toIso8601String();
@@ -766,6 +776,12 @@ class PythonIngestController extends Controller
                     $calibration->completed_at = null;
                 } else {
                     $meta['awaiting_config_report'] = false;
+                    $code = isset($details['error_code']) ? (string) $details['error_code'] : '';
+                    if ($code !== '') {
+                        $meta['point_2_error_code'] = $code;
+                    } else {
+                        unset($meta['point_2_error_code']);
+                    }
                     $calibration->status = SensorCalibration::STATUS_FAILED;
                     $calibration->completed_at = now();
                 }

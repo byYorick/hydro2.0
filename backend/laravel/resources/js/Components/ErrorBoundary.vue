@@ -12,7 +12,7 @@
           Произошла ошибка
         </h2>
         <p class="text-sm text-[color:var(--text-muted)] mb-4">
-          {{ error.message }}
+          {{ humanErrorMessage }}
         </p>
         
         <div
@@ -46,11 +46,21 @@
 import { ref, onErrorCaptured, computed, nextTick } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import Card from './Card.vue'
 import Button from './Button.vue'
 
 const error = ref<Error | null>(null)
 const isDev = computed(() => import.meta.env.DEV)
+
+/** Axios кладёт «Request failed with status code 422» в message; детали — в response.data (errors / message). */
+const humanErrorMessage = computed(() => {
+  const err = error.value
+  if (!err) {
+    return ''
+  }
+  return extractHumanErrorMessage(err, err.message)
+})
 const isRetrying = ref(false)
 
 onErrorCaptured((err: Error) => {

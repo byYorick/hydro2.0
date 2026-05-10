@@ -179,6 +179,9 @@ services:
       - laravel
     ports:
       - "9000:9000"
+    volumes:
+      - ./services/mqtt-bridge:/app
+      - ./services/common:/app/common
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 10s
@@ -217,6 +220,9 @@ services:
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
+    volumes:
+      - ./services/history-logger:/app
+      - ./services/common:/app/common
     restart: unless-stopped
   automation-engine:
     build:
@@ -251,6 +257,10 @@ services:
       - laravel
     ports:
       - "9405:9405"
+    volumes:
+      - ./services/automation-engine:/app
+      - ./services/common:/app/common
+      - ../schemas:/schemas:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/live', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s
