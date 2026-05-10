@@ -112,21 +112,3 @@ defineEmits<{
 }>()
 </script>
 
-<style scoped>
-.hf-drawer-enter-active,
-.hf-drawer-leave-active {
-  transition: opacity 180ms ease;
-}
-.hf-drawer-enter-from,
-.hf-drawer-leave-to {
-  opacity: 0;
-}
-.hf-drawer-enter-active aside,
-.hf-drawer-leave-active aside {
-  transition: transform 200ms ease;
-}
-.hf-drawer-enter-from aside,
-.hf-drawer-leave-to aside {
-  transform: translateX(8px);
-}
-</style>

@@ -493,6 +493,11 @@ class BaseStageHandler:
             )
         if reason == "mismatch":
             snapshot = last_state["snapshot"] if isinstance(last_state["snapshot"], Mapping) else {}
+            if self._is_solution_fill_terminal_snapshot(task=task, expected=expected, snapshot=snapshot):
+                # Для test-node допустим штатный terminal snapshot на solution_fill_check:
+                # путь already closed после достижения solution_level_max.
+                self._remember_probe_state(task=task, state=last_state)
+                return
             await self._maybe_emit_node_reboot_event(
                 task=task,
                 plan=plan,
@@ -508,6 +513,29 @@ class BaseStageHandler:
         raise TaskExecutionError(
             "irr_state_unavailable", "Снимок состояния IRR-ноды недоступен",
         )
+
+    @staticmethod
+    def _is_solution_fill_terminal_snapshot(
+        *,
+        task: Any,
+        expected: Mapping[str, bool],
+        snapshot: Mapping[str, Any],
+    ) -> bool:
+        stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        if stage != "solution_fill_check":
+            return False
+        if not isinstance(snapshot, Mapping):
+            return False
+
+        # Для solution_fill terminal-condition в test-node приходит как:
+        # solution_level_max=true и flow-path уже выключен.
+        if not bool(snapshot.get("solution_level_max")):
+            return False
+
+        truthy_expected_keys = [key for key, value in expected.items() if bool(value)]
+        if not truthy_expected_keys:
+            return False
+        return all(not bool(snapshot.get(key)) for key in truthy_expected_keys)
 
     @staticmethod
     def _is_node_reboot_pattern(

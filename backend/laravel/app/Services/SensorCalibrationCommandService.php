@@ -6,9 +6,9 @@ use App\Models\NodeChannel;
 use App\Models\SensorCalibration;
 use App\Models\Zone;
 use DomainException;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class SensorCalibrationCommandService
@@ -43,6 +43,16 @@ class SensorCalibrationCommandService
             ));
 
         $response->throw();
+
+        Log::info('sensor_calibration.command_enqueued', [
+            'zone_id' => $zone->id,
+            'node_uid' => $node->uid,
+            'channel' => $channel->channel,
+            'sensor_type' => $calibration->sensor_type,
+            'calibration_id' => $calibration->id,
+            'stage' => $stage,
+            'cmd_id' => $commandId,
+        ]);
 
         $now = now();
         if ($stage === 1) {

@@ -170,6 +170,70 @@ class _SnapshotReadModelNoOnlineActuators:
         )
 
 
+class _SnapshotReadModelNoOnlineActuatorsTransient:
+    """Snapshot read-model отдаёт diagnostics только с transient узлами (нет persistent)."""
+
+    async def load(self, *, zone_id):
+        raise SnapshotBuildError(
+            f"Zone {zone_id} has no online actuator channels",
+            code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+            details={
+                "zone_id": zone_id,
+                "zone_nodes": [
+                    {"uid": "nd-irrig-1", "type": "irrig", "status": "offline", "last_seen_age_sec": 60, "active_actuator_count": 6},
+                    {"uid": "nd-ph-1", "type": "ph", "status": "offline", "last_seen_age_sec": 90, "active_actuator_count": 2},
+                ],
+                "persistently_offline_uids": [],
+                "transiently_offline_uids": ["nd-irrig-1", "nd-ph-1"],
+                "persistent_dead_threshold_sec": 600,
+            },
+        )
+
+
+class _SnapshotReadModelNoOnlineActuatorsPersistent:
+    """Snapshot read-model отдаёт diagnostics с persistently dead узлом."""
+
+    async def load(self, *, zone_id):
+        raise SnapshotBuildError(
+            f"Zone {zone_id} has no online actuator channels",
+            code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+            details={
+                "zone_id": zone_id,
+                "zone_nodes": [
+                    {"uid": "nd-irrig-1", "type": "irrig", "status": "offline", "last_seen_age_sec": 1500, "active_actuator_count": 6},
+                    {"uid": "nd-ph-1", "type": "ph", "status": "offline", "last_seen_age_sec": 60, "active_actuator_count": 2},
+                ],
+                "persistently_offline_uids": ["nd-irrig-1"],
+                "transiently_offline_uids": ["nd-ph-1"],
+                "persistent_dead_threshold_sec": 600,
+            },
+        )
+
+
+class _SnapshotPhOnlyActuators:
+    """Snapshot для two-tank topology, в котором есть только ``ph`` actuator."""
+
+    zone_id = 99
+    automation_runtime = "ae3"
+    grow_cycle_id = 99
+    current_phase_id = 99
+    phase_name = "vegetation"
+    workflow_phase = "idle"
+    command_plans = {"schema_version": "1.0"}
+    phase_targets = {"ph": 5.8, "ec": 1.7}
+    pid_configs = {}
+    process_calibrations = {}
+    actuators = (
+        ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=1, role="pump_base"),
+    )
+    correction_config = {"meta": {"version": 1}}
+
+
+class _SnapshotReadModelPhOnly:
+    async def load(self, *, zone_id):
+        return _SnapshotPhOnlyActuators()
+
+
 class _SnapshotWithCorrectionConfig:
     zone_id = 99
     automation_runtime = "ae3"
@@ -181,7 +245,11 @@ class _SnapshotWithCorrectionConfig:
     phase_targets = {"ph": 5.8, "ec": 1.7}
     pid_configs = {"ph": {"kp": 1}, "ec": {"kp": 1}}
     process_calibrations = {"transport_delay_sec": 12}
-    actuators = ()
+    actuators = (
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=1, role="pump_main"),
+        ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=2, role="pump_acid"),
+        ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=3, role="pump_a"),
+    )
     correction_config = {"meta": {"version": 7}}
 
 
@@ -203,6 +271,7 @@ class _SnapshotWithIrrActuators:
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=15, role="valve_irrigation"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=16, role="pump_main"),
         ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=17, role="pump_base"),
+        ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=18, role="pump_a"),
     )
 
 
@@ -595,7 +664,7 @@ async def test_execute_task_transient_snapshot_gap_exhausted_fails_closed_with_s
         task,
         workflow=replace(
             task.workflow,
-            stage_entered_at=NOW - timedelta(seconds=91),
+            stage_entered_at=NOW - timedelta(seconds=601),
         ),
     )
     finalize = _FinalizeTaskUseCase()
@@ -1573,3 +1642,196 @@ async def test_execute_task_fail_closed_skips_zone_bound_side_effects_when_zone_
     assert workflow_repo.calls == []
     assert alerts.calls == []
     assert recorded_events == []
+
+
+# ── Snapshot diagnostics (per-node breakdown, persistent/transient detection) ─
+
+@pytest.mark.asyncio
+async def test_execute_task_persistent_dead_nodes_fail_closed_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Если хотя бы один узел persistently dead — fail-closed без retry."""
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    task = replace(
+        task,
+        workflow=replace(task.workflow, stage_entered_at=NOW - timedelta(seconds=5)),
+    )
+    task_repo = _TaskRepoRequeue(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelNoOnlineActuatorsPersistent(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert len(finalize.calls) == 1
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE
+    assert task_repo.update_stage_calls == []
+    assert all(event_type != "AE_SNAPSHOT_RETRY_SCHEDULED" for _, event_type, _ in recorded_events)
+
+    failed_events = [payload for _, event_type, payload in recorded_events if event_type == "AE_TASK_FAILED"]
+    assert len(failed_events) == 1
+    assert failed_events[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE
+    assert failed_events[0]["persistently_offline_uids"] == ["nd-irrig-1"]
+    assert any(node["uid"] == "nd-irrig-1" for node in failed_events[0]["zone_nodes"])
+
+    assert len(alerts.calls) == 1
+    alert_details = alerts.calls[0]["details"]
+    assert alert_details["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE
+    assert alert_details["persistently_offline_uids"] == ["nd-irrig-1"]
+    assert isinstance(alert_details["zone_nodes"], list) and alert_details["zone_nodes"]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_transient_snapshot_gap_propagates_zone_nodes_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostics из SnapshotBuildError.details попадают в retry-event."""
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    task_repo = _TaskRepoRequeue(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelNoOnlineActuatorsTransient(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "pending"
+    assert finalize.calls == []
+    assert len(task_repo.update_stage_calls) == 1
+    scheduled_events = [
+        payload for _, event_type, payload in recorded_events if event_type == "AE_SNAPSHOT_RETRY_SCHEDULED"
+    ]
+    assert len(scheduled_events) == 1
+    payload = scheduled_events[0]
+    assert payload["transiently_offline_uids"] == ["nd-irrig-1", "nd-ph-1"]
+    assert payload["persistently_offline_uids"] == []
+    assert isinstance(payload["zone_nodes"], list) and len(payload["zone_nodes"]) == 2
+    assert payload["persistent_dead_threshold_sec"] == 600
+
+
+@pytest.mark.asyncio
+async def test_execute_task_two_tank_required_node_type_missing_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Если в snapshot two-tank нет actuator'ов хотя бы для одного из required types — fail-closed с конкретным кодом."""
+    recorded_events: list[tuple[int, str, dict]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="startup", topology="two_tank_drip_substrate_trays")
+    task_repo = _TaskRepoRunning(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelPhOnly(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert len(finalize.calls) == 1
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING
+
+    failed_events = [payload for _, event_type, payload in recorded_events if event_type == "AE_TASK_FAILED"]
+    assert len(failed_events) == 1
+    assert failed_events[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING
+    assert failed_events[0]["missing_node_types"] == ["ec", "irrig"]
+    assert failed_events[0]["present_node_types"] == ["ph"]
+
+    assert len(alerts.calls) == 1
+    alert_details = alerts.calls[0]["details"]
+    assert alert_details["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING
+    assert alert_details["missing_node_types"] == ["ec", "irrig"]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_non_two_tank_topology_skips_required_node_check() -> None:
+    """Для нестандартных топологий (single_tank и т.п.) topology-aware check пропускается."""
+    task = _make_task(stage="startup", topology="single_tank")
+    task_repo = _TaskRepoRunning(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelPhOnly(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+    assert len(finalize.calls) == 1
+    assert finalize.calls[0]["error_code"] != ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING

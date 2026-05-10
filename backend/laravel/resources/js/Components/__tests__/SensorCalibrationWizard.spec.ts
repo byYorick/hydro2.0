@@ -47,6 +47,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_status: 'never',
           has_active_session: false,
           active_calibration_id: null,
+          calibration_channel_contract_ok: true,
+          calibration_channel_expected: 'ec_sensor',
         },
         settings: {
           ph_point_1_value: 7,
@@ -118,6 +120,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_status: 'never',
           has_active_session: true,
           active_calibration_id: 42,
+          calibration_channel_contract_ok: true,
+          calibration_channel_expected: 'ph_sensor',
         },
         settings: {
           ph_point_1_value: 7,
@@ -190,6 +194,8 @@ describe('SensorCalibrationWizard', () => {
           calibration_status: 'never',
           has_active_session: true,
           active_calibration_id: 43,
+          calibration_channel_contract_ok: true,
+          calibration_channel_expected: 'ph_sensor',
         },
         settings: {
           ph_point_1_value: 7,

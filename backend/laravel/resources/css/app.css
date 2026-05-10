@@ -1,6 +1,8 @@
 /* Vue Virtual Scroller styles */
 @import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
+@import './hydro-drawer.css';
+
 /* Шрифты только локально (@font-face ниже). Внешние @import запрещены — блокируют парсинг CSS и дают CLS при холодном старте. */
 
 /* IBM Plex Sans — основной UI-шрифт. Подмножества latin + cyrillic. */

@@ -94,6 +94,8 @@ class ErrorCodes:
     AE3_SNAPSHOT_ACTIVE_LOGIC_PROFILE_MISSING = "ae3_snapshot_active_logic_profile_missing"
     AE3_SNAPSHOT_EMPTY_COMMAND_PLANS = "ae3_snapshot_empty_command_plans"
     AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS = "ae3_snapshot_no_online_actuator_channels"
+    AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE = "ae3_snapshot_required_node_persistently_offline"
+    AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING = "ae3_snapshot_required_node_type_missing"
     AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES = "ae3_snapshot_conflicting_config_values"
 
     # Отправка и reconcile команд

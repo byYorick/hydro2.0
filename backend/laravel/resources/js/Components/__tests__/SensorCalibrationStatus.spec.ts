@@ -30,6 +30,8 @@ describe('SensorCalibrationStatus', () => {
         calibration_status: 'never',
         has_active_session: false,
         active_calibration_id: null,
+        calibration_channel_contract_ok: true,
+        calibration_channel_expected: 'ph_sensor',
       },
     ])
     fetchHistoryMock.mockResolvedValue([])

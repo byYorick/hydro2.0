@@ -43,6 +43,13 @@
         </Button>
         <Button
           size="sm"
+          variant="secondary"
+          @click="$emit('open-sensor-wizard')"
+        >
+          Калибровка сенсоров
+        </Button>
+        <Button
+          size="sm"
           variant="primary"
           @click="$emit('open-pump-wizard')"
         >
@@ -87,6 +94,7 @@ const props = defineProps<{
 defineEmits<{
   (e: 'open-blockers'): void
   (e: 'open-pump-wizard'): void
+  (e: 'open-sensor-wizard'): void
   (e: 'open-contract', contract: CalibrationContract): void
 }>()
 

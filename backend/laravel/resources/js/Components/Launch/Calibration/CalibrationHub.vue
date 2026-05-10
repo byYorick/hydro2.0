@@ -5,6 +5,7 @@
       :summary="summary"
       @open-blockers="blockersOpen = true"
       @open-pump-wizard="openPumpWizardFromReadiness"
+      @open-sensor-wizard="openSensorWizardFromReadiness"
       @open-contract="onContractClick"
     />
 
@@ -37,6 +38,10 @@
           v-else-if="currentSub === 'sensors'"
           :zone-id="zoneId"
           :settings="sensorCalibrationSettings"
+          :items="sensorOverviews"
+          @calibrate="onSensorCalibrateFromRow"
+          @open-sensor-drawer="openSensorDrawerGeneric"
+          @export-csv="onExportSensorCsv"
         />
 
         <ProcessSubview
@@ -85,6 +90,16 @@
       @start="onPumpStart"
       @save="onPumpSave"
     />
+
+    <SensorCalibrationDrawer
+      :show="sensorDrawerOpen"
+      :zone-id="zoneId"
+      :settings="sensorCalibrationSettings"
+      :items="sensorOverviews"
+      :initial-channel-id="forcedSensorChannelId"
+      @close="onSensorDrawerClose"
+      @session-finished="onSensorDrawerSessionFinished"
+    />
   </div>
 </template>
 
@@ -100,6 +115,7 @@ import CalibrationBreadcrumb from './CalibrationBreadcrumb.vue'
 import { type PumpRow } from './CalibrationPumpsSubpage.vue'
 import BlockersDrawer from '@/Components/Launch/Shell/BlockersDrawer.vue'
 import PumpCalibrationDrawer from './PumpCalibrationDrawer.vue'
+import SensorCalibrationDrawer from './SensorCalibrationDrawer.vue'
 import SensorsSubview from './Subviews/SensorsSubview.vue'
 import PumpsSubview from './Subviews/PumpsSubview.vue'
 import ProcessSubview from './Subviews/ProcessSubview.vue'
@@ -122,6 +138,7 @@ import type {
   PumpCalibrationSavePayload,
 } from '@/types/Calibration'
 import type { LaunchFlowReadinessBlocker } from '@/services/api/launchFlow'
+import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
 
 const props = withDefaults(
   defineProps<{
@@ -144,8 +161,11 @@ const blockersOpen = ref(false)
 const pumpDrawerOpen = ref(false)
 const forcedComponent = ref<PumpCalibrationComponent | null>(null)
 const forcedNodeChannelId = ref<number | null>(null)
+const sensorDrawerOpen = ref(false)
+const forcedSensorChannelId = ref<number | null>(null)
 
 const pumps = ref<PumpCalibration[]>([])
+const sensorOverviews = ref<SensorCalibrationOverview[]>([])
 const zoneDevices = ref<Device[]>([])
 const processDocs = ref<Record<string, unknown>>({})
 const correctionDoc = ref<Record<string, unknown> | null>(null)
@@ -181,6 +201,8 @@ const navMap = computed<CalibrationNavMap>(() => {
   const correctionContract = contracts.value.find((c) => c.subsystem === 'correction')
   const pidContract = contracts.value.find((c) => c.subsystem === 'pid')
   const pumpsBlocked = pumpContracts.some((c) => c.status === 'blocker')
+  const sensorOk = sensorOverviews.value.filter((i) => i.calibration_status === 'ok').length
+  const sensorTotal = sensorOverviews.value.length
 
   const fromContract = (contract?: CalibrationContract): CalibrationNavInfo['state'] => {
     if (!contract) return 'optional'
@@ -190,10 +212,17 @@ const navMap = computed<CalibrationNavMap>(() => {
     return 'active'
   }
 
+  const sensorsNavState = (): CalibrationNavInfo['state'] => {
+    if (sensorTotal > 0) {
+      return sensorOk === sensorTotal ? 'passed' : 'blocker'
+    }
+    return fromContract(sensorContract)
+  }
+
   return {
     sensors: {
-      state: fromContract(sensorContract),
-      count: sensorContract?.status === 'passed' ? '2/2' : '0/2',
+      state: sensorsNavState(),
+      count: sensorTotal > 0 ? `${sensorOk}/${sensorTotal}` : '0/0',
     },
     pumps: {
       state: pumpsBlocked
@@ -321,9 +350,18 @@ async function loadPidDoc(): Promise<void> {
   }
 }
 
+async function loadSensorStatus(): Promise<void> {
+  try {
+    sensorOverviews.value = await api.zones.sensorCalibrationStatus(props.zoneId)
+  } catch {
+    sensorOverviews.value = []
+  }
+}
+
 async function reloadAll(): Promise<void> {
   await Promise.all([
     loadPumpCalibrations(),
+    loadSensorStatus(),
     loadZoneDevices(),
     loadProcessDocs(),
     loadCorrectionDoc(),
@@ -369,6 +407,32 @@ function openPumpWizardFromReadiness(): void {
   }
   forcedNodeChannelId.value = null
   pumpDrawerOpen.value = true
+}
+
+function openSensorWizardFromReadiness(): void {
+  currentSub.value = 'sensors'
+  forcedSensorChannelId.value = null
+  sensorDrawerOpen.value = true
+}
+
+function openSensorDrawerGeneric(): void {
+  openSensorWizardFromReadiness()
+}
+
+function onSensorCalibrateFromRow(item: SensorCalibrationOverview): void {
+  currentSub.value = 'sensors'
+  forcedSensorChannelId.value = item.node_channel_id
+  sensorDrawerOpen.value = true
+}
+
+function onSensorDrawerClose(): void {
+  sensorDrawerOpen.value = false
+  forcedSensorChannelId.value = null
+}
+
+async function onSensorDrawerSessionFinished(_outcome: SensorCalibrationSessionOutcome): Promise<void> {
+  await loadSensorStatus()
+  emit('updated')
 }
 
 function onContractClick(contract: CalibrationContract): void {
@@ -423,6 +487,34 @@ function onExportCsv(): void {
   const a = document.createElement('a')
   a.href = url
   a.download = `pump-calibrations-zone-${props.zoneId}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function onExportSensorCsv(): void {
+  const rows = sensorOverviews.value.map((i) => ({
+    sensor_type: i.sensor_type,
+    channel_uid: i.channel_uid,
+    node_uid: i.node_uid ?? '',
+    calibration_status: i.calibration_status,
+    last_calibrated_at: i.last_calibrated_at ?? '',
+    days_since_calibration: i.days_since_calibration ?? '',
+  }))
+  if (rows.length === 0) {
+    showToast('Нет каналов для экспорта', 'info')
+    return
+  }
+  const header = Object.keys(rows[0]).join(',')
+  const body = rows
+    .map((r) => Object.values(r).map((v) => JSON.stringify(v ?? '')).join(','))
+    .join('\n')
+  const blob = new Blob([`${header}\n${body}`], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `sensor-calibrations-zone-${props.zoneId}.csv`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

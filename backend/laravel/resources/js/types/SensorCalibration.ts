@@ -1,3 +1,20 @@
+/** Терминальное событие UI-сессии калибровки (для обновления списков, не путать с HTTP completed). */
+export type SensorCalibrationSessionOutcome = 'success' | 'failed' | 'cancelled'
+
+/** UID канала в NodeConfig / MQTT, с которым прошивка ожидает `calibrate` (см. NODE_CHANNELS_REFERENCE). */
+export type SensorCalibrationFirmwareChannelUid = 'ph_sensor' | 'ec_sensor'
+
+/**
+ * Коды доменных ошибок в теле 422 (`error_code`), когда `status === 'error'`.
+ * Совпадают с бэкендом `SensorCalibrationController::mapSensorCalibrationErrorCode`.
+ */
+export type SensorCalibrationApiErrorCode =
+  | 'sensor_calibration_channel_contract'
+  | 'sensor_calibration_active_session'
+  | 'ec_reference_likely_ms_cm'
+  | 'ec_reference_range'
+  | 'ph_reference_range'
+
 export type SensorCalibrationStatus =
   | 'started'
   | 'point_1_pending'
@@ -47,4 +64,14 @@ export interface SensorCalibrationOverview {
   calibration_status: 'ok' | 'warning' | 'critical' | 'never'
   has_active_session: boolean
   active_calibration_id: number | null
+  /** Совпадает ли `channel_uid` с ожидаемым UID прошивки для данного `sensor_type`. */
+  calibration_channel_contract_ok: boolean
+  /** Ожидаемый канонический UID (`ph_sensor` / `ec_sensor`). */
+  calibration_channel_expected: SensorCalibrationFirmwareChannelUid
+}
+
+/** Ответ `POST .../sensor-calibrations` после успешного старта сессии. */
+export interface SensorCalibrationStartResult {
+  calibration: SensorCalibration
+  defaults: { point_1_value: number; point_2_value: number }
 }

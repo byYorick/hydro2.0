@@ -130,7 +130,7 @@
       :overview="wizardItem"
       :settings="settings"
       @close="wizardOpen = false"
-      @completed="onWizardCompleted"
+      @session-finished="onWizardSessionFinished"
     />
   </ShellCard>
 </template>
@@ -148,6 +148,7 @@ import { useSensorCalibration } from '@/composables/useSensorCalibration'
 import type {
   SensorCalibration,
   SensorCalibrationOverview,
+  SensorCalibrationSessionOutcome,
 } from '@/types/SensorCalibration'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
@@ -156,7 +157,7 @@ const props = defineProps<{
   settings: SensorCalibrationSettings
 }>()
 
-const { fetchStatus, fetchHistory } = useSensorCalibration(props.zoneId)
+const { fetchStatus, fetchHistory } = useSensorCalibration(() => props.zoneId)
 
 const loading = ref(true)
 const items = ref<SensorCalibrationOverview[]>([])
@@ -219,7 +220,7 @@ function openWizard(item: SensorCalibrationOverview): void {
   wizardOpen.value = true
 }
 
-async function onWizardCompleted(): Promise<void> {
+async function onWizardSessionFinished(_outcome: SensorCalibrationSessionOutcome): Promise<void> {
   await loadStatus()
 }
 

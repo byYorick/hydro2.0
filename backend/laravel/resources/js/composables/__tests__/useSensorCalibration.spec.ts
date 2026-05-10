@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sensorCalibrationsListMock = vi.hoisted(() => vi.fn())
@@ -57,6 +57,33 @@ describe('useSensorCalibration', () => {
       node_channel_id: 101,
       limit: 15,
     })
+
+    wrapper.unmount()
+  })
+
+  it('берёт актуальный zoneId из ref при каждом запросе', async () => {
+    sensorCalibrationsListMock.mockResolvedValue([])
+
+    let composable: ReturnType<typeof useSensorCalibration> | null = null
+    const zoneRef = ref(7)
+
+    const wrapper = mount(defineComponent({
+      setup() {
+        composable = useSensorCalibration(zoneRef)
+        return () => null
+      },
+    }))
+
+    if (!composable) {
+      throw new Error('useSensorCalibration not initialized')
+    }
+
+    await composable.fetchHistory({ nodeChannelId: 1 })
+    expect(sensorCalibrationsListMock).toHaveBeenLastCalledWith(7, expect.any(Object))
+
+    zoneRef.value = 8
+    await composable.fetchHistory({ nodeChannelId: 1 })
+    expect(sensorCalibrationsListMock).toHaveBeenLastCalledWith(8, expect.any(Object))
 
     wrapper.unmount()
   })
