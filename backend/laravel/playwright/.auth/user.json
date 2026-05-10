@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6IjE4TVM1N2FuSFVoZ21CL2U1d0NMMFE9PSIsInZhbHVlIjoiTVJKOTJLdW8vQ1VsZFF4WUl5QmxzRldSR3JzNUxLQVRGN285R3JOa0t5WXEvWUdodUxsalV3dk95UXVwZW1TKy8rQXY2QVRBcnRhdG8rYWt2ZTlRd0RnZ0l5UHFVallQWnhWRU84dDRrOEtGSUVyK2xYSm1oNXZta1VFNzE3YUsiLCJtYWMiOiJkOWE5NzI3NjlmNmRlN2I2MDA1NGFjOWUwYzMyYjI0MGIyYmZmNTYxN2JmMDgwYWM1MjU3ZWNkZGQxMmEwN2I2IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IlZnNnljZXFzNCtGcU0yaGMvenAwTnc9PSIsInZhbHVlIjoiRjB3UWR2RGpxOThLQnh2TmlPdXY1NVlzd3BYQTc2NjZoY3ltMnY4Q3lXb0pDT0lHdmdDWW9veDg3b3JScVhZZU5mN2kwVTJxamJYTXlZeHBZTnpOOXRZV2ZMZnplV25rc1ZERTUxV3llVi9KY0dlazZYK0JxbXZoZnlrM3psMjYiLCJtYWMiOiIyZDUwZDU0ODg0MWNkNWQxYTJkZGIxODY2ZjM1YzZkM2IxMWJjYjZlOTcyOWNlYzJiODJlZGY4YmMwZmUwZWVjIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1775885920.872089,
+      "expires": 1777806439.196653,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
-      "name": "laravel_session",
-      "value": "eyJpdiI6IkM2b2ErRHdycFJKaXlFNUd2YmpXcGc9PSIsInZhbHVlIjoiSm5zVHp5MFd6Mi9lallFbURNaW1lMU5FRndLVisydmIrZkJJZFQwc1hpcEFUM2xTL0tGZ0pCQ1VrTkx1REdJTGl1OWVLelkwbE9uMHp4R092M01ad2c0ak9qeWk1UkxGTGRpR3g0cnBLSTZKSDg1V2JpNEJGaFkwWUhHZm5JdnEiLCJtYWMiOiJkNmFjMjA2NDM5ODIzYTMyMTFjNDY1YWJkNTljNTdkYjU1N2I5Y2RhMzJkMjQ4ZjBlZGZmODZlZDNhMTQwNDBjIiwidGFnIjoiIn0%3D",
+      "name": "avtomatika_teplicy_session",
+      "value": "eyJpdiI6IkRVQkFGWmhnZU1ydVplWjVTM3FkalE9PSIsInZhbHVlIjoiUTAvVmdJMi9kWXE4TUR4bkRVcE9RUkZLVlZrczlJQ2R6b3hIYlJ4Q2d4S1ZpNzl5eEZOTkJxQlpSOWkvQ2ExRStENmxmQ1QxWitYWnliSkxSdDdEN0pRam5lR0ttdi9hQ2pqKzBHZWZlTkxLY0NQeWtpVW9laG53K01EaEJPU1oiLCJtYWMiOiJmZDJjYjRkYWQ4ZmYyMTg5ODllN2MwODhiZWFkMmUyYjk2NTMwMDJhYjdkY2NhNzIwZTg4OTU4YTkwOGZiMjhmIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1775885920.87219,
+      "expires": 1777806439.595046,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
@@ -27,7 +27,7 @@
       "localStorage": [
         {
           "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1775878722433,\"transport\":\"ws\",\"latency\":59,\"cacheSkipCount\":0}"
+          "value": "{\"timestamp\":1777799239627,\"transport\":\"ws\",\"latency\":63,\"cacheSkipCount\":0}"
         }
       ]
     }

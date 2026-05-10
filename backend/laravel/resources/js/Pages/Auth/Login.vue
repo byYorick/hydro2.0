@@ -244,7 +244,7 @@ function togglePasswordVisibility(): void {
                   class="px-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#566456]"
                   for="email"
                 >
-                  Электронная почта
+                  Логин или почта
                 </label>
                 <div class="relative group">
                   <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">

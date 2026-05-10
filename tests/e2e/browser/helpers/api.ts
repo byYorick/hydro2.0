@@ -1,6 +1,10 @@
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 import { APIRequestContext } from '@playwright/test';
 
 const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+const laravelAppRoot = process.env.LARAVEL_APP_ROOT || path.resolve(process.cwd(), '../../../backend/laravel');
+const laravelArtisanContainer = process.env.LARAVEL_ARTISAN_CONTAINER || '';
 
 export interface TestGreenhouse {
   id: number;
@@ -29,6 +33,51 @@ export interface TestRecipePhase {
   };
 }
 
+function buildCanonicalTestRecipePhasePayload(phase: TestRecipePhase): Record<string, any> {
+  const phTarget = phase.targets.ph ?? null
+  const ecTarget = phase.targets.ec ?? null
+  const tempAirTarget = phase.targets.temp_air ?? null
+  const humidityTarget = phase.targets.humidity_air ?? null
+  const lightHours = phase.targets.light_hours ?? null
+  const irrigationInterval = phase.targets.irrigation_interval_sec ?? null
+  const irrigationDuration = phase.targets.irrigation_duration_sec ?? null
+
+  return {
+    phase_index: phase.phase_index,
+    name: phase.name,
+    duration_hours: phase.duration_hours,
+    ph_target: phTarget,
+    ph_min: phTarget !== null ? phTarget - 0.2 : null,
+    ph_max: phTarget !== null ? phTarget + 0.2 : null,
+    ec_target: ecTarget,
+    ec_min: ecTarget !== null ? ecTarget - 0.2 : null,
+    ec_max: ecTarget !== null ? ecTarget + 0.2 : null,
+    temp_air_target: tempAirTarget,
+    humidity_target: humidityTarget,
+    lighting_photoperiod_hours: lightHours,
+    lighting_start_time: '06:00:00',
+    irrigation_mode: 'SUBSTRATE',
+    irrigation_interval_sec: irrigationInterval,
+    irrigation_duration_sec: irrigationDuration,
+    extensions: {
+      day_night: {
+        ph: { day: phTarget, night: phTarget },
+        ec: { day: ecTarget, night: ecTarget },
+        temperature: { day: tempAirTarget, night: tempAirTarget },
+        humidity: { day: humidityTarget, night: humidityTarget },
+        lighting: { day_start_time: '06:00:00', day_hours: lightHours },
+      },
+      subsystems: {
+        irrigation: {
+          targets: {
+            system_type: 'drip',
+          },
+        },
+      },
+    },
+  };
+}
+
 export interface TestZone {
   id: number;
   name: string;
@@ -42,11 +91,64 @@ export interface TestBinding {
   role: string;
 }
 
+export interface SeededGreenhouseClimateNodes {
+  climateSensor: {
+    id: number;
+    uid: string;
+    name: string;
+  };
+  ventActuator: {
+    id: number;
+    uid: string;
+    name: string;
+  };
+  uids: string[];
+}
+
+export interface ZoneLiveEditState {
+  id: number;
+  control_mode: string;
+  config_mode: string;
+  live_until: string | null;
+}
+
 export class APITestHelper {
   constructor(
     private request: APIRequestContext, 
     private token?: string
   ) {}
+
+  static bootstrapToken(email: string, role: string): string {
+    const output = laravelArtisanContainer
+      ? execFileSync(
+        'docker',
+        ['exec', '-w', '/app', laravelArtisanContainer, 'php', 'artisan', 'e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`],
+        {
+          encoding: 'utf8',
+        },
+      )
+      : execFileSync(
+        'php',
+        ['artisan', 'e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`],
+        {
+        cwd: laravelAppRoot,
+        encoding: 'utf8',
+        },
+      );
+
+    const token = output
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => line.includes('|'));
+
+    if (!token) {
+      throw new Error(`Failed to bootstrap E2E auth token: ${output}`);
+    }
+
+    return token;
+  }
 
   private async getHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -183,10 +285,194 @@ export class APITestHelper {
     return plantData.data.id;
   }
 
+  private runArtisanTinkerJson<T>(code: string): T {
+    const output = laravelArtisanContainer
+      ? execFileSync('docker', ['exec', '-w', '/app', laravelArtisanContainer, 'php', 'artisan', 'tinker', `--execute=${code}`], {
+        encoding: 'utf8',
+      })
+      : execFileSync('php', ['artisan', 'tinker', `--execute=${code}`], {
+        cwd: laravelAppRoot,
+        encoding: 'utf8',
+      });
+    const jsonLine = output
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => line.startsWith('{') || line.startsWith('['));
+
+    if (!jsonLine) {
+      throw new Error(`Failed to parse artisan tinker output as JSON: ${output}`);
+    }
+
+    return JSON.parse(jsonLine) as T;
+  }
+
+  async seedZoneReadinessNode(zoneId: number, prefix = `pw-zone-${Date.now()}`): Promise<SeededGreenhouseClimateNodes> {
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+    return this.runArtisanTinkerJson<SeededGreenhouseClimateNodes>(`
+      $zone = \\App\\Models\\Zone::query()->findOrFail(${zoneId});
+      $prefix = '${safePrefix}';
+      $node = \\App\\Models\\DeviceNode::query()->create([
+        'zone_id' => $zone->id,
+        'uid' => $prefix . '-irrig',
+        'hardware_id' => $prefix . '-irrig',
+        'name' => 'Playwright Irrigation Node ' . $prefix,
+        'type' => 'irrig',
+        'status' => 'online',
+        'lifecycle_state' => 'ACTIVE',
+        'validated' => true,
+        'last_seen_at' => now(),
+        'last_heartbeat_at' => now(),
+        'first_seen_at' => now(),
+      ]);
+      foreach (['main_pump', 'force_irrigation', 'storage_state', 'drain'] as $channel) {
+        \\App\\Models\\NodeChannel::query()->create([
+          'node_id' => $node->id,
+          'channel' => $channel,
+          'type' => $channel === 'storage_state' ? 'SENSOR' : 'ACTUATOR',
+          'is_active' => true,
+          'last_seen_at' => now(),
+        ]);
+      }
+      echo json_encode([
+        'climateSensor' => [
+          'id' => $node->id,
+          'uid' => $node->uid,
+          'name' => $node->name,
+        ],
+        'ventActuator' => [
+          'id' => $node->id,
+          'uid' => $node->uid,
+          'name' => $node->name,
+        ],
+        'uids' => [$node->uid],
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async seedZoneAlert(zoneId: number, code = `pw_zone_alert_${Date.now()}`): Promise<{ id: number }> {
+    const safeCode = code.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    return this.runArtisanTinkerJson<{ id: number }>(`
+      $alert = \\App\\Models\\Alert::query()->create([
+        'zone_id' => ${zoneId},
+        'source' => 'e2e',
+        'code' => '${safeCode}',
+        'type' => 'playwright_zone_alert',
+        'details' => ['payload' => ['source' => 'playwright']],
+        'status' => 'ACTIVE',
+        'category' => 'test',
+        'severity' => 'warning',
+        'error_count' => 1,
+        'first_seen_at' => now(),
+        'last_seen_at' => now(),
+        'created_at' => now(),
+      ]);
+      echo json_encode(['id' => $alert->id], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async deleteAlert(id: number): Promise<void> {
+    this.runArtisanTinkerJson<{ deleted: number }>(`
+      $deleted = \\App\\Models\\Alert::query()->whereKey(${id})->delete();
+      echo json_encode(['deleted' => $deleted], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async seedGreenhouseClimateNodes(prefix = `e2e-gh-${Date.now()}`): Promise<SeededGreenhouseClimateNodes> {
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+    return this.runArtisanTinkerJson<SeededGreenhouseClimateNodes>(`
+      $prefix = '${safePrefix}';
+      $climate = \\App\\Models\\DeviceNode::query()->create([
+        'uid' => $prefix . '-climate-sensor',
+        'name' => 'E2E Climate Sensor ' . $prefix,
+        'type' => 'climate',
+        'status' => 'online',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $climate->id,
+        'channel' => 'temp_air',
+        'type' => 'SENSOR',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $climate->id,
+        'channel' => 'humidity_air',
+        'type' => 'SENSOR',
+      ]);
+      $vent = \\App\\Models\\DeviceNode::query()->create([
+        'uid' => $prefix . '-vent-actuator',
+        'name' => 'E2E Vent Actuator ' . $prefix,
+        'type' => 'climate',
+        'status' => 'online',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $vent->id,
+        'channel' => 'vent_drive',
+        'type' => 'ACTUATOR',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $vent->id,
+        'channel' => 'vent_window_pct',
+        'type' => 'ACTUATOR',
+      ]);
+      echo json_encode([
+        'climateSensor' => [
+          'id' => $climate->id,
+          'uid' => $climate->uid,
+          'name' => $climate->name,
+        ],
+        'ventActuator' => [
+          'id' => $vent->id,
+          'uid' => $vent->uid,
+          'name' => $vent->name,
+        ],
+        'uids' => [$climate->uid, $vent->uid],
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async cleanupNodesByUids(uids: string[]): Promise<void> {
+    const safeUids = uids
+      .map((uid) => String(uid).trim())
+      .filter((uid) => uid.length > 0)
+      .map((uid) => `'${uid.replace(/'/g, "\\'")}'`);
+
+    if (safeUids.length === 0) {
+      return;
+    }
+
+    this.runArtisanTinkerJson<{ deleted: number }>(`
+      $uids = [${safeUids.join(', ')}];
+      $deleted = \\App\\Models\\DeviceNode::query()->whereIn('uid', $uids)->delete();
+      echo json_encode(['deleted' => $deleted], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async primeZoneForLiveEdit(zoneId: number, liveUntilIso: string): Promise<ZoneLiveEditState> {
+    return this.runArtisanTinkerJson<ZoneLiveEditState>(`
+      $zone = \\App\\Models\\Zone::query()->findOrFail(${zoneId});
+      $zone->control_mode = 'manual';
+      $zone->config_mode = 'live';
+      $zone->live_started_at = now();
+      $zone->live_until = '${liveUntilIso}';
+      $zone->save();
+      echo json_encode([
+        'id' => $zone->id,
+        'control_mode' => $zone->control_mode,
+        'config_mode' => $zone->config_mode,
+        'live_until' => optional($zone->live_until)->toISOString(),
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
   async createTestGreenhouse(data?: Partial<TestGreenhouse>): Promise<TestGreenhouse> {
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const payload = {
-      uid: data?.uid || `test-gh-${Date.now()}`,
-      name: data?.name || `Test Greenhouse ${Date.now()}`,
+      uid: data?.uid || `test-gh-${uniqueSuffix}`,
+      name: data?.name || `Test Greenhouse ${uniqueSuffix}`,
       timezone: 'Europe/Moscow',
       type: 'indoor',
       ...data,
@@ -248,44 +534,10 @@ export class APITestHelper {
     // Создаем фазы ревизии, если они указаны
     if (phases && phases.length > 0) {
       for (const phase of phases) {
-        const phasePayload: any = {
-          phase_index: phase.phase_index,
-          name: phase.name,
-          duration_hours: phase.duration_hours,
-        };
-
-        // Преобразуем targets в новую структуру (колонки вместо JSON)
-        if (phase.targets.ph !== undefined) {
-          phasePayload.ph_target = phase.targets.ph;
-          phasePayload.ph_min = phase.targets.ph - 0.2;
-          phasePayload.ph_max = phase.targets.ph + 0.2;
-        }
-        if (phase.targets.ec !== undefined) {
-          phasePayload.ec_target = phase.targets.ec;
-          phasePayload.ec_min = phase.targets.ec - 0.2;
-          phasePayload.ec_max = phase.targets.ec + 0.2;
-        }
-        if (phase.targets.temp_air !== undefined) {
-          phasePayload.temp_air_target = phase.targets.temp_air;
-        }
-        if (phase.targets.humidity_air !== undefined) {
-          phasePayload.humidity_target = phase.targets.humidity_air;
-        }
-        if (phase.targets.light_hours !== undefined) {
-          phasePayload.lighting_photoperiod_hours = phase.targets.light_hours;
-        }
-        if (phase.targets.irrigation_interval_sec !== undefined) {
-          phasePayload.irrigation_interval_sec = phase.targets.irrigation_interval_sec;
-        }
-        if (phase.targets.irrigation_duration_sec !== undefined) {
-          phasePayload.irrigation_duration_sec = phase.targets.irrigation_duration_sec;
-        }
-        phasePayload.irrigation_mode = 'SUBSTRATE';
-
         await this.postWithRetry(
           `${baseURL}/api/recipe-revisions/${revision.id}/phases`,
           'create recipe revision phase',
-          phasePayload,
+          buildCanonicalTestRecipePhasePayload(phase),
           5
         );
       }
@@ -553,6 +805,71 @@ export class APITestHelper {
 
     const result = await response.json();
     return result.data;
+  }
+
+  async setZoneControlMode(
+    zoneId: number,
+    controlMode: 'auto' | 'semi' | 'manual',
+    reason = 'playwright control mode setup'
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/control-mode`, {
+      headers,
+      data: {
+        control_mode: controlMode,
+        source: 'playwright',
+        reason,
+      },
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to set control mode for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
+  }
+
+  async setZoneConfigMode(
+    zoneId: number,
+    payload: {
+      mode: 'locked' | 'live';
+      reason: string;
+      live_until?: string | null;
+    }
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.patch(`${baseURL}/api/zones/${zoneId}/config-mode`, {
+      headers,
+      data: payload,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to set config mode for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
+  }
+
+  async applyCorrectionLiveEdit(
+    zoneId: number,
+    payload: {
+      reason: string;
+      phase?: 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation';
+      correction_patch?: Record<string, unknown>;
+      calibration_patch?: Record<string, unknown>;
+    }
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    const response = await this.request.put(`${baseURL}/api/zones/${zoneId}/correction/live-edit`, {
+      headers,
+      data: payload,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to apply correction live edit for zone ${zoneId}: ${response.status()} ${await response.text()}`);
+    }
+
+    return response.json();
   }
 
   async getAutomationConfig(scopeType: 'system' | 'greenhouse' | 'zone' | 'grow_cycle', scopeId: number, namespace: string): Promise<any> {

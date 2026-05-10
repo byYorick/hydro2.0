@@ -49,11 +49,11 @@ test.describe('Commands', () => {
         }
       } else {
         // Если кнопка не видна, просто проверяем загрузку страницы
-        await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+        await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]')).first()).toBeVisible();
       }
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]')).first()).toBeVisible();
     }
   });
 
@@ -73,7 +73,7 @@ test.describe('Commands', () => {
       await expect(wsIndicator.first()).toBeVisible({ timeout: 10000 });
     } else {
       // Если индикатор не найден, просто проверяем, что страница загружена
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]')).first()).toBeVisible();
     }
   });
 
@@ -96,8 +96,7 @@ test.describe('Commands', () => {
       await expect(commandForm.or(commandButtons).first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]')).first()).toBeVisible();
     }
   });
 });
-

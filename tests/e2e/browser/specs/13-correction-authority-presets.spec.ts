@@ -16,12 +16,14 @@ test.describe('Correction Authority Presets', () => {
       await details.locator('summary').click();
 
       await expect(page.locator('[data-testid="correction-config-form"]')).toBeVisible({ timeout: 15000 });
+      await page.locator('[data-testid="correction-config-tab-base"]').click();
 
       const baseKpInput = page.locator('[data-testid="correction-config-base-controllers.ph.kp"]').first();
       await baseKpInput.fill('6.2');
+      await page.locator('[data-testid="correction-config-new-preset"]').click();
       await page.locator('[data-testid="correction-config-new-preset-name"]').fill(presetName);
       await page.locator('[data-testid="correction-config-save-preset"]').click();
-      await page.waitForTimeout(1500);
+      await expect(page.locator('[data-testid="correction-config-new-preset-name"]')).toBeHidden({ timeout: 15000 });
 
       const createdPreset = (await apiHelper.listAutomationPresets('zone.correction'))
         .find((preset) => preset.name === presetName);
@@ -29,15 +31,20 @@ test.describe('Correction Authority Presets', () => {
       presetId = createdPreset?.id ?? null;
       expect(presetId).not.toBeNull();
 
+      await expect(page.locator(`[data-testid="correction-config-preset-${presetId}"]`)).toBeVisible({ timeout: 15000 });
       await baseKpInput.fill('7.4');
       await page.locator('[data-testid="correction-config-update-preset"]').click();
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(750);
 
       await page.locator('[data-testid="correction-config-reset-defaults"]').click();
-      await page.locator('[data-testid="correction-config-preset-select"]').selectOption(String(presetId));
-      await page.locator('[data-testid="correction-config-apply-preset"]').click();
+      await page.locator(`[data-testid="correction-config-preset-${presetId}"]`).click();
+      const conflictBanner = page.locator('[data-testid="correction-config-conflict-banner"]');
+      if (await conflictBanner.isVisible().catch(() => false)) {
+        await page.getByRole('button', { name: 'Применить и затереть' }).click();
+      }
       await expect(baseKpInput).toHaveValue('7.4');
 
+      await page.locator('[data-testid="correction-config-preset-menu"]').click();
       await page.locator('[data-testid="correction-config-delete-preset"]').click();
       await page.waitForTimeout(1500);
 

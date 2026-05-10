@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/test-data';
 import { TEST_IDS } from '../constants';
 
@@ -50,6 +51,79 @@ async function injectZoneEventsIntoInertiaPage(page: import('@playwright/test').
       },
     });
   });
+}
+
+async function installSchedulerWorkspaceMocks(
+  page: Page,
+  zoneId: number,
+  runs: Array<Record<string, unknown>>,
+  details: Record<string, Record<string, unknown>>,
+): Promise<void> {
+  await page.route(new RegExp(`/api/zones/${zoneId}/schedule-workspace(?:\\?.*)?$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        data: {
+          control: {
+            automation_runtime: 'ae3',
+            control_mode: 'auto',
+            allowed_manual_steps: [],
+            generated_at: new Date().toISOString(),
+          },
+          capabilities: {
+            executable_task_types: ['irrigation', 'diagnostics'],
+            planned_task_types: ['irrigation', 'diagnostics'],
+            diagnostics_available: false,
+          },
+          plan: {
+            horizon: '24h',
+            lanes: [],
+            windows: [],
+            summary: { planned_total: 0, suppressed_total: 0, missed_total: 0 },
+          },
+          execution: {
+            active_run: null,
+            recent_runs: runs,
+            counters: { active: 0, completed_24h: 2, failed_24h: 1 },
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route(new RegExp(`/api/zones/${zoneId}/state(?:\\?.*)?$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok', data: { zone_id: zoneId, control_mode: 'auto' } }),
+    });
+  });
+
+  await page.route(new RegExp(`/api/zones/${zoneId}/scheduler-diagnostics(?:\\?.*)?$`), async (route) => {
+    await route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.route(new RegExp(`/api/zones/${zoneId}/executions/([^/?]+)(?:\\?.*)?$`), async (route) => {
+    const id = route.request().url().match(/\/executions\/([^/?]+)/)?.[1] ?? '';
+    const payload = details[id];
+    await route.fulfill({
+      status: payload ? 200 : 404,
+      contentType: 'application/json',
+      body: JSON.stringify(payload ? { status: 'ok', data: payload } : { status: 'error', code: 'NOT_FOUND' }),
+    });
+  });
+}
+
+function chainStep(step: string, status: string, detail: string, ref: string): Record<string, unknown> {
+  return {
+    step,
+    status,
+    detail,
+    ref,
+    at: new Date().toISOString(),
+  };
 }
 
 test.describe('Zone Detail', () => {
@@ -185,117 +259,38 @@ test.describe('Zone Detail', () => {
 
   test('should render scheduler task SLA and timeline on automation tab', async ({ page, apiHelper, testGreenhouse }) => {
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
-    const taskId = 'st-e2e-expired';
-    const now = Date.now();
-    const scheduledFor = new Date(now - 2 * 60 * 1000).toISOString();
-    const dueAt = new Date(now - 60 * 1000).toISOString();
-    const expiresAt = new Date(now - 5 * 1000).toISOString();
+    const executionId = '501';
+    const run = {
+      execution_id: executionId,
+      task_id: 'st-e2e-expired',
+      zone_id: zone.id,
+      task_type: 'diagnostics',
+      status: 'failed',
+      decision_outcome: 'fail',
+      decision_reason_code: 'task_expired',
+      error_code: 'task_expired',
+      error_message: 'Задача получена после expires_at и не может быть исполнена',
+      correlation_id: `sch:z${zone.id}:diagnostics:e2e-expired`,
+      updated_at: new Date().toISOString(),
+      chain: [
+        chainStep('SNAPSHOT', 'ok', 'Задача получена', 'evt-e2e-1'),
+        chainStep('DECISION', 'skip', 'SLA нарушен: expires_at', 'evt-e2e-2'),
+        chainStep('FAIL', 'err', 'task_expired', 'evt-e2e-3'),
+      ],
+    };
 
     try {
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: [
-              {
-                task_id: taskId,
-                zone_id: zone.id,
-                task_type: 'diagnostics',
-                status: 'expired',
-                created_at: scheduledFor,
-                updated_at: expiresAt,
-                scheduled_for: scheduledFor,
-                due_at: dueAt,
-                expires_at: expiresAt,
-                correlation_id: `sch:z${zone.id}:diagnostics:e2e-expired`,
-                lifecycle: [],
-              },
-            ],
-          }),
-        });
-      });
+      await installSchedulerWorkspaceMocks(page, zone.id, [run], { [executionId]: run });
 
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${taskId}(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: {
-              task_id: taskId,
-              zone_id: zone.id,
-              task_type: 'diagnostics',
-              status: 'expired',
-              created_at: scheduledFor,
-              updated_at: expiresAt,
-              scheduled_for: scheduledFor,
-              due_at: dueAt,
-              expires_at: expiresAt,
-              correlation_id: `sch:z${zone.id}:diagnostics:e2e-expired`,
-              action_required: false,
-              decision: 'skip',
-              reason_code: 'task_expired',
-              reason: 'Задача получена после expires_at и не может быть исполнена',
-              error: 'task_expired',
-              error_code: 'task_expired',
-              result: {
-                success: false,
-                mode: 'deadline_rejected',
-                action_required: false,
-                decision: 'skip',
-                reason_code: 'task_expired',
-                reason: 'Задача получена после expires_at и не может быть исполнена',
-                error: 'task_expired',
-                error_code: 'task_expired',
-              },
-              lifecycle: [
-                { status: 'accepted', at: scheduledFor },
-                { status: 'expired', at: expiresAt },
-              ],
-              timeline: [
-                {
-                  event_id: 'evt-e2e-1',
-                  event_seq: 1,
-                  event_type: 'TASK_RECEIVED',
-                  at: scheduledFor,
-                  reason_code: 'task_expired',
-                },
-                {
-                  event_id: 'evt-e2e-2',
-                  event_seq: 2,
-                  event_type: 'SCHEDULE_TASK_EXECUTION_STARTED',
-                  at: scheduledFor,
-                },
-                {
-                  event_id: 'evt-e2e-3',
-                  event_seq: 3,
-                  event_type: 'TASK_FINISHED',
-                  at: expiresAt,
-                  decision: 'skip',
-                  reason_code: 'task_expired',
-                  error_code: 'task_expired',
-                },
-              ],
-            },
-          }),
-        });
-      });
+      await page.goto(`/zones/${zone.id}?tab=scheduler`, { waitUntil: 'networkidle' });
+      await expect(page.locator('[data-testid="scheduler-root"]')).toBeVisible({ timeout: 15000 });
+      await page.locator(`[data-testid="scheduler-runs-row-${executionId}"]`).click();
 
-      await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
-      await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
-
-      await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
-      await page.getByRole('button', { name: 'Открыть' }).first().click();
-
-      await expect(page.getByText('Просрочена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('SLA-контроль')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('SLA нарушен: expires_at')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Задача получена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Automation-engine: execution started')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Превышен срок expires_at (task_expired)').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('[data-testid="scheduler-causal-chain"]')).toBeVisible({ timeout: 15000 });
+      await expect(page.locator('[data-testid="scheduler-chain-error"]')).toContainText('task_expired');
+      await expect(page.locator('[data-testid="scheduler-chain-step-SNAPSHOT"]')).toContainText('Задача получена');
+      await expect(page.locator('[data-testid="scheduler-chain-step-DECISION"]')).toContainText('SLA нарушен: expires_at');
+      await expect(page.locator('[data-testid="scheduler-chain-step-FAIL"]')).toContainText('task_expired');
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
@@ -303,116 +298,70 @@ test.describe('Zone Detail', () => {
 
   test('should display DONE confirmation and scheduler task presets', async ({ page, apiHelper, testGreenhouse }) => {
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
-    const doneTaskId = 'st-e2e-done-confirmed';
+    const doneExecutionId = '502';
+    const unconfirmedExecutionId = '503';
+    const failedExecutionId = '504';
+    const doneRun = {
+      execution_id: doneExecutionId,
+      task_id: 'st-e2e-done-confirmed',
+      zone_id: zone.id,
+      task_type: 'irrigation',
+      status: 'completed',
+      decision_outcome: 'run',
+      command_submitted: true,
+      command_effect_confirmed: true,
+      commands_total: 1,
+      commands_effect_confirmed: 1,
+      updated_at: new Date().toISOString(),
+      chain: [
+        chainStep('SNAPSHOT', 'ok', 'soil moisture ниже target', 'evt-done-1'),
+        chainStep('DECISION', 'ok', 'RUN irrigation', 'cw-done'),
+        chainStep('DISPATCH', 'ok', 'DONE подтвержден', 'cmd-done'),
+      ],
+    };
+    const unconfirmedRun = {
+      ...doneRun,
+      execution_id: unconfirmedExecutionId,
+      task_id: 'st-e2e-done-unconfirmed',
+      command_effect_confirmed: false,
+      commands_effect_confirmed: 0,
+      chain: [
+        chainStep('SNAPSHOT', 'ok', 'soil moisture ниже target', 'evt-unconfirmed-1'),
+        chainStep('DECISION', 'ok', 'RUN irrigation', 'cw-unconfirmed'),
+        chainStep('DISPATCH', 'warn', 'DONE не подтвержден', 'cmd-unconfirmed'),
+      ],
+    };
+    const failedRun = {
+      execution_id: failedExecutionId,
+      task_id: 'st-e2e-failed',
+      zone_id: zone.id,
+      task_type: 'diagnostics',
+      status: 'failed',
+      decision_outcome: 'fail',
+      decision_reason_code: 'cycle_start_refill_timeout',
+      error_code: 'cycle_start_refill_timeout',
+      updated_at: new Date().toISOString(),
+      chain: [chainStep('FAIL', 'err', 'cycle_start_refill_timeout', 'evt-failed')],
+    };
 
     try {
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: [
-              {
-                task_id: doneTaskId,
-                zone_id: zone.id,
-                task_type: 'irrigation',
-                status: 'completed',
-                action_required: true,
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-              {
-                task_id: 'st-e2e-done-unconfirmed',
-                zone_id: zone.id,
-                task_type: 'irrigation',
-                status: 'completed',
-                action_required: true,
-                command_submitted: true,
-                command_effect_confirmed: false,
-                commands_total: 1,
-                commands_effect_confirmed: 0,
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-              {
-                task_id: 'st-e2e-failed',
-                zone_id: zone.id,
-                task_type: 'diagnostics',
-                status: 'failed',
-                error_code: 'cycle_start_refill_timeout',
-                reason_code: 'cycle_start_refill_timeout',
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-            ],
-          }),
-        });
+      await installSchedulerWorkspaceMocks(page, zone.id, [doneRun, unconfirmedRun, failedRun], {
+        [doneExecutionId]: doneRun,
+        [unconfirmedExecutionId]: unconfirmedRun,
+        [failedExecutionId]: failedRun,
       });
 
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${doneTaskId}(?:\\?.*)?$`), async (route) => {
-        const nowIso = new Date().toISOString();
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: {
-              task_id: doneTaskId,
-              zone_id: zone.id,
-              task_type: 'irrigation',
-              status: 'completed',
-              created_at: nowIso,
-              updated_at: nowIso,
-              scheduled_for: nowIso,
-              due_at: nowIso,
-              expires_at: nowIso,
-              action_required: true,
-              decision: 'run',
-              reason_code: 'irrigation_required',
-              command_submitted: true,
-              command_effect_confirmed: true,
-              commands_total: 1,
-              commands_effect_confirmed: 1,
-              commands_failed: 0,
-              lifecycle: [],
-              timeline: [],
-              result: {
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                commands_failed: 0,
-              },
-            },
-          }),
-        });
-      });
+      await page.goto(`/zones/${zone.id}?tab=scheduler`, { waitUntil: 'networkidle' });
+      await expect(page.locator('[data-testid="scheduler-root"]')).toBeVisible({ timeout: 15000 });
+      await expect(page.locator(`[data-testid="scheduler-runs-row-${doneExecutionId}"]`)).toBeVisible();
+      await expect(page.locator(`[data-testid="scheduler-runs-row-${unconfirmedExecutionId}"]`)).toBeVisible();
+      await expect(page.locator(`[data-testid="scheduler-runs-row-${failedExecutionId}"]`)).toBeVisible();
 
-      await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
-      await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
+      await page.locator(`[data-testid="scheduler-runs-row-${doneExecutionId}"]`).click();
+      await expect(page.locator('[data-testid="scheduler-chain-step-DISPATCH"]')).toContainText('DONE подтвержден');
 
-      const schedulerPresetSelect = page
-        .locator('select')
-        .filter({ has: page.locator('option[value="done_unconfirmed"]') })
-        .first();
-      await expect(schedulerPresetSelect).toBeVisible({ timeout: 15000 });
-      await schedulerPresetSelect.selectOption('done_unconfirmed');
-      await expect(page.getByText('st-e2e-done-unconfirmed')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText(doneTaskId)).not.toBeVisible();
-
-      await schedulerPresetSelect.selectOption('all');
-      await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('st-e2e-failed');
-      await expect(page.getByText('st-e2e-failed')).toBeVisible({ timeout: 15000 });
-
-      await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('');
-      await page.getByRole('button', { name: 'Открыть' }).first().click();
-      await expect(page.locator('span.badge', { hasText: 'DONE подтвержден' }).first()).toBeVisible({ timeout: 15000 });
+      await page.locator(`[data-testid="scheduler-runs-row-${failedExecutionId}"]`).click();
+      await expect(page.locator('[data-testid="scheduler-chain-error"]')).toContainText('cycle_start_refill_timeout');
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }

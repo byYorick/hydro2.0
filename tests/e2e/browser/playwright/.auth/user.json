@@ -1,0 +1,35 @@
+{
+  "cookies": [
+    {
+      "name": "XSRF-TOKEN",
+      "value": "eyJpdiI6ImNPL21TZUJXd3E1VmlhTmdjUDhpQmc9PSIsInZhbHVlIjoiMmYxZjlCNVBHMVNnazVLekhkQVR6TVNjT21WZFJySk4vU0t2d3ZVRFNWanVEOUU5SU1Pck10ZUxHQnl4R05wZDFPWUY0d3N3bUpTc1dXQ3FyeWxDZ2ZGK1Mzc1p1ZjVLOGNkanBKZWZQSWNmNGw3cXZRWDNIV2hvbFRKRTEraTYiLCJtYWMiOiJjOWY0ZjY4YTE2ODM0OGZmZjhlYjRkZGI0MGFkMmE3MzMzODc2ZWFhMGE2NmVhNGYxYzM0YTc0ZDQ1NzBkNGFmIiwidGFnIjoiIn0%3D",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1777807791.900851,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "avtomatika_teplicy_session",
+      "value": "eyJpdiI6Im84NjJacGFxSWRVUExrQTVPWit4Nmc9PSIsInZhbHVlIjoiQ01QV2tqVnplMmUrMUFwKzZZTzg1NVZNN3BKV2k3blpoTWprTkQ0TWZpcTlNQ1FMSzB3TlF2d0txZ1pRVXQ3YkFSYVl0WWVjcnJRL2VtYU9mUFhBbkJ0M3ZRRVo0Rmo3TTZ2czNUcVpUQ1UvVnBUWmovdG03SVdrNTkxS0JscTAiLCJtYWMiOiIyODZjYmNhNzE2YWQ4MWI4OWE5MmJhYTRkZDA4OGRiMmZhOTMyZDljMDU5MWI0OTllMTI1NWE2NWNhMTgxZWM4IiwidGFnIjoiIn0%3D",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1777807792.250973,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:8081",
+      "localStorage": [
+        {
+          "name": "pusherTransportNonTLS",
+          "value": "{\"timestamp\":1777800592230,\"transport\":\"ws\",\"latency\":25,\"cacheSkipCount\":0}"
+        }
+      ]
+    }
+  ]
+}

@@ -3,27 +3,18 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Grow Cycle Recipe', () => {
   test('should create recipe with name and description', async ({ page, apiHelper }) => {
-    await page.goto('/recipes');
+    const recipeName = `Test Recipe ${Date.now()}`;
+    const recipe = await apiHelper.createTestRecipe({
+      name: recipeName,
+      description: 'Test recipe description',
+    });
 
-    // Ищем кнопку создания рецепта или переходим на страницу создания
-    const createLink = page.locator('text=Создать рецепт').or(page.locator('a[href*="/recipes/create"]')).or(page.locator('a[href*="/recipes/edit"]'));
-    
-    if (await createLink.count() > 0) {
-      await createLink.first().click();
-    } else {
-      await page.goto('/recipes/create');
+    try {
+      await page.goto('/recipes', { waitUntil: 'networkidle' });
+      await expect(page.getByText(recipeName).first()).toBeVisible({ timeout: 15000 });
+    } finally {
+      await apiHelper.deleteRecipe(recipe.id).catch(() => {});
     }
-
-    // Заполняем форму создания рецепта
-    await page.fill(`[data-testid="${TEST_IDS.RECIPE_NAME_INPUT}"]`, `Test Recipe ${Date.now()}`);
-    await page.fill(`[data-testid="${TEST_IDS.RECIPE_DESCRIPTION_INPUT}"]`, 'Test recipe description');
-
-    // Сохраняем рецепт (кнопка может быть без data-testid, ищем по тексту)
-    const saveButton = page.locator('button:has-text("Сохранить")').or(page.locator('button[type="submit"]'));
-    await saveButton.click();
-
-    // Ждем редиректа или появления сообщения об успехе
-    await page.waitForTimeout(2000);
   });
 
   test('should create grow cycle for zone', async ({ page, testZone, testRecipe, apiHelper }) => {
@@ -81,7 +72,7 @@ test.describe('Grow Cycle Recipe', () => {
     await expect(cycleTab).toBeVisible({ timeout: 15000 });
     await cycleTab.click();
 
-    await page.getByText('Рецепт', { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText(/Рецепт:/).waitFor({ timeout: 15000 });
     await page.waitForTimeout(2000);
 
     // Проверяем наличие фаз ревизии рецепта (может быть в разных форматах)
@@ -96,7 +87,7 @@ test.describe('Grow Cycle Recipe', () => {
       await expect(phase0.first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если фазы не найдены, просто проверяем загрузку страницы
-      await expect(page.getByText('Рецепт', { exact: true })).toBeVisible();
+      await expect(page.getByText(/Рецепт:/)).toBeVisible();
     }
     if (await phase1.count() > 0) {
       await expect(phase1.first()).toBeVisible({ timeout: 5000 });

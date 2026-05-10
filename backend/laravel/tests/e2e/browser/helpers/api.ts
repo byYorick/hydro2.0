@@ -456,9 +456,10 @@ export class APITestHelper {
   }
 
   async createTestGreenhouse(data?: Partial<TestGreenhouse>): Promise<TestGreenhouse> {
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const payload = {
-      uid: data?.uid || `test-gh-${Date.now()}`,
-      name: data?.name || `Test Greenhouse ${Date.now()}`,
+      uid: data?.uid || `test-gh-${uniqueSuffix}`,
+      name: data?.name || `Test Greenhouse ${uniqueSuffix}`,
       timezone: 'Europe/Moscow',
       type: 'indoor',
       ...data,
