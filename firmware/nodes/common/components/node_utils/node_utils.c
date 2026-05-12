@@ -300,7 +300,7 @@ esp_err_t node_utils_set_time(int64_t unix_ts_sec) {
     s_time_offset_us = unix_ts_us - current_uptime_us;
     s_time_synced = true;
     
-    ESP_LOGI(TAG, "Time set: Unix timestamp=%lld, offset_us=%lld", 
+    ESP_LOGD(TAG, "Time set: Unix timestamp=%lld, offset_us=%lld",
              (long long)unix_ts_sec, (long long)s_time_offset_us);
     
     // Также устанавливаем системное время через clock_settime (если доступно)

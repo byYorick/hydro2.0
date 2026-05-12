@@ -2,7 +2,8 @@
  * @file trema_ec.h
  * @brief Драйвер Trema EC-сенсора (iarduino) для узлов ESP32
  * 
- * Компонент реализует драйвер для Trema EC-датчика через I²C:
+ * На **ec_node** драйвер привязан к **I2C_BUS_1** (отдельная линия Trema EC, GPIO как у pH на ph_node).
+ * Шина 0 — OLED/INA209. См. `ec_node_defaults.h` и `TREMA_EC_I2C_BUS` в `trema_ec.c`.
  * - Чтение EC значения (mS/cm)
  * - Калибровка (2 этапа)
  * - Температурная компенсация
@@ -10,6 +11,9 @@
  * - Обработка ошибок
  * 
  * Адаптирован из mesh_hydro/hydro1.0 для новой архитектуры hydro2.0
+ *
+ * Заводской 7-bit адрес Flash-I²C по iarduino: **0x09**; на стенде зафиксирован ответ по **0x08**
+ * (см. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`, раздел 2.2, `trema_ec_get_i2c_address()`).
  */
 
 #ifndef TREMA_EC_H
@@ -22,10 +26,16 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-// Default I2C address for the EC sensor
-#define TREMA_EC_ADDR 0x08
+/**
+ * Первый пробуемый 7-bit адрес Trema TDS/EC Flash-I²C (заводской дефолт iarduino).
+ * Фактический адрес после init может быть 0x08 и др. — см. `trema_ec_get_i2c_address()` и
+ * `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`, раздел 2.2.
+ */
+#define TREMA_EC_ADDR 0x09
 
 // Register addresses
+#define REG_FLAGS_0         0x00  // Флаги (в т.ч. завершение reset), см. iarduino_I2C_TDS
+#define REG_BITS_0          0x01  // Биты управления (SET_RESET и др.)
 #define REG_TDS_KNOWN_TDS   0x0A  // Known TDS value for calibration (2 bytes)
 #define REG_TDS_CALIBRATION 0x10  // Calibration control register
 #define REG_TDS_S           0x20  // Measured conductivity (2 bytes)
@@ -51,6 +61,11 @@ typedef enum {
  * @return true on success, false on failure
  */
 bool trema_ec_init(void);
+
+/**
+ * @brief Датчик успешно проинициализирован (аналог trema_ph_is_initialized на ph_node).
+ */
+bool trema_ec_is_initialized(void);
 
 /**
  * @brief Read EC value from the Trema EC sensor
@@ -110,6 +125,11 @@ bool trema_ec_is_using_stub_values(void);
  * @return trema_ec_error_t value
  */
 trema_ec_error_t trema_ec_get_error(void);
+
+/**
+ * @brief Текущий 7-bit I²C адрес Trema EC (после init: обычно 0x09 или найденный перебором).
+ */
+uint8_t trema_ec_get_i2c_address(void);
 
 #ifdef __cplusplus
 }

@@ -102,8 +102,6 @@ void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         if (node_utils_should_send_node_hello()) {
             light_node_publish_hello();
         }
-        
-        node_utils_request_time();
 
         node_utils_publish_config_report();
     } else {

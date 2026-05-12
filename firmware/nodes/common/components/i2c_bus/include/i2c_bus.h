@@ -174,6 +174,17 @@ esp_err_t i2c_bus_write_byte(uint8_t device_addr, uint8_t reg_addr, uint8_t data
 esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *found_count);
 
 /**
+ * @brief Сканирование указанной I²C шины (адреса 0x08–0x77, probe через приём 1 байта)
+ *
+ * @param bus_id Шина (I2C_BUS_0 / I2C_BUS_1)
+ * @param found_addresses Массив 7-bit адресов
+ * @param max_addresses Размер массива
+ * @param found_count Число найденных устройств
+ */
+esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses,
+                           size_t *found_count);
+
+/**
  * @brief Восстановление I²C шины при ошибках
  * 
  * Выполняет reset шины и повторную инициализацию
@@ -181,6 +192,17 @@ esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *f
  * @return esp_err_t ESP_OK при успехе
  */
 esp_err_t i2c_bus_recover(void);
+
+/**
+ * @brief Аппаратный сброс FSM мастера I²C (без удаления шины и mutex).
+ *
+ * Нужен после программного reset устройств вроде Trema TDS/EC, которые кратко отпускают линии SDA/SCL
+ * (аналог `Wire.begin()` сразу после reset в iarduino_I2C_TDS).
+ *
+ * @param bus_id Шина
+ * @return ESP_OK при успехе
+ */
+esp_err_t i2c_bus_reset_bus(i2c_bus_id_t bus_id);
 
 /**
  * @brief Инициализация I²C шины из NodeConfig

@@ -80,7 +80,7 @@ firmware/nodes/common/components/
 │  ├─ ph_sensor/                # Универсальный драйвер pH
 │  ├─ trema_ph/                 # Trema pH-сенсор (iarduino)
 │  ├─ ec_sensor/                # Универсальный драйвер EC
-│  ├─ trema_ec/                 # Trema EC-сенсор (iarduino)
+│  ├─ trema_ec/                 # Trema EC (iarduino), I2C_BUS_1 — отдельная линия 18/19 как pH на ph_node; адрес см. NODE_CHANNELS_REFERENCE раздел 2.2
 │  ├─ sht3x/                    # Температура/влажность
 │  └─ ina209/                   # Датчик тока
 ├─ i2c_bus/                     # I²C шина

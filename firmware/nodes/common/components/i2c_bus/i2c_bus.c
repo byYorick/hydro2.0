@@ -20,10 +20,24 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <limits.h>
 #include <string.h>
 #include "cJSON.h"
 
 static const char *TAG = "i2c_bus";
+
+/**
+ * Таймаут для i2c_master_transmit / receive / transmit_receive в ESP-IDF задаётся в миллисекундах
+ * (см. i2c_master.h: xfer_timeout_ms); драйвер внутри сам вызывает pdMS_TO_TICKS.
+ * Раньше сюда ошибочно передавались тики — из-за этого транзакция могла завершаться с ESP_ERR_INVALID_STATE.
+ */
+static int i2c_bus_master_timeout_ms(uint32_t timeout_ms)
+{
+    if (timeout_ms > (uint32_t)INT_MAX) {
+        return INT_MAX;
+    }
+    return (int)timeout_ms;
+}
 
 // Структура для хранения состояния шины
 typedef struct {
@@ -48,7 +62,6 @@ static i2c_bus_state_t s_buses[I2C_BUS_MAX] = {0};
 
 // Предварительные объявления
 static esp_err_t i2c_bus_deinit_bus(i2c_bus_id_t bus_id);
-static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count);
 static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id);
 
 esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
@@ -236,11 +249,11 @@ esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8
     
     // Запись адреса регистра (если указан)
     if (reg_addr != NULL && reg_addr_len > 0) {
-        err = i2c_master_transmit_receive(dev_handle, reg_addr, reg_addr_len, data, data_len, 
-                                         pdMS_TO_TICKS(timeout_ms));
+        err = i2c_master_transmit_receive(dev_handle, reg_addr, reg_addr_len, data, data_len,
+                                          i2c_bus_master_timeout_ms(timeout_ms));
     } else {
         // Чтение без указания регистра
-        err = i2c_master_receive(dev_handle, data, data_len, pdMS_TO_TICKS(timeout_ms));
+        err = i2c_master_receive(dev_handle, data, data_len, i2c_bus_master_timeout_ms(timeout_ms));
     }
     
     // Удаление device handle (в реальной реализации можно кэшировать)
@@ -336,7 +349,7 @@ esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint
     memcpy(write_buf + (reg_addr != NULL ? reg_addr_len : 0), data, data_len);
     
     // Запись
-    err = i2c_master_transmit(dev_handle, write_buf, total_len, pdMS_TO_TICKS(timeout_ms));
+    err = i2c_master_transmit(dev_handle, write_buf, total_len, i2c_bus_master_timeout_ms(timeout_ms));
     
     free(write_buf);
     i2c_master_bus_rm_device(dev_handle);
@@ -363,7 +376,7 @@ esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *f
     return i2c_bus_scan_bus(I2C_BUS_0, found_addresses, max_addresses, found_count);
 }
 
-static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count) {
+esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count) {
     if (bus_id >= I2C_BUS_MAX) {
         ESP_LOGE(TAG, "Invalid bus_id: %d", bus_id);
         return ESP_ERR_INVALID_ARG;
@@ -414,11 +427,11 @@ static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses,
         if (err == ESP_OK) {
             // Попытка чтения для проверки наличия устройства
             uint8_t dummy;
-            err = i2c_master_receive(dev_handle, &dummy, 1, pdMS_TO_TICKS(100));
+            err = i2c_master_receive(dev_handle, &dummy, 1, i2c_bus_master_timeout_ms(35));
             if (err == ESP_OK) {
                 found_addresses[*found_count] = addr;
                 (*found_count)++;
-                ESP_LOGI(TAG, "Found I²C device at address 0x%02X on bus %d", addr, bus_id);
+                ESP_LOGD(TAG, "Found I²C device at address 0x%02X on bus %d", addr, bus_id);
             }
             i2c_master_bus_rm_device(dev_handle);
         }
@@ -426,13 +439,41 @@ static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses,
     
     xSemaphoreGive(bus->mutex);
     
-    ESP_LOGI(TAG, "I²C bus %d scan completed: found %zu device(s)", bus_id, *found_count);
+    ESP_LOGD(TAG, "I²C bus %d scan completed: found %zu device(s)", bus_id, *found_count);
     return ESP_OK;
 }
 
 esp_err_t i2c_bus_recover(void) {
     // Для обратной совместимости - восстановление шины 0
     return i2c_bus_recover_bus(I2C_BUS_0);
+}
+
+esp_err_t i2c_bus_reset_bus(i2c_bus_id_t bus_id)
+{
+    if (bus_id >= I2C_BUS_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+
+    if (!bus->initialized || bus->bus_handle == NULL || bus->mutex == NULL) {
+        ESP_LOGW(TAG, "i2c_bus_reset_bus(%d): bus not ready", bus_id);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        ESP_LOGW(TAG, "i2c_bus_reset_bus(%d): mutex timeout", bus_id);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    esp_err_t err = i2c_master_bus_reset(bus->bus_handle);
+    xSemaphoreGive(bus->mutex);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "i2c_master_bus_reset(bus %d): %s", bus_id, esp_err_to_name(err));
+    }
+
+    return err;
 }
 
 static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id) {

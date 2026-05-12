@@ -592,12 +592,12 @@ static esp_err_t handle_test_sensor(
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
             "i2c_not_initialized",
-            "I2C bus is not initialized",
+            "I2C bus 1 (Trema EC) is not initialized",
             NULL
         );
         return ESP_ERR_INVALID_STATE;
@@ -683,17 +683,19 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Инициализация сенсора, если не инициализирован
-    // Проверяем через попытку чтения температуры (если сенсор не инициализирован, вернет false)
+    // Инициализация сенсора при необходимости (до чтения температуры/EC)
     float temp_check = 0.0f;
-    bool sensor_ready = trema_ec_get_temperature(&temp_check);
-    
-    // trema_ec использует дефолтную шину (I2C_BUS_0)
-    if (!sensor_ready && i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+    bool sensor_ready = trema_ec_is_initialized();
+
+    if (!sensor_ready && i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         if (trema_ec_init()) {
             ESP_LOGI(TAG, "Trema EC sensor initialized");
-            sensor_ready = true;
         }
+        sensor_ready = trema_ec_is_initialized();
+    }
+
+    if (sensor_ready) {
+        (void)trema_ec_get_temperature(&temp_check);
     }
 
     // Получение температуры для компенсации
@@ -734,6 +736,15 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         ec_value = 1.2f;
         using_stub = true;
     }
+
+    ESP_LOGD(
+        TAG,
+        "ec_sensor: I2C 7-bit=0x%02X  EC=%.3f mS/cm  TDS=%u ppm  stub=%s",
+        trema_ec_get_i2c_address(),
+        (double)ec_value,
+        (unsigned)tds_value,
+        using_stub ? "yes" : "no"
+    );
 
     // Публикация EC через node_telemetry_engine
     int32_t raw_value = (int32_t)(ec_value * 1000);  // Raw value в тысячных

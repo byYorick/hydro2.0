@@ -88,7 +88,13 @@ static void task_sensors(void *pvParameters) {
             if (mqtt_manager_is_connected()) {
                 ph_node_publish_telemetry();
             } else {
-                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                connection_status_t cs = {0};
+                bool wifi_up = (connection_status_get(&cs) == ESP_OK && cs.wifi_connected);
+                if (wifi_up) {
+                    ESP_LOGD(TAG, "MQTT ещё не подключён, пропуск опроса сенсора (Wi-Fi есть)");
+                } else {
+                    ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                }
                 trema_ph_log_connection_status();
             }
             

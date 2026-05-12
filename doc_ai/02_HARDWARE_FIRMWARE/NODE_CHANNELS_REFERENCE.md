@@ -73,6 +73,14 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
+#### I²C: Trema Flash TDS/EC (`ec_node`, драйвер `trema_ec`)
+
+- **Шина:** на `ec_node` Trema EC висит на **отдельном контроллере I²C — `I2C_BUS_1`**, GPIO по умолчанию **SDA 18 / SCL 19** (как Trema pH на `ph_node`); **шина 0** (21/22) — OLED и INA209, **не** смешивать с Trema на одной линии в штатной разводке.
+- Заводской **дефолт iarduino** для Trema Flash-I²C TDS/EC — 7-bit адрес **0x09** (см. библиотеку [iarduino_I2C_TDS](https://github.com/tremaru/iarduino_I2C_TDS), регистр `REG_ADDRESS`).
+- Модуль может отвечать на **ином 7-bit адресе** (например **0x08**), если адрес был сохранён во FLASH (`changeAddress` и т.п.) или иная конфигурация поставки.
+- Прошивка: первая попытка `trema_ec_init()` — адрес **`TREMA_EC_ADDR` (0x09)**; при неудаче — перебор **0x08–0x77** на **шине 1**; фактический адрес после успешного init — `trema_ec_get_i2c_address()` (в логах телеметрии `ec_node_fw`: строка `ec_sensor: I2C 7-bit=0x..`).
+- **Зафиксировано по логам референс-узла (hydro2.0):** рабочий 7-bit адрес **0x08** (сенсор отвечает, `stub=no`).
+
 ### 2.3. Температура воздуха
 
 - Domain key: `temp_air`

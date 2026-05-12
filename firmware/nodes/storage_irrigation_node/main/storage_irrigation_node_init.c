@@ -145,9 +145,6 @@ void storage_irrigation_node_mqtt_connection_cb(bool connected, void *user_ctx) 
         // На старте и после reconnect всегда публикуем node_hello, чтобы backend
         // видел факт присутствия реальной IRR-ноды независимо от namespace.
         storage_irrigation_node_publish_hello();
-        
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
 
         // Публикуем текущий NodeConfig на сервер
         node_utils_publish_config_report();

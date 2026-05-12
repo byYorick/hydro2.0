@@ -109,6 +109,8 @@ pH_probe → pH_board → ADS1115 → I²C → ESP32
 
 Схема аналогична pH.
 
+**Trema Flash-I²C TDS/EC (прошивка `ec_node`, компонент `trema_ec`):** отдельная шина **I2C 1** (по умолчанию SDA **18** / SCL **19**), как Trema pH на `ph_node`; шина **0** (21/22) — OLED/INA209. Заводской адрес iarduino — **0x09**; фактический 7-bit может быть **0x08** — см. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`, раздел 2.2, `trema_ec_get_i2c_address()`.
+
 ## 4.3. SHT31
 Стандартный I²C.
 

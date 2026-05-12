@@ -70,7 +70,13 @@ static void task_sensors(void *pvParameters) {
                 extern esp_err_t ec_node_publish_telemetry_callback(void *);
                 ec_node_publish_telemetry_callback(NULL);
             } else {
-                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                connection_status_t cs = {0};
+                bool wifi_up = (connection_status_get(&cs) == ESP_OK && cs.wifi_connected);
+                if (wifi_up) {
+                    ESP_LOGD(TAG, "MQTT ещё не подключён, пропуск опроса сенсора (Wi-Fi есть)");
+                } else {
+                    ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                }
             }
             
             // Update OLED UI with current EC values (EC-специфичная логика)
@@ -115,9 +121,8 @@ static void task_sensors(void *pvParameters) {
                     }
                     
                     // Get current EC value and sensor status (EC-специфичная логика)
-                    // trema_ec использует дефолтную шину (I2C_BUS_0)
                     bool sensor_initialized = ec_node_is_ec_sensor_initialized();
-                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_0);
+                    bool i2c_ec_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_1);
                     
                     // Инициализируем статус датчика
                     model.sensor_status.i2c_connected = false;
@@ -127,13 +132,13 @@ static void task_sensors(void *pvParameters) {
                     // Инициализируем EC как NaN, чтобы не показывать 0.00
                     model.ec_value = NAN;
                     
-                    if (i2c_bus_ok) {
-                        // Проверяем подключение I2C - пытаемся прочитать model ID
+                    if (i2c_ec_bus_ok) {
                         uint8_t reg_model = 0x04;  // REG_MODEL для Trema EC
                         uint8_t model_id = 0;
-                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_0, 0x08, &reg_model, 1, &model_id, 1, 200);  // TREMA_EC_ADDR = 0x08
-                        
-                        if (i2c_err == ESP_OK && model_id == 0x19) {  // EC sensor model ID = 0x19
+                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_1, trema_ec_get_i2c_address(), &reg_model, 1,
+                                                             &model_id, 1, 200);
+
+                        if (i2c_err == ESP_OK && model_id == 0x19) {  // Trema TDS/EC Flash-I²C, REG_MODEL = 0x19
                             model.sensor_status.i2c_connected = true;
                             
                             // Если датчик подключен, пытаемся прочитать значение
@@ -185,7 +190,7 @@ static void task_sensors(void *pvParameters) {
                         model.sensor_status.has_error = true;
                         model.sensor_status.using_stub = true;
                         model.ec_value = NAN;  // Устанавливаем NaN
-                        strncpy(model.sensor_status.error_msg, "I2C bus down", sizeof(model.sensor_status.error_msg) - 1);
+                        strncpy(model.sensor_status.error_msg, "EC bus1 down", sizeof(model.sensor_status.error_msg) - 1);
                     }
                     
                     // Статус узла

@@ -149,9 +149,6 @@ void pump_node_mqtt_connection_cb(bool connected, void *user_ctx) {
             // Устройство еще не зарегистрировано - публикуем node_hello
             pump_node_publish_hello();
         }
-        
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - pump_node is offline");
     }
