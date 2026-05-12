@@ -37,6 +37,9 @@
 
 static const char *TAG = "ph_node_fw";
 
+/** Согласовано с ph_node_tasks: возраст снимка из очереди trema_ph для повторного использования без I²C. */
+#define PH_TELEMETRY_CACHE_MAX_AGE_MS 4000U
+
 /**
  * Записать эталон стадии калибровки в NodeConfig (NVS).
  * Публикацию config_report см. ph_node_publish_config_report_resilient() — бэкенд ждёт MQTT с непустым calibration.ph.
@@ -879,26 +882,35 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
         }
     }
 
-    // Чтение значения pH
+    // Чтение значения pH (сначала снимок из очереди драйвера — см. trema_ph_bind_sample_queue в ph_node_start_tasks)
     float ph_value = NAN;
     bool read_success = false;
     bool using_stub = false;
     bool is_stable = true;
     int32_t raw_value = 0;
 
-    if (trema_ph_is_initialized()) {
+    trema_ph_measurement_t cached;
+    if (trema_ph_try_cached_measurement(&cached, PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
+        !isnan(cached.ph) && isfinite(cached.ph) && cached.ph >= 0.0f && cached.ph <= 14.0f) {
+        ph_value = cached.ph;
+        read_success = true;
+        using_stub = false;
+        raw_value = (int32_t)cached.raw_thousandths;
+        is_stable = cached.stable;
+        s_ph_sensor_error_active = false;
+    } else if (trema_ph_is_initialized()) {
         read_success = trema_ph_read(&ph_value);
         using_stub = trema_ph_is_using_stub_values();
-        
+
         if (!read_success || isnan(ph_value)) {
             if (!s_ph_sensor_error_active) {
                 node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read pH sensor value");
                 s_ph_sensor_error_active = true;
             }
-            ph_value = 6.5f;  // Нейтральное значение
+            ph_value = 6.5f;
             using_stub = true;
         } else {
-            raw_value = (int32_t)(ph_value * 1000);  // Raw value в тысячных
+            raw_value = (int32_t)(ph_value * 1000);
             is_stable = trema_ph_get_last_read_stability();
             s_ph_sensor_error_active = false;
         }

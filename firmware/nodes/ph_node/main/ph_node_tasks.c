@@ -29,6 +29,7 @@
 #include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "cJSON.h"
 #include <math.h>
 #include <float.h>
@@ -37,6 +38,12 @@
 #include <stdlib.h>
 
 static const char *TAG = "ph_node_tasks";
+
+/** Очередь глубины 1: последний валидный снимок pH после trema_ph_read (см. trema_ph_bind_sample_queue). */
+static QueueHandle_t s_ph_meas_queue;
+
+/** Макс. возраст снимка из очереди для телеметрии без повторного I²C (чуть больше периода опроса). */
+#define PH_TELEMETRY_CACHE_MAX_AGE_MS 4000U
 
 // Период опроса датчика (в миллисекундах)
 #define SENSOR_POLL_INTERVAL_MS    3000  // 3 секунды - опрос pH датчика
@@ -86,6 +93,11 @@ static void task_sensors(void *pvParameters) {
             
             // Publish pH telemetry только если MQTT подключен
             if (mqtt_manager_is_connected()) {
+                /* Один I²C-опрос здесь; ph_node_publish_telemetry возьмёт снимок из очереди (trema_ph). */
+                if (i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+                    float ph_prime = NAN;
+                    (void)trema_ph_read(&ph_prime);
+                }
                 ph_node_publish_telemetry();
             } else {
                 connection_status_t cs = {0};
@@ -156,12 +168,22 @@ static void task_sensors(void *pvParameters) {
                         if (trema_ph_probe_presence()) {
                             model.sensor_status.i2c_connected = true;
                             
-                            // Если датчик подключен, пытаемся прочитать значение
+                            // Если датчик подключен: сначала снимок из очереди trema_ph (после read в ветке MQTT), иначе I²C
                             if (sensor_initialized) {
                                 float ph_value = 0.0f;
-                                bool read_success = trema_ph_read(&ph_value);
-                                bool using_stub = trema_ph_is_using_stub_values();
-                                
+                                bool read_success = false;
+                                bool using_stub = false;
+                                trema_ph_measurement_t snap;
+                                if (trema_ph_try_cached_measurement(&snap, PH_TELEMETRY_CACHE_MAX_AGE_MS) && snap.valid &&
+                                    !isnan(snap.ph) && isfinite(snap.ph) && snap.ph >= 0.0f && snap.ph <= 14.0f) {
+                                    ph_value = snap.ph;
+                                    read_success = true;
+                                    using_stub = false;
+                                } else {
+                                    read_success = trema_ph_read(&ph_value);
+                                    using_stub = trema_ph_is_using_stub_values();
+                                }
+
                                 // Проверяем валидность значения: pH должен быть в диапазоне 0-14
                                 if (read_success && !isnan(ph_value) && isfinite(ph_value) && 
                                     ph_value >= 0.0f && ph_value <= 14.0f && ph_value != 0.0f) {
@@ -341,6 +363,13 @@ static void task_status(void *pvParameters) {
  * @brief Запуск FreeRTOS задач
  */
 void ph_node_start_tasks(void) {
+    s_ph_meas_queue = xQueueCreate(1, sizeof(trema_ph_measurement_t));
+    if (s_ph_meas_queue == NULL) {
+        ESP_LOGE(TAG, "xQueueCreate ph_meas failed — телеметрия только через trema_ph_read");
+    } else {
+        trema_ph_bind_sample_queue(s_ph_meas_queue);
+    }
+
     // Задача опроса pH датчика (pH-специфичная)
     xTaskCreate(task_sensors, "sensor_task", 4096, NULL, 5, NULL);
     
@@ -374,23 +403,30 @@ void ph_node_publish_telemetry(void) {
         }
     }
     
-    // Read pH value
     float ph_value = NAN;
     bool read_success = false;
     bool using_stub = false;
     bool is_stable = true;
     int32_t raw_value = 0;
-    
-    if (trema_ph_is_initialized()) {
+
+    trema_ph_measurement_t cached;
+    if (trema_ph_try_cached_measurement(&cached, PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
+        !isnan(cached.ph) && isfinite(cached.ph) && cached.ph >= 0.0f && cached.ph <= 14.0f) {
+        ph_value = cached.ph;
+        read_success = true;
+        using_stub = false;
+        raw_value = (int32_t)cached.raw_thousandths;
+        is_stable = cached.stable;
+    } else if (trema_ph_is_initialized()) {
         read_success = trema_ph_read(&ph_value);
         using_stub = trema_ph_is_using_stub_values();
-        
+
         if (!read_success || isnan(ph_value)) {
             ESP_LOGW(TAG, "Failed to read pH value, using stub");
-            ph_value = 6.5f;  // Neutral value
+            ph_value = 6.5f;
             using_stub = true;
         } else {
-            raw_value = (int32_t)(ph_value * 1000);  // Raw value in thousandths
+            raw_value = (int32_t)(ph_value * 1000);
             is_stable = trema_ph_get_last_read_stability();
         }
     } else {

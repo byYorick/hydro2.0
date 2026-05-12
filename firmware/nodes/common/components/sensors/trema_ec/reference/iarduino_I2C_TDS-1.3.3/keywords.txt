@@ -1,0 +1,37 @@
+#	####################################################
+#	СИНТАКСИЧЕСКАЯ РАСКРАСКА ДЛЯ БИБИЛИОТЕКИ:
+#	iarduino_I2C_TDS
+#	####################################################
+#	ТИПЫ ДАННЫХ:							   (KEYWORD1)
+	iarduino_I2C_TDS	KEYWORD1
+#	####################################################
+#	МЕТОДЫ И ФУНКЦИИ:						   (KEYWORD2)
+	begin	KEYWORD2
+	changeAddress	KEYWORD2
+	reset	KEYWORD2
+	getAddress	KEYWORD2
+	getVersion	KEYWORD2
+	getPullI2C	KEYWORD2
+	setPullI2C	KEYWORD2
+	getFrequency	KEYWORD2
+	setFrequency	KEYWORD2
+	getCalibration	KEYWORD2
+	setCalibration	KEYWORD2
+	getKnownTDS	KEYWORD2
+	setKnownTDS	KEYWORD2
+	getKa	KEYWORD2
+	setKa	KEYWORD2
+	getKb	KEYWORD2
+	setKb	KEYWORD2
+	getKt	KEYWORD2
+	setKt	KEYWORD2
+	getKp	KEYWORD2
+	setKp	KEYWORD2
+	set_t	KEYWORD2
+	get_T	KEYWORD2
+	set_T	KEYWORD2
+	getRo	KEYWORD2
+	getVout	KEYWORD2
+	get_S	KEYWORD2
+	getEC	KEYWORD2
+	getTDS	KEYWORD2

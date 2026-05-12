@@ -1,14 +1,16 @@
 /**
  * @file trema_ph.h
- * @brief Драйвер Trema pH-сенсора (iarduino) для узлов ESP32
- * 
- * Компонент реализует драйвер для Trema pH-датчика через I²C:
- * - Чтение pH значения
- * - Калибровка (2 этапа)
- * - Проверка стабильности измерений
- * - Обработка ошибок
- * 
- * Адаптирован из mesh_hydro/hydro1.0 для новой архитектуры hydro2.0
+ * @brief Драйвер Trema pH (iarduino I²C Flash) для ESP-IDF / FreeRTOS
+ *
+ * Порт протокола библиотеки **iarduino_I2C_pH** v1.2.3 на C для hydro2.0:
+ * - Оригинал (Arduino): `firmware/nodes/common/components/sensors/trema_ph/reference/iarduino_I2C_pH-1.2.3/`
+ * - Архив тега: https://github.com/tremaru/iarduino_I2C_pH/archive/refs/tags/1.2.3.zip
+ * - Wiki API/регистры: https://wiki.iarduino.ru/page/ph-i2c/
+ *
+ * Потокобезопасность: все публичные вызовы сериализуются recursive mutex (одна задача может
+ * вложенно вызывать API; разные задачи — по очереди). I²C к шине 1 уже защищён `i2c_bus`.
+ * Опционально: привязка `QueueHandle_t` глубины 1 — последний валидный снимок после
+ * `trema_ph_read()` (см. `trema_ph_bind_sample_queue`).
  */
 
 #ifndef TREMA_PH_H
@@ -21,150 +23,163 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-// 7-bit адрес по умолчанию — 0x09 (datasheet/wiki iarduino FLASH-I2C pH); 0x0A — встречается у части плат
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+
+/** 7-bit адрес по умолчанию (wiki iarduino FLASH-I2C pH); 0x0A — встречается у части плат */
 #define TREMA_PH_ADDR 0x09
 
-/**
- * @brief Задать 7-bit I²C адрес модуля до/между инициализациями (если отличается от TREMA_PH_ADDR).
- */
-void trema_ph_set_i2c_address(uint8_t addr_7bit);
-
-/**
- * @brief Текущий 7-bit I²C адрес драйвера.
- */
-uint8_t trema_ph_get_i2c_address(void);
-
-/**
- * @brief Версия прошивки модуля (байт из заголовка REG_MODEL+1), 0 если ещё не было успешного init.
- *
- * См. wiki iarduino: нормализация/getStability — с FW ≥ 6.
- */
-uint8_t trema_ph_get_firmware_version(void);
-
-/** Идентификатор модели и линейки чипа — как в iarduino_I2C_pH.h v1.2.3 (tre.ru / GitHub) */
+/** Идентификатор модели и линейки чипа — как в `iarduino_I2C_pH.h` v1.2.3 */
 #define TREMA_PH_MODEL_ID       0x1A
 #define TREMA_PH_CHIP_ID_FLASH  0x3C
 #define TREMA_PH_CHIP_ID_METRO  0xC3
 
-// Register addresses
-#define REG_PH_KNOWN_PH     0x0A  // Known pH value for calibration (2 bytes)
-#define REG_PH_CALIBRATION  0x10  // Calibration control register
-#define REG_PH_pH           0x1D  // pH measurement result (2 bytes)
-#define REG_PH_ERROR        0x1F  // Error flags
-#define REG_MODEL           0x04  // Model ID register
+/*
+ * Регистры модуля (имена и адреса — из iarduino_I2C_pH.h v1.2.3).
+ * Старые макросы REG_* оставлены как алиасы для совместимости с существующим кодом.
+ */
+#define TREMA_PH_REG_FLAGS_0        0x00
+#define TREMA_PH_REG_BITS_0         0x01
+#define TREMA_PH_REG_FLAGS_1        0x02
+#define TREMA_PH_REG_BITS_1         0x03
+#define TREMA_PH_REG_MODEL          0x04
+#define TREMA_PH_REG_VERSION        0x05
+#define TREMA_PH_REG_ADDRESS        0x06
+#define TREMA_PH_REG_CHIP_ID        0x07
+#define TREMA_PH_REG_PH_KNOWN_PH    0x0A
+#define TREMA_PH_REG_PH_KNOWN_PH_1  0x0C
+#define TREMA_PH_REG_PH_KNOWN_PH_2  0x0E
+#define TREMA_PH_REG_PH_CALIBRATION 0x10
+#define TREMA_PH_REG_PH_Ky          0x11
+#define TREMA_PH_REG_PH_Ustp        0x13
+#define TREMA_PH_REG_PH_pHn         0x15
+#define TREMA_PH_REG_PH_Uin         0x17
+#define TREMA_PH_REG_PH_Uout        0x19
+#define TREMA_PH_REG_PH_Un          0x1B
+#define TREMA_PH_REG_PH_pH          0x1D
+#define TREMA_PH_REG_PH_ERROR       0x1F
 
-// Error flags (REG_PH_ERROR)
-#define PH_FLG_STAB_ERR     0x02  // Stability error flag
-#define PH_FLG_CALC_ERR     0x01  // Calibration error flag
+#define REG_PH_KNOWN_PH     TREMA_PH_REG_PH_KNOWN_PH
+#define REG_PH_CALIBRATION  TREMA_PH_REG_PH_CALIBRATION
+#define REG_PH_pH           TREMA_PH_REG_PH_pH
+#define REG_PH_ERROR        TREMA_PH_REG_PH_ERROR
+#define REG_MODEL           TREMA_PH_REG_MODEL
 
-// Calibration control (REG_PH_CALIBRATION): status bits + command bits
-#define PH_FLG_STATUS_1     0x40  // Stage 1 calibration in progress / done (iarduino)
-#define PH_FLG_STATUS_2     0x80  // Stage 2 calibration in progress / done (iarduino)
-#define PH_BIT_CALC_1       0x01  // Start calibration stage 1
-#define PH_BIT_CALC_2       0x02  // Start calibration stage 2
-#define PH_CODE_CALC_SAVE   0x24  // Calibration save code
+/** REG_PH_ERROR */
+#define PH_FLG_STAB_ERR     0x02
+#define PH_FLG_CALC_ERR     0x01
+
+/** REG_PH_CALIBRATION */
+#define PH_FLG_STATUS_1    0x40
+#define PH_FLG_STATUS_2    0x80
+#define PH_BIT_CALC_1       0x01
+#define PH_BIT_CALC_2       0x02
+#define PH_CODE_CALC_SAVE   0x24
+
+/** REG_FLAGS_0: модуль поддерживает управление подтяжкой I²C (см. getPullI2C в iarduino) */
+#define TREMA_PH_FLG_I2C_UP 0x04
+/** REG_BITS_0: включение подтяжки линий I²C на модуле */
+#define TREMA_PH_BIT_I2C_UP 0x04
+/** REG_BITS_0: блокировка смены адреса */
+#define TREMA_PH_BIT_BLOCK_ADR 0x08
+/** Разрешить запись нового адреса во flash */
+#define TREMA_PH_BIT_SAVE_ADR_EN 0x02
 
 /**
- * @brief Initialize the Trema pH sensor
- * @return true on success, false on failure
+ * @brief Снимок измерения для телеметрии / очереди (без указателей — копируется целиком).
  */
+typedef struct {
+    float ph;
+    uint16_t raw_thousandths;
+    uint8_t error_flags;
+    bool stable;
+    bool valid;
+    TickType_t tick_stamp;
+} trema_ph_measurement_t;
+
+void trema_ph_set_i2c_address(uint8_t addr_7bit);
+uint8_t trema_ph_get_i2c_address(void);
+
+/**
+ * @brief Привязать очередь глубины 1, sizeof(trema_ph_measurement_t).
+ *
+ * После каждого успешного `trema_ph_read()` выполняется xQueueOverwrite (нужна глубина ровно 1).
+ * Утечек нет: очередь создаёт и владеет ею вызывающий код.
+ */
+void trema_ph_bind_sample_queue(QueueHandle_t queue);
+
+/** Снять привязку очереди (например перед vQueueDelete). */
+void trema_ph_unbind_sample_queue(void);
+
+/**
+ * @brief Взять последний снимок из очереди без удаления (peek).
+ *
+ * @param out куда записать
+ * @param max_age_ms максимальный возраст снимка с момента trema_ph_read()
+ * @return true если в очереди есть свежий valid снимок
+ */
+bool trema_ph_try_cached_measurement(trema_ph_measurement_t *out, uint32_t max_age_ms);
+
+uint8_t trema_ph_get_firmware_version(void);
+
 bool trema_ph_init(void);
-
-/**
- * @brief Read pH value from the Trema pH sensor
- * @param ph Pointer to store the pH value
- * @return true on success, false on failure
- */
 bool trema_ph_read(float *ph);
 
 /**
- * @brief Start calibration of the pH sensor
- * @param stage Calibration stage (1 or 2)
- * @param known_pH Known pH value for calibration (0.0 - 14.0)
- * @return true on success, false on failure
+ * @brief Калибровка (как setCalibration + ожидание idle в прошивке; расширение относительно Arduino).
+ *
+ * Соответствует `iarduino_I2C_pH::setCalibration` + опрос статуса до завершения этапа.
  */
 bool trema_ph_calibrate(uint8_t stage, float known_pH);
 
-/**
- * @brief Get calibration status
- * @return 0 if no calibration, 1 for stage 1, 2 for stage 2
- */
 uint8_t trema_ph_get_calibration_status(void);
-
-/**
- * @brief Get calibration result
- * @return true if calibration was successful, false otherwise
- */
 bool trema_ph_get_calibration_result(void);
-
-/**
- * @brief Get measurement stability
- * @return true if measurement is stable, false otherwise
- */
 bool trema_ph_get_stability(void);
-
-/**
- * @brief Стабильность для последнего успешного trema_ph_read (тот же кадр, что REG_PH_pH + REG_PH_ERROR).
- *
- * Для телеметрии предпочтительнее, чем отдельный trema_ph_get_stability(), чтобы не было гонки по I²C.
- * Если успешного чтения ещё не было — возвращает false.
- */
 bool trema_ph_get_last_read_stability(void);
-
-/**
- * @brief Wait for stable measurement
- * @param timeout_ms Maximum time to wait for stable measurement in milliseconds
- * @return true if measurement is stable, false if timeout occurred
- */
 bool trema_ph_wait_for_stable_reading(uint32_t timeout_ms);
-
-/**
- * @brief Get the last measured pH value
- * @return pH value (0.0 - 14.0)
- */
 float trema_ph_get_value(void);
 
-/**
- * @brief Reset the pH sensor
- * @return true on success, false on failure
- */
+/** Как `iarduino_I2C_pH::reset` — soft reset модуля; при необходимости сброс FSM мастера I²C шины 1 */
 bool trema_ph_reset(void);
 
-/**
- * @brief Check if we're using stub values (sensor not connected)
- * @return true if using stub values, false if sensor is connected
- */
 bool trema_ph_is_using_stub_values(void);
-
-/**
- * @brief Check if pH sensor is initialized
- * @return true if sensor is initialized, false otherwise
- */
 bool trema_ph_is_initialized(void);
-
-/**
- * @brief Log I²C bus 1 connectivity status for the pH sensor
- * @return true if sensor responded with expected model ID, false otherwise
- */
 bool trema_ph_log_connection_status(void);
-
-/**
- * @brief Быстрая проверка наличия модуля по правилам iarduino (REG_MODEL..CHIP_ID, 4 байта).
- * Не требует успешного trema_ph_init().
- */
 bool trema_ph_probe_presence(void);
-
-/**
- * @brief Подробные шаги чтения/инициализации в лог.
- *
- * @param verbose true — шаги через ESP_LOGI (каждый опрос, шумно).
- *                false — шаги только ESP_LOGD (нужен esp_log_level_set("trema_ph", ESP_LOG_DEBUG)).
- */
 void trema_ph_set_read_trace_verbose(bool verbose);
+
+/* --- Функции из iarduino_I2C_pH v1.2.3 (имена в стиле trema_ph_*) --- */
+
+/** changeAddress: новый 7-bit адрес (запрещены 0x00 и 0x7F, см. оригинал). */
+bool trema_ph_change_i2c_address(uint8_t new_addr_7bit);
+
+/** getPullI2C / setPullI2C */
+bool trema_ph_get_pull_i2c(bool *pull_enabled_out);
+bool trema_ph_set_pull_i2c(bool enable);
+
+/** getKnownPH / setKnownPH — буферные pH для калибровки «с кнопки» (регистры 0x0C / 0x0E). */
+float trema_ph_get_known_ph(uint8_t stage);
+bool trema_ph_set_known_ph(uint8_t stage, float known_ph);
+
+/** getKy / setKy — коэффициент усиления, 1..65.535 в тысячных */
+float trema_ph_get_ky(void);
+bool trema_ph_set_ky(float ky);
+
+/** getVstp / setVstp — шаг Ustp в сотых долях мВ на 1 pH (0.01..655.35 мВ) */
+float trema_ph_get_vstp(void);
+bool trema_ph_set_vstp(float vstp_mv);
+
+/** Напряжения в вольтах (десятитысячные доли В в модуле) */
+float trema_ph_get_u_in(void);
+float trema_ph_get_u_out(void);
+float trema_ph_get_u_n(void);
+
+/** getPHn / setPHn — нейтральный pH датчика в тысячных */
+float trema_ph_get_phn(void);
+bool trema_ph_set_phn(float phn);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif // TREMA_PH_H
-

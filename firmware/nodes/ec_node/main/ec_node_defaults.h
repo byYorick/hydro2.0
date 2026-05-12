@@ -40,7 +40,10 @@ extern "C" {
 #define EC_NODE_OLED_UPDATE_INTERVAL_MS 1500
 
 // EC sensor defaults
-#define EC_NODE_EC_SENSOR_POLL_INTERVAL_MS 3000
+#define EC_NODE_EC_SENSOR_POLL_INTERVAL_MS 2000
+
+/** Макс. возраст снимка EC из очереди для MQTT/OLED (чуть больше периода опроса). */
+#define EC_NODE_EC_CACHE_MAX_AGE_MS 2500U
 #define EC_NODE_EC_SENSOR_PRECISION 2
 
 // Pump defaults

@@ -44,6 +44,12 @@ void ec_node_framework_register_mqtt_handlers(void);
  */
 esp_err_t ec_node_publish_telemetry_callback(void *user_ctx);
 
+/**
+ * Один опрос Trema EC за тик: init/температура, одно trema_ec_read, push в очередь снимка.
+ * Публикация MQTT и OLED берут значение только из очереди (`trema_ec_try_cached_measurement`).
+ */
+void ec_node_ec_poll_sensor_once(void);
+
 #ifdef __cplusplus
 }
 #endif

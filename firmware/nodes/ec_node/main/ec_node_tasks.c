@@ -8,6 +8,7 @@
  */
 
 #include "ec_node_app.h"
+#include "ec_node_defaults.h"
 #include "ec_node_framework_integration.h"
 #include "node_watchdog.h"
 #include "mqtt_manager.h"
@@ -18,15 +19,26 @@
 #include "config_storage.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
 
 static const char *TAG = "ec_node_tasks";
 
-// Периоды задач (в миллисекундах)
-#define SENSOR_POLL_INTERVAL_MS    3000  // 3 секунды - опрос EC датчика
+/** Очередь глубины 1: снимок EC после телеметрии (`trema_ec_push_telemetry_snapshot` в publish callback). */
+static QueueHandle_t s_ec_meas_queue;
+
+/**
+ * Стек sensor_task: publish callback держит на стеке `pump_driver_health_snapshot_t` (~2 КБ) + OLED-модель
+ * и буферы config_storage в этой же задаче — 4096 недостаточно (см. climate_node SENSOR_TASK_STACK_SIZE).
+ */
+#define EC_NODE_SENSOR_TASK_STACK_SIZE 8192
+
+// Периоды задач (в миллисекундах) — согласовано с EC_NODE_EC_SENSOR_POLL_INTERVAL_MS
+#define SENSOR_POLL_INTERVAL_MS    EC_NODE_EC_SENSOR_POLL_INTERVAL_MS
 
 /**
  * @brief Задача опроса сенсоров
@@ -63,11 +75,10 @@ static void task_sensors(void *pvParameters) {
             // Сбрасываем watchdog перед выполнением работы
             node_watchdog_reset();
             
-            // Publish EC telemetry только если MQTT подключен
+            // Один trema_ec_read в ec_node_ec_poll_sensor_once → очередь; MQTT и OLED только из кэша.
+            ec_node_ec_poll_sensor_once();
+
             if (mqtt_manager_is_connected()) {
-                // Публикация телеметрии EC через node_framework
-                // Используем callback из ec_node_framework_integration
-                extern esp_err_t ec_node_publish_telemetry_callback(void *);
                 ec_node_publish_telemetry_callback(NULL);
             } else {
                 connection_status_t cs = {0};
@@ -133,22 +144,28 @@ static void task_sensors(void *pvParameters) {
                     model.ec_value = NAN;
                     
                     if (i2c_ec_bus_ok) {
-                        uint8_t reg_model = 0x04;  // REG_MODEL для Trema EC
-                        uint8_t model_id = 0;
-                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_1, trema_ec_get_i2c_address(), &reg_model, 1,
-                                                             &model_id, 1, 200);
+                        const bool chip_on_wire = trema_ec_probe_present();
 
-                        if (i2c_err == ESP_OK && model_id == 0x19) {  // Trema TDS/EC Flash-I²C, REG_MODEL = 0x19
+                        if (chip_on_wire) {
                             model.sensor_status.i2c_connected = true;
-                            
-                            // Если датчик подключен, пытаемся прочитать значение
+
                             if (sensor_initialized) {
                                 float ec_value = 0.0f;
-                                bool read_success = trema_ec_read(&ec_value);
-                                bool using_stub = trema_ec_is_using_stub_values();
-                                
+                                bool read_success = false;
+                                bool using_stub = false;
+                                trema_ec_measurement_t snap;
+                                if (trema_ec_try_cached_measurement(&snap, EC_NODE_EC_CACHE_MAX_AGE_MS) && snap.valid &&
+                                    !isnan(snap.ec_mScm) && isfinite(snap.ec_mScm) &&
+                                    snap.ec_mScm >= 0.0f && snap.ec_mScm <= 20.0f && snap.ec_mScm != 0.0f) {
+                                    ec_value = snap.ec_mScm;
+                                    read_success = true;
+                                    using_stub = snap.using_stub;
+                                } else {
+                                    read_success = false;
+                                }
+
                                 // Проверяем валидность значения: EC должен быть в диапазоне 0-20 mS/cm
-                                if (read_success && !isnan(ec_value) && isfinite(ec_value) && 
+                                if (read_success && !isnan(ec_value) && isfinite(ec_value) &&
                                     ec_value >= 0.0f && ec_value <= 20.0f && ec_value != 0.0f) {
                                     model.ec_value = ec_value;
                                     model.sensor_status.using_stub = using_stub;
@@ -171,18 +188,12 @@ static void task_sensors(void *pvParameters) {
                                 strncpy(model.sensor_status.error_msg, "Not init", sizeof(model.sensor_status.error_msg) - 1);
                             }
                         } else {
-                            // I2C ошибка - датчик не отвечает
+                            /* Нет ответа Trema по текущему адресу (до/вне init) — без прямого I²C в обход драйвера. */
                             model.sensor_status.i2c_connected = false;
                             model.sensor_status.has_error = true;
                             model.sensor_status.using_stub = true;
-                            model.ec_value = NAN;  // Устанавливаем NaN
-                            if (i2c_err == ESP_ERR_INVALID_STATE || i2c_err == ESP_ERR_TIMEOUT) {
-                                strncpy(model.sensor_status.error_msg, "I2C NACK", sizeof(model.sensor_status.error_msg) - 1);
-                            } else if (i2c_err == ESP_ERR_NOT_FOUND) {
-                                strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
-                            } else {
-                                strncpy(model.sensor_status.error_msg, "I2C Error", sizeof(model.sensor_status.error_msg) - 1);
-                            }
+                            model.ec_value = NAN;
+                            strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
                         }
                     } else {
                         // I2C шина не инициализирована
@@ -215,8 +226,15 @@ static void task_sensors(void *pvParameters) {
  * @brief Запуск FreeRTOS задач
  */
 void ec_node_start_tasks(void) {
+    s_ec_meas_queue = xQueueCreate(1, sizeof(trema_ec_measurement_t));
+    if (s_ec_meas_queue == NULL) {
+        ESP_LOGE(TAG, "xQueueCreate ec_meas failed — OLED без снимка из очереди телеметрии");
+    } else {
+        trema_ec_bind_sample_queue(s_ec_meas_queue);
+    }
+
     // Задача опроса сенсоров
-    xTaskCreate(task_sensors, "sensor_task", 4096, NULL, 5, NULL);
+    xTaskCreate(task_sensors, "sensor_task", EC_NODE_SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
     
     // Общая задача heartbeat из компонента
     heartbeat_task_start_default();

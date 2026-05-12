@@ -1,19 +1,15 @@
 /**
  * @file trema_ec.h
- * @brief Драйвер Trema EC-сенсора (iarduino) для узлов ESP32
- * 
- * На **ec_node** драйвер привязан к **I2C_BUS_1** (отдельная линия Trema EC, GPIO как у pH на ph_node).
- * Шина 0 — OLED/INA209. См. `ec_node_defaults.h` и `TREMA_EC_I2C_BUS` в `trema_ec.c`.
- * - Чтение EC значения (mS/cm)
- * - Калибровка (2 этапа)
- * - Температурная компенсация
- * - Чтение TDS значения (ppm)
- * - Обработка ошибок
- * 
- * Адаптирован из mesh_hydro/hydro1.0 для новой архитектуры hydro2.0
+ * @brief Драйвер Trema EC/TDS (Flash-I²C, iarduino) для узлов ESP-IDF / FreeRTOS
  *
- * Заводской 7-bit адрес Flash-I²C по iarduino: **0x09**; на стенде зафиксирован ответ по **0x08**
- * (см. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`, раздел 2.2, `trema_ec_get_i2c_address()`).
+ * Регистры и семантика полей совпадают с **iarduino_I2C_TDS 1.3.3**; эталон и ссылки:
+ * `reference/README.md`, `reference/iarduino_I2C_TDS-1.3.3/src/iarduino_I2C_TDS.{h,cpp}`.
+ *
+ * **FreeRTOS:** все публичные вызовы сериализуются одним **статическим** mutex; между попытками I²C
+ * используются `vTaskDelay` / `esp_rom_delay_us`. Не вызывать из ISR. Не вызывать `trema_ec_*`, удерживая
+ * mutex `i2c_bus` той же шины, что и Trema (`trema_ec.c`: `TREMA_EC_I2C_BUS`).
+ *
+ * ec_node: Trema EC на **I2C_BUS_1** (см. `TREMA_EC_I2C_BUS` в `trema_ec.c`, `ec_node_defaults.h`).
  */
 
 #ifndef TREMA_EC_H
@@ -26,28 +22,57 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
-/**
- * Первый пробуемый 7-bit адрес Trema TDS/EC Flash-I²C (заводской дефолт iarduino).
- * Фактический адрес после init может быть 0x08 и др. — см. `trema_ec_get_i2c_address()` и
- * `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`, раздел 2.2.
- */
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+
+/** Заводской 7-bit адрес по умолчанию (см. iarduino wiki / NODE_CHANNELS_REFERENCE). */
 #define TREMA_EC_ADDR 0x09
 
-// Register addresses
-#define REG_FLAGS_0         0x00  // Флаги (в т.ч. завершение reset), см. iarduino_I2C_TDS
-#define REG_BITS_0          0x01  // Биты управления (SET_RESET и др.)
-#define REG_TDS_KNOWN_TDS   0x0A  // Known TDS value for calibration (2 bytes)
-#define REG_TDS_CALIBRATION 0x10  // Calibration control register
-#define REG_TDS_S           0x20  // Measured conductivity (2 bytes)
-#define REG_TDS_EC          0x22  // Converted conductivity (2 bytes)
-#define REG_TDS_TDS         0x24  // TDS value (2 bytes)
-#define REG_TDS_t           0x19  // Temperature register
-#define REG_MODEL           0x04  // Model ID register
+/** Идентификатор модели модуля (`DEF_MODEL_TDS`). */
+#define TREMA_EC_DEF_MODEL_TDS 0x19U
 
-// Calibration bits
-#define TDS_BIT_CALC_1      0x01  // Start calibration stage 1
-#define TDS_BIT_CALC_2      0x02  // Start calibration stage 2
-#define TDS_CODE_CALC_SAVE  0x24  // Calibration save code
+/** Макс. EC с REG_TDS_EC (raw/1000), как у iarduino `getEC` (0…65.535 mS/cm). Согласовано с `trema_ec_read`. */
+#define TREMA_EC_EC_REGISTER_MAX_MSCM (65.535f)
+
+/** Регистры — как `iarduino_I2C_TDS.h` (имена сохранены для сопоставления с эталоном). */
+#define REG_FLAGS_0         0x00U
+#define REG_BITS_0          0x01U
+#define REG_FLAGS_1         0x02U
+#define REG_BITS_1          0x03U
+#define REG_MODEL           0x04U
+#define REG_VERSION         0x05U
+#define REG_ADDRESS         0x06U
+#define REG_CHIP_ID         0x07U
+#define REG_TDS_FREQUENCY_L 0x08U
+#define REG_TDS_FREQUENCY_H 0x09U
+#define REG_TDS_KNOWN_TDS   0x0AU
+#define REG_TDS_KNOWN_TDS_1 0x0CU
+#define REG_TDS_KNOWN_TDS_2 0x0EU
+#define REG_TDS_CALIBRATION 0x10U
+#define REG_TDS_Ka          0x11U
+#define REG_TDS_Kb          0x14U
+#define REG_TDS_Kt          0x16U
+#define REG_TDS_Kp          0x18U
+#define REG_TDS_t           0x19U
+#define REG_TDS_T           0x1AU
+#define REG_TDS_Ro          0x1BU
+#define REG_TDS_Vout        0x1EU
+#define REG_TDS_S           0x20U
+#define REG_TDS_EC          0x22U
+#define REG_TDS_TDS         0x24U
+
+/** Флаги/биты калибровки — как в `iarduino_I2C_TDS.h`. */
+#define TDS_FLG_STATUS_2    0x80U
+#define TDS_FLG_STATUS_1    0x40U
+#define TDS_BIT_CALC_ERR    0x10U
+#define TDS_BIT_CALC_2      0x02U
+#define TDS_BIT_CALC_1      0x01U
+#define TDS_BITS_CALC_INFO  0x0CU
+#define TDS_CODE_CALC_SAVE  0x24U
+
+/** Подтяжка SDA/SCL на модуле: флаг в REG_FLAGS_0, бит в REG_BITS_0 (`getPullI2C` / `setPullI2C`). */
+#define TREMA_EC_FLG_I2C_UP     0x04U
+#define TREMA_EC_BIT_SET_I2C_UP 0x04U
 
 typedef enum {
     TREMA_EC_ERROR_NONE = 0,
@@ -56,84 +81,147 @@ typedef enum {
     TREMA_EC_ERROR_INVALID_VALUE = 3
 } trema_ec_error_t;
 
-/**
- * @brief Initialize the Trema EC sensor
- * @return true on success, false on failure
- */
-bool trema_ec_init(void);
+/** Макс. возраст снимка из очереди для OLED без повторного I²C (как `PH_TELEMETRY_CACHE_MAX_AGE_MS` на ph_node). */
+#define TREMA_EC_TELEMETRY_CACHE_MAX_AGE_MS 4000U
 
 /**
- * @brief Датчик успешно проинициализирован (аналог trema_ph_is_initialized на ph_node).
+ * Снимок EC для телеметрии / очереди (копируется целиком; см. `trema_ph_measurement_t` на ph_node).
  */
+typedef struct {
+    float ec_mScm;
+    uint16_t raw_ec_u16;
+    bool using_stub;
+    bool valid;
+    TickType_t tick_stamp;
+} trema_ec_measurement_t;
+
+/**
+ * Привязать очередь глубины 1, sizeof(trema_ec_measurement_t). Заполняется `trema_ec_push_telemetry_snapshot`.
+ */
+void trema_ec_bind_sample_queue(QueueHandle_t queue);
+
+void trema_ec_unbind_sample_queue(void);
+
+/**
+ * Последний снимок из очереди (peek), если не старше max_age_ms и valid (как `trema_ph_try_cached_measurement`).
+ */
+bool trema_ec_try_cached_measurement(trema_ec_measurement_t *out, uint32_t max_age_ms);
+
+/**
+ * Сохранить снимок после опроса EC (`ec_node_ec_poll_sensor_once`) — MQTT/OLED читают очередь без повторного I²C.
+ */
+void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool using_stub);
+
+bool trema_ec_init(void);
 bool trema_ec_is_initialized(void);
 
 /**
- * @brief Read EC value from the Trema EC sensor
- * @param ec Pointer to store the EC value (mS/cm)
- * @return true on success, false on failure
+ * @brief Быстрая проверка Trema: MODEL по текущему `trema_ec_get_i2c_address()`, затем типичные адреса 0x08/0x09/0x0A.
+ *        Полный перебор 1…126 — только в `trema_ec_init` (как iarduino `_begin`). Не меняет I²C-адрес драйвера.
  */
+bool trema_ec_probe_present(void);
+
 bool trema_ec_read(float *ec);
 
-/**
- * @brief Start calibration of the EC sensor
- * @param stage Calibration stage (1 or 2)
- * @param known_tds Known TDS value for calibration (0 - 10000 ppm)
- * @return true on success, false on failure
- */
+/** @see iarduino_I2C_TDS::setCalibration */
 bool trema_ec_calibrate(uint8_t stage, uint16_t known_tds);
 
+/** Синоним `trema_ec_calibrate` для соответствия имени iarduino. */
+#define trema_ec_set_calibration trema_ec_calibrate
+
 /**
- * @brief Get calibration status
- * @return 0 if no calibration, 1 for stage 1, 2 for stage 2
+ * Стадия калибровки: 0 — нет; 1 — стадия 1; 2 — стадия 2; 3 — ошибка (`TDS_BIT_CALC_ERR`).
+ * @param info_out необязательно: биты `(REG_TDS_CALIBRATION & TDS_BITS_CALC_INFO) >> 2` (как в getCalibration(&info)).
+ * @see iarduino_I2C_TDS::getCalibration
  */
+uint8_t trema_ec_get_calibration(uint8_t *info_out);
+
+/** Обёрка: `trema_ec_get_calibration(NULL)`. */
 uint8_t trema_ec_get_calibration_status(void);
 
-/**
- * @brief Set temperature for temperature compensation
- * @param temperature Temperature in Celsius (0 - 63.75 °C)
- * @return true on success, false on failure
- */
+/** @see iarduino_I2C_TDS::set_t — температура жидкости 0…63.75 °C. */
 bool trema_ec_set_temperature(float temperature);
 
-/**
- * @brief Get the last measured TDS value
- * @return TDS value (ppm)
- */
-uint16_t trema_ec_get_tds(void);
+#define trema_ec_set_t trema_ec_set_temperature
 
-/**
- * @brief Read the last temperature value used for compensation
- * @param temperature Pointer to store the temperature (Celsius)
- * @return true on success, false otherwise
- */
 bool trema_ec_get_temperature(float *temperature);
 
-/**
- * @brief Get the last measured conductivity
- * @return Conductivity value (mS/cm)
- */
+/** @see iarduino_I2C_TDS::getTDS */
+uint16_t trema_ec_get_tds(void);
+
 float trema_ec_get_conductivity(void);
 
-/**
- * @brief Check if we're using stub values (sensor not connected)
- * @return true if using stub values, false if sensor is connected
- */
 bool trema_ec_is_using_stub_values(void);
-
-/**
- * @brief Retrieve the last error code from EC operations
- * @return trema_ec_error_t value
- */
 trema_ec_error_t trema_ec_get_error(void);
 
-/**
- * @brief Текущий 7-bit I²C адрес Trema EC (после init: обычно 0x09 или найденный перебором).
- */
+bool trema_ec_get_last_ec_register_raw(uint16_t *out_u16);
+
+/** Текущий 7-bit адрес (после init / changeAddress). @see iarduino_I2C_TDS::getAddress */
 uint8_t trema_ec_get_i2c_address(void);
+#define trema_ec_get_address trema_ec_get_i2c_address
+
+/** Версия прошивки модуля (байт REG_VERSION из блока идентификации при init). @see iarduino_I2C_TDS::getVersion */
+uint8_t trema_ec_get_module_firmware_version(void);
+
+/** @see iarduino_I2C_TDS::reset */
+bool trema_ec_reset_device(void);
+
+/**
+ * @param new_addr_7bit 0x01…0x7E (запрещены 0x00 и 0x7F; как в upstream).
+ * @see iarduino_I2C_TDS::changeAddress
+ */
+bool trema_ec_change_address(uint8_t new_addr_7bit);
+
+/** true, если модуль поддерживает подтяжку и она включена. @see iarduino_I2C_TDS::getPullI2C */
+bool trema_ec_get_pull_i2c(void);
+
+/** @see iarduino_I2C_TDS::setPullI2C */
+bool trema_ec_set_pull_i2c(bool enable);
+
+/** @see iarduino_I2C_TDS::getFrequency */
+uint16_t trema_ec_get_frequency_hz(void);
+
+/** 50…5000 Гц. @see iarduino_I2C_TDS::setFrequency */
+bool trema_ec_set_frequency_hz(uint16_t frequency_hz);
+
+/** @see iarduino_I2C_TDS::getKnownTDS */
+uint16_t trema_ec_get_known_tds(uint8_t stage_1_or_2);
+
+/** @see iarduino_I2C_TDS::setKnownTDS */
+bool trema_ec_set_known_tds(uint8_t stage_1_or_2, uint16_t tds_ppm);
+
+float trema_ec_get_ka(void);
+bool trema_ec_set_ka(float ka);
+
+float trema_ec_get_kb(void);
+bool trema_ec_set_kb(float kb);
+
+float trema_ec_get_kt(void);
+bool trema_ec_set_kt(float kt);
+
+float trema_ec_get_kp(void);
+bool trema_ec_set_kp(float kp);
+
+/** Опорная температура T, 0…63.75 °C. @see iarduino_I2C_TDS::get_T */
+float trema_ec_get_reference_temperature_c(void);
+
+/** @see iarduino_I2C_TDS::set_T */
+bool trema_ec_set_reference_temperature_c(float temperature_c);
+
+/** @see iarduino_I2C_TDS::getRo */
+uint32_t trema_ec_get_ro_ohm(void);
+
+/** @see iarduino_I2C_TDS::getVout */
+float trema_ec_get_vout_volts(void);
+
+/** Измеренная проводимость S, мСм/см. @see iarduino_I2C_TDS::get_S */
+float trema_ec_get_S_mScm(void);
+
+/** EC с регистра (мСм/см), без логики stub/валидации `trema_ec_read`. @see iarduino_I2C_TDS::getEC */
+float trema_ec_get_ec_register_mScm(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // TREMA_EC_H
-
+#endif
