@@ -27,6 +27,17 @@ from .node_channels_sync import sync_node_channels_from_payload
 logger = logging.getLogger(__name__)
 
 
+def _extract_fw_version(data: Dict[str, Any]) -> Optional[str]:
+    for key in ("fw_version", "firmware_version", "fw"):
+        raw = data.get(key)
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            return value
+    return None
+
+
 async def handle_config_report(topic: str, payload: bytes) -> None:
     """Сохраняет NodeConfig в БД + синхронизирует ``node_channels`` + завершает binding."""
     try:
@@ -63,17 +74,32 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
 
         CONFIG_REPORT_RECEIVED.inc()
         data = _normalize_config_report_channels_for_storage(data)
+        fw_version = _extract_fw_version(data)
 
-        await execute(
-            """
-            UPDATE nodes
-            SET config = $1,
-                updated_at = NOW()
-            WHERE id = $2
-            """,
-            data,
-            node_id,
-        )
+        if fw_version:
+            await execute(
+                """
+                UPDATE nodes
+                SET config = $1,
+                    fw_version = $2,
+                    updated_at = NOW()
+                WHERE id = $3
+                """,
+                data,
+                fw_version,
+                node_id,
+            )
+        else:
+            await execute(
+                """
+                UPDATE nodes
+                SET config = $1,
+                    updated_at = NOW()
+                WHERE id = $2
+                """,
+                data,
+                node_id,
+            )
 
         try:
             await _complete_sensor_calibrations_after_config_report(int(node_id), data)

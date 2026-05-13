@@ -3,18 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Enums\NodeLifecycleState;
+use App\Exceptions\ZoneNodeAutomationBindingException;
 use App\Http\Requests\PublishNodeConfigRequest;
-use App\Jobs\PublishNodeConfigJob;
 use App\Http\Requests\UpdateNodeRequest;
+use App\Jobs\PublishNodeConfigJob;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
-use App\Support\PumpCalibrationCatalog;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use App\Services\PythonBridgeService;
+use App\Support\PumpCalibrationCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -76,7 +77,7 @@ class NodeController extends Controller
                 // Исключаем полный config из каналов, но безопасно извлекаем actuator_type и binding_role для UI.
                 $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit',
                     DB::raw("config->>'actuator_type' as actuator_type"),
-                    DB::raw("(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role"));
+                    DB::raw('(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role'));
             }]);
 
         // Фильтруем по доступным нодам (кроме админов)
@@ -343,7 +344,21 @@ class NodeController extends Controller
         // Проверяем доступ к новой зоне, если меняется
         $this->validateZoneChange($user, $node, $data);
 
-        $node = $this->nodeService->update($node, $data);
+        try {
+            $node = $this->nodeService->update($node, $data);
+        } catch (ZoneNodeAutomationBindingException $e) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'zone_automation_binding_conflict',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'node_operation_rejected',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
@@ -749,6 +764,7 @@ class NodeController extends Controller
                 $this->recursiveKsort($value);
             }
         }
+
         return $array;
     }
 }

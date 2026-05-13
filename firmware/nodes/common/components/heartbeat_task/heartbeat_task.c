@@ -85,6 +85,7 @@ static void task_heartbeat(void *pvParameters) {
             cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
             // rssi - опциональное поле
             cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+            cJSON_AddStringToObject(heartbeat, "fw_version", node_utils_get_firmware_version());
 
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {

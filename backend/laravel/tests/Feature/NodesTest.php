@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
+use App\Models\NodeChannel;
+use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
@@ -146,13 +148,13 @@ class NodesTest extends TestCase
     {
         // Настраиваем токен
         config(['services.python_bridge.token' => 'test-token-123']);
-        
+
         // Без токена должен вернуть 401
         $response = $this->postJson('/api/nodes/register', [
             'node_uid' => 'test-node-001',
             'type' => 'ph',
         ]);
-        
+
         $response->assertStatus(401)
             ->assertJsonPath('status', 'error')
             ->assertJsonPath('message', 'Unauthorized: token required');
@@ -162,18 +164,18 @@ class NodesTest extends TestCase
     {
         config(['services.python_bridge.ingest_token' => 'test-token-123']);
         config(['services.python_bridge.token' => 'test-token-123']);
-        
+
         $response = $this->withHeader('Authorization', 'Bearer test-token-123')
             ->postJson('/api/nodes/register', [
                 'node_uid' => 'test-node-002',
                 'type' => 'ph',
                 'firmware_version' => '1.0.0',
             ]);
-        
+
         $response->assertCreated()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.uid', 'test-node-002');
-        
+
         $this->assertDatabaseHas('nodes', [
             'uid' => 'test-node-002',
             'type' => 'ph',
@@ -183,13 +185,13 @@ class NodesTest extends TestCase
     public function test_register_node_with_invalid_token(): void
     {
         config(['services.python_bridge.token' => 'test-token-123']);
-        
+
         $response = $this->withHeader('Authorization', 'Bearer wrong-token')
             ->postJson('/api/nodes/register', [
                 'node_uid' => 'test-node-003',
                 'type' => 'ph',
             ]);
-        
+
         $response->assertStatus(401)
             ->assertJsonPath('status', 'error')
             ->assertJsonPath('message', 'Unauthorized: invalid token');
@@ -200,13 +202,13 @@ class NodesTest extends TestCase
         // Токен не настроен - регистрация должна быть запрещена
         config(['services.python_bridge.ingest_token' => null]);
         config(['services.python_bridge.token' => null]);
-        
+
         // Регистрация должна быть запрещена, если токен не настроен
         $response = $this->postJson('/api/nodes/register', [
             'node_uid' => 'test-node-004',
             'type' => 'ec',
         ]);
-        
+
         // Если токен не настроен, регистрация запрещена
         $response->assertStatus(500)
             ->assertJsonPath('status', 'error')
@@ -217,7 +219,7 @@ class NodesTest extends TestCase
     {
         config(['services.python_bridge.ingest_token' => 'test-token-123']);
         config(['services.python_bridge.token' => 'test-token-123']);
-        
+
         $response = $this->withHeader('Authorization', 'Bearer test-token-123')
             ->postJson('/api/nodes/register', [
                 'message_type' => 'node_hello',
@@ -225,14 +227,62 @@ class NodesTest extends TestCase
                 'node_type' => 'ph',
                 'fw_version' => '2.0.1',
             ]);
-        
+
         $response->assertCreated()
             ->assertJsonPath('status', 'ok');
-        
+
         // Проверяем, что узел был создан
         $this->assertDatabaseHas('nodes', [
             'hardware_id' => 'esp32-ABCD1234',
             'type' => 'ph',
         ]);
+    }
+
+    public function test_patch_bind_node_to_zone_returns_422_when_duplicate_ec_telemetry(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $zone = Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
+
+        $existing = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+        NodeChannel::create([
+            'node_id' => $existing->id,
+            'channel' => 'ec0',
+            'type' => 'sensor',
+            'metric' => 'EC',
+            'unit' => null,
+            'config' => [],
+            'is_active' => true,
+        ]);
+
+        $incoming = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+            'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        NodeChannel::create([
+            'node_id' => $incoming->id,
+            'channel' => 'ec0',
+            'type' => 'sensor',
+            'metric' => 'EC',
+            'unit' => null,
+            'config' => [],
+            'is_active' => true,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/nodes/{$incoming->id}", ['zone_id' => $zone->id]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'zone_automation_binding_conflict');
+        $this->assertStringContainsString('EC', (string) $response->json('message'));
     }
 }

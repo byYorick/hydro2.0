@@ -28,6 +28,9 @@ const PRESET = {
   animation: false,
 } as const
 
+const EC_SANITY_MIN = 0
+const EC_SANITY_MAX = 20
+
 const formatAxisTimestamp = (timestamp: number, timeRange: TelemetryRange): string => {
   const date = new Date(timestamp)
   if (timeRange === '1H') {
@@ -59,6 +62,18 @@ const formatValue = (value: number, seriesName: string): string => {
   return value.toFixed(isPh ? 2 : 1)
 }
 
+const isEcLabel = (seriesLabel: string): boolean => seriesLabel.trim().toLowerCase().includes('ec')
+
+const isSaneTelemetryValue = (value: number | null | undefined, seriesLabel: string): value is number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return false
+  }
+  if (isEcLabel(seriesLabel)) {
+    return value >= EC_SANITY_MIN && value <= EC_SANITY_MAX
+  }
+  return true
+}
+
 const axisFormatterByLabel = (label: string): ((value: number) => string) => {
   const normalized = label.trim().toLowerCase()
   if (normalized.includes('ph')) {
@@ -75,13 +90,34 @@ const defaultZoomStartByRange: Record<TelemetryRange, number> = {
   'ALL': 95,
 }
 
-const resolveAxisBounds = (seriesLabel: string): { min?: number; max?: number } => {
+const roundUpToTenth = (value: number): number => Math.ceil(value * 10) / 10
+
+const maxFiniteValue = (values: Array<number | null | undefined>): number | null => {
+  const finiteValues = values.filter((value): value is number =>
+    typeof value === 'number' && Number.isFinite(value),
+  )
+  if (finiteValues.length === 0) {
+    return null
+  }
+  return Math.max(...finiteValues)
+}
+
+const resolveAxisBounds = (seriesItem?: TelemetrySeriesInput): { min?: number; max?: number } => {
+  const seriesLabel = seriesItem?.label ?? ''
   const normalized = seriesLabel.trim().toLowerCase()
   if (normalized.includes('ph')) {
     return { min: 3, max: 10 }
   }
   if (normalized.includes('ec')) {
-    return { min: 0, max: 5 }
+    const observedMax = maxFiniteValue([
+      ...(seriesItem?.data ?? []).map((point) => point.value),
+      seriesItem?.currentValue,
+      seriesItem?.targetRange?.max,
+    ].filter((value) => isSaneTelemetryValue(value, seriesLabel)))
+    const max = observedMax !== null && observedMax > 2
+      ? roundUpToTenth(observedMax * 1.1)
+      : 2
+    return { min: 0, max }
   }
   if (normalized.includes('soil') || normalized.includes('влажность')) {
     return { min: 0, max: 100 }
@@ -111,12 +147,14 @@ const toLineSeries = (
       opacity: PRESET.areaOpacity,
       color: series.color,
     },
-    data: series.data.map((point) => [point.ts, point.value]),
+    data: series.data
+      .filter((point) => isSaneTelemetryValue(point.value, series.label))
+      .map((point) => [point.ts, point.value]),
     clip: true,
     yAxisIndex: series.yAxisIndex ?? 0,
   }
 
-  if (typeof series.currentValue === 'number' && Number.isFinite(series.currentValue)) {
+  if (isSaneTelemetryValue(series.currentValue, series.label)) {
     output.markLine = {
       symbol: 'none',
       silent: true,
@@ -171,8 +209,8 @@ export function buildTelemetryChartOptions(params: BuildTelemetryChartOptionsPar
   )
   const primarySeries = firstSeries
   const secondarySeries = series.find((item) => item.yAxisIndex === 1)
-  const primaryAxisBounds = resolveAxisBounds(primarySeries?.label ?? '')
-  const secondaryAxisBounds = resolveAxisBounds(secondarySeries?.label ?? '')
+  const primaryAxisBounds = resolveAxisBounds(primarySeries)
+  const secondaryAxisBounds = resolveAxisBounds(secondarySeries)
 
   return {
     tooltip: {

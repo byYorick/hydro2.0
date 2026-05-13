@@ -125,18 +125,21 @@ class TestHeartbeatFormat:
         payload = {
             "uptime": 35555,  # секунды
             "free_heap": 102000,  # байты
-            "rssi": -62
+            "rssi": -62,
+            "fw_version": "1.0.0",
         }
         
         # Проверяем, что все поля присутствуют
         assert "uptime" in payload
         assert "free_heap" in payload
         assert "rssi" in payload
+        assert "fw_version" in payload
         
         # Проверяем типы
         assert isinstance(payload["uptime"], int)
         assert isinstance(payload["free_heap"], int)
         assert isinstance(payload["rssi"], int)
+        assert isinstance(payload["fw_version"], str)
 
 
 class TestNodeHelloFormat:
@@ -148,7 +151,7 @@ class TestNodeHelloFormat:
             "message_type": "node_hello",
             "hardware_id": "esp32-aabbccddeeff",
             "node_type": "ph",
-            "fw_version": "v5.1.0",
+            "fw_version": "1.0.0",
             "capabilities": ["ph", "temperature"]
         }
         

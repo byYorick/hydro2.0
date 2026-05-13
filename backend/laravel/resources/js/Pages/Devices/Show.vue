@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
-    <div class="flex items-center justify-between mb-3">
-      <div>
+    <div class="flex flex-col gap-3 mb-3 lg:flex-row lg:items-start lg:justify-between">
+      <div class="min-w-0">
         <div class="text-lg font-semibold">
           {{ device.uid || device.name || device.id }}
         </div>
@@ -17,21 +17,23 @@
           <span v-if="device.fw_version"> · FW: {{ device.fw_version }}</span>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
-          {{ device.status?.toUpperCase() || 'UNKNOWN' }}
-        </Badge>
-        <NodeLifecycleBadge
-          v-if="device.lifecycle_state"
-          :lifecycle-state="device.lifecycle_state"
-        />
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="onRestart"
-        >
-          Перезапустить
-        </Button>
+      <div class="flex flex-col gap-2 lg:items-end">
+        <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+          <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
+            {{ device.status?.toUpperCase() || 'UNKNOWN' }}
+          </Badge>
+          <NodeLifecycleBadge
+            v-if="device.lifecycle_state"
+            :lifecycle-state="device.lifecycle_state"
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="onRestart"
+          >
+            Перезапустить
+          </Button>
+        </div>
       </div>
     </div>
 
@@ -303,22 +305,83 @@
           @test="onTestPump" 
         />
       </Card>
+      <Card class="xl:col-span-3">
+        <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Метаданные ноды
+            </div>
+            <div class="text-xs text-[color:var(--text-dim)]">
+              Связь, прошивка, привязка к зоне и runtime-показатели
+            </div>
+          </div>
+          <Link
+            v-if="linkedZoneId"
+            :href="`/zones/${linkedZoneId}`"
+            class="w-fit rounded-full border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-2 py-1 text-xs text-[color:var(--badge-info-text)] hover:border-[color:var(--accent-cyan)]"
+          >
+            <span class="opacity-80">Привязка:</span>
+            <span class="font-medium"> {{ linkedZoneName }}</span>
+          </Link>
+          <span
+            v-else
+            class="w-fit rounded-full border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2 py-1 text-xs text-[color:var(--badge-warning-text)]"
+          >
+            Привязка: нет зоны
+          </span>
+        </div>
+        <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-5">
+          <div
+            v-for="item in nodeMetaItems"
+            :key="item.label"
+            class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2"
+          >
+            <dt class="text-[11px] text-[color:var(--text-dim)]">
+              {{ item.label }}:
+            </dt>
+            <dd class="truncate font-medium text-[color:var(--text-primary)]">
+              {{ item.value }}
+            </dd>
+          </div>
+        </dl>
+      </Card>
       <Card>
         <div class="flex items-center justify-between mb-2">
-          <div class="text-sm font-semibold">
-            NodeConfig
+          <div>
+            <div class="text-sm font-semibold">
+              NodeConfig
+            </div>
+            <div class="text-[11px] text-[color:var(--text-dim)]">
+              Конфиг присылается нодой через config_report и хранится на сервере.
+            </div>
           </div>
-          <div
-            v-if="configLoading"
-            class="text-[11px] text-[color:var(--text-dim)]"
-          >
-            Загрузка...
+          <div class="flex items-center gap-2">
+            <div
+              v-if="configLoading"
+              class="text-[11px] text-[color:var(--text-dim)]"
+            >
+              Загрузка...
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              @click="nodeConfigExpanded = !nodeConfigExpanded"
+            >
+              {{ nodeConfigExpanded ? 'Скрыть' : 'Показать' }}
+            </Button>
           </div>
         </div>
-        <div class="text-[11px] text-[color:var(--text-dim)] mb-2">
-          Конфиг присылается нодой через config_report и хранится на сервере.
+        <div
+          v-if="!nodeConfigExpanded"
+          class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2 text-xs text-[color:var(--text-dim)]"
+        >
+          JSON скрыт, чтобы не занимать экран.
         </div>
-        <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ nodeConfig }}</pre>
+        <pre
+          v-else
+          class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"
+          v-html="highlightedNodeConfig"
+        ></pre>
       </Card>
     </div>
 
@@ -398,6 +461,93 @@ const zoneAssignmentTitle = computed(() => {
   }
 
   return 'Устройство не привязано к зоне'
+})
+
+interface NodeMetaItem {
+  label: string
+  value: string
+}
+
+function formatNodeDate(value?: string | null): string | null {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatUptime(seconds?: number | null): string | null {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
+    return null
+  }
+  const days = Math.floor(seconds / 86_400)
+  const hours = Math.floor((seconds % 86_400) / 3_600)
+  const minutes = Math.floor((seconds % 3_600) / 60)
+  if (days > 0) {
+    return `${days}д ${hours}ч`
+  }
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`
+  }
+  return `${minutes}м`
+}
+
+function formatHeap(bytes?: number | null): string | null {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
+    return null
+  }
+  return `${Math.round(bytes / 1024)} KB`
+}
+
+const nodeMetaItems = computed<NodeMetaItem[]>(() => {
+  const items: NodeMetaItem[] = [
+    { label: 'Node ID', value: String(device.value.id ?? '-') },
+    { label: 'UID', value: String(device.value.uid || '-') },
+    { label: 'Тип', value: String(device.value.type || '-') },
+  ]
+
+  if (device.value.fw_version) {
+    items.push({ label: 'FW', value: device.value.fw_version })
+  }
+  if (device.value.hardware_revision) {
+    items.push({ label: 'HW', value: device.value.hardware_revision })
+  }
+  if (device.value.hardware_id) {
+    items.push({ label: 'HW ID', value: device.value.hardware_id })
+  }
+  if (typeof device.value.validated === 'boolean') {
+    items.push({ label: 'Валидация', value: device.value.validated ? 'OK' : 'нет' })
+  }
+
+  const heartbeat = formatNodeDate(device.value.last_heartbeat_at)
+  if (heartbeat) {
+    items.push({ label: 'Heartbeat', value: heartbeat })
+  }
+  const lastSeen = formatNodeDate(device.value.last_seen_at)
+  if (lastSeen) {
+    items.push({ label: 'Last seen', value: lastSeen })
+  }
+  if (typeof device.value.rssi === 'number' && Number.isFinite(device.value.rssi)) {
+    items.push({ label: 'RSSI', value: `${device.value.rssi} dBm` })
+  }
+  const heap = formatHeap(device.value.free_heap_bytes)
+  if (heap) {
+    items.push({ label: 'Heap', value: heap })
+  }
+  const uptime = formatUptime(device.value.uptime_seconds)
+  if (uptime) {
+    items.push({ label: 'Uptime', value: uptime })
+  }
+
+  return items
 })
 
 const userRole = computed(() => page.props.auth?.user?.role ?? 'viewer')
@@ -515,6 +665,7 @@ async function onPhSensorCalibrationSessionFinished(_outcome: SensorCalibrationS
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
+const nodeConfigExpanded = ref(false)
 const { showToast } = useToast()
 const devicesStore = useDevicesStore()
 const { theme } = useTheme()
@@ -805,6 +956,36 @@ const nodeConfig = computed(() => {
   }
   return JSON.stringify(fallback, null, 2)
 })
+
+const JSON_TOKEN_RE = /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"\s*:|"(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b)/g
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function highlightJson(json: string): string {
+  return json.replace(JSON_TOKEN_RE, (token) => {
+    const escaped = escapeHtml(token)
+    if (/^".*"\s*:$/.test(token)) {
+      return `<span class="json-key" style="color: var(--accent-cyan)">${escaped}</span>`
+    }
+    if (token.startsWith('"')) {
+      return `<span class="json-string" style="color: var(--accent-green)">${escaped}</span>`
+    }
+    if (token === 'true' || token === 'false') {
+      return `<span class="json-boolean" style="color: var(--accent-amber)">${escaped}</span>`
+    }
+    if (token === 'null') {
+      return `<span class="json-null" style="color: var(--text-dim)">${escaped}</span>`
+    }
+    return `<span class="json-number" style="color: var(--accent-lime)">${escaped}</span>`
+  })
+}
+
+const highlightedNodeConfig = computed(() => highlightJson(nodeConfig.value))
 
 const loadNodeConfig = async (): Promise<void> => {
   if (!device.value.id) return

@@ -62,6 +62,7 @@ import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 import { autoSelectAssignmentsByNodeType } from '@/composables/zoneAutomationAssignmentAutoSelect';
+import { extractHumanErrorMessage } from '@/utils/errorMessage';
 
 interface RecipeSummary {
     name?: string | null;
@@ -386,18 +387,14 @@ async function onRefreshNodes() {
         autoSelectAssignments(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
-        showToast((error as Error).message || 'Ошибка обновления списка нод', 'error');
+        showToast(extractHumanErrorMessage(error, 'Ошибка обновления списка нод'), 'error');
     } finally {
         refreshingNodes.value = false;
     }
 }
 
 async function attachNodeToZone(nodeId: number, zoneId: number): Promise<void> {
-    try {
-        await api.nodes.update(nodeId, { zone_id: zoneId });
-    } catch {
-        // node уже привязан — игнорируем
-    }
+    await api.nodes.update(nodeId, { zone_id: zoneId });
 }
 
 async function onBindDevices(roles: string[]) {
@@ -444,7 +441,7 @@ async function onBindDevices(roles: string[]) {
         deriveBindingsFromNodes(props.zoneId);
         autoSelectAssignments(props.zoneId);
     } catch (error) {
-        showToast((error as Error).message || 'Ошибка привязки', 'error');
+        showToast(extractHumanErrorMessage(error, 'Ошибка привязки'), 'error');
     } finally {
         bindingInProgress.value = false;
     }
@@ -478,7 +475,7 @@ async function onBindNode(nodeId: number) {
     } catch (error) {
         clearBindingUiTimeout(nodeId);
         bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, nodeId]);
-        showToast((error as Error).message || 'Ошибка привязки ноды', 'error');
+        showToast(extractHumanErrorMessage(error, 'Ошибка привязки ноды'), 'error');
         const next = new Set(bindingNodeIds.value);
         next.delete(nodeId);
         bindingNodeIds.value = next;

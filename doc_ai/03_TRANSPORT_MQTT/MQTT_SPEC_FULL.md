@@ -200,6 +200,7 @@ hydro/{gh}/{zone}/{node}/config_report
 {
  "node_id": "nd-ph-1",
  "version": 3,
+ "fw_version": "1.0.0",
  "channels": [
  {
  "name": "ph_sensor",
@@ -234,6 +235,7 @@ hydro/{gh}/{zone}/{node}/config_report
 - Retain = false
 - Узел сохраняет конфиг в NVS
 - Узел отправляет `config_report` при подключении
+- `fw_version` — версия прикладной прошивки, сформированная самой нодой; это не версия ESP-IDF SDK. Backend сохраняет её в `nodes.fw_version`.
 
 ---
 
@@ -1100,7 +1102,8 @@ hydro/{gh}/{zone}/{node}/heartbeat
 {
   "uptime": 3600,
   "free_heap": 102000,
-  "rssi": -62
+  "rssi": -62,
+  "fw_version": "1.0.0"
 }
 ```
 
@@ -1110,13 +1113,14 @@ hydro/{gh}/{zone}/{node}/heartbeat
 
 **Опциональные поля:**
 - `rssi` (integer) — сила сигнала Wi-Fi в dBm (от -100 до 0)
+- `fw_version` (string) — версия прикладной прошивки, которую сообщает сама нода; backend не задаёт её вручную и только сохраняет последнее полученное значение.
 
 > **Важно:** Поле `ts` **не включается** в heartbeat согласно эталону node-sim. Формат соответствует эталону, который успешно проходит E2E тесты.
 
 **Requirements:**
 - QoS = 1 (обновлено: было 0, теперь 1 для надёжности)
 - Retain = false
-- Backend обновляет поля `last_heartbeat_at`, `uptime_seconds`, `free_heap_bytes`, `rssi` в таблице `nodes`
+- Backend обновляет поля `last_heartbeat_at`, `uptime_seconds`, `free_heap_bytes`, `rssi`, `fw_version` в таблице `nodes`
 - Обновляет также `last_seen_at` при получении heartbeat
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_heartbeat` в history-logger, поля в БД добавлены)

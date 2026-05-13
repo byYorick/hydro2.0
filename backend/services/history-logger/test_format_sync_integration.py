@@ -130,6 +130,7 @@ class TestConfigReportFormatSync:
         payload_data = {
             "node_id": "nd-ph-1",
             "version": 1,
+            "fw_version": "1.0.0",
             "channels": [
                 {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
             ],
@@ -157,6 +158,8 @@ class TestConfigReportFormatSync:
             
             mock_received.inc.assert_called_once()
             mock_execute.assert_called_once()
+            assert "fw_version" in mock_execute.await_args.args[0]
+            assert mock_execute.await_args.args[2] == "1.0.0"
             mock_sync.assert_called_once()
             mock_complete.assert_called_once()
             mock_processed.inc.assert_called_once()
@@ -538,7 +541,8 @@ class TestHeartbeatFormatSync:
         payload_data = {
             "uptime": 35555,  # секунды
             "free_heap": 102000,  # байты
-            "rssi": -62
+            "rssi": -62,
+            "fw_version": "1.0.0",
         }
         payload = json.dumps(payload_data).encode('utf-8')
         
@@ -551,6 +555,8 @@ class TestHeartbeatFormatSync:
             mock_received.labels.assert_called_once()
             # Проверяем, что был выполнен SQL запрос
             assert mock_execute.called
+            assert "fw_version" in mock_execute.await_args.args[0]
+            assert "1.0.0" in mock_execute.await_args.args
 
     @pytest.mark.asyncio
     async def test_handle_heartbeat_temp_topic_missing_node_logs_once_as_info(self):
@@ -585,7 +591,7 @@ class TestNodeHelloFormatSync:
             "message_type": "node_hello",
             "hardware_id": "esp32-aabbccddeeff",
             "node_type": "ph",
-            "fw_version": "v5.1.0",
+            "fw_version": "1.0.0",
             "capabilities": ["ph", "temperature"]
         }
         payload = json.dumps(payload_data).encode('utf-8')
@@ -620,7 +626,7 @@ class TestNodeHelloFormatSync:
                 "message_type": "node_hello",
                 "hardware_id": "esp32-legacy-node-type",
                 "node_type": "pump_node",
-                "fw_version": "v5.1.0",
+                "fw_version": "1.0.0",
             }
         ).encode("utf-8")
 

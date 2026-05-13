@@ -83,13 +83,6 @@ static void pump_node_publish_hello(void) {
     snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
-    // Получаем версию прошивки
-    // Используем версию ESP-IDF, так как версия прошивки не хранится в config_storage
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    // esp_get_idf_version() уже возвращает версию с префиксом "v", не добавляем еще один
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
     // Создаем JSON сообщение node_hello
     cJSON *hello = cJSON_CreateObject();
     if (!hello) {
@@ -100,7 +93,7 @@ static void pump_node_publish_hello(void) {
     cJSON_AddStringToObject(hello, "message_type", "node_hello");
     cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
     cJSON_AddStringToObject(hello, "node_type", "pump");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
+    cJSON_AddStringToObject(hello, "fw_version", node_utils_get_firmware_version());
     
     // Добавляем capabilities
     cJSON *capabilities = cJSON_CreateArray();

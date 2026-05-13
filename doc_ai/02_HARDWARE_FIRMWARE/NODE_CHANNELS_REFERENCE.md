@@ -73,6 +73,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
+- **TDS (ppm)** с того же Trema-модуля публикуется **отдельным** firmware channel id **`ec_tds_ppm`** (топик `.../ec_tds_ppm/telemetry`, `metric_type`: **`TDS`**, `unit`: `ppm`). В history-logger это резолвится в сенсор типа `OTHER` с label `ec_tds_ppm`, а не в канал `ec_sensor` (EC, mS/cm). Публикация TDS на `ec_sensor` с тем же `metric_type` **EC** запрещена контрактом: смешивает ppm и mS/cm в одной серии на графике и в `telemetry_samples`.
+
 #### I²C: Trema Flash TDS/EC (`ec_node`, драйвер `trema_ec`)
 
 - **Шина:** на `ec_node` Trema EC висит на **отдельном контроллере I²C — `I2C_BUS_1`**, GPIO по умолчанию **SDA 18 / SCL 19** (как Trema pH на `ph_node`); **шина 0** (21/22) — OLED и INA209, **не** смешивать с Trema на одной линии в штатной разводке.

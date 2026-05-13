@@ -66,12 +66,23 @@ static const char *channel_to_metric_type(const char *channel, metric_type_t typ
         return "OTHER";
     }
     
+    /* TDS (ppm) с ec_node — отдельный MQTT channel id; не смешивать с EC (mS/cm) на ec_sensor. */
+    if (strcmp(channel, "ec_tds_ppm") == 0) {
+        return "TDS";
+    }
+
     // Прямой маппинг каналов → metric_type (канонический формат)
     if (strcmp(channel, "ph_sensor") == 0 || strcmp(channel, "ph") == 0) {
-        return "PH";
+        if (type == METRIC_TYPE_PH) {
+            return "PH";
+        }
+        /* Вторичные метрики на том же железном канале — не подменяют PH. */
     }
     if (strcmp(channel, "ec_sensor") == 0 || strcmp(channel, "ec") == 0) {
-        return "EC";
+        if (type == METRIC_TYPE_EC) {
+            return "EC";
+        }
+        /* Например METRIC_TYPE_CUSTOM на ec_sensor — не тегировать как EC. */
     }
     if (strcmp(channel, "air_temp_c") == 0 || strcmp(channel, "temperature") == 0) {
         return "TEMPERATURE";

@@ -41,6 +41,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 {
   "node_id": "nd-ph-1",
   "version": 3,
+  "fw_version": "1.0.0",
   "type": "ph",
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
@@ -59,6 +60,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 |------|-----|--------------|----------|
 | `node_id` | string | Да | Уникальный идентификатор узла (UID) |
 | `version` | integer | Да | Версия формата конфигурации |
+| `fw_version` | string | Нет | Версия прикладной прошивки, которую сообщает сама нода в `config_report`/`heartbeat`; backend только сохраняет последнее полученное значение в `nodes.fw_version`. Не использовать версию ESP-IDF SDK как версию прошивки. |
 | `type` | string | Да | Тип узла: `ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |

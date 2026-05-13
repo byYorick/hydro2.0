@@ -120,6 +120,73 @@ describe('MultiSeriesTelemetryChart.vue', () => {
     expect(dataZoom?.[0]?.start).toBe(50)
   })
 
+  it('для EC держит верхнюю границу оси на 2 при значениях ниже 2', () => {
+    const wrapper = mount(MultiSeriesTelemetryChart, {
+      props: {
+        series: [{
+          name: 'ec_sensor',
+          label: 'EC (mS/cm)',
+          color: '#06b6d4',
+          data: [
+            { ts: Date.now() - 60_000, value: 1.4 },
+            { ts: Date.now(), value: 1.8 },
+          ],
+          currentValue: 1.8,
+        }],
+      },
+    })
+
+    const option = chartOption(wrapper)
+    const yAxis = option.yAxis as Array<{ max?: number }>
+    expect(yAxis[0]?.max).toBe(2)
+  })
+
+  it('для EC расширяет верхнюю границу оси при значениях выше 2', () => {
+    const wrapper = mount(MultiSeriesTelemetryChart, {
+      props: {
+        series: [{
+          name: 'ec_sensor',
+          label: 'EC (mS/cm)',
+          color: '#06b6d4',
+          data: [
+            { ts: Date.now() - 60_000, value: 1.8 },
+            { ts: Date.now(), value: 2.4 },
+          ],
+          currentValue: 2.4,
+        }],
+      },
+    })
+
+    const option = chartOption(wrapper)
+    const yAxis = option.yAxis as Array<{ max?: number }>
+    expect(yAxis[0]?.max).toBeGreaterThan(2.4)
+  })
+
+  it('для EC не учитывает legacy/raw-точки вне sane-диапазона', () => {
+    const wrapper = mount(MultiSeriesTelemetryChart, {
+      props: {
+        series: [{
+          name: 'ec_sensor',
+          label: 'EC (mS/cm)',
+          color: '#06b6d4',
+          data: [
+            { ts: Date.now() - 120_000, value: 160 },
+            { ts: Date.now() - 60_000, value: 0.32 },
+            { ts: Date.now(), value: 203 },
+            { ts: Date.now() + 60_000, value: 0.4 },
+          ],
+          currentValue: 0.4,
+        }],
+      },
+    })
+
+    const option = chartOption(wrapper)
+    const yAxis = option.yAxis as Array<{ max?: number }>
+    const series = option.series as Array<{ data?: Array<[number, number]> }>
+    expect(yAxis[0]?.max).toBe(2)
+    expect(series[0]?.data?.map((point) => point[1])).toEqual([0.32, 0.4])
+  })
+
   describe('formatValue', () => {
     it('форматирует pH значения с 2 знаками после запятой', () => {
       const wrapper = mount(MultiSeriesTelemetryChart, {

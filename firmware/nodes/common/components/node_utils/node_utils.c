@@ -22,6 +22,10 @@ static const char *TAG = "node_utils";
 
 static char s_node_type[32] = {0};
 
+#ifndef HYDRO_FIRMWARE_VERSION
+#define HYDRO_FIRMWARE_VERSION "1.0.0"
+#endif
+
 // Смещение времени для нормализации Unix timestamp
 // time_offset_us = host_ts_us - esp_timer_get_time()
 // Используется для преобразования esp_timer_get_time() в Unix timestamp
@@ -54,6 +58,10 @@ void node_utils_set_node_type(const char *node_type) {
 
 const char *node_utils_get_node_type(void) {
     return s_node_type[0] != '\0' ? s_node_type : NULL;
+}
+
+const char *node_utils_get_firmware_version(void) {
+    return HYDRO_FIRMWARE_VERSION;
 }
 
 esp_err_t node_utils_get_hardware_id(char *hardware_id, size_t size) {
@@ -347,11 +355,6 @@ esp_err_t node_utils_publish_node_hello(
         return err;
     }
     
-    // Получаем версию прошивки
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
     // Создаем JSON сообщение node_hello
     cJSON *hello = cJSON_CreateObject();
     if (!hello) {
@@ -362,7 +365,7 @@ esp_err_t node_utils_publish_node_hello(
     cJSON_AddStringToObject(hello, "message_type", "node_hello");
     cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
     cJSON_AddStringToObject(hello, "node_type", node_type);
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
+    cJSON_AddStringToObject(hello, "fw_version", node_utils_get_firmware_version());
     
     // Добавляем capabilities
     cJSON *capabilities_array = cJSON_CreateArray();
@@ -434,29 +437,36 @@ esp_err_t node_utils_publish_config_report(void) {
     }
 
     const char *node_type = node_utils_get_node_type();
-    if (node_type && node_type[0] != '\0') {
-        cJSON *config = cJSON_Parse(config_json);
-        if (config) {
-            cJSON *type_item = cJSON_GetObjectItem(config, "type");
-            bool needs_patch = !cJSON_IsString(type_item) || !type_item->valuestring ||
-                strlen(type_item->valuestring) == 0 || strcmp(type_item->valuestring, "unknown") == 0;
-            if (needs_patch) {
-                cJSON_DeleteItemFromObject(config, "type");
-                cJSON_AddStringToObject(config, "type", node_type);
-                char *patched = cJSON_PrintUnformatted(config);
-                if (patched) {
-                    size_t patched_len = strlen(patched);
-                    if (patched_len < sizeof(config_json)) {
-                        memcpy(config_json, patched, patched_len + 1);
-                        ESP_LOGI(TAG, "Patched config_report type to '%s'", node_type);
-                    } else {
-                        ESP_LOGW(TAG, "Patched config_report exceeds buffer, sending original config");
-                    }
-                    free(patched);
-                }
-            }
-            cJSON_Delete(config);
+    cJSON *config = cJSON_Parse(config_json);
+    if (config) {
+        bool changed = false;
+        cJSON *type_item = cJSON_GetObjectItem(config, "type");
+        bool needs_patch = !cJSON_IsString(type_item) || !type_item->valuestring ||
+            strlen(type_item->valuestring) == 0 || strcmp(type_item->valuestring, "unknown") == 0;
+        if (node_type && node_type[0] != '\0' && needs_patch) {
+            cJSON_DeleteItemFromObject(config, "type");
+            cJSON_AddStringToObject(config, "type", node_type);
+            changed = true;
         }
+
+        cJSON_DeleteItemFromObject(config, "fw_version");
+        cJSON_AddStringToObject(config, "fw_version", node_utils_get_firmware_version());
+        changed = true;
+
+        if (changed) {
+            char *patched = cJSON_PrintUnformatted(config);
+            if (patched) {
+                size_t patched_len = strlen(patched);
+                if (patched_len < sizeof(config_json)) {
+                    memcpy(config_json, patched, patched_len + 1);
+                    ESP_LOGI(TAG, "Patched config_report metadata");
+                } else {
+                    ESP_LOGW(TAG, "Patched config_report exceeds buffer, sending original config");
+                }
+                free(patched);
+            }
+        }
+        cJSON_Delete(config);
     }
 
     ESP_LOGI(TAG, "Publishing config_report (%zu bytes)", strlen(config_json));

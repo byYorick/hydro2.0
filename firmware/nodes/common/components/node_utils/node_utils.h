@@ -44,6 +44,16 @@ void node_utils_set_node_type(const char *node_type);
 const char *node_utils_get_node_type(void);
 
 /**
+ * @brief Получить версию прикладной прошивки узла.
+ *
+ * Это версия firmware/app, а не версия ESP-IDF SDK. Backend отображает именно
+ * это значение как `nodes.fw_version`.
+ *
+ * @return Строка версии прошивки.
+ */
+const char *node_utils_get_firmware_version(void);
+
+/**
  * @brief Получить hardware_id (MAC-основанный идентификатор ноды)
  *
  * Формат: esp32-<mac6bytes lowercase hex>
