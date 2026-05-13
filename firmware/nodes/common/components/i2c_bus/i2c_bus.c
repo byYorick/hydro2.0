@@ -4,7 +4,6 @@
  */
 
 #include "i2c_bus.h"
-#include "config_storage.h"
 #include "esp_log.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
@@ -13,7 +12,6 @@
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
-#include "cJSON.h"
 
 static const char *TAG = "i2c_bus";
 
@@ -603,101 +601,20 @@ static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id)
     return ESP_OK;
 }
 
-static void i2c_bus_apply_json_i2c_object(cJSON *i2c, i2c_bus_config_t *out)
-{
-    cJSON *item = NULL;
-    if ((item = cJSON_GetObjectItem(i2c, "sda")) && cJSON_IsNumber(item)) {
-        out->sda_pin = (int)cJSON_GetNumberValue(item);
-    }
-    if ((item = cJSON_GetObjectItem(i2c, "scl")) && cJSON_IsNumber(item)) {
-        out->scl_pin = (int)cJSON_GetNumberValue(item);
-    }
-    if ((item = cJSON_GetObjectItem(i2c, "speed")) && cJSON_IsNumber(item)) {
-        out->clock_speed = (uint32_t)cJSON_GetNumberValue(item);
-    }
-    if ((item = cJSON_GetObjectItem(i2c, "pullup")) != NULL) {
-        if (cJSON_IsBool(item)) {
-            out->pullup_enable = cJSON_IsTrue(item);
-        } else if (cJSON_IsNumber(item)) {
-            out->pullup_enable = (cJSON_GetNumberValue(item) != 0);
-        }
-    }
-}
-
 esp_err_t i2c_bus_init_from_config(void)
 {
-    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
-
+    /*
+     * I²C пины и скорость не входят в NodeConfig: задаются прошивкой (*_defaults.h / init_steps).
+     * Функция сохранена для совместимости API — инициализирует только шину 0 дефолтами компонента.
+     * Шина 1 — только через i2c_bus_init_bus(I2C_BUS_1, …) из кода ноды.
+     */
     i2c_bus_config_t def = {
         .sda_pin = I2C_BUS_DEFAULT_SDA_PIN,
         .scl_pin = I2C_BUS_DEFAULT_SCL_PIN,
         .clock_speed = I2C_BUS_DEFAULT_CLOCK_SPEED,
         .pullup_enable = false
     };
-
-    esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to load config from storage, using defaults");
-        return i2c_bus_init(&def);
-    }
-
-    cJSON *config = cJSON_Parse(config_json);
-    if (config == NULL) {
-        ESP_LOGE(TAG, "Failed to parse config JSON");
-        return i2c_bus_init(&def);
-    }
-
-    cJSON *hardware = cJSON_GetObjectItem(config, "hardware");
-    if (hardware == NULL || !cJSON_IsObject(hardware)) {
-        cJSON_Delete(config);
-        ESP_LOGW(TAG, "No hardware section in config, using defaults");
-        return i2c_bus_init(&def);
-    }
-
-    cJSON *i2c = cJSON_GetObjectItem(hardware, "i2c");
-    cJSON *i2c1 = cJSON_GetObjectItem(hardware, "i2c1");
-    const bool have_i2c = (i2c != NULL && cJSON_IsObject(i2c));
-    const bool have_i2c1 = (i2c1 != NULL && cJSON_IsObject(i2c1));
-
-    if (!have_i2c && !have_i2c1) {
-        cJSON_Delete(config);
-        ESP_LOGW(TAG, "No hardware.i2c / hardware.i2c1, using defaults for bus 0");
-        return i2c_bus_init(&def);
-    }
-
-    i2c_bus_config_t cfg0 = def;
-    if (have_i2c) {
-        i2c_bus_apply_json_i2c_object(i2c, &cfg0);
-    }
-
-    ESP_LOGI(TAG, "Init bus0 from NodeConfig: SDA=%d SCL=%d speed=%lu Hz pullup=%d",
-             cfg0.sda_pin, cfg0.scl_pin, (unsigned long)cfg0.clock_speed, (int)cfg0.pullup_enable);
-
-    esp_err_t result = i2c_bus_init(&cfg0);
-    if (result != ESP_OK) {
-        cJSON_Delete(config);
-        return result;
-    }
-
-    if (have_i2c1) {
-        i2c_bus_config_t cfg1 = def;
-        i2c_bus_apply_json_i2c_object(i2c1, &cfg1);
-        ESP_LOGI(TAG, "Init bus1 from NodeConfig hardware.i2c1: SDA=%d SCL=%d speed=%lu Hz pullup=%d",
-                 cfg1.sda_pin, cfg1.scl_pin, (unsigned long)cfg1.clock_speed, (int)cfg1.pullup_enable);
-        result = i2c_bus_init_bus(I2C_BUS_1, &cfg1);
-        if (result != ESP_OK) {
-            ESP_LOGE(TAG, "hardware.i2c1 init failed: %s", esp_err_to_name(result));
-            if (have_i2c) {
-                ESP_LOGW(TAG,
-                         "I²C bus 0 остаётся активным (hardware.i2c применён); шина 1 не поднята — проверьте hardware.i2c1");
-            } else {
-                ESP_LOGW(TAG,
-                         "hardware.i2c1 не поднят; шина 0 инициализирована дефолтами из init_from_config — "
-                         "при необходимости вызовите i2c_bus_init_bus(I2C_BUS_1, …) из кода ноды");
-            }
-        }
-    }
-
-    cJSON_Delete(config);
-    return result;
+    ESP_LOGI(TAG, "i2c_bus_init_from_config: bus0 defaults SDA=%d SCL=%d speed=%lu Hz (internal, not NodeConfig)",
+             def.sda_pin, def.scl_pin, (unsigned long)def.clock_speed);
+    return i2c_bus_init(&def);
 }

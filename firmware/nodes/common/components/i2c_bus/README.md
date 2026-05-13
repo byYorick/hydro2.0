@@ -12,7 +12,7 @@
 
 ## Инициализация
 
-Ручная:
+Ручная (основной путь — пины и скорость задаются в коде ноды, не в NodeConfig):
 
 ```c
 i2c_bus_config_t config = {
@@ -24,14 +24,11 @@ i2c_bus_config_t config = {
 ESP_ERROR_CHECK(i2c_bus_init_bus(I2C_BUS_0, &config));
 ```
 
-Из NodeConfig (`i2c_bus_init_from_config`):
+`i2c_bus_init_from_config()` — **не** читает NodeConfig; инициализирует только шину **0** дефолтами компонента (`I2C_BUS_DEFAULT_*`). Сохранено для совместимости API. Вторая шина — только `i2c_bus_init_bus(I2C_BUS_1, &config)` из кода ноды.
 
-- `hardware.i2c` — шина **0** (как раньше).
-- Опционально `hardware.i2c1` — шина **1** (те же поля: `sda`, `scl`, `speed`, опционально `pullup`). **По умолчанию** в прошивке и в `i2c_bus_init_from_config` внутренние pull-up **выключены** (`pullup: false`); включайте `pullup: true` в JSON только если нужны слабые внутренние подтяжки ESP.
+**По умолчанию** внутренние pull-up ESP на шине **выключены** (`pullup_enable = false`); включайте только если нужны слабые внутренние подтяжки и это согласовано со схемой платы.
 
-**Частичная инициализация:** сначала всегда поднимается шина 0. Если задан `hardware.i2c1`, а `i2c_bus_init_bus(I2C_BUS_1, …)` завершился с ошибкой, **шина 0 остаётся инициализированной** (в лог пишется предупреждение). Вызывающий получает код ошибки шины 1 и может повторить инициализацию или поднять шину 1 вручную.
-
-См. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` (раздел `hardware`).
+См. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — пины и скорость I²C задаются в коде ноды, не в JSON NodeConfig.
 
 ## Чтение / запись
 
@@ -68,10 +65,10 @@ err = i2c_bus_read_bus_ex(I2C_BUS_1, 0x09, &reg, 1, buf, 2, &o);
 
 ## Зависимости
 
-ESP-IDF 5.x, FreeRTOS, `config_storage` + cJSON для `init_from_config`.
+ESP-IDF 5.x, FreeRTOS.
 
 ## Документация
 
 - `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` (`hardware.i2c` / `i2c1`)
+- `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`
 - Компонент `i2c_cache`: политика кэширования чтений — `../i2c_cache/README.md`

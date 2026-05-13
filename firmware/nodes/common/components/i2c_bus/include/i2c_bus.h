@@ -10,7 +10,7 @@
  * - Повторы только для чтения (i2c_bus_read_bus_ex); запись — одна попытка (без автоповтора)
  * - Запись без malloc при len <= I2C_BUS_MAX_COMBINED_WRITE
  * - I²C recovery / reset шины
- * - Инициализация из NodeConfig: hardware.i2c (шина 0), опционально hardware.i2c1 (шина 1)
+ * - i2c_bus_init_from_config(): только дефолты шины 0 из компонента (пины/скорость не в NodeConfig)
  *
  * Инварианты (порядок блокировок): держите mutex драйвера сенсора, затем вызывайте i2c_bus_*;
  * не вызывайте драйвер с удерживаемым mutex i2c_bus — риск deadlock.
@@ -201,7 +201,9 @@ esp_err_t i2c_bus_recover(void);
 esp_err_t i2c_bus_reset_bus(i2c_bus_id_t bus_id);
 
 /**
- * @brief Инициализация из NodeConfig: hardware.i2c → шина 0; опционально hardware.i2c1 → шина 1.
+ * @brief Инициализация шины 0 дефолтами компонента (совместимость API; NodeConfig не читается).
+ *
+ * Пины, скорость и вторая шина задаются в коде ноды (i2c_bus_init / i2c_bus_init_bus).
  */
 esp_err_t i2c_bus_init_from_config(void);
 
