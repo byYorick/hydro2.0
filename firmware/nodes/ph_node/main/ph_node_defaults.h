@@ -31,6 +31,12 @@ extern "C" {
 #define PH_NODE_SOLUTION_TEMP_POLL_INTERVAL_MS 5000
 #define PH_NODE_SOLUTION_TEMP_PRECISION        1
 
+/**
+ * Макс. возраст снимка trema_ph для MQTT/OLED без повторного I²C (чуть больше периода опроса).
+ * @see ph_node_ph_poll_sensor_once
+ */
+#define PH_NODE_PH_TELEMETRY_CACHE_MAX_AGE_MS 3500U
+
 // I2C bus defaults (Trema pH FLASH-I2C: wiki iarduino — шина 100 кГц, заводской адрес 0x09)
 #define PH_NODE_I2C_BUS_0_SDA        21  // ESP32 стандартный SDA (OLED + INA209)
 #define PH_NODE_I2C_BUS_0_SCL        22  // ESP32 стандартный SCL

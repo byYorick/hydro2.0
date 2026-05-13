@@ -43,6 +43,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "channels": [],
   "wifi": {...},
   "mqtt": {...},
+  "hardware": {...},
   "limits": {...},
   "calibration": {...}
 }
@@ -61,6 +62,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы). Каналы формируются в прошивке и отправляются нодой на сервер. |
 | `wifi` | object | Да | Параметры Wi-Fi подключения |
 | `mqtt` | object | Да | Параметры MQTT подключения |
+| `hardware` | object | Нет | I²C: `i2c` (шина 0), опционально `i2c1` (шина 1); эталон — `doc_ai/.../NODE_CONFIG_SPEC.md` §3.5.1 |
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
 
@@ -120,6 +122,10 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Примеры:**
 - `"zn-3"` — зона #3
 - `"zn-main"` — главная зона
+
+### 3.5.1. `hardware` (опционально)
+
+См. эталон `../doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` §3.5.1 (`hardware.i2c`, `hardware.i2c1`).
 
 ### 3.6. `channels`
 

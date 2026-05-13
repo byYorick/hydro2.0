@@ -22,6 +22,15 @@
 
 2. Либо задайте значение до включения заголовка только в отдельной обёртке (редко нужно).
 
+## Интеграция ph_node (один poll за тик)
+
+На **ph_node** периодический путь: **`ph_node_ph_poll_sensor_once()`** — лёгкий **`trema_ph_probe_chip_quick()`**
+(байт `REG_MODEL` и несколько типичных адресов, без полного discovery), при необходимости **`trema_ph_init()`**,
+затем **`trema_ph_read()`** (снимок в очереди драйвера). MQTT и OLED берут значение только из
+**`trema_ph_try_cached_measurement`**; для индикации «модуль на шине» в том же тике —
+**`ph_node_ph_last_poll_chip_present()`**. Полный **`trema_ph_probe_presence()`** / discovery остаётся для
+диагностики и init.
+
 ## Описание
 
 Компонент реализует драйвер для Trema pH-датчика:
@@ -43,7 +52,7 @@ i2c_bus_config_t i2c_config = {
     .sda_pin = 21,
     .scl_pin = 22,
     .clock_speed = 100000,
-    .pullup_enable = true
+    .pullup_enable = false
 };
 i2c_bus_init(&i2c_config);
 

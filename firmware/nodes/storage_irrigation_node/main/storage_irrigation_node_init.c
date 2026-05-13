@@ -43,7 +43,7 @@ static esp_err_t init_i2c_bus_if_needed(void) {
         .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
         .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
         .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
-        .pullup_enable = true
+        .pullup_enable = false
     };
 
     esp_err_t err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);

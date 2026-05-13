@@ -21,6 +21,15 @@ EC-нода для измерения электропроводности и у
 - Температурная компенсация
 - Измерение EC (mS/cm) и TDS (ppm)
 
+## Опрос и телеметрия (sensor_task)
+
+- За тик вызывается **`ec_node_ec_poll_sensor_once()`**: `trema_ec_probe_present`, при необходимости `trema_ec_init`,
+  температура, **`trema_ec_read`**, **`trema_ec_get_tds`**, затем **`trema_ec_push_telemetry_snapshot`** (в очередь
+  попадают EC, raw, **tds_ppm**).
+- **`ec_node_publish_telemetry_callback`** и OLED используют только **`trema_ec_try_cached_measurement`** — без
+  повторного read/get_tds на MQTT.
+- Для OLED без второго probe на шине: **`ec_node_ec_last_poll_probe_present()`** (результат probe в последнем poll).
+
 ## Описание
 
 Нода измеряет EC (электропроводность) раствора и управляет 4 насосами для внесения компонентов питания.

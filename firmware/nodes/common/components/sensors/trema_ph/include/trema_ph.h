@@ -182,6 +182,11 @@ bool trema_ph_is_using_stub_values(void);
 bool trema_ph_is_initialized(void);
 bool trema_ph_log_connection_status(void);
 bool trema_ph_probe_presence(void);
+/**
+ * Лёгкий probe: байт REG_MODEL по текущему адресу и типичные 7-bit 0x09/0x0A/0x08.
+ * Полный discovery — в `trema_ph_init` / `trema_ph_probe_presence` / `trema_ph_log_connection_status`.
+ */
+bool trema_ph_probe_chip_quick(void);
 void trema_ph_set_read_trace_verbose(bool verbose);
 
 /* --- Функции из iarduino_I2C_pH v1.2.3 (имена в стиле trema_ph_*) --- */

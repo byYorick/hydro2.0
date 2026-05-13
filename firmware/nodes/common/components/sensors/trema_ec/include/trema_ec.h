@@ -81,7 +81,7 @@ typedef enum {
     TREMA_EC_ERROR_INVALID_VALUE = 3
 } trema_ec_error_t;
 
-/** Макс. возраст снимка из очереди для OLED без повторного I²C (как `PH_TELEMETRY_CACHE_MAX_AGE_MS` на ph_node). */
+/** Макс. возраст снимка из очереди для OLED без повторного I²C (см. `PH_NODE_PH_TELEMETRY_CACHE_MAX_AGE_MS`). */
 #define TREMA_EC_TELEMETRY_CACHE_MAX_AGE_MS 4000U
 
 /**
@@ -90,6 +90,8 @@ typedef enum {
 typedef struct {
     float ec_mScm;
     uint16_t raw_ec_u16;
+    /** ppm из REG_TDS_TDS, снято в том же poll что и EC (без отдельного I²C в publish). */
+    uint16_t tds_ppm;
     bool using_stub;
     bool valid;
     TickType_t tick_stamp;
@@ -108,9 +110,9 @@ void trema_ec_unbind_sample_queue(void);
 bool trema_ec_try_cached_measurement(trema_ec_measurement_t *out, uint32_t max_age_ms);
 
 /**
- * Сохранить снимок после опроса EC (`ec_node_ec_poll_sensor_once`) — MQTT/OLED читают очередь без повторного I²C.
+ * Сохранить снимок после опроса EC (`ec_node_ec_poll_sensor_once`): EC, raw, TDS ppm, stub-флаг.
  */
-void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool using_stub);
+void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool using_stub, uint16_t tds_ppm);
 
 bool trema_ec_init(void);
 bool trema_ec_is_initialized(void);

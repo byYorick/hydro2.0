@@ -3,13 +3,15 @@
  * @brief FreeRTOS задачи и телеметрия для ph_node
  * 
  * Реализует периодические задачи согласно FIRMWARE_STRUCTURE.md:
- * - task_sensors - опрос pH датчика и публикация телеметрии
- * - ph_node_publish_telemetry - публикация телеметрии pH
+ * - task_sensors — ph_node_ph_poll_sensor_once + MQTT/OLED из снимка trema_ph
+ * - ph_node_publish_telemetry — публикация pH только из очереди (после poll)
  * 
  * Примечание: heartbeat задача вынесена в компонент heartbeat_task
  */
 
 #include "ph_node_app.h"
+#include "ph_node_defaults.h"
+#include "ph_node_framework_integration.h"
 #include "mqtt_manager.h"
 #include "oled_ui.h"
 #include "trema_ph.h"
@@ -39,14 +41,11 @@
 
 static const char *TAG = "ph_node_tasks";
 
-/** Очередь глубины 1: последний валидный снимок pH после trema_ph_read (см. trema_ph_bind_sample_queue). */
+/** Очередь глубины 1: снимок pH после ph_node_ph_poll_sensor_once → trema_ph_read (см. trema_ph_bind_sample_queue). */
 static QueueHandle_t s_ph_meas_queue;
 
-/** Макс. возраст снимка из очереди для телеметрии без повторного I²C (чуть больше периода опроса). */
-#define PH_TELEMETRY_CACHE_MAX_AGE_MS 4000U
-
 // Период опроса датчика (в миллисекундах)
-#define SENSOR_POLL_INTERVAL_MS    3000  // 3 секунды - опрос pH датчика
+#define SENSOR_POLL_INTERVAL_MS PH_NODE_PH_SENSOR_POLL_INTERVAL_MS
 #define PUMP_CURRENT_POLL_INTERVAL_MS 5000  // 5 секунд - опрос тока насосов (по умолчанию)
 #define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 
@@ -90,26 +89,22 @@ static void task_sensors(void *pvParameters) {
         if (elapsed_since_wake >= interval) {
             // Сбрасываем watchdog перед выполнением работы
             node_watchdog_reset();
-            
-            // Publish pH telemetry только если MQTT подключен
+
+            /* Один poll за тик (как ec_node): I²C в trema_ph; MQTT/OLED — только из очереди снимка. */
+            ph_node_ph_poll_sensor_once();
+
             if (mqtt_manager_is_connected()) {
-                /* Один I²C-опрос здесь; ph_node_publish_telemetry возьмёт снимок из очереди (trema_ph). */
-                if (i2c_bus_is_initialized_bus(I2C_BUS_1)) {
-                    float ph_prime = NAN;
-                    (void)trema_ph_read(&ph_prime);
-                }
                 ph_node_publish_telemetry();
             } else {
                 connection_status_t cs = {0};
                 bool wifi_up = (connection_status_get(&cs) == ESP_OK && cs.wifi_connected);
                 if (wifi_up) {
-                    ESP_LOGD(TAG, "MQTT ещё не подключён, пропуск опроса сенсора (Wi-Fi есть)");
+                    ESP_LOGD(TAG, "MQTT ещё не подключён, опрос pH выполнен для OLED (Wi-Fi есть)");
                 } else {
-                    ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                    ESP_LOGW(TAG, "MQTT not connected, sensor poll done for OLED only");
                 }
-                trema_ph_log_connection_status();
             }
-            
+
             // Update OLED UI with current pH values (pH-специфичная логика)
             // Обновляем OLED независимо от MQTT подключения
             if (ph_node_is_oled_initialized()) {
@@ -164,24 +159,23 @@ static void task_sensors(void *pvParameters) {
                     model.ph_value = NAN;
                     
                     if (i2c_bus_ok) {
-                        /* Полная проверка заголовка как iarduino_I2C_pH (model/address/chip) */
-                        if (trema_ph_probe_presence()) {
+                        if (ph_node_ph_last_poll_chip_present()) {
                             model.sensor_status.i2c_connected = true;
-                            
-                            // Если датчик подключен: сначала снимок из очереди trema_ph (после read в ветке MQTT), иначе I²C
+
+                            // Значение только из снимка очереди (без повторного trema_ph_read)
                             if (sensor_initialized) {
                                 float ph_value = 0.0f;
                                 bool read_success = false;
                                 bool using_stub = false;
                                 trema_ph_measurement_t snap;
-                                if (trema_ph_try_cached_measurement(&snap, PH_TELEMETRY_CACHE_MAX_AGE_MS) && snap.valid &&
-                                    !isnan(snap.ph) && isfinite(snap.ph) && snap.ph >= 0.0f && snap.ph <= 14.0f) {
+                                if (trema_ph_try_cached_measurement(&snap, PH_NODE_PH_TELEMETRY_CACHE_MAX_AGE_MS) &&
+                                    snap.valid && !isnan(snap.ph) && isfinite(snap.ph) && snap.ph >= 0.0f &&
+                                    snap.ph <= 14.0f) {
                                     ph_value = snap.ph;
                                     read_success = true;
                                     using_stub = false;
                                 } else {
-                                    read_success = trema_ph_read(&ph_value);
-                                    using_stub = trema_ph_is_using_stub_values();
+                                    read_success = false;
                                 }
 
                                 // Проверяем валидность значения: pH должен быть в диапазоне 0-14
@@ -395,44 +389,25 @@ void ph_node_publish_telemetry(void) {
         ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
         return;
     }
-    
-    // Initialize sensor if not initialized
-    if (!trema_ph_is_initialized() && i2c_bus_is_initialized_bus(I2C_BUS_1)) {
-        if (trema_ph_init()) {
-            ESP_LOGI(TAG, "Trema pH sensor initialized");
-        }
-    }
-    
+
     float ph_value = NAN;
-    bool read_success = false;
     bool using_stub = false;
     bool is_stable = true;
     int32_t raw_value = 0;
 
     trema_ph_measurement_t cached;
-    if (trema_ph_try_cached_measurement(&cached, PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
+    if (trema_ph_try_cached_measurement(&cached, PH_NODE_PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
         !isnan(cached.ph) && isfinite(cached.ph) && cached.ph >= 0.0f && cached.ph <= 14.0f) {
         ph_value = cached.ph;
-        read_success = true;
         using_stub = false;
         raw_value = (int32_t)cached.raw_thousandths;
         is_stable = cached.stable;
-    } else if (trema_ph_is_initialized()) {
-        read_success = trema_ph_read(&ph_value);
-        using_stub = trema_ph_is_using_stub_values();
-
-        if (!read_success || isnan(ph_value)) {
-            ESP_LOGW(TAG, "Failed to read pH value, using stub");
-            ph_value = 6.5f;
-            using_stub = true;
-        } else {
-            raw_value = (int32_t)(ph_value * 1000);
-            is_stable = trema_ph_get_last_read_stability();
-        }
     } else {
-        ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
+        ESP_LOGW(TAG, "pH telemetry: cache miss or stale (stub for MQTT)");
         ph_value = 6.5f;
         using_stub = true;
+        is_stable = false;
+        raw_value = 6500;
     }
 
     ESP_LOGI(

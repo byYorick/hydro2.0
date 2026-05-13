@@ -28,7 +28,7 @@
 
 static const char *TAG = "ec_node_tasks";
 
-/** Очередь глубины 1: снимок EC после телеметрии (`trema_ec_push_telemetry_snapshot` в publish callback). */
+/** Очередь глубины 1: снимок EC после `ec_node_ec_poll_sensor_once` → `trema_ec_push_telemetry_snapshot`. */
 static QueueHandle_t s_ec_meas_queue;
 
 /**
@@ -144,7 +144,7 @@ static void task_sensors(void *pvParameters) {
                     model.ec_value = NAN;
                     
                     if (i2c_ec_bus_ok) {
-                        const bool chip_on_wire = trema_ec_probe_present();
+                        const bool chip_on_wire = ec_node_ec_last_poll_probe_present();
 
                         if (chip_on_wire) {
                             model.sensor_status.i2c_connected = true;

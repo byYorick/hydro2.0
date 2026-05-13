@@ -37,8 +37,33 @@
 
 static const char *TAG = "ph_node_fw";
 
-/** Согласовано с ph_node_tasks: возраст снимка из очереди trema_ph для повторного использования без I²C. */
-#define PH_TELEMETRY_CACHE_MAX_AGE_MS 4000U
+static bool s_ph_last_poll_chip_present;
+
+void ph_node_ph_poll_sensor_once(void)
+{
+    s_ph_last_poll_chip_present = false;
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        return;
+    }
+    if (!trema_ph_probe_chip_quick()) {
+        return;
+    }
+    s_ph_last_poll_chip_present = true;
+
+    if (!trema_ph_is_initialized()) {
+        if (!trema_ph_init()) {
+            return;
+        }
+    }
+
+    float ph = NAN;
+    (void)trema_ph_read(&ph);
+}
+
+bool ph_node_ph_last_poll_chip_present(void)
+{
+    return s_ph_last_poll_chip_present;
+}
 
 /**
  * Записать эталон стадии калибровки в NodeConfig (NVS).
@@ -890,52 +915,34 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Инициализация сенсора, если не инициализирован
-    if (!trema_ph_is_initialized() && i2c_bus_is_initialized_bus(I2C_BUS_1)) {
-        if (trema_ph_init()) {
-            ESP_LOGI(TAG, "Trema pH sensor initialized");
-        }
-    }
-
-    // Чтение значения pH (сначала снимок из очереди драйвера — см. trema_ph_bind_sample_queue в ph_node_start_tasks)
     float ph_value = NAN;
-    bool read_success = false;
     bool using_stub = false;
     bool is_stable = true;
     int32_t raw_value = 0;
 
     trema_ph_measurement_t cached;
-    if (trema_ph_try_cached_measurement(&cached, PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
+    if (trema_ph_try_cached_measurement(&cached, PH_NODE_PH_TELEMETRY_CACHE_MAX_AGE_MS) && cached.valid &&
         !isnan(cached.ph) && isfinite(cached.ph) && cached.ph >= 0.0f && cached.ph <= 14.0f) {
         ph_value = cached.ph;
-        read_success = true;
         using_stub = false;
         raw_value = (int32_t)cached.raw_thousandths;
         is_stable = cached.stable;
         s_ph_sensor_error_active = false;
-    } else if (trema_ph_is_initialized()) {
-        read_success = trema_ph_read(&ph_value);
-        using_stub = trema_ph_is_using_stub_values();
-
-        if (!read_success || isnan(ph_value)) {
-            if (!s_ph_sensor_error_active) {
-                node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read pH sensor value");
-                s_ph_sensor_error_active = true;
-            }
-            ph_value = 6.5f;
-            using_stub = true;
-        } else {
-            raw_value = (int32_t)(ph_value * 1000);
-            is_stable = trema_ph_get_last_read_stability();
-            s_ph_sensor_error_active = false;
-        }
     } else {
         if (!s_ph_sensor_error_active) {
-            node_state_manager_report_error(ERROR_LEVEL_WARNING, "ph_sensor", ESP_ERR_INVALID_STATE, "pH sensor not initialized");
+            if (trema_ph_is_initialized()) {
+                node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_ERR_INVALID_RESPONSE,
+                                                  "pH telemetry cache empty or stale (run sensor_task poll)");
+            } else {
+                node_state_manager_report_error(ERROR_LEVEL_WARNING, "ph_sensor", ESP_ERR_INVALID_STATE,
+                                                  "pH sensor not initialized");
+            }
             s_ph_sensor_error_active = true;
         }
         ph_value = 6.5f;
         using_stub = true;
+        is_stable = false;
+        raw_value = 6500;
     }
 
     ESP_LOGI(

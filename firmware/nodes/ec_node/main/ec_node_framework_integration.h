@@ -9,6 +9,7 @@
 #ifndef EC_NODE_FRAMEWORK_INTEGRATION_H
 #define EC_NODE_FRAMEWORK_INTEGRATION_H
 
+#include <stdbool.h>
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -45,10 +46,14 @@ void ec_node_framework_register_mqtt_handlers(void);
 esp_err_t ec_node_publish_telemetry_callback(void *user_ctx);
 
 /**
- * Один опрос Trema EC за тик: init/температура, одно trema_ec_read, push в очередь снимка.
- * Публикация MQTT и OLED берут значение только из очереди (`trema_ec_try_cached_measurement`).
+ * Один опрос Trema EC за тик: probe, init/температура, trema_ec_read, trema_ec_get_tds (один раз),
+ * push в очередь снимка (EC + raw + TDS ppm). Публикация MQTT и OLED — только из очереди, без
+ * повторного trema_ec_read / trema_ec_get_tds в callback.
  */
 void ec_node_ec_poll_sensor_once(void);
+
+/** Результат trema_ec_probe_present() в последнем ec_node_ec_poll_sensor_once() (для OLED без второго probe). */
+bool ec_node_ec_last_poll_probe_present(void);
 
 #ifdef __cplusplus
 }

@@ -35,6 +35,9 @@
 static const char *TAG = "ec_node_fw";
 static bool s_sensor_mode_active = false;
 
+/** Последний ec_node_ec_poll_sensor_once: trema_ec_probe_present() до init/read (для OLED). */
+static bool s_ec_last_poll_probe_present;
+
 /** Последний удачный EC для телеметрии (mS/cm): при срыве чтения не шлём 1.2 на график. */
 static float s_ec_telemetry_last_good = NAN;
 static bool s_ec_telemetry_have_last_good = false;
@@ -47,12 +50,14 @@ static bool s_ec_telemetry_have_last_good = false;
 
 void ec_node_ec_poll_sensor_once(void)
 {
+    s_ec_last_poll_probe_present = false;
     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         return;
     }
     if (!trema_ec_probe_present()) {
         return;
     }
+    s_ec_last_poll_probe_present = true;
 
     bool sensor_ready = trema_ec_is_initialized();
     if (!sensor_ready) {
@@ -134,12 +139,19 @@ void ec_node_ec_poll_sensor_once(void)
     if (!trema_ec_get_last_ec_register_raw(&raw_for_push)) {
         raw_for_push = 0;
     }
-    trema_ec_push_telemetry_snapshot(ec_value, raw_for_push, using_stub);
-
-    const uint16_t tds_ppm = trema_ec_get_tds();
+    uint16_t tds_ppm = 0;
+    if (sensor_ready) {
+        tds_ppm = trema_ec_get_tds();
+    }
+    trema_ec_push_telemetry_snapshot(ec_value, raw_for_push, using_stub, tds_ppm);
     ESP_LOGI(TAG, "EC %.3f TDS=%u st=%d", (double)ec_value, (unsigned)tds_ppm, (int)using_stub);
     (void)temp_check;
     (void)stored_temp_valid;
+}
+
+bool ec_node_ec_last_poll_probe_present(void)
+{
+    return s_ec_last_poll_probe_present;
 }
 
 // Параметры для отложенного ответа DONE после теста насоса
@@ -803,6 +815,7 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         isfinite(snap.ec_mScm) && snap.ec_mScm >= 0.0f && snap.ec_mScm <= 20.0f) {
         ec_value = snap.ec_mScm;
         using_stub = snap.using_stub;
+        tds_value = snap.tds_ppm;
         read_error = TREMA_EC_ERROR_NONE;
     } else if (s_ec_telemetry_have_last_good && isfinite(s_ec_telemetry_last_good)) {
         ec_value = s_ec_telemetry_last_good;
@@ -820,10 +833,6 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         ec_value = 1.2f;
         using_stub = true;
         read_error = sensor_ready ? TREMA_EC_ERROR_I2C : TREMA_EC_ERROR_NOT_INITIALIZED;
-    }
-
-    if (sensor_ready) {
-        tds_value = trema_ec_get_tds();
     }
 
     ESP_LOGD(TAG, "EC tx prep EC=%.3f TDS=%u st=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub);

@@ -19,8 +19,8 @@
  *   но код без блокировки» при OOM.
  * - Порядок блокировок: сначала mutex `trema_ec`, затем внутри `i2c_bus_*` — mutex шины. Не вызывать
  *   `trema_ec_*`, удерживая mutex `i2c_bus` той же шины (возможен deadlock с другой задачей).
- * - Опционально: очередь глубины 1 — снимок после `trema_ec_push_telemetry_snapshot` (один poll за тик), MQTT/OLED через
- *   `trema_ec_try_cached_measurement` без второго I²C в том же тике (см. `ec_node_tasks`).
+ * - Опционально: очередь глубины 1 — снимок после `trema_ec_push_telemetry_snapshot` (EC + raw + TDS ppm за один
+ *   poll), MQTT/OLED через `trema_ec_try_cached_measurement` без повторного read/get_tds в том же тике.
  */
 
 #include "trema_ec.h"
@@ -134,7 +134,7 @@ bool trema_ec_try_cached_measurement(trema_ec_measurement_t *out, uint32_t max_a
     return true;
 }
 
-void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool using_stub)
+void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool using_stub, uint16_t tds_ppm)
 {
     if (s_sample_q == NULL) {
         return;
@@ -146,6 +146,7 @@ void trema_ec_push_telemetry_snapshot(float ec_mScm, uint16_t raw_ec_u16, bool u
     trema_ec_measurement_t m = {
         .ec_mScm = ec_mScm,
         .raw_ec_u16 = raw_ec_u16,
+        .tds_ppm = tds_ppm,
         .using_stub = using_stub,
         .valid = valid,
         .tick_stamp = xTaskGetTickCount(),
@@ -342,7 +343,11 @@ static bool trema_ec_init_locked(void)
                 vTaskDelay(pdMS_TO_TICKS(1));
                 continue;
             }
+            uint8_t prev = s_ec_i2c_addr;
             s_ec_i2c_addr = addr;
+            if (prev != addr) {
+                (void)i2c_bus_forget_device(TREMA_EC_I2C_BUS, prev);
+            }
             ESP_LOGI(TAG, "Trema EC: найден по полному ID-блоку на 0x%02X (дефолт iarduino 0x%02X)", addr, TREMA_EC_ADDR);
             found = true;
             break;
@@ -870,7 +875,12 @@ bool trema_ec_change_address(uint8_t new_addr_7bit)
         return false;
     }
 
+    uint8_t old_addr = s_ec_i2c_addr;
     s_ec_i2c_addr = new_addr;
+    if (old_addr != new_addr) {
+        (void)i2c_bus_forget_device(TREMA_EC_I2C_BUS, old_addr);
+    }
+    (void)i2c_bus_forget_device(TREMA_EC_I2C_BUS, new_addr);
     last_error = TREMA_EC_ERROR_NONE;
     ESP_LOGI(TAG, "Trema EC: адрес сменён на 0x%02X (@see iarduino_I2C_TDS::changeAddress)", new_addr);
     trema_ec_mutex_give();

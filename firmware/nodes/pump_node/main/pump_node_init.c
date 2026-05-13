@@ -45,7 +45,7 @@ void pump_node_run_setup_mode(void) {
             .sda_pin = PUMP_NODE_I2C_BUS_0_SDA,
             .scl_pin = PUMP_NODE_I2C_BUS_0_SCL,
             .clock_speed = PUMP_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
+            .pullup_enable = false
         };
         esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (i2c_err == ESP_OK) {

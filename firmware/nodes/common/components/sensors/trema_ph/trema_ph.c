@@ -41,12 +41,16 @@ static bool trema_ph_addr_valid(uint8_t a)
 
 void trema_ph_set_i2c_address(uint8_t addr_7bit)
 {
-    if (trema_ph_addr_valid(addr_7bit)) {
-        s_ph_i2c_addr_7bit = addr_7bit;
-        ESP_LOGI(TAG, "pH I2C 7-bit address set to 0x%02X", s_ph_i2c_addr_7bit);
-    } else {
+    if (!trema_ph_addr_valid(addr_7bit)) {
         ESP_LOGW(TAG, "pH I2C address 0x%02X ignored (must be 0x08..0x77)", addr_7bit);
+        return;
     }
+    uint8_t prev = s_ph_i2c_addr_7bit;
+    if (prev != addr_7bit) {
+        (void)i2c_bus_forget_device(I2C_BUS_1, prev);
+    }
+    s_ph_i2c_addr_7bit = addr_7bit;
+    ESP_LOGI(TAG, "pH I2C 7-bit address set to 0x%02X", s_ph_i2c_addr_7bit);
 }
 
 uint8_t trema_ph_get_i2c_address(void)
@@ -916,6 +920,46 @@ bool trema_ph_probe_presence(void)
     }
     ok = true;
 out:
+    trema_ph_mutex_give();
+    return ok;
+}
+
+bool trema_ph_probe_chip_quick(void)
+{
+    trema_ph_mutex_take();
+    bool ok = false;
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        trema_ph_mutex_give();
+        return false;
+    }
+    trema_ph_suppress_i2c_logs();
+
+    uint8_t saved = s_ph_i2c_addr_7bit;
+    const uint8_t candidates[] = {saved, 0x09U, 0x0AU, 0x08U};
+    uint8_t seen[4];
+    size_t nseen = 0;
+
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+        uint8_t a = candidates[i];
+        bool dup = false;
+        for (size_t j = 0; j < nseen; j++) {
+            if (seen[j] == a) {
+                dup = true;
+                break;
+            }
+        }
+        if (dup) {
+            continue;
+        }
+        seen[nseen++] = a;
+        s_ph_i2c_addr_7bit = a;
+        uint8_t m = 0;
+        if (trema_ph_read_registers(TREMA_PH_REG_MODEL, &m, 1) == ESP_OK && m == TREMA_PH_MODEL_ID) {
+            ok = true;
+            break;
+        }
+    }
+    s_ph_i2c_addr_7bit = saved;
     trema_ph_mutex_give();
     return ok;
 }

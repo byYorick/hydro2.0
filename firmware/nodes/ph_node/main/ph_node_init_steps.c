@@ -128,7 +128,7 @@ esp_err_t ph_node_init_step_i2c(ph_node_init_context_t *ctx,
             .sda_pin = PH_NODE_I2C_BUS_0_SDA,
             .scl_pin = PH_NODE_I2C_BUS_0_SCL,
             .clock_speed = PH_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
+            .pullup_enable = false
         };
         err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (err != ESP_OK) {
