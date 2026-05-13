@@ -12,6 +12,9 @@
  *   `trema_ph_try_cached_measurement` берёт тот же mutex на время peek/копии (сериализация с Overwrite).
  *
  * Память: без malloc в горячем пути; mutex/queue создаёт потребитель (`xQueueCreate` в ph_node).
+ *
+ * Сборка: см. trema_ph.h — TREMA_PH_INIT_SOFTWARE_RESET (по умолчанию 1, как iarduino _begin+reset),
+ * TREMA_PH_READ_SOFT_RESET_RECOVERY.
  */
 
 #include "trema_ph.h"
@@ -178,11 +181,6 @@ static void trema_ph_push_sample_unlocked(float ph, uint16_t raw, uint8_t err, b
 #define TREMA_PH_RAW_THOUSANDTHS_MAX       14000U
 
 #define TREMA_PH_FW_STABILITY_SUPPORTED_MIN 6U
-#define TREMA_PH_POST_INIT_RESET_DELAY_MS   50U
-
-#ifndef TREMA_PH_ENABLE_SOFT_RESET
-#define TREMA_PH_ENABLE_SOFT_RESET 0
-#endif
 
 static bool use_stub_values = false;
 static float stub_ph = 6.5f;
@@ -450,15 +448,15 @@ bool trema_ph_init(void)
     TREMA_TRACE_INIT("header bytes: M=0x%02X V=0x%02X A=0x%02X C=0x%02X addr_7bit=0x%02X", hdr[0], hdr[1], hdr[2],
                      hdr[3], s_ph_i2c_addr_7bit);
     s_module_fw_version = hdr[1];
-#if TREMA_PH_ENABLE_SOFT_RESET
+#if TREMA_PH_INIT_SOFTWARE_RESET
     if (!trema_ph_soft_reset_hw()) {
         ESP_LOGW(TAG, "pH sensor soft reset after probe failed (continuing init like iarduino)");
     }
-    vTaskDelay(pdMS_TO_TICKS(TREMA_PH_POST_INIT_RESET_DELAY_MS));
-    TREMA_TRACE_INIT("post-reset delay %ums done", (unsigned)TREMA_PH_POST_INIT_RESET_DELAY_MS);
+    vTaskDelay(pdMS_TO_TICKS(TREMA_PH_POST_INIT_RESET_MS));
+    TREMA_TRACE_INIT("post-reset delay %ums (TREMA_PH_POST_INIT_RESET_MS)", (unsigned)TREMA_PH_POST_INIT_RESET_MS);
 #else
     vTaskDelay(pdMS_TO_TICKS(5));
-    TREMA_TRACE_INIT("post-probe 5ms (TREMA_PH_ENABLE_SOFT_RESET=0, без soft reset)");
+    TREMA_TRACE_INIT("post-probe 5ms (TREMA_PH_INIT_SOFTWARE_RESET=0, без soft reset как в iarduino)");
 #endif
 
     sensor_initialized = true;
@@ -519,7 +517,7 @@ bool trema_ph_read(float *ph)
     esp_err_t last_xfer_err = ESP_OK;
     bool had_sentinel = false;
     bool recovery_done = false;
-    const int read_phases = TREMA_PH_ENABLE_SOFT_RESET ? 2 : 1;
+    const int read_phases = TREMA_PH_READ_SOFT_RESET_RECOVERY ? 2 : 1;
 
     for (int phase = 0; phase < read_phases && !ok; phase++) {
         int max_try = TREMA_PH_SAMPLE_ATTEMPTS;

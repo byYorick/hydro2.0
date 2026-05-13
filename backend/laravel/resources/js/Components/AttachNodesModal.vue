@@ -17,6 +17,14 @@
       <div class="text-xs text-[color:var(--text-muted)] mb-2">
         Выберите узлы для привязки к зоне {{ zoneId }}
       </div>
+
+      <div
+        v-if="bindError"
+        role="alert"
+        class="rounded-md border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-200 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-100"
+      >
+        {{ bindError }}
+      </div>
       
       <div
         v-if="availableNodes.length === 0"
@@ -80,6 +88,7 @@ import { logger } from '@/utils/logger'
 import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Device } from '@/types'
 
 const { showToast } = useToast()
@@ -99,15 +108,18 @@ const loading = ref<boolean>(false)
 const attaching = ref<boolean>(false)
 const availableNodes = ref<Device[]>([])
 const selectedNodeIds = ref<number[]>([])
+const bindError = ref<string | null>(null)
 
 watch(() => props.show, (show) => {
   if (show) {
+    bindError.value = null
     loadAvailableNodes()
   }
 })
 
 onMounted(() => {
   if (props.show) {
+    bindError.value = null
     loadAvailableNodes()
   }
 })
@@ -128,13 +140,15 @@ async function onAttach() {
   if (selectedNodeIds.value.length === 0) return
 
   attaching.value = true
-  try {
-    // Привязываем каждый узел к зоне
-    const updatedDevices = await Promise.all(
-      selectedNodeIds.value.map((nodeId) => api.nodes.update(nodeId, { zone_id: props.zoneId })),
-    )
+  bindError.value = null
+  const updatedDevices: Device[] = []
 
-    // Обновляем устройства в store из ответов API
+  try {
+    for (const nodeId of selectedNodeIds.value) {
+      const updated = await api.nodes.update(nodeId, { zone_id: props.zoneId }, { skipErrorToast: true })
+      updatedDevices.push(updated)
+    }
+
     try {
       const { useDevicesStore } = await import('@/stores/devices')
       const devicesStore = useDevicesStore()
@@ -153,7 +167,10 @@ async function onAttach() {
     emit('attached', selectedNodeIds.value)
     emit('close')
   } catch (error) {
-    // Ошибка уже обработана в apiClient через глобальный showToast
+    bindError.value = extractHumanErrorMessage(
+      error,
+      'Не удалось привязать узел к зоне. Проверьте сообщение выше и отвяжите конфликтующее оборудование при необходимости.',
+    )
     logger.error('Failed to attach nodes:', error)
   } finally {
     attaching.value = false

@@ -387,7 +387,54 @@ describe('AttachNodesModal.vue', () => {
       await flushPromises()
       
       expect(axiosPatchMock).toHaveBeenCalled()
+      const alert = wrapper.find('[role="alert"]')
+      expect(alert.exists()).toBe(true)
+      expect(alert.text()).toContain('Network error')
     }
+  })
+
+  it('при ошибке на втором узле показывает alert и не эмитит attached', async () => {
+    axiosPatchMock
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: { id: 1, zone_id: 1 },
+        },
+      })
+      .mockRejectedValueOnce({
+        response: {
+          status: 422,
+          data: {
+            status: 'error',
+            code: 'zone_automation_binding_conflict',
+            message: 'В этой зоне уже есть источник телеметрии EC на узле ec-node.',
+          },
+        },
+      })
+
+    const wrapper = mount(AttachNodesModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+      },
+    })
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await flushPromises()
+
+    const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
+    expect(attachButton).toBeTruthy()
+    await attachButton!.trigger('click')
+    await flushPromises()
+
+    expect(axiosPatchMock).toHaveBeenCalledTimes(2)
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('EC')
+    expect(wrapper.emitted('attached')).toBeFalsy()
   })
 })
 

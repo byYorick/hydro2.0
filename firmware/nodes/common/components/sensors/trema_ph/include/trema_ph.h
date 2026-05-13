@@ -7,6 +7,8 @@
  * - Архив тега: https://github.com/tremaru/iarduino_I2C_pH/archive/refs/tags/1.2.3.zip
  * - Wiki API/регистры: https://wiki.iarduino.ru/page/ph-i2c/
  *
+ * Поведение init: по умолчанию **TREMA_PH_INIT_SOFTWARE_RESET=1** — после probe выполняется программный
+ * reset модуля, как в `iarduino_I2C_pH::_begin` → `reset()` (см. группу макросов внизу файла).
  * Потокобезопасность: все публичные вызовы сериализуются recursive mutex (одна задача может
  * вложенно вызывать API; разные задачи — по очереди). I²C к шине 1 уже защищён `i2c_bus`.
  * Опционально: привязка `QueueHandle_t` глубины 1 — последний валидный снимок после
@@ -84,6 +86,40 @@ extern "C" {
 #define TREMA_PH_BIT_BLOCK_ADR 0x08
 /** Разрешить запись нового адреса во flash */
 #define TREMA_PH_BIT_SAVE_ADR_EN 0x02
+
+/**
+ * @defgroup trema_ph_build_flags Флаги сборки (parity с iarduino_I2C_pH v1.2.3)
+ *
+ * Переопределение: в `CMakeLists.txt` потребителя или через `idf.py build`
+ * добавьте `target_compile_definitions(... PRIVATE TREMA_PH_INIT_SOFTWARE_RESET=0)`.
+ * @{
+ */
+
+/**
+ * После успешного probe в trema_ph_init выполнять программный reset модуля (бит SET_RESET в
+ * REG_BITS_0, ожидание FLG_RESET, переинициализация I²C), затем паузу TREMA_PH_POST_INIT_RESET_MS.
+ * Эквивалентно цепочке iarduino_I2C_pH::_begin() → reset() → delay(5).
+ *
+ * Значение 0: не сбрасывать регистры модуля в default при init (быстрее старт; отличие от Arduino API).
+ */
+#ifndef TREMA_PH_INIT_SOFTWARE_RESET
+#define TREMA_PH_INIT_SOFTWARE_RESET 1
+#endif
+
+/** Пауза после программного reset при init (мс); в iarduino после reset — delay(5). */
+#ifndef TREMA_PH_POST_INIT_RESET_MS
+#define TREMA_PH_POST_INIT_RESET_MS 5
+#endif
+
+/**
+ * В trema_ph_read: вторая фаза с soft reset при «сыром» значении 0xFFFF и дополнительные попытки.
+ * Не входит в оригинальный getPH(); опциональное усиление устойчивости к сбоям шины.
+ */
+#ifndef TREMA_PH_READ_SOFT_RESET_RECOVERY
+#define TREMA_PH_READ_SOFT_RESET_RECOVERY 0
+#endif
+
+/** @} */
 
 /**
  * @brief Снимок измерения для телеметрии / очереди (без указателей — копируется целиком).

@@ -274,6 +274,16 @@ static esp_err_t ph_node_init_channel_callback(
     const char *channel_type = type_item->valuestring;
     const char *actuator_type = channel_type;
 
+    if (strcasecmp(channel_type, "SENSOR") == 0) {
+        const char *sensor_channel = ph_node_canonicalize_sensor_channel(channel_name);
+        if (sensor_channel != NULL) {
+            ESP_LOGI(TAG, "Sensor channel %s registered as %s", channel_name, sensor_channel);
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "Unknown sensor channel: %s", channel_name);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     if (strcasecmp(channel_type, "ACTUATOR") == 0) {
         cJSON *actuator_item = cJSON_GetObjectItem(channel_config, "actuator_type");
         if (!cJSON_IsString(actuator_item)) {
@@ -281,6 +291,11 @@ static esp_err_t ph_node_init_channel_callback(
             return ESP_ERR_INVALID_ARG;
         }
         actuator_type = actuator_item->valuestring;
+
+        if (strcasecmp(actuator_type, "SYSTEM") == 0 || ph_node_is_system_channel(channel_name)) {
+            ESP_LOGI(TAG, "System channel %s registered", channel_name);
+            return ESP_OK;
+        }
     }
 
     // Инициализация насосов

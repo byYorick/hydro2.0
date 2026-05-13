@@ -147,20 +147,26 @@ apiClient.interceptors.response.use(
     }
     
     if (globalShowToast && status !== 401 && !isNotEnoughData) {
-      let toastMessage = `Ошибка: ${message}`
-      if (status === 422 && data && typeof data === 'object') {
-        const errors = (data as { errors?: Record<string, string[] | string> }).errors
-        if (errors && typeof errors === 'object') {
-          const details = Object.entries(errors)
-            .map(([field, msgs]) => {
-              const text = Array.isArray(msgs) ? msgs.join('; ') : String(msgs)
-              return `${field}: ${text}`
-            })
-            .join(' · ')
-          if (details) toastMessage = `Валидация: ${details}`
+      const skipToast = Boolean(
+        error.config && typeof error.config === 'object' && 'skipErrorToast' in error.config
+          && (error.config as { skipErrorToast?: boolean }).skipErrorToast === true,
+      )
+      if (!skipToast) {
+        let toastMessage = `Ошибка: ${message}`
+        if (status === 422 && data && typeof data === 'object') {
+          const errors = (data as { errors?: Record<string, string[] | string> }).errors
+          if (errors && typeof errors === 'object') {
+            const details = Object.entries(errors)
+              .map(([field, msgs]) => {
+                const text = Array.isArray(msgs) ? msgs.join('; ') : String(msgs)
+                return `${field}: ${text}`
+              })
+              .join(' · ')
+            if (details) toastMessage = `Валидация: ${details}`
+          }
         }
+        globalShowToast(toastMessage, 'error', 7000)
       }
-      globalShowToast(toastMessage, 'error', 7000)
     }
     
     return Promise.reject(error)

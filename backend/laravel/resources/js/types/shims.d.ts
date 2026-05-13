@@ -1,6 +1,15 @@
 /// <reference types="vite/client" />
 /// <reference types="vitest/globals" />
 
+import type {} from 'axios'
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** Не показывать глобальный error-toast (caller покажет своё UI). */
+    skipErrorToast?: boolean
+  }
+}
+
 declare const require: (moduleId: string) => any;
 
 interface Window {

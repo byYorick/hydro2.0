@@ -456,7 +456,7 @@ async function assignNode(node: any) {
       name: form.name || node.name || node.uid,
     }
 
-    const updatedNode = await api.nodes.update(node.id, updateData)
+    const updatedNode = await api.nodes.update(node.id, updateData, { skipErrorToast: true })
 
     if (updatedNode) {
       // Проверяем состояние привязки:

@@ -2,6 +2,26 @@
 
 Драйвер для Trema pH-сенсора (iarduino) через I²C.
 
+## Соответствие iarduino и флаги сборки
+
+После успешного обнаружения модуля `trema_ph_init()` по умолчанию выполняет **программный reset** (как
+`iarduino_I2C_pH::_begin` → `reset()`), затем паузу **5 ms** (`TREMA_PH_POST_INIT_RESET_MS`), чтобы регистры
+модуля соответствовали состоянию после `begin()` в Arduino.
+
+| Макрос | По умолчанию | Назначение |
+|--------|----------------|------------|
+| `TREMA_PH_INIT_SOFTWARE_RESET` | `1` | `1` — soft reset после probe; `0` — только задержка 5 ms без сброса (быстрее, не 1:1 с iarduino). |
+| `TREMA_PH_POST_INIT_RESET_MS` | `5` | Пауза после reset при init (в оригинале `delay(5)`). |
+| `TREMA_PH_READ_SOFT_RESET_RECOVERY` | `0` | `1` — во второй фазе `trema_ph_read` при сыром `0xFFFF` выполняется soft reset и доп. попытки (расширение, не из оригинального `getPH`). |
+
+Переопределение (чтобы **не** сбрасывать модуль при каждом `trema_ph_init`):
+
+1. В `trema_ph/CMakeLists.txt` сразу после `idf_component_register(...)` добавьте строку  
+   `target_compile_definitions(${COMPONENT_LIB} PRIVATE TREMA_PH_INIT_SOFTWARE_RESET=0)`  
+   (так макрос попадёт в компиляцию `trema_ph.c`).
+
+2. Либо задайте значение до включения заголовка только в отдельной обёртке (редко нужно).
+
 ## Описание
 
 Компонент реализует драйвер для Trema pH-датчика:

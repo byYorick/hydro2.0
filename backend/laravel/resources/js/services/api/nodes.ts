@@ -49,8 +49,16 @@ export const nodesApi = {
     return normalizePaginatedList<Device>(response)
   },
 
-  update(nodeId: number, payload: NodeUpdatePayload): Promise<Device> {
-    return apiPatch<Device>(`/nodes/${nodeId}`, payload)
+  update(
+    nodeId: number,
+    payload: NodeUpdatePayload,
+    requestOptions?: { skipErrorToast?: boolean },
+  ): Promise<Device> {
+    return apiPatch<Device>(
+      `/nodes/${nodeId}`,
+      payload,
+      requestOptions?.skipErrorToast ? { skipErrorToast: true } : undefined,
+    )
   },
 
   detach(nodeId: number): Promise<Device> {

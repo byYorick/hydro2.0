@@ -31,6 +31,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. Если код отсутствует в каталоге, это считается регрессией.
 4. Для исторических записей без кода допускается только compatibility fallback локализации.
 
+## Таблица кодов Laravel API (`NodeController` / привязка узлов)
+
+| code | HTTP | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `zone_automation_binding_conflict` | 422 | UI-привязка узла к зоне: в зоне уже есть другой узел с тем же критичным датчиком (pH/EC) или та же роль полива/коррекции занята в `channel_bindings` | Текст из `message` ответа API (детальное объяснение + uid узла); fallback в `error_codes.json`. |
+| `node_operation_rejected` | 422 | Прочие `DomainException` из `NodeService::update` (например, недопустимый lifecycle при привязке) | Текст из `message` ответа API; fallback в `error_codes.json`. |
+
 ## Таблица кодов AE3 snapshot/runtime
 
 | code | Домен | Когда возникает | Что видит пользователь |

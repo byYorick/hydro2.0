@@ -387,7 +387,10 @@ async function onRefreshNodes() {
         autoSelectAssignments(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
-        showToast(extractHumanErrorMessage(error, 'Ошибка обновления списка нод'), 'error');
+        logger.error('[AutomationStep] onRefreshNodes failed', {
+            message: extractHumanErrorMessage(error, 'Ошибка обновления списка нод'),
+            error,
+        });
     } finally {
         refreshingNodes.value = false;
     }
@@ -441,7 +444,10 @@ async function onBindDevices(roles: string[]) {
         deriveBindingsFromNodes(props.zoneId);
         autoSelectAssignments(props.zoneId);
     } catch (error) {
-        showToast(extractHumanErrorMessage(error, 'Ошибка привязки'), 'error');
+        logger.error('[AutomationStep] onBindDevices failed', {
+            message: extractHumanErrorMessage(error, 'Ошибка привязки'),
+            error,
+        });
     } finally {
         bindingInProgress.value = false;
     }
@@ -475,7 +481,11 @@ async function onBindNode(nodeId: number) {
     } catch (error) {
         clearBindingUiTimeout(nodeId);
         bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, nodeId]);
-        showToast(extractHumanErrorMessage(error, 'Ошибка привязки ноды'), 'error');
+        logger.error('[AutomationStep] onBindNode failed', {
+            nodeId,
+            message: extractHumanErrorMessage(error, 'Ошибка привязки ноды'),
+            error,
+        });
         const next = new Set(bindingNodeIds.value);
         next.delete(nodeId);
         bindingNodeIds.value = next;
