@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AutomationConfigDocument;
 use App\Models\AutomationConfigViolation;
 use App\Models\AutomationEffectiveBundle;
+use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Support\Automation\RecipeNutritionRuntimeConfigResolver;
@@ -25,6 +26,7 @@ class AutomationConfigCompiler
             AutomationConfigRegistry::SCOPE_SYSTEM => $this->compileSystemCascade(),
             AutomationConfigRegistry::SCOPE_ZONE => $this->compileZoneCascade($scopeId),
             AutomationConfigRegistry::SCOPE_GROW_CYCLE => $this->compileGrowCycleBundle($scopeId),
+            AutomationConfigRegistry::SCOPE_GREENHOUSE => $this->compileGreenhouseBundle($scopeId),
             default => null,
         };
     }
@@ -41,6 +43,11 @@ class AutomationConfigCompiler
         $cycleIds = GrowCycle::query()->active()->pluck('id')->all();
         foreach ($cycleIds as $cycleId) {
             $this->compileGrowCycleBundle((int) $cycleId);
+        }
+
+        $greenhouseIds = Greenhouse::query()->pluck('id')->all();
+        foreach ($greenhouseIds as $greenhouseId) {
+            $this->compileGreenhouseBundle((int) $greenhouseId);
         }
     }
 
@@ -151,6 +158,22 @@ class AutomationConfigCompiler
         $cycle->save();
 
         return $bundle;
+    }
+
+    public function compileGreenhouseBundle(int $greenhouseId): AutomationEffectiveBundle
+    {
+        $logicProfile = $this->payload(
+            AutomationConfigRegistry::NAMESPACE_GREENHOUSE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_GREENHOUSE,
+            $greenhouseId
+        );
+
+        return $this->storeBundle(AutomationConfigRegistry::SCOPE_GREENHOUSE, $greenhouseId, [
+            'schema_version' => 1,
+            'greenhouse' => [
+                'logic_profile' => $logicProfile,
+            ],
+        ]);
     }
 
     /**

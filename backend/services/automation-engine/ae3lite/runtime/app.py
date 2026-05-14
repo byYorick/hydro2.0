@@ -14,6 +14,7 @@ from prometheus_client import make_asgi_app
 from pydantic import BaseModel, ConfigDict, Field
 
 from ae3lite.api import (
+    bind_greenhouse_climate_tick_route,
     bind_internal_task_route,
     bind_start_cycle_route,
     bind_start_irrigation_route,
@@ -648,6 +649,12 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         app,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
         load_task_status_fn=lambda task_id: bundle.task_status_read_model.get_by_task_id(task_id=task_id),
+    )
+    bind_greenhouse_climate_tick_route(
+        app,
+        validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
+        history_logger_client=bundle.history_logger_client,
+        logger=logger,
     )
 
     @app.get("/zones/{zone_id}/state")

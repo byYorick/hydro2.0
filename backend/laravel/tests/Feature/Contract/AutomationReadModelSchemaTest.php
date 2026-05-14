@@ -62,6 +62,10 @@ class AutomationReadModelSchemaTest extends TestCase
         'alerts',
         'commands',
         'unassigned_node_errors',
+        'greenhouse_automation_intents',
+        'greenhouse_automation_leases',
+        'greenhouse_automation_state',
+        'greenhouse_manual_overrides',
     ];
 
     public function test_schema_snapshot_matches_committed(): void

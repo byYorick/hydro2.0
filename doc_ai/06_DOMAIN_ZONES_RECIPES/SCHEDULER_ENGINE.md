@@ -12,7 +12,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - сопоставить **расписания полива/света/климата** из рецепта и фаз зоны с моментами запуска;
 - создать **намерения (intents)** автоматизации в PostgreSQL;
 - **разбудить** `automation-engine` HTTP-вызовом к совместимому endpoint (см. §2);
-- отследить lifecycle задач в таблицах scheduler-dispatch (например `laravel_scheduler_active_tasks`, `zone_automation_intents`).
+- отследить lifecycle задач в таблицах scheduler-dispatch (например `laravel_scheduler_active_tasks`, `zone_automation_intents`, `greenhouse_automation_intents`).
 
 Исполнение workflow зоны (команды на узлы, ожидание терминальных статусов, коррекции) остаётся в **automation-engine** и **history-logger** — см. `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `doc_ai/04_BACKEND_CORE/ae3lite.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
@@ -33,8 +33,9 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 |------------------------------|---------------------|------------|
 | `irrigation` | `POST /zones/{id}/start-irrigation` | intent/task `irrigation_start`, опционально `requested_duration_sec` из payload расписания |
 | `lighting` | `POST /zones/{id}/start-lighting-tick` | только при `zones.automation_runtime='ae3'`; intent/task `lighting_tick` (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`, C1) |
+| greenhouse climate (крыша) | `POST /greenhouses/{id}/start-climate-tick` | после tick `automation:dispatch-schedules` вызывает `GreenhouseClimateDispatchService` → `greenhouse_automation_intents` + `greenhouse_automation_state.next_scheduled_tick_at`; не использовать `start-cycle` зоны (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`) |
 | `diagnostics` | `POST /zones/{id}/start-cycle` | на AE3 идёт через compat-path `diagnostics / cycle_start`; intent `DIAGNOSTICS_TICK`, task `cycle_start` |
-| прочие (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
+| прочие зональные (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
 
 Для **`automation_runtime ≠ ae3`** по-прежнему используется прежняя матрица endpoint-ов (в т.ч. `start-cycle` для типов вне полива — см. код `ScheduleDispatcher`).
 

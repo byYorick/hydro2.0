@@ -65,6 +65,7 @@ export type AutomationSubKey =
   | 'correction'
   | 'lighting'
   | 'climate'
+  | 'greenhouse_climate'
 
 export type AutomationNavState = 'passed' | 'active' | 'blocker' | 'optional'
 
@@ -110,6 +111,7 @@ const groups: Array<{ title: string; items: Item[] }> = [
     items: [
       { id: 'lighting', title: 'Свет', defaultSubtitle: 'расписание · lux', idx: 5 },
       { id: 'climate', title: 'Климат зоны', defaultSubtitle: 'CO₂ · вентиляция', idx: 6 },
+      { id: 'greenhouse_climate', title: 'Климат теплицы', defaultSubtitle: 'форточки · погода', idx: 7 },
     ],
   },
 ]

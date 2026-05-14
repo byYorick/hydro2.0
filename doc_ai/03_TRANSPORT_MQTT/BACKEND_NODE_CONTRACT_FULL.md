@@ -322,6 +322,11 @@ Backend → Node
 - `dose + params.ml` используется для volume-based dosing channels;
 - для pH/EC correction effect source of truth — только `params.ml`.
 
+**Позиция привода (roof vent, greenhouse climate):**
+- `cmd`: `set_position`
+- `params`: обязательный `position_pct` (0..100), опционально `max_step_pct` (0..100)
+- каналы: `roof_vent_left`, `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+
 **Тест сенсора канала:**
 - `cmd`: `test_sensor`
 - `params`: `{}` (канал определяется из MQTT топика)

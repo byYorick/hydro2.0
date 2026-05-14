@@ -1,5 +1,7 @@
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
+import { getActivePinia } from 'pinia'
+import { useWebSocketStore, type WsConnectionState } from '@/stores/websocket'
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
 import { buildEchoConfig, resolveHost, resolvePort, resolveScheme } from './echoConfig'
@@ -17,24 +19,24 @@ export type EchoInstance = Echo<'reverb'>
 // Ленивая загрузка store для избежания ошибок до инициализации Pinia
 function getWebSocketStore() {
   try {
-    // Проверяем доступность Pinia перед использованием store
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getActivePinia } = require('pinia')
     const pinia = getActivePinia()
     if (!pinia) {
       return null
     }
-    // Динамический импорт для избежания циклических зависимостей
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { useWebSocketStore } = require('@/stores/websocket')
     return useWebSocketStore()
-  } catch (err) {
-    // Pinia еще не инициализирована или store недоступен - это нормально при начальной загрузке
+  } catch {
     return null
   }
 }
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
+
+function toStoreConnectionState(state: WsState): WsConnectionState {
+  if (state === 'unavailable') {
+    return 'failed'
+  }
+  return state
+}
 type StateListener = (state: WsState) => void
 
 interface ConnectionError {
@@ -89,7 +91,7 @@ function emitState(state: WsState): void {
     const wsStore = getWebSocketStore()
     if (wsStore) {
       const connectionState = getConnectionState()
-      wsStore.setState(state)
+      wsStore.setState(toStoreConnectionState(state))
       wsStore.setReconnectAttempts(connectionState.reconnectAttempts)
       wsStore.setLastError(connectionState.lastError)
       wsStore.setSocketId(connectionState.socketId || null)

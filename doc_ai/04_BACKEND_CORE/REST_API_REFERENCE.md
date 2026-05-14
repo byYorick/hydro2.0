@@ -48,8 +48,37 @@ Breaking-change: обратная совместимость со старыми
 | GET | /api/greenhouses | auth:sanctum | Список теплиц |
 | POST | /api/greenhouses | auth:sanctum (operator/admin/agronomist/engineer) | Создать теплицу; duplicate `uid` auto-suffix, empty `greenhouse_type_id` -> `null`, new greenhouse auto-assigned in `user_greenhouses` |
 | GET | /api/greenhouses/{id} | auth:sanctum | Детали теплицы |
+| GET | /api/greenhouses/{greenhouse}/climate/state | auth:sanctum | Состояние greenhouse climate automation (snapshot для UI) |
 | PATCH | /api/greenhouses/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить теплицу |
 | DELETE| /api/greenhouses/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить (если безопасно) |
+
+Доп. climate control (роль `operator|admin|agronomist|engineer` на `POST`/`DELETE`):
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------|------|-------------------------------|
+| POST | /api/greenhouses/{greenhouse}/climate/control-mode | auth:sanctum (operator/admin/agronomist/engineer) | `control_mode`: `auto` / `semi` / `manual` |
+| POST | /api/greenhouses/{greenhouse}/climate/manual-override | auth:sanctum (operator/admin/agronomist/engineer) | Временный override позиций + TTL |
+| DELETE | /api/greenhouses/{greenhouse}/climate/manual-override | auth:sanctum (operator/admin/agronomist/engineer) | Снять активный override |
+
+`GET /api/greenhouses/{greenhouse}/climate/state` возвращает read-model
+`greenhouse_automation_state`, включая `current/recommended/last_sent` позиции,
+`decision_reason`, `decision_factors`, stale-флаги, `active_manual_override_id`,
+`next_scheduled_tick_at`, `last_task_id`, `last_error_code`, `last_error_message`.
+
+`POST /api/greenhouses/{greenhouse}/climate/manual-override` принимает:
+
+```json
+{
+  "left_position_pct": 40,
+  "right_position_pct": 40,
+  "ttl_sec": 1800,
+  "return_mode": "auto",
+  "reason": "operator_request"
+}
+```
+
+Команды actuator-ам после override публикует только `automation-engine` через
+`history-logger POST /commands`; Laravel API не публикует MQTT напрямую.
 
 ---
 
@@ -387,7 +416,8 @@ Preset rules:
 Исключение:
 
 - `greenhouse.logic_profile` читается и сохраняется через `/api/automation-configs/greenhouse/{id}/greenhouse.logic_profile`
-- bundle endpoint для `greenhouse` не является частью текущего контракта
+- runtime читает compiled bundle `automation_effective_bundles(scope_type='greenhouse', scope_id={id})`;
+  raw authority document не используется в hot path `automation-engine`
 - `greenhouse.logic_profile` и greenhouse climate setup flows (`/api/setup-wizard/validate-greenhouse-climate-devices`, `/api/setup-wizard/apply-greenhouse-climate-bindings`) допускают `admin|agronomist` без explicit greenhouse ACL; `viewer|operator|engineer` требуют direct greenhouse ACL или доступ к зоне внутри теплицы
 
 ---

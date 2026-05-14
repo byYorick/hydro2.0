@@ -56,6 +56,7 @@ class Ae3RuntimeBundle:
     zone_intent_repository: PgZoneIntentRepository
     worker: Ae3RuntimeWorker
     http_client: httpx.AsyncClient
+    history_logger_client: HistoryLoggerClient
 
 
 def build_ae3_runtime_bundle(
@@ -179,4 +180,5 @@ def build_ae3_runtime_bundle(
         zone_intent_repository=zone_intent_repository,
         worker=worker,
         http_client=http_client,
+        history_logger_client=history_logger_client,
     )

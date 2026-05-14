@@ -194,14 +194,24 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 Канонические ключи:
 
 - `wind_speed` — скорость ветра;
-- `outside_temp` — наружная температура.
+- `wind_direction` — направление ветра (метеорологические градусы: **откуда дует**);
+- `outside_temp` — наружная температура;
+- `outside_humidity` — наружная влажность;
+- `outside_pressure` — наружное давление (опционально);
+- `outside_light` — наружная освещённость (lux или PPFD);
+- `rain_detected` — дождь (bool / пороговый датчик).
 
 Тип:
-- `SENSOR` (`float`).
+- `SENSOR` (`float` или bool по каналу).
 
 Канонические `metric_type`:
 - `WIND_SPEED`;
-- `OUTSIDE_TEMP`.
+- `WIND_DIRECTION`;
+- `OUTSIDE_TEMP`;
+- `OUTSIDE_HUMIDITY`;
+- `OUTSIDE_PRESSURE`;
+- `OUTSIDE_LIGHT`;
+- `RAIN_DETECTED`.
 
 Рекомендуемый telemetry payload:
 
@@ -327,7 +337,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `fan_air` — вентилятор;
 - `heater_air` / `heater` — нагреватель воздуха (имя зависит от прошивки);
 - `white_light` — основное освещение;
-- `uv_light` — УФ-лампы.
+- `uv_light` — УФ-лампы;
+- `roof_vent_left` / `roof_vent_right` — крышные форточки (greenhouse climate); команда `set_position`, параметр `position_pct` 0..100, опционально `max_step_pct`.
 
 Тип: `ACTUATOR`.
 
@@ -351,6 +362,19 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   "cmd": "set_pwm",
   "params": {
     "value": 255
+  }
+}
+```
+
+Пример `set_position` для крышной форточки:
+
+```json
+{
+  "cmd_id": "cmd-30003",
+  "cmd": "set_position",
+  "params": {
+    "position_pct": 40,
+    "max_step_pct": 25
   }
 }
 ```

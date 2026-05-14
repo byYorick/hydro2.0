@@ -452,6 +452,21 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
         ]);
     })->name('greenhouses.show');
 
+    Route::get('/greenhouses/{greenhouse}/climate', function (Greenhouse $greenhouse) {
+        $user = auth()->user();
+        if (! $user->isAdmin()) {
+            abort_unless(ZoneAccessHelper::canAccessGreenhouseScope($user, $greenhouse), 403);
+        }
+
+        return Inertia::render('Greenhouses/Climate', [
+            'auth' => ['user' => ['role' => $user->role ?? 'viewer']],
+            'greenhouse' => [
+                'id' => $greenhouse->id,
+                'name' => $greenhouse->name,
+            ],
+        ]);
+    })->name('greenhouses.climate');
+
     Route::redirect('/cycles', '/')->name('cycles.center');
 
     Route::redirect('/grow-cycle-wizard', '/launch', 301)

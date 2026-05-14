@@ -1,7 +1,7 @@
 # SCHEDULER_AE3_NON_IRRIGATION_DISPATCH
 # Dispatch света/климата/пр. для AE3 (C1)
 
-**Статус:** реализовано для **lighting** (C1): Laravel scheduler → `POST .../start-lighting-tick` → AE3 task `lighting_tick` → history-logger → MQTT. Для **diagnostics** включён compat-path через `POST .../start-cycle` → AE3 `cycle_start`. Климат/прочие типы по-прежнему вне dispatch.  
+**Статус:** реализовано для **lighting** (C1) и для **greenhouse climate** (крышные форточки): Laravel scheduler → соответствующий `POST ...` в AE3 → history-logger → MQTT. Для **diagnostics** включён compat-path через `POST .../start-cycle` → AE3 `cycle_start`. Зональные типы `climate`/`mist`/`ventilation` в рецепте без отдельного AE-endpoint по-прежнему **не** автодиспатчатся на AE3 (см. `SCHEDULER_ENGINE.md`); климат **теплицы** идёт отдельным контуром `greenhouse_automation_*`, а не через `zone_automation_intents` с `task_type=climate`.
 **Связано с:** `SCHEDULER_ENGINE.md`, `ScheduleDispatcher.php`, `ae3lite.md`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -10,9 +10,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 1. Проблема (историческая / остаточная)
 
-Ранее при `zones.automation_runtime = 'ae3'` планировщик диспатчил только **полив** (`start-irrigation`); свет/климат из расписания не запускались автоматически.
+Ранее при `zones.automation_runtime = 'ae3'` планировщик диспатчил только **полив** (`start-irrigation`); свет из расписания не запускался автоматически; климат теплицы (общие форточки) не имел отдельного контура.
 
-**Текущее состояние:** для **lighting** добавлен канонический путь `POST .../start-lighting-tick` → задача `lighting_tick` (C1). Для **`diagnostics`** включён scheduler-dispatch через существующий `POST .../start-cycle` с intent `DIAGNOSTICS_TICK` и исполнением через compat-path `cycle_start`. Расписания **`climate`**, **`mist`**, **`ventilation`** и т.п. на AE3 по-прежнему **не диспатчатся** до появления отдельных compat-endpoint-ов и task type в AE3.
+**Текущее состояние:** для **lighting** добавлен канонический путь `POST .../start-lighting-tick` → задача `lighting_tick` (C1). Для **`diagnostics`** включён scheduler-dispatch через существующий `POST .../start-cycle` с intent `DIAGNOSTICS_TICK` и исполнением через compat-path `cycle_start`. Для **greenhouse climate (крыша)** — `greenhouse_automation_intents` + `POST /greenhouses/{id}/start-climate-tick` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`). Расписания **`climate`**, **`mist`**, **`ventilation`** на уровне **зоны** на AE3 по-прежнему **не диспатчатся** до появления отдельных compat-endpoint-ов и task type в AE3.
 
 План в `schedule-workspace` показывает окна из effective targets; типы без автодиспатча перечисляются в `capabilities.non_executable_planned_task_types`.
 

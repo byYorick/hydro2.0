@@ -92,6 +92,15 @@ abs(now - ts) < 10 секунд
 1 ≤ duration_ms ≤ 60000
 ```
 
+### Команда set_position (roof vent / greenhouse climate):
+
+```
+0 ≤ position_pct ≤ 100
+max_step_pct optional, 0..100
+```
+
+Валидация в `history-logger` при `POST /commands` (см. `HISTORY_LOGGER_API.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+
 ### Команда set_relay:
 ```
 "cmd": "set_relay"

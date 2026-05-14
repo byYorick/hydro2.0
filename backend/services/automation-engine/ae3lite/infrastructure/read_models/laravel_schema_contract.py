@@ -476,6 +476,117 @@ UNASSIGNED_NODE_ERRORS = Table(
 )
 
 
+GREENHOUSE_AUTOMATION_INTENTS = Table(
+    name="greenhouse_automation_intents",
+    columns=(
+        _col("id", "bigint", nullable=False),
+        _col("greenhouse_id", "bigint", nullable=False),
+        _col("intent_type", "text", nullable=False),
+        _col("task_type", "text", nullable=False),
+        _col("intent_source", "text"),
+        _col("idempotency_key", "text", nullable=False),
+        _col("status", "text", nullable=False),
+        _col("not_before", "timestamp"),
+        _col("claimed_at", "timestamp"),
+        _col("completed_at", "timestamp"),
+        _col("error_code", "text"),
+        _col("error_message", "text"),
+        _col("retry_count", "integer", nullable=False),
+        _col("max_retries", "integer", nullable=False),
+        _col("created_at", "timestamp", nullable=False),
+        _col("updated_at", "timestamp", nullable=False),
+    ),
+    enum_values={
+        "status": frozenset({"pending", "claimed", "running", "failed", "completed", "cancelled"}),
+    },
+)
+
+GREENHOUSE_AUTOMATION_LEASES = Table(
+    name="greenhouse_automation_leases",
+    columns=(
+        _col("greenhouse_id", "bigint", nullable=False),
+        _col("owner", "text", nullable=False),
+        _col("leased_until", "timestamp", nullable=False),
+        _col("updated_at", "timestamp", nullable=False),
+    ),
+)
+
+GREENHOUSE_AUTOMATION_TASKS = Table(
+    name="greenhouse_automation_tasks",
+    columns=(
+        _col("id", "bigint", nullable=False),
+        _col("greenhouse_id", "bigint", nullable=False),
+        _col("intent_id", "bigint"),
+        _col("task_type", "text", nullable=False),
+        _col("status", "text", nullable=False),
+        _col("idempotency_key", "text", nullable=False),
+        _col("workflow_stage", "text"),
+        _col("decision_snapshot", "jsonb"),
+        _col("command_refs", "jsonb"),
+        _col("error_code", "text"),
+        _col("error_message", "text"),
+        _col("completed_at", "timestamp"),
+        _col("created_at", "timestamp", nullable=False),
+        _col("updated_at", "timestamp", nullable=False),
+    ),
+    enum_values={
+        "status": frozenset({"claimed", "running", "waiting_command", "failed", "completed", "cancelled"}),
+        "task_type": frozenset({"greenhouse_climate_tick"}),
+    },
+)
+
+GREENHOUSE_AUTOMATION_STATE = Table(
+    name="greenhouse_automation_state",
+    columns=(
+        _col("greenhouse_id", "bigint", nullable=False),
+        _col("climate_enabled", "boolean", nullable=False),
+        _col("control_mode", "text", nullable=False),
+        _col("next_scheduled_tick_at", "timestamp"),
+        _col("left_position_pct", "integer", nullable=False),
+        _col("right_position_pct", "integer", nullable=False),
+        _col("recommended_left_position_pct", "integer", nullable=False),
+        _col("recommended_right_position_pct", "integer", nullable=False),
+        _col("last_sent_left_position_pct", "integer"),
+        _col("last_sent_right_position_pct", "integer"),
+        _col("decision_reason", "text"),
+        _col("decision_factors", "jsonb"),
+        _col("weather_fresh", "boolean", nullable=False),
+        _col("inside_climate_fresh", "boolean", nullable=False),
+        _col("active_manual_override_id", "bigint"),
+        _col("last_task_id", "bigint"),
+        _col("last_error_code", "text"),
+        _col("last_error_message", "text"),
+        _col("active_alerts_summary", "jsonb"),
+        _col("last_decision_at", "timestamp"),
+        _col("last_command_at", "timestamp"),
+        _col("last_left_cmd_id", "text"),
+        _col("last_right_cmd_id", "text"),
+        _col("created_at", "timestamp", nullable=False),
+        _col("updated_at", "timestamp", nullable=False),
+    ),
+    enum_values={
+        "control_mode": frozenset({"auto", "manual", "semi"}),
+    },
+)
+
+GREENHOUSE_MANUAL_OVERRIDES = Table(
+    name="greenhouse_manual_overrides",
+    columns=(
+        _col("id", "bigint", nullable=False),
+        _col("greenhouse_id", "bigint", nullable=False),
+        _col("left_position_pct", "integer", nullable=False),
+        _col("right_position_pct", "integer", nullable=False),
+        _col("ttl_sec", "integer", nullable=False),
+        _col("return_mode", "text", nullable=False),
+        _col("reason", "text"),
+        _col("expires_at", "timestamp", nullable=False),
+        _col("created_by", "bigint"),
+        _col("created_at", "timestamp", nullable=False),
+        _col("updated_at", "timestamp", nullable=False),
+    ),
+)
+
+
 ALL_TABLES: tuple[Table, ...] = (
     AE_TASKS,
     AE_COMMANDS,
@@ -501,6 +612,11 @@ ALL_TABLES: tuple[Table, ...] = (
     ALERTS,
     COMMANDS,
     UNASSIGNED_NODE_ERRORS,
+    GREENHOUSE_AUTOMATION_INTENTS,
+    GREENHOUSE_AUTOMATION_LEASES,
+    GREENHOUSE_AUTOMATION_TASKS,
+    GREENHOUSE_AUTOMATION_STATE,
+    GREENHOUSE_MANUAL_OVERRIDES,
 )
 
 # LISTEN-каналы, которые AE3 подписывается на получение (NOTIFY шлёт Laravel/trigger).

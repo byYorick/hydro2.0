@@ -2,21 +2,63 @@ export type IrrigationSystem = 'drip' | 'substrate_trays' | 'nft'
 
 export interface ClimateFormState {
   enabled: boolean
+  controlMode?: 'auto' | 'semi' | 'manual'
   dayTemp: number
   nightTemp: number
   dayHumidity: number
   nightHumidity: number
   intervalMinutes: number
+  emergencyIntervalSeconds?: number
+  minCommandIntervalSeconds?: number
   dayStart: string
   nightStart: string
+  daylightLuxThreshold?: number
   ventMinPercent: number
   ventMaxPercent: number
+  minSafeOpenPercent?: number
+  fallbackOpenPercent?: number
+  weatherStaleMaxOpenPercent?: number
+  emergencyOpenPercent?: number
+  positionDeadbandPercent?: number
+  nightBaseOpenPercent?: number
+  nightMinOpenPercent?: number
+  nightMaxOpenPercent?: number
+  dayBaseOpenPercent?: number
+  dayMinOpenPercent?: number
+  dayMaxOpenPercent?: number
+  tempFullOpenDeltaC?: number
+  rhFullOpenDeltaPercent?: number
+  insideTempSpreadAlertC?: number
+  insideRhSpreadAlertPercent?: number
+  coldGuardMarginC?: number
+  coldGuardMaxOpenPercent?: number
+  outsideHotterGain?: number
+  outsideWetterGain?: number
   useExternalTelemetry: boolean
   outsideTempMin: number
   outsideTempMax: number
   outsideHumidityMax: number
+  windReduceThresholdMs?: number
+  windCloseThresholdMs?: number
+  windReduceWindwardMaxPercent?: number
+  windReduceLeewardMaxPercent?: number
+  windStormWindwardMaxPercent?: number
+  windStormLeewardMaxPercent?: number
+  rainWindwardPositionPercent?: number
+  rainLeewardPositionPercent?: number
+  rainUnknownDirectionMaxPercent?: number
+  overheatEmergencyTempC?: number
+  sensorFreshnessSeconds?: number
+  greenhouseOrientationDeg?: number | null
+  leftRoofNormalDeg?: number | null
+  rightRoofNormalDeg?: number | null
+  targetPolicy?: 'greenhouse_targets' | 'primary_zone' | 'active_zones_strictest'
+  primaryZoneId?: number | null
   manualOverrideEnabled: boolean
+  manualEmergencyOverrideEnabled?: boolean
   overrideMinutes: number
+  /** Макс. шаг открытия форточек за один tick (AE `execution.max_step_pct`, 1–100). */
+  maxVentStepPct: number
 }
 
 export interface WaterFormState {

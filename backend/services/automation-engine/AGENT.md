@@ -1,12 +1,12 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-03-07
+Обновлено: 2026-05-14
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
 
-Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`.
+Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`, `irrigation_start`, `lighting_tick` и `greenhouse_climate_tick`.
 Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
 Прежний monolithic automation runtime удалён. Рабочий пакет автоматики — `ae3lite/`.
@@ -15,14 +15,14 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
 1. Никакого прямого MQTT из AE или Laravel.
 2. Все команды к узлам идут только через `history-logger` (`POST /commands`).
-3. Одна активная execution task на зону — гарантируется partial unique index и ZoneLease.
+3. Одна активная execution task на зону — гарантируется partial unique index и `ae_zone_leases`; отдельно single-writer lease на теплицу для `greenhouse_climate_tick` — `greenhouse_automation_leases`.
 4. Успешный terminal outcome mutating-команды только `DONE`; все остальные — fail.
 5. Изменения схемы БД только через Laravel миграции (не ручной DDL).
 6. `ae3lite/*` не импортирует legacy runtime пакеты.
 7. Переключение `zones.automation_runtime` на `ae3` запрещено при активной task или lease.
 8. Runtime читает zone state напрямую из PostgreSQL read-model, без HTTP к Laravel.
 9. Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.
-10. Единственный внешний ingress: `POST /zones/{id}/start-cycle`.
+10. Внешние ingress AE3-Lite: `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`, `POST /greenhouses/{id}/start-climate-tick` (плюс internal `GET /internal/tasks/{task_id}`).
 11. Hardcoded default targets запрещены (spec §5.3.4); отсутствие target → `PlannerConfigurationError`.
 12. CAS-промах в `zone_workflow_state.upsert_phase` → `Ae3LiteError` (не silent None).
 
@@ -31,6 +31,7 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 ```
 ae3lite/
   api/              # HTTP endpoints (compat + internal), security, rate_limit
+  greenhouse_climate/  # rule-based roof vent tick (POST /greenhouses/{id}/start-climate-tick)
   domain/
     entities/       # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
     errors.py       # Все domain-ошибки
@@ -104,8 +105,9 @@ pending → claimed → running → waiting_command → completed
    `docker compose exec -e APP_ENV=testing -e DB_DATABASE=hydro_test laravel php artisan test --filter="Ae3Lite"`
 3. При изменении миграций: `php artisan migrate` + rollback.
 4. При изменении API/контрактов: обновить `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`.
+5. `make test-ae PYTEST_ARGS="..."` из корня репозитория: пути задаются **относительно WORKDIR контейнера** (`/app` = `backend/services/automation-engine`). Пример: `test_greenhouse_climate_tick_integration.py`. Путь вида `backend/services/automation-engine/...` в контейнере **не существует** — pytest завершится с «file or directory not found».
 
-## 9. Обновление документации при изменениях
+## 10. Обновление документации при изменениях
 
 1. DB schema → `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 2. API/контракты → `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\AutomationScheduler\SchedulerCycleService;
+use App\Services\GreenhouseClimate\GreenhouseClimateDispatchService;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
@@ -18,6 +19,7 @@ class AutomationDispatchSchedules extends Command
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly SchedulerCycleService $schedulerCycleService,
+        private readonly GreenhouseClimateDispatchService $greenhouseClimateDispatchService,
     ) {
         parent::__construct();
     }
@@ -61,6 +63,14 @@ class AutomationDispatchSchedules extends Command
                 (int) ($stats['zones_pending_time_retry'] ?? 0),
                 $durationMs,
             ));
+
+            try {
+                $this->greenhouseClimateDispatchService->dispatchDue();
+            } catch (\Throwable $e) {
+                Log::warning('greenhouse_climate_dispatch_failed', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

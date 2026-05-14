@@ -89,6 +89,7 @@ Content-Type: application/json
   где backend/automation владеет `run_token`, `zone_events` и `pump_calibrations`;
 - `history-logger` в этом сценарии принимает только transport publish на `POST /commands`;
 - `POST /zones/{zone_id}/calibrate-pump` считается удалённым из контракта и возвращает `410 Gone`.
+- **`set_position`** (roof vent, 0..100%): greenhouse climate tick; обязательный `params.position_pct`, опционально `params.max_step_pct` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
 
 **Response (200 OK):**
 ```json

@@ -5,6 +5,7 @@
 
 import { logger } from '@/utils/logger'
 import type { Zone, Device, Recipe } from '@/types'
+import { getCurrentInstance, onUnmounted } from 'vue'
 
 interface StoreEventPayloadMap {
   'zone:updated': Zone
@@ -88,19 +89,9 @@ export type StoreEventType = keyof StoreEventPayloadMap
  * Composable для работы с событиями stores
  */
 export function useStoreEvents() {
-  // Динамический импорт Vue hooks для избежания проблем с SSR
-  let onUnmountedHook: ((fn: () => void) => void) | null = null
-  
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const vue = require('vue')
-    const hasInstance = typeof vue.getCurrentInstance === 'function' && !!vue.getCurrentInstance()
-    onUnmountedHook = hasInstance ? vue.onUnmounted : () => {}
-  } catch (e) {
-    // Если Vue недоступен (например, в SSR), используем заглушки
-    onUnmountedHook = () => {}
-  }
-  
+  const hasInstance = typeof getCurrentInstance === 'function' && getCurrentInstance() != null
+  const onUnmountedHook: (fn: () => void) => void = hasInstance ? onUnmounted : () => {}
+
   /**
    * Подписаться на событие
    */
@@ -134,11 +125,9 @@ export function useStoreEvents() {
   ): void {
     const unsubscribe = subscribe(event, listener)
     
-    if (onUnmountedHook) {
-      onUnmountedHook(() => {
-        unsubscribe()
-      })
-    }
+    onUnmountedHook(() => {
+      unsubscribe()
+    })
   }
   
   /**

@@ -922,7 +922,125 @@ Lifecycle:
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
-## 6.9. PostgreSQL NOTIFY triggers (runtime)
+## 6.9. greenhouse_automation_intents / greenhouse_automation_tasks / greenhouse_automation_leases / greenhouse_automation_state / greenhouse_manual_overrides
+
+Таблицы **greenhouse-level** автоматизации (климат крыши), ортогональны `zone_automation_intents` / `ae_tasks`.
+Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`.
+
+### 6.9.1. greenhouse_automation_intents
+
+```
+id BIGSERIAL PK
+greenhouse_id BIGINT NOT NULL FK -> greenhouses
+intent_type VARCHAR(64) NOT NULL DEFAULT 'GREENHOUSE_CLIMATE_TICK'
+task_type VARCHAR(64) NOT NULL DEFAULT 'greenhouse_climate_tick'
+intent_source VARCHAR(64) NULL
+idempotency_key VARCHAR(191) NOT NULL
+status VARCHAR(32) NOT NULL DEFAULT 'pending'
+not_before TIMESTAMPTZ NULL
+claimed_at TIMESTAMPTZ NULL
+completed_at TIMESTAMPTZ NULL
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+retry_count INT NOT NULL DEFAULT 0
+max_retries INT NOT NULL DEFAULT 3
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+Индексы: `(greenhouse_id, idempotency_key)` UNIQUE; `(greenhouse_id, status)`; `(status, not_before)`;
+partial UNIQUE `(greenhouse_id) WHERE status IN ('pending','claimed','running')`.
+
+### 6.9.2. greenhouse_automation_tasks
+
+Runtime task greenhouse climate tick. В V1 task type только `greenhouse_climate_tick`.
+
+```
+id BIGSERIAL PK
+greenhouse_id BIGINT NOT NULL FK -> greenhouses
+intent_id BIGINT NULL FK -> greenhouse_automation_intents
+task_type VARCHAR(64) NOT NULL DEFAULT 'greenhouse_climate_tick'
+status VARCHAR(32) NOT NULL DEFAULT 'running'
+idempotency_key VARCHAR(191) NOT NULL
+workflow_stage VARCHAR(64) NULL
+decision_snapshot JSONB NULL
+command_refs JSONB NULL
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+completed_at TIMESTAMPTZ NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+Индексы: `(greenhouse_id, idempotency_key)` UNIQUE; `(greenhouse_id, status)`;
+partial UNIQUE `(greenhouse_id) WHERE status IN ('claimed','running','waiting_command')`.
+
+### 6.9.3. greenhouse_automation_leases
+
+Single-writer lease на теплицу (отдельно от `ae_zone_leases`):
+
+```
+greenhouse_id BIGINT PK FK -> greenhouses
+owner VARCHAR(64) NOT NULL DEFAULT 'ae3_greenhouse_climate'
+leased_until TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+### 6.9.4. greenhouse_automation_state
+
+Состояние и UI-snapshot решения:
+
+```
+greenhouse_id BIGINT PK FK -> greenhouses
+climate_enabled BOOLEAN NOT NULL DEFAULT false
+control_mode VARCHAR(16) NOT NULL DEFAULT 'auto'
+next_scheduled_tick_at TIMESTAMPTZ NULL
+left_position_pct SMALLINT NOT NULL DEFAULT 0
+right_position_pct SMALLINT NOT NULL DEFAULT 0
+recommended_left_position_pct SMALLINT NOT NULL DEFAULT 0
+recommended_right_position_pct SMALLINT NOT NULL DEFAULT 0
+last_sent_left_position_pct SMALLINT NULL
+last_sent_right_position_pct SMALLINT NULL
+decision_reason TEXT NULL
+decision_factors JSONB NULL
+weather_fresh BOOLEAN NOT NULL DEFAULT false
+inside_climate_fresh BOOLEAN NOT NULL DEFAULT false
+active_manual_override_id BIGINT NULL
+last_task_id BIGINT NULL FK -> greenhouse_automation_tasks
+last_error_code VARCHAR(128) NULL
+last_error_message TEXT NULL
+active_alerts_summary JSONB NULL
+last_decision_at TIMESTAMPTZ NULL
+last_command_at TIMESTAMPTZ NULL
+last_left_cmd_id VARCHAR(128) NULL
+last_right_cmd_id VARCHAR(128) NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+### 6.9.5. greenhouse_manual_overrides
+
+Временный ручной override позиций (TTL):
+
+```
+id BIGSERIAL PK
+greenhouse_id BIGINT NOT NULL FK -> greenhouses
+left_position_pct SMALLINT NOT NULL
+right_position_pct SMALLINT NOT NULL
+ttl_sec INT NOT NULL
+return_mode VARCHAR(16) NOT NULL DEFAULT 'auto'
+reason VARCHAR(500) NULL
+expires_at TIMESTAMPTZ NOT NULL
+created_by BIGINT NULL FK -> users
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+Индекс: `(greenhouse_id, expires_at)`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+## 6.10. PostgreSQL NOTIFY triggers (runtime)
 
 Источник событий для fast-path listener в `automation-engine`:
 
@@ -1000,12 +1118,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 }
 ```
 
-## 6.10. AE3-Lite runtime tables (staged rollout)
+## 6.11. AE3-Lite runtime tables (staged rollout)
 
 Ниже таблицы вводятся migration-пакетом AE3-Lite и используются runtime-слоем
 `backend/services/automation-engine/ae3lite/` (см. `04_BACKEND_CORE/ae3lite.md`).
 
-### 6.10.1. ae_tasks
+### 6.11.1. ae_tasks
 
 ```
 id BIGSERIAL PK
@@ -1101,7 +1219,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - irrigation decision/replay/runtime state хранится в explicit columns, а не в свободном JSON.
 - canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из произвольного JSON в `payload`.
 
-### 6.10.2. ae_commands
+### 6.11.2. ae_commands
 
 ```
 id BIGSERIAL PK
@@ -1131,7 +1249,7 @@ ae_commands_external_id_idx (external_id) WHERE external_id IS NOT NULL
 - `terminal_status` синхронизирован по значениям с `commands.status`;
 - трекинг делается через mapping `external_id -> commands.cmd_id`.
 
-### 6.10.3. ae_zone_leases
+### 6.11.3. ae_zone_leases
 
 ```
 zone_id BIGINT PK FK -> zones ON DELETE CASCADE
@@ -1941,7 +2059,12 @@ Runtime-снимок подсистем отражается в `zone_automation
 Ограничение v1:
 
 - поддерживается только subsystem `climate`;
-- runtime-dispatch ещё не активирован, но authority document уже является source of truth для UI и дальнейшего rollout.
+- runtime path читает только compiled bundle `automation_effective_bundles`
+  (`scope_type='greenhouse'`, `scope_id={greenhouse_id}`);
+- raw authority document не читается из `automation-engine` hot path;
+- `execution.day_schedule.start_local/end_local` задаёт дневное окно в timezone теплицы;
+- `execution.weather_stale_max_open_pct`, `fallback_open_pct`, `max_step_pct`,
+  `position_deadband_pct`, `min_command_interval_sec` являются обязательными для безопасного V1 поведения.
 
 Связанные bindings не хранятся в самой таблице. Они описываются через:
 

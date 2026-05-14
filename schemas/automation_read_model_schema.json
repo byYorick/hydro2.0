@@ -1,7 +1,7 @@
 {
     "version": 1,
-    "generated_at": "2026-04-18T06:23:50+00:00",
-    "tracked_tables_count": 24,
+    "generated_at": "2026-05-14T12:09:24+00:00",
+    "tracked_tables_count": 28,
     "tables": {
         "ae_commands": {
             "columns": {
@@ -880,6 +880,302 @@
                 "zone_id": {
                     "data_type": "bigint",
                     "udt_name": "int8",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "greenhouse_automation_intents": {
+            "columns": {
+                "claimed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "completed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "idempotency_key": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "intent_source": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "intent_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "max_retries": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "not_before": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "retry_count": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "task_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                }
+            }
+        },
+        "greenhouse_automation_leases": {
+            "columns": {
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "leased_until": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "owner": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "greenhouse_automation_state": {
+            "columns": {
+                "active_alerts_summary": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "active_manual_override_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "climate_enabled": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "control_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "decision_factors": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "decision_reason": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "inside_climate_fresh": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                },
+                "last_command_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "last_decision_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "last_error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "last_error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "last_left_cmd_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "last_right_cmd_id": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "last_sent_left_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "last_sent_right_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "YES"
+                },
+                "last_task_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "left_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "next_scheduled_tick_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "recommended_left_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "recommended_right_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "right_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "weather_fresh": {
+                    "data_type": "boolean",
+                    "udt_name": "bool",
+                    "is_nullable": "NO"
+                }
+            }
+        },
+        "greenhouse_manual_overrides": {
+            "columns": {
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "created_by": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "expires_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "NO"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "left_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "reason": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "return_mode": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "right_position_pct": {
+                    "data_type": "smallint",
+                    "udt_name": "int2",
+                    "is_nullable": "NO"
+                },
+                "ttl_sec": {
+                    "data_type": "integer",
+                    "udt_name": "int4",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
                     "is_nullable": "YES"
                 }
             }

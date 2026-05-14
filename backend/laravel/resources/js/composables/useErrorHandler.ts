@@ -81,32 +81,33 @@ export function useErrorHandler(showToast?: ToastHandler) {
       }
 
       const status = axiosError.response?.status || 500
-      const responseData = axiosError.response?.data
+      const responseData: unknown = axiosError.response?.data
       let payloadMessage: string | null = null
       if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
         payloadMessage = pickApiMessageFromPayload(responseData as Record<string, unknown>)
       } else if (typeof responseData === 'string' && responseData.trim().length > 0) {
         payloadMessage = responseData.trim().slice(0, 500)
       }
+      const responseRecord =
+        responseData && typeof responseData === 'object' && !Array.isArray(responseData)
+          ? (responseData as Record<string, unknown>)
+          : null
       const responseCode =
-        responseData && typeof responseData === 'object' && !Array.isArray(responseData) &&
-        typeof (responseData as { code?: unknown }).code === 'string'
-          ? (responseData as { code: string }).code
-          : undefined
+        typeof responseRecord?.code === 'string' ? responseRecord.code : undefined
       const message = resolveHumanErrorMessage({
         code: responseCode,
         message: payloadMessage || axiosError.message || ERROR_MESSAGES.UNKNOWN,
       }) || payloadMessage || axiosError.message || ERROR_MESSAGES.UNKNOWN
 
       // Ошибки валидации (422)
-      if (status === 422 && responseData?.errors) {
-        return new ValidationError(message, responseData.errors)
+      if (status === 422 && responseRecord?.errors) {
+        return new ValidationError(message, responseRecord.errors as Record<string, string[]>)
       }
 
       return new ApiError(
         message,
         status,
-        responseData?.code,
+        typeof responseRecord?.code === 'string' ? responseRecord.code : undefined,
         responseData
       )
     }

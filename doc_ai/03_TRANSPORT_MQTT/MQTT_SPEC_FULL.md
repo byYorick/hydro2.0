@@ -315,7 +315,25 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
-### 5) Калибровка
+### 5) Позиция привода (roof vent, greenhouse climate)
+
+Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Сегмент `{zone}` в топике — UID anchor-зоны при greenhouse-only приводе (см. `MQTT_NAMESPACE.md`).
+
+```json
+{
+ "cmd": "set_position",
+ "params": {
+   "position_pct": 40,
+   "max_step_pct": 25
+ },
+ "cmd_id": "cmd-594b",
+ "ts": 1737355115,
+ "sig": "..."
+}
+```
+
+### 6) Калибровка
 ```json
 {
  "cmd": "calibrate",
@@ -328,7 +346,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
-### 6) Тест сенсора канала
+### 7) Тест сенсора канала
 ```json
 {
  "cmd": "test_sensor",
@@ -345,7 +363,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
   `metric_type`, опционально `raw`, `stable`, `tvoc_ppb` и т.п.);
 - при ошибке чтения/инициализации: `status=ERROR` или `INVALID` + `error_code`/`error_message`.
 
-### 7) Перезапуск ноды
+### 8) Перезапуск ноды
 ```json
 {
  "cmd": "restart",
@@ -358,7 +376,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 **Правило (для всех нод):** команда `restart` доступна для любых узлов. Узел обязан отправить
 `command_response` со статусом `DONE`, а затем выполнить перезагрузку устройства.
 
-### 8) Снимок состояния IRR-ноды (`state`)
+### 9) Снимок состояния IRR-ноды (`state`)
 ```json
 {
  "cmd": "state",

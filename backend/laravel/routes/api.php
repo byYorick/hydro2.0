@@ -9,6 +9,7 @@ use App\Http\Controllers\AutomationConfigController;
 use App\Http\Controllers\AutomationPresetController;
 use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
+use App\Http\Controllers\Api\GreenhouseClimateController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
@@ -166,6 +167,7 @@ Route::middleware([
     Route::get('zones/{zone}/effective-targets', [ZoneController::class, 'effectiveTargets'])
         ->middleware('ae.legacy.sql.guard');
     Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
+    Route::get('greenhouses/{greenhouse}/climate/state', [GreenhouseClimateController::class, 'state']);
 
     // Recipe revisions
     Route::get('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'show']);
@@ -202,6 +204,10 @@ Route::middleware([
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::patch('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::delete('greenhouses/{greenhouse}', [GreenhouseController::class, 'destroy']);
+
+        Route::post('greenhouses/{greenhouse}/climate/control-mode', [GreenhouseClimateController::class, 'updateControlMode']);
+        Route::post('greenhouses/{greenhouse}/climate/manual-override', [GreenhouseClimateController::class, 'storeManualOverride']);
+        Route::delete('greenhouses/{greenhouse}/climate/manual-override', [GreenhouseClimateController::class, 'destroyManualOverride']);
 
         // Zones
         Route::post('zones', [ZoneController::class, 'store']);

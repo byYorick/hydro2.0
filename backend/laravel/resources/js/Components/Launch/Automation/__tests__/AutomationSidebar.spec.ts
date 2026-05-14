@@ -10,10 +10,11 @@ const baseNav: AutomationNavMap = {
   correction: { state: 'active', count: '1/2' },
   lighting: { state: 'optional', count: 'опц.' },
   climate: { state: 'optional', count: 'опц.' },
+  greenhouse_climate: { state: 'optional', count: 'опц.' },
 }
 
 describe('AutomationSidebar', () => {
-  it('renders 6 nav items in 3 groups with titles', () => {
+  it('renders nav items in 3 groups with titles', () => {
     const w = mount(AutomationSidebar, {
       props: { current: 'bindings', nav: baseNav },
     })
@@ -26,6 +27,7 @@ describe('AutomationSidebar', () => {
     expect(w.text()).toContain('Коррекция pH/EC')
     expect(w.text()).toContain('Свет')
     expect(w.text()).toContain('Климат зоны')
+    expect(w.text()).toContain('Климат теплицы')
   })
 
   it('shows ! bullet for blockers, ✓ for passed, idx for active/optional', () => {
