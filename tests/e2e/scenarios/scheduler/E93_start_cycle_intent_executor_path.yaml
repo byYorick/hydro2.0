@@ -390,7 +390,9 @@ actions:
       INSERT INTO zone_automation_intents (
         zone_id,
         intent_type,
-        payload,
+        task_type,
+        topology,
+        intent_source,
         idempotency_key,
         status,
         not_before,

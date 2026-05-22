@@ -25,6 +25,7 @@ interface ClimateState {
   last_task_id: number | null
   last_error_code: string | null
   last_error_message: string | null
+  active_alerts_summary: string[] | null
   last_decision_at: string | null
   last_command_at: string | null
 }
@@ -273,6 +274,20 @@ onMounted(loadState)
                 class="mt-3 border border-red-900 bg-red-950/30 p-3 text-sm text-red-100"
               >
                 {{ state.last_error_code }}<span v-if="state.last_error_message"> · {{ state.last_error_message }}</span>
+              </div>
+              <div
+                v-if="state.active_alerts_summary?.length"
+                class="mt-3 border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100"
+              >
+                <div class="font-medium">Активные ограничения</div>
+                <ul class="mt-2 space-y-1">
+                  <li
+                    v-for="alert in state.active_alerts_summary"
+                    :key="alert"
+                  >
+                    {{ alert }}
+                  </li>
+                </ul>
               </div>
             </div>
           </div>

@@ -603,6 +603,15 @@ actions:
                   topology: two_tank_drip_substrate_trays
                   required_node_types:
                     - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                    irr_state_wait_timeout_sec: 12
+                    sensor_mode_stabilization_time_sec: 0
               irrigation:
                 decision:
                   strategy: task

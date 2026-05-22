@@ -1042,7 +1042,9 @@ actions:
       INSERT INTO zone_automation_intents (
         zone_id,
         intent_type,
-        payload,
+        task_type,
+        topology,
+        intent_source,
         idempotency_key,
         status,
         not_before,
@@ -1054,12 +1056,9 @@ actions:
       VALUES (
         :zone_id,
         'start_cycle',
-        jsonb_build_object(
-          'source', CAST(:source AS text),
-          'task_type', 'diagnostics',
-          'workflow', 'cycle_start',
-          'topology', 'two_tank_drip_substrate_trays'
-        ),
+        'cycle_start',
+        'two_tank_drip_substrate_trays',
+        CAST(:source AS text),
         :idempotency_key,
         'pending',
         NOW() - INTERVAL '1 second',

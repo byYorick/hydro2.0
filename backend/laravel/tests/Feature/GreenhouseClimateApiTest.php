@@ -123,6 +123,12 @@ class GreenhouseClimateApiTest extends TestCase
 
     public function test_manual_override_store_and_delete(): void
     {
+        config([
+            'services.automation_engine.api_url' => 'http://automation-engine:9405',
+            'services.automation_engine.scheduler_api_token' => 'test-token',
+        ]);
+        Http::fake(['*' => Http::response(['status' => 'accepted'], 202)]);
+
         $user = User::factory()->create(['role' => 'operator']);
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
@@ -147,6 +153,75 @@ class GreenhouseClimateApiTest extends TestCase
         $del = $this->deleteJson('/api/greenhouses/'.$greenhouse->id.'/climate/manual-override');
         $del->assertOk();
         $this->assertSame(0, DB::table('greenhouse_manual_overrides')->where('greenhouse_id', $greenhouse->id)->count());
+        Http::assertSentCount(2);
+    }
+
+    public function test_manual_override_caps_ttl_from_bundle_and_wakes_automation_engine(): void
+    {
+        config([
+            'services.automation_engine.api_url' => 'http://automation-engine:9405',
+            'services.automation_engine.scheduler_api_token' => 'test-token',
+            'services.automation_engine.timeout' => 0.5,
+        ]);
+        Http::fake(['*' => Http::response(['status' => 'accepted'], 202)]);
+
+        $user = User::factory()->create(['role' => 'operator']);
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $this->grantZoneAccess($user, $zone);
+        Sanctum::actingAs($user);
+
+        DB::table('automation_effective_bundles')->insert([
+            'scope_type' => 'greenhouse',
+            'scope_id' => $greenhouse->id,
+            'bundle_revision' => 'test-gh-climate',
+            'schema_revision' => '1',
+            'config' => json_encode([
+                'greenhouse' => [
+                    'logic_profile' => [
+                        'active_mode' => 'working',
+                        'profiles' => [
+                            'working' => [
+                                'subsystems' => [
+                                    'climate' => [
+                                        'execution' => [
+                                            'manual_override_max_sec' => 120,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+            'violations' => json_encode([]),
+            'status' => 'valid',
+            'compiled_at' => now(),
+            'inputs_checksum' => 'test-gh-climate',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->postJson('/api/greenhouses/'.$greenhouse->id.'/climate/manual-override', [
+            'left_position_pct' => 15,
+            'right_position_pct' => 25,
+            'ttl_sec' => 500,
+            'return_mode' => 'semi',
+            'reason' => 'test override',
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('greenhouse_manual_overrides', [
+            'greenhouse_id' => $greenhouse->id,
+            'ttl_sec' => 120,
+        ]);
+        $this->assertDatabaseHas('greenhouse_automation_intents', [
+            'greenhouse_id' => $greenhouse->id,
+            'intent_source' => 'manual_override',
+            'status' => 'pending',
+        ]);
+        Http::assertSent(fn ($request) => $request->url() === 'http://automation-engine:9405/greenhouses/'.$greenhouse->id.'/start-climate-tick'
+            && $request['source'] === 'manual_override');
     }
 
     public function test_viewer_cannot_post_control_mode(): void
@@ -170,9 +245,7 @@ class GreenhouseClimateApiTest extends TestCase
             'services.automation_engine.scheduler_api_token' => 'test-token',
             'services.automation_engine.timeout' => 0.5,
         ]);
-        Http::fake([
-            'automation-engine:9405/*' => Http::response(['status' => 'accepted'], 202),
-        ]);
+        Http::fake(['*' => Http::response(['status' => 'accepted'], 202)]);
 
         $greenhouse = Greenhouse::factory()->create();
         DB::table('greenhouse_automation_state')->insert([

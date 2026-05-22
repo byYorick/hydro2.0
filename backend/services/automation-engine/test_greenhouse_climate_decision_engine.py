@@ -40,6 +40,7 @@ def _exec(**kwargs):
         "greenhouse_targets": {
             "temp_min_c": 18,
             "temp_max_c": 28,
+            "humidity_min_pct": 40,
             "humidity_max_pct": 70,
         },
     }
@@ -151,6 +152,30 @@ async def test_sensor_snapshot_ignores_stale_values_and_reads_rain_label(monkeyp
                 "last_quality": "GOOD",
             },
             {
+                "scope": "inside",
+                "type": "TEMPERATURE",
+                "label": "temperature",
+                "last_value": 30.0,
+                "last_ts": now,
+                "last_quality": "GOOD",
+            },
+            {
+                "scope": "inside",
+                "type": "HUMIDITY",
+                "label": "humidity",
+                "last_value": 55.0,
+                "last_ts": now,
+                "last_quality": "GOOD",
+            },
+            {
+                "scope": "inside",
+                "type": "HUMIDITY",
+                "label": "humidity",
+                "last_value": 70.0,
+                "last_ts": now,
+                "last_quality": "GOOD",
+            },
+            {
                 "scope": "outside",
                 "type": "OTHER",
                 "label": "rain_detected",
@@ -164,11 +189,26 @@ async def test_sensor_snapshot_ignores_stale_values_and_reads_rain_label(monkeyp
 
     snap = await run_tick._sensor_snapshot(1, 1200)
 
-    assert snap["inside_temp_median"] == 24.0
-    assert snap["inside_temp_max"] == 24.0
+    assert snap["inside_temp_median"] == 27.0
+    assert snap["inside_temp_max"] == 30.0
+    assert snap["inside_temp_min"] == 24.0
+    assert snap["inside_temp_spread"] == 6.0
+    assert snap["inside_rh_median"] == 62.5
+    assert snap["inside_rh_spread"] == 15.0
     assert snap["rain_detected"] is True
     assert snap["inside_fresh"] is True
-    assert snap["weather_fresh"] is True
+    assert snap["weather_fresh"] is False
+    assert snap["outside_fresh"]["rain_detected"] is True
+
+
+def test_spread_alert_thresholds_detect_high_inside_sensor_spread() -> None:
+    snap = {
+        "inside_temp_spread": 5.0,
+        "inside_rh_spread": 10.0,
+    }
+    alerts = run_tick._spread_alerts(snap, {"inside_temp_spread_alert_c": 4, "inside_rh_spread_alert_pct": 15})
+
+    assert alerts == ["GREENHOUSE_CLIMATE_SENSOR_SPREAD_HIGH"]
 
 
 @pytest.mark.asyncio
@@ -326,3 +366,59 @@ def test_rain_with_direction_prefers_leeward_higher_cap() -> None:
         last_command_ts=None,
     )
     assert "rain_clamp" in d.decision_reason
+
+
+def test_unknown_wind_direction_uses_symmetric_conservative_clamp() -> None:
+    ex = _exec()
+    d = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=40.0,
+        inside_temp_max=40.0,
+        inside_rh_max=50.0,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=15.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=200.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=50,
+        current_right_pct=50,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+
+    assert d.left_target_pct == d.right_target_pct
+
+
+def test_deadband_suppresses_only_unchanged_side() -> None:
+    ex = _exec(position_deadband_pct=5, max_step_pct=100)
+    d = compute_climate_decision(
+        execution=ex,
+        control_mode="auto",
+        manual_override=None,
+        inside_temp_median=31.0,
+        inside_temp_max=31.0,
+        inside_rh_max=50.0,
+        outside_temp=20.0,
+        outside_humidity=40.0,
+        wind_speed=0.0,
+        wind_direction_deg=None,
+        rain_detected=False,
+        outside_light_lux=200.0,
+        schedule_day=True,
+        weather_fresh=True,
+        inside_fresh=True,
+        current_left_pct=52,
+        current_right_pct=10,
+        now_ts=1_000_000.0,
+        last_command_ts=None,
+    )
+
+    assert "right" in d.command_sides
+    assert "left" not in d.command_sides
+    assert d.suppress_commands is False

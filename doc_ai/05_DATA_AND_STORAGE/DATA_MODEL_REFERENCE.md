@@ -926,6 +926,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Таблицы **greenhouse-level** автоматизации (климат крыши), ортогональны `zone_automation_intents` / `ae_tasks`.
 Семантика и алгоритм — `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`.
+FK на `greenhouses` используют `ON DELETE RESTRICT`: runtime history не удаляется каскадом без отдельной retention policy.
 
 ### 6.9.1. greenhouse_automation_intents
 

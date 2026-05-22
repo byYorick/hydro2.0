@@ -90,7 +90,7 @@ class AutomationConfigDocumentService
         ])->first();
         $currentPayload = is_array($currentDocument?->payload) ? $currentDocument->payload : [];
         $normalizedPayload = $this->normalizePayload($namespace, $payload, $scopeType, $scopeId, $currentPayload);
-        $this->registry->validate($namespace, $normalizedPayload);
+        $this->registry->validate($namespace, $normalizedPayload, $scopeType, $scopeId);
 
         return DB::transaction(function () use ($namespace, $scopeType, $scopeId, $normalizedPayload, $userId, $source): AutomationConfigDocument {
             $document = $this->persistDocument($namespace, $scopeType, $scopeId, $normalizedPayload, $userId, $source);
@@ -115,7 +115,7 @@ class AutomationConfigDocumentService
         ])->first();
         $currentPayload = is_array($currentDocument?->payload) ? $currentDocument->payload : [];
         $normalizedPayload = $this->normalizePayload($namespace, $payload, $scopeType, $zoneId, $currentPayload);
-        $this->registry->validate($namespace, $normalizedPayload);
+        $this->registry->validate($namespace, $normalizedPayload, $scopeType, $zoneId);
         $resolvedTargets = $this->resolveRuntimeTuningBundleTargets($normalizedPayload);
 
         return DB::transaction(function () use ($zoneId, $normalizedPayload, $resolvedTargets, $userId, $source, $namespace, $scopeType): AutomationConfigDocument {

@@ -14,7 +14,7 @@ export default defineConfig({
     ['junit', { outputFile: '../reports/playwright/junit.xml' }],
   ],
   use: {
-    baseURL: process.env.LARAVEL_URL || 'http://localhost',
+    baseURL: process.env.LARAVEL_URL || 'http://localhost:8081',
     trace: 'on-first-retry',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',

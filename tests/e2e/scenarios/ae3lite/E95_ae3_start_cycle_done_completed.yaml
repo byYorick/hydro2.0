@@ -424,11 +424,18 @@ actions:
     type: set
     node_id: ${node_row.0.id}
 
-  - step: create_node_channel
+  - step: create_node_channels
     type: database_execute
     query: |
       INSERT INTO node_channels (node_id, channel, type, config, created_at, updated_at)
-      VALUES (:node_id, 'pump_main', 'ACTUATOR', '{}'::jsonb, NOW(), NOW())
+      SELECT :node_id, channel_name, channel_type, '{}'::jsonb, NOW(), NOW()
+      FROM (VALUES
+        ('pump_main', 'ACTUATOR'),
+        ('system', 'SERVICE')
+      ) AS items(channel_name, channel_type)
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW()
     params:
       node_id: ${node_id}
 
@@ -506,7 +513,9 @@ actions:
       INSERT INTO zone_automation_intents (
         zone_id,
         intent_type,
-        payload,
+        task_type,
+        topology,
+        intent_source,
         idempotency_key,
         status,
         not_before,
@@ -518,12 +527,9 @@ actions:
       VALUES (
         :zone_id,
         'start_cycle',
-        jsonb_build_object(
-          'source', CAST(:source AS text),
-          'task_type', 'diagnostics',
-          'workflow', 'cycle_start',
-          'topology', 'generic_cycle_start'
-        ),
+        'cycle_start',
+        'generic_cycle_start',
+        CAST(:source AS text),
         :idempotency_key,
         'pending',
         NOW() - INTERVAL '1 second',

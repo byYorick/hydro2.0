@@ -11,7 +11,7 @@ return new class extends Migration
     {
         Schema::create('greenhouse_automation_intents', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('greenhouse_id')->constrained('greenhouses')->cascadeOnDelete();
+            $table->foreignId('greenhouse_id')->constrained('greenhouses')->restrictOnDelete();
             $table->string('intent_type', 64)->default('GREENHOUSE_CLIMATE_TICK');
             $table->string('task_type', 64)->default('greenhouse_climate_tick');
             $table->string('intent_source', 64)->nullable();
@@ -51,7 +51,7 @@ return new class extends Migration
 
         Schema::create('greenhouse_automation_tasks', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('greenhouse_id')->constrained('greenhouses')->cascadeOnDelete();
+            $table->foreignId('greenhouse_id')->constrained('greenhouses')->restrictOnDelete();
             $table->foreignId('intent_id')->nullable()->constrained('greenhouse_automation_intents')->nullOnDelete();
             $table->string('task_type', 64)->default('greenhouse_climate_tick');
             $table->string('status', 32)->default('running');
@@ -97,14 +97,14 @@ return new class extends Migration
         }
 
         Schema::create('greenhouse_automation_leases', function (Blueprint $table) {
-            $table->foreignId('greenhouse_id')->primary()->constrained('greenhouses')->cascadeOnDelete();
+            $table->foreignId('greenhouse_id')->primary()->constrained('greenhouses')->restrictOnDelete();
             $table->string('owner', 64)->default('ae3_greenhouse_climate');
             $table->timestampTz('leased_until');
             $table->timestampTz('updated_at');
         });
 
         Schema::create('greenhouse_automation_state', function (Blueprint $table) {
-            $table->foreignId('greenhouse_id')->primary()->constrained('greenhouses')->cascadeOnDelete();
+            $table->foreignId('greenhouse_id')->primary()->constrained('greenhouses')->restrictOnDelete();
             $table->boolean('climate_enabled')->default(false);
             $table->string('control_mode', 16)->default('auto');
             $table->timestampTz('next_scheduled_tick_at')->nullable();
@@ -132,7 +132,7 @@ return new class extends Migration
 
         Schema::create('greenhouse_manual_overrides', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('greenhouse_id')->constrained('greenhouses')->cascadeOnDelete();
+            $table->foreignId('greenhouse_id')->constrained('greenhouses')->restrictOnDelete();
             $table->unsignedSmallInteger('left_position_pct');
             $table->unsignedSmallInteger('right_position_pct');
             $table->unsignedInteger('ttl_sec');

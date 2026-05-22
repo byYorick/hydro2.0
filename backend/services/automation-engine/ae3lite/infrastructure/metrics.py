@@ -346,6 +346,48 @@ STARTUP_RECOVERY_TASK = Counter(
     ["outcome"],  # completed | failed | waiting_command | recovered_waiting_command
 )
 
+# ─── Greenhouse climate ─────────────────────────────────────────────
+
+GREENHOUSE_CLIMATE_TICK_TOTAL = Counter(
+    "greenhouse_climate_tick_total",
+    "Greenhouse climate ticks grouped by terminal runtime status",
+    ["status"],
+)
+
+GREENHOUSE_CLIMATE_COMMAND_TOTAL = Counter(
+    "greenhouse_climate_command_total",
+    "Greenhouse climate actuator commands grouped by side and terminal status",
+    ["side", "status"],
+)
+
+GREENHOUSE_CLIMATE_DECISION_DURATION_SECONDS = Histogram(
+    "greenhouse_climate_decision_duration_seconds",
+    "Wall-clock duration of one greenhouse climate tick",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
+)
+
+GREENHOUSE_CLIMATE_SENSOR_STALE_TOTAL = Counter(
+    "greenhouse_climate_sensor_stale_total",
+    "Greenhouse climate stale sensor detections",
+    ["kind"],
+)
+
+GREENHOUSE_CLIMATE_WIND_CLAMP_TOTAL = Counter(
+    "greenhouse_climate_wind_clamp_total",
+    "Greenhouse climate decisions where wind clamp was active",
+)
+
+GREENHOUSE_CLIMATE_RAIN_CLAMP_TOTAL = Counter(
+    "greenhouse_climate_rain_clamp_total",
+    "Greenhouse climate decisions where rain clamp was active",
+)
+
+GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL = Counter(
+    "greenhouse_climate_command_failed_total",
+    "Greenhouse climate actuator command failures grouped by side and failure code",
+    ["side", "failure"],
+)
+
 
 def initialize_counter_series() -> None:
     """Pre-register counter series for known static label combinations.

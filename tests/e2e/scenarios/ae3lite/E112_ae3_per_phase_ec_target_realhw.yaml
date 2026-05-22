@@ -697,6 +697,15 @@ actions:
                   topology: two_tank_drip_substrate_trays
                   required_node_types:
                     - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                    irr_state_wait_timeout_sec: 12
+                    sensor_mode_stabilization_time_sec: 0
                   target_ph: 5.1
                   target_ec: 2.33
                   prepare_tolerance:
@@ -1036,7 +1045,9 @@ actions:
       INSERT INTO zone_automation_intents (
         zone_id,
         intent_type,
-        payload,
+        task_type,
+        topology,
+        intent_source,
         idempotency_key,
         status,
         not_before,
@@ -1048,12 +1059,9 @@ actions:
       VALUES (
         :zone_id,
         'start_cycle',
-        jsonb_build_object(
-          'source', CAST(:source AS text),
-          'task_type', 'diagnostics',
-          'workflow', 'cycle_start',
-          'topology', 'two_tank_drip_substrate_trays'
-        ),
+        'cycle_start',
+        'two_tank_drip_substrate_trays',
+        CAST(:source AS text),
         :idempotency_key,
         'pending',
         NOW() - INTERVAL '1 second',

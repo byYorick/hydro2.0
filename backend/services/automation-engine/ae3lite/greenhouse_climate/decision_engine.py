@@ -37,6 +37,7 @@ class ClimateDecision:
     factors: dict[str, Any]
     suppress_commands: bool
     emergency_overheat: bool
+    command_sides: tuple[str, ...]
 
 
 def compute_climate_decision(
@@ -67,9 +68,14 @@ def compute_climate_decision(
 
     gt_raw = ex.get("greenhouse_targets")
     gt: dict[str, Any] = gt_raw if isinstance(gt_raw, dict) else {}
-    temp_max = float(_f(gt.get("temp_max_c")) or 28.0)
-    temp_min = float(_f(gt.get("temp_min_c")) or 18.0)
-    rh_max = float(_f(gt.get("humidity_max_pct")) or 75.0)
+    temp_min_v = _f(gt.get("temp_min_c"))
+    temp_max_v = _f(gt.get("temp_max_c"))
+    rh_max_v_cfg = _f(gt.get("humidity_max_pct"))
+    if temp_min_v is None or temp_max_v is None or rh_max_v_cfg is None:
+        raise ValueError("greenhouse_targets temp_min_c, temp_max_c and humidity_max_pct are required")
+    temp_max = float(temp_max_v)
+    temp_min = float(temp_min_v)
+    rh_max = float(rh_max_v_cfg)
 
     _decision_interval = int(_f(ex.get("decision_interval_sec")) or 900)
     min_command_interval = int(_f(ex.get("min_command_interval_sec")) or 300)
@@ -133,6 +139,7 @@ def compute_climate_decision(
             factors={**factors, "override": dict(manual_override)},
             suppress_commands=False,
             emergency_overheat=False,
+            command_sides=("left", "right"),
         )
 
     daylight = bool(schedule_day) or (
@@ -202,8 +209,8 @@ def compute_climate_decision(
             windward_max = min(windward_max, rain_unknown)
             leeward_max = min(leeward_max, rain_unknown)
 
-    left_max = windward_max
-    right_max = leeward_max
+    left_max = min(windward_max, leeward_max)
+    right_max = min(windward_max, leeward_max)
     if direction_known and left_n is not None and right_n is not None and wind_direction_deg is not None:
         def _ang_dist(a: float, b: float) -> float:
             d = abs(a - b) % 360.0
@@ -243,7 +250,12 @@ def compute_climate_decision(
         and not emergency_overheat
     ):
         suppress = True
-    if abs(left_next - current_left_pct) < deadband and abs(right_next - current_right_pct) < deadband:
+    command_sides: list[str] = []
+    if abs(left_next - current_left_pct) >= deadband:
+        command_sides.append("left")
+    if abs(right_next - current_right_pct) >= deadband:
+        command_sides.append("right")
+    if not command_sides:
         suppress = True
 
     reason_parts = []
@@ -270,4 +282,5 @@ def compute_climate_decision(
         factors=factors,
         suppress_commands=suppress,
         emergency_overheat=emergency_overheat,
+        command_sides=tuple(command_sides),
     )

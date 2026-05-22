@@ -550,6 +550,15 @@ actions:
                   topology: two_tank_drip_substrate_trays
                   required_node_types:
                     - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                    irr_state_wait_timeout_sec: 12
+                    sensor_mode_stabilization_time_sec: 0
               irrigation:
                 decision:
                   strategy: task
@@ -1350,6 +1359,78 @@ actions:
                   topology: two_tank_drip_substrate_trays
                   required_node_types:
                     - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                    irr_state_wait_timeout_sec: 12
+                    sensor_mode_stabilization_time_sec: 0
+                  two_tank_commands:
+                    clean_fill_start:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                    clean_fill_stop:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                    solution_fill_start:
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_fill_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: false
+                    prepare_recirculation_start:
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    prepare_recirculation_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: false
               irrigation:
                 decision:
                   strategy: smart_soil_v1
@@ -1504,7 +1585,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${skip_task_id}
-    timeout: 30.0
+    timeout: 120.0
     expected_rows: 1
     save: skip_task_row
 

@@ -11,9 +11,12 @@ setup('authenticate', async ({ page }) => {
   const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
   const readyIndicators = [
     page.locator('[data-testid="dashboard-zones-count"]'),
+    page.getByRole('heading', { name: 'Операционный центр' }),
+    page.getByText('Зоны (всего / в работе)'),
     page.locator('[data-testid^="zone-card-"]').first(),
     page.locator('nav a[href="/zones"]'),
     page.locator('nav a[href="/alerts"]'),
+    page.getByText('Последние события'),
   ];
 
   const isAuthenticated = async (): Promise<boolean> => {

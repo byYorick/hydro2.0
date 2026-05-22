@@ -462,7 +462,9 @@ actions:
       INSERT INTO zone_automation_intents (
         zone_id,
         intent_type,
-        payload,
+        task_type,
+        topology,
+        intent_source,
         idempotency_key,
         status,
         not_before,
@@ -474,12 +476,9 @@ actions:
       VALUES (
         :zone_id,
         'LIGHTING_TICK',
-        jsonb_build_object(
-          'source', CAST(:source AS text),
-          'task_type', 'lighting_tick',
-          'workflow', 'lighting_tick',
-          'topology', 'lighting_tick'
-        ),
+        'lighting_tick',
+        'lighting_tick',
+        CAST(:source AS text),
         :idempotency_key,
         'pending',
         NOW() - INTERVAL '1 second',

@@ -74,6 +74,20 @@ class _FakeHistoryLoggerClient:
         return cid
 
 
+class _FakeAlertPublisher:
+    def __init__(self) -> None:
+        self.active: list[dict[str, Any]] = []
+        self.resolved: list[dict[str, Any]] = []
+
+    async def raise_active(self, **kwargs: Any) -> bool:
+        self.active.append(dict(kwargs))
+        return True
+
+    async def resolve(self, **kwargs: Any) -> bool:
+        self.resolved.append(dict(kwargs))
+        return True
+
+
 def _bundle_config() -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -101,6 +115,7 @@ def _bundle_config() -> dict[str, Any]:
                                     "greenhouse_targets": {
                                         "temp_max_c": 28,
                                         "temp_min_c": 18,
+                                        "humidity_min_pct": 40,
                                         "humidity_max_pct": 95,
                                     },
                                     "temp_full_open_delta_c": 2,
@@ -108,6 +123,30 @@ def _bundle_config() -> dict[str, Any]:
                                     "day_max_open_pct": 100,
                                     "night_min_open_pct": 0,
                                     "night_max_open_pct": 100,
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        },
+    }
+
+
+def _disabled_bundle_config_without_targets() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "greenhouse": {
+            "logic_profile": {
+                "active_mode": "working",
+                "profiles": {
+                    "working": {
+                        "subsystems": {
+                            "climate": {
+                                "enabled": False,
+                                "control_mode": "auto",
+                                "execution": {
+                                    "decision_interval_sec": 60,
                                 },
                             }
                         }
@@ -147,11 +186,101 @@ async def _cleanup_greenhouse(*, greenhouse_id: int, zone_id: int, sensor_ids: l
 
 
 @pytest.mark.asyncio
+async def test_disabled_greenhouse_climate_tick_does_not_require_targets() -> None:
+    prefix = f"gh-disabled-{uuid.uuid4().hex[:12]}"
+    gh_uid = f"gh-{uuid.uuid4().hex[:20]}"
+    fake_hl = _FakeHistoryLoggerClient()
+    fake_alerts = _FakeAlertPublisher()
+
+    gh_rows = await fetch(
+        """
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
+        RETURNING id
+        """,
+        gh_uid,
+        prefix,
+        f"pt-{uuid.uuid4().hex[:24]}",
+    )
+    greenhouse_id = int(gh_rows[0]["id"])
+    rev = uuid.uuid4().hex
+    await execute(
+        """
+        INSERT INTO automation_effective_bundles (
+            scope_type, scope_id, bundle_revision, schema_revision, config, violations, status, compiled_at, inputs_checksum, created_at, updated_at
+        )
+        VALUES ('greenhouse', $1, $2, '1', $3::jsonb, '[]'::jsonb, 'valid', NOW(), $4, NOW(), NOW())
+        """,
+        greenhouse_id,
+        rev,
+        _disabled_bundle_config_without_targets(),
+        rev,
+    )
+    await execute(
+        """
+        INSERT INTO greenhouse_automation_state (
+            greenhouse_id, climate_enabled, control_mode, left_position_pct, right_position_pct,
+            recommended_left_position_pct, recommended_right_position_pct,
+            created_at, updated_at
+        )
+        VALUES ($1, false, 'auto', 10, 20, 10, 20, NOW(), NOW())
+        """,
+        greenhouse_id,
+    )
+    idem = f"idem-{uuid.uuid4().hex}"
+    await execute(
+        """
+        INSERT INTO greenhouse_automation_intents (
+            greenhouse_id, intent_type, task_type, intent_source, idempotency_key, status, created_at, updated_at
+        )
+        VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2, 'pending', NOW(), NOW())
+        """,
+        greenhouse_id,
+        idem,
+    )
+
+    try:
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=greenhouse_id,
+            idempotency_key=idem,
+            history_logger_client=fake_hl,
+            alert_publisher=fake_alerts,
+        )
+        assert result.get("status") == "completed", result
+        assert result.get("reason") == "climate_disabled", result
+        assert fake_hl.calls == []
+
+        intents = await fetch(
+            "SELECT status, error_code FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            greenhouse_id,
+            idem,
+        )
+        assert intents and str(intents[0]["status"]).lower() == "completed"
+
+        st = await fetch(
+            "SELECT climate_enabled, decision_reason, active_alerts_summary FROM greenhouse_automation_state WHERE greenhouse_id = $1",
+            greenhouse_id,
+        )
+        assert st
+        assert bool(st[0]["climate_enabled"]) is False
+        assert st[0]["decision_reason"] == "climate_disabled"
+        assert st[0]["active_alerts_summary"] == []
+        assert fake_alerts.active == []
+        assert {item["code"] for item in fake_alerts.resolved} >= {
+            "GREENHOUSE_WEATHER_STATION_STALE",
+            "GREENHOUSE_VENT_COMMAND_FAILED",
+        }
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=greenhouse_id, zone_id=-1, sensor_ids=[])
+
+
+@pytest.mark.asyncio
 async def test_greenhouse_climate_tick_intent_to_done_updates_state() -> None:
     prefix = f"gh-tick-{uuid.uuid4().hex[:12]}"
     gh_uid = f"gh-{uuid.uuid4().hex[:20]}"
     z_uid = f"zn-{uuid.uuid4().hex[:20]}"
     fake_hl = _FakeHistoryLoggerClient()
+    fake_alerts = _FakeAlertPublisher()
     sensor_ids: list[int] = []
 
     gh_rows = await fetch(
@@ -307,6 +436,7 @@ async def test_greenhouse_climate_tick_intent_to_done_updates_state() -> None:
             greenhouse_id=greenhouse_id,
             idempotency_key=idem,
             history_logger_client=fake_hl,
+            alert_publisher=fake_alerts,
         )
         assert result.get("status") == "ok", result
 
@@ -322,6 +452,9 @@ async def test_greenhouse_climate_tick_intent_to_done_updates_state() -> None:
             idem,
         )
         assert intents and str(intents[0]["status"]).lower() == "completed"
+        assert {item["code"] for item in fake_alerts.active} >= {
+            "GREENHOUSE_WEATHER_STATION_STALE",
+        }
 
         st = await fetch("SELECT left_position_pct, right_position_pct, climate_enabled FROM greenhouse_automation_state WHERE greenhouse_id = $1", greenhouse_id)
         assert st

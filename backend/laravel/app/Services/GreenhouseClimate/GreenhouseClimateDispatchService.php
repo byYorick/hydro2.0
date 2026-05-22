@@ -38,29 +38,34 @@ class GreenhouseClimateDispatchService
             }
 
             $idempotencyKey = (string) $activeIntent->idempotency_key;
-            $url = $base.'/greenhouses/'.$greenhouseId.'/start-climate-tick';
-            try {
-                $response = Http::timeout($timeout)
-                    ->withToken($token)
-                    ->acceptJson()
-                    ->post($url, [
-                        'source' => 'laravel_scheduler',
-                        'idempotency_key' => $idempotencyKey,
-                    ]);
-                if (! $response->successful()) {
-                    Log::warning('greenhouse_climate_dispatch_http_error', [
-                        'greenhouse_id' => $greenhouseId,
-                        'status' => $response->status(),
-                        'body' => $response->body(),
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Log::warning('greenhouse_climate_dispatch_exception', [
-                    'greenhouse_id' => $greenhouseId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->wakeAutomationEngine($greenhouseId, $idempotencyKey, 'laravel_scheduler', $base, $token, $timeout);
         }
+    }
+
+    public function dispatchNow(int $greenhouseId, string $source = 'laravel_api'): void
+    {
+        $base = rtrim((string) config('services.automation_engine.api_url'), '/');
+        $token = (string) config('services.automation_engine.scheduler_api_token');
+        if ($base === '' || $token === '') {
+            return;
+        }
+
+        $now = CarbonImmutable::now('UTC');
+        $activeIntent = $this->pendingIntent($greenhouseId) ?? $this->createPendingIntent($greenhouseId, $now, $source);
+        if ($activeIntent === null || $activeIntent->status !== 'pending') {
+            return;
+        }
+
+        DB::table('greenhouse_automation_state')->updateOrInsert(
+            ['greenhouse_id' => $greenhouseId],
+            [
+                'next_scheduled_tick_at' => $now,
+                'updated_at' => $now,
+            ] + (DB::table('greenhouse_automation_state')->where('greenhouse_id', $greenhouseId)->exists() ? [] : ['created_at' => $now])
+        );
+
+        $timeout = (float) config('services.automation_engine.timeout', 2.0);
+        $this->wakeAutomationEngine($greenhouseId, (string) $activeIntent->idempotency_key, $source, $base, $token, $timeout);
     }
 
     private function pendingIntent(int $greenhouseId): ?object
@@ -72,14 +77,14 @@ class GreenhouseClimateDispatchService
             ->first();
     }
 
-    private function createPendingIntent(int $greenhouseId, CarbonImmutable $now): ?object
+    private function createPendingIntent(int $greenhouseId, CarbonImmutable $now, string $source = 'laravel_scheduler'): ?object
     {
-        $idempotencyKey = sprintf('gh-climate-%d-%s', $greenhouseId, $now->format('YmdHi'));
+        $idempotencyKey = sprintf('gh-climate-%d-%s', $greenhouseId, $now->format('YmdHis'));
         DB::table('greenhouse_automation_intents')->insertOrIgnore([
             'greenhouse_id' => $greenhouseId,
             'intent_type' => 'GREENHOUSE_CLIMATE_TICK',
             'task_type' => 'greenhouse_climate_tick',
-            'intent_source' => 'laravel_scheduler',
+            'intent_source' => $source,
             'idempotency_key' => $idempotencyKey,
             'status' => 'pending',
             'not_before' => $now,
@@ -90,6 +95,38 @@ class GreenhouseClimateDispatchService
         ]);
 
         return $this->pendingIntent($greenhouseId);
+    }
+
+    private function wakeAutomationEngine(
+        int $greenhouseId,
+        string $idempotencyKey,
+        string $source,
+        string $base,
+        string $token,
+        float $timeout
+    ): void {
+        $url = $base.'/greenhouses/'.$greenhouseId.'/start-climate-tick';
+        try {
+            $response = Http::timeout($timeout)
+                ->withToken($token)
+                ->acceptJson()
+                ->post($url, [
+                    'source' => $source,
+                    'idempotency_key' => $idempotencyKey,
+                ]);
+            if (! $response->successful()) {
+                Log::warning('greenhouse_climate_dispatch_http_error', [
+                    'greenhouse_id' => $greenhouseId,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('greenhouse_climate_dispatch_exception', [
+                'greenhouse_id' => $greenhouseId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function shouldDispatch(int $greenhouseId, CarbonImmutable $now): bool

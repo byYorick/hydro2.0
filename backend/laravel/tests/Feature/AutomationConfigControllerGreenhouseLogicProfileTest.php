@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Greenhouse;
+use App\Models\Zone;
 use App\Services\AutomationConfigRegistry;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -45,6 +46,12 @@ class AutomationConfigControllerGreenhouseLogicProfileTest extends TestCase
                             'enabled' => true,
                             'execution' => [
                                 'strategy' => 'greenhouse_runtime',
+                                'greenhouse_targets' => [
+                                    'temp_min_c' => 18,
+                                    'temp_max_c' => 28,
+                                    'humidity_min_pct' => 45,
+                                    'humidity_max_pct' => 80,
+                                ],
                             ],
                         ],
                     ],
@@ -64,5 +71,75 @@ class AutomationConfigControllerGreenhouseLogicProfileTest extends TestCase
             ->assertJsonPath('data.active_mode', 'setup')
             ->assertJsonPath('data.profiles.setup.subsystems.climate.enabled', true)
             ->assertJsonPath('data.payload.profiles.setup.subsystems.climate.execution.strategy', 'greenhouse_runtime');
+    }
+
+    public function test_enabled_greenhouse_climate_requires_execution_targets(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $greenhouse = Greenhouse::factory()->create();
+
+        $payload = [
+            'active_mode' => 'setup',
+            'profiles' => [
+                'setup' => [
+                    'subsystems' => [
+                        'climate' => [
+                            'enabled' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->putJson("/api/automation-configs/greenhouse/{$greenhouse->id}/".AutomationConfigRegistry::NAMESPACE_GREENHOUSE_LOGIC_PROFILE, [
+                'payload' => $payload,
+            ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+        $this->assertStringContainsString('execution', (string) $response->json('message'));
+    }
+
+    public function test_primary_zone_policy_rejects_zone_from_another_greenhouse(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $greenhouse = Greenhouse::factory()->create();
+        $otherGreenhouse = Greenhouse::factory()->create();
+        $otherZone = Zone::factory()->create(['greenhouse_id' => $otherGreenhouse->id]);
+
+        $payload = [
+            'active_mode' => 'setup',
+            'profiles' => [
+                'setup' => [
+                    'subsystems' => [
+                        'climate' => [
+                            'enabled' => true,
+                            'execution' => [
+                                'target_policy' => 'primary_zone',
+                                'primary_zone_id' => $otherZone->id,
+                                'greenhouse_targets' => [
+                                    'temp_min_c' => 18,
+                                    'temp_max_c' => 28,
+                                    'humidity_min_pct' => 45,
+                                    'humidity_max_pct' => 80,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->putJson("/api/automation-configs/greenhouse/{$greenhouse->id}/".AutomationConfigRegistry::NAMESPACE_GREENHOUSE_LOGIC_PROFILE, [
+                'payload' => $payload,
+            ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+        $this->assertStringContainsString('primary_zone_id must belong', (string) $response->json('message'));
     }
 }

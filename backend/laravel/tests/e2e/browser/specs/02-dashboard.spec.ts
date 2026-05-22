@@ -1,29 +1,6 @@
 import { test, expect } from '../fixtures/test-data';
-import type { Page } from '@playwright/test';
 import { TEST_IDS } from '../constants';
-
-async function waitForDashboardReady(page: Page) {
-  await expect.poll(
-    async () => {
-      const indicators = [
-        page.locator('[data-testid="ws-status-indicator"]'),
-        page.locator('[data-testid="dashboard-zones-count"]'),
-        page.getByText('В работе', { exact: true }),
-        page.getByText('Активные зоны', { exact: true }),
-        page.locator('nav a[href="/zones"]'),
-      ];
-
-      for (const indicator of indicators) {
-        if (await indicator.first().isVisible().catch(() => false)) {
-          return true;
-        }
-      }
-
-      return false;
-    },
-    { timeout: 20000, message: 'Dashboard did not expose any stable ready indicator' },
-  ).toBe(true);
-}
+import { waitForDashboardReady } from '../helpers/navigation';
 
 test.describe('Dashboard Overview', () => {
   test('should display zones count card', async ({ page }) => {

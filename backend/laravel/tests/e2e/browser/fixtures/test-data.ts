@@ -9,6 +9,13 @@ type TestDataFixtures = {
 };
 
 export const test = base.extend<TestDataFixtures>({
+  page: async ({ page }, use) => {
+    const email = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
+    await page.goto(`/testing/login?email=${encodeURIComponent(email)}`, { waitUntil: 'load' });
+    await page.waitForSelector('#app[data-page]', { state: 'attached', timeout: 30000 });
+    await use(page);
+  },
+
   apiHelper: async ({ context }, use) => {
     const authEmail = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
     const authRole = process.env.E2E_AUTH_ROLE || 'agronomist';

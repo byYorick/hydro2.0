@@ -9,6 +9,7 @@ use App\Http\Requests\GreenhouseClimate\StoreGreenhouseClimateManualOverrideRequ
 use App\Http\Requests\GreenhouseClimate\UpdateGreenhouseClimateControlModeRequest;
 use App\Models\Greenhouse;
 use App\Models\GreenhouseAutomationState;
+use App\Services\GreenhouseClimate\GreenhouseClimateDispatchService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,11 @@ use Illuminate\Support\Facades\DB;
 
 class GreenhouseClimateController extends Controller
 {
+    public function __construct(
+        private readonly GreenhouseClimateDispatchService $dispatchService,
+    ) {
+    }
+
     public function state(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         abort_unless(ZoneAccessHelper::canAccessGreenhouseScope($request->user(), $greenhouse), 403);
@@ -56,6 +62,7 @@ class GreenhouseClimateController extends Controller
         abort_unless(ZoneAccessHelper::canAccessGreenhouseScope($request->user(), $greenhouse), 403);
 
         $ttl = max(1, (int) $request->validated('ttl_sec'));
+        $ttl = min($ttl, $this->manualOverrideMaxSec($greenhouse));
         $expires = CarbonImmutable::now('UTC')->addSeconds($ttl);
 
         $id = DB::table('greenhouse_manual_overrides')->insertGetId([
@@ -71,6 +78,8 @@ class GreenhouseClimateController extends Controller
             'updated_at' => now(),
         ]);
 
+        $this->dispatchService->dispatchNow($greenhouse->id, 'manual_override');
+
         return response()->json(['status' => 'ok', 'data' => ['id' => $id, 'expires_at' => $expires->toIso8601String()]]);
     }
 
@@ -82,6 +91,38 @@ class GreenhouseClimateController extends Controller
             ->where('greenhouse_id', $greenhouse->id)
             ->delete();
 
+        $this->dispatchService->dispatchNow($greenhouse->id, 'manual_override_delete');
+
         return response()->json(['status' => 'ok']);
+    }
+
+    private function manualOverrideMaxSec(Greenhouse $greenhouse): int
+    {
+        $row = DB::table('automation_effective_bundles')
+            ->where('scope_type', 'greenhouse')
+            ->where('scope_id', $greenhouse->id)
+            ->where('status', 'valid')
+            ->first();
+
+        $config = is_string($row->config ?? null) ? json_decode((string) $row->config, true) : ($row->config ?? null);
+        if (! is_array($config)) {
+            return 86400;
+        }
+
+        $logicProfile = $config['greenhouse']['logic_profile'] ?? null;
+        if (! is_array($logicProfile)) {
+            return 86400;
+        }
+        $mode = $logicProfile['active_mode'] ?? null;
+        if (! is_string($mode) || ! in_array($mode, ['setup', 'working'], true)) {
+            return 86400;
+        }
+
+        $value = $logicProfile['profiles'][$mode]['subsystems']['climate']['execution']['manual_override_max_sec'] ?? null;
+        if (! is_numeric($value)) {
+            return 86400;
+        }
+
+        return max(60, min(86400, (int) $value));
     }
 }

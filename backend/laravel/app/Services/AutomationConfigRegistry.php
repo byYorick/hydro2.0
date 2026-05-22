@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Support\Automation\ZonePidDefaults;
 use App\Support\Automation\ZoneProcessCalibrationDefaults;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class AutomationConfigRegistry
@@ -195,7 +196,7 @@ class AutomationConfigRegistry
         ], true);
     }
 
-    public function validate(string $namespace, array $payload): void
+    public function validate(string $namespace, array $payload, ?string $scopeType = null, ?int $scopeId = null): void
     {
         if ($this->isLegacySystemMappedNamespace($namespace)) {
             $legacyNamespace = $this->authorityToLegacySystemNamespace($namespace);
@@ -234,7 +235,10 @@ class AutomationConfigRegistry
                 return;
 
             case self::NAMESPACE_GREENHOUSE_LOGIC_PROFILE:
-                $this->validateGreenhouseLogicProfilePayload($payload);
+                $this->validateGreenhouseLogicProfilePayload(
+                    $payload,
+                    $scopeType === self::SCOPE_GREENHOUSE ? $scopeId : null
+                );
                 return;
 
             case self::NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC:
@@ -609,7 +613,7 @@ class AutomationConfigRegistry
         }
     }
 
-    private function validateGreenhouseLogicProfilePayload(array $payload): void
+    private function validateGreenhouseLogicProfilePayload(array $payload, ?int $greenhouseId = null): void
     {
         if (array_is_list($payload)) {
             throw new InvalidArgumentException('greenhouse.logic_profile payload must be an object.');
@@ -653,12 +657,17 @@ class AutomationConfigRegistry
                 throw new InvalidArgumentException("greenhouse.logic_profile.profiles.{$mode}.subsystems.climate.control_mode must be auto, semi or manual.");
             }
 
+            $climateEnabled = ($climate['enabled'] ?? false) === true;
+            if ($climateEnabled && ! array_key_exists('execution', $climate)) {
+                throw new InvalidArgumentException("greenhouse.logic_profile.profiles.{$mode}.subsystems.climate.execution is required when climate is enabled.");
+            }
+
             if (isset($climate['execution']) && (! is_array($climate['execution']) || array_is_list($climate['execution']))) {
                 throw new InvalidArgumentException("greenhouse.logic_profile.profiles.{$mode}.subsystems.climate.execution must be an object.");
             }
 
             if (isset($climate['execution']) && is_array($climate['execution'])) {
-                $this->validateGreenhouseClimateExecution((string) $mode, $climate['execution']);
+                $this->validateGreenhouseClimateExecution((string) $mode, $climate['execution'], $climateEnabled, $greenhouseId);
             }
 
             foreach (array_keys($subsystems) as $subsystem) {
@@ -672,7 +681,7 @@ class AutomationConfigRegistry
     /**
      * @param  array<string, mixed>  $execution
      */
-    private function validateGreenhouseClimateExecution(string $mode, array $execution): void
+    private function validateGreenhouseClimateExecution(string $mode, array $execution, bool $requireTargets, ?int $greenhouseId): void
     {
         $path = "greenhouse.logic_profile.profiles.{$mode}.subsystems.climate.execution";
 
@@ -760,23 +769,34 @@ class AutomationConfigRegistry
         if ($targetPolicy === 'primary_zone' && (! isset($execution['primary_zone_id']) || ! is_numeric($execution['primary_zone_id']) || (int) $execution['primary_zone_id'] <= 0)) {
             throw new InvalidArgumentException("{$path}.primary_zone_id is required for primary_zone target_policy.");
         }
+        if ($targetPolicy === 'primary_zone' && $greenhouseId !== null) {
+            $primaryZoneId = (int) $execution['primary_zone_id'];
+            $belongs = DB::table('zones')
+                ->where('id', $primaryZoneId)
+                ->where('greenhouse_id', $greenhouseId)
+                ->exists();
+            if (! $belongs) {
+                throw new InvalidArgumentException("{$path}.primary_zone_id must belong to greenhouse {$greenhouseId}.");
+            }
+        }
 
         $targets = $execution['greenhouse_targets'] ?? null;
-        if ($targets !== null) {
-            if (! is_array($targets) || array_is_list($targets)) {
-                throw new InvalidArgumentException("{$path}.greenhouse_targets must be an object.");
+        if (! $requireTargets && $targets === null) {
+            return;
+        }
+        if (! is_array($targets) || array_is_list($targets)) {
+            throw new InvalidArgumentException("{$path}.greenhouse_targets must be an object.");
+        }
+        foreach (['temp_min_c', 'temp_max_c', 'humidity_min_pct', 'humidity_max_pct'] as $targetKey) {
+            if (! array_key_exists($targetKey, $targets) || ! is_numeric($targets[$targetKey])) {
+                throw new InvalidArgumentException("{$path}.greenhouse_targets.{$targetKey} must be numeric.");
             }
-            foreach (['temp_min_c', 'temp_max_c', 'humidity_min_pct', 'humidity_max_pct'] as $targetKey) {
-                if (! array_key_exists($targetKey, $targets) || ! is_numeric($targets[$targetKey])) {
-                    throw new InvalidArgumentException("{$path}.greenhouse_targets.{$targetKey} must be numeric.");
-                }
-            }
-            if ((float) $targets['temp_min_c'] > (float) $targets['temp_max_c']) {
-                throw new InvalidArgumentException("{$path}.greenhouse_targets temp_min_c must be <= temp_max_c.");
-            }
-            if ((float) $targets['humidity_min_pct'] > (float) $targets['humidity_max_pct']) {
-                throw new InvalidArgumentException("{$path}.greenhouse_targets humidity_min_pct must be <= humidity_max_pct.");
-            }
+        }
+        if ((float) $targets['temp_min_c'] > (float) $targets['temp_max_c']) {
+            throw new InvalidArgumentException("{$path}.greenhouse_targets temp_min_c must be <= temp_max_c.");
+        }
+        if ((float) $targets['humidity_min_pct'] > (float) $targets['humidity_max_pct']) {
+            throw new InvalidArgumentException("{$path}.greenhouse_targets humidity_min_pct must be <= humidity_max_pct.");
         }
     }
 

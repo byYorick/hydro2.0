@@ -4,6 +4,22 @@ import { APIRequestContext } from '@playwright/test';
 
 const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 const laravelAppRoot = process.env.LARAVEL_APP_ROOT || path.resolve(process.cwd(), '../../..');
+const laravelArtisanContainer = process.env.LARAVEL_ARTISAN_CONTAINER || 'e2e-laravel-1';
+
+function runArtisan(args: string[]): string {
+  if (laravelArtisanContainer) {
+    return execFileSync(
+      'docker',
+      ['exec', '-w', '/app', laravelArtisanContainer, 'php', 'artisan', ...args],
+      { encoding: 'utf8' },
+    );
+  }
+
+  return execFileSync('php', ['artisan', ...args], {
+    cwd: laravelAppRoot,
+    encoding: 'utf8',
+  });
+}
 
 export interface TestGreenhouse {
   id: number;
@@ -118,14 +134,7 @@ export class APITestHelper {
   ) {}
 
   static bootstrapToken(email: string, role: string): string {
-    const output = execFileSync(
-      'php',
-      ['artisan', 'e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`],
-      {
-        cwd: laravelAppRoot,
-        encoding: 'utf8',
-      },
-    );
+    const output = runArtisan(['e2e:auth-bootstrap', `--email=${email}`, `--role=${role}`]);
 
     const token = output
       .trim()
@@ -277,10 +286,7 @@ export class APITestHelper {
   }
 
   private runArtisanTinkerJson<T>(code: string): T {
-    const output = execFileSync('php', ['artisan', 'tinker', `--execute=${code}`], {
-      cwd: laravelAppRoot,
-      encoding: 'utf8',
-    });
+    const output = runArtisan(['tinker', `--execute=${code}`]);
     const jsonLine = output
       .trim()
       .split(/\r?\n/)

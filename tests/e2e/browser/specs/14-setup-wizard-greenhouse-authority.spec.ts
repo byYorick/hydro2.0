@@ -17,7 +17,14 @@ test.describe('Setup Wizard Greenhouse Authority', () => {
               climate: {
                 enabled: true,
                 execution: {
-                  interval_sec: 900,
+                  strategy: 'greenhouse_runtime',
+                  decision_interval_sec: 900,
+                  greenhouse_targets: {
+                    temp_min_c: 18,
+                    temp_max_c: 27,
+                    humidity_min_pct: 45,
+                    humidity_max_pct: 85,
+                  },
                   temperature: { day: 27, night: 21 },
                   humidity: { day: 61, night: 72 },
                   vent_control: { min_open_percent: 20, max_open_percent: 80 },
@@ -68,8 +75,11 @@ test.describe('Setup Wizard Greenhouse Authority', () => {
 
       await expect.poll(async () => {
         const savedDocument = await apiHelper.getAutomationConfig('greenhouse', testGreenhouse.id, 'greenhouse.logic_profile');
-        return savedDocument.profiles?.setup?.subsystems?.climate?.execution?.temperature?.day
-          ?? savedDocument.payload?.profiles?.setup?.subsystems?.climate?.execution?.temperature?.day
+        const execution = savedDocument.profiles?.setup?.subsystems?.climate?.execution
+          ?? savedDocument.payload?.profiles?.setup?.subsystems?.climate?.execution
+          ?? null;
+        return execution?.greenhouse_targets?.temp_max_c
+          ?? execution?.temperature?.day
           ?? null;
       }, { timeout: 15000 }).toBe(28);
 
