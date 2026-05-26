@@ -86,14 +86,12 @@ describe('useWebSocket', () => {
     originalWindow.Echo = mockEcho
     vi.resetModules()
     useWebSocketModule = await import('../useWebSocket')
+    useWebSocketModule.__testExports.reset()
   })
 
   afterEach(() => {
+    useWebSocketModule?.__testExports?.reset()
     vi.clearAllMocks()
-    // Очищаем состояние модуля между тестами
-    if (useWebSocketModule && typeof (useWebSocketModule as any).__reset === 'function') {
-      (useWebSocketModule as any).__reset()
-    }
     if (previousEcho === undefined) {
       delete originalWindow.Echo
     } else {
@@ -146,7 +144,9 @@ describe('useWebSocket', () => {
 
     // Get the listener function - ищем среди всех вызовов listen
     const statusCall = mockZoneChannel.listen.mock.calls.find(
-      call => call[0] === '.App\\Events\\CommandStatusUpdated'
+      call =>
+        call[0] === '.CommandStatusUpdated' ||
+        call[0] === '.App\\Events\\CommandStatusUpdated',
     )
     const statusListener = statusCall?.[1]
 
@@ -204,7 +204,11 @@ describe('useWebSocket', () => {
       failureListener(event)
 
       expect(onCommandUpdate).toHaveBeenCalled()
-      expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Command failed'), 'error', 5000)
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Команда завершилась с ошибкой: Some error',
+        'error',
+        5000,
+      )
     }
   })
 

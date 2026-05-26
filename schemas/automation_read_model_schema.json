@@ -1,7 +1,7 @@
 {
     "version": 1,
-    "generated_at": "2026-05-14T12:09:24+00:00",
-    "tracked_tables_count": 28,
+    "generated_at": "2026-05-26T05:37:26+00:00",
+    "tracked_tables_count": 29,
     "tables": {
         "ae_commands": {
             "columns": {
@@ -1118,6 +1118,80 @@
                     "data_type": "boolean",
                     "udt_name": "bool",
                     "is_nullable": "NO"
+                }
+            }
+        },
+        "greenhouse_automation_tasks": {
+            "columns": {
+                "command_refs": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "completed_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "created_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "decision_snapshot": {
+                    "data_type": "jsonb",
+                    "udt_name": "jsonb",
+                    "is_nullable": "YES"
+                },
+                "error_code": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
+                },
+                "error_message": {
+                    "data_type": "text",
+                    "udt_name": "text",
+                    "is_nullable": "YES"
+                },
+                "greenhouse_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "NO"
+                },
+                "idempotency_key": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "intent_id": {
+                    "data_type": "bigint",
+                    "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "status": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "task_type": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "NO"
+                },
+                "updated_at": {
+                    "data_type": "timestamp with time zone",
+                    "udt_name": "timestamptz",
+                    "is_nullable": "YES"
+                },
+                "workflow_stage": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
                 }
             }
         },

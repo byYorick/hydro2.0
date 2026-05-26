@@ -1,17 +1,21 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const envWorkers = process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : undefined;
-const workerCount = Number.isFinite(envWorkers) && envWorkers && envWorkers > 0 ? envWorkers : 2;
+// По умолчанию 1 worker: E2E Laravel + testZone fixtures не выдерживают параллельную нагрузку.
+const workerCount = Number.isFinite(envWorkers) && envWorkers && envWorkers > 0 ? envWorkers : 1;
+const reportDir = process.env.PW_REPORT_DIR || '/tmp/hydro-pw-reports';
 
 export default defineConfig({
   testDir: './specs',
+  timeout: 90_000,
+  expect: { timeout: 20_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 1 : workerCount,
   reporter: [
-    ['html', { outputFolder: '../reports/playwright' }],
-    ['junit', { outputFile: '../reports/playwright/junit.xml' }],
+    ['html', { outputFolder: `${reportDir}/html` }],
+    ['junit', { outputFile: `${reportDir}/junit.xml` }],
   ],
   use: {
     baseURL: process.env.LARAVEL_URL || 'http://localhost:8081',

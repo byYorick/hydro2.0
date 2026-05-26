@@ -910,13 +910,35 @@ actions:
   save: zero_levels_row
 - step: insert_scheduler_like_intent
   type: database_execute
-  query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
-    \  idempotency_key,\n  status,\n  not_before,\n  retry_count,\n  max_retries,\n\
-    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'start_cycle',\n \
-    \ jsonb_build_object(\n    'source', CAST(:source AS text),\n    'task_type',\
-    \ 'diagnostics',\n    'workflow', 'cycle_start',\n    'topology', 'two_tank_drip_substrate_trays'\n\
-    \  ),\n  :idempotency_key,\n  'pending',\n  NOW() - INTERVAL '1 second',\n  0,\n\
-    \  3,\n  NOW(),\n  NOW()\n)\n"
+  query: |
+      INSERT INTO zone_automation_intents (
+        zone_id,
+        intent_type,
+        task_type,
+        topology,
+        intent_source,
+        idempotency_key,
+        status,
+        not_before,
+        retry_count,
+        max_retries,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :zone_id,
+        'start_cycle',
+        'cycle_start',
+        'two_tank_drip_substrate_trays',
+        CAST(:source AS text),
+        :idempotency_key,
+        'pending',
+        NOW() - INTERVAL '1 second',
+        0,
+        3,
+        NOW(),
+        NOW()
+      )
   params:
     zone_id: ${zone_id}
     idempotency_key: ${idempotency_key}
@@ -1698,13 +1720,35 @@ actions:
   save: grow_cycle_bundle_row_second
 - step: insert_scheduler_like_intent_second
   type: database_execute
-  query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
-    \  idempotency_key,\n  status,\n  not_before,\n  retry_count,\n  max_retries,\n\
-    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'start_cycle',\n \
-    \ jsonb_build_object(\n    'source', CAST(:source AS text),\n    'task_type',\
-    \ 'diagnostics',\n    'workflow', 'cycle_start',\n    'topology', 'two_tank_drip_substrate_trays'\n\
-    \  ),\n  :idempotency_key,\n  'pending',\n  NOW() - INTERVAL '1 second',\n  0,\n\
-    \  3,\n  NOW(),\n  NOW()\n)\n"
+  query: |
+      INSERT INTO zone_automation_intents (
+        zone_id,
+        intent_type,
+        task_type,
+        topology,
+        intent_source,
+        idempotency_key,
+        status,
+        not_before,
+        retry_count,
+        max_retries,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :zone_id,
+        'start_cycle',
+        'cycle_start',
+        'two_tank_drip_substrate_trays',
+        CAST(:source AS text),
+        :idempotency_key,
+        'pending',
+        NOW() - INTERVAL '1 second',
+        0,
+        3,
+        NOW(),
+        NOW()
+      )
   params:
     zone_id: ${zone_id}
     idempotency_key: ${idempotency_key_2}

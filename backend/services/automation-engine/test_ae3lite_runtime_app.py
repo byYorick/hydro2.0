@@ -243,6 +243,7 @@ def test_create_app_validates_explicit_runtime_config() -> None:
         ),
         worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
         http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
     )
     original_build = runtime_app_module.build_ae3_runtime_bundle
     runtime_app_module.build_ae3_runtime_bundle = lambda **_kwargs: bundle
@@ -267,6 +268,7 @@ async def test_runtime_get_routes_validate_zone_exists(monkeypatch: pytest.Monke
         zone_intent_repository=None,
         worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
         http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
     )
     monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
 
@@ -318,6 +320,7 @@ async def test_health_ready_returns_503_when_critical_background_task_crashed(
         zone_intent_repository=None,
         worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
         http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
     )
     monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
 

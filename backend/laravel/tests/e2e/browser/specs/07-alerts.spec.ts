@@ -140,37 +140,51 @@ test.describe('Alerts', () => {
   });
 
   test('should resolve alert', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'load' });
+    test.setTimeout(90_000);
+
+    await page.goto('/alerts', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, table, [data-testid^="alert-row-"]', { timeout: 15000 });
 
-    // Ищем первую строку алерта
     const alertRows = page.locator(`[data-testid^="${TEST_IDS.ALERT_ROW(0).replace('0', '')}"]`);
-    
-    if (await alertRows.count() > 0) {
-      const firstRow = alertRows.first();
-      const alertId = await firstRow.getAttribute('data-testid');
-      
-      if (alertId) {
-        // Извлекаем ID из data-testid
-        const match = alertId.match(/alert-row-(\d+)/);
-        if (match) {
-          const id = parseInt(match[1]);
-          const resolveBtn = page.locator(`[data-testid="${TEST_IDS.ALERT_RESOLVE_BTN(id)}"]`);
-          
-          if (await resolveBtn.count() > 0 && await resolveBtn.isEnabled()) {
-            await resolveBtn.click();
 
-            const confirmModal = page.getByText('Вы уверены, что алерт будет помечен как решённый?');
-            await expect(confirmModal).toBeVisible({ timeout: 10000 });
-
-            const confirmDialog = page.getByText('Подтвердить алерт').locator('..');
-            await confirmDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
-
-            await expect(confirmModal).not.toBeVisible({ timeout: 15000 });
-            await expect(page.locator(`[data-testid="${TEST_IDS.ALERT_ROW(id)}"]`)).toHaveCount(0, { timeout: 15000 });
-          }
-        }
-      }
+    if (await alertRows.count() === 0) {
+      return;
     }
+
+    const firstRow = alertRows.first();
+    const alertId = await firstRow.getAttribute('data-testid');
+    if (!alertId) {
+      return;
+    }
+
+    const match = alertId.match(/alert-row-(\d+)/);
+    if (!match) {
+      return;
+    }
+
+    const id = parseInt(match[1], 10);
+    const resolveBtn = page.locator(`[data-testid="${TEST_IDS.ALERT_RESOLVE_BTN(id)}"]`);
+
+    if (await resolveBtn.count() === 0 || !(await resolveBtn.isEnabled())) {
+      return;
+    }
+
+    await resolveBtn.click();
+
+    const confirmMessage = page.getByText('Вы уверены, что алерт будет помечен как решённый?');
+    await expect(confirmMessage).toBeVisible({ timeout: 10000 });
+
+    const modal = page.locator('div.fixed.inset-0.z-50').filter({ has: confirmMessage });
+    const confirmBtn = modal.getByRole('button', { name: 'Подтвердить', exact: true });
+
+    const acknowledgeResponse = page.waitForResponse(
+      (response) => response.url().includes('/api/alerts/') && response.request().method() === 'PATCH',
+      { timeout: 30_000 },
+    );
+    await confirmBtn.click();
+    await acknowledgeResponse;
+
+    await expect(confirmMessage).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="${TEST_IDS.ALERT_ROW(id)}"]`)).toHaveCount(0, { timeout: 15_000 });
   });
 });

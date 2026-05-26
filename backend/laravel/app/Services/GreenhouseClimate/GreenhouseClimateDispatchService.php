@@ -2,7 +2,6 @@
 
 namespace App\Services\GreenhouseClimate;
 
-use App\Models\Greenhouse;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -22,8 +21,8 @@ class GreenhouseClimateDispatchService
         }
 
         $timeout = (float) config('services.automation_engine.timeout', 2.0);
-        $ids = Greenhouse::query()->pluck('id')->all();
         $now = CarbonImmutable::now('UTC');
+        $ids = $this->greenhouseIdsDueForDispatch($now);
 
         foreach ($ids as $greenhouseId) {
             $greenhouseId = (int) $greenhouseId;
@@ -133,7 +132,7 @@ class GreenhouseClimateDispatchService
     {
         $row = DB::table('greenhouse_automation_state')->where('greenhouse_id', $greenhouseId)->first();
         if ($row === null) {
-            return true;
+            return false;
         }
         $next = $row->next_scheduled_tick_at ?? null;
         if ($next === null) {
@@ -141,5 +140,30 @@ class GreenhouseClimateDispatchService
         }
 
         return CarbonImmutable::parse((string) $next, 'UTC')->lte($now);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function greenhouseIdsDueForDispatch(CarbonImmutable $now): array
+    {
+        $dueFromState = DB::table('greenhouse_automation_state')
+            ->where(function ($query) use ($now) {
+                $query->whereNull('next_scheduled_tick_at')
+                    ->orWhere('next_scheduled_tick_at', '<=', $now);
+            })
+            ->pluck('greenhouse_id');
+
+        $dueFromIntents = DB::table('greenhouse_automation_intents')
+            ->whereIn('status', ['pending', 'claimed', 'running'])
+            ->distinct()
+            ->pluck('greenhouse_id');
+
+        return $dueFromState
+            ->merge($dueFromIntents)
+            ->map(static fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

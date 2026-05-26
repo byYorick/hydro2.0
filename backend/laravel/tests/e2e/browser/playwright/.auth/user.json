@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6InNQYzBJM2JXZmpvNllxUEI4Y1UwZ1E9PSIsInZhbHVlIjoieG5HaHprd1hQNS90eGt4WTd5b0QxTU42cE5HRU01eDI4MUFjZk1CQm5YVDJmcnlRZFJBQTl5cFFJTlYvQXhiRkhqMFB5NnFiWnczbEVMQVhwODlnSWgyQXV0YU5tYXBjR1lwcVZCRkwwdGU5YlZrVW1qa3AvaXBiVGp0VGRQb3AiLCJtYWMiOiI2OTk5YWZjNTJlZWFhM2Y0Y2VlNzRiYWE2YjFlOTRjZGQ0NzdmY2ExZWY0MmY5NjQwMThjODNlOTFmMDAxMTc2IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IkJWLzhxVitCNXZuZXBubk9zekZDaGc9PSIsInZhbHVlIjoiNDRsMzEya0QzZkwrT0VrK1lrQ1k0c2pMWlQxN0FYcmlzVU03Vm96L2crSnltbFByTi9yRnRaK1Y1ckt2cEI1R1FTb0hDN3RXYXVmUHhiMHRYMUhLUmR6Ni9GalNTempjSVdNU0dZWHZ1a3Zvb1pHMExMUVpac3NPdW1JOHFRNFciLCJtYWMiOiI3NTgxMTlmMGQwNWVmZTczNzQ2MDI1MzMyZDYyMWM3MWQ1ZDMzNzkxMmEwYzYxNDA5MWNjMjc3YjM4ZmRmMjRkIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1779456003.206129,
+      "expires": 1779793120.53754,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "avtomatika_teplicy_session",
-      "value": "eyJpdiI6Ijc2eGhwU0pvaVBGV0ptVVMrL1E3TXc9PSIsInZhbHVlIjoiSTZZWVFiUzJCT25GZ0xHb2c2SXJjdEluZ3pTRFNJSEgyZm53SEkwRWUzbittTVNXdU9GdXBzNWh4REgwbVVLQ2p1YzF0TjFJdmdEZ1hjOVRmaHFNWnBDWHEyV0tMeXBBVnlsNkp2UEh4T3NIelByM0xFSGpNMDl1Wmkwa1g0RE0iLCJtYWMiOiIyOThmZjA0YjMzNWM5ZGFlM2Y4M2NkNmJhYjdmZTk3MmIxMGQ0ZjIzZDllMWM2MTNiOGM3Y2ZlNDc1Y2MzOGMxIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6ImJzSytDQ0xuZEE1TEZrdElLOUgrRUE9PSIsInZhbHVlIjoiRWV0ZWhKdm1XREgvY3g4SXhWRnVLWC9TbjF0MDZrcWlJd2J4U1BHeVNPb3AwaExDTnZJUDdxbDlCSUVxUW9iWDNUb0c4Q2xiNC8vVUQ0RTh5em0yQVE2bWgyd2tCMHdCc1lQVnVXb1ArTnlzL1l3eXZFZXFLWk9JVWtOTnhyYnciLCJtYWMiOiI4NWMxOWFiZWRlMGQxMjMzMjdmZTc0YTJhYzk3ZmU1Yjk5ZDM1YTQxOGJjY2M5NzY3YzUyODc5NjMzNzczZWQ4IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1779456003.206234,
+      "expires": 1779793120.537597,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"

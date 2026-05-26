@@ -1,4 +1,6 @@
-import { test, expect } from '../fixtures/test-data';
+// Smoke проверяет публичные маршруты без авторизации (редирект на /login — ожидаемо).
+// Не используем fixtures/test-data.ts: там принудительный /testing/login (только testing|e2e).
+import { test, expect } from '@playwright/test';
 
 test.describe('UI Smoke Tests - No 500 Errors', () => {
   test('should open Dashboard page without 500 errors', async ({ page }) => {

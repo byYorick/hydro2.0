@@ -63,6 +63,7 @@ class AutomationReadModelSchemaTest extends TestCase
         'commands',
         'unassigned_node_errors',
         'greenhouse_automation_intents',
+        'greenhouse_automation_tasks',
         'greenhouse_automation_leases',
         'greenhouse_automation_state',
         'greenhouse_manual_overrides',

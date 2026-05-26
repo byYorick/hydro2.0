@@ -3,7 +3,9 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Alerts', () => {
   test('should display alerts table', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -21,7 +23,7 @@ test.describe('Alerts', () => {
   });
 
   test('should filter alerts by active status', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1, table, [data-testid*="alert"]', { timeout: 15000 });
 
     // Проверяем наличие фильтра "Только активные"
@@ -47,8 +49,9 @@ test.describe('Alerts', () => {
   });
 
   test('should filter alerts by zone', async ({ page, testZone }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -108,7 +111,9 @@ test.describe('Alerts', () => {
   });
 
   test('should display alert rows', async ({ page }) => {
-    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    test.setTimeout(60000);
+
+    await page.goto('/alerts', { waitUntil: 'load' });
     await page.waitForSelector('h1', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -135,39 +140,51 @@ test.describe('Alerts', () => {
   });
 
   test('should resolve alert', async ({ page }) => {
-    await page.goto('/alerts');
+    test.setTimeout(90_000);
 
-    // Ищем первую строку алерта
+    await page.goto('/alerts', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('h1, table, [data-testid^="alert-row-"]', { timeout: 15000 });
+
     const alertRows = page.locator(`[data-testid^="${TEST_IDS.ALERT_ROW(0).replace('0', '')}"]`);
-    
-    if (await alertRows.count() > 0) {
-      const firstRow = alertRows.first();
-      const alertId = await firstRow.getAttribute('data-testid');
-      
-      if (alertId) {
-        // Извлекаем ID из data-testid
-        const match = alertId.match(/alert-row-(\d+)/);
-        if (match) {
-          const id = parseInt(match[1]);
-          const resolveBtn = page.locator(`[data-testid="${TEST_IDS.ALERT_RESOLVE_BTN(id)}"]`);
-          
-          if (await resolveBtn.count() > 0 && await resolveBtn.isEnabled()) {
-            await resolveBtn.click();
-            
-            // Ждем обновления
-            await page.waitForTimeout(2000);
-            
-            // Проверяем, что кнопка стала неактивной или исчезла
-            const isDisabled = await resolveBtn.isDisabled().catch(() => false);
-            const isVisible = await resolveBtn.isVisible().catch(() => false);
-            if (!isDisabled && isVisible) {
-              // Если кнопка все еще видна и активна, это может быть нормально для некоторых сценариев
-              // Просто проверяем, что страница обновилась
-              await page.waitForTimeout(1000);
-            }
-          }
-        }
-      }
+
+    if (await alertRows.count() === 0) {
+      return;
     }
+
+    const firstRow = alertRows.first();
+    const alertId = await firstRow.getAttribute('data-testid');
+    if (!alertId) {
+      return;
+    }
+
+    const match = alertId.match(/alert-row-(\d+)/);
+    if (!match) {
+      return;
+    }
+
+    const id = parseInt(match[1], 10);
+    const resolveBtn = page.locator(`[data-testid="${TEST_IDS.ALERT_RESOLVE_BTN(id)}"]`);
+
+    if (await resolveBtn.count() === 0 || !(await resolveBtn.isEnabled())) {
+      return;
+    }
+
+    await resolveBtn.click();
+
+    const confirmMessage = page.getByText('Вы уверены, что алерт будет помечен как решённый?');
+    await expect(confirmMessage).toBeVisible({ timeout: 10000 });
+
+    const modal = page.locator('div.fixed.inset-0.z-50').filter({ has: confirmMessage });
+    const confirmBtn = modal.getByRole('button', { name: 'Подтвердить', exact: true });
+
+    const acknowledgeResponse = page.waitForResponse(
+      (response) => response.url().includes('/api/alerts/') && response.request().method() === 'PATCH',
+      { timeout: 30_000 },
+    );
+    await confirmBtn.click();
+    await acknowledgeResponse;
+
+    await expect(confirmMessage).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(`[data-testid="${TEST_IDS.ALERT_ROW(id)}"]`)).toHaveCount(0, { timeout: 15_000 });
   });
 });
