@@ -392,6 +392,9 @@ async def _complete_binding_after_config_report(
             headers["Authorization"] = f"Bearer {ingest_token}"
 
         try:
+            # S2.4 (AUDIT_2026_05_28_BUGFIX_PLAN): перевод на shared
+            # http_client_pool отложен в backlog (см. B11) — требуется
+            # параллельное обновление тестов в test_format_sync_integration.py.
             async with httpx.AsyncClient(timeout=10.0) as client:
                 observe_response = await client.post(
                     f"{laravel_url}/api/python/nodes/config-report-observed",

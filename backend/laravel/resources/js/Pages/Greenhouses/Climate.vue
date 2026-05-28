@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
-import axios from 'axios'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { api } from '@/services/api'
 import { route } from '@/utils/route'
 
 type ControlMode = 'auto' | 'semi' | 'manual'
@@ -88,8 +88,17 @@ async function loadState(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    const response = await axios.get(`/api/greenhouses/${props.greenhouse.id}/climate/state`)
-    const next = normalizeState(response.data?.data?.state)
+    // S2.5 (AUDIT_2026_05_28_BUGFIX_PLAN): через services/api вместо raw axios.
+    const payload = (await api.greenhouses.climate.state(props.greenhouse.id)) as
+      | { data?: { state?: unknown } }
+      | { state?: unknown }
+      | null
+      | undefined
+    const stateRaw =
+      payload && typeof payload === 'object' && 'data' in payload && payload.data
+        ? (payload.data as { state?: unknown }).state
+        : (payload as { state?: unknown } | null | undefined)?.state
+    const next = normalizeState(stateRaw)
     state.value = next
     if (next?.control_mode) {
       controlMode.value = next.control_mode
@@ -108,10 +117,12 @@ async function updateMode(): Promise<void> {
   savingMode.value = true
   error.value = null
   try {
-    const response = await axios.post(`/api/greenhouses/${props.greenhouse.id}/climate/control-mode`, {
+    const payload = (await api.greenhouses.climate.setControlMode(props.greenhouse.id, {
       control_mode: controlMode.value,
-    })
-    state.value = normalizeState(response.data?.data)
+    })) as { data?: unknown } | null | undefined
+    state.value = normalizeState(
+      payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload,
+    )
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'mode_update_failed'
   } finally {
@@ -126,7 +137,7 @@ async function storeOverride(): Promise<void> {
   savingOverride.value = true
   error.value = null
   try {
-    await axios.post(`/api/greenhouses/${props.greenhouse.id}/climate/manual-override`, {
+    await api.greenhouses.climate.setManualOverride(props.greenhouse.id, {
       left_position_pct: Math.max(0, Math.min(100, Math.round(overrideForm.left_position_pct))),
       right_position_pct: Math.max(0, Math.min(100, Math.round(overrideForm.right_position_pct))),
       ttl_sec: Math.max(60, Math.min(86400, Math.round(overrideForm.ttl_sec))),
@@ -148,7 +159,7 @@ async function deleteOverride(): Promise<void> {
   savingOverride.value = true
   error.value = null
   try {
-    await axios.delete(`/api/greenhouses/${props.greenhouse.id}/climate/manual-override`)
+    await api.greenhouses.climate.clearManualOverride(props.greenhouse.id)
     await loadState()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'override_delete_failed'

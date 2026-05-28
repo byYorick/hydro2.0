@@ -80,7 +80,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import Button from '@/Components/Button.vue'
-import axios from 'axios'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 
 interface Props {
@@ -150,13 +150,19 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    // Загружаем ноды зоны
-    const nodesResp = await axios.get(`/api/nodes`, { params: { zone_id: props.zoneId, per_page: 100 } })
-    allNodes.value = nodesResp.data?.data?.data ?? []
+    // S2.5 (AUDIT_2026_05_28_BUGFIX_PLAN): через services/api вместо raw axios.
+    // `nodesApi.list` нормализует paginated envelope, `infrastructureApi.listZoneInstances`
+    // возвращает массив instances из `{data: [...]}`.
+    const nodes = await api.nodes.list({ zone_id: props.zoneId, per_page: 100 })
+    allNodes.value = nodes as unknown as Node[]
 
-    // Загружаем текущие биндинги через infra instances
-    const infraResp = await axios.get(`/api/zones/${props.zoneId}/infrastructure-instances`)
-    const instances = infraResp.data?.data ?? []
+    const instancesPayload = (await api.infrastructure.listZoneInstances(props.zoneId)) as
+      | unknown[]
+      | { data?: unknown[] }
+      | null
+    const instances: Array<{ channel_bindings?: Array<Record<string, unknown>> }> = Array.isArray(instancesPayload)
+      ? (instancesPayload as Array<{ channel_bindings?: Array<Record<string, unknown>> }>)
+      : ((instancesPayload as { data?: Array<{ channel_bindings?: Array<Record<string, unknown>> }> })?.data ?? [])
 
     // Сбрасываем
     assignments.irrigation = null
@@ -168,9 +174,11 @@ async function load() {
     // Восстанавливаем текущие назначения по существующим биндингам
     for (const instance of instances) {
       for (const binding of instance.channel_bindings ?? []) {
-        const assignmentRole = BINDING_ROLE_TO_ASSIGNMENT[binding.role]
+        const bindingRole = (binding as { role?: string }).role
+        if (!bindingRole) continue
+        const assignmentRole = BINDING_ROLE_TO_ASSIGNMENT[bindingRole]
         if (!assignmentRole) continue
-        const nodeId = binding.node_channel?.node_id
+        const nodeId = (binding as { node_channel?: { node_id?: number } }).node_channel?.node_id
         if (!nodeId) continue
         if (assignments[assignmentRole] === null) {
           assignments[assignmentRole] = nodeId
@@ -191,7 +199,7 @@ async function save() {
   saving.value = true
   try {
     const selectedNodeIds = Object.values(assignments).filter((id): id is number => id !== null)
-    await axios.post('/api/setup-wizard/apply-device-bindings', {
+    await api.setupWizard.applyDeviceBindings({
       zone_id: props.zoneId,
       assignments: { ...assignments },
       selected_node_ids: selectedNodeIds,

@@ -6,6 +6,7 @@ use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
 use App\Helpers\TransactionHelper;
 use App\Models\DeviceNode;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -17,6 +18,43 @@ class NodeService
     ) {}
 
     /**
+     * Targeted invalidation для кеша списка устройств.
+     *
+     * S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): раньше использовался
+     * `Cache::flush()` как fallback, если cache driver не поддерживает теги
+     * (file/array/database). Это полный wipe shared cache, что выбивает
+     * сессии, rate-limit counters, scheduler state и т.д. → de facto DoS.
+     *
+     * Корректная стратегия:
+     *  1. Если cache driver поддерживает теги (Redis/Memcached) — `tags(...)->flush()`.
+     *  2. Иначе — `Cache::forget()` только по известным fixed-ключам.
+     *  3. Per-user ключи (`devices_list_<userId>`) имеют TTL=2-10 сек и сами
+     *     быстро освежатся; их не трогаем — было бы O(users) вызовов.
+     */
+    private function invalidateDevicesListCache(?int $affectedZoneId = null): void
+    {
+        try {
+            Cache::tags(['devices_list'])->flush();
+
+            return;
+        } catch (\BadMethodCallException $e) {
+            // driver без поддержки тегов → targeted forget ниже
+        }
+
+        $keys = [
+            'devices_list_all',
+            'devices_list_unassigned',
+        ];
+        if ($affectedZoneId !== null) {
+            $keys[] = 'devices_list_zone_'.$affectedZoneId;
+        }
+
+        foreach ($keys as $key) {
+            Cache::forget($key);
+        }
+    }
+
+    /**
      * Создать/зарегистрировать узел
      */
     public function create(array $data): DeviceNode
@@ -25,21 +63,9 @@ class NodeService
             $node = DeviceNode::create($data);
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
 
-            // Очищаем кеш списка устройств для всех пользователей
-            // Используем точечную очистку вместо глобального flush для предотвращения DoS
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем только конкретные ключи
-                $cacheKeys = [
-                    'devices_list_all',
-                    'devices_list_unassigned',
-                ];
-                foreach ($cacheKeys as $key) {
-                    \Illuminate\Support\Facades\Cache::forget($key);
-                }
-                // НЕ используем Cache::flush() - это может привести к DoS при массовых обновлениях
-            }
+            // S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): targeted cache invalidation,
+            // никогда `Cache::flush()`. См. NodeService::invalidateDevicesListCache().
+            $this->invalidateDevicesListCache($node->zone_id);
 
             return $node;
         });
@@ -286,15 +312,15 @@ class NodeService
             ]);
 
             /**
-             * Очищаем кеш списка устройств для всех пользователей
-             * Используем теги для точечной очистки, если поддерживаются
+             * Очищаем кеш списка устройств.
+             *
+             * S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): без поддержки тегов мы НЕ
+             * вызываем `Cache::flush()` (это DoS на shared cache, выбивая
+             * сессии, throttle-rate-counters, scheduler state). Очищаем только
+             * известные fixed-ключи; per-user ключи `devices_list_<uid>` имеют
+             * TTL=2 сек (см. routes/web.php) и сами быстро освежатся.
              */
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем весь кеш
-                \Illuminate\Support\Facades\Cache::flush();
-            }
+            $this->invalidateDevicesListCache($node->zone_id);
 
             return $node->fresh();
         }, maxRetries: 6, baseDelayMs: 75, useSerializable: false);
@@ -345,12 +371,8 @@ class NodeService
                 'new_lifecycle_state' => $node->lifecycle_state?->value,
             ]);
 
-            // Очищаем кеш списка устройств
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                \Illuminate\Support\Facades\Cache::flush();
-            }
+            // S2.1: targeted cache invalidation (см. NodeService::update()).
+            $this->invalidateDevicesListCache($oldZoneId);
 
             // Генерируем событие для обновления фронтенда через WebSocket
             event(new NodeConfigUpdated($node->fresh()));

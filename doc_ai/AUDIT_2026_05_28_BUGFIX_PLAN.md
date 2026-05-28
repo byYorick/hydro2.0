@@ -198,6 +198,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### S2.4 — HL: новый `httpx.AsyncClient` на каждый запрос
 
+**Статус:** **отложено в backlog B11.** Попытка перевода в Stage 2 сломала 8
+production тестов, которые мокают `httpx.AsyncClient` через context manager.
+Требуется параллельное обновление тестов перед merge.
+
 **Файлы:**
 - `backend/services/history-logger/handlers/node_hello.py:199`
 - `backend/services/history-logger/handlers/config_report.py:395`
@@ -207,6 +211,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 **План:**
 - Использовать `http_client_pool` / shared client из lifespan.
+- Перед merge: обновить тесты в `test_critical_fixes.py::TestLaravelApiRetry`
+  (6 тестов) и `test_format_sync_integration.py` (2 теста).
 
 ### S2.5 — `npm run lint:api-boundary` для всех Pages
 
@@ -332,6 +338,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - **B8.** Replace `xSemaphoreTake(..., portMAX_DELAY)` на bounded timeout в trema_ec/trema_ph
 - **B9.** Watchdog `node_watchdog_add_task` на storage_irrigation_node `cmd_queue_task`
 - **B10.** Migrate `corr_*_amount_ml` `float` → `numeric(12,3)` (если есть данные — backfill)
+- **B11.** Завершить S2.4 (HL handlers → http_client_pool): обновить 8 тестов
+  в `test_critical_fixes.py::TestLaravelApiRetry` и
+  `test_format_sync_integration.py` — заменить mocking `httpx.AsyncClient`
+  context manager на `get_http_client()`. На текущем этапе попытка перевода
+  сломала 8 production тестов; откат сделан в Stage 2 коммите.
 
 ---
 

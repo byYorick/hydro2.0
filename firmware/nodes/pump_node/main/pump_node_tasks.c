@@ -153,6 +153,22 @@ static void task_pump_health(void *pvParameters) {
             continue;
         }
 
+        /*
+         * S2.2 (AUDIT_2026_05_28_BUGFIX_PLAN): не публикуем telemetry с
+         * полем `ts` до time-sync. До `hydro/time/response` локальный
+         * `node_utils_get_timestamp_seconds()` вернёт значение с эпохи
+         * boot (или 0), что нарушит MQTT-контракт (telemetry.ts в Unix
+         * seconds, см. doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md §3.3).
+         * Остальные ноды (ph/ec/climate/...) уже используют этот gate
+         * через `node_telemetry_engine`; pump_node публикует health
+         * напрямую через `mqtt_manager_publish_telemetry`, поэтому
+         * проверка нужна здесь.
+         */
+        if (!node_utils_is_time_synced()) {
+            ESP_LOGD(TAG, "Skipping pump health publish: time not synced yet");
+            continue;
+        }
+
         esp_err_t err = pump_driver_get_health_snapshot(&snapshot);
         if (err != ESP_OK) {
             ESP_LOGD(TAG, "Health snapshot unavailable: %s", esp_err_to_name(err));

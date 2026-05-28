@@ -193,6 +193,12 @@ async def _register_via_api(
     MAX_API_RETRIES = 3
     API_RETRY_BACKOFF_BASE = 2
 
+    # S2.4 (AUDIT_2026_05_28_BUGFIX_PLAN): перевод на shared http_client_pool
+    # отложен в backlog — требуется параллельное обновление 8 тестов в
+    # test_critical_fixes.py и test_format_sync_integration.py, которые
+    # мокают `httpx.AsyncClient` через context manager. Этот файл пока
+    # сохраняет ad-hoc AsyncClient pattern; задача переехала в раздел
+    # backlog в AUDIT_2026_05_28_BUGFIX_PLAN.md (B11).
     last_error = None
     for attempt in range(MAX_API_RETRIES):
         try:
