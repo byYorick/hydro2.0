@@ -40,10 +40,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // Rate limiting для регистрации нод будет настроен в AppServiceProvider
 
         // Rate Limiting для API роутов.
-        // S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): значения вынесены в
-        // `config/services.php` секцию `api.throttle_default`, чтобы
-        // поддерживать `php artisan config:cache` в production.
-        $apiThrottle = config('services.api.throttle_default', '120,1');
+        //
+        // S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): попытка вынести throttle в
+        // `config('services.api.throttle_default')` была откатана —
+        // `bootstrap/app.php` выполняется ДО регистрации service container,
+        // и `config()` падает с `Target class [config] does not exist`.
+        // `env()` здесь — **легитимное исключение** Laravel-правила
+        // «env() только в config-файлах» (см. Laravel docs Bootstrap Process):
+        // на этом уровне config service ещё не доступен.
+        //
+        // Для `routes/api.php` (где config service уже инициализирован)
+        // используется `config('services.api.throttle_default')`.
+        $defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
+            ? '1000,1'
+            : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
+        $apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
         $middleware->api(prepend: [
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);
