@@ -170,30 +170,25 @@ function teardownEcho(): void {
   isReconnecting = false
   connectingStartTime = 0
   lastError = null
-  
-  // Устанавливаем состояние disconnected
-  emitState('disconnected')
-  
-  // Очищаем каналы useWebSocket при teardown
-  if (typeof window !== 'undefined') {
-    // Динамически импортируем cleanupWebSocketChannels, чтобы избежать циклических зависимостей
-    import('../composables/useWebSocket').then(({ cleanupWebSocketChannels }) => {
-      try {
-        cleanupWebSocketChannels()
-      } catch (error) {
-        logger.warn('[echoClient] Error cleaning up WebSocket channels', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }).catch(() => {
-      // Игнорируем ошибки импорта (может быть недоступен в некоторых контекстах)
-    })
-  }
-  
-  // Уведомляем bootstrap.js о сбросе состояния через событие
+
+  /*
+   * S4 (AUDIT_2026_05_28_BUGFIX_PLAN): порядок dispatch критичен.
+   *
+   *   1. Dispatch `echo:teardown` — это синхронный event, на который
+   *      `useWebSocket` подписан и выполняет `cleanupWebSocketChannels()`
+   *      в том же call-stack. Раньше cleanup делался через async
+   *      `import('../composables/useWebSocket').then(...)`, что создавало
+   *      race: между `emitState('disconnected')` и реальным cleanup мог
+   *      запуститься `scheduleReconnect()`.
+   *   2. ТОЛЬКО затем `emitState('disconnected')` — теперь все listeners
+   *      получают финальное состояние уже после cleanup'а каналов.
+   */
   if (typeof window !== 'undefined' && window.dispatchEvent) {
     window.dispatchEvent(new CustomEvent('echo:teardown'))
   }
+
+  // Устанавливаем состояние disconnected (после cleanup'а каналов).
+  emitState('disconnected')
 }
 
 function scheduleReconnect(reason: string): void {
@@ -515,20 +510,24 @@ export function initEcho(forceReinit = false): EchoInstance | null {
     reconnectLockUntil = 0
     isReconnecting = false
     connectingStartTime = 0
-    
-    // Устанавливаем состояние failed и disconnected
-    emitState('failed')
-    emitState('disconnected')
-    
+
     // Очищаем экземпляр
     window.Echo = undefined
     echoInstance = null
-    
-    // Уведомляем bootstrap.js о сбросе состояния
+
+    /*
+     * S4 (AUDIT_2026_05_28_BUGFIX_PLAN): synchronous cleanup перед emitState,
+     * чтобы между состоянием failed/disconnected и реальным cleanup'ом
+     * каналов не возникало race condition.
+     */
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(new CustomEvent('echo:teardown'))
     }
-    
+
+    // Устанавливаем состояние failed и disconnected (после cleanup'а каналов).
+    emitState('failed')
+    emitState('disconnected')
+
     return null
   } finally {
     initializing = false
