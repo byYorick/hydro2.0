@@ -1,7 +1,7 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-05-14
+Обновлено: 2026-05-28 (sync с runtime кодом: `update_stage`, error codes, file tree)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
@@ -30,30 +30,39 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
 ```
 ae3lite/
-  api/              # HTTP endpoints (compat + internal), security, rate_limit
-  greenhouse_climate/  # rule-based roof vent tick (POST /greenhouses/{id}/start-climate-tick)
+  api/                # HTTP endpoints (compat + internal), security, rate_limit
+  greenhouse_climate/ # rule-based roof vent tick (POST /greenhouses/{id}/start-climate-tick)
   domain/
-    entities/       # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
-    errors.py       # Все domain-ошибки
-    services/       # CycleStartPlanner
+    entities/         # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
+    errors.py         # ErrorCodes + domain exceptions
+    services/         # CycleStartPlanner, CorrectionPlanner, irrigation_decision_controller
+    value_objects.py
   application/
-    use_cases/      # create_task, claim_next, execute_task, finalize_task,
-                    # reconcile_command, startup_recovery, two_tank_executor
-    services/       # workflow_topology, sensor_mode_controller, decision_window_reader
-    adapters/       # intent mapping adapter (фактическое имя модуля см. в каталоге)
-  config/           # Pydantic schemas, runtime_plan_builder, loader
+    use_cases/        # create_task_from_intent, claim_next_task, execute_task,
+                      # finalize_task, startup_recovery
+    handlers/         # stage handlers: startup, clean_fill_*, solution_fill_*,
+                      # prepare_recirc_*, await_ready, decision_gate,
+                      # irrigation_*, correction, base (с _checkpoint hot-reload)
+    services/         # workflow_topology (TWO_TANK graph), workflow_router,
+                      # topology_registry, correction_transition_policy
+    adapters/         # intent mapping
+  config/             # Pydantic schemas, runtime_plan_builder, loader
   infrastructure/
-    repositories/   # PgAutomationTaskRepository, PgZoneWorkflowRepository,
-                    # PgZoneLease, PgAeCommandRepository
-    gateways/       # SequentialCommandGateway
-    clients/        # HistoryLoggerClient
-    read_models/    # ZoneSnapshotReadModel, TaskStatusReadModel, ZoneRuntimeMonitor
+    repositories/     # PgAutomationTaskRepository (claim/update_stage/mark_*),
+                      # PgZoneWorkflowRepository, PgZoneLeaseRepository,
+                      # PgAeCommandRepository, PgPidStateRepository
+    gateways/         # SequentialCommandGateway (publish + recover_waiting_command polling)
+    clients/          # HistoryLoggerClient
+    read_models/      # PgZoneSnapshotReadModel, TaskStatusReadModel,
+                      # ZoneRuntimeMonitor, laravel_schema_contract
+    intent_status_listener.py   # LISTEN scheduler_intent_terminal → worker.kick()
+    zone_event_listener.py      # LISTEN ae_zone_event → worker.kick()
   runtime/
-    worker.py       # Ae3RuntimeWorker (drain loop)
-    bootstrap.py    # build_ae3_runtime_bundle()
-    env.py          # Ae3RuntimeConfig.from_env()
-    app.py          # create_app() / serve()
-main.py             # точка входа → ae3lite.main
+    worker.py         # Ae3RuntimeWorker (drain loop, lease heartbeat)
+    bootstrap.py      # build_ae3_runtime_bundle()
+    env.py            # Ae3RuntimeConfig.from_env()
+    app.py            # create_app() / serve()
+main.py               # точка входа → ae3lite.main
 ```
 
 Все `common/` и `utils/` — только вспомогательные; основная логика в `ae3lite/`.
@@ -64,11 +73,18 @@ main.py             # точка входа → ae3lite.main
 pending → claimed → running → waiting_command → completed
                                                → failed
                   → failed (любой exception)
+                  → cancelled (control_mode_switched_to_manual)
 ```
 
-Реквью (two-tank): `running → pending` через `requeue_pending`.
-`mark_running`: WHERE `status IN ('claimed', 'running')` (не `waiting_command`).
-`resume_after_waiting_command`: отдельный метод для `waiting_command → running`.
+Stage re-enqueue (two-tank workflow): атомарный `update_stage` из `PgAutomationTaskRepository`. Он одной транзакцией переводит `(claimed|running|waiting_command) → pending`, сбрасывает `claimed_by/claimed_at` и обновляет `current_stage` + correction-поля (`corr_*`). Прежний `requeue_pending` снят, любой stage handler возвращает `StageOutcome.transition/poll/enter_correction`, который `WorkflowRouter` транслирует в `update_stage`.
+
+Ключевые методы:
+- `claim_next_pending`: `pending → claimed` с `FOR UPDATE SKIP LOCKED`.
+- `mark_running`: WHERE `status IN ('claimed','running')` (не `waiting_command`).
+- `mark_waiting_command` / `resume_after_waiting_command`: ожидание terminal в `commands` и возврат в `running`.
+- `mark_completed` / `mark_failed`: terminal.
+- `release_claim`: rollback `claimed → pending` (при провале `ZoneLease.claim`).
+- `update_stage`: атомарный stage advance с requeue (см. выше).
 
 ## 5. Политика cleanup
 
@@ -89,13 +105,46 @@ pending → claimed → running → waiting_command → completed
 
 ## 7. Типовые error codes
 
-- `ae3_task_create_conflict` — idempotency race (другой worker создал task)
-- `ae3_lease_claim_failed` — ZoneLease занята другим owner
-- `ae3_complete_transition_failed` — task не смог перейти в completed
-- `ae3_requeue_failed` — two-tank stage не смог создать следующий pending
-- `cycle_start_blocked_nodes_unavailable` — нет online-узлов обязательных типов
-- `irr_state_unavailable` — снимок IRR state недоступен
-- `two_tank_prepare_targets_unavailable` — нет PH/EC телеметрии для prepare check
+Полный канонический реестр — `doc_ai/04_BACKEND_CORE/ERROR_CODE_CATALOG.md`. Здесь — только наиболее частые в AE3 runtime.
+
+Ingress / task creation:
+- `start_cycle_zone_busy` — у зоны уже есть active task или active lease.
+- `start_cycle_idempotency_key_conflict` — другой intent уже занял тот же `(zone_id, idempotency_key)`.
+- `start_irrigation_setup_pending` — `POST /zones/{id}/start-irrigation` вызван до перехода зоны в `workflow_phase='ready'`.
+- `ae3_task_create_failed` — не удалось вставить task (DB-сбой, нарушение constraints).
+
+Snapshot / topology:
+- `ae3_snapshot_no_active_grow_cycle`, `ae3_snapshot_bundle_invalid` — типичные snapshot-ошибки.
+- `ae3_snapshot_required_node_type_missing` — для топологии two_tank/`two_tank_drip_substrate_trays` отсутствует узел обязательного типа (`irrig|ph|ec`).
+- `ae3_snapshot_required_node_persistently_offline` — обязательный узел не отвечает дольше `AE3_NODE_PERSISTENT_DEAD_SEC` (fail-closed без retry).
+- `ae3_snapshot_no_online_actuator_channels` — нет ни одного online actuator/service канала.
+
+Execution / FSM:
+- `ae3_complete_transition_failed` — не удалось перевести task в `completed` (CAS-промах).
+- `ae3_transition_apply_failed`, `ae3_poll_apply_failed`, `ae3_correction_apply_failed` — `WorkflowRouter` не смог применить `StageOutcome` через `update_stage`.
+- `ae3_zone_lease_lost`, `ae3_zone_lease_release_failed` — runtime потерял или не смог отдать lease.
+- `ae3_task_execution_timeout` — превышен `AE_MAX_TASK_EXECUTION_SEC`.
+- `runtime_plan_missing` — у task в `running/waiting_command` нет RuntimePlan (битый снимок).
+- `control_mode_switched_to_manual` — task отменена переключением `control_mode='manual'`.
+
+Commands:
+- `command_send_failed`, `command_timeout`, `ae3_command_poll_deadline_exceeded`.
+- `ae3_missing_ae_command`, `ae3_legacy_command_not_found` — рассинхрон `ae_commands`/`commands`.
+
+IRR probe:
+- `irr_state_unavailable`, `irr_state_stale`, `irr_state_mismatch`.
+- `irrigation_recovery_probe_exhausted`, `irrigation_wait_ready_timeout`.
+
+Two-tank stages:
+- `prepare_recirculation_attempt_limit_reached`, `clean_fill_source_empty_stop`, `solution_fill_leak_detected`, `solution_fill_timeout_stop` и др. stage-terminal коды (см. каталог).
+
+Startup recovery: `startup_recovery_unconfirmed_command`, `startup_recovery_pending_resume_failed`, …
+
+Deprecated (не используются в runtime, оставлены только в backlog/catalog для compat):
+- `ae3_task_create_conflict` → заменён на `start_cycle_zone_busy` / `start_cycle_idempotency_key_conflict`.
+- `ae3_lease_claim_failed` → провал lease не raise'ит code, делает silent rollback claim (`release_claim`); при потере уже захваченной lease — `ae3_zone_lease_lost`.
+- `ae3_requeue_failed` → заменён на `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed`.
+- `cycle_start_blocked_nodes_unavailable` → заменён на `ae3_snapshot_required_node_type_missing` / `ae3_snapshot_no_online_actuator_channels` / `ae3_snapshot_required_node_persistently_offline`.
 
 ## 8. Обязательные проверки перед merge
 

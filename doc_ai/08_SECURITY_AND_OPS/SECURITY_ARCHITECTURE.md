@@ -99,7 +99,9 @@ topic write hydro/+/+/+/status
 - числа форматируются как в cJSON (int если целое, иначе 15/17 значащих),
 - строки JSON-экранируются, UTF-8, слэши не экранируются.
 
-Узлы ESP32 проверяют подпись и timestamp (не старше 30 секунд).
+**Канонический tolerance — 10 секунд** (см. `HMAC_TIMESTAMP_TOLERANCE_SEC` в `firmware/nodes/common/components/node_framework/node_command_handler.c` и `_MAX_TIMESTAMP_SKEW_SEC` в `backend/services/history-logger/commands/command_service.py`).
+
+> История: ранние версии этого документа упоминали «не старше 30 секунд». Это устаревший прицел — реальный firmware/HL контракт `±10 сек`. Точка синхронизации с `COMMAND_VALIDATION_ENGINE.md` §4.1 и §5.1.
 
 ### 2.3.2. Подпись конфигураций
 
@@ -114,7 +116,9 @@ topic write hydro/+/+/+/status
 }
 ```
 
-Узлы ESP32 проверяют подпись и timestamp (не старше 60 секунд).
+**Контракт:** Узлы ESP32 должны проверять подпись и timestamp (не старше 60 секунд).
+
+**Status: planned / not implemented.** В актуальной прошивке HMAC-верификация **config** в `node_config_handler.c` не реализована — handler принимает push-конфиг и обрабатывает payload без проверки `sig`/`ts`. Безопасность config-канала пока обеспечивается косвенно: ACL MQTT-брокера + закрытая внутренняя сеть. Полная HMAC-валидация конфигов запланирована.
 
 ---
 
@@ -141,13 +145,15 @@ node_secret = random(32 bytes)
 
 ## 4.1. Аутентификация
 
-Используется токен‑базированная авторизация:
+Используется **Laravel Sanctum** (session-cookie для SPA + Personal Access Token / Bearer для API). Passport и JWT в проекте не подключены и не поддерживаются.
 
-- Sanctum
-- Passport
-- JWT
+Middleware aliases:
+- `auth.token` — `AuthenticateWithApiToken` (Session + Bearer)
+- `auth:sanctum` — стандартный Sanctum guard для API-роутов
+- `admin` — `EnsureAdmin`
+- `role` — `EnsureUserHasRole` (со списком ролей в route definition)
 
-Рекомендуемый вариант: **Sanctum с SPA токенами**.
+Подробнее — `AUTH_SYSTEM.md`.
 
 ## 4.2. Права пользователей (Roles)
 
@@ -166,7 +172,7 @@ node_secret = random(32 bytes)
 - **System endpoints** (`/api/system/health`, `/api/system/scheduler/metrics`): 300 запросов/мин/IP — выше для polling мониторинга.
 - **Auth endpoints** (`/api/auth/login|logout|me`): 10 запросов/мин/IP + 5 неудачных попыток per `email|IP` (защита от брутфорса).
 - **Node register** (`/api/nodes/register`): 10 запросов/мин на `node_uid`/`hardware_id` + burst 120/мин/IP bridge.
-- **IP whitelist** для регистрации узлов: `services.node_registration.allowed_ips`.
+- **IP whitelist** для регистрации узлов: `services.node_registration.allowed_ips`. **Канонический тип значения — массив CIDR/IP-строк.** Middleware `NodeRegistrationIpWhitelist` ожидает массив; до миграции `2026_05_28_*` (и фиксации `config/services.php` той же датой) значение приходило строкой и whitelist де-факто пропускал любой запрос. После фикса значение приводится к массиву через `explode(',', ...)` + `array_map('trim')` в `services.php`. ENV: `NODE_REGISTRATION_ALLOWED_IPS` (значение через запятую). Default: `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`.
 - Все изменения рецептов/зон логируются в `zone_events`.
 
 ## 4.4. Блокировки и дедупликация
@@ -194,10 +200,14 @@ node_secret = random(32 bytes)
 - **Policy** классы для проверки прав доступа
 - **API Resource** классы для стандартизации ответов
 
-Доступные Policy:
-- `ZonePolicy` - управление зонами
-- `DeviceNodePolicy` - управление узлами
-- `CommandPolicy` - управление командами
+Доступные Policy (`backend/laravel/app/Policies/`):
+- `ZonePolicy` — управление зонами (view, update, setLive, manageCycle, ...)
+- `DeviceNodePolicy` — управление узлами
+- `CommandPolicy` — управление командами
+- `GrowCyclePolicy` — управление grow-циклами (advance, pause, harvest, abort)
+- `RecipeRevisionPolicy` — управление ревизиями рецептов
+
+Регистрация — `app/Providers/AuthServiceProvider.php`.
 
 ---
 

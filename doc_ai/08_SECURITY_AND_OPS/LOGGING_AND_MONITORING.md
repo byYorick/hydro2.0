@@ -145,34 +145,67 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
-## 4.2. Мониторинг automation-engine
+## 4.2. Мониторинг automation-engine (AE3)
 
 ### Статус сервиса
 
 **Видимость статуса:**
-- **Prometheus endpoint**: `http://service:9405/metrics/` — все метрики сервиса
-- **Метрика**: `zone_checks_total` (Counter) — общее количество проверок зон
-- **Метрика**: `zone_check_seconds` (Histogram) — время проверки зон
+- **Prometheus endpoint:** `http://automation-engine:9405/metrics/` (mount на ту же FastAPI app, не отдельный порт; путь с trailing slash);
+- **Health:** `GET http://automation-engine:9405/health/live` и `/health/ready`.
 
-**Критические индикаторы:**
-- Если `automation_loop_errors_total > 0` — ошибки в основном цикле
-- Если `config_fetch_errors_total > 0` — проблемы с получением конфигурации
-- Если `mqtt_publish_errors_total > 0` — проблемы с публикацией команд
+> **Note:** Историческое именование метрик AE2 (`zone_checks_total`, `automation_commands_sent_total`, `config_fetch_*`, `automation_loop_errors_total`, `mqtt_publish_errors_total`) **deprecated и не существует** в AE3 runtime. Реальные канонические метрики AE3 — ниже.
 
-### Прогресс на уровне этапов
+### Канонические метрики AE3 (`backend/services/automation-engine/ae3lite/infrastructure/metrics.py`)
 
-**Этапы обработки зоны:**
-1. **Загрузка конфигурации** → `config_fetch_success_total` / `config_fetch_errors_total` (Counter)
-2. **Получение данных зоны** → репозитории (логирование в коде)
-3. **Проверка зоны** → `zone_checks_total` (Counter), `zone_check_seconds` (Histogram)
-4. **Генерация команд** → `automation_commands_sent_total` (Counter) по зонам и метрикам
-5. **Публикация команд** → `mqtt_publish_errors_total` (Counter) при ошибках
+**Intent lifecycle:**
+- `ae3_intent_claimed_total{source_status}` — claim intent из `zone_automation_intents`
+- `ae3_intent_terminal_total{status}` — terminal lifecycle intent (completed/failed/cancelled)
+- `ae3_intent_stale_reclaimed_total` — re-claim просроченного `claimed` intent
 
-**Метрики прогресса:**
-- `zone_checks_total` — количество проверенных зон
-- `automation_commands_sent_total` — количество отправленных команд (по зонам и метрикам)
-- `zone_check_seconds` — время обработки зоны (целевое: < 5 секунд)
-- Соотношение успешных проверок к общему количеству зон
+**Команды:**
+- `ae3_command_dispatched_total` — публикация команды через history-logger
+- `ae3_command_dispatch_duration_seconds` — длительность publish call
+- `ae3_command_terminal_total{status}` — terminal статус для AE3-команды
+- `ae3_command_send_retry_total{reason}` — transient retry HL publish
+
+**Task / workflow:**
+- `ae3_tick_duration_seconds` — длительность `Ae3RuntimeWorker` drain tick
+- `ae3_fail_safe_transition_total{topology, stage, reason, source}` — fail-closed terminal в two-tank workflow
+- `ae3_emergency_stop_reconcile_total{topology, stage, outcome}` — E-stop reconcile
+- `ae3_node_runtime_event_kick_total{event_type, channel}` — wake-up по `ae_zone_event` NOTIFY
+- `ae3_config_hot_reload_total{result}` — hot-reload runtime config (`config_mode=live`)
+- `ae3_irrigation_wait_ready_*` — `await_ready` stage metrics
+- `ae3_start_irrigation_blocked_total{reason}` — ingress guard `start-irrigation` (например, `setup_pending`)
+
+**Snapshot / retry:**
+- `infra_ae3_snapshot_retry_scheduled_total` — запланированный retry при transient snapshot gap
+- `ae3_snapshot_retry_exhausted_total` — исчерпание retry budget
+
+**Greenhouse climate (отдельный runtime):**
+- `greenhouse_climate_*` метрики (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
+
+**Health:** `ae3_health_live`, `ae3_health_ready` (gauge 0/1).
+
+### Прогресс на уровне этапов (AE3 task lifecycle)
+
+1. **Claim intent** → `ae3_intent_claimed_total`
+2. **Snapshot load** → `infra_ae3_snapshot_retry_scheduled_total` при transient gap, иначе success
+3. **Task creation** → `ae_tasks` insert + partial unique index `ae_tasks_active_zone_unique`
+4. **Stage execution** → `ae3_tick_duration_seconds`; per-stage transitions в `ae_stage_transitions`
+5. **Command publish** → `ae3_command_dispatched_total` + duration histogram
+6. **Wait terminal** → polling `recover_waiting_command`; на terminal — `ae3_command_terminal_total`
+7. **Stage advance / requeue** → `update_stage` (атомарно `claimed/running/waiting_command → pending`)
+8. **Terminal task** → `ae3_intent_terminal_total{status}`
+
+### Метрики Laravel scheduler-dispatch
+
+Параллельный набор от Laravel-stack (см. `backend/laravel/app/Services/AutomationScheduler/`):
+
+- `laravel_scheduler_dispatches_total{zone_id, task_type, result}` — Counter dispatch результатов
+- `laravel_scheduler_cycle_duration_seconds{dispatch_mode}` — Histogram длительности cycle
+- `laravel_scheduler_active_tasks{status}` — Gauge активных tasks (cursor + active_tasks таблицы)
+
+Источник: персистентные таблицы `laravel_scheduler_dispatch_metric_totals`, `laravel_scheduler_cycle_duration_aggregates`, `laravel_scheduler_cycle_duration_bucket_counts`. Exporter: `App\Services\AutomationScheduler\SchedulerPrometheusMetricsExporter` → `GET /api/system/scheduler/metrics` (Prometheus text format).
 
 ### Выделенные представления мониторинга
 
@@ -210,12 +243,13 @@ Breaking-change: обратная совместимость со старыми
    - Параллелизм обработки (количество зон, обрабатываемых одновременно)
    - Задержка между циклами обработки
 
-**Алерты:**
-- `automation_loop_errors_total > 5` за 5 минут — критические ошибки в цикле
-- `config_fetch_errors_total > 3` за 10 минут — проблемы с конфигурацией
-- `mqtt_publish_errors_total > 10` за 5 минут — проблемы с публикацией команд
-- `zone_check_seconds{p99} > 30` — медленная обработка зон
-- Отсутствие `zone_checks_total` в течение 5 минут — сервис не обрабатывает зоны
+**Алерты (AE3-каноничные):**
+- `rate(ae3_intent_terminal_total{status="failed"}[5m]) > 0.1` — рост частоты failed intents
+- `histogram_quantile(0.99, rate(ae3_tick_duration_seconds_bucket[5m])) > 30` — медленная обработка drain loop
+- `rate(ae3_command_send_retry_total[10m]) > 0` — transient retries publish команд
+- `rate(ae3_fail_safe_transition_total[15m]) > 0` — fail-closed переходы в workflow
+- Отсутствие `ae3_intent_claimed_total` или `ae3_tick_duration_seconds_count` в течение 5 минут — AE3 worker не работает
+- `ae3_health_live == 0` или `ae3_health_ready == 0` — degraded health
 
 **Дополнительные метрики для мониторинга:**
 - Количество зон в статусе "требует корректировки"

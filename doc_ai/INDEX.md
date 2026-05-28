@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
-**Версия:** 2.2  
-**Дата обновления:** 2026-04-15
+**Версия:** 2.3
+**Дата обновления:** 2026-05-28 (большая sync-итерация: AE3 runtime, NOTIFY каналы, error codes, MQTT message types, frontend Unified Dashboard, firmware lifecycle, security HMAC tolerance, scheduler chain, Laravel роли, IP whitelist fix)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 

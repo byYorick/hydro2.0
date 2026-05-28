@@ -3,6 +3,8 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
+**Дата обновления:** 2026-05-28 (sync с FastAPI routes: добавлены `/zones/.../commands`, `/nodes/.../commands`, `/nodes/.../config`, `/ingest/telemetry`, DLQ endpoints, webhook callback; порт `/metrics` исправлен на 9300; canonical имена метрик).
+
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
 - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и форматы сообщений
@@ -21,8 +23,9 @@ Breaking-change: обратная совместимость со старыми
 **External URL (dev):** `http://localhost:9300`
 
 **Порты:**
-- **9300**: REST API (команды)
-- **9301**: Prometheus metrics (`/metrics`)
+- **9300**: REST API **+** Prometheus metrics (`/metrics` mount на тот же FastAPI app, не отдельный порт)
+
+Status: **historical** — README/часть документации упоминала «metrics на :9301». Это устарело: uvicorn слушает только `SERVICE_PORT=9300`, Prometheus scrape настроен на `history-logger:9300/metrics` (`configs/dev/prometheus.yml`). Порт 9301 в коде не открывается.
 
 **Назначение:**
 - Централизованная публикация команд в MQTT
@@ -42,6 +45,32 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 ---
 
 ## 2. Endpoints
+
+### Полный список endpoints (sync с кодом 2026-05-28)
+
+| Метод | Путь | Назначение |
+|-------|------|-----------|
+| POST | `/commands` | Универсальная публикация команды (см. §2.1) |
+| POST | `/zones/{zone_id}/commands` | Zone-scoped публикация команды (см. §2.1.1) — используется Laravel `PythonBridgeService` |
+| POST | `/nodes/{node_uid}/commands` | Node-scoped публикация команды (см. §2.1.2) |
+| POST | `/nodes/{node_uid}/config` | Push NodeConfig в MQTT (см. §2.1.3) |
+| POST | `/ingest/telemetry` | HTTP-ingest телеметрии (для нод без MQTT, см. §2.1.4) |
+| GET | `/health` | Health check (см. §2.2) |
+| GET | `/metrics` | Prometheus metrics (см. §6.1) |
+| POST | `/internal/metrics/command-latency` | Internal metrics ingest (см. §2.3) |
+| POST | `/internal/metrics/error-delivery-latency` | Internal metrics ingest (см. §2.6) |
+| POST | `/internal/metrics/ws-broadcast` | WebSocket broadcast metrics |
+| POST | `/internal/metrics/ws-auth` | WebSocket auth metrics |
+| POST | `/internal/metrics/ws-event` | WebSocket event metrics |
+| GET | `/api/dlq/alerts` | DLQ alerts list (см. §2.5) |
+| POST | `/api/dlq/alerts/replay` | Replay alerts из DLQ |
+| DELETE | `/api/dlq/alerts/{id}` | Удаление alert из DLQ |
+| GET | `/api/dlq/status-updates` | DLQ status updates list |
+| POST | `/api/dlq/status-updates/replay` | Replay status updates |
+| DELETE | `/api/dlq/status-updates/{id}` | Удаление status update из DLQ |
+| GET | `/api/dlq/metrics` | DLQ summary metrics |
+
+Webhook callback (HL → Laravel): `POST {LARAVEL_URL}/api/internal/webhooks/history-logger/execution-event` с HMAC-подписью (`HISTORY_LOGGER_WEBHOOK_SECRET`). Используется для Scheduler Cockpit causal chain. См. §2.7.
 
 ### 2.1. POST /commands
 
@@ -128,6 +157,113 @@ Content-Type: application/json
 ```
 
 ---
+
+### 2.1.1. POST /zones/{zone_id}/commands
+
+**Описание:** Zone-scoped публикация команды. Используется Laravel `PythonBridgeService` (`backend/laravel/app/Services/PythonBridgeService.php`) для всех команд, инициированных из Laravel.
+
+**URL:** `POST /zones/{zone_id}/commands`
+
+Поведение идентично `POST /commands`, но `zone_id` из URL автоматически подставляется в payload. Это разделение упрощает audit и применение per-zone rate limits.
+
+**Request Body:** как для `POST /commands`, без `zone_id` (берётся из URL):
+```json
+{
+  "greenhouse_uid": "gh-1",
+  "node_uid": "nd-pump-1",
+  "channel": "pump_in",
+  "cmd": "run_pump",
+  "params": {"duration_ms": 5000},
+  "source": "laravel:manual",
+  "cmd_id": "...",
+  "ts": 1737355112,
+  "sig": "...",
+  "zone_uid": "zn-1",
+  "hardware_id": "esp32-ABCD"
+}
+```
+
+Дополнительные поля передаются Laravel:
+- `ts`, `sig` — HMAC-подпись вычисляется `App\Services\CommandSignatureService` ещё в Laravel;
+- `trace_id`, `request_id` — для audit;
+- `zone_uid`, `hardware_id` — denormalized identifiers.
+
+История-logger **всё равно пересчитывает** `sig` согласно своей policy (`command_service.py`: `Overriding provided command signature`) — Laravel-side подпись используется как best-effort baseline, canonical sign делает HL непосредственно перед публикацией в MQTT.
+
+### 2.1.2. POST /nodes/{node_uid}/commands
+
+**Описание:** Node-scoped публикация команды. Используется для node-level операций (например, `restart`, `state`, `system/command`).
+
+**URL:** `POST /nodes/{node_uid}/commands`
+
+Payload как у `POST /commands`, но `node_uid` берётся из URL. Если `channel` не указан, команда публикуется в node-level topic (`hydro/{gh}/{zone}/{node}/{type}` без сегмента channel) — это используется для `restart`, `state`, и system команд `activate_sensor_mode`/`deactivate_sensor_mode` (`channel="system"`).
+
+### 2.1.3. POST /nodes/{node_uid}/config
+
+**Описание:** Push NodeConfig в MQTT topic `hydro/{gh}/{zone}/{node}/config`. Используется Laravel `PublishNodeConfigJob` (`backend/laravel/app/Jobs/PublishNodeConfigJob.php`) при изменении конфигурации ноды.
+
+**URL:** `POST /nodes/{node_uid}/config`
+
+**Request Body:**
+```json
+{
+  "greenhouse_uid": "gh-1",
+  "zone_uid": "zn-1",
+  "config": {
+    "node_id": "nd-ph-1",
+    "version": 3,
+    "fw_version": "1.0.0",
+    "channels": [...],
+    "wifi": {...},
+    "mqtt": {...}
+  },
+  "ts": 1737355112,
+  "sig": "..."
+}
+```
+
+Поведение:
+- HL валидирует структуру NodeConfig;
+- публикует в MQTT с QoS=1, Retain=false;
+- логирует факт публикации в `nodes.config` (через Laravel API observed-факт).
+
+### 2.1.4. POST /ingest/telemetry
+
+**Описание:** HTTP fallback для приёма телеметрии от нод, у которых нет прямого MQTT-канала (например, тестовый прогон или edge-кейсы). Сохраняет в `telemetry_samples` и обновляет `telemetry_last`.
+
+**URL:** `POST /ingest/telemetry`
+
+**Request Body:**
+```json
+{
+  "greenhouse_uid": "gh-1",
+  "zone_id": 1,
+  "node_uid": "nd-ph-1",
+  "channel": "ph_sensor",
+  "metric_type": "PH",
+  "value": 6.2,
+  "ts": 1737355112,
+  "unit": "pH"
+}
+```
+
+Внимание: `ts` декодируется как **секунды** через `datetime.fromtimestamp(ts_value)`. Не передавайте миллисекунды (известный edge-case, ts > 10^10 будет интерпретирован как далёкое будущее).
+
+### 2.1.5. DLQ endpoints (`/api/dlq/*`)
+
+Управление dead-letter queue для alerts и status updates:
+
+| Метод | Путь | Назначение |
+|-------|------|-----------|
+| GET | `/api/dlq/alerts` | List failed alert ingest |
+| POST | `/api/dlq/alerts/replay` | Перенос обратно в `pending_alerts` для повторной обработки |
+| DELETE | `/api/dlq/alerts/{id}` | Hard delete из DLQ |
+| GET | `/api/dlq/status-updates` | List failed status updates |
+| POST | `/api/dlq/status-updates/replay` | Replay status updates |
+| DELETE | `/api/dlq/status-updates/{id}` | Hard delete |
+| GET | `/api/dlq/metrics` | Summary (queue depth, failure rate, oldest entry age) |
+
+Аутентификация: те же правила, что у `/commands` (Bearer token + production-only enforcement).
 
 ### 2.2. GET /health
 
@@ -219,6 +355,38 @@ curl http://localhost:9300/health
   "status": "ok"
 }
 ```
+
+---
+
+### 2.7. Webhook callback (HL → Laravel)
+
+**Описание:** History-logger вызывает Laravel webhook при terminal-статусе команды, чтобы Scheduler Cockpit получил causal chain update.
+
+**Endpoint Laravel:** `POST {LARAVEL_URL}/api/internal/webhooks/history-logger/execution-event`
+
+**HL config:**
+- `LARAVEL_URL` — base URL Laravel (по умолчанию `http://laravel:8080`);
+- `HISTORY_LOGGER_WEBHOOK_SECRET` — секрет HMAC-подписи;
+- `HISTORY_LOGGER_WEBHOOK_DEBOUNCE_MS` — debounce окно (default 250 ms).
+
+**Headers:**
+- `X-HL-Signature: hmac-sha256=<hex>` — подпись body
+- `X-HL-Timestamp: <unix>` — для replay-protection
+
+**Body:**
+```json
+{
+  "event_type": "command_terminal",
+  "cmd_id": "cmd-123",
+  "zone_id": 1,
+  "task_id": 42,
+  "terminal_status": "DONE",
+  "ack_received_at": "2026-05-28T10:00:00Z",
+  "terminal_at": "2026-05-28T10:00:05Z"
+}
+```
+
+Laravel middleware: `VerifyHistoryLoggerWebhook` (alias `verify.history-logger.webhook`) проверяет HMAC и timestamp tolerance. После приёма Laravel эмитит broadcast event `ExecutionChainUpdated` на канал `hydro.zone.executions.{zoneId}`.
 
 ---
 
@@ -346,30 +514,43 @@ CREATE TABLE commands (
 
 ## 6. Мониторинг
 
-### 6.1. Prometheus метрики (порт 9301)
+### 6.1. Prometheus метрики (порт 9300, путь `/metrics`)
 
-**Endpoint:** `GET /metrics`
+**Endpoint:** `GET http://history-logger:9300/metrics`
 
-**Метрики:**
+Канонические имена метрик (из `backend/services/history-logger/metrics.py`):
+
 ```
 # Команды
-history_logger_commands_published_total{command_type="FORCE_IRRIGATION", zone_id="1"} 123
-history_logger_commands_failed_total{command_type="FORCE_IRRIGATION", reason="validation_error"} 5
+commands_sent_total{cmd, zone_id, source}
+commands_failed_total{cmd, reason}
+commands_publish_duration_seconds{cmd, le}
 
 # Телеметрия
-history_logger_telemetry_received_total{node_uid="nd-ph-1", channel="ph_main"} 45678
-history_logger_telemetry_processing_duration_seconds{quantile="0.5"} 0.001
-history_logger_telemetry_batch_size{quantile="0.95"} 150
+telemetry_received_total{node_uid, channel}
+telemetry_processed_total{result}
+telemetry_processing_duration_seconds{le}
+telemetry_batch_size{le}
 
 # MQTT
-history_logger_mqtt_connected{} 1
-history_logger_mqtt_messages_received_total{} 123456
-history_logger_mqtt_reconnects_total{} 3
+mqtt_connected
+mqtt_messages_received_total{topic_kind}
+mqtt_reconnects_total
 
 # База данных
-history_logger_db_operations_total{operation="insert", table="telemetry_samples"} 45000
-history_logger_db_errors_total{operation="insert", table="telemetry_samples"} 2
+db_operations_total{operation, table}
+db_errors_total{operation, table}
+
+# DLQ
+dlq_size{queue}                              # pending_alerts, pending_status_updates
+dlq_replay_total{queue, result}
+
+# Webhook
+hl_webhook_calls_total{event_type, result}
+hl_webhook_duration_seconds{event_type, le}
 ```
+
+Старый префикс `history_logger_*` (например `history_logger_commands_published_total`) **deprecated** — оставлен только в части legacy dashboards.
 
 ### 6.2. Логи
 

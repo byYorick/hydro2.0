@@ -2,6 +2,7 @@
 # Полный справочник моделей данных системы 2.0
 # PostgreSQL • Laravel Models • Python ORM • Связи • Ограничения
 # **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
+# **СИНХРОНИЗИРОВАНО С МИГРАЦИЯМИ 2026-05-28** (поля commands, NOTIFY каналы, новые таблицы DLQ/ACK/ae_stage_transitions/zone_correction_*)
 
 Документ описывает всю структуру данных системы 2.0:
 таблицы, связи, ключи, индексы, правила и использование.
@@ -238,8 +239,10 @@ sensors_greenhouse_scope_idx
 sensors_greenhouse_type_idx
 sensors_node_idx
 sensors_active_idx
-UNIQUE(zone_id, node_id, scope, type, label)
+UNIQUE(zone_id, node_id, scope, type, label)  -- canonical
 ```
+
+**Status:** canonical UNIQUE index восстановлен миграцией `2026_05_28_120000_restore_sensors_canonical_unique_index.php`. До этого пакета миграция `2025_12_31_070152_*` дедуплицировала данные, но создание уникального индекса было пропущено. Если приложение работает на старой схеме, дубли по `(zone_id, node_id, scope, type, label)` возможны — сначала прогнать `make migrate`.
 
 ---
 
@@ -250,12 +253,14 @@ id BIGSERIAL PK
 sensor_id FK
 ts TIMESTAMP
 zone_id FK NULL
-cycle_id FK NULL
+cycle_id FK NULL          -- ⚠️ см. ниже: пока не заполняется на ingest path
 value DECIMAL
 quality ENUM(GOOD|BAD|UNCERTAIN)
 metadata JSONB
 created_at
 ```
+
+Hypertable: Timescale с chunk 1 day, retention 90 дней (см. `DATA_RETENTION_POLICY.md`). В CI/testing hypertable пропускается (`$withinTransaction=false` миграции отключены).
 
 Индексы:
 ```
@@ -263,6 +268,8 @@ telemetry_samples_sensor_ts_idx
 telemetry_samples_zone_ts_idx
 telemetry_samples_cycle_ts_idx
 ```
+
+**Status: `cycle_id` declared, NOT populated by ingest path** — колонка и индекс созданы миграцией, но history-logger ingest (`backend/services/history-logger/telemetry_processing.py`) пишет samples без `cycle_id`. Это известное расхождение; в backlog'е либо заполнить `cycle_id` через grow_cycle lookup, либо удалить колонку. До разрешения запросы по `telemetry_samples_cycle_ts_idx` не имеют production-данных. `metadata` хранит `node_uid`, `raw` и опциональные flags (`flow_active`, `stable`, `corrections_allowed`).
 
 ---
 
@@ -647,16 +654,30 @@ INDEX: grow_cycle_transition_trigger_idx (trigger_type)
 id PK
 zone_id FK
 node_id FK
-channel VARCHAR
-cmd VARCHAR
+channel VARCHAR NULL              -- может быть NULL для system команд (system/command topic)
+cmd VARCHAR                       -- canonical: run_pump|dose|set_relay|set_pwm|set_position|calibrate|test_sensor|restart|state|activate_sensor_mode|deactivate_sensor_mode
+command_type VARCHAR NULL         -- legacy/audit category (deprecated, used by command_tracking)
 params JSONB
-status VARCHAR (QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED)
+payload JSONB NULL                -- полный исходный payload (для audit/debug)
+status VARCHAR DEFAULT 'QUEUED'   -- canonical: QUEUED|SENT|ACK|DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED
+                                  -- (миграция default='pending' устарела — history-logger создаёт QUEUED)
 cmd_id VARCHAR UNIQUE
+source VARCHAR NULL               -- 'laravel_scheduler'|'automation-engine'|'manual'|...
+request_id VARCHAR NULL           -- idempotency key из вышестоящего сервиса
+context_type VARCHAR NULL         -- 'correction'|'irrigation'|'cycle_start'|...
+cycle_id BIGINT NULL FK -> grow_cycles
+duration_ms INT NULL              -- для timed-команд (run_pump, dose преобразованная)
+result_code VARCHAR NULL          -- для DONE-команд: подробный код результата от ноды
+error_code VARCHAR NULL           -- для ERROR/INVALID: машинный код от ноды
+error_message TEXT NULL           -- для ERROR/INVALID: human-readable от ноды
 created_at
 sent_at
 ack_at
 failed_at
+updated_at
 ```
+
+Hypertable: Timescale с chunk 1 month, retention 365 дней (см. `DATA_RETENTION_POLICY.md`). Архивная таблица — `commands_archive` (см. §6.1.1).
 
 Индексы:
 ```
@@ -673,6 +694,58 @@ commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
 commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
 ```
 
+## 6.1.1. command_acks
+
+ACK-фазы команды (детальный feedback от ноды). Параллельная legacy-модель: канон — `commands.status` + timestamps; `command_acks` сохраняется для UI диагностики и audit.
+
+```
+id BIGSERIAL PK
+command_id BIGINT FK -> commands ON DELETE CASCADE
+cmd_id VARCHAR(191) NOT NULL                    -- денормализованный для быстрого lookup
+zone_id BIGINT FK -> zones NULL
+node_id BIGINT FK -> nodes NULL
+ack_type VARCHAR(32) NOT NULL                   -- 'accepted' | 'executed' | 'verified' | 'error'
+ack_status VARCHAR(32) NULL                     -- raw status из command_response
+ack_data JSONB NULL                             -- детали ACK от ноды (current_ma, measured_value, ...)
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+received_at TIMESTAMP NOT NULL
+created_at
+updated_at
+```
+
+Индексы: `(command_id)`, `(cmd_id)`, `(zone_id, received_at)`, `(node_id, ack_type)`.
+
+Назначение:
+- traceability ACK→DONE/ERROR для UI Scheduler Cockpit;
+- источник данных для `Components/Scheduler/Cockpit/causal-chain`.
+
+## 6.1.2. commands_archive
+
+Архив исторических команд (retention beyond hot 365 дней).
+
+```
+-- Структура зеркалит commands, плюс:
+archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+```
+
+Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php` после ошибочного удаления в `2025_12_25_151714_drop_legacy_tables.php`. Заполняется фоновой job `commands:archive` (см. Console/Commands).
+
+## 6.1.3. pending_status_updates / pending_status_updates_dlq
+
+Transport queue для inbound status updates от нод, когда core mid-tier недоступен. Используется history-logger для resilient ingest.
+
+```
+id BIGSERIAL PK
+payload JSONB NOT NULL          -- raw event/status payload
+target_type VARCHAR             -- 'command_status'|'node_status'|...
+retry_count INT NOT NULL DEFAULT 0
+last_error TEXT NULL
+created_at, updated_at
+```
+
+`pending_status_updates_dlq` — dead letter queue (структура такая же + `dlq_reason TEXT`). REST API DLQ описан в `HISTORY_LOGGER_API.md`.
+
 ## 6.2. command_tracking
 
 ```
@@ -688,6 +761,8 @@ error TEXT NULL
 latency_seconds FLOAT NULL
 context JSONB NULL
 ```
+
+**Status: legacy (AE2-era).** Canonical command lifecycle ведёт `commands` + `command_acks`. Таблица сохранена для backward-compat с UI/exporter; не используется AE3 runtime.
 
 Индексы:
 ```
@@ -1051,6 +1126,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```json
 {"cmd_id":"...", "zone_id":12, "status":"DONE", "updated_at":"..."}
 ```
+- **Subscribers:** Laravel Scheduler Cockpit (`ExecutionChainAssembler`), потенциальные future консьюмеры.
+- **NOT subscribed by AE3 runtime.** AE3 не использует этот канал для reconcile команд: terminal-статусы команд `ae_commands.terminal_status` синхронизируются через polling в `SequentialCommandGateway.recover_waiting_command(...)` (intervals из `AE_RECONCILE_POLL_INTERVAL_SEC`, default 0.5s, bounded backoff x1.5, upper 5s). Trigger оставлен в БД для остальных потребителей.
 
 2) `ae_signal_update`:
 - trigger: `trg_ae_signal_update_zone_events` на `zone_events` (`AFTER INSERT OR UPDATE`);
@@ -1060,10 +1137,21 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```json
 {"zone_id":12, "kind":"zone_event|telemetry_last", "updated_at":"..."}
 ```
+- **NOT subscribed by AE3 runtime.** AE3 слушает только `scheduler_intent_terminal` и `ae_zone_event` (см. ниже).
+
+3) `scheduler_intent_terminal`:
+- trigger на `zone_automation_intents` при переходе в terminal state;
+- payload: `{"intent_id":..., "zone_id":..., "status":"completed|failed|cancelled", "updated_at":"..."}`;
+- **Subscribed by:** AE3 `IntentStatusListener` → `worker.kick()`.
+
+4) `ae_zone_event`:
+- trigger на `zone_events` для node runtime events (LEVEL_SWITCH_CHANGED, storage_state/event, emergency stop);
+- payload: `{"zone_id":..., "event_type":..., "event_id":..., "created_at":"..."}`;
+- **Subscribed by:** AE3 `ZoneEventListener` → guard + `worker.kick()`.
 
 Правило runtime:
 - `NOTIFY` используется как fast-path;
-- reconcile polling обязателен как fallback на случай пропуска notify-событий.
+- reconcile polling обязателен как fallback на случай пропуска notify-событий;
 - изменение runtime profile (`zone.logic_profile`) должно порождать `zone_events`
   типа `AUTOMATION_LOGIC_PROFILE_UPDATED`, чтобы инициировать `ae_signal_update` по `kind=zone_event`.
 
@@ -1129,7 +1217,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```
 id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
-task_type VARCHAR(64) NOT NULL         -- в v1 допустимо cycle_start|irrigation_start
+task_type VARCHAR(64) NOT NULL         -- в v1 допустимо cycle_start|irrigation_start|lighting_tick (CHECK constraint)
 status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
 idempotency_key VARCHAR(191) NOT NULL
 intent_source VARCHAR(64) NULL
@@ -1213,8 +1301,27 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
 - `corr_snapshot_*` хранит causal link на последний подтверждённый `IRR_STATE_SNAPSHOT`, который должен переживать `enter_correction`, requeue и process restart;
 - `corr_limit_policy_logged=true` означает, что `CORRECTION_LIMIT_POLICY_APPLIED` уже был записан для текущего correction-window и повторно эмитироваться не должен;
-- `task_type IN ('cycle_start', 'irrigation_start')` фиксируется DB check constraint.
+- `task_type IN ('cycle_start', 'irrigation_start', 'lighting_tick')` фиксируется DB check constraint (миграция `2026_04_04_*` расширила список).
 - `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|irrig_recirc|ready`.
+
+### 6.11.4. ae_stage_transitions
+
+Append-only audit log переходов между стадиями two-tank workflow.
+
+```
+id BIGSERIAL PK
+task_id BIGINT FK -> ae_tasks ON DELETE CASCADE
+from_stage VARCHAR(64) NULL
+to_stage VARCHAR(64) NOT NULL
+transition_kind VARCHAR(32) NOT NULL    -- 'transition'|'poll'|'enter_correction'|'complete'|'fail'
+reason_code VARCHAR(128) NULL
+details JSONB NULL                       -- runtime context (correction_window_id, attempt counters, ...)
+created_at TIMESTAMP NOT NULL DEFAULT NOW()
+```
+
+Индексы: `(task_id, created_at)`, `(transition_kind, created_at)`.
+
+Назначение: Scheduler Cockpit history pane + post-mortem диагностика. Запись делает `WorkflowRouter._record_transition(...)` после успешного `update_stage` / terminal transition.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 - irrigation decision/replay/runtime state хранится в explicit columns, а не в свободном JSON.
@@ -1375,6 +1482,17 @@ zone_events_zone_id_id_idx
   `stage`, `workflow_phase`, `corr_step`, `attempt`, `ec_attempt`, `ph_attempt`.
 
 ---
+
+## 8.1.1. zone_events_archive
+
+Архив исторических `zone_events` после истечения hot retention (365 дней).
+
+```
+-- Структура зеркалит zone_events, плюс:
+archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+```
+
+Восстановлено миграцией `2026_04_30_195000_restore_archive_tables_for_commands_and_zone_events.php`. Заполняется фоновой job `zone-events:archive`.
 
 ## 8.2. simulation_events
 
@@ -2283,6 +2401,119 @@ Process-gain и observe-window contract хранятся в zone-scoped authorit
 - Ручная pump calibration панель Laravel читает активную запись из `pump_calibrations`.
 - `node_channels.config.pump_calibration` допустим как read-through mirror/manual payload, но не как source of truth
   для системных default/min/max порогов.
+
+### 16.8. Zone correction preset / config / version (UI-managed)
+
+UI-layer таблицы для редактирования correction config зоны. Не являются runtime authority (canonical authority — `automation_config_documents` namespace `zone.correction`), но используются API/UI для удобного управления и истории.
+
+#### 16.8.1. zone_correction_presets
+
+```
+id BIGSERIAL PK
+name VARCHAR
+slug VARCHAR UNIQUE
+description TEXT NULL
+payload JSONB NOT NULL                   -- correction config template
+is_locked BOOLEAN NOT NULL DEFAULT FALSE
+schema_version INT NOT NULL DEFAULT 1
+created_by BIGINT NULL FK -> users
+created_at, updated_at
+```
+
+#### 16.8.2. zone_correction_configs
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones ON DELETE CASCADE
+preset_id BIGINT NULL FK -> zone_correction_presets
+payload JSONB NOT NULL                   -- {base_config, phase_overrides, resolved_config}
+checksum VARCHAR(64) NOT NULL
+updated_by BIGINT NULL FK -> users
+created_at, updated_at
+UNIQUE (zone_id)
+```
+
+#### 16.8.3. zone_correction_config_versions
+
+```
+id BIGSERIAL PK
+zone_correction_config_id BIGINT FK CASCADE
+payload JSONB NOT NULL
+checksum VARCHAR(64) NOT NULL
+changed_by BIGINT NULL FK -> users
+changed_at TIMESTAMP NOT NULL
+```
+
+### 16.9. zone_automation_presets
+
+UI-managed presets для `zone.logic_profile` automation config (working/setup profile templates).
+
+```
+id BIGSERIAL PK
+slug VARCHAR UNIQUE
+name VARCHAR
+description TEXT NULL
+payload JSONB NOT NULL                   -- {profiles: {setup, working}}
+schema_version INT NOT NULL DEFAULT 1
+is_locked BOOLEAN NOT NULL DEFAULT FALSE
+created_by BIGINT NULL FK -> users
+created_at, updated_at
+```
+
+Миграция: `2026_04_17_120000_create_zone_automation_presets_table.php`.
+
+### 16.10. automation_runtime_overrides
+
+Точечные runtime-overrides (system-уровень) для AE3/scheduler без правки authority documents — для emergency tuning.
+
+```
+id BIGSERIAL PK
+namespace VARCHAR(128) NOT NULL          -- e.g. 'ae3.snapshot.retry_sec'
+scope_type VARCHAR(32) NOT NULL          -- 'system'|'zone'
+scope_id BIGINT NOT NULL
+value JSONB NOT NULL
+reason TEXT NULL
+expires_at TIMESTAMP NULL                -- auto-revert TTL
+created_by BIGINT NULL FK -> users
+created_at, updated_at
+UNIQUE (namespace, scope_type, scope_id)
+```
+
+Миграция: `2026_03_11_111500_*`.
+
+### 16.11. zone_pid_configs
+
+UI-snapshot zoned PID tuning. Canonical authority — `automation_config_documents` namespaces `zone.pid.ph` / `zone.pid.ec`.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones ON DELETE CASCADE
+pid_type VARCHAR(8) NOT NULL              -- 'ph'|'ec'
+dead_zone NUMERIC NULL
+close_zone NUMERIC NULL
+zone_coeffs JSONB NULL                    -- {close: {Kp,Ki,Kd}, far: {...}}
+max_integral NUMERIC NULL
+updated_by BIGINT NULL FK -> users
+created_at, updated_at
+UNIQUE (zone_id, pid_type)
+```
+
+### 16.12. unassigned_node_errors / unassigned_node_errors_archive
+
+Ошибки от нод, у которых ещё нет `zone_id` (preconfig / unbound). Источник — history-logger ingest.
+
+```
+id BIGSERIAL PK
+node_uid VARCHAR(128) NOT NULL
+hardware_id VARCHAR NULL
+error_code VARCHAR(128) NOT NULL
+error_message TEXT NULL
+details JSONB NULL
+received_at TIMESTAMP NOT NULL
+created_at
+```
+
+Архивная таблица `unassigned_node_errors_archive` хранит исторические записи с `archived_at TIMESTAMP`. Миграции: `2025_12_15_*`, `2025_12_12_*`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 

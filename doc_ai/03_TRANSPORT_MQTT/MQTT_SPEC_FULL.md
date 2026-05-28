@@ -5,6 +5,8 @@
 Здесь указаны форматы топиков, JSON‑payload, правила QoS, LWT, NodeConfig, Telemetry,
 Command, Responses и системные события.
 
+**Дата обновления:** 2026-05-28 (sync с кодом history-logger и firmware: полный список message types, telemetry_last на PostgreSQL, QoS таблица расширена).
+
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
@@ -48,14 +50,33 @@ hydro/{gh}/{zone}/{node}/{type}
 - `channel` — имя канала (например `ph_sensor` или `pump_acid`).
 - `type` — тип сообщения:
 
-Типы:
-- **telemetry**
-- **command**
-- **command_response**
-- **config_report**
-- **config** (опционально, сервисный сценарий)
-- **status**
-- **lwt**
+Полный список типов сообщений (`{type}`), которые реально публикуются/обрабатываются runtime:
+
+**Узел → backend (channel-level):**
+- `telemetry` — измерения с канала
+- `command_response` — ответ на команду
+- `event` — channel-level node event (`level_switch_changed`, ...)
+
+**Узел → backend (node-level, без `{channel}`):**
+- `status` — online/offline status (retained)
+- `lwt` — Last Will and Testament (retained, payload `"offline"`)
+- `config_report` — текущий NodeConfig
+- `heartbeat` — uptime/free_heap/rssi
+- `node_hello` — первая регистрация (доп. также безсегментный `hydro/node_hello`)
+- `diagnostics` — опциональный engineering snapshot
+- `error` — узловые ошибки
+- `storage_state/event` — aggregate state event (только для `irrig` нод)
+
+**Backend → узел:**
+- `command` — команда на канал
+- `config` — push NodeConfig (опционально, сервисный сценарий)
+- `system/command` — system-level команда без `{channel}` (`activate_sensor_mode`, `deactivate_sensor_mode`)
+
+**Системные / broadcast:**
+- `hydro/time/request` (узел → backend)
+- `hydro/time/response` (backend → узлы)
+
+Status: **planned / not implemented** — `hydro/{node}/debug` (см. §9.4); обработчик в history-logger отсутствует, оставлен как опциональная диагностика.
 
 Пример:
 ```
@@ -88,7 +109,11 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - `unit` (string) — единица измерения (например, "pH", "°C", "%")
 - `raw` (integer) — сырое значение сенсора
 - `stub` (boolean) — флаг, указывающий на симулированное значение
-- `stable` (boolean) — флаг, указывающий на стабильность значения
+- `stable` (boolean) — флаг стабильности значения (для активированных sensor-нод)
+- `flow_active` (boolean) — индикатор активного потока через сенсор (pH/EC)
+- `corrections_allowed` (boolean) — runtime-флаг доступности коррекции
+- `tds` (number) — производное TDS-значение для EC-нод
+- `health` (object) — sensor-side health context (`status`, `error_count`)
 
 > **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim, который успешно проходит E2E тесты.
 
@@ -96,9 +121,10 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - QoS = 1
 - Retain = false
 - Узел публикует telemetry только после time sync через `hydro/time/response`
-- Backend сохраняет TelemetrySample
-- Backend обновляет last_value в Redis
-- Backend может триггерить Alerts
+- `history-logger` сохраняет запись в hypertable `telemetry_samples` (Timescale, chunk 1 day) и обновляет кэш последнего значения в PostgreSQL `telemetry_last` (PK по `sensor_id`).
+- `history-logger` использует точечные подписки MQTT — `hydro/+/+/+/+/{telemetry|command_response|event}` и `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello|storage_state/event}`, без подписки на широкий wildcard `hydro/#`.
+- `history-logger` также пишет business-trigger в `zone_events` и эмитит `AlertService` ingest при выходе за пороги/freshness.
+- Last-value хранится в **PostgreSQL** (`telemetry_last`), Redis для последних значений **не используется** (исторический паттерн ранних версий, removed).
 
 ## 3.4. Telemetry для дискретных датчиков уровня (2-бака)
 
@@ -1199,10 +1225,18 @@ hydro/{node}/debug
 | command | 1 | false |
 | command_response | 1 | false |
 | config_report | 1 | false |
+| config (backend → node) | 1 | false |
 | status | 1 | true |
 | lwt | 1 | true |
 | node_hello | 1 | false |
 | heartbeat | 1 | false |
+| event (channel-level) | 1 | false |
+| storage_state/event | 1 | false |
+| diagnostics | 1 | false |
+| error | 1 | false |
+| system/command | 1 | false |
+| hydro/time/request | 1 | false |
+| hydro/time/response | 1 | false |
 
 ---
 

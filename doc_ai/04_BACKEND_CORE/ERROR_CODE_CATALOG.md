@@ -1,9 +1,9 @@
 # ERROR_CODE_CATALOG.md
 # Канонический каталог кодов ошибок automation/runtime
 
-**Версия:** 1.0  
-**Дата:** 2026-03-29  
-**Статус:** Актуально  
+**Версия:** 1.1
+**Дата:** 2026-05-28
+**Статус:** Актуально (sync с runtime кодом 2026-05-28: добавлены ingress/execution/recovery/stage коды, секция deprecated)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -69,6 +69,73 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `irr_state_mismatch` | `ae3_irr_probe` | Snapshot пришёл, но hardware state не совпал с `expected` (valve/pump). **Не** оборачивается backoff'ом — это safety boundary, fail-closed немедленно | `Состояние IRR-ноды не совпало с ожиданиями автоматики.` |
 | `irrigation_recovery_probe_exhausted` | `ae3_irr_probe` | В `irrigation_recovery_check` исчерпан streak подряд идущих deferred probes (`_IRR_PROBE_FAILURE_STREAK_LIMIT=5`) — нода долго недоступна | `IRR-нода недоступна: исчерпан лимит подряд идущих probe-deferrals.` |
 | `ae3_prepare_recirculation_max_attempts_missing` | `ae3_config` | В bundle коррекции для prepare-recirculation отсутствует обязательный `prepare_recirculation_max_attempts` (Phase 3.1 B-7 fail-closed) | `В конфигурации коррекции отсутствует обязательный параметр числа повторов prepare-recirculation.` |
+
+## Таблица кодов AE3 ingress / task creation
+
+| code | Домен | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `start_cycle_zone_busy` | `ae3_ingress` | `POST /zones/{id}/start-cycle` / `start-irrigation` / `start-lighting-tick` при наличии active task или active lease | `Зона занята другим запуском, повторите попытку после завершения текущей задачи.` |
+| `start_cycle_idempotency_key_conflict` | `ae3_ingress` | Тот же `(zone_id, idempotency_key)` уже использован другим intent | `Идентичный запуск уже зарегистрирован, дублирующий запрос отклонён.` |
+| `start_cycle_missing_idempotency_key` | `ae3_ingress` | Запрос на ingress без `idempotency_key` | `В запросе отсутствует ключ идемпотентности — повторите с уникальным идентификатором.` |
+| `ae3_task_create_failed` | `ae3_ingress` | Не удалось вставить task в `ae_tasks` (DB-ошибка или нарушение constraints) | `AE3 не смог зарегистрировать задачу автоматики — попробуйте позже.` |
+| `start_lighting_tick_unsupported_runtime` | `ae3_ingress` | Зона не на AE3 runtime, но получен `start-lighting-tick` | `Освещение по AE3 расписанию доступно только для зон на AE3 runtime.` |
+
+## Таблица кодов AE3 execution / FSM
+
+| code | Домен | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `ae3_complete_transition_failed` | `ae3_execution` | CAS-промах при переводе task в `completed` | `Не удалось финализировать задачу AE3 (несовместимая ревизия состояния).` |
+| `ae3_transition_apply_failed` | `ae3_execution` | `WorkflowRouter` не смог применить `StageOutcome.transition` через `update_stage` | `Не удалось зафиксировать переход между этапами автоматики.` |
+| `ae3_poll_apply_failed` | `ae3_execution` | Аналогично, для `StageOutcome.poll` | `Не удалось зарегистрировать повторный опрос этапа автоматики.` |
+| `ae3_correction_apply_failed` | `ae3_execution` | Аналогично, для `StageOutcome.enter_correction` | `Не удалось войти в окно коррекции.` |
+| `ae3_task_running_transition_failed` | `ae3_execution` | Не удалось перевести claimed→running | `Не удалось активировать задачу AE3 для выполнения.` |
+| `ae3_zone_lease_lost` | `ae3_execution` | Lease зоны потеряна mid-run | `Эксклюзивная блокировка зоны была потеряна, задача прервана.` |
+| `ae3_zone_lease_release_failed` | `ae3_execution` | Не удалось отпустить lease после завершения | `Не удалось освободить блокировку зоны после задачи (требуется ручная проверка).` |
+| `runtime_plan_missing` | `ae3_execution` | У task в `running/waiting_command` нет RuntimePlan | `Отсутствует runtime-план для активной задачи — задача отменена.` |
+| `control_mode_switched_to_manual` | `ae3_execution` | Active task отменена переключением `control_mode='manual'` | `Задача отменена: оператор переключил зону в ручной режим.` |
+| `ae3_command_send_retry_scheduled` | `ae3_execution` | Запланирован transient retry публикации команды | `Команда отправляется повторно из-за временного сбоя.` |
+| `infra_ae3_snapshot_retry_scheduled` | `ae3_execution` | Transient snapshot gap, запланирован retry | `AE3 повторит попытку собрать снимок зоны.` |
+
+## Таблица кодов startup recovery
+
+Возвращаются `StartupRecoveryUseCase` для in-flight задач после рестарта AE3:
+
+| code | Когда возникает |
+| --- | --- |
+| `startup_recovery_unconfirmed_command` | Task в `claimed/running` без подтверждённой внешней команды — переводится в `failed`. |
+| `startup_recovery_pending_resume_failed` | Не удалось вернуть task из `waiting_command` обратно в `running`. |
+| `startup_recovery_lease_release_failed` | Не удалось освободить просроченную lease. |
+| `startup_recovery_orphan_lease_released` | Освобождена осиротевшая lease (information level). |
+
+## Таблица кодов irrigation / two-tank stage terminal
+
+Stage-terminal коды используются `WorkflowRouter._fail_task` для безопасного завершения задачи внутри two-tank workflow:
+
+| code | Стадия | Что значит |
+| --- | --- | --- |
+| `clean_tank_not_filled_timeout` | `clean_fill_check` | Чистый бак не наполнился за `clean_fill_timeout_sec`. |
+| `clean_fill_source_empty_stop` | `clean_fill_*` | Источник воды пуст (после повторных попыток). |
+| `solution_fill_leak_detected` | `solution_fill_check` | Зафиксирована утечка раствора. |
+| `solution_fill_leak_stop` | `solution_fill_*` | Stage остановлен из-за утечки. |
+| `solution_fill_source_empty_stop` | `solution_fill_*` | Источник раствора пуст. |
+| `solution_fill_timeout_stop` | `solution_fill_check` | Stage timeout / fail-closed по `no-effect`. |
+| `prepare_recirculation_solution_low_stop` | `prepare_recirc_*` | Уровень раствора ниже минимального. |
+| `prepare_recirculation_attempt_limit_reached` | `prepare_recirc_*` | Исчерпан `prepare_recirculation_max_attempts`. |
+| `irrigation_decision_strategy_unknown` | `decision_gate` | Неизвестная irrigation strategy в конфиге. |
+| `irrigation_wait_ready_timeout` | `await_ready` | Зона не вышла в `workflow_phase='ready'` за `AE_IRRIGATION_WAIT_READY_SEC`. |
+| `irrigation_recovery_probe_exhausted` | `irrigation_recovery_check` | Исчерпан streak deferred probes IRR-ноды. |
+| `emergency_stop_activated` | любая | E-stop активирован, reconcile не подтвердил безопасное состояние. |
+
+## Deprecated коды
+
+Эти коды остаются в `error_codes.json` для совместимости с историческими записями и backlog'ом, но не используются текущим runtime AE3 (`ae3lite/`). Новый код, ссылки в Laravel/UI на эти значения добавлять запрещено.
+
+| Deprecated code | Заменён на |
+| --- | --- |
+| `ae3_task_create_conflict` | `start_cycle_zone_busy` (active task/lease) или `start_cycle_idempotency_key_conflict` (idempotency race) |
+| `ae3_lease_claim_failed` | Провал claim делает silent rollback через `release_claim`; при потере уже захваченной lease — `ae3_zone_lease_lost` |
+| `ae3_requeue_failed` | `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed` |
+| `cycle_start_blocked_nodes_unavailable` | `ae3_snapshot_required_node_type_missing` / `ae3_snapshot_no_online_actuator_channels` / `ae3_snapshot_required_node_persistently_offline` |
 
 ## Коды config modes (Phase 5, HTTP 4xx/5xx)
 

@@ -1,16 +1,22 @@
 # FRONTEND_ARCH_FULL.md
 # Полная архитектура Frontend 2.0 (UI/UX + функционал, детальная версия)
 # **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
+# **СИНХРОНИЗИРОВАНО С КОДОМ 2026-05-28** (Unified Dashboard, единый Launch flow, фактический список табов зоны)
 
 Этот документ описывает полный, детальный и расширенный фронтенд системы управления теплицей 2.0.
 
 **КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
-- ✅ Новый мастер создания циклов (`GrowCycles/Wizard.vue`)
-- ✅ Центр циклов (`Cycles/Center.vue`) с управлением GrowCycle
 - ✅ Версионирование рецептов в UI
-- ✅ Удалены устаревшие компоненты (AttachRecipeModal, etc.)
-- ✅ Новые API endpoints для циклов и ревизий
 - ✅ Scheduler workspace cutover: `ZoneSchedulerTab.vue` работает через `schedule-workspace` / `executions`
+- ✅ Unified Dashboard как production canonical UI (см. §3.1 и §3.1bis)
+- ✅ Единая точка запуска grow cycle — `/launch` (`Pages/Launch/Index.vue`); `/cycles` редиректится на `/`; `/setup/wizard` → `/launch`
+
+**Status: planned / not implemented** для следующих ранее анонсированных элементов:
+- `GrowCycles/Wizard.vue` — не существует в `resources/js/Pages/`; production entry point — `Pages/Launch/Index.vue`
+- `Cycles/Center.vue` — не подключён в маршруты; `/cycles` редиректит на `/`. Файл `Pages/Cycles/Center.vue` существует, но не используется в production UI
+- `AttachRecipeModal.vue` — файл и тесты ещё есть в репо, но не используется в production flow
+- Трёхколоночная структура `[Nav | Content | Context]` — реализована как двухколоночная (sidebar + main) в `Layouts/AppLayout.vue`; правая context/events panel остаётся roadmap
+
 Здесь собраны принципы UI/UX, структура интерфейса, экраны, реалтайм-механики, компоненты, state‑management, интеграция с backend и ИИ.
 
 
@@ -63,17 +69,31 @@ WebSocket → обновление данных зон / нод / алертов
 
 # 2. Основные разделы фронтенда
 
-1. **Dashboard** (`/`) – ролевые дашборды с общим обзором
-2. **Greenhouses** (`/greenhouses/create`) – создание теплиц
-3. **Zones** (`/zones`) – список всех зон теплицы
-4. **Zone Detail** (`/zones/{id}`) – *главный рабочий экран*
-5. **Devices** (`/devices`) – узлы ESP, каналы, диагностика
-6. **Recipes** (`/recipes`) – рецепты выращивания и культуры
-7. **Alerts** (`/alerts`) – алерты и события
-8. **Settings** (`/settings`) – настройки системы
-9. **Admin** (`/admin`) – административная панель (для админов)
-10. **Profile** (`/profile`) – профиль пользователя
-11. **Launch** (`/launch/{zoneId?}`) – единый мастер настройки зоны и запуска grow cycle; `/setup/wizard` редиректится сюда
+Фактический набор production маршрутов (`backend/laravel/routes/web.php`):
+
+**Основные:**
+1. **Dashboard** (`/`) — Unified Dashboard (`Pages/Dashboard/Index.vue`); рендерится одинаково для всех ролей, доступ к действиям фильтруется через `useRole()`
+2. **Greenhouses** (`/greenhouses`, `/greenhouses/create`, `/greenhouses/{id}`, `/greenhouses/{id}/climate`) — список, создание, страница теплицы, climate-вкладка
+3. **Zones** (`/zones`) — список зон
+4. **Zone Detail** (`/zones/{id}`) — главный рабочий экран зоны
+5. **Zones Simulation** (`/zones/{id}/simulation`) — симулятор/digital twin зоны
+6. **Devices** (`/devices`, `/devices/add`, `/devices/{id}`) — узлы ESP, каналы, диагностика
+7. **Recipes** (`/recipes`, `/recipes/create`, `/recipes/{id}/edit`) — рецепты выращивания
+8. **Alerts** (`/alerts`) — алерты и события
+9. **Settings** (`/settings`, `/settings/preferences`) — настройки системы и пользовательские preferences
+10. **Admin** (`/admin`, `/admin/zones`, `/admin/recipes`) — административная панель
+11. **Profile** (`/profile`) — профиль пользователя
+12. **Launch** (`/launch/{zoneId?}`) — единый мастер настройки зоны и запуска grow cycle; `/setup/wizard` редиректится сюда; `/cycles` редиректит на `/`
+
+**Дополнительные:**
+13. **Analytics** (`/analytics`)
+14. **Monitoring** (`/monitoring`) — статусы Python-сервисов, MQTT, БД (пункт меню «Сервисы»)
+15. **Logs** (`/logs`)
+16. **Audit** (`/audit`) — admin audit trail
+17. **Users** (`/users`) — admin user management
+18. **Plants** (`/plants`) — таксономия культур
+19. **Nutrients** (`/nutrients`) — справочник питательных продуктов
+20. **Documentation** (`/documentation/fertigation`, ...) — встроенные гайды
 
 ## 3.0a. Recipes (`/recipes`, `/recipes/create`, `/recipes/{id}/edit`)
 
@@ -90,14 +110,24 @@ Canonical recipe UX:
 
 # 3.1. Dashboard
 
-**Файл:** `Pages/Dashboard/Index.vue`
+**Файл:** `Pages/Dashboard/Index.vue` (Unified Dashboard, canonical в production)
 
 ### Реализация:
-- **Ролевые дашборды:** система автоматически показывает специализированный дашборд в зависимости от роли пользователя:
-  - `AgronomistDashboard` - для агрономов (фокус на рецептах и аналитике)
-  - `AdminDashboard` - для администраторов (полный контроль системы)
-  - `EngineerDashboard` - для инженеров (диагностика устройств)
-  - `OperatorDashboard` - для операторов (мониторинг зон)
+
+**Status: Unified Dashboard.** Production-UI — единый `Pages/Dashboard/Index.vue`, который рендерится одинаково для всех ролей. Контроллер: `UnifiedDashboardController` → `UnifiedDashboardService`. Доступ к действиям, видимость пунктов меню и колонок управляется через `useRole()` composable и `RoleBasedNavigation.vue`.
+
+### Status: planned / not implemented — отдельные ролевые дашборды
+
+Компоненты ролевых дашбордов **существуют в `Pages/Dashboard/Dashboards/`**:
+- `AgronomistDashboard.vue` — для агрономов (фокус на рецептах и аналитике)
+- `AdminDashboard.vue` — для администраторов (полный контроль системы)
+- `EngineerDashboard.vue` — для инженеров (диагностика устройств)
+- `OperatorDashboard.vue` — для операторов (мониторинг зон)
+- `ViewerDashboard.vue` — для зрителей (read-only)
+
+…но они **не подключены к маршрутам** и не используются в production. UI единый.
+
+Решение по будущему направлению (подключать ролевые дашборды или удалить файлы) — отдельная продуктовая задача. До принятия решения новый код **не должен ссылаться на ролевые дашборды как на canonical**; используйте Unified Dashboard + `useRole()`.
   - `ViewerDashboard` - для наблюдателей (только просмотр)
   - Дефолтный дашборд - для пользователей без роли
 
@@ -173,6 +203,28 @@ Canonical мастер запуска состоит из 5 manifest-driven ша
 ---
 
 # 3.3. Zone Detail – главный экран системы
+
+**Файл:** `Pages/Zones/Show.vue` + табы из `Pages/Zones/Tabs/`. Оркестратор — composable `useZoneShowPage.ts`.
+
+### Фактический набор табов в production (порядок в UI):
+
+1. **Цикл** (`ZoneCycleTab.vue`) — grow cycle, текущая фаза, controls (pause/resume/advance), irrigation/lighting overview
+2. **Телеметрия** (`ZoneTelemetryTab.vue`) — графики pH/EC/температуры/влажности (ECharts)
+3. **Автоматизация** (`ZoneAutomationTab.vue`) — PID config, correction setpoints, presets, live-edit для `config_mode='live'`
+4. **Планировщик** (`ZoneSchedulerTab.vue`) — AE3 Scheduler Cockpit causal chain
+5. **События** (`ZoneEventsTab.vue`) — лента zone_events с группировкой по causal context (`correction_window_id → task_id → snapshot_event_id/caused_by_event_id`)
+6. **Алерты** (`ZoneAlertsTab.vue`) — активные/исторические алерты зоны
+7. **Устройства** (`ZoneDevicesTab.vue`) — узлы зоны, pump calibration, sensor calibration
+
+Wizard редактирования automation profile (`ZoneAutomationEditWizard.vue`) запускается из таба «Автоматизация» как modal/full-screen flow.
+
+### Status: planned / not implemented
+
+Старая структура `[Header → Target vs Actual → Charts → Devices → Cycles → Actions → Events]` (§§3.3.1–3.3.6, 3.3.8 ниже) описывает дизайн до миграции на табы. Отдельные блоки `Target vs Actual`, `Cycles (расписание)`, `Actions (действия)` как самостоятельные секции на странице зоны **не существуют** — соответствующая функциональность переехала внутрь табов «Цикл» и «Автоматизация».
+
+«Service Mode» и «Apply Recipe» в header'е (см. §3.3.1) **не реализованы** как отдельные UI-controls — они интегрированы в Launch wizard (`/launch`) и табы автоматизации.
+
+Секции ниже сохранены как описание целевого UX-намерения и могут использоваться при будущих редизайнах. Реальная разметка — в файлах табов из `Pages/Zones/Tabs/`.
 
 ## 3.3.1. Верхний блок (Header)
 - Название зоны

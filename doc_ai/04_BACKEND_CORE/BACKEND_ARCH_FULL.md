@@ -1,6 +1,8 @@
 # BACKEND_ARCH_FULL.md
 # Полная архитектура Backend 2.0 (Детальный документ)
 
+**Дата обновления:** 2026-05-28 (sync: pipeline команд через history-logger; роли admin/operator/viewer/agronomist/engineer; scheduler chain).
+
 Документ описывает архитектуру backend-системы 2.0:
 
 - как устроены слои;
@@ -123,9 +125,9 @@ PostgreSQL
 
 ### 3.5. Users & Auth Module
 
-- Регистрация, авторизация (обычно JWT или Laravel Sanctum).
-- Роли и права: админ, оператор, гость и т.п.
-- Привязка пользователей к теплицам/зонам (мульти-арендная модель по желанию).
+- Регистрация, авторизация: **Laravel Sanctum** (session-cookie + Personal Access Token / Bearer). Passport / JWT в проекте не подключены.
+- Роли: `admin`, `operator`, `viewer`, `agronomist`, `engineer` (`User::AVAILABLE_ROLES`). Подробности — `../08_SECURITY_AND_OPS/AUTH_SYSTEM.md`.
+- Привязка пользователей к теплицам/зонам: таблицы `user_greenhouses` и `user_zones` (см. `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §9).
 
 ### 3.6. Integration & AI Module
 
@@ -157,13 +159,47 @@ PostgreSQL
 
 ### 4.3. Команды от пользователя к узлам
 
+Защищённый pipeline (инвариант, см. `../ARCHITECTURE_FLOWS.md`):
+
+```
+UI/Operator → Laravel Controller → PythonBridgeService → history-logger (POST /zones/{id}/commands)
+                                                                  ↓
+                                                            commands table
+                                                                  ↓
+                                                       MQTT (hydro/.../command)
+                                                                  ↓
+                                                              ESP32 nodes
+```
+
 1. Пользователь на UI вызывает действие (например, «включить насос на 10 секунд»).
-2. Backend:
- - валидирует права;
- - регистрирует намерение/команду в БД (таблица `commands`);
- - отдаёт Python-сервису (через очередь/Endpoint).
-3. Python-сервис публикует команду в MQTT в нужный топик.
-4. Результат исполнения (status/event) возвращается через БД/событие обратно на backend и UI.
+2. Laravel:
+   - валидирует права (Sanctum + role middleware + `ZonePolicy`);
+   - вычисляет HMAC-подпись через `App\Services\CommandSignatureService`;
+   - вызывает `App\Services\PythonBridgeService::sendCommand()` → `POST {history-logger}/zones/{id}/commands`.
+3. `history-logger` принимает payload, проверяет sanity caps, пересчитывает HMAC, публикует в MQTT, сохраняет lifecycle команды в `commands` (`status=QUEUED → SENT → ACK → DONE/...`).
+4. Нода исполняет команду и публикует `command_response`. `history-logger` обновляет `commands.status` и `command_acks`.
+5. AE3 reconcile терминальных статусов команд — через polling (`SequentialCommandGateway.recover_waiting_command`). Laravel Scheduler Cockpit получает обновления через `LISTEN ae_command_status` (+ webhook `ExecutionChainUpdated` для causal chain).
+
+### 4.4. Scheduler-dispatch chain (автоматические команды по расписанию)
+
+Полная цепочка (`backend/laravel/app/Services/AutomationScheduler/`):
+
+```
+Schedule::command('automation:dispatch-schedules')          (routes/console.php)
+  → SchedulerCycleService
+    → SchedulerCycleOrchestrator
+      → ScheduleLoader (zones + EffectiveTargets + active GrowCycle)
+      → ZoneScheduleItemBuilder + LightingScheduleParser
+      → ScheduleDispatcher
+          ├─ INSERT … ON CONFLICT в zone_automation_intents
+          └─ Http::pool → AE3 (POST /zones/{id}/start-cycle | start-irrigation | start-lighting-tick)
+              ↓
+          AE3 claim intent → ExecuteTaskUseCase → device-команды через history-logger
+```
+
+Терминальный sync intent после AE3: `AutomationIntentListener` слушает `scheduler_intent_terminal` (NOTIFY) + fallback `ActiveTaskPoller`. Headers Laravel→AE3: `Authorization: Bearer <token>`, `X-Trace-Id`, `X-Scheduler-Id`.
+
+**Прямой publish из Laravel или AE3 в MQTT запрещён.** История publish ведёт только `history-logger`.
 
 ---
 

@@ -826,7 +826,17 @@ Python сервисы должны регулярно обновлять targets
 
 ### 7.2. Default значения
 
-Если targets не заданы в recipe, используются default значения:
+**ВАЖНО (актуализация 2026-05-28, sync с AE3 runtime):**
+
+В **runtime AE3 (`ae3lite/`) defaults НЕ применяются**. Канон fail-closed:
+- `target_ph/min/max` и `target_ec/min/max` берутся **только** из active recipe phase (`grow_cycle_phases` / `recipe_revision_phases`);
+- если поле отсутствует, `runtime_plan_builder._resolve_phase_target` / `_collect_missing_paths` raise'ят `PlannerConfigurationError`, и task завершается с `error_code='ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL'`;
+- `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` **не могут** переопределять canonical pH/EC setpoints (см. §1 канон pH/EC targets);
+- hardcoded default targets в AE3 запрещены (см. `ae3lite.md` §5.3.4).
+
+Дефолты ниже остаются как **diagnostics/integration baseline** (legacy effective-targets API `POST /api/internal/effective-targets/batch` / `GET .../{zone_id}`) и используются Laravel при отсутствии активного цикла или для UI-подсказок. Status: **Reference defaults — used by Laravel diagnostic API only, NOT by AE3 runtime.**
+
+Если targets не заданы в recipe, integration API возвращает следующие baseline-значения (для AE3 runtime отсутствие target всё равно даёт fail-closed):
 
 ```json
 {

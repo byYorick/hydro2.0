@@ -526,7 +526,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - Калибровка pH — 2-3 точки (raw/value); EC — K-value + temperature compensation.
 - `fail_safe_guards` для `irrig` — **зеркало** значений из `zone.logic_profile`.
 - Узел обязан валидировать NodeConfig, применять локально и публиковать `config_report` как ACK.
-- HMAC подпись конфига — timestamp не старше 60 секунд (команды — не старше 30).
+- HMAC подпись команд: timestamp не старше **10 секунд** (firmware `HMAC_TIMESTAMP_TOLERANCE_SEC=10` и HL `_MAX_TIMESTAMP_SKEW_SEC=10`). HMAC подписи конфигов на ноде — целевое значение 60 секунд, но в актуальной прошивке config HMAC verify пока не реализован (Status: planned, см. `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md` §2.3.2).
 
 ### Безопасность
 
@@ -534,7 +534,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - OTA защищена: SHA256, версия, signed URL, HMAC запроса.
 - MQTT должен быть закрыт для внешних сетей; Wi-Fi — скрытый, WPA2/WPA3.
 - Pessimistic locking (`SELECT FOR UPDATE`) при публикации конфигов; PostgreSQL advisory lock для дедупликации; кэш-дедупликация 60 сек.
-- Rate limiting: 60 req/min/IP стандартно; регистрация узлов — 10 req/min/node_uid + burst 120/min/IP; IP whitelist (`services.node_registration.allowed_ips`).
+- Rate limiting: **120 req/min/IP стандартно** (production; `API_THROTTLE` env override); 300 req/min для system/health endpoints; auth endpoints — 10 req/min/IP + 5 неудачных попыток per email/IP; регистрация узлов — 10 req/min/node_uid + burst 120/min/IP; IP whitelist (`services.node_registration.allowed_ips`, массив CIDR/IP-строк после миграции 2026-05-28).
 - Docker network — `internal: true` для отключения внешней доступности.
 - **Роли/авторизацию (`auth/roles`) не менять** без явной необходимости и тестов.
 

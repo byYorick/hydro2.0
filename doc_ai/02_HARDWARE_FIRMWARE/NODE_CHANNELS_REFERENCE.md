@@ -14,7 +14,7 @@ Breaking-change: обратная совместимость со старыми
 
 Каждый канал описывается:
 
-- полем `channels.key` в БД;
+- полем `node_channels.channel` в БД (каноническая таблица — `node_channels`, см. `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §3.2);
 - типом (`SENSOR`, `ACTUATOR`, `VIRTUAL`);
 - типом данных (`float`, `int`, `bool`);
 - единицами измерения (для сенсоров);
@@ -626,7 +626,7 @@ Runtime-оговорка:
 
 1. Любой новый канал должен быть добавлен:
  - сюда;
- - в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` (таблица `channels`);
+ - в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §3.2 (таблица `node_channels`);
  - при необходимости — в NodeConfig прошивки.
 2. Нельзя использовать один и тот же ключ для разных физических значений.
 3. Для ИИ-агентов:

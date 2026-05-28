@@ -1,9 +1,26 @@
 # Спецификация ролевых интерфейсов UI/UX
 
-**Дата создания:** 2025-01-27  
-**Версия:** 1.0  
-**Статус:** Спецификация для реализации
+**Дата создания:** 2025-01-27
+**Дата обновления:** 2026-05-28 (status sync с реальной реализацией)
+**Версия:** 1.1
+**Статус:** Спецификация для будущего редизайна. Большая часть отдельных ролевых дашбордов и ролевых меню **не реализована** в production — см. блок Status ниже.
 
+> **Status: planned / not implemented (полный set ролевых dashboards):**
+> Отдельные ролевые компоненты `AgronomistDashboard.vue`, `AdminDashboard.vue`, `EngineerDashboard.vue`, `OperatorDashboard.vue`, `ViewerDashboard.vue` существуют в `resources/js/Pages/Dashboard/Dashboards/`, но **не подключены к маршрутам**. Production-UI — единый Unified Dashboard (`Pages/Dashboard/Index.vue`) для всех ролей.
+>
+> **Status: partially implemented (роль-based access):**
+> Реально работают:
+> - `useRole()` composable (`canEdit`, `canConfigureCycle`, `canManageCycle`, `canOperateCycles`, `canConfigureEntities`, `canOperateClimate`, `hasRole`)
+> - Фильтрация пунктов меню через `RoleBasedNavigation.vue` (общий массив + `roles?: string[]` filter на пункт)
+> - Условный рендеринг кнопок/действий внутри страниц через `useRole()`
+>
+> **Расхождения с этим документом, которые сохраняются как known issue (см. таблицу аудита):**
+> - Спецификация ниже описывает «отдельное меню per role» — в коде один общий nav array с per-item filter.
+> - Operator по спецификации управляет зонами и редактирует рецепты — реальная реализация: `/launch` доступен `admin`/`agronomist`/`engineer`, `/recipes` — `admin`/`agronomist`, operator исключён.
+> - Viewer по спецификации не видит Settings — в коде `/settings` доступен всем.
+> - Пункт «Система» (`/system`) в спецификации — в коде маршрута нет; ближайший аналог — `/monitoring` («Сервисы»).
+>
+> Конкретные пункты ниже сохранены как описание целевого UX-намерения. Когда продуктовая команда решит подключать ролевые дашборды или ужесточать role-based menus — этот документ становится отправной точкой.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.

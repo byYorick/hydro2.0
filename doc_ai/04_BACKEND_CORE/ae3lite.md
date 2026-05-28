@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.7-canonical
-**Дата:** 2026-05-14
-**Статус:** CANONICAL MINIMAL SPEC (+ Phase 5/5.5+ config modes locked/live in §6.6/7.5)
+**Версия:** 3.8-canonical
+**Дата:** 2026-05-28
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -42,13 +42,14 @@ AE3-Lite v1 не включает:
 3. `mist`
 4. `diagnostics` как отдельный productized runtime (compat через `start-cycle` допускается см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`)
 5. `recovery` как отдельный business task
-6. native `GET /zones/{id}/state`
-7. relay-autotune runtime как отдельный business task
-8. multi-replica runtime
-9. auto-canary router
-10. auto-rollback controller
-11. outbox/domain-events platform
-12. generic workflow framework
+6. relay-autotune runtime как отдельный business task (endpoint `POST /zones/{id}/start-relay-autotune` не реализован)
+7. multi-replica runtime
+8. auto-canary router
+9. auto-rollback controller
+10. outbox/domain-events platform
+11. generic workflow framework
+
+`GET /zones/{id}/state` доступен как internal operator endpoint (см. §7.4 и `runtime/app.py`), но не считается canonical ingress runtime path и не используется как single source of truth — UI обязан читать состояние из Laravel/SQL read-model.
 
 ---
 
@@ -251,20 +252,29 @@ Execution record внутри task:
 
 ### 4.2 Canonical task types
 
-В `v1` разрешены два business task:
+В `v1` разрешены business task'и (записи в `ae_tasks`):
 1. `cycle_start`
 2. `irrigation_start`
+3. `lighting_tick`
 
-Другие task types считаются out of scope и не должны появляться
-ни в migration, ни в API, ни в runtime wiring `v1`.
+Greenhouse climate runtime (`greenhouse_climate_tick`) исполняется отдельной таблицей `greenhouse_automation_tasks` (и lease в `greenhouse_automation_leases`), не в `ae_tasks` — см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`. Поэтому в DB CHECK constraint на `ae_tasks.task_type` лежат именно три значения выше.
+
+Другие task types считаются out of scope и не должны появляться ни в migration, ни в API, ни в runtime wiring `v1`.
 
 ### 4.3 Task statuses
 
 Main path:
 `pending -> claimed -> running -> waiting_command -> completed`
 
+Two-tank stage requeue (`running|claimed|waiting_command -> pending`) реализован атомарно методом `PgAutomationTaskRepository.update_stage(...)`: одна транзакция сбрасывает claim, обновляет `current_stage` и correction-поля (`corr_*`), переводит task в `pending`. Прежний метод `requeue_pending` снят. Любое `StageOutcome.transition/poll/enter_correction` от handler'а транслируется `WorkflowRouter` в `update_stage`.
+
 Terminal:
 `failed | cancelled`
+
+`cancelled` используется только для controlled abort:
+1. `control_mode_switched_to_manual` — переключение зоны в manual прерывает active task (см. `application/use_cases/set_control_mode.py`);
+2. явная отмена через operator API (`POST /zones/{id}/manual-step` с cancel-семантикой);
+3. экспирация lease на restart, если recovery определяет task как невосстановимую.
 
 Дополнительные статусы в `v1` не вводятся.
 
@@ -493,9 +503,9 @@ intent metadata и workflow state. Произвольный JSON в `payload` н
 для stage progression.
 
 Обязательные ограничения:
-1. `task_type IN ('cycle_start', 'irrigation_start')` для всех записей `v1`
-2. уникальность `idempotency_key` в допустимом scope
-3. не более одной активной task на `zone_id`
+1. `task_type IN ('cycle_start', 'irrigation_start', 'lighting_tick')` для всех записей `v1` (DB CHECK constraint, см. миграцию `2026_04_04_*`)
+2. уникальность `idempotency_key` в допустимом scope — scoped по `(zone_id, idempotency_key)` начиная с миграции `2026_03_17_131000_scope_idempotency_keys_by_zone.php`
+3. не более одной активной task на `zone_id` — partial unique index `ae_tasks_active_zone_unique` по `WHERE status IN ('pending','claimed','running','waiting_command')`
 4. terminal task не может вернуться в active status
 5. runtime state irrigation decision/replay хранится в explicit typed columns, а не в произвольном JSON `payload`
 6. correction runtime сохраняет causal snapshot context в explicit columns `corr_snapshot_*`, чтобы `EC_DOSING` / `PH_CORRECTED` могли ссылаться на конкретный `IRR_STATE_SNAPSHOT` после requeue/restart
@@ -819,43 +829,74 @@ Controlled stop выполняется вручную:
 
 ## 11. Минимальная кодовая структура
 
+Дерево актуально на 2026-05-28; точные имена файлов — в `backend/services/automation-engine/ae3lite/`.
+
 ```text
 backend/services/automation-engine/ae3lite/
 ├── api/
-│   ├── compat_endpoints.py
-│   └── internal_endpoints.py
+│   ├── compat_endpoints.py            # start-cycle / start-irrigation / start-lighting-tick
+│   ├── internal_endpoints.py          # GET /internal/tasks/{task_id}
+│   ├── greenhouse_climate_compat.py   # POST /greenhouses/{id}/start-climate-tick
+│   ├── security.py
+│   └── rate_limit.py
 ├── application/
-│   ├── adapters/
-│   │   └── <intent adapter>.py
-│   └── use_cases/
-│       ├── create_task_from_intent.py
-│       ├── claim_next_task.py
-│       ├── execute_task.py
-│       ├── reconcile_command.py
-│       └── finalize_task.py
-├── application/handlers/
-│   ├── await_ready.py
-│   ├── decision_gate.py
-│   ├── irrigation_check.py
-│   └── irrigation_recovery.py
+│   ├── use_cases/
+│   │   ├── create_task_from_intent.py
+│   │   ├── claim_next_task.py
+│   │   ├── execute_task.py
+│   │   ├── finalize_task.py
+│   │   ├── startup_recovery.py        # recovery после restart (включая waiting_command)
+│   │   ├── set_control_mode.py
+│   │   └── request_manual_step.py
+│   ├── handlers/                      # stage handlers: startup, *_fill_*, prepare_recirc_*,
+│   │                                  # await_ready, decision_gate, irrigation_*, correction,
+│   │                                  # base.py с _checkpoint hot-reload
+│   ├── services/
+│   │   ├── workflow_topology.py       # TWO_TANK graph (StageDef + transitions)
+│   │   ├── workflow_router.py         # запуск handler, перевод StageOutcome в update_stage
+│   │   ├── topology_registry.py
+│   │   └── correction_transition_policy.py
+│   └── adapters/                      # intent mapping
+├── config/
+│   ├── runtime_plan_builder.py        # resolve_two_tank_runtime_plan
+│   └── ...                            # Pydantic schemas, loaders
 ├── domain/
 │   ├── entities/
-│   │   ├── automation_task.py
+│   │   ├── automation_task.py         # AutomationTask + ACTIVE_TASK_STATUSES
 │   │   ├── planned_command.py
 │   │   ├── zone_lease.py
 │   │   └── zone_workflow.py
 │   ├── services/
 │   │   ├── cycle_start_planner.py
+│   │   ├── correction_planner.py
 │   │   └── irrigation_decision_controller.py
 │   ├── value_objects.py
-│   └── errors.py
+│   └── errors.py                      # ErrorCodes + domain exceptions
 ├── infrastructure/
 │   ├── repositories/
+│   │   ├── automation_task_repository.py    # claim/update_stage/mark_*/release_claim
+│   │   ├── zone_workflow_repository.py
+│   │   ├── zone_lease_repository.py
+│   │   ├── ae_command_repository.py
+│   │   └── pid_state_repository.py
 │   ├── gateways/
-│   └── read_models/
+│   │   └── sequential_command_gateway.py    # publish + recover_waiting_command polling
+│   ├── clients/
+│   │   └── history_logger_client.py
+│   ├── read_models/
+│   │   ├── zone_snapshot_read_model.py
+│   │   ├── task_status_read_model.py
+│   │   ├── zone_runtime_monitor.py
+│   │   └── laravel_schema_contract.py       # contract + NOTIFY_CHANNELS
+│   ├── intent_status_listener.py            # LISTEN scheduler_intent_terminal
+│   ├── zone_event_listener.py               # LISTEN ae_zone_event
+│   └── metrics.py
 ├── runtime/
-│   ├── worker.py
-│   └── recovery.py
+│   ├── worker.py                      # Ae3RuntimeWorker (drain loop, lease heartbeat)
+│   ├── bootstrap.py                   # build_ae3_runtime_bundle()
+│   ├── env.py                         # Ae3RuntimeConfig.from_env()
+│   └── app.py                         # create_app() / serve()
+├── greenhouse_climate/                # rule-based roof vent tick
 └── main.py
 ```
 
@@ -863,7 +904,8 @@ backend/services/automation-engine/ae3lite/
 1. один публичный use case или один публичный класс на файл
 2. без module-level mutable state
 3. DTO и domain objects не смешиваются
-4. compatibility code живёт только в adapter/facade слое (`application/adapters/`, фактическое имя модуля см. в репозитории)
+4. compatibility code живёт только в adapter/facade слое (`application/adapters/`)
+5. модулей `reconcile_command.py` и `runtime/recovery.py` в актуальном дереве **нет**: command reconcile реализован в `gateways/sequential_command_gateway.py::recover_waiting_command`, startup-recovery — в `use_cases/startup_recovery.py`.
 
 ---
 

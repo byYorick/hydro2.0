@@ -1,9 +1,9 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.4
-**Дата обновления:** 2026-05-14
-**Статус:** Актуально (канонично для runtime)
+**Версия:** 3.5
+**Дата обновления:** 2026-05-28
+**Статус:** Актуально (канонично для runtime; sync с кодом 2026-05-28: NOTIFY каналы, topology registry, runtime worker, endpoints)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
@@ -104,18 +104,24 @@ Laravel scheduler-dispatch модель:
 
 ### 3.3 Телеметрия и фидбек команд
 
-Основной transport:
-- PostgreSQL `LISTEN/NOTIFY` каналы:
-  - `ae_command_status`
-  - `ae_signal_update`
+Канонические `LISTEN/NOTIFY` каналы, на которые AE3 действительно подписывается (см. `ae3lite/infrastructure/read_models/laravel_schema_contract.py::NOTIFY_CHANNELS`):
+- `scheduler_intent_terminal` — terminal lifecycle intent от Laravel scheduler (`IntentStatusListener` → `worker.kick()`).
+- `ae_zone_event` — node runtime event (`level_switch_changed`, `storage_state/event`, e-stop), записанный history-logger'ом (`ZoneEventListener` → `worker.kick()`).
+
+Канал `ae_command_status` (триггер `trg_ae_command_status_notify` на `commands`) **не подписывается** AE3 — он остаётся как fast-path notification для других потребителей (Laravel scheduler cockpit, future консьюмеры). Reconcile terminal статусов команд для AE3 идёт исключительно через **polling**:
+- `SequentialCommandGateway.recover_waiting_command(...)` периодически читает `ae_commands` + `commands` с интервалом `AE_RECONCILE_POLL_INTERVAL_SEC` (default `0.5s`), bounded backoff x1.5, upper bound `5s`.
+- В `waiting_command` цикл polling крутится до terminal статуса либо до истечения stage deadline (`AE_MAX_TASK_EXECUTION_SEC`, default `900s`).
 
 Payload-contract:
-- `ae_command_status`: `cmd_id`, `zone_id`, `status`, `updated_at`;
-- `ae_signal_update`: `zone_id`, `kind`, `updated_at`.
+- `scheduler_intent_terminal`: `intent_id`, `zone_id`, `status` (terminal), `updated_at`.
+- `ae_zone_event`: `zone_id`, `event_type`, `event_id`, `created_at`.
 
-Обязательный fallback:
-- reconcile polling (`commands`, `telemetry_last`, `zone_events`).
-- при burst/перегрузке listener runtime переключается на polling-first до стабилизации.
+Status: AE3 listens — `scheduler_intent_terminal`, `ae_zone_event`. Status: NOT subscribed by AE3 — `ae_command_status`, `ae_signal_update` (зарезервированы за scheduler cockpit / Laravel; AE3 для команд использует polling).
+
+Обязательные правила:
+- reconcile polling (`commands`, `telemetry_last`, `zone_events`) обязателен независимо от NOTIFY — DB остаётся source of truth.
+- при burst/перегрузке runtime переключается на polling-first до стабилизации listener'а.
+- любой fast-path NOTIFY никогда не заменяет canonical DB read.
 
 Для production IRR two-tank runtime:
 - `storage_irrigation_node` публикует channel-level `level_* /event` с `event_code=level_switch_changed`;
@@ -159,10 +165,13 @@ Payload-contract:
 
 ## 4. Runtime-модель AE3
 
+Архитектура runtime — DB-backed drain loop, не per-zone runner:
 - один event loop на процесс;
-- один долгоживущий `ZoneRunner` на зону;
+- один `Ae3RuntimeWorker` (`ae3lite/runtime/worker.py`) на процесс выполняет drain loop по `ae_tasks`: `claim_next_pending` (FOR UPDATE SKIP LOCKED) → `ZoneLease.claim` → `ExecuteTaskUseCase.run()` → terminal или requeue через `update_stage`;
+- per-zone изоляция обеспечивается **только** комбинацией partial unique index `ae_tasks_active_zone_unique` и `ae_zone_leases` (а не отдельным процессом/таском на зону);
 - последовательное исполнение шагов: `send -> await terminal -> next`;
-- переход на следующий шаг только при `DONE`.
+- переход на следующий шаг только при `DONE`;
+- worker продлевает lease heartbeat и при потере lease отменяет run с `ae3_zone_lease_lost`.
 
 ### 4.1 Режимы управления
 
@@ -171,12 +180,17 @@ Payload-contract:
 - `semi`
 - `manual`
 
-### 4.2 Two-tank scope
+### 4.2 Topology registry (zone workflows)
 
-Поддерживаемая топология runtime v1:
-- только `two_tank`.
+Реальный registry задан в `ae3lite/application/services/workflow_topology.py` и `topology_registry.py`. Поддерживаемые topology для `ae_tasks`:
+- `two_tank_drip_substrate_trays` — production two-tank workflow (`TWO_TANK` graph);
+- `two_tank` — алиас к `two_tank_drip_substrate_trays` (compat);
+- `generic_cycle_start` — облегчённый cycle_start для зон без two-tank (`single_tank`/`single_tank_drip`);
+- `lighting_tick` — workflow для `task_type='lighting_tick'`.
 
-Фазы:
+Greenhouse climate (`task_type='greenhouse_climate_tick'`) исполняется отдельным runtime path (`ae3lite/greenhouse_climate/`) и не использует topology registry зоны.
+
+Фазы two-tank (стадии графа агрегируются в `workflow_phase`):
 - `idle -> tank_filling -> tank_recirc -> ready -> irrigating <-> irrig_recirc`.
 
 ---
@@ -187,16 +201,18 @@ AE runtime читает данные напрямую из PostgreSQL:
 - `zones`, `nodes`, `node_channels`, `infrastructure_instances`, `channel_bindings`;
 - `grow_cycles`, `grow_cycle_phases`;
 - `automation_effective_bundles`;
-- `automation_config_violations`;
 - `telemetry_last`, `telemetry_samples`;
-- `commands`, `zone_events`, `zone_workflow_state`, `pid_state`.
+- `commands`, `zone_events`, `zone_workflow_state`, `pid_state`;
+- `ae_tasks`, `ae_commands`, `ae_zone_leases`, `ae_stage_transitions`;
+- `zone_automation_intents` (для claim из Laravel scheduler).
 
 Канонический runtime-конфиг:
 - authority state живёт в `automation_config_documents`;
 - runtime не читает raw documents на hot path;
-- runtime использует compiled bundle по `grow_cycles.settings.bundle_revision`.
+- runtime использует compiled bundle по `grow_cycles.settings.bundle_revision`;
+- `automation_config_violations` поддерживается на стороне Laravel compiler, но AE3 runtime его на hot path не читает: фактический mismatch bundle ловится через `ZoneSnapshotReadModel` (raise `ae3_snapshot_bundle_invalid`/`ae3_snapshot_bundle_missing`).
 
-Compile precedence:
+Compile precedence (для Laravel compiler):
 `system.* -> zone.* -> cycle.*`
 
 Требования:
@@ -210,15 +226,27 @@ Compile precedence:
 
 ### 6.1 Канонические endpoint-ы
 
+Wake-up / ingress:
 - `POST /zones/{id}/start-cycle`
 - `POST /zones/{id}/start-irrigation`
 - `POST /zones/{id}/start-lighting-tick`
+- `POST /greenhouses/{id}/start-climate-tick`
+
+Internal / status:
+- `GET /internal/tasks/{task_id}` — canonical task status
+
+Operator-уровень (см. `runtime/app.py`):
 - `GET /zones/{id}/state`
+- `GET /zones/{id}/control-mode`
 - `POST /zones/{id}/control-mode`
 - `POST /zones/{id}/manual-step`
-- `POST /zones/{id}/start-relay-autotune`
+
+Ops:
 - `GET /health/live`
 - `GET /health/ready`
+- `/metrics/` — Prometheus ASGI mount
+
+Status: **planned / not implemented** — `POST /zones/{id}/start-relay-autotune` (relay-autotune остаётся out of scope для v1, см. `ae3lite.md` §1).
 
 ### 6.2 Удаленные endpoint-ы
 
