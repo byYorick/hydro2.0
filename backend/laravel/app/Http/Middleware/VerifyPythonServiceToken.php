@@ -27,7 +27,9 @@ class VerifyPythonServiceToken
         // personal_access_tokens, что делает внутренние API зависимыми от БД даже
         // когда достаточно статического service token.
         $pyApiToken = Config::get('services.python_bridge.token');
-        $laravelApiToken = env('LARAVEL_API_TOKEN');
+        // S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): через config(), а не env() —
+        // совместимость с `php artisan config:cache` в production.
+        $laravelApiToken = Config::get('services.python_bridge.laravel_api_token');
         $providedToken = $request->bearerToken();
 
         if ($providedToken) {

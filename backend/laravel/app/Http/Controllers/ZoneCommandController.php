@@ -203,11 +203,16 @@ class ZoneCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
+            /*
+             * S1.6 (AUDIT_2026_05_28_BUGFIX_PLAN): не возвращаем
+             * `$e->getMessage()` в response — может содержать внутренние пути или
+             * детали реализации. Сообщение остаётся в Log::warning для
+             * отладки.
+             */
             return response()->json([
                 'status' => 'error',
                 'code' => 'INVALID_ARGUMENT',
-                'message' => $e->getMessage(),
-                'details' => $e->getMessage(),
+                'message' => 'Command argument is invalid. See logs for details.',
             ], 422);
         } catch (\Exception $e) {
             Log::error('ZoneCommandController: Unexpected error', [
@@ -218,11 +223,11 @@ class ZoneCommandController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            // S1.6: не возвращаем raw exception message клиенту.
             return response()->json([
                 'status' => 'error',
                 'code' => 'INTERNAL_ERROR',
                 'message' => 'An unexpected error occurred while sending the command.',
-                'details' => $e->getMessage(),
             ], 500);
         }
     }

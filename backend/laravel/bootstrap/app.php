@@ -39,14 +39,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Rate limiting для регистрации нод будет настроен в AppServiceProvider
 
-        // Rate Limiting для API роутов
-        // Стандартный лимит: 120 запросов в минуту для всех API роутов
-        // Более строгие лимиты применяются на уровне отдельных роутов
-        // Увеличен для поддержки множественных компонентов на одной странице
-        $defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
-            ? '1000,1'
-            : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
-        $apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
+        // Rate Limiting для API роутов.
+        // S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): значения вынесены в
+        // `config/services.php` секцию `api.throttle_default`, чтобы
+        // поддерживать `php artisan config:cache` в production.
+        $apiThrottle = config('services.api.throttle_default', '120,1');
         $middleware->api(prepend: [
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);

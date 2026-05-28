@@ -16,10 +16,20 @@ def client():
 
 @pytest.fixture(autouse=True)
 def bypass_ingest_auth():
-    """Disable auth for ingest endpoint tests."""
-    with patch("ingest_routes._auth_ingest") as mock_auth:
-        mock_auth.return_value = None
-        yield mock_auth
+    """Disable auth for ingest / internal metrics / DLQ endpoint tests.
+
+    Auth-функция `_auth_ingest` импортируется в три модуля (`ingest_routes`,
+    `command_routes`, `system_routes`); чтобы не дёргать токен в тестах,
+    патчим все три места. Реальная auth-логика покрыта отдельными тестами в
+    `test_auth.py`.
+    """
+    with patch("ingest_routes._auth_ingest") as mock_ingest, \
+         patch("system_routes._auth_ingest") as mock_system, \
+         patch("command_routes._auth_ingest") as mock_command:
+        mock_ingest.return_value = None
+        mock_system.return_value = None
+        mock_command.return_value = None
+        yield mock_ingest
 
 
 def test_health_endpoint(client):

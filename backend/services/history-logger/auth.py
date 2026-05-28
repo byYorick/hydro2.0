@@ -1,3 +1,4 @@
+import hmac
 import logging
 import os
 import time
@@ -8,6 +9,18 @@ from fastapi import HTTPException, Request
 
 from common.env import get_settings
 from metrics import INGEST_AUTH_FAILED
+
+
+def _tokens_equal(provided: str, expected: str) -> bool:
+    """Timing-safe сравнение Bearer-токенов.
+
+    Использует ``hmac.compare_digest``, чтобы исключить timing side-channel при
+    проверке `Authorization: Bearer …` против ожидаемого значения. Также безопасен
+    для пустых/None входов.
+    """
+    if not provided or not expected:
+        return False
+    return hmac.compare_digest(provided, expected)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +55,7 @@ def _auth_ingest(request: Request) -> None:
         token = request.headers.get("Authorization", "")
         expected_token = f"Bearer {s.history_logger_api_token}"
 
-        if token != expected_token:
+        if not _tokens_equal(token, expected_token):
             client_ip = request.client.host if request.client else "unknown"
             logger.warning(
                 "Invalid or missing token for HTTP ingest in production: "
@@ -59,7 +72,7 @@ def _auth_ingest(request: Request) -> None:
         token = request.headers.get("Authorization", "")
         expected_token = f"Bearer {s.history_logger_api_token}"
 
-        if token != expected_token:
+        if not _tokens_equal(token, expected_token):
             client_ip = request.client.host if request.client else "unknown"
             logger.warning(
                 "Invalid or missing token for HTTP ingest: "

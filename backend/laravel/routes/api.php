@@ -57,11 +57,11 @@ use App\Http\Controllers\ZoneRelayAutotuneController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-$defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
-    ? '1000,1'
-    : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
-$apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
-$internalApiThrottle = env('INTERNAL_API_THROTTLE', $apiThrottle);
+// S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): throttle-значения теперь читаются из
+// config-слоя (`services.api.throttle_default` / `throttle_internal`), что
+// поддерживает `php artisan config:cache` в production.
+$apiThrottle = config('services.api.throttle_default', '120,1');
+$internalApiThrottle = config('services.api.throttle_internal', $apiThrottle);
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {

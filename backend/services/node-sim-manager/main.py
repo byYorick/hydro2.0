@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import os
 import subprocess
@@ -20,6 +21,61 @@ install_exception_handlers("node-sim-manager")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Node Sim Manager")
+
+# S1.3 (AUDIT_2026_05_28_BUGFIX_PLAN): authorization для /sessions/* endpoints.
+# Сервис стартует subprocess из произвольного YAML payload, без auth доступ
+# равнозначен RCE на уровне сети. Токен берётся из `NODE_SIM_MANAGER_TOKEN`,
+# который уже используется Laravel-клиентом `NodeSimManagerClient`.
+NODE_SIM_MANAGER_TOKEN = os.getenv("NODE_SIM_MANAGER_TOKEN")
+
+
+def _require_session_token(request: Request) -> None:
+    """Проверка Bearer-токена для mutating /sessions/* endpoints.
+
+    - в production токен обязателен;
+    - в dev без токена допускается только localhost;
+    - сравнение токенов через `hmac.compare_digest` (timing-safe).
+    """
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
+
+    if NODE_SIM_MANAGER_TOKEN:
+        provided = request.headers.get("Authorization", "")
+        expected = f"Bearer {NODE_SIM_MANAGER_TOKEN}"
+        if not provided or not hmac.compare_digest(provided, expected):
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                "node-sim-manager: rejected request without valid token",
+                extra={"client_ip": client_ip, "path": str(request.url.path)},
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: node-sim-manager API token required",
+            )
+        return
+
+    if is_prod:
+        logger.error(
+            "NODE_SIM_MANAGER_TOKEN must be set in production environment"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: node-sim-manager token not configured",
+        )
+
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in {"127.0.0.1", "::1", "localhost"}:
+        logger.warning(
+            "node-sim-manager: rejected non-localhost request without token (dev mode)",
+            extra={"client_ip": client_ip, "path": str(request.url.path)},
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Unauthorized: token required. Set NODE_SIM_MANAGER_TOKEN "
+                "environment variable."
+            ),
+        )
 
 
 @app.middleware("http")
@@ -141,7 +197,8 @@ def _start_process(config_path: Path, log_level_override: str) -> subprocess.Pop
 
 
 @app.post("/sessions/start", response_model=SessionResponse)
-async def start_session(request: StartSessionRequest) -> SessionResponse:
+async def start_session(request: StartSessionRequest, http_request: Request) -> SessionResponse:
+    _require_session_token(http_request)
     if not request.nodes:
         raise HTTPException(status_code=400, detail="nodes list is required")
 
@@ -177,7 +234,8 @@ async def start_session(request: StartSessionRequest) -> SessionResponse:
 
 
 @app.post("/sessions/stop", response_model=SessionResponse)
-async def stop_session(request: StopSessionRequest) -> SessionResponse:
+async def stop_session(request: StopSessionRequest, http_request: Request) -> SessionResponse:
+    _require_session_token(http_request)
     async with _sessions_lock:
         session = _sessions.get(request.session_id)
         if not session:
@@ -203,7 +261,8 @@ async def stop_session(request: StopSessionRequest) -> SessionResponse:
 
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str) -> SessionResponse:
+async def get_session(session_id: str, http_request: Request) -> SessionResponse:
+    _require_session_token(http_request)
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")

@@ -13,14 +13,42 @@ class PipelineMetricsService
         return config('services.history_logger.url', 'http://history-logger:9300');
     }
 
+    private static function historyLoggerToken(): ?string
+    {
+        $token = config('services.history_logger.token');
+
+        return is_string($token) && $token !== '' ? $token : null;
+    }
+
+    /**
+     * Builds an Http client with Bearer token if token is configured.
+     *
+     * History-logger `/internal/metrics/*` endpoints требуют auth начиная с
+     * S1.1 в `AUDIT_2026_05_28_BUGFIX_PLAN.md`. Если токен не задан (legacy
+     * dev-окружение), запросы уйдут без Authorization — HL допускает это для
+     * localhost dev-режима.
+     */
+    private static function buildHttpClient(float $timeoutSeconds, bool $async = false)
+    {
+        $client = $async ? Http::async() : Http::pendingRequest();
+        $client = $client->timeout($timeoutSeconds);
+
+        $token = self::historyLoggerToken();
+        if ($token !== null) {
+            $client = $client->withToken($token);
+        }
+
+        return $client;
+    }
+
     private static function postInternalMetric(string $path, array $payload, float $timeoutSeconds = 1.0): void
     {
-        Http::timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+        self::buildHttpClient($timeoutSeconds, false)->post(self::historyLoggerUrl().$path, $payload);
     }
 
     private static function postInternalMetricAsync(string $path, array $payload, float $timeoutSeconds = 1.0): void
     {
-        Http::async()->timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+        self::buildHttpClient($timeoutSeconds, true)->post(self::historyLoggerUrl().$path, $payload);
     }
 
     public static function trackWsBroadcast(string $eventType): void

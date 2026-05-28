@@ -105,7 +105,21 @@ return [
         ),
     ],
 
-    'node_default_secret' => env('NODE_DEFAULT_SECRET', 'hydro-default-secret-key-2025'),
+    /*
+    | S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN): убран hardcoded дефолт
+    | "hydro-default-secret-key-2025" из production-конфига. Если ENV
+    | NODE_DEFAULT_SECRET не задан:
+    |   - dev/testing/local: используется legacy default через `??` fallback
+    |     в потребителях (`ConfigSignatureService`, `CommandSignatureService`,
+    |     `NodeConfigService`).
+    |   - production: возвращается null; потребители fallback'ятся на
+    |     `config('app.key')`, который должен быть случайным per-instance.
+    */
+    'node_default_secret' => env('NODE_DEFAULT_SECRET',
+        in_array(env('APP_ENV', 'production'), ['production', 'prod'], true)
+            ? null
+            : 'hydro-default-secret-key-2025'
+    ),
 
     /*
     |--------------------------------------------------------------------------

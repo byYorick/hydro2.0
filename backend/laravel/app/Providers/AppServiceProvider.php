@@ -34,8 +34,12 @@ class AppServiceProvider extends ServiceProvider
         // Регистрация DigitalTwinClient
         $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {
             $baseUrl = config('services.digital_twin.url', 'http://digital-twin:8003');
+            $token = config('services.digital_twin.token');
 
-            return new \App\Services\DigitalTwinClient($baseUrl);
+            return new \App\Services\DigitalTwinClient(
+                $baseUrl,
+                is_string($token) && $token !== '' ? $token : null,
+            );
         });
 
         $this->app->singleton(\App\Services\NodeSimManagerClient::class, function ($app) {

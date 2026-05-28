@@ -132,13 +132,17 @@ def _auth(request: Request):
     Проверка токена аутентификации.
     В production токен обязателен всегда, без исключений для внутренних IP.
     В dev окружении разрешаем внутренние запросы без токена только если токен не настроен.
+
+    S1.4 (AUDIT_2026_05_28_BUGFIX_PLAN): сравнение токена через
+    `hmac.compare_digest` (timing-safe), чтобы исключить side-channel при
+    подборе токена через измерение времени ответа.
     """
     s = get_settings()
-    
+
     # Проверяем окружение
     app_env = os.getenv("APP_ENV", "").lower().strip()
     is_prod = app_env in ("production", "prod") and app_env != ""
-    
+
     # В production токен обязателен всегда
     if is_prod:
         if not s.bridge_api_token:
@@ -147,9 +151,10 @@ def _auth(request: Request):
                 status_code=500,
                 detail="Server configuration error: API token not configured"
             )
-        
+
         token = request.headers.get("Authorization", "")
-        if token != f"Bearer {s.bridge_api_token}":
+        expected = f"Bearer {s.bridge_api_token}"
+        if not token or not hmac.compare_digest(token, expected):
             client_ip = request.client.host if request.client else "unknown"
             logger.warning(
                 f"Invalid or missing token in production: token_present={bool(token)}, "
@@ -160,12 +165,13 @@ def _auth(request: Request):
                 detail="Unauthorized: token required in production"
             )
         return
-    
+
     # В dev окружении: если токен настроен, он обязателен
     # Если токен не настроен, разрешаем только localhost (не все внутренние IP)
     if s.bridge_api_token:
         token = request.headers.get("Authorization", "")
-        if token != f"Bearer {s.bridge_api_token}":
+        expected = f"Bearer {s.bridge_api_token}"
+        if not token or not hmac.compare_digest(token, expected):
             logger.warning(f"Invalid or missing token: token_present={bool(token)}")
             raise HTTPException(
                 status_code=401,

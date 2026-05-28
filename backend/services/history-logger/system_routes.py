@@ -1,10 +1,11 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
+from auth import _auth_ingest
 from common.alert_queue import get_alert_queue
 from common.command_status_queue import get_status_queue
 from common.infra_monitor import check_db_health, check_mqtt_health
@@ -159,9 +160,10 @@ def metrics():
 
 
 @router.post("/internal/metrics/ws-broadcast")
-async def ws_broadcast_metrics(payload: WsBroadcastMetricPayload):
+async def ws_broadcast_metrics(payload: WsBroadcastMetricPayload, request: Request):
     """Increment WebSocket broadcast counter."""
-    return await ws_event_metrics(
+    _auth_ingest(request)
+    return await _record_ws_event(
         WsEventMetricPayload(
             event_type=payload.event_type,
             count=1,
@@ -170,9 +172,10 @@ async def ws_broadcast_metrics(payload: WsBroadcastMetricPayload):
 
 
 @router.post("/internal/metrics/ws-auth")
-async def ws_auth_metrics(payload: WsAuthMetricPayload):
+async def ws_auth_metrics(payload: WsAuthMetricPayload, request: Request):
     """Increment WebSocket channel authorization counter."""
-    return await ws_event_metrics(
+    _auth_ingest(request)
+    return await _record_ws_event(
         WsEventMetricPayload(
             channel_type=payload.channel_type,
             result=payload.result,
@@ -182,8 +185,14 @@ async def ws_auth_metrics(payload: WsAuthMetricPayload):
 
 
 @router.post("/internal/metrics/ws-event")
-async def ws_event_metrics(payload: WsEventMetricPayload):
+async def ws_event_metrics(payload: WsEventMetricPayload, request: Request):
     """Increment WebSocket broadcast/auth counters via unified payload."""
+    _auth_ingest(request)
+    return await _record_ws_event(payload)
+
+
+async def _record_ws_event(payload: WsEventMetricPayload):
+    """Internal helper для записи WS-метрик без auth check (auth выполнен в роутере)."""
     try:
         if payload.event_type:
             WS_BROADCAST_TOTAL.labels(event_type=payload.event_type).inc(payload.count)
@@ -208,8 +217,9 @@ async def ws_event_metrics(payload: WsEventMetricPayload):
 
 
 @router.post("/internal/metrics/command-latency")
-async def command_latency_metrics(payload: CommandLatencyMetricPayload):
+async def command_latency_metrics(payload: CommandLatencyMetricPayload, request: Request):
     """Accept command latency metrics from Laravel and map to Prometheus histograms."""
+    _auth_ingest(request)
     try:
         metrics = payload.metrics if isinstance(payload.metrics, dict) else {}
         sent_to_ack = metrics.get("sent_to_accepted_seconds")
@@ -231,8 +241,9 @@ async def command_latency_metrics(payload: CommandLatencyMetricPayload):
 
 
 @router.post("/internal/metrics/error-delivery-latency")
-async def error_delivery_latency_metrics(payload: ErrorDeliveryLatencyMetricPayload):
+async def error_delivery_latency_metrics(payload: ErrorDeliveryLatencyMetricPayload, request: Request):
     """Accept error delivery latency metrics from Laravel and map to Prometheus histograms."""
+    _auth_ingest(request)
     try:
         metrics = payload.metrics if isinstance(payload.metrics, dict) else {}
         mqtt_to_laravel = metrics.get("mqtt_to_laravel_seconds")
@@ -254,8 +265,9 @@ async def error_delivery_latency_metrics(payload: ErrorDeliveryLatencyMetricPayl
 
 
 @router.get("/api/dlq/alerts")
-async def list_alerts_dlq(limit: int = 100, offset: int = 0):
+async def list_alerts_dlq(request: Request, limit: int = 100, offset: int = 0):
     """Получить список элементов из DLQ алертов."""
+    _auth_ingest(request)
     try:
         alert_queue = await get_alert_queue()
         items = await alert_queue.list_dlq(limit=limit, offset=offset)
@@ -273,8 +285,9 @@ async def list_alerts_dlq(limit: int = 100, offset: int = 0):
 
 
 @router.post("/api/dlq/alerts/{dlq_id}/replay")
-async def replay_alert_dlq(dlq_id: int):
+async def replay_alert_dlq(dlq_id: int, request: Request):
     """Переместить элемент из DLQ алертов обратно в очередь для повторной попытки."""
+    _auth_ingest(request)
     try:
         alert_queue = await get_alert_queue()
         success = await alert_queue.replay_dlq_item(dlq_id)
@@ -294,8 +307,9 @@ async def replay_alert_dlq(dlq_id: int):
 
 
 @router.delete("/api/dlq/alerts/{dlq_id}")
-async def purge_alert_dlq_item(dlq_id: int):
+async def purge_alert_dlq_item(dlq_id: int, request: Request):
     """Удалить элемент из DLQ алертов."""
+    _auth_ingest(request)
     try:
         alert_queue = await get_alert_queue()
         success = await alert_queue.purge_dlq_item(dlq_id)
@@ -312,8 +326,9 @@ async def purge_alert_dlq_item(dlq_id: int):
 
 
 @router.delete("/api/dlq/alerts")
-async def purge_all_alerts_dlq():
+async def purge_all_alerts_dlq(request: Request):
     """Удалить все элементы из DLQ алертов."""
+    _auth_ingest(request)
     try:
         alert_queue = await get_alert_queue()
         count = await alert_queue.purge_dlq_all()
@@ -325,8 +340,9 @@ async def purge_all_alerts_dlq():
 
 
 @router.get("/api/dlq/status-updates")
-async def list_status_updates_dlq(limit: int = 100, offset: int = 0):
+async def list_status_updates_dlq(request: Request, limit: int = 100, offset: int = 0):
     """Получить список элементов из DLQ статусов команд."""
+    _auth_ingest(request)
     try:
         status_queue = await get_status_queue()
         items = await status_queue.list_dlq(limit=limit, offset=offset)
@@ -344,8 +360,9 @@ async def list_status_updates_dlq(limit: int = 100, offset: int = 0):
 
 
 @router.post("/api/dlq/status-updates/{dlq_id}/replay")
-async def replay_status_update_dlq(dlq_id: int):
+async def replay_status_update_dlq(dlq_id: int, request: Request):
     """Переместить элемент из DLQ статусов команд обратно в очередь для повторной попытки."""
+    _auth_ingest(request)
     try:
         status_queue = await get_status_queue()
         success = await status_queue.replay_dlq_item(dlq_id)
@@ -367,8 +384,9 @@ async def replay_status_update_dlq(dlq_id: int):
 
 
 @router.delete("/api/dlq/status-updates/{dlq_id}")
-async def purge_status_update_dlq_item(dlq_id: int):
+async def purge_status_update_dlq_item(dlq_id: int, request: Request):
     """Удалить элемент из DLQ статусов команд."""
+    _auth_ingest(request)
     try:
         status_queue = await get_status_queue()
         success = await status_queue.purge_dlq_item(dlq_id)
@@ -390,8 +408,9 @@ async def purge_status_update_dlq_item(dlq_id: int):
 
 
 @router.delete("/api/dlq/status-updates")
-async def purge_all_status_updates_dlq():
+async def purge_all_status_updates_dlq(request: Request):
     """Удалить все элементы из DLQ статусов команд."""
+    _auth_ingest(request)
     try:
         status_queue = await get_status_queue()
         count = await status_queue.purge_dlq_all()
@@ -403,8 +422,9 @@ async def purge_all_status_updates_dlq():
 
 
 @router.get("/api/dlq/metrics")
-async def get_dlq_metrics():
+async def get_dlq_metrics(request: Request):
     """Получить метрики всех DLQ очередей."""
+    _auth_ingest(request)
     try:
         alert_queue = await get_alert_queue()
         status_queue = await get_status_queue()
