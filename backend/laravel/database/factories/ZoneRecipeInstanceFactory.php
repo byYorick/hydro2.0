@@ -2,9 +2,9 @@
 
 namespace Database\Factories;
 
-use App\Models\ZoneRecipeInstance;
-use App\Models\Zone;
 use App\Models\Recipe;
+use App\Models\Zone;
+use App\Models\ZoneRecipeInstance;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -24,4 +24,3 @@ class ZoneRecipeInstanceFactory extends Factory
         ];
     }
 }
-

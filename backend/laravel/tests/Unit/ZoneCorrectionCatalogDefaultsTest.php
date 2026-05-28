@@ -97,6 +97,7 @@ class ZoneCorrectionCatalogDefaultsTest extends TestCase
             if (is_array($expectedValue)) {
                 $this->assertIsArray($actual[$key], "'{$currentPath}' must be an array");
                 $this->assertSameRecursive($expectedValue, $actual[$key], $currentPath);
+
                 continue;
             }
 
@@ -107,6 +108,7 @@ class ZoneCorrectionCatalogDefaultsTest extends TestCase
                     1e-9,
                     "Float mismatch at '{$currentPath}'"
                 );
+
                 continue;
             }
 

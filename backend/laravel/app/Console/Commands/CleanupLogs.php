@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
 use Illuminate\Console\Command as ConsoleCommand;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class CleanupLogs extends ConsoleCommand
 {
@@ -33,21 +33,22 @@ class CleanupLogs extends ConsoleCommand
                 ) as exists",
                 [$table]
             );
-            
+
             // Проверяем результат (может быть boolean или объект с полем exists)
-            $exists = is_bool($tableExists) 
-                ? $tableExists 
+            $exists = is_bool($tableExists)
+                ? $tableExists
                 : ($tableExists->exists ?? false);
-            
-            if (!$exists) {
+
+            if (! $exists) {
                 $this->warn("  {$table}: таблица не существует, пропущена");
+
                 continue;
             }
-            
+
             $deleted = DB::table($table)
                 ->where('created_at', '<', $cutoffDate)
                 ->delete();
-            
+
             $this->info("  {$table}: удалено {$deleted} записей");
             $totalDeleted += $deleted;
         }
@@ -67,17 +68,18 @@ class CleanupLogs extends ConsoleCommand
                     ) as exists",
                     [$table]
                 );
-                
+
                 // Проверяем результат (может быть boolean или объект с полем exists)
-                $exists = is_bool($tableExists) 
-                    ? $tableExists 
+                $exists = is_bool($tableExists)
+                    ? $tableExists
                     : ($tableExists->exists ?? false);
-                
-                if (!$exists) {
+
+                if (! $exists) {
                     $this->warn("  {$table}: таблица не существует, пропущена");
+
                     continue;
                 }
-                
+
                 try {
                     DB::statement("VACUUM ANALYZE {$table};");
                     $this->info("  {$table}: VACUUM выполнен");
@@ -89,7 +91,7 @@ class CleanupLogs extends ConsoleCommand
         }
 
         $this->info('Очистка завершена.');
+
         return ConsoleCommand::SUCCESS;
     }
 }
-

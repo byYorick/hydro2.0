@@ -4,8 +4,8 @@ namespace Tests\Unit\Services;
 
 use App\Models\DeviceNode;
 use App\Services\ConfigPublishLockService;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ConfigPublishLockServiceTest extends TestCase
@@ -17,15 +17,15 @@ class ConfigPublishLockServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
-        $this->service = new ConfigPublishLockService();
+
+        $this->service = new ConfigPublishLockService;
         Cache::flush();
     }
 
     public function test_acquire_optimistic_lock_returns_node_and_version(): void
     {
         $node = DeviceNode::factory()->create();
-        
+
         $lock = $this->service->acquireOptimisticLock($node);
 
         $this->assertNotNull($lock);
@@ -39,7 +39,7 @@ class ConfigPublishLockServiceTest extends TestCase
     {
         $node = DeviceNode::factory()->create();
         $lock = $this->service->acquireOptimisticLock($node);
-        
+
         $isValid = $this->service->checkOptimisticLock($node, $lock['version']);
 
         $this->assertTrue($isValid);
@@ -49,13 +49,13 @@ class ConfigPublishLockServiceTest extends TestCase
     {
         $node = DeviceNode::factory()->create();
         $lock = $this->service->acquireOptimisticLock($node);
-        
+
         // Simulate node update - обновляем в БД с небольшой задержкой
         // чтобы гарантировать изменение timestamp
         sleep(1);
         $node->touch();
         $node->refresh(); // Обновляем модель из БД, чтобы получить новую версию
-        
+
         $isValid = $this->service->checkOptimisticLock($node, $lock['version']);
 
         $this->assertFalse($isValid);
@@ -75,9 +75,9 @@ class ConfigPublishLockServiceTest extends TestCase
     {
         $node = DeviceNode::factory()->create();
         $configHash = hash('sha256', 'test_config');
-        
+
         $this->service->markAsPublished($node, $configHash);
-        
+
         $isDuplicate = $this->service->isDuplicate($node, $configHash);
 
         $this->assertTrue($isDuplicate);
@@ -87,11 +87,10 @@ class ConfigPublishLockServiceTest extends TestCase
     {
         $node = DeviceNode::factory()->create();
         $configHash = hash('sha256', 'test_config');
-        
+
         $this->service->markAsPublished($node, $configHash, 60);
-        
+
         $cacheKey = "config_publish:{$node->id}:{$configHash}";
         $this->assertTrue(Cache::has($cacheKey));
     }
 }
-

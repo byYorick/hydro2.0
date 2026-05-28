@@ -8,18 +8,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes')) {
             return;
         }
 
         Schema::table('nodes', function (Blueprint $table) {
-            if (!Schema::hasColumn('nodes', 'error_count')) {
+            if (! Schema::hasColumn('nodes', 'error_count')) {
                 $table->unsignedInteger('error_count')->default(0)->after('rssi');
             }
-            if (!Schema::hasColumn('nodes', 'warning_count')) {
+            if (! Schema::hasColumn('nodes', 'warning_count')) {
                 $table->unsignedInteger('warning_count')->default(0)->after('error_count');
             }
-            if (!Schema::hasColumn('nodes', 'critical_count')) {
+            if (! Schema::hasColumn('nodes', 'critical_count')) {
                 $table->unsignedInteger('critical_count')->default(0)->after('warning_count');
             }
         });
@@ -27,7 +27,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes')) {
             return;
         }
 

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Trait для записи событий в zone_events (Zone Event Ledger).
- * 
+ *
  * Используется в broadcast событиях для гарантированной записи
  * всех WebSocket событий в единый журнал событий зоны.
  */
@@ -15,16 +15,16 @@ trait RecordsZoneEvent
 {
     /**
      * Записывает событие в zone_events.
-     * 
+     *
      * Вызывается автоматически при broadcast события через метод broadcasted().
-     * 
-     * @param int|null $zoneId ID зоны (если null, событие не записывается)
-     * @param string $type Тип события (telemetry_updated, command_status, alert_created, etc.)
-     * @param string|null $entityType Тип сущности (command, alert, telemetry, device)
-     * @param int|string|null $entityId ID сущности
-     * @param array|null $payload Минимально необходимые данные для события
-     * @param int|null $eventId ID события из EventSequenceService
-     * @param int|null $serverTs Временная метка сервера в миллисекундах
+     *
+     * @param  int|null  $zoneId  ID зоны (если null, событие не записывается)
+     * @param  string  $type  Тип события (telemetry_updated, command_status, alert_created, etc.)
+     * @param  string|null  $entityType  Тип сущности (command, alert, telemetry, device)
+     * @param  int|string|null  $entityId  ID сущности
+     * @param  array|null  $payload  Минимально необходимые данные для события
+     * @param  int|null  $eventId  ID события из EventSequenceService
+     * @param  int|null  $serverTs  Временная метка сервера в миллисекундах
      * @return int|null ID созданной записи или null если не записано
      */
     protected function recordZoneEvent(
@@ -37,7 +37,7 @@ trait RecordsZoneEvent
         ?int $serverTs = null
     ): ?int {
         // Если zone_id не указан, не записываем событие
-        if (!$zoneId) {
+        if (! $zoneId) {
             return null;
         }
 
@@ -53,13 +53,14 @@ trait RecordsZoneEvent
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return null;
         }
     }
 
     /**
      * Вставляет событие в zone_events.
-     * 
+     *
      * Использует event_id из EventSequenceService для синхронизации с WS событиями.
      * id в таблице автоинкрементный, но для запросов по after_id используется id (который монотонно возрастает).
      */
@@ -73,7 +74,7 @@ trait RecordsZoneEvent
         ?int $serverTs
     ): ?int {
         // Если event_id не передан, генерируем новый (но лучше использовать из события)
-        if (!$eventId || !$serverTs) {
+        if (! $eventId || ! $serverTs) {
             $sequence = \App\Services\EventSequenceService::generateEventId();
             $eventId = $eventId ?? $sequence['event_id'];
             $serverTs = $serverTs ?? $sequence['server_ts'];
@@ -99,7 +100,7 @@ trait RecordsZoneEvent
 
     /**
      * Метод вызывается Laravel после успешного broadcast события.
-     * 
+     *
      * Используется для записи события в zone_events после успешного broadcast.
      * Переопределите этот метод в событиях для автоматической записи.
      */
@@ -109,4 +110,3 @@ trait RecordsZoneEvent
         // Каждое событие должно переопределить этот метод и вызвать recordZoneEvent
     }
 }
-

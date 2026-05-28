@@ -13,8 +13,8 @@ use Tests\TestCase;
 
 class AlertsPageAccessTest extends TestCase
 {
-    use RefreshDatabase;
     use InteractsWithViews;
+    use RefreshDatabase;
 
     public function test_alerts_page_includes_global_and_accessible_zone_alerts_only(): void
     {

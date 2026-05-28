@@ -29,4 +29,3 @@ class NodeLog extends Model
         return $this->belongsTo(DeviceNode::class, 'node_id');
     }
 }
-

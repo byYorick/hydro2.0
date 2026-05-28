@@ -2,30 +2,28 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GrowCycleStatus;
 use App\Http\Requests\StoreZoneCommandRequest;
-use App\Http\Resources\CommandResource;
+use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Models\GrowCycle;
-use App\Enums\GrowCycleStatus;
-use App\Services\PythonBridgeService;
 use App\Services\Ae3IrrigationBridgeService;
+use App\Services\PythonBridgeService;
 use App\Services\ZoneLogicProfileService;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 
 class ZoneCommandController extends Controller
 {
     public function __construct(
         private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly Ae3IrrigationBridgeService $ae3IrrigationBridge,
-    ) {
-    }
+    ) {}
 
     /**
      * Отправка команды для зоны в Python-сервис + логирование в историю зоны.
@@ -68,9 +66,9 @@ class ZoneCommandController extends Controller
             // Проверка готовности зоны к старту цикла
             $readinessService = app(ZoneReadinessService::class);
             $readiness = $readinessService->validate($zone->id);
-            
+
             // Если есть критические ошибки - блокируем старт
-            if (!$readiness['valid']) {
+            if (! $readiness['valid']) {
                 return response()->json([
                     'status' => 'error',
                     'code' => 'ZONE_NOT_READY',
@@ -81,9 +79,9 @@ class ZoneCommandController extends Controller
                     ],
                 ], 422);
             }
-            
+
             // Если есть предупреждения и не указан флаг "start_anyway" - возвращаем предупреждения
-            if (!empty($readiness['warnings']) && !($data['params']['start_anyway'] ?? false)) {
+            if (! empty($readiness['warnings']) && ! ($data['params']['start_anyway'] ?? false)) {
                 return response()->json([
                     'status' => 'warning',
                     'code' => 'ZONE_READINESS_WARNINGS',
@@ -109,7 +107,7 @@ class ZoneCommandController extends Controller
                 }
                 if (is_string($requestedSystemType) && $requestedSystemType !== '') {
                     $currentSystemType = Arr::get($activeCycle->settings ?? [], 'irrigation.system_type');
-                    if (!is_string($currentSystemType) || trim($currentSystemType) === '') {
+                    if (! is_string($currentSystemType) || trim($currentSystemType) === '') {
                         return response()->json([
                             'status' => 'error',
                             'code' => 'CYCLE_IRRIGATION_NOT_INITIALIZED',
@@ -291,12 +289,12 @@ class ZoneCommandController extends Controller
     {
         $params = is_array($data['params'] ?? null) ? $data['params'] : [];
         $profileMode = $params['profile_mode'] ?? null;
-        if (!is_string($profileMode) || trim($profileMode) === '') {
+        if (! is_string($profileMode) || trim($profileMode) === '') {
             throw new \InvalidArgumentException('GROWTH_CYCLE_CONFIG requires params.profile_mode.');
         }
 
         $profile = $this->automationLogicProfiles->resolveProfileByMode($zone->id, $profileMode);
-        if (!$profile) {
+        if (! $profile) {
             throw new \InvalidArgumentException("Automation logic profile '{$profileMode}' not found for zone {$zone->id}.");
         }
 
@@ -344,7 +342,7 @@ class ZoneCommandController extends Controller
                     ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
                     ->exists();
 
-                if (!$hasActiveCycle) {
+                if (! $hasActiveCycle) {
                     // Логируем событие, но не создаем цикл здесь
                     // Создание циклов должно происходить через GrowCycleController::store()
                     Log::warning('ZoneCommandController: GROWTH_CYCLE_CONFIG start command received, but cycle creation should use GrowCycleController::store()', [

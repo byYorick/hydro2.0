@@ -727,7 +727,7 @@ function setNumberField(key: keyof ClimateFormState, event: Event): void {
     return
   }
 
-  ;(climateForm.value as unknown as Record<string, unknown>)[key] = next
+  (climateForm.value as unknown as Record<string, unknown>)[key] = next
 }
 
 function nullableNumberFieldValue(key: keyof ClimateFormState): string {

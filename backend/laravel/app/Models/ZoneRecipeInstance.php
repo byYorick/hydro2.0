@@ -38,12 +38,12 @@ class ZoneRecipeInstance extends Model
      */
     public function getPhaseProgressAttribute(): ?float
     {
-        if (!$this->started_at) {
+        if (! $this->started_at) {
             return null;
         }
 
         $recipe = $this->recipe;
-        if (!$recipe) {
+        if (! $recipe) {
             return null;
         }
 
@@ -55,7 +55,7 @@ class ZoneRecipeInstance extends Model
 
         // Находим текущую фазу
         $currentPhase = $phases->firstWhere('phase_index', $this->current_phase_index);
-        if (!$currentPhase || !$currentPhase->duration_hours) {
+        if (! $currentPhase || ! $currentPhase->duration_hours) {
             return null;
         }
 
@@ -77,7 +77,7 @@ class ZoneRecipeInstance extends Model
 
         // Вычисляем время в текущей фазе
         $timeInPhaseHours = $elapsedHours - $phaseStartCumulative;
-        
+
         // Если время в фазе отрицательное, значит фаза еще не началась
         if ($timeInPhaseHours < 0) {
             return 0.0;
@@ -85,10 +85,8 @@ class ZoneRecipeInstance extends Model
 
         // Вычисляем прогресс (0-100%)
         $progress = ($timeInPhaseHours / $currentPhase->duration_hours) * 100.0;
-        
+
         // Ограничиваем от 0 до 100
         return min(100.0, max(0.0, $progress));
     }
 }
-
-

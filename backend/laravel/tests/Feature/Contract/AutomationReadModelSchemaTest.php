@@ -31,6 +31,7 @@ class AutomationReadModelSchemaTest extends TestCase
      * Host-путь: schemas/automation_read_model_schema.json (коммитится в git).
      */
     private const SNAPSHOT_CONTAINER_PATH = '/schemas/automation_read_model_schema.json';
+
     private const SNAPSHOT_CI_FALLBACK_RELATIVE = 'schemas/automation_read_model_schema.json';
 
     /**

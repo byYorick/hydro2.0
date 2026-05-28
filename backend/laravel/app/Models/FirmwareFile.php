@@ -23,4 +23,3 @@ class FirmwareFile extends Model
         'created_at' => 'datetime',
     ];
 }
-

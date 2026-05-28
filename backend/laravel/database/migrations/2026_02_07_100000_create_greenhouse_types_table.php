@@ -56,13 +56,13 @@ return new class extends Migration
                 ->nullOnDelete();
         });
 
-        DB::statement("
+        DB::statement('
             UPDATE greenhouses g
             SET greenhouse_type_id = gt.id
             FROM greenhouse_types gt
             WHERE g.type IS NOT NULL
               AND lower(g.type) = gt.code
-        ");
+        ');
     }
 
     public function down(): void
@@ -74,4 +74,3 @@ return new class extends Migration
         Schema::dropIfExists('greenhouse_types');
     }
 };
-

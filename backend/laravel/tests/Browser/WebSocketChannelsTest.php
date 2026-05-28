@@ -78,7 +78,7 @@ class WebSocketChannelsTest extends DuskTestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
 
-        $this->browse(function (Browser $browser) use ($user, $zone) {
+        $this->browse(function (Browser $browser) use ($user) {
             $browser->loginAs($user)
                 ->visit('/')
                 ->waitFor('body', 5);
@@ -146,4 +146,3 @@ class WebSocketChannelsTest extends DuskTestCase
         });
     }
 }
-

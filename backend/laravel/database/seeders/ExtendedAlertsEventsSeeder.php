@@ -19,6 +19,7 @@ class ExtendedAlertsEventsSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -30,17 +31,17 @@ class ExtendedAlertsEventsSeeder extends Seeder
             $eventsCreated += $this->seedEventsForZone($zone);
         }
 
-        $this->command->info("Создано алертов: " . number_format($alertsCreated));
-        $this->command->info("Создано событий: " . number_format($eventsCreated));
-        $this->command->info("Всего алертов: " . Alert::count());
-        $this->command->info("Активных алертов: " . Alert::where('status', 'ACTIVE')->count());
-        $this->command->info("Всего событий: " . ZoneEvent::count());
+        $this->command->info('Создано алертов: '.number_format($alertsCreated));
+        $this->command->info('Создано событий: '.number_format($eventsCreated));
+        $this->command->info('Всего алертов: '.Alert::count());
+        $this->command->info('Активных алертов: '.Alert::where('status', 'ACTIVE')->count());
+        $this->command->info('Всего событий: '.ZoneEvent::count());
     }
 
     private function seedAlertsForZone(Zone $zone): int
     {
         $alertsCreated = 0;
-        
+
         $daysBack = match ($zone->status) {
             'RUNNING' => 60,
             'PAUSED' => 30,
@@ -83,12 +84,12 @@ class ExtendedAlertsEventsSeeder extends Seeder
             for ($i = 0; $i < $alertsPerDay; $i++) {
                 $alertType = array_rand($alertTypes);
                 $alertConfig = $alertTypes[$alertType];
-                
+
                 // Выбираем статус по весам
                 $status = rand(1, 100) <= $statuses['ACTIVE'] ? 'ACTIVE' : 'RESOLVED';
-                
+
                 $createdAt = $currentDate->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
-                $resolvedAt = $status === 'RESOLVED' 
+                $resolvedAt = $status === 'RESOLVED'
                     ? $createdAt->copy()->addHours(rand(1, 48))
                     : null;
 
@@ -120,7 +121,7 @@ class ExtendedAlertsEventsSeeder extends Seeder
     private function seedEventsForZone(Zone $zone): int
     {
         $eventsCreated = 0;
-        
+
         $daysBack = match ($zone->status) {
             'RUNNING' => 30,
             'PAUSED' => 14,
@@ -253,4 +254,3 @@ class ExtendedAlertsEventsSeeder extends Seeder
         };
     }
 }
-

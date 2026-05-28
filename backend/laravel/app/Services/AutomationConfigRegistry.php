@@ -10,30 +10,53 @@ use InvalidArgumentException;
 class AutomationConfigRegistry
 {
     public const SCOPE_SYSTEM = 'system';
+
     public const SCOPE_GREENHOUSE = 'greenhouse';
+
     public const SCOPE_ZONE = 'zone';
+
     public const SCOPE_GROW_CYCLE = 'grow_cycle';
 
     public const NAMESPACE_SYSTEM_RUNTIME = 'system.runtime';
+
     public const NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS = 'system.automation_defaults';
+
     public const NAMESPACE_SYSTEM_COMMAND_TEMPLATES = 'system.command_templates';
+
     public const NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS = 'system.process_calibration_defaults';
+
     public const NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY = 'system.pump_calibration_policy';
+
     public const NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY = 'system.sensor_calibration_policy';
+
     public const NAMESPACE_SYSTEM_ALERT_POLICIES = 'system.alert_policies';
+
     public const NAMESPACE_GREENHOUSE_LOGIC_PROFILE = 'greenhouse.logic_profile';
+
     public const NAMESPACE_ZONE_LOGIC_PROFILE = 'zone.logic_profile';
+
     public const NAMESPACE_ZONE_CORRECTION = 'zone.correction';
+
     public const NAMESPACE_ZONE_PID_PH = 'zone.pid.ph';
+
     public const NAMESPACE_ZONE_PID_EC = 'zone.pid.ec';
+
     public const NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE = 'zone.runtime_tuning_bundle';
+
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC = 'zone.process_calibration.generic';
+
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL = 'zone.process_calibration.solution_fill';
+
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC = 'zone.process_calibration.tank_recirc';
+
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_IRRIGATION = 'zone.process_calibration.irrigation';
+
     public const NAMESPACE_CYCLE_START_SNAPSHOT = 'cycle.start_snapshot';
+
     public const NAMESPACE_CYCLE_PHASE_OVERRIDES = 'cycle.phase_overrides';
+
     public const NAMESPACE_CYCLE_MANUAL_OVERRIDES = 'cycle.manual_overrides';
+
     public const NAMESPACE_CYCLE_CONFIG_OVERRIDES = 'cycle.config_overrides';
 
     /**
@@ -208,30 +231,37 @@ class AutomationConfigRegistry
         switch ($namespace) {
             case self::NAMESPACE_SYSTEM_RUNTIME:
                 $this->validateRuntimePayload($payload);
+
                 return;
 
             case self::NAMESPACE_SYSTEM_ALERT_POLICIES:
                 $this->validateAlertPoliciesPayload($payload);
+
                 return;
 
             case self::NAMESPACE_ZONE_CORRECTION:
                 $this->validateZoneCorrectionPayload($payload);
+
                 return;
 
             case self::NAMESPACE_ZONE_PID_PH:
                 $this->validatePidPayload($payload, 'ph');
+
                 return;
 
             case self::NAMESPACE_ZONE_PID_EC:
                 $this->validatePidPayload($payload, 'ec');
+
                 return;
 
             case self::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE:
                 $this->validateRuntimeTuningBundlePayload($payload);
+
                 return;
 
             case self::NAMESPACE_ZONE_LOGIC_PROFILE:
                 $this->validateLogicProfilePayload($payload);
+
                 return;
 
             case self::NAMESPACE_GREENHOUSE_LOGIC_PROFILE:
@@ -239,6 +269,7 @@ class AutomationConfigRegistry
                     $payload,
                     $scopeType === self::SCOPE_GREENHOUSE ? $scopeId : null
                 );
+
                 return;
 
             case self::NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC:
@@ -246,6 +277,7 @@ class AutomationConfigRegistry
             case self::NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC:
             case self::NAMESPACE_ZONE_PROCESS_CALIBRATION_IRRIGATION:
                 $this->validateProcessCalibrationPayload($payload);
+
                 return;
 
             case self::NAMESPACE_CYCLE_START_SNAPSHOT:
@@ -254,12 +286,14 @@ class AutomationConfigRegistry
                 if ($payload !== [] && array_is_list($payload)) {
                     throw new InvalidArgumentException("Payload for {$namespace} must be an object.");
                 }
+
                 return;
 
             case self::NAMESPACE_CYCLE_MANUAL_OVERRIDES:
                 if (! array_is_list($payload)) {
                     throw new InvalidArgumentException('cycle.manual_overrides must be an array.');
                 }
+
                 return;
         }
     }

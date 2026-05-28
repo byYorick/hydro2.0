@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\AutomationConfigDocument;
-use App\Models\AutomationEffectiveBundle;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Zone;

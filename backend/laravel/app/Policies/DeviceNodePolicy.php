@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\DeviceNode;
 use App\Models\User;
-use App\Helpers\ZoneAccessHelper;
 
 class DeviceNodePolicy
 {
@@ -38,10 +38,10 @@ class DeviceNodePolicy
      */
     public function update(User $user, DeviceNode $deviceNode): bool
     {
-        if (!ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
+        if (! ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -51,10 +51,10 @@ class DeviceNodePolicy
      */
     public function delete(User $user, DeviceNode $deviceNode): bool
     {
-        if (!ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
+        if (! ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -64,10 +64,10 @@ class DeviceNodePolicy
      */
     public function detach(User $user, DeviceNode $deviceNode): bool
     {
-        if (!ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
+        if (! ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -77,10 +77,10 @@ class DeviceNodePolicy
      */
     public function publishConfig(User $user, DeviceNode $deviceNode): bool
     {
-        if (!ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
+        if (! ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -90,10 +90,10 @@ class DeviceNodePolicy
      */
     public function sendCommand(User $user, DeviceNode $deviceNode): bool
     {
-        if (!ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
+        if (! ZoneAccessHelper::canAccessNode($user, $deviceNode)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }

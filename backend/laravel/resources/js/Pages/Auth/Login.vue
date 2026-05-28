@@ -186,7 +186,13 @@ function togglePasswordVisibility(): void {
           </div>
 
           <div class="pointer-events-none absolute -bottom-16 -right-8 z-0 opacity-[0.08] select-none sm:-bottom-20 sm:-right-12">
-            <img :src="faviconSrc" alt="" width="240" height="240" class="h-56 w-56 sm:h-64 sm:w-64" />
+            <img
+              :src="faviconSrc"
+              alt=""
+              width="240"
+              height="240"
+              class="h-56 w-56 sm:h-64 sm:w-64"
+            />
           </div>
         </aside>
 

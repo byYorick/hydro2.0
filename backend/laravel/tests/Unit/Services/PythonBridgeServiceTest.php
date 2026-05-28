@@ -7,9 +7,9 @@ use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\PythonBridgeService;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class PythonBridgeServiceTest extends TestCase
@@ -58,6 +58,7 @@ class PythonBridgeServiceTest extends TestCase
         Http::assertSent(function ($request) use ($zone) {
             $data = $request->data();
             $url = $request->url();
+
             // PythonBridgeService использует history-logger для команд зон
             return str_contains($url, "zones/{$zone->id}/commands")
                 && $request->hasHeader('Authorization', 'Bearer test-token')

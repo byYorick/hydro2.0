@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\Zone;
 use App\Models\Greenhouse;
+use App\Models\Zone;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**

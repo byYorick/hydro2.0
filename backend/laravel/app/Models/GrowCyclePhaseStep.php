@@ -71,4 +71,3 @@ class GrowCyclePhaseStep extends Model
         return $this->belongsTo(RecipeRevisionPhaseStep::class);
     }
 }
-

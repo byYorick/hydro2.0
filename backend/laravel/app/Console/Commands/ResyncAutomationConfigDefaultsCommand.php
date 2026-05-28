@@ -46,6 +46,7 @@ class ResyncAutomationConfigDefaultsCommand extends Command
 
         if ($namespace !== AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION) {
             $this->error("Only zone.correction is supported in this command (got: {$namespace})");
+
             return self::FAILURE;
         }
 
@@ -56,6 +57,7 @@ class ResyncAutomationConfigDefaultsCommand extends Command
 
         if ($rows->isEmpty()) {
             $this->info("No documents found for {$namespace}.");
+
             return self::SUCCESS;
         }
 
@@ -65,14 +67,16 @@ class ResyncAutomationConfigDefaultsCommand extends Command
 
         foreach ($rows as $row) {
             $payload = is_string($row->payload) ? json_decode($row->payload, true) : $row->payload;
-            if (!is_array($payload)) {
+            if (! is_array($payload)) {
                 $this->warn("scope_id={$row->scope_id}: payload is not JSON object, skipping");
+
                 continue;
             }
 
             $base = $payload['base_config'] ?? [];
-            if (!is_array($base)) {
+            if (! is_array($base)) {
                 $this->warn("scope_id={$row->scope_id}: base_config missing/invalid, skipping");
+
                 continue;
             }
 
@@ -102,13 +106,14 @@ class ResyncAutomationConfigDefaultsCommand extends Command
                 $touchedScopes[(int) $row->scope_id] = $row->scope_type;
             } catch (Throwable $e) {
                 $this->error("scope_id={$row->scope_id}: upsert failed: {$e->getMessage()}");
+
                 return self::FAILURE;
             }
         }
 
         $this->info("Documents updated: {$changed} of {$rows->count()}.");
 
-        if ($recompile && !$dryRun && !empty($touchedScopes)) {
+        if ($recompile && ! $dryRun && ! empty($touchedScopes)) {
             foreach ($touchedScopes as $scopeId => $scopeType) {
                 if ($scopeType === AutomationConfigRegistry::SCOPE_ZONE) {
                     $compiler->compileZoneCascade($scopeId);
@@ -125,8 +130,8 @@ class ResyncAutomationConfigDefaultsCommand extends Command
      *
      * Returns [merged_array, list_of_dot_paths_that_were_added].
      *
-     * @param array<string,mixed> $defaults
-     * @param array<string,mixed> $existing
+     * @param  array<string,mixed>  $defaults
+     * @param  array<string,mixed>  $existing
      * @return array{0: array<string,mixed>, 1: list<string>}
      */
     private function fillMissingDefaults(array $defaults, array $existing, string $prefix = ''): array
@@ -134,16 +139,18 @@ class ResyncAutomationConfigDefaultsCommand extends Command
         $missing = [];
         foreach ($defaults as $key => $defaultValue) {
             $path = $prefix === '' ? (string) $key : "{$prefix}.{$key}";
-            if (!array_key_exists($key, $existing)) {
+            if (! array_key_exists($key, $existing)) {
                 $existing[$key] = $defaultValue;
                 $missing[] = $path;
+
                 continue;
             }
-            if (is_array($defaultValue) && is_array($existing[$key]) && !array_is_list($defaultValue)) {
+            if (is_array($defaultValue) && is_array($existing[$key]) && ! array_is_list($defaultValue)) {
                 [$existing[$key], $sub] = $this->fillMissingDefaults($defaultValue, $existing[$key], $path);
                 $missing = array_merge($missing, $sub);
             }
         }
+
         return [$existing, $missing];
     }
 }

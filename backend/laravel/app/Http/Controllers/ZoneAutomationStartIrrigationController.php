@@ -17,8 +17,7 @@ class ZoneAutomationStartIrrigationController extends Controller
 {
     public function __construct(
         private readonly Ae3IrrigationBridgeService $bridge,
-    ) {
-    }
+    ) {}
 
     public function store(Request $request, Zone $zone): JsonResponse
     {

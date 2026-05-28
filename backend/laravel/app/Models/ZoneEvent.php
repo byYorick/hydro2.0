@@ -26,13 +26,13 @@ class ZoneEvent extends Model
         'payload_json' => 'array',  // Используем payload_json вместо details
         'created_at' => 'datetime',
     ];
-    
+
     // Accessor для обратной совместимости с кодом, использующим 'details'
     public function getDetailsAttribute()
     {
         return $this->payload_json;
     }
-    
+
     // Mutator для обратной совместимости
     public function setDetailsAttribute($value)
     {

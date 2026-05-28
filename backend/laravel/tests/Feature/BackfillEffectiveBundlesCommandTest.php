@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\AutomationEffectiveBundle;
 use App\Models\Greenhouse;
-use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;

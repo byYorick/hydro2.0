@@ -74,7 +74,7 @@ class AlertCodeTranslator
     ) {}
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     public function translateByCode(string $code, ?string $rawMessage, array $details): ?string
     {
@@ -129,7 +129,7 @@ class AlertCodeTranslator
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     public function translateAe3TaskFailed(?string $message, array $details): string
     {
@@ -196,7 +196,7 @@ class AlertCodeTranslator
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     private function translateCommandTimeoutReason(array $details): ?string
     {
@@ -359,7 +359,7 @@ class AlertCodeTranslator
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     public function translateCorrectionNoEffect(?string $message, array $details): ?string
     {

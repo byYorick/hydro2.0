@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('grow_cycle_transitions')) {
+        if (! Schema::hasTable('grow_cycle_transitions')) {
             return;
         }
 
@@ -27,7 +27,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!Schema::hasTable('grow_cycle_transitions')) {
+        if (! Schema::hasTable('grow_cycle_transitions')) {
             return;
         }
 

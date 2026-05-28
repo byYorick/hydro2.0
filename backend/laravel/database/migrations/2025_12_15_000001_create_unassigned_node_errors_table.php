@@ -21,11 +21,11 @@ return new class extends Migration
             $table->timestamp('last_seen_at'); // Когда последний раз видели
             $table->foreignId('node_id')->nullable()->constrained('nodes')->nullOnDelete(); // Привязывается при регистрации
             $table->timestamps();
-            
+
             // Уникальный индекс для upsert: hardware_id + COALESCE(error_code, '') + topic
             // Используем выражение для обработки NULL в error_code
             $table->unique(['hardware_id', 'topic'], 'unassigned_errors_hardware_topic_unique');
-            
+
             // Индексы для быстрого поиска
             $table->index('hardware_id', 'unassigned_errors_hardware_id_idx');
             $table->index('node_id', 'unassigned_errors_node_id_idx');

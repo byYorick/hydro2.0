@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\ZoneSimulation;
-use App\Jobs\StopSimulationNodesJob;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -40,6 +39,7 @@ class CompleteSimulationJob implements ShouldQueue
                 'simulation_id' => $this->simulationId,
                 'job_id' => $this->jobId,
             ]);
+
             return;
         }
 

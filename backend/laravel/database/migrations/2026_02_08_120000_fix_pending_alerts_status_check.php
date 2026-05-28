@@ -29,4 +29,3 @@ return new class extends Migration
         DB::statement('ALTER TABLE pending_alerts DROP CONSTRAINT IF EXISTS pending_alerts_status_check');
     }
 };
-

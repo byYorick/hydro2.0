@@ -221,8 +221,7 @@ class NutrientProductController extends Controller
         array $data,
         ?int $ignoreId = null,
         ?NutrientProduct $existing = null
-    ): void
-    {
+    ): void {
         $manufacturer = Arr::get($data, 'manufacturer', $existing?->manufacturer);
         $name = Arr::get($data, 'name', $existing?->name);
         $component = Arr::get($data, 'component', $existing?->component);

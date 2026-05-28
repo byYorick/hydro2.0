@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use Tests\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use App\Models\Sensor;
+use Illuminate\Support\Facades\DB;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class DatabaseIndexesTest extends TestCase
@@ -25,11 +25,11 @@ class DatabaseIndexesTest extends TestCase
         ");
 
         $indexNames = array_column($indexes, 'indexname');
-        
+
         // Базовые индексы должны существовать
         $this->assertContains('telemetry_samples_sensor_ts_idx', $indexNames);
         $this->assertContains('telemetry_samples_zone_ts_idx', $indexNames);
-        
+
         // Дополнительные индексы могут быть созданы позже (из другой миграции)
         // Проверяем, что хотя бы базовые индексы есть
         $hasExtra = in_array('telemetry_samples_cycle_ts_idx', $indexNames) ||
@@ -53,14 +53,14 @@ class DatabaseIndexesTest extends TestCase
         ");
 
         $indexNames = array_column($indexes, 'indexname');
-        
+
         // Базовые индексы должны существовать
         $this->assertContains('commands_status_idx', $indexNames);
         $this->assertContains('commands_cmd_id_idx', $indexNames);
-        
+
         // Дополнительные индексы могут быть созданы позже
         // Проверяем, что есть хотя бы базовые индексы
-        $this->assertGreaterThanOrEqual(2, count($indexNames), 
+        $this->assertGreaterThanOrEqual(2, count($indexNames),
             'Should have at least status and cmd_id indexes');
     }
 
@@ -78,13 +78,13 @@ class DatabaseIndexesTest extends TestCase
         ");
 
         $indexNames = array_column($indexes, 'indexname');
-        
+
         // Базовый индекс должен существовать
         $this->assertContains('alerts_zone_status_idx', $indexNames);
-        
+
         // Дополнительные индексы могут быть созданы позже
         // Проверяем, что есть хотя бы базовый индекс
-        $this->assertGreaterThanOrEqual(1, count($indexNames), 
+        $this->assertGreaterThanOrEqual(1, count($indexNames),
             'Should have at least zone_status index');
     }
 
@@ -102,14 +102,14 @@ class DatabaseIndexesTest extends TestCase
         ");
 
         $indexNames = array_column($indexes, 'indexname');
-        
+
         // Базовые индексы должны существовать
         $this->assertContains('zone_events_zone_id_created_at_idx', $indexNames);
         $this->assertContains('zone_events_type_idx', $indexNames);
-        
+
         // Дополнительные индексы могут быть созданы позже
         // Проверяем, что есть хотя бы базовые индексы
-        $this->assertGreaterThanOrEqual(2, count($indexNames), 
+        $this->assertGreaterThanOrEqual(2, count($indexNames),
             'Should have at least zone_id_created_at and type indexes');
     }
 
@@ -131,19 +131,20 @@ class DatabaseIndexesTest extends TestCase
         // Проверяем, что запрос использует индекс
         try {
             DB::statement('SET enable_seqscan = off');
-            $explainRow = DB::selectOne("
+            $explainRow = DB::selectOne('
                 EXPLAIN (FORMAT JSON)
                 SELECT * FROM telemetry_samples 
                 WHERE sensor_id = ? AND ts >= ?
-            ", [$sensor->id, now()->subDay()]);
+            ', [$sensor->id, now()->subDay()]);
         } catch (\Throwable $e) {
             $this->markTestSkipped('EXPLAIN (FORMAT JSON) not supported: '.$e->getMessage());
+
             return;
         }
 
         // EXPLAIN возвращает одну колонку (обычно "QUERY PLAN")
         $resultArray = is_array($explainRow) ? $explainRow : (array) $explainRow;
-        $rawPlan = !empty($resultArray) ? reset($resultArray) : null;
+        $rawPlan = ! empty($resultArray) ? reset($resultArray) : null;
         if (is_string($rawPlan)) {
             $planData = json_decode($rawPlan, true);
         } elseif (is_array($rawPlan)) {
@@ -153,15 +154,16 @@ class DatabaseIndexesTest extends TestCase
         } else {
             $planData = [];
         }
-        
+
         if (empty($planData)) {
             $this->markTestSkipped('Could not parse EXPLAIN result');
+
             return;
         }
 
         $plan = is_array($planData) && isset($planData[0]) ? $planData[0] : $planData;
         $this->assertNotNull($plan);
-        
+
         // Проверяем, что используется индекс (Index Scan или Index Only Scan)
         $nodeType = $plan['Plan']['Node Type'] ?? '';
         $this->assertTrue(

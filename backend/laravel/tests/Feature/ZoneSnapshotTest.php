@@ -2,16 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\Zone;
-use App\Models\Greenhouse;
-use App\Models\DeviceNode;
 use App\Models\Alert;
 use App\Models\Command;
-use App\Models\TelemetryLast;
+use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\Sensor;
-use Tests\RefreshDatabase;
+use App\Models\TelemetryLast;
+use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZoneSnapshotTest extends TestCase
@@ -22,6 +22,7 @@ class ZoneSnapshotTest extends TestCase
     {
         $user = User::factory()->create(['role' => $role]);
         $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 
@@ -29,7 +30,7 @@ class ZoneSnapshotTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Создаем несколько событий для зоны
@@ -74,7 +75,7 @@ class ZoneSnapshotTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Создаем начальные события
@@ -125,12 +126,12 @@ class ZoneSnapshotTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $node = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'online',
         ]);
-        
+
         $token = $this->token();
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -138,14 +139,14 @@ class ZoneSnapshotTest extends TestCase
 
         $response->assertStatus(200);
         $data = $response->json('data');
-        
+
         $this->assertArrayHasKey('devices_online_state', $data);
         $devices = $data['devices_online_state'];
-        
+
         $this->assertCount(1, $devices);
-        
+
         $device = collect($devices)->firstWhere('id', $node->id);
-        
+
         $this->assertNotNull($device);
         $this->assertEquals('online', $device['status']);
     }
@@ -154,22 +155,22 @@ class ZoneSnapshotTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $activeAlert1 = Alert::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'ACTIVE',
         ]);
-        
+
         $activeAlert2 = Alert::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'ACTIVE',
         ]);
-        
+
         $resolvedAlert = Alert::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'RESOLVED',
         ]);
-        
+
         $token = $this->token();
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -177,13 +178,13 @@ class ZoneSnapshotTest extends TestCase
 
         $response->assertStatus(200);
         $data = $response->json('data');
-        
+
         $this->assertArrayHasKey('active_alerts', $data);
         $alerts = $data['active_alerts'];
-        
+
         // Должны быть только активные алерты
         $this->assertCount(2, $alerts);
-        
+
         $alertIds = array_column($alerts, 'id');
         $this->assertContains($activeAlert1->id, $alertIds);
         $this->assertContains($activeAlert2->id, $alertIds);
@@ -195,7 +196,7 @@ class ZoneSnapshotTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        
+
         // Создаем телеметрию для разных каналов
         $phSensor = Sensor::query()->create([
             'greenhouse_id' => $zone->greenhouse_id,
@@ -225,14 +226,14 @@ class ZoneSnapshotTest extends TestCase
             'last_ts' => now(),
             'last_quality' => 'GOOD',
         ]);
-        
+
         TelemetryLast::create([
             'sensor_id' => $ecSensor->id,
             'last_value' => 1.8,
             'last_ts' => now(),
             'last_quality' => 'GOOD',
         ]);
-        
+
         $token = $this->token();
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -240,22 +241,22 @@ class ZoneSnapshotTest extends TestCase
 
         $response->assertStatus(200);
         $data = $response->json('data');
-        
+
         $this->assertArrayHasKey('latest_telemetry_per_channel', $data);
         $telemetry = $data['latest_telemetry_per_channel'];
-        
+
         $this->assertArrayHasKey('ph_sensor', $telemetry);
         $this->assertArrayHasKey('ec_sensor', $telemetry);
-        
+
         $phData = $telemetry['ph_sensor'][$node->id] ?? [];
         $ecData = $telemetry['ec_sensor'][$node->id] ?? [];
-        
+
         $this->assertNotEmpty($phData);
         $this->assertNotEmpty($ecData);
-        
+
         $phValue = collect($phData)->firstWhere('metric_type', 'PH');
         $ecValue = collect($ecData)->firstWhere('metric_type', 'EC');
-        
+
         $this->assertNotNull($phValue);
         $this->assertEquals(6.5, $phValue['value']);
         $this->assertNotNull($ecValue);
@@ -267,7 +268,7 @@ class ZoneSnapshotTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        
+
         // Создаем команды с разными статусами
         $cmd1 = Command::create([
             'zone_id' => $zone->id,
@@ -277,7 +278,7 @@ class ZoneSnapshotTest extends TestCase
             'status' => Command::STATUS_QUEUED,
             'created_at' => now()->subMinutes(5),
         ]);
-        
+
         $cmd2 = Command::create([
             'zone_id' => $zone->id,
             'node_id' => $node->id,
@@ -286,7 +287,7 @@ class ZoneSnapshotTest extends TestCase
             'status' => Command::STATUS_SENT,
             'created_at' => now()->subMinutes(3),
         ]);
-        
+
         $cmd3 = Command::create([
             'zone_id' => $zone->id,
             'node_id' => $node->id,
@@ -295,7 +296,7 @@ class ZoneSnapshotTest extends TestCase
             'status' => Command::STATUS_DONE,
             'created_at' => now()->subMinutes(1),
         ]);
-        
+
         $token = $this->token();
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
@@ -303,17 +304,17 @@ class ZoneSnapshotTest extends TestCase
 
         $response->assertStatus(200);
         $data = $response->json('data');
-        
+
         $this->assertArrayHasKey('commands_recent', $data);
         $commands = $data['commands_recent'];
-        
+
         $this->assertGreaterThanOrEqual(3, count($commands));
-        
+
         $cmdIds = array_column($commands, 'cmd_id');
         $this->assertContains('cmd-1', $cmdIds);
         $this->assertContains('cmd-2', $cmdIds);
         $this->assertContains('cmd-3', $cmdIds);
-        
+
         // Проверяем, что команды отсортированы по created_at desc (самые новые первые)
         $firstCmd = $commands[0];
         $this->assertEquals('cmd-3', $firstCmd['cmd_id']);
@@ -323,7 +324,7 @@ class ZoneSnapshotTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Создаем начальные события
@@ -366,14 +367,14 @@ class ZoneSnapshotTest extends TestCase
 
         $eventsResponse->assertStatus(200);
         $eventsData = $eventsResponse->json('data');
-        
+
         // Должны получить события с ID больше last_event_id из snapshot
         $this->assertGreaterThan(0, count($eventsData));
-        
+
         foreach ($eventsData as $event) {
             $this->assertGreaterThan($lastEventId, $event['event_id']);
         }
-        
+
         // Проверяем порядок событий
         $eventIds = array_column($eventsData, 'event_id');
         $sortedIds = $eventIds;

@@ -62,4 +62,3 @@ class CommandAck extends Model
         return $query->where('ack_type', 'error');
     }
 }
-

@@ -23,7 +23,7 @@ class Authenticate extends Middleware
         }
 
         // Для API и чистых JSON запросов возвращаем null (будет 401)
-        if ($request->is('api/*') || ($request->expectsJson() && !$request->header('X-Inertia'))) {
+        if ($request->is('api/*') || ($request->expectsJson() && ! $request->header('X-Inertia'))) {
             return null;
         }
 

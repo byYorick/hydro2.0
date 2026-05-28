@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class SecurityMiddlewareTest extends TestCase
@@ -19,7 +19,7 @@ class SecurityMiddlewareTest extends TestCase
 
         // Запрос без токена должен быть отклонен
         $response = $this->getJson('/api/system/config/full');
-        
+
         $response->assertStatus(401)
             ->assertJson([
                 'status' => 'error',
@@ -35,7 +35,7 @@ class SecurityMiddlewareTest extends TestCase
 
         // Даже в production, если токен не настроен, доступ должен быть запрещен
         $response = $this->getJson('/api/system/config/full');
-        
+
         $response->assertStatus(401)
             ->assertJson([
                 'status' => 'error',
@@ -53,7 +53,7 @@ class SecurityMiddlewareTest extends TestCase
         $response = $this->postJson('/api/alerts/webhook', [
             'alerts' => [],
         ]);
-        
+
         $response->assertStatus(500)
             ->assertJson([
                 'status' => 'error',
@@ -70,7 +70,7 @@ class SecurityMiddlewareTest extends TestCase
         $response = $this->postJson('/api/nodes/register', [
             'node_uid' => 'test-node',
         ]);
-        
+
         $response->assertStatus(401)
             ->assertJson([
                 'status' => 'error',
@@ -90,7 +90,7 @@ class SecurityMiddlewareTest extends TestCase
         $response = $this->postJson('/api/nodes/register', [
             'node_uid' => 'test-node',
         ]);
-        
+
         $response->assertStatus(500)
             ->assertJson([
                 'status' => 'error',
@@ -98,4 +98,3 @@ class SecurityMiddlewareTest extends TestCase
             ]);
     }
 }
-

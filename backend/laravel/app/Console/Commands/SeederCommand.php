@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Database\Seeders\SeederFactory;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Console\Command;
 
@@ -43,26 +42,29 @@ class SeederCommand extends Command
                 break;
 
             case 'group':
-                if (!$target) {
+                if (! $target) {
                     $this->error('Не указана группа сидеров. Используйте: php artisan seeders:manage group <group_name>');
                     $this->showAvailableGroups();
+
                     return;
                 }
                 $this->runSeederGroup($target, $force);
                 break;
 
             case 'seeder':
-                if (!$target) {
+                if (! $target) {
                     $this->error('Не указан класс сидера. Используйте: php artisan seeders:manage seeder <SeederClass>');
+
                     return;
                 }
                 $this->runIndividualSeeder($target, $force);
                 break;
 
             case 'cleanup':
-                if (!$target) {
+                if (! $target) {
                     $this->error('Не указана группа для очистки. Используйте: php artisan seeders:manage cleanup <group_name>');
                     $this->showAvailableGroups();
+
                     return;
                 }
                 $this->cleanupGroup($target, $force);
@@ -75,6 +77,7 @@ class SeederCommand extends Command
             default:
                 $this->error("Неизвестное действие: {$action}");
                 $this->showHelp();
+
                 return;
         }
     }
@@ -84,7 +87,7 @@ class SeederCommand extends Command
      */
     private function runFullSeed(): void
     {
-        if (!$this->confirm('Запустить все сидеры? Это может занять много времени.', true)) {
+        if (! $this->confirm('Запустить все сидеры? Это может занять много времени.', true)) {
             return;
         }
 
@@ -98,7 +101,7 @@ class SeederCommand extends Command
      */
     private function runSeederGroup(string $groupName, bool $force): void
     {
-        if (!$force && !$this->confirm("Запустить группу сидеров '{$groupName}'?", true)) {
+        if (! $force && ! $this->confirm("Запустить группу сидеров '{$groupName}'?", true)) {
             return;
         }
 
@@ -113,16 +116,16 @@ class SeederCommand extends Command
     private function runIndividualSeeder(string $seederClass, bool $force): void
     {
         // Добавляем суффикс Seeder если не указан
-        if (!str_ends_with($seederClass, 'Seeder')) {
+        if (! str_ends_with($seederClass, 'Seeder')) {
             $seederClass .= 'Seeder';
         }
 
         // Добавляем namespace если не указан
-        if (!str_contains($seederClass, '\\')) {
+        if (! str_contains($seederClass, '\\')) {
             $seederClass = "Database\\Seeders\\{$seederClass}";
         }
 
-        if (!$force && !$this->confirm("Запустить сидер '{$seederClass}'?", true)) {
+        if (! $force && ! $this->confirm("Запустить сидер '{$seederClass}'?", true)) {
             return;
         }
 
@@ -136,7 +139,7 @@ class SeederCommand extends Command
      */
     private function cleanupGroup(string $groupName, bool $force): void
     {
-        if (!$force && !$this->confirm("Очистить данные группы '{$groupName}'? Это действие необратимо!", false)) {
+        if (! $force && ! $this->confirm("Очистить данные группы '{$groupName}'? Это действие необратимо!", false)) {
             return;
         }
 

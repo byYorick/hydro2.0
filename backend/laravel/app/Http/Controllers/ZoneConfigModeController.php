@@ -15,6 +15,7 @@ use Illuminate\Validation\Rule;
 class ZoneConfigModeController extends Controller
 {
     public const MIN_TTL_SECONDS = 5 * 60;
+
     public const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 
     public function __construct(
@@ -249,6 +250,7 @@ class ZoneConfigModeController extends Controller
                 ], 422);
             }
             $locked->forceFill(['live_until' => $newLiveUntil])->save();
+
             return response()->json([
                 'status' => 'ok',
                 'zone_id' => $locked->id,

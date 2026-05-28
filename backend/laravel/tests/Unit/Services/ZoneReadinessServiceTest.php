@@ -310,8 +310,7 @@ class ZoneReadinessServiceTest extends TestCase
         string $label,
         string $ownerType = 'zone',
         bool $withCalibration = false
-    ): void
-    {
+    ): void {
         $nodeChannel = NodeChannel::create([
             'node_id' => $node->id,
             'channel' => $channel,

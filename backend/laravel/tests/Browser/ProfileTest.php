@@ -45,4 +45,3 @@ class ProfileTest extends DuskTestCase
         });
     }
 }
-

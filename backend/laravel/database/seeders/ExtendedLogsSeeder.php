@@ -28,14 +28,14 @@ class ExtendedLogsSeeder extends Seeder
         $aiLogsCreated = $this->seedAiLogs($zones);
         $schedulerLogsCreated = $this->seedSchedulerLogs($zones);
 
-        $this->command->info("Создано системных логов: " . number_format($systemLogsCreated));
-        $this->command->info("Создано логов узлов: " . number_format($nodeLogsCreated));
-        $this->command->info("Создано AI логов: " . number_format($aiLogsCreated));
-        $this->command->info("Создано логов планировщика: " . number_format($schedulerLogsCreated));
-        $this->command->info("Всего системных логов: " . SystemLog::count());
-        $this->command->info("Всего логов узлов: " . NodeLog::count());
-        $this->command->info("Всего AI логов: " . AiLog::count());
-        $this->command->info("Всего логов планировщика: " . SchedulerLog::count());
+        $this->command->info('Создано системных логов: '.number_format($systemLogsCreated));
+        $this->command->info('Создано логов узлов: '.number_format($nodeLogsCreated));
+        $this->command->info('Создано AI логов: '.number_format($aiLogsCreated));
+        $this->command->info('Создано логов планировщика: '.number_format($schedulerLogsCreated));
+        $this->command->info('Всего системных логов: '.SystemLog::count());
+        $this->command->info('Всего логов узлов: '.NodeLog::count());
+        $this->command->info('Всего AI логов: '.AiLog::count());
+        $this->command->info('Всего логов планировщика: '.SchedulerLog::count());
     }
 
     private function seedSystemLogs(): int
@@ -72,14 +72,14 @@ class ExtendedLogsSeeder extends Seeder
         // Создаем логи за последние 2 дня
         for ($daysAgo = 2; $daysAgo >= 0; $daysAgo--) {
             $logCount = rand(5, 10);
-            
+
             for ($i = 0; $i < $logCount; $i++) {
                 $level = $levels[rand(0, count($levels) - 1)];
                 $message = $messages[$level][rand(0, count($messages[$level]) - 1)];
 
                 SystemLog::create([
                     'level' => $level,
-                    'message' => $message . ' (' . ($i + 1) . ')',
+                    'message' => $message.' ('.($i + 1).')',
                     'context' => [
                         'source' => 'system',
                         'component' => ['api', 'scheduler', 'automation', 'mqtt'][rand(0, 3)],
@@ -132,7 +132,7 @@ class ExtendedLogsSeeder extends Seeder
                 NodeLog::create([
                     'node_id' => $node->id,
                     'level' => $level,
-                    'message' => $message . ' для узла ' . $node->uid,
+                    'message' => $message.' для узла '.$node->uid,
                     'context' => [
                         'node_uid' => $node->uid,
                         'node_type' => $node->type,
@@ -152,7 +152,7 @@ class ExtendedLogsSeeder extends Seeder
     {
         $created = 0;
         $actions = ['predict', 'recommend', 'explain', 'diagnostics', 'optimize'];
-        
+
         $actionMessages = [
             'predict' => 'Прогноз параметров выполнен',
             'recommend' => 'Рекомендация сгенерирована',
@@ -176,7 +176,7 @@ class ExtendedLogsSeeder extends Seeder
                     'zone_id' => $zone->id,
                     'action' => $action,
                     'details' => [
-                        'message' => $actionMessages[$action] . ' для зоны ' . $zone->name,
+                        'message' => $actionMessages[$action].' для зоны '.$zone->name,
                         'data' => [
                             'metric' => ['ph', 'ec', 'temperature', 'humidity'][rand(0, 3)],
                             'value' => rand(0, 100) / 10,
@@ -223,7 +223,7 @@ class ExtendedLogsSeeder extends Seeder
         // Создаем логи за последние 2 дня
         for ($daysAgo = 2; $daysAgo >= 0; $daysAgo--) {
             $logCount = rand(10, 20);
-            
+
             for ($i = 0; $i < $logCount; $i++) {
                 $createdAt = now()->subDays($daysAgo)->subHours(rand(0, 23))->subMinutes(rand(0, 59));
                 $status = $this->pickWeightedStatus($statusWeights);

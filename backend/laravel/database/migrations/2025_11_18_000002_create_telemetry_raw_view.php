@@ -17,4 +17,3 @@ return new class extends Migration
         DB::statement('DROP VIEW IF EXISTS telemetry_raw;');
     }
 };
-

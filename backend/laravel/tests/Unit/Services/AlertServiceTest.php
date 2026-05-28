@@ -3,8 +3,8 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Alert;
-use App\Services\AlertService;
 use App\Services\AlertPolicyService;
+use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use Tests\RefreshDatabase;
@@ -19,7 +19,7 @@ class AlertServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new AlertService();
+        $this->service = new AlertService;
     }
 
     public function test_create_alert(): void

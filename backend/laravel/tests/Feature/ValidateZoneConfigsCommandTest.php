@@ -50,8 +50,8 @@ class ValidateZoneConfigsCommandTest extends TestCase
         $broken = json_encode([
             'preset_id' => null,
             'base_config' => $base,
-            'phase_overrides' => new \stdClass(),
-            'resolved_config' => new \stdClass(),
+            'phase_overrides' => new \stdClass,
+            'resolved_config' => new \stdClass,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         $this->insertDocument('zone.correction', 'zone', 42, $broken);
@@ -87,11 +87,12 @@ class ValidateZoneConfigsCommandTest extends TestCase
     private function validZoneCorrectionPayload(): string
     {
         $base = $this->completeBaseConfig();
+
         return json_encode([
             'preset_id' => null,
             'base_config' => $base,
-            'phase_overrides' => new \stdClass(),
-            'resolved_config' => new \stdClass(),
+            'phase_overrides' => new \stdClass,
+            'resolved_config' => new \stdClass,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
@@ -107,7 +108,7 @@ class ValidateZoneConfigsCommandTest extends TestCase
     }
 
     /**
-     * @param array<string,mixed>|string $payload — JSON string preferred to preserve {} vs [] semantics
+     * @param  array<string,mixed>|string  $payload  — JSON string preferred to preserve {} vs [] semantics
      */
     private function insertDocument(string $namespace, string $scopeType, int $scopeId, array|string $payload): void
     {

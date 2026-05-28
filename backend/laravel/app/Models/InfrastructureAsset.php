@@ -23,12 +23,19 @@ class InfrastructureAsset extends Model
      * Типы оборудования
      */
     public const TYPE_PUMP = 'PUMP';
+
     public const TYPE_MISTER = 'MISTER';
+
     public const TYPE_TANK_NUTRIENT = 'TANK_NUTRIENT';
+
     public const TYPE_TANK_CLEAN = 'TANK_CLEAN';
+
     public const TYPE_DRAIN = 'DRAIN';
+
     public const TYPE_LIGHT = 'LIGHT';
+
     public const TYPE_VENT = 'VENT';
+
     public const TYPE_HEATER = 'HEATER';
 
     /**
@@ -48,4 +55,3 @@ class InfrastructureAsset extends Model
         ];
     }
 }
-

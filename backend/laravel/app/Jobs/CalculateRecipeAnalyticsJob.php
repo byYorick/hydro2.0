@@ -17,8 +17,7 @@ class CalculateRecipeAnalyticsJob implements ShouldQueue
     public function __construct(
         public int $zoneId,
         public ?int $growCycleId = null
-    ) {
-    }
+    ) {}
 
     public function handle(RecipeAnalyticsService $service): void
     {
@@ -34,4 +33,3 @@ class CalculateRecipeAnalyticsJob implements ShouldQueue
         }
     }
 }
-

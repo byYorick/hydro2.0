@@ -170,7 +170,7 @@ return new class extends Migration
             END $$;
         ");
 
-        DB::statement("
+        DB::statement('
             DO $$
             BEGIN
                 ALTER TABLE ae_commands
@@ -179,7 +179,7 @@ return new class extends Migration
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END $$;
-        ");
+        ');
 
         DB::statement("
             DO $$
@@ -218,11 +218,11 @@ return new class extends Migration
             WHERE status = 'pending'
         ");
 
-        DB::statement("
+        DB::statement('
             CREATE INDEX IF NOT EXISTS ae_commands_external_id_idx
             ON ae_commands (external_id)
             WHERE external_id IS NOT NULL
-        ");
+        ');
     }
 
     private function dropPgsqlConstraintsAndIndexes(): void

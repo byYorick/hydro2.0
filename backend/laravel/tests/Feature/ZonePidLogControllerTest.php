@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use Tests\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZonePidLogControllerTest extends TestCase

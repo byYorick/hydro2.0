@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Модель команды с единым контрактом статусов.
- * 
+ *
  * State-machine статусов:
  * - QUEUED: команда поставлена в очередь
  * - SENT: команда отправлена в MQTT
@@ -30,14 +30,23 @@ class Command extends Model
      * Статусы команд согласно единому контракту
      */
     public const STATUS_QUEUED = 'QUEUED';
+
     public const STATUS_SENT = 'SENT';
+
     public const STATUS_ACK = 'ACK';
+
     public const STATUS_DONE = 'DONE';
+
     public const STATUS_NO_EFFECT = 'NO_EFFECT';
+
     public const STATUS_ERROR = 'ERROR';
+
     public const STATUS_INVALID = 'INVALID';
+
     public const STATUS_BUSY = 'BUSY';
+
     public const STATUS_TIMEOUT = 'TIMEOUT';
+
     public const STATUS_SEND_FAILED = 'SEND_FAILED';
 
     /**

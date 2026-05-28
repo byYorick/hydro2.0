@@ -27,4 +27,3 @@ class GreenhouseType extends Model
         return $this->hasMany(Greenhouse::class);
     }
 }
-

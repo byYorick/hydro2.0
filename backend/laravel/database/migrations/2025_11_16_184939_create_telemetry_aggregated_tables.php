@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -41,7 +41,7 @@ return new class extends Migration
 
         // Преобразуем в hypertable (только для PostgreSQL)
         // Выполняем вне транзакции миграции, так как create_hypertable требует commit
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
                 // Проверяем, не является ли таблица уже hypertable
                 $isHypertable = DB::selectOne("
@@ -50,14 +50,14 @@ return new class extends Migration
                         WHERE hypertable_name = 'telemetry_agg_1m'
                     ) as exists;
                 ");
-                
-                if (!$isHypertable || !$isHypertable->exists) {
+
+                if (! $isHypertable || ! $isHypertable->exists) {
                     // Удаляем существующий primary key
-                    DB::statement("ALTER TABLE telemetry_agg_1m DROP CONSTRAINT IF EXISTS telemetry_agg_1m_pkey;");
-                    
+                    DB::statement('ALTER TABLE telemetry_agg_1m DROP CONSTRAINT IF EXISTS telemetry_agg_1m_pkey;');
+
                     // Создаем составной primary key с ts (требуется для TimescaleDB)
-                    DB::statement("ALTER TABLE telemetry_agg_1m ADD PRIMARY KEY (id, ts);");
-                    
+                    DB::statement('ALTER TABLE telemetry_agg_1m ADD PRIMARY KEY (id, ts);');
+
                     // Выполняем вне транзакции миграции
                     DB::unprepared("
                         SELECT create_hypertable(
@@ -71,7 +71,7 @@ return new class extends Migration
             } catch (\Exception $e) {
                 // TimescaleDB недоступно - пропускаем создание hypertable
                 // Логируем ошибку, но не прерываем миграцию
-                \Log::warning('Failed to create hypertable for telemetry_agg_1m: ' . $e->getMessage());
+                \Log::warning('Failed to create hypertable for telemetry_agg_1m: '.$e->getMessage());
             }
         }
 
@@ -97,7 +97,7 @@ return new class extends Migration
 
         // Преобразуем в hypertable (только для PostgreSQL)
         // Выполняем вне транзакции миграции, так как create_hypertable требует commit
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
                 // Проверяем, не является ли таблица уже hypertable
                 $isHypertable = DB::selectOne("
@@ -106,14 +106,14 @@ return new class extends Migration
                         WHERE hypertable_name = 'telemetry_agg_1h'
                     ) as exists;
                 ");
-                
-                if (!$isHypertable || !$isHypertable->exists) {
+
+                if (! $isHypertable || ! $isHypertable->exists) {
                     // Удаляем существующий primary key
-                    DB::statement("ALTER TABLE telemetry_agg_1h DROP CONSTRAINT IF EXISTS telemetry_agg_1h_pkey;");
-                    
+                    DB::statement('ALTER TABLE telemetry_agg_1h DROP CONSTRAINT IF EXISTS telemetry_agg_1h_pkey;');
+
                     // Создаем составной primary key с ts (требуется для TimescaleDB)
-                    DB::statement("ALTER TABLE telemetry_agg_1h ADD PRIMARY KEY (id, ts);");
-                    
+                    DB::statement('ALTER TABLE telemetry_agg_1h ADD PRIMARY KEY (id, ts);');
+
                     // Выполняем вне транзакции миграции
                     DB::unprepared("
                         SELECT create_hypertable(
@@ -127,7 +127,7 @@ return new class extends Migration
             } catch (\Exception $e) {
                 // TimescaleDB недоступно - пропускаем создание hypertable
                 // Логируем ошибку, но не прерываем миграцию
-                \Log::warning('Failed to create hypertable for telemetry_agg_1h: ' . $e->getMessage());
+                \Log::warning('Failed to create hypertable for telemetry_agg_1h: '.$e->getMessage());
             }
         }
 
@@ -170,7 +170,7 @@ return new class extends Migration
                 // Игнорируем ошибки при удалении
             }
         }
-        
+
         Schema::dropIfExists('telemetry_daily');
         Schema::dropIfExists('telemetry_agg_1h');
         Schema::dropIfExists('telemetry_agg_1m');

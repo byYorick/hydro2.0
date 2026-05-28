@@ -8,8 +8,7 @@ class ZoneCorrectionPresetService
 {
     public function __construct(
         private readonly AutomationConfigPresetService $presets,
-    ) {
-    }
+    ) {}
 
     public function list(): array
     {

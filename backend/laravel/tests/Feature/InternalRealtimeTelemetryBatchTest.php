@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Events\TelemetryBatchUpdated;
 use App\Models\DeviceNode;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class InternalRealtimeTelemetryBatchTest extends TestCase

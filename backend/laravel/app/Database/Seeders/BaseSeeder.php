@@ -51,12 +51,13 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
 
         try {
             // Проверка зависимостей
-            if (!$this->validateDependencies()) {
+            if (! $this->validateDependencies()) {
                 $this->command->error("❌ Зависимости не выполнены для сидера: {$this->getSeederName()}");
                 $dependencies = $this->getDependencies();
-                if (!empty($dependencies)) {
-                    $this->command->error("Необходимые сидеры: " . implode(', ', $dependencies));
+                if (! empty($dependencies)) {
+                    $this->command->error('Необходимые сидеры: '.implode(', ', $dependencies));
                 }
+
                 return;
             }
 
@@ -71,7 +72,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
             $this->command->error("❌ Ошибка в сидере {$this->getSeederName()}: {$e->getMessage()}");
             Log::error("Seeder error: {$this->getSeederName()}", [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             throw $e;
@@ -91,7 +92,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
         $dependencies = $this->getDependencies();
 
         foreach ($dependencies as $dependency) {
-            if (!$this->isSeederExecuted($dependency)) {
+            if (! $this->isSeederExecuted($dependency)) {
                 return false;
             }
         }
@@ -163,7 +164,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
     {
         $total = $items->count();
         $bar = $this->command->getOutput()->createProgressBar($total);
-        $bar->setFormat("verbose [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s% %memory:6s%");
+        $bar->setFormat('verbose [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s% %memory:6s%');
 
         $created = 0;
         $batch = collect();
@@ -216,7 +217,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
                 $this->command->error("Ошибка при обработке элемента: {$e->getMessage()}");
                 Log::error("Batch processing error in {$this->getSeederName()}", [
                     'error' => $e->getMessage(),
-                    'item' => $item
+                    'item' => $item,
                 ]);
                 $bar->advance();
             }
@@ -239,7 +240,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
                 // Обновляем все измененные поля, а не только первое совпадение.
                 $changes = [];
                 foreach ($values as $key => $value) {
-                    if ($instance->$key != $value) {
+                    if ($value != $instance->$key) {
                         $changes[$key] = $value;
                     }
                 }
@@ -257,7 +258,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
                 'model' => $model,
                 'attributes' => $attributes,
                 'values' => $values,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
@@ -275,7 +276,7 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
             if ($this->validateItem($item, $rules)) {
                 $collection->push($item);
             } else {
-                $this->command->warn("⚠️  Пропущен невалидный элемент: " . json_encode($item));
+                $this->command->warn('⚠️  Пропущен невалидный элемент: '.json_encode($item));
             }
         }
 
@@ -288,16 +289,16 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
     protected function validateItem(array $item, array $rules): bool
     {
         foreach ($rules as $field => $rule) {
-            if (!isset($item[$field])) {
+            if (! isset($item[$field])) {
                 return false;
             }
 
             if (is_callable($rule)) {
-                if (!$rule($item[$field])) {
+                if (! $rule($item[$field])) {
                     return false;
                 }
             } elseif (is_array($rule)) {
-                if (!in_array($item[$field], $rule)) {
+                if (! in_array($item[$field], $rule)) {
                     return false;
                 }
             } elseif ($rule === 'required' && empty($item[$field])) {
@@ -331,15 +332,16 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
      */
     protected function generateUid(string $prefix = '', int $length = 8): string
     {
-        return $prefix . Str::random($length);
+        return $prefix.Str::random($length);
     }
 
     /**
      * Генерация реалистичного email
      */
-    protected function generateEmail(string $role, string $name = null): string
+    protected function generateEmail(string $role, ?string $name = null): string
     {
         $name = $name ?? Str::slug($role);
+
         return "{$name}@hydro.local";
     }
 }

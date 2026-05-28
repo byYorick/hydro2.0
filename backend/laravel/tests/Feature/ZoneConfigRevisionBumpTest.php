@@ -31,7 +31,7 @@ class ZoneConfigRevisionBumpTest extends TestCase
                     'ec' => ['mode' => 'supervisory_allocator', 'kp' => 0.5],
                 ],
             ],
-            'meta' => new \stdClass(),
+            'meta' => new \stdClass,
         ];
 
         $response = $this->actingAs($user)

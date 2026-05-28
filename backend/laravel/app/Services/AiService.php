@@ -2,14 +2,12 @@
 
 namespace App\Services;
 
-use App\Models\Zone;
-use App\Models\TelemetryLast;
 use App\Models\ParameterPrediction;
-use App\Services\PredictionService;
-use App\Services\EffectiveTargetsService;
+use App\Models\TelemetryLast;
+use App\Models\Zone;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 class AiService
 {
@@ -31,7 +29,7 @@ class AiService
                 'sensors.type as metric_type',
                 'telemetry_last.last_value as value',
                 'telemetry_last.last_ts as timestamp',
-                'telemetry_last.updated_at'
+                'telemetry_last.updated_at',
             ])
             ->get()
             ->keyBy(fn ($item) => strtolower((string) $item->metric_type));
@@ -48,7 +46,7 @@ class AiService
             ->orderBy('created_at', 'desc')
             ->get()
             ->groupBy('metric_type')
-            ->map(fn($group) => $group->first());
+            ->map(fn ($group) => $group->first());
     }
 
     /**

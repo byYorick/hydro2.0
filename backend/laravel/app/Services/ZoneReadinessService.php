@@ -38,8 +38,7 @@ class ZoneReadinessService
         private readonly ZoneLogicProfileService $logicProfiles,
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigRegistry $registry,
-    ) {
-    }
+    ) {}
 
     /**
      * Получить список обязательных bindings для зоны.
@@ -187,10 +186,12 @@ class ZoneReadinessService
         }
         if (is_string($raw) && trim($raw) !== '') {
             $parsed = (int) trim($raw);
+
             return in_array($parsed, [2, 3], true) ? $parsed : null;
         }
         if (is_float($raw)) {
             $parsed = (int) round($raw);
+
             return in_array($parsed, [2, 3], true) ? $parsed : null;
         }
 
@@ -452,6 +453,7 @@ class ZoneReadinessService
             $type = (string) ($issue['type'] ?? '');
             if ($type === 'dispatch_disabled') {
                 $errors[] = 'Запуск в automation-engine отключён runtime-флагом';
+
                 continue;
             }
 
@@ -465,6 +467,7 @@ class ZoneReadinessService
                     $code = (string) ($alert['code'] ?? '');
                     $errors[] = $this->blockingAlertMessage($code);
                 }
+
                 continue;
             }
 
@@ -536,6 +539,7 @@ class ZoneReadinessService
                 if ($count > 0) {
                     $warnings[] = $count === 1 ? '1 нода офлайн' : "{$count} нод офлайн";
                 }
+
                 continue;
             }
 
@@ -692,6 +696,7 @@ class ZoneReadinessService
                 'zone_id' => $zone->id,
                 'required_bindings' => $requiredBindings,
             ]);
+
             return array_values($requiredBindings);
         }
 
@@ -730,7 +735,7 @@ class ZoneReadinessService
      * если на узлах зоны уже есть каналы с каноничными именами.
      *
      * @param  array<int, string>  $missingBindings
-     * @return array<int, string>  Роли, которые удалось auto-bind
+     * @return array<int, string> Роли, которые удалось auto-bind
      */
     private function autoBindTransportRolesFromNodeChannels(Zone $zone, array $missingBindings): array
     {
@@ -887,6 +892,7 @@ class ZoneReadinessService
 
             if ($payload === [] || array_is_list($payload)) {
                 $missing[] = $type;
+
                 continue;
             }
 
@@ -895,6 +901,7 @@ class ZoneReadinessService
             // пользователь обязан явно сохранить PID-настройки.
             if (($document?->source ?? null) === 'bootstrap') {
                 $missing[] = $type;
+
                 continue;
             }
 

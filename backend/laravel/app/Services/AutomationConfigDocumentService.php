@@ -15,8 +15,7 @@ class AutomationConfigDocumentService
         private readonly AutomationConfigRegistry $registry,
         private readonly ZoneLogicProfileNormalizer $logicProfileNormalizer,
         private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
-    ) {
-    }
+    ) {}
 
     public function getDocument(string $namespace, string $scopeType, int $scopeId, bool $materialize = true): ?AutomationConfigDocument
     {
@@ -234,8 +233,7 @@ class AutomationConfigDocumentService
         ?string $scopeType = null,
         ?int $scopeId = null,
         array $currentPayload = []
-    ): array
-    {
+    ): array {
         if ($payload !== [] && array_is_list($payload) && $namespace !== AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES) {
             throw new \InvalidArgumentException("Payload for {$namespace} must be an object.");
         }
@@ -577,6 +575,7 @@ class AutomationConfigDocumentService
                 && ! array_is_list($value)
             ) {
                 $result[$key] = $this->deepMerge($result[$key], $value);
+
                 continue;
             }
 

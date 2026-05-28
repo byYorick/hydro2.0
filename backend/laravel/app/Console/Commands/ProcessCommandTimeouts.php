@@ -51,6 +51,7 @@ class ProcessCommandTimeouts extends Command
 
         if ($timeoutCommands->isEmpty()) {
             $this->info('No commands found to timeout');
+
             return Command::SUCCESS;
         }
 
@@ -79,6 +80,7 @@ class ProcessCommandTimeouts extends Command
                             'command_id' => $command->id,
                             'cmd_id' => $command->cmd_id ?? null,
                         ]);
+
                         return false;
                     }
 
@@ -116,7 +118,7 @@ class ProcessCommandTimeouts extends Command
                     // Отправляем WebSocket уведомление
                     // commandId должен быть cmd_id (строка), а не id (integer)
                     event(new CommandStatusUpdated(
-                        commandId: $command->cmd_id ?? (string)$command->id,
+                        commandId: $command->cmd_id ?? (string) $command->id,
                         status: 'TIMEOUT',
                         message: "Command timed out after {$timeoutMinutes} minutes",
                         error: null,
@@ -148,6 +150,7 @@ class ProcessCommandTimeouts extends Command
         }
 
         $this->info("Processed {$processed} command(s)");
+
         return Command::SUCCESS;
     }
 }

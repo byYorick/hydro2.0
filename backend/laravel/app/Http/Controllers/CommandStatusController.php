@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Command;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Command;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class CommandStatusController extends Controller
@@ -21,14 +21,14 @@ class CommandStatusController extends Controller
 
     /**
      * Получить статус команды.
-     * 
+     *
      * Проверяет права доступа: команда должна принадлежать зоне, к которой пользователь имеет доступ.
      * Если команда не имеет zone_id, проверяется node_id.
      */
     public function show(Request $request, string $cmdId): JsonResponse
     {
         // Проверяем авторизацию
-        if (!auth()->check()) {
+        if (! auth()->check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
@@ -38,7 +38,7 @@ class CommandStatusController extends Controller
 
         $command = Command::where('cmd_id', $cmdId)->first();
 
-        if (!$command) {
+        if (! $command) {
             if (preg_match('/^ae3-task-(\d+)$/', $cmdId, $matches) === 1) {
                 return $this->proxyAe3TaskStatus($request, (int) $matches[1], $cmdId);
             }
@@ -54,7 +54,7 @@ class CommandStatusController extends Controller
         // Проверяем права доступа через zone_id или node_id
         $user = auth()->user();
         $hasAccess = false;
-        
+
         if ($command->zone_id) {
             // Проверяем доступ к зоне через ZoneAccessHelper
             $hasAccess = ZoneAccessHelper::canAccessZone($user, $command->zone_id);
@@ -66,14 +66,14 @@ class CommandStatusController extends Controller
             $hasAccess = $user->isAdmin();
         }
 
-        if (!$hasAccess) {
+        if (! $hasAccess) {
             Log::warning('CommandStatusController: Unauthorized access attempt', [
                 'user_id' => auth()->id(),
                 'cmd_id' => $cmdId,
                 'command_zone_id' => $command->zone_id,
                 'command_node_id' => $command->node_id,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',

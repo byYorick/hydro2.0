@@ -19,9 +19,9 @@ use Illuminate\Support\Facades\Log;
 class DigitalTwinCalibrateAll extends Command
 {
     protected $signature = 'digital-twin:calibrate-all '
-        . '{--days=7 : Сколько дней истории использовать} '
-        . '{--zone= : Калибровать только указанную зону} '
-        . '{--persist=1 : Сохранять ли результат в zone_dt_params (1/0)}';
+        .'{--days=7 : Сколько дней истории использовать} '
+        .'{--zone= : Калибровать только указанную зону} '
+        .'{--persist=1 : Сохранять ли результат в zone_dt_params (1/0)}';
 
     protected $description = 'Прогон калибровки Digital Twin для всех активных зон';
 
@@ -42,6 +42,7 @@ class DigitalTwinCalibrateAll extends Command
 
         if ($zones->isEmpty()) {
             $this->warn('No active zones found.');
+
             return self::SUCCESS;
         }
 
@@ -49,7 +50,7 @@ class DigitalTwinCalibrateAll extends Command
         $failCount = 0;
 
         foreach ($zones as $zone) {
-            $url = rtrim($baseUrl, '/') . "/v1/calibrate/zone/{$zone->id}";
+            $url = rtrim($baseUrl, '/')."/v1/calibrate/zone/{$zone->id}";
             $this->info("Calibrating zone={$zone->id} ({$zone->name})...");
 
             try {
@@ -68,6 +69,7 @@ class DigitalTwinCalibrateAll extends Command
                     'zone_id' => $zone->id,
                     'error' => $e->getMessage(),
                 ]);
+
                 continue;
             }
 
@@ -75,7 +77,7 @@ class DigitalTwinCalibrateAll extends Command
                 $okCount++;
                 $data = $response->json('data') ?? [];
                 $persisted = $data['persisted'] ?? [];
-                $this->info("  OK; persisted=" . count($persisted));
+                $this->info('  OK; persisted='.count($persisted));
             } else {
                 $failCount++;
                 $this->error("  HTTP {$response->status()}: {$response->body()}");
@@ -89,6 +91,7 @@ class DigitalTwinCalibrateAll extends Command
 
         $this->newLine();
         $this->info("Done. ok={$okCount}, failed={$failCount}");
+
         return $failCount === 0 ? self::SUCCESS : self::FAILURE;
     }
 }

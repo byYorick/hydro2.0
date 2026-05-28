@@ -37,4 +37,3 @@ class PresetFactory extends Factory
         ];
     }
 }
-

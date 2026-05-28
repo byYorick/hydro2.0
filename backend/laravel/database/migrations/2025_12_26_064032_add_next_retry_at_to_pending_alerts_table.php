@@ -18,6 +18,7 @@ return new class extends Migration
 
         if (Schema::hasColumn('pending_alerts', 'next_retry_at')) {
             DB::statement('CREATE INDEX IF NOT EXISTS pending_alerts_next_retry_at_idx ON pending_alerts (next_retry_at)');
+
             return;
         }
 

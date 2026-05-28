@@ -76,35 +76,35 @@ return new class extends Migration
 
         DB::statement('DROP TRIGGER IF EXISTS trg_ae_command_status_notify ON commands;');
         DB::statement(
-            "
+            '
             CREATE TRIGGER trg_ae_command_status_notify
             AFTER INSERT OR UPDATE OF status, updated_at
             ON commands
             FOR EACH ROW
             EXECUTE FUNCTION public.ae_notify_command_status();
-            "
+            '
         );
 
         DB::statement('DROP TRIGGER IF EXISTS trg_ae_signal_update_zone_events ON zone_events;');
         DB::statement(
-            "
+            '
             CREATE TRIGGER trg_ae_signal_update_zone_events
             AFTER INSERT OR UPDATE
             ON zone_events
             FOR EACH ROW
             EXECUTE FUNCTION public.ae_notify_signal_update();
-            "
+            '
         );
 
         DB::statement('DROP TRIGGER IF EXISTS trg_ae_signal_update_telemetry_last ON telemetry_last;');
         DB::statement(
-            "
+            '
             CREATE TRIGGER trg_ae_signal_update_telemetry_last
             AFTER INSERT OR UPDATE OF last_value, last_ts, updated_at
             ON telemetry_last
             FOR EACH ROW
             EXECUTE FUNCTION public.ae_notify_signal_update();
-            "
+            '
         );
     }
 

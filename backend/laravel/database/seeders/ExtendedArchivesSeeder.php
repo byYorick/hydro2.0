@@ -2,16 +2,13 @@
 
 namespace Database\Seeders;
 
-use App\Models\Command;
-use App\Models\Zone;
-use App\Models\ZoneEvent;
 use App\Models\UnassignedNodeError;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Сидер для архивных таблиц (только ошибки узлов)
- * 
+ *
  * DEPRECATED: commands_archive и zone_events_archive удалены.
  * Используется партиционирование и retention policies вместо архивных таблиц.
  */
@@ -91,4 +88,3 @@ class ExtendedArchivesSeeder extends Seeder
         return $archived;
     }
 }
-

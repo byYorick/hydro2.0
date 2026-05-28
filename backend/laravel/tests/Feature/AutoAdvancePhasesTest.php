@@ -136,7 +136,7 @@ class AutoAdvancePhasesTest extends TestCase
         $zone = Zone::factory()->create(['control_mode' => $controlMode]);
 
         $recipe = Recipe::query()->create([
-            'name' => 'Test Recipe ' . uniqid(),
+            'name' => 'Test Recipe '.uniqid(),
             'crop_type' => 'lettuce',
             'visibility' => 'private',
         ]);

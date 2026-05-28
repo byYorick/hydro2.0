@@ -103,6 +103,7 @@ return new class extends Migration
                 && ! array_is_list($base[$key])
             ) {
                 $base[$key] = $this->mergeRecursive($base[$key], $value);
+
                 continue;
             }
 
@@ -118,6 +119,7 @@ return new class extends Migration
         foreach ($target as $key => $value) {
             if (! array_key_exists($key, $base)) {
                 $diff[$key] = $value;
+
                 continue;
             }
 
@@ -132,6 +134,7 @@ return new class extends Migration
                 if ($nested !== []) {
                     $diff[$key] = $nested;
                 }
+
                 continue;
             }
 

@@ -2,14 +2,14 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Таблица телеметрии с партиционированием по месяцам.
      * zone_id и cycle_id проставляются сервером для удобства запросов.
      *
@@ -19,10 +19,10 @@ return new class extends Migration
     {
         // Удаляем зависимые объекты (views) перед удалением таблицы
         DB::statement('DROP VIEW IF EXISTS telemetry_raw CASCADE');
-        
+
         // Удаляем старую таблицу, если она существует (без обратной совместимости)
         DB::statement('DROP TABLE IF EXISTS telemetry_samples CASCADE');
-        
+
         // Создаём новую таблицу без партиционирования (для совместимости с Laravel)
         // Партиционирование будет настроено отдельным SQL скриптом
         Schema::create('telemetry_samples', function (Blueprint $table) {

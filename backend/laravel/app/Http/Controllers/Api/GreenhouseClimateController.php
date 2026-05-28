@@ -19,8 +19,7 @@ class GreenhouseClimateController extends Controller
 {
     public function __construct(
         private readonly GreenhouseClimateDispatchService $dispatchService,
-    ) {
-    }
+    ) {}
 
     public function state(Request $request, Greenhouse $greenhouse): JsonResponse
     {

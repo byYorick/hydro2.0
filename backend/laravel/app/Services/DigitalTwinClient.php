@@ -9,24 +9,24 @@ class DigitalTwinClient
 {
     public function __construct(
         private string $baseUrl
-    ) {
-    }
+    ) {}
 
     /**
      * Симулировать зону.
      *
-     * @param int $zoneId ID зоны
-     * @param array $params Параметры симуляции:
-     *   - duration_hours: int (по умолчанию 72)
-     *   - step_minutes: int (по умолчанию 10)
-     *   - scenario: array {recipe_id, initial_state: {...}}
+     * @param  int  $zoneId  ID зоны
+     * @param  array  $params  Параметры симуляции:
+     *                         - duration_hours: int (по умолчанию 72)
+     *                         - step_minutes: int (по умолчанию 10)
+     *                         - scenario: array {recipe_id, initial_state: {...}}
      * @return array Результат симуляции
+     *
      * @throws \Exception
      */
     public function simulateZone(int $zoneId, array $params): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulate/zone';
-        
+        $url = rtrim($this->baseUrl, '/').'/simulate/zone';
+
         $payload = [
             'zone_id' => $zoneId,
             'duration_hours' => $params['duration_hours'] ?? 72,
@@ -51,7 +51,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin simulation failed: " . $response->body(),
+                'Digital Twin simulation failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -61,7 +61,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }
@@ -71,7 +71,7 @@ class DigitalTwinClient
      */
     public function startLiveSimulation(array $payload): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulations/live/start';
+        $url = rtrim($this->baseUrl, '/').'/simulations/live/start';
 
         try {
             $response = Http::timeout(30)->post($url, $payload);
@@ -85,7 +85,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin live simulation start failed: " . $response->body(),
+                'Digital Twin live simulation start failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -94,7 +94,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }
@@ -104,7 +104,7 @@ class DigitalTwinClient
      */
     public function stopLiveSimulation(array $payload): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulations/live/stop';
+        $url = rtrim($this->baseUrl, '/').'/simulations/live/stop';
 
         try {
             $response = Http::timeout(30)->post($url, $payload);
@@ -118,7 +118,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin live simulation stop failed: " . $response->body(),
+                'Digital Twin live simulation stop failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -127,7 +127,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }

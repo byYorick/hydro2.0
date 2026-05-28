@@ -2,11 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Models\Zone;
 use App\Models\ZoneSimulation;
-use App\Jobs\RunSimulationReportJob;
 use App\Services\DigitalTwinClient;
 use App\Services\SimulationOrchestratorService;
-use App\Models\Zone;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;

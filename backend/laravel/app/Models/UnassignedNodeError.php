@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UnassignedNodeError extends Model
@@ -34,4 +34,3 @@ class UnassignedNodeError extends Model
         return $this->belongsTo(DeviceNode::class, 'node_id');
     }
 }
-

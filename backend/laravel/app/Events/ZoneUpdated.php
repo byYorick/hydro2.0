@@ -14,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class ZoneUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -27,7 +27,7 @@ class ZoneUpdated implements ShouldBroadcast
     public function __construct(Zone $zone)
     {
         $this->zone = $zone;
-        
+
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
         $this->eventId = $sequence['event_id'];

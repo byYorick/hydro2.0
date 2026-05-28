@@ -37,6 +37,7 @@ class FullServiceTestSeederTest extends TestCase
         $schedulerLogs = DB::table('scheduler_logs')->get();
         $contractLogs = $schedulerLogs->filter(function ($log): bool {
             $details = json_decode((string) $log->details, true);
+
             return is_array($details) && ($details['contract_version'] ?? null) === 'scheduler_task_v2';
         });
         $this->assertGreaterThan(0, $contractLogs->count());

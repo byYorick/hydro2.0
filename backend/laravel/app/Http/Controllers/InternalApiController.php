@@ -20,18 +20,17 @@ class InternalApiController extends Controller
     public function __construct(
         private EffectiveTargetsService $effectiveTargetsService,
         private GrowCycleService $growCycleService,
-    ) {
-    }
+    ) {}
 
     /**
      * POST /api/internal/effective-targets/batch
      * Получить effective targets для нескольких зон одним запросом
-     * 
+     *
      * Request body:
      * {
      *   "zone_ids": [1, 2, 3]
      * }
-     * 
+     *
      * Response:
      * {
      *   "status": "ok",
@@ -91,9 +90,10 @@ class InternalApiController extends Controller
 
             foreach ($zoneIds as $zoneId) {
                 $cycle = $cycles->get($zoneId);
-                
-                if (!$cycle) {
+
+                if (! $cycle) {
                     $results[$zoneId] = null;
+
                     continue;
                 }
 

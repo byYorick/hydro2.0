@@ -87,4 +87,3 @@ class ChannelBinding extends Model
         });
     }
 }
-

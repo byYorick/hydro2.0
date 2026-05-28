@@ -29,6 +29,3 @@ class ZoneCycle extends Model
         return $this->belongsTo(Zone::class);
     }
 }
-
-
-

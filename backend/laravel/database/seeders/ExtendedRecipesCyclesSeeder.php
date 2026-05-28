@@ -4,11 +4,11 @@ namespace Database\Seeders;
 
 use App\Models\GrowCycle;
 use App\Models\GrowStageTemplate;
+use App\Models\NutrientProduct;
 use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Models\NutrientProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -149,6 +149,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
 
             if ($plants->isEmpty()) {
                 $this->command->warn('Растения не найдены для рецепта: '.$recipeConfig['name']);
+
                 continue;
             }
 

@@ -35,7 +35,7 @@ return new class extends Migration
             DB::statement("UPDATE alerts SET severity = COALESCE(severity, NULLIF(lower(details->>'severity'), ''), NULLIF(lower(details->>'level'), ''), CASE WHEN code LIKE '%timeout%' OR code LIKE '%circuit_open%' OR code LIKE '%db_unreachable%' OR code LIKE '%mqtt_down%' THEN 'critical' WHEN code LIKE '%failed%' OR code LIKE '%error%' THEN 'error' ELSE 'warning' END)");
             DB::statement("UPDATE alerts SET node_uid = COALESCE(node_uid, NULLIF(details->>'node_uid', ''))");
             DB::statement("UPDATE alerts SET hardware_id = COALESCE(hardware_id, NULLIF(details->>'hardware_id', ''))");
-            DB::statement("UPDATE alerts SET first_seen_at = COALESCE(first_seen_at, created_at)");
+            DB::statement('UPDATE alerts SET first_seen_at = COALESCE(first_seen_at, created_at)');
             DB::statement("UPDATE alerts SET last_seen_at = COALESCE(last_seen_at, NULLIF(details->>'last_seen_at','')::timestamp, created_at)");
 
             DB::statement('CREATE INDEX IF NOT EXISTS alerts_severity_idx ON alerts(severity)');
@@ -50,8 +50,8 @@ return new class extends Migration
             DB::statement("UPDATE alerts SET severity = COALESCE(severity, NULLIF(lower(JSON_UNQUOTE(JSON_EXTRACT(details, '$.severity'))), ''), NULLIF(lower(JSON_UNQUOTE(JSON_EXTRACT(details, '$.level'))), ''), CASE WHEN code LIKE '%timeout%' OR code LIKE '%circuit_open%' OR code LIKE '%db_unreachable%' OR code LIKE '%mqtt_down%' THEN 'critical' WHEN code LIKE '%failed%' OR code LIKE '%error%' THEN 'error' ELSE 'warning' END)");
             DB::statement("UPDATE alerts SET node_uid = COALESCE(node_uid, NULLIF(JSON_UNQUOTE(JSON_EXTRACT(details, '$.node_uid')), ''))");
             DB::statement("UPDATE alerts SET hardware_id = COALESCE(hardware_id, NULLIF(JSON_UNQUOTE(JSON_EXTRACT(details, '$.hardware_id')), ''))");
-            DB::statement("UPDATE alerts SET first_seen_at = COALESCE(first_seen_at, created_at)");
-            DB::statement("UPDATE alerts SET last_seen_at = COALESCE(last_seen_at, created_at)");
+            DB::statement('UPDATE alerts SET first_seen_at = COALESCE(first_seen_at, created_at)');
+            DB::statement('UPDATE alerts SET last_seen_at = COALESCE(last_seen_at, created_at)');
 
             Schema::table('alerts', function (Blueprint $table) {
                 $table->index('severity', 'alerts_severity_idx');

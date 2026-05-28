@@ -7,7 +7,6 @@ namespace App\Services\GrowCycle;
 use App\Enums\GrowCycleStatus;
 use App\Events\GrowCycleUpdated;
 use App\Models\GrowCycle;
-use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
 use App\Models\RecipeRevision;
 use App\Models\Zone;
@@ -31,7 +30,7 @@ class GrowCycleCreator
     ) {}
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function createCycle(
         Zone $zone,

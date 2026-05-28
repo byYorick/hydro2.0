@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('alerts', function (Blueprint $table) {
-            if (!Schema::hasColumn('alerts', 'error_count')) {
+            if (! Schema::hasColumn('alerts', 'error_count')) {
                 $table->integer('error_count')->default(1)->after('status');
             }
         });
@@ -55,4 +55,3 @@ return new class extends Migration
         });
     }
 };
-

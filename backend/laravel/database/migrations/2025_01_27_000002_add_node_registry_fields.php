@@ -9,18 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         // Проверяем, существует ли таблица
-        if (!Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes')) {
             return; // Таблица создается в другой миграции
         }
 
         Schema::table('nodes', function (Blueprint $table) {
-            if (!Schema::hasColumn('nodes', 'validated')) {
+            if (! Schema::hasColumn('nodes', 'validated')) {
                 $table->boolean('validated')->default(false)->after('status');
             }
-            if (!Schema::hasColumn('nodes', 'first_seen_at')) {
+            if (! Schema::hasColumn('nodes', 'first_seen_at')) {
                 $table->timestamp('first_seen_at')->nullable()->after('validated');
             }
-            if (!Schema::hasColumn('nodes', 'hardware_revision')) {
+            if (! Schema::hasColumn('nodes', 'hardware_revision')) {
                 $table->string('hardware_revision')->nullable()->after('fw_version');
             }
         });
@@ -33,4 +33,3 @@ return new class extends Migration
         });
     }
 };
-

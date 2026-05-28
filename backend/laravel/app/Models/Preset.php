@@ -44,4 +44,3 @@ class Preset extends Model
         return $this->hasMany(Zone::class);
     }
 }
-

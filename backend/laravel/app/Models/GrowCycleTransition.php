@@ -74,4 +74,3 @@ class GrowCycleTransition extends Model
         return $this->belongsTo(User::class, 'triggered_by');
     }
 }
-

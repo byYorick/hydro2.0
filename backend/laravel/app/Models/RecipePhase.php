@@ -27,5 +27,3 @@ class RecipePhase extends Model
         return $this->belongsTo(Recipe::class);
     }
 }
-
-

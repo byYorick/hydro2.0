@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Command;
+use App\Models\DeviceNode;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\DeviceNode;
-use App\Models\Command;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,7 +17,7 @@ class CommandStatusControllerTest extends TestCase
     {
         // Роут защищен middleware 'auth', который возвращает стандартное сообщение Laravel
         $response = $this->getJson('/api/commands/test-cmd-id/status');
-        
+
         $response->assertStatus(401)
             ->assertJsonStructure([
                 'status',
@@ -32,9 +32,9 @@ class CommandStatusControllerTest extends TestCase
         $this->actingAs($user);
         $token = $user->createToken('test')->plainTextToken;
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/commands/nonexistent-cmd-id/status');
-        
+
         $response->assertStatus(404)
             ->assertJson([
                 'status' => 'error',
@@ -57,9 +57,9 @@ class CommandStatusControllerTest extends TestCase
             'status' => Command::STATUS_QUEUED,
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/commands/{$command->cmd_id}/status");
-        
+
         $response->assertOk()
             ->assertJson([
                 'status' => 'ok',
@@ -108,9 +108,9 @@ class CommandStatusControllerTest extends TestCase
             'status' => 'completed',
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/commands/{$command->cmd_id}/status");
-        
+
         $response->assertOk()
             ->assertJson([
                 'status' => 'ok',
@@ -136,9 +136,9 @@ class CommandStatusControllerTest extends TestCase
             'status' => Command::STATUS_QUEUED,
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/commands/{$command->cmd_id}/status");
-        
+
         $response->assertOk()
             ->assertJson([
                 'status' => 'ok',
@@ -162,9 +162,9 @@ class CommandStatusControllerTest extends TestCase
             'status' => Command::STATUS_QUEUED,
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/commands/{$command->cmd_id}/status");
-        
+
         $response->assertStatus(403)
             ->assertJson([
                 'status' => 'error',

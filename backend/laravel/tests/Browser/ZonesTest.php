@@ -75,4 +75,3 @@ class ZonesTest extends DuskTestCase
         });
     }
 }
-

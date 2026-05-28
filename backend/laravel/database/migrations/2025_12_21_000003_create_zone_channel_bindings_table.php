@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Привязка оборудования к нодам/каналам
      */
     public function up(): void
@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('direction'); // actuator|sensor
             $table->string('role'); // main_pump|drain_pump|mister|fan|heater|...
             $table->timestamps();
-            
+
             $table->unique(['asset_id', 'node_id', 'channel'], 'zone_channel_bindings_unique');
             $table->index(['zone_id', 'asset_id']);
             $table->index(['node_id', 'channel']);
@@ -37,4 +37,3 @@ return new class extends Migration
         Schema::dropIfExists('zone_channel_bindings');
     }
 };
-

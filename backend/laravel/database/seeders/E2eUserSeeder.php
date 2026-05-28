@@ -28,5 +28,3 @@ class E2eUserSeeder extends Seeder
         );
     }
 }
-
-

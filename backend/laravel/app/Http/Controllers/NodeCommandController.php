@@ -6,10 +6,10 @@ use App\Helpers\ZoneAccessHelper;
 use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
 use App\Services\PythonBridgeService;
-use Illuminate\Http\Request;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\TimeoutException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class NodeCommandController extends Controller
@@ -32,14 +32,14 @@ class NodeCommandController extends Controller
         }
 
         $data = $request->validated();
-        
+
         // Support both 'type' and 'cmd' fields for backward compatibility
-        if (!isset($data['cmd']) && isset($data['type'])) {
+        if (! isset($data['cmd']) && isset($data['type'])) {
             $data['cmd'] = $data['type'];
         }
-        
+
         // Ensure cmd is set (валидация в Form Request)
-        if (!isset($data['cmd'])) {
+        if (! isset($data['cmd'])) {
             return response()->json([
                 'message' => 'The cmd or type field is required.',
                 'errors' => ['cmd' => ['The cmd or type field is required.']],
@@ -47,7 +47,7 @@ class NodeCommandController extends Controller
         }
 
         // Ensure params is an associative array (object), not a list (валидация в Form Request)
-        if (!isset($data['params']) || $data['params'] === null) {
+        if (! isset($data['params']) || $data['params'] === null) {
             $data['params'] = [];
         } elseif (is_array($data['params']) && array_is_list($data['params'])) {
             $data['params'] = [];
@@ -69,6 +69,7 @@ class NodeCommandController extends Controller
                 'command_type' => $data['cmd'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'SERVICE_UNAVAILABLE',
@@ -82,6 +83,7 @@ class NodeCommandController extends Controller
                 'command_type' => $data['cmd'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'SERVICE_TIMEOUT',
@@ -120,6 +122,7 @@ class NodeCommandController extends Controller
                 'command_type' => $data['cmd'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'INVALID_ARGUMENT',
@@ -135,6 +138,7 @@ class NodeCommandController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'INTERNAL_ERROR',

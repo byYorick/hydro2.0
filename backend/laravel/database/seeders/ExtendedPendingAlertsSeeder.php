@@ -18,6 +18,7 @@ class ExtendedPendingAlertsSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -31,7 +32,7 @@ class ExtendedPendingAlertsSeeder extends Seeder
         }
 
         $this->command->info("Создано ожидающих алертов: {$created}");
-        $this->command->info("Всего ожидающих алертов: " . DB::table('pending_alerts')->count());
+        $this->command->info('Всего ожидающих алертов: '.DB::table('pending_alerts')->count());
     }
 
     private function seedPendingAlertsForZone(Zone $zone): int
@@ -51,7 +52,7 @@ class ExtendedPendingAlertsSeeder extends Seeder
 
         for ($i = 0; $i < $alertCount; $i++) {
             $alertType = $alertTypes[rand(0, count($alertTypes) - 1)];
-            
+
             // Выбираем статус по весам
             $rand = rand(1, 100);
             $cumulative = 0;

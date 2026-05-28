@@ -13,7 +13,7 @@ return new class extends Migration
             $table->timestamp('current_stage_started_at')->nullable()->after('current_stage_code');
             $table->timestamp('planting_at')->nullable()->after('started_at'); // Дата посадки
             // expected_harvest_at уже существует, но убедимся что он есть
-            if (!Schema::hasColumn('grow_cycles', 'expected_harvest_at')) {
+            if (! Schema::hasColumn('grow_cycles', 'expected_harvest_at')) {
                 $table->timestamp('expected_harvest_at')->nullable()->after('recipe_started_at');
             }
 
@@ -29,4 +29,3 @@ return new class extends Migration
         });
     }
 };
-

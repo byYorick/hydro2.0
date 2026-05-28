@@ -205,28 +205,38 @@ onMounted(loadState)
       <div
         v-if="loading"
         class="h-36 animate-pulse border border-zinc-800 bg-zinc-900/40"
-      />
+      ></div>
 
       <template v-else-if="state">
         <section class="grid gap-3 md:grid-cols-4">
           <div class="border border-zinc-800 bg-zinc-900/40 p-3">
-            <div class="text-xs uppercase text-zinc-500">Режим</div>
-            <div class="mt-2 text-lg font-semibold">{{ state.control_mode }}</div>
+            <div class="text-xs uppercase text-zinc-500">
+              Режим
+            </div>
+            <div class="mt-2 text-lg font-semibold">
+              {{ state.control_mode }}
+            </div>
           </div>
           <div class="border border-zinc-800 bg-zinc-900/40 p-3">
-            <div class="text-xs uppercase text-zinc-500">Левая / правая</div>
+            <div class="text-xs uppercase text-zinc-500">
+              Левая / правая
+            </div>
             <div class="mt-2 text-lg font-semibold">
               {{ pct(state.left_position_pct) }} / {{ pct(state.right_position_pct) }}
             </div>
           </div>
           <div class="border border-zinc-800 bg-zinc-900/40 p-3">
-            <div class="text-xs uppercase text-zinc-500">Рекомендация</div>
+            <div class="text-xs uppercase text-zinc-500">
+              Рекомендация
+            </div>
             <div class="mt-2 text-lg font-semibold">
               {{ pct(state.recommended_left_position_pct) }} / {{ pct(state.recommended_right_position_pct) }}
             </div>
           </div>
           <div class="border border-zinc-800 bg-zinc-900/40 p-3">
-            <div class="text-xs uppercase text-zinc-500">Сенсоры</div>
+            <div class="text-xs uppercase text-zinc-500">
+              Сенсоры
+            </div>
             <div class="mt-2 text-sm">
               weather {{ boolLabel(state.weather_fresh) }} · inside {{ boolLabel(state.inside_climate_fresh) }}
             </div>
@@ -236,30 +246,44 @@ onMounted(loadState)
         <section class="grid gap-4 lg:grid-cols-[1fr_360px]">
           <div class="space-y-4">
             <div class="border border-zinc-800 bg-zinc-900/40 p-4">
-              <h2 class="text-sm font-semibold text-zinc-100">Решение runtime</h2>
+              <h2 class="text-sm font-semibold text-zinc-100">
+                Решение runtime
+              </h2>
               <dl class="mt-3 grid gap-3 text-sm md:grid-cols-2">
                 <div>
-                  <dt class="text-zinc-500">Последняя команда</dt>
+                  <dt class="text-zinc-500">
+                    Последняя команда
+                  </dt>
                   <dd>{{ pct(state.last_sent_left_position_pct) }} / {{ pct(state.last_sent_right_position_pct) }}</dd>
                 </div>
                 <div>
-                  <dt class="text-zinc-500">Следующий tick</dt>
+                  <dt class="text-zinc-500">
+                    Следующий tick
+                  </dt>
                   <dd>{{ formatDate(state.next_scheduled_tick_at) }}</dd>
                 </div>
                 <div>
-                  <dt class="text-zinc-500">Последнее решение</dt>
+                  <dt class="text-zinc-500">
+                    Последнее решение
+                  </dt>
                   <dd>{{ formatDate(state.last_decision_at) }}</dd>
                 </div>
                 <div>
-                  <dt class="text-zinc-500">Последняя команда</dt>
+                  <dt class="text-zinc-500">
+                    Последняя команда
+                  </dt>
                   <dd>{{ formatDate(state.last_command_at) }}</dd>
                 </div>
                 <div>
-                  <dt class="text-zinc-500">Task</dt>
+                  <dt class="text-zinc-500">
+                    Task
+                  </dt>
                   <dd>{{ state.last_task_id ?? '-' }}</dd>
                 </div>
                 <div>
-                  <dt class="text-zinc-500">Override</dt>
+                  <dt class="text-zinc-500">
+                    Override
+                  </dt>
                   <dd>{{ state.active_manual_override_id ?? '-' }}</dd>
                 </div>
               </dl>
@@ -279,7 +303,9 @@ onMounted(loadState)
                 v-if="state.active_alerts_summary?.length"
                 class="mt-3 border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100"
               >
-                <div class="font-medium">Активные ограничения</div>
+                <div class="font-medium">
+                  Активные ограничения
+                </div>
                 <ul class="mt-2 space-y-1">
                   <li
                     v-for="alert in state.active_alerts_summary"
@@ -294,7 +320,9 @@ onMounted(loadState)
 
           <aside class="space-y-4">
             <div class="border border-zinc-800 bg-zinc-900/40 p-4">
-              <h2 class="text-sm font-semibold text-zinc-100">Control mode</h2>
+              <h2 class="text-sm font-semibold text-zinc-100">
+                Control mode
+              </h2>
               <div class="mt-3 grid grid-cols-3 gap-1 rounded border border-zinc-800 p-1">
                 <button
                   v-for="mode in controlModes"
@@ -322,7 +350,9 @@ onMounted(loadState)
               class="border border-zinc-800 bg-zinc-900/40 p-4"
               @submit.prevent="storeOverride"
             >
-              <h2 class="text-sm font-semibold text-zinc-100">Manual override</h2>
+              <h2 class="text-sm font-semibold text-zinc-100">
+                Manual override
+              </h2>
               <div class="mt-3 grid grid-cols-2 gap-3">
                 <label class="text-xs text-zinc-400">
                   Левая, %

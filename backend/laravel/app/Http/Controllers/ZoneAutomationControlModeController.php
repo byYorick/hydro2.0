@@ -18,8 +18,7 @@ class ZoneAutomationControlModeController extends Controller
 {
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
-    ) {
-    }
+    ) {}
 
     public function show(Request $request, Zone $zone): JsonResponse
     {
@@ -203,6 +202,7 @@ class ZoneAutomationControlModeController extends Controller
             return '';
         }
         $role = strtolower(trim((string) ($user->role ?? '')));
+
         return $role !== '' ? $role : 'agronomist';
     }
 

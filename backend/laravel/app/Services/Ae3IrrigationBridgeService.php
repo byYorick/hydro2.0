@@ -13,8 +13,7 @@ class Ae3IrrigationBridgeService
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly ZoneAutomationIntentService $intentService,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string,mixed>  $payload

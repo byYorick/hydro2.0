@@ -36,7 +36,7 @@ class ZoneOperationJob implements ShouldQueue
     {
         try {
             $zone = Zone::findOrFail($this->zoneId);
-            
+
             // Устанавливаем статус "processing"
             \Illuminate\Support\Facades\Cache::put("zone_operation:{$this->jobId}", [
                 'status' => 'processing',
@@ -46,7 +46,7 @@ class ZoneOperationJob implements ShouldQueue
             ], 3600); // Храним 1 час
 
             // Выполняем операцию
-            $result = match($this->operation) {
+            $result = match ($this->operation) {
                 'fill' => $zoneService->fill($zone, $this->data),
                 'drain' => $zoneService->drain($zone, $this->data),
                 'calibrateFlow' => $zoneService->calibrateFlow($zone, $this->data),
@@ -110,4 +110,3 @@ class ZoneOperationJob implements ShouldQueue
         ]);
     }
 }
-

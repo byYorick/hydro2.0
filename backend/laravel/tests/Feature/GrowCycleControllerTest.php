@@ -6,8 +6,8 @@ use App\Enums\GrowCycleStatus;
 use App\Models\Alert;
 use App\Models\AutomationConfigDocument;
 use App\Models\ChannelBinding;
-use App\Models\GrowCycle;
 use App\Models\DeviceNode;
+use App\Models\GrowCycle;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
@@ -22,8 +22,8 @@ use App\Services\GrowCycleService;
 use App\Services\ZoneLogicProfileCatalog;
 use App\Services\ZoneLogicProfileService;
 use Illuminate\Support\Facades\DB;
-use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class GrowCycleControllerTest extends TestCase

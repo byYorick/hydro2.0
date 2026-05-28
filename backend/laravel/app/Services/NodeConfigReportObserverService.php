@@ -10,8 +10,7 @@ class NodeConfigReportObserverService
     public function __construct(
         private readonly NodeService $nodeService,
         private readonly NodeLifecycleService $nodeLifecycleService,
-    ) {
-    }
+    ) {}
 
     /**
      * Laravel-only owner of bind/rebind completion after observed config_report.

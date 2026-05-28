@@ -30,7 +30,7 @@ defineProps({
     >
       <div
         class="h-full w-full bg-[radial-gradient(ellipse_80%_60%_at_15%_20%,rgba(47,158,93,0.28),transparent),radial-gradient(ellipse_70%_50%_at_85%_30%,rgba(43,154,159,0.22),transparent),radial-gradient(ellipse_60%_40%_at_50%_90%,rgba(107,207,92,0.12),transparent)]"
-      />
+      ></div>
     </div>
     <div
       class="relative flex min-h-screen flex-col items-center justify-center selection:bg-[color:var(--accent-green)] selection:text-[color:var(--btn-primary-text)]"
@@ -104,7 +104,11 @@ defineProps({
                     stroke-width="1.25"
                     aria-hidden="true"
                   >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
+                    />
                   </svg>
                   <p class="max-w-sm text-center text-sm font-medium text-[color:var(--text-muted)]">
                     Документация Laravel — без внешних превью, только локальные стили.
@@ -118,9 +122,9 @@ defineProps({
               <div
                 class="relative flex items-center gap-6 lg:items-end"
               >
-              <div
-                class="flex items-start gap-6 lg:flex-col"
-              >
+                <div
+                  class="flex items-start gap-6 lg:flex-col"
+                >
                   <div
                     class="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--badge-success-bg)] text-[color:var(--accent-green)] sm:size-16"
                   >

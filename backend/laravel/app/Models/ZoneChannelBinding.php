@@ -49,21 +49,32 @@ class ZoneChannelBinding extends Model
      * Направления
      */
     public const DIRECTION_ACTUATOR = 'actuator';
+
     public const DIRECTION_SENSOR = 'sensor';
 
     /**
      * Роли оборудования
      */
     public const ROLE_MAIN_PUMP = 'pump_main';
+
     public const ROLE_DRAIN_PUMP = 'drain_pump';
+
     public const ROLE_MISTER = 'mister';
+
     public const ROLE_FAN = 'fan';
+
     public const ROLE_HEATER = 'heater';
+
     public const ROLE_LIGHT = 'light';
+
     public const ROLE_VENT = 'vent';
+
     public const ROLE_PH_SENSOR = 'ph_sensor';
+
     public const ROLE_EC_SENSOR = 'ec_sensor';
+
     public const ROLE_TEMP_SENSOR = 'temp_sensor';
+
     public const ROLE_FLOW_SENSOR = 'flow_sensor';
 
     /**
@@ -86,4 +97,3 @@ class ZoneChannelBinding extends Model
         ];
     }
 }
-

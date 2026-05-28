@@ -5,11 +5,9 @@ namespace Tests\Feature\Broadcasting;
 use App\Events\CommandStatusUpdated;
 use App\Events\ZoneUpdated;
 use App\Models\Greenhouse;
-use App\Models\User;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class WebSocketIntegrationTest extends TestCase
@@ -160,7 +158,7 @@ class WebSocketIntegrationTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $zoneEvent = new ZoneUpdated($zone);
-        
+
         // ZoneUpdated может не иметь broadcastAs(), используем имя класса
         $this->assertInstanceOf(\Illuminate\Contracts\Broadcasting\ShouldBroadcast::class, $zoneEvent);
     }
@@ -179,4 +177,3 @@ class WebSocketIntegrationTest extends TestCase
         $this->assertEquals('broadcasts', $zoneEvent->queue);
     }
 }
-

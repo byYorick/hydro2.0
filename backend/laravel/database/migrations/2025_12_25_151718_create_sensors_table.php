@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Единая таблица сенсоров для зон, теплиц и наружных датчиков.
      * zone_id nullable для тепличных/наружных датчиков.
      */
@@ -32,7 +32,7 @@ return new class extends Migration
                 'PRESSURE',
                 'LIGHT_INTENSITY',
                 'SOIL_MOISTURE',
-                'OTHER'
+                'OTHER',
             ])->default('TEMPERATURE');
             $table->string('label'); // Человекочитаемое название
             $table->string('unit')->nullable(); // Единица измерения (C, %, ppm, и т.д.)
@@ -58,4 +58,3 @@ return new class extends Migration
         Schema::dropIfExists('sensors');
     }
 };
-

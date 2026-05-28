@@ -20,12 +20,13 @@ class UserController extends Controller
             $search = $request->string('search');
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
-                  ->orWhere('email', 'ilike', "%{$search}%");
+                    ->orWhere('email', 'ilike', "%{$search}%");
             });
         }
         $items = $query->select(['id', 'name', 'email', 'role', 'created_at'])
             ->latest('id')
             ->paginate(25);
+
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -67,6 +68,7 @@ class UserController extends Controller
             $data['password'] = Hash::make($data['password']);
         }
         $user->update($data);
+
         return response()->json([
             'status' => 'ok',
             'data' => $user->makeHidden(['password', 'remember_token']),
@@ -83,6 +85,7 @@ class UserController extends Controller
             ], Response::HTTP_BAD_REQUEST);
         }
         $user->delete();
+
         return response()->json(['status' => 'ok']);
     }
 }

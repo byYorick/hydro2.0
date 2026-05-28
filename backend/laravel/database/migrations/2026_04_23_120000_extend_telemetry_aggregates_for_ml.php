@@ -15,25 +15,25 @@ return new class extends Migration
     public function up(): void
     {
         foreach (['telemetry_agg_1m', 'telemetry_agg_1h'] as $table) {
-            if (!Schema::hasTable($table)) {
+            if (! Schema::hasTable($table)) {
                 continue;
             }
 
             $columns = [
-                'value_std'      => 'double precision',
-                'value_p10'      => 'double precision',
-                'value_p90'      => 'double precision',
-                'slope_per_min'  => 'double precision',
-                'valid_count'    => 'integer',
-                'agg_version'    => 'smallint',
+                'value_std' => 'double precision',
+                'value_p10' => 'double precision',
+                'value_p90' => 'double precision',
+                'slope_per_min' => 'double precision',
+                'valid_count' => 'integer',
+                'agg_version' => 'smallint',
             ];
 
             foreach ($columns as $name => $type) {
-                if (!Schema::hasColumn($table, $name)) {
+                if (! Schema::hasColumn($table, $name)) {
                     $default = match ($name) {
                         'valid_count' => 'DEFAULT 0',
                         'agg_version' => 'NOT NULL DEFAULT 1',
-                        default       => '',
+                        default => '',
                     };
                     DB::statement("ALTER TABLE {$table} ADD COLUMN {$name} {$type} {$default}");
                 }
@@ -42,7 +42,7 @@ return new class extends Migration
 
         // Compression policy для telemetry_agg_1m: сжимать чанки старше 14 дней.
         // telemetry_agg_1h оставляем без compression (уже часовые данные, мало строк).
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
                 $isHypertable = DB::selectOne("
                     SELECT EXISTS (
@@ -69,7 +69,7 @@ return new class extends Migration
                         ) AS exists
                     ");
 
-                    if (!$hasPolicy || !$hasPolicy->exists) {
+                    if (! $hasPolicy || ! $hasPolicy->exists) {
                         DB::statement("
                             SELECT add_compression_policy(
                                 'telemetry_agg_1m',
@@ -80,28 +80,28 @@ return new class extends Migration
                     }
                 }
             } catch (\Exception $e) {
-                \Log::warning('ML Phase 1: failed to enable compression on telemetry_agg_1m: ' . $e->getMessage());
+                \Log::warning('ML Phase 1: failed to enable compression on telemetry_agg_1m: '.$e->getMessage());
             }
         }
     }
 
     public function down(): void
     {
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
                 DB::statement("SELECT remove_compression_policy('telemetry_agg_1m', if_exists => TRUE)");
             } catch (\Exception $e) {
                 // ignore
             }
             try {
-                DB::statement("ALTER TABLE telemetry_agg_1m SET (timescaledb.compress = false)");
+                DB::statement('ALTER TABLE telemetry_agg_1m SET (timescaledb.compress = false)');
             } catch (\Exception $e) {
                 // ignore — compression может быть не включён
             }
         }
 
         foreach (['telemetry_agg_1m', 'telemetry_agg_1h'] as $table) {
-            if (!Schema::hasTable($table)) {
+            if (! Schema::hasTable($table)) {
                 continue;
             }
             foreach (['agg_version', 'valid_count', 'slope_per_min', 'value_p90', 'value_p10', 'value_std'] as $col) {

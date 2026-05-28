@@ -13,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 
 class GrowCycleUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -29,7 +29,7 @@ class GrowCycleUpdated implements ShouldBroadcast
     {
         $this->cycle = $cycle;
         $this->action = $action;
-        
+
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
         $this->eventId = $sequence['event_id'];
@@ -58,7 +58,7 @@ class GrowCycleUpdated implements ShouldBroadcast
     public function broadcastWith(): array
     {
         $cycle = $this->cycle->load('currentPhase.recipeRevisionPhase.stageTemplate');
-        
+
         return [
             'cycle' => [
                 'id' => $this->cycle->id,
@@ -87,7 +87,7 @@ class GrowCycleUpdated implements ShouldBroadcast
     public function broadcasted(): void
     {
         // Определяем тип события для zone_events
-        $eventType = match($this->action) {
+        $eventType = match ($this->action) {
             'PAUSED' => 'CYCLE_PAUSED',
             'RESUMED' => 'CYCLE_RESUMED',
             'HARVESTED' => 'CYCLE_HARVESTED',
@@ -96,10 +96,10 @@ class GrowCycleUpdated implements ShouldBroadcast
             'STAGE_COMPUTED' => 'STAGE_COMPUTED',
             default => "CYCLE_{$this->action}",
         };
-        
+
         $currentPhase = $this->cycle->currentPhase;
         $stageCode = $currentPhase?->recipeRevisionPhase?->stageTemplate?->code ?? null;
-        
+
         $this->recordZoneEvent(
             $this->cycle->zone_id,
             $eventType,
@@ -118,4 +118,3 @@ class GrowCycleUpdated implements ShouldBroadcast
         );
     }
 }
-

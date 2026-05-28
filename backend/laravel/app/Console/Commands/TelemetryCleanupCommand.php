@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class TelemetryCleanupCommand extends Command
 {
@@ -35,19 +35,19 @@ class TelemetryCleanupCommand extends Command
         $this->info("Очистка raw данных телеметрии старше {$days} дней (до {$cutoffDate->toDateTimeString()})...");
 
         $totalDeleted = 0;
-        
+
         // Удаляем старые записи из telemetry_samples порциями для предотвращения утечки памяти
         do {
-        $deleted = DB::table('telemetry_samples')
-            ->where('ts', '<', $cutoffDate)
+            $deleted = DB::table('telemetry_samples')
+                ->where('ts', '<', $cutoffDate)
                 ->limit($chunkSize)
-            ->delete();
+                ->delete();
 
             $totalDeleted += $deleted;
-            
+
             if ($deleted > 0) {
                 $this->info("Удалено записей: {$totalDeleted}...");
-                
+
                 // Принудительная сборка мусора после каждого чанка
                 if (function_exists('gc_collect_cycles')) {
                     gc_collect_cycles();
@@ -65,6 +65,7 @@ class TelemetryCleanupCommand extends Command
         }
 
         $this->info('Очистка завершена.');
+
         return Command::SUCCESS;
     }
 }

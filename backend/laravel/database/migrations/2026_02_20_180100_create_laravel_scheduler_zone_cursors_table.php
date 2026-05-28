@@ -25,4 +25,3 @@ return new class extends Migration
         Schema::dropIfExists('laravel_scheduler_zone_cursors');
     }
 };
-

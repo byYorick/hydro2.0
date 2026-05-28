@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('pid_state')) {
+        if (! Schema::hasTable('pid_state')) {
             Schema::create('pid_state', function (Blueprint $table) {
                 $table->unsignedBigInteger('zone_id');
                 $table->string('pid_type', 10);
@@ -27,7 +27,7 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('command_tracking')) {
+        if (! Schema::hasTable('command_tracking')) {
             Schema::create('command_tracking', function (Blueprint $table) {
                 $table->bigIncrements('id');
                 $table->string('cmd_id', 100)->unique();
@@ -49,7 +49,7 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('command_audit')) {
+        if (! Schema::hasTable('command_audit')) {
             Schema::create('command_audit', function (Blueprint $table) {
                 $table->bigIncrements('id');
                 $table->unsignedBigInteger('zone_id');
@@ -67,7 +67,7 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('zone_automation_state')) {
+        if (! Schema::hasTable('zone_automation_state')) {
             Schema::create('zone_automation_state', function (Blueprint $table) {
                 $table->unsignedBigInteger('zone_id');
                 $table->jsonb('state')->nullable();

@@ -29,4 +29,3 @@ class LaravelSchedulerZoneCursor extends Model
         'metadata' => 'array',
     ];
 }
-

@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\Greenhouse;
-use App\Models\Zone;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\NodeChannel;
+use App\Models\Zone;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
@@ -41,7 +41,7 @@ class LoadTestSeeder extends Seeder
                     'name' => "Load Test Zone {$i}",
                 ],
                 [
-                    'uid' => 'zone-load-test-' . $i,
+                    'uid' => 'zone-load-test-'.$i,
                     'description' => "Zone for load testing #{$i}",
                     'status' => $i % 10 === 0 ? 'PAUSED' : 'RUNNING',
                 ]
@@ -50,26 +50,26 @@ class LoadTestSeeder extends Seeder
         }
 
         // Создаем 1000 нод, распределяя их по зонам
-        $nodesPerZone = (int)ceil(1000 / $zonesCount);
+        $nodesPerZone = (int) ceil(1000 / $zonesCount);
         for ($i = 0; $i < 1000; $i++) {
             $zone = $zones[$i % $zonesCount];
-            $j = (int)floor($i / $zonesCount) + 1;
-                $node = DeviceNode::firstOrCreate(
-                    [
-                        'uid' => "node-load-test-{$i}-{$j}",
-                    ],
-                    [
-                        'zone_id' => $zone->id,
-                        'name' => "Node {$j} - Zone {$i}",
-                        'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'climate'),
-                        'status' => 'online',
-                        'lifecycle_state' => 'ACTIVE',
-                        'fw_version' => '1.0.0',
-                        'last_seen_at' => now(),
-                        'last_heartbeat_at' => now(),
-                    ]
-                );
-                $nodes[] = $node;
+            $j = (int) floor($i / $zonesCount) + 1;
+            $node = DeviceNode::firstOrCreate(
+                [
+                    'uid' => "node-load-test-{$i}-{$j}",
+                ],
+                [
+                    'zone_id' => $zone->id,
+                    'name' => "Node {$j} - Zone {$i}",
+                    'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'climate'),
+                    'status' => 'online',
+                    'lifecycle_state' => 'ACTIVE',
+                    'fw_version' => '1.0.0',
+                    'last_seen_at' => now(),
+                    'last_heartbeat_at' => now(),
+                ]
+            );
+            $nodes[] = $node;
 
             // Создаем каналы для ноды
             $channels = ['ph', 'ec', 'temperature', 'humidity'];
@@ -94,7 +94,7 @@ class LoadTestSeeder extends Seeder
             }
         }
 
-        $this->command->info("✓ Создано зон: " . count($zones));
-        $this->command->info("✓ Создано нод: " . count($nodes));
+        $this->command->info('✓ Создано зон: '.count($zones));
+        $this->command->info('✓ Создано нод: '.count($nodes));
     }
 }

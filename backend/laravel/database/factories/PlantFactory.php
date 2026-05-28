@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 class PlantFactory extends Factory
 {
     protected $model = \App\Models\Plant::class;
+
     /**
      * Define the model's default state.
      *

@@ -20,7 +20,7 @@ class CommandStatusUpdatedTest extends TestCase
 
         $this->assertEquals(new PrivateChannel('hydro.commands.7'), $event->broadcastOn());
         $this->assertSame('CommandStatusUpdated', $event->broadcastAs());
-        
+
         $data = $event->broadcastWith();
         $this->assertEquals(42, $data['commandId']);
         $this->assertEquals('completed', $data['status']);
@@ -46,7 +46,7 @@ class CommandStatusUpdatedTest extends TestCase
         );
 
         $this->assertEquals(new PrivateChannel('hydro.commands.global'), $event->broadcastOn());
-        
+
         $data = $event->broadcastWith();
         $this->assertEquals('cmd-1', $data['commandId']);
         $this->assertEquals('failed', $data['status']);

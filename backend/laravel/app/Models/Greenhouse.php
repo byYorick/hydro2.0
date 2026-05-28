@@ -59,5 +59,4 @@ class Greenhouse extends Model
     {
         return $this->hasOne(GreenhouseAutomationState::class);
     }
-
 }

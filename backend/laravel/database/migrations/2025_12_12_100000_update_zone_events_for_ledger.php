@@ -2,14 +2,14 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Обновляет таблицу zone_events для Zone Event Ledger:
      * - Переименовываем details в payload_json
      * - Добавляем entity_type и entity_id
@@ -24,12 +24,12 @@ return new class extends Migration
             $table->string('entity_type')->nullable()->after('type');
             $table->string('entity_id')->nullable()->after('entity_type'); // Изменено на string для поддержки строковых ID
             $table->bigInteger('server_ts')->nullable()->after('entity_id');
-            
+
             // Добавляем индексы для новых полей
             $table->index(['zone_id', 'entity_type', 'entity_id'], 'zone_events_zone_entity_idx');
             $table->index(['zone_id', 'id'], 'zone_events_zone_id_id_idx'); // для after_id запросов
         });
-        
+
         // Переименовываем details в payload_json (если колонка существует)
         if (Schema::hasColumn('zone_events', 'details')) {
             DB::statement('ALTER TABLE zone_events RENAME COLUMN details TO payload_json');
@@ -51,11 +51,10 @@ return new class extends Migration
             $table->dropIndex('zone_events_zone_id_id_idx');
             $table->dropColumn(['entity_type', 'entity_id', 'server_ts']);
         });
-        
+
         // Переименовываем обратно payload_json в details
         if (Schema::hasColumn('zone_events', 'payload_json')) {
             DB::statement('ALTER TABLE zone_events RENAME COLUMN payload_json TO details');
         }
     }
 };
-

@@ -44,4 +44,3 @@ class RecipeAnalytics extends Model
         return $this->belongsTo(Zone::class);
     }
 }
-

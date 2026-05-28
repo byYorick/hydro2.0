@@ -23,7 +23,7 @@ class GrowCycleConfigSyncer
     ) {}
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
     {

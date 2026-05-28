@@ -2,13 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\Zone;
-use App\Models\Greenhouse;
-use App\Models\DeviceNode;
 use App\Models\Alert;
-use Tests\RefreshDatabase;
+use App\Models\DeviceNode;
+use App\Models\Greenhouse;
+use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class UnassignedNodeErrorsAttachTest extends TestCase
@@ -22,18 +21,18 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $hardwareId = 'esp32-test-node';
         $firstSeenAt = now()->subHours(5);
         $lastSeenAt = now()->subMinutes(30);
-        
+
         // Создаем несколько ошибок для незарегистрированного узла
         DB::table('unassigned_node_errors')->insert([
             'hardware_id' => $hardwareId,
             'error_message' => 'Connection timeout',
             'error_code' => 'ERR_TIMEOUT',
             'severity' => 'ERROR',
-            'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+            'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
             'count' => 10,
             'first_seen_at' => $firstSeenAt,
             'last_seen_at' => $lastSeenAt,
@@ -42,13 +41,13 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        
+
         DB::table('unassigned_node_errors')->insert([
             'hardware_id' => $hardwareId,
             'error_message' => 'Sensor reading failed',
             'error_code' => 'ERR_SENSOR',
             'severity' => 'WARNING',
-            'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+            'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
             'count' => 5,
             'first_seen_at' => $firstSeenAt->copy()->subMinutes(10),
             'last_seen_at' => $lastSeenAt->copy()->subMinutes(5),
@@ -60,7 +59,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел с hardware_id и привязываем к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => $zone->id,
             'type' => 'climate',
@@ -83,7 +82,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'source' => 'infra',
             'status' => 'ACTIVE',
         ]);
-        
+
         $this->assertDatabaseHas('alerts', [
             'zone_id' => $zone->id,
             'code' => 'infra_node_error_err_sensor',
@@ -97,7 +96,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $this->assertEquals(10, $timeoutAlert->details['count'], 'Count должен быть сохранен');
         $this->assertArrayHasKey('first_seen_at', $timeoutAlert->details);
         $this->assertArrayHasKey('last_seen_at', $timeoutAlert->details);
-        
+
         $sensorAlert = Alert::where('code', 'infra_node_error_err_sensor')->first();
         $this->assertNotNull($sensorAlert);
         $this->assertEquals(5, $sensorAlert->details['count'], 'Count должен быть сохранен');
@@ -111,7 +110,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'node_id' => $node->id,
             'attached_zone_id' => $zone->id,
         ]);
-        
+
         $this->assertDatabaseHas('unassigned_node_errors_archive', [
             'hardware_id' => $hardwareId,
             'error_code' => 'ERR_SENSOR',
@@ -130,12 +129,12 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'zone_id' => $zone->id,
             'type' => 'unassigned_attached',
         ]);
-        
+
         $zoneEvent = DB::table('zone_events')
             ->where('zone_id', $zone->id)
             ->where('type', 'unassigned_attached')
             ->first();
-        
+
         $this->assertNotNull($zoneEvent);
         $payload = json_decode($zoneEvent->payload_json, true);
         $this->assertEquals($node->id, $payload['node_id']);
@@ -149,14 +148,14 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     public function test_unassigned_errors_not_archived_if_node_not_attached_to_zone(): void
     {
         $hardwareId = 'esp32-unattached-node';
-        
+
         // Создаем ошибку
         DB::table('unassigned_node_errors')->insert([
             'hardware_id' => $hardwareId,
             'error_message' => 'Test error',
             'error_code' => 'ERR_TEST',
             'severity' => 'ERROR',
-            'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+            'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
             'count' => 1,
             'first_seen_at' => now()->subHour(),
             'last_seen_at' => now(),
@@ -167,7 +166,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел БЕЗ привязки к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => null, // Не привязана к зоне
             'type' => 'climate',
@@ -192,7 +191,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             ->where('hardware_id', $hardwareId)
             ->count();
         $this->assertEquals(0, $archivedCount, 'Ошибки не должны архивироваться без zone_id');
-        
+
         // Ошибки должны остаться в unassigned_node_errors
         $remainingErrors = DB::table('unassigned_node_errors')
             ->where('hardware_id', $hardwareId)
@@ -207,11 +206,11 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $hardwareId = 'esp32-test-early';
         $veryEarlyTime = now()->subDays(5);
         $laterTime = now()->subDays(2);
-        
+
         // Создаем существующий алерт с более поздним first_seen_at
         $existingAlert = Alert::create([
             'zone_id' => $zone->id,
@@ -232,7 +231,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'error_message' => 'Test error',
             'error_code' => 'ERR_TEST',
             'severity' => 'ERROR',
-            'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+            'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
             'count' => 5,
             'first_seen_at' => $veryEarlyTime,
             'last_seen_at' => now(),
@@ -243,7 +242,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел и привязываем к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => $zone->id,
             'type' => 'climate',
@@ -264,7 +263,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $this->assertNotNull($alert);
         $firstSeenAt = \Carbon\Carbon::parse($alert->details['first_seen_at']);
         $this->assertTrue($firstSeenAt->lt($laterTime), 'first_seen_at должен быть более ранним');
-        
+
         // В dedup-потоке AlertService синхронизирует details.count с alerts.error_count.
         $this->assertEquals($alert->error_count, $alert->details['count']);
         $this->assertGreaterThanOrEqual(2, $alert->details['count'], 'Count должен увеличиваться при обновлении алерта');
@@ -277,16 +276,16 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $hardwareId = 'esp32-no-code';
-        
+
         // Создаем ошибку без error_code
         DB::table('unassigned_node_errors')->insert([
             'hardware_id' => $hardwareId,
             'error_message' => 'Generic error without code',
             'error_code' => null,
             'severity' => 'ERROR',
-            'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+            'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
             'count' => 2,
             'first_seen_at' => now()->subHour(),
             'last_seen_at' => now(),
@@ -297,7 +296,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел и привязываем к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => $zone->id,
             'type' => 'climate',
@@ -327,7 +326,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             'error_code' => null,
             'node_id' => $node->id,
         ]);
-        
+
         $remainingErrors = DB::table('unassigned_node_errors')
             ->where('hardware_id', $hardwareId)
             ->count();
@@ -341,9 +340,9 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $hardwareId = 'esp32-event-test';
-        
+
         // Создаем 3 ошибки
         for ($i = 1; $i <= 3; $i++) {
             DB::table('unassigned_node_errors')->insert([
@@ -351,7 +350,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
                 'error_message' => "Error $i",
                 'error_code' => "ERR_$i",
                 'severity' => 'ERROR',
-                'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+                'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
                 'count' => $i,
                 'first_seen_at' => now()->subHours($i),
                 'last_seen_at' => now(),
@@ -363,7 +362,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел и привязываем к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => $zone->id,
             'type' => 'climate',
@@ -384,9 +383,9 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             ->where('zone_id', $zone->id)
             ->where('type', 'unassigned_attached')
             ->first();
-        
+
         $this->assertNotNull($zoneEvent, 'zone_event должен быть создан');
-        
+
         $payload = json_decode($zoneEvent->payload_json, true);
         $this->assertEquals($node->id, $payload['node_id']);
         $this->assertEquals($node->uid, $payload['node_uid']);
@@ -405,10 +404,10 @@ class UnassignedNodeErrorsAttachTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $hardwareId = 'esp32-many-errors';
         $errorCount = 20;
-        
+
         // Создаем много ошибок
         for ($i = 1; $i <= $errorCount; $i++) {
             DB::table('unassigned_node_errors')->insert([
@@ -416,7 +415,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
                 'error_message' => "Error message $i",
                 'error_code' => "ERR_$i",
                 'severity' => 'ERROR',
-                'topic' => 'hydro/gh-temp/zn-temp/' . $hardwareId . '/error',
+                'topic' => 'hydro/gh-temp/zn-temp/'.$hardwareId.'/error',
                 'count' => rand(1, 10),
                 'first_seen_at' => now()->subHours(rand(1, 24)),
                 'last_seen_at' => now()->subMinutes(rand(1, 60)),
@@ -428,7 +427,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
 
         // Регистрируем узел и привязываем к зоне
         $node = DeviceNode::create([
-            'uid' => 'nd-test-' . substr($hardwareId, -8) . '-1',
+            'uid' => 'nd-test-'.substr($hardwareId, -8).'-1',
             'hardware_id' => $hardwareId,
             'zone_id' => $zone->id,
             'type' => 'climate',
@@ -450,12 +449,12 @@ class UnassignedNodeErrorsAttachTest extends TestCase
             ->where('code', 'like', 'infra_node_error%')
             ->count();
         $this->assertEquals($errorCount, $alertsCreated, "Должно быть создано $errorCount алертов");
-        
+
         $archivedCount = DB::table('unassigned_node_errors_archive')
             ->where('hardware_id', $hardwareId)
             ->count();
         $this->assertEquals($errorCount, $archivedCount, "Должно быть архивировано $errorCount ошибок");
-        
+
         $remainingErrors = DB::table('unassigned_node_errors')
             ->where('hardware_id', $hardwareId)
             ->count();

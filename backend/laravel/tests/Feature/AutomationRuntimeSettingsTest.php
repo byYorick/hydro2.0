@@ -6,10 +6,10 @@ use App\Models\User;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
-use Inertia\Testing\AssertableInertia;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 

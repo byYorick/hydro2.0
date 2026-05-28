@@ -1,9 +1,9 @@
 <?php
 
+use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use App\Services\AutomationRuntimeConfigService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -27,7 +27,7 @@ Schedule::command('telemetry:aggregate')
     ->description('Агрегация телеметрии в таблицы 1m, 1h, daily');
 
 // Генерация прогнозов AI: каждые 15 минут
-Schedule::job(new \App\Jobs\GeneratePredictionsJob())
+Schedule::job(new \App\Jobs\GeneratePredictionsJob)
     ->everyFifteenMinutes()
     ->description('Генерация прогнозов параметров для активных зон');
 
@@ -53,9 +53,9 @@ Schedule::call(function () {
             ->env(['BACKUP_DIR' => $backupDir])
             ->timeout(600)
             ->run("bash {$scriptPath}");
-        
-        if (!$process->successful()) {
-            \Log::error('Ошибка при ротации бэкапов: ' . $process->errorOutput());
+
+        if (! $process->successful()) {
+            \Log::error('Ошибка при ротации бэкапов: '.$process->errorOutput());
         }
     }
 })

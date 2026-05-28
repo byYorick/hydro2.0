@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Alert;
+use App\Models\User;
 use App\Models\Zone;
 use Tests\RefreshDatabase;
 use Tests\TestCase;

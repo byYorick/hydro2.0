@@ -17,8 +17,8 @@ class AlertMessageComposer
     ) {}
 
     /**
-     * @param array<string, mixed> $catalog
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $catalog
+     * @param  array<string, mixed>  $details
      */
     public function resolveTitle(string $code, array $catalog, ?string $type, array $details): string
     {
@@ -45,8 +45,8 @@ class AlertMessageComposer
     }
 
     /**
-     * @param array<string, mixed> $catalog
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $catalog
+     * @param  array<string, mixed>  $details
      */
     public function resolveDescription(array $catalog, array $details): string
     {
@@ -64,8 +64,8 @@ class AlertMessageComposer
     }
 
     /**
-     * @param array<string, mixed> $catalog
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $catalog
+     * @param  array<string, mixed>  $details
      */
     public function resolveRecommendation(array $catalog, array $details): string
     {
@@ -83,7 +83,7 @@ class AlertMessageComposer
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     public function resolveMessage(string $code, ?string $type, array $details, string $description): string
     {

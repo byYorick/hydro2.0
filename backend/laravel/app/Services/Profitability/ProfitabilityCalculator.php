@@ -54,11 +54,11 @@ class ProfitabilityCalculator
                     ->whereNull('effective_from')
                     ->orWhere('effective_from', '<=', $atDate->toDateString());
             })
-            ->where(function ($builder) use ($atDate) {
-                $builder
-                    ->whereNull('effective_to')
-                    ->orWhere('effective_to', '>=', $atDate->toDateString());
-            });
+                ->where(function ($builder) use ($atDate) {
+                    $builder
+                        ->whereNull('effective_to')
+                        ->orWhere('effective_to', '>=', $atDate->toDateString());
+                });
         }
 
         return $query
@@ -132,4 +132,3 @@ class ProfitabilityCalculator
         return $fallback !== null ? (float) $fallback : null;
     }
 }
-

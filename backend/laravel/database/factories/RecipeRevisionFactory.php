@@ -19,7 +19,7 @@ class RecipeRevisionFactory extends Factory
     public function definition(): array
     {
         $recipe = Recipe::factory()->create();
-        
+
         return [
             'recipe_id' => $recipe->id,
             'revision_number' => 1,

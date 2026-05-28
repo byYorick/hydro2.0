@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Перекрытия целевых параметров для активного цикла
      * Таблица лучше чем JSONB для аудита и истории изменений
      */
@@ -41,4 +41,3 @@ return new class extends Migration
         Schema::dropIfExists('grow_cycle_overrides');
     }
 };
-

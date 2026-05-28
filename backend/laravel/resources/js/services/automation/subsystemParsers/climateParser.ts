@@ -194,7 +194,7 @@ function setNumber(
     return
   }
 
-  ;(climateForm as unknown as Record<string, unknown>)[key] = roundValue
+  (climateForm as unknown as Record<string, unknown>)[key] = roundValue
     ? Math.round(clamp(parsed, min, max))
     : clamp(parsed, min, max)
 }

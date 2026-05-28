@@ -55,9 +55,7 @@ return new class extends Migration
             });
     }
 
-    public function down(): void
-    {
-    }
+    public function down(): void {}
 
     private function normalizePresetConfig(array $config, array $runtimeDefaults): array
     {

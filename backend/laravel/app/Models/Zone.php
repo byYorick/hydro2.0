@@ -97,7 +97,6 @@ class Zone extends Model
         )->where('infrastructure_instances.owner_type', 'zone');
     }
 
-
     public function alerts(): HasMany
     {
         return $this->hasMany(Alert::class);
@@ -132,7 +131,6 @@ class Zone extends Model
     {
         return $this->hasMany(GrowCycle::class);
     }
-
 
     /**
      * Проверка валидности инфраструктуры зоны (новая модель)

@@ -10,9 +10,7 @@ use Illuminate\Http\Request;
 
 class LaunchFlowManifestController extends Controller
 {
-    public function __construct(private readonly LaunchFlowManifestBuilder $builder)
-    {
-    }
+    public function __construct(private readonly LaunchFlowManifestBuilder $builder) {}
 
     public function show(Request $request): JsonResponse
     {

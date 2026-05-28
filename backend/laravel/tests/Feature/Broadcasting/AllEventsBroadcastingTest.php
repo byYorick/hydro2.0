@@ -13,8 +13,8 @@ use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class AllEventsBroadcastingTest extends TestCase
@@ -180,7 +180,7 @@ class AllEventsBroadcastingTest extends TestCase
 
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $failedEvent = new CommandFailed(1, 'Failed', 'Error', Command::STATUS_ERROR, $zone->id);
         $this->assertEquals('CommandFailed', $failedEvent->broadcastAs());
 

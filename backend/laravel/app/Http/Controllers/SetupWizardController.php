@@ -115,6 +115,7 @@ class SetupWizardController extends Controller
                     if (! $spec['required']) {
                         $this->deleteBindingsByRole($zoneId, $spec['binding_role']);
                     }
+
                     continue;
                 }
 
@@ -136,6 +137,7 @@ class SetupWizardController extends Controller
                         ]);
                     }
                     $this->deleteBindingsByRole($zoneId, $spec['binding_role']);
+
                     continue;
                 }
 
@@ -291,7 +293,6 @@ class SetupWizardController extends Controller
 
     /**
      * @param  array<string, mixed>  $validated
-     * @param  mixed  $user
      * @return array{assignments: array<string, mixed>, nodes: Collection<int, DeviceNode>}
      */
     private function resolveAssignments(array $validated, int $zoneId, mixed $user): array
@@ -778,8 +779,8 @@ class SetupWizardController extends Controller
     }
 
     /**
-     * @param array<int, string> $channels
-     * @param array<int, string> $candidates
+     * @param  array<int, string>  $channels
+     * @param  array<int, string>  $candidates
      */
     private function hasAnyChannel(array $channels, array $candidates): bool
     {

@@ -9,9 +9,9 @@ class CommandSignatureService
 {
     /**
      * Подписать команду HMAC подписью.
-     * 
-     * @param DeviceNode $node Узел, для которого подписывается команда
-     * @param array $command Команда для подписи (должна содержать 'cmd')
+     *
+     * @param  DeviceNode  $node  Узел, для которого подписывается команда
+     * @param  array  $command  Команда для подписи (должна содержать 'cmd')
      * @return array Команда с добавленными полями 'ts' и 'sig'
      */
     public function signCommand(DeviceNode $node, array $command): array
@@ -19,7 +19,7 @@ class CommandSignatureService
         $timestamp = now()->timestamp;
         $secret = $this->getNodeSecret($node);
 
-        if (!$secret) {
+        if (! $secret) {
             throw new \RuntimeException('Node secret not configured. Cannot sign command.');
         }
 
@@ -49,9 +49,9 @@ class CommandSignatureService
 
     /**
      * Проверить HMAC подпись команды.
-     * 
-     * @param DeviceNode $node Узел, для которого проверяется команда
-     * @param array $command Команда с полями 'cmd', 'ts', 'sig'
+     *
+     * @param  DeviceNode  $node  Узел, для которого проверяется команда
+     * @param  array  $command  Команда с полями 'cmd', 'ts', 'sig'
      * @return bool true если подпись валидна, false иначе
      */
     public function verifySignature(DeviceNode $node, array $command): bool
@@ -61,22 +61,24 @@ class CommandSignatureService
         $signature = $command['sig'] ?? null;
         $cmd = $command['cmd'] ?? $command['type'] ?? '';
 
-        if (!$timestamp || !$signature || empty($cmd)) {
+        if (! $timestamp || ! $signature || empty($cmd)) {
             Log::warning('Command signature verification failed: missing fields', [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
-                'has_ts' => !is_null($timestamp),
-                'has_sig' => !is_null($signature),
-                'has_cmd' => !empty($cmd),
+                'has_ts' => ! is_null($timestamp),
+                'has_sig' => ! is_null($signature),
+                'has_cmd' => ! empty($cmd),
             ]);
+
             return false;
         }
 
-        if (!$secret) {
+        if (! $secret) {
             Log::warning('Command signature verification failed: node secret not configured', [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
             ]);
+
             return false;
         }
 
@@ -90,6 +92,7 @@ class CommandSignatureService
                 'now' => $now,
                 'diff' => abs($now - $timestamp),
             ]);
+
             return false;
         }
 
@@ -98,7 +101,7 @@ class CommandSignatureService
 
         $isValid = hash_equals($expectedSignature, $signature);
 
-        if (!$isValid) {
+        if (! $isValid) {
             Log::warning('Command signature verification failed: signature mismatch', [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
@@ -116,6 +119,7 @@ class CommandSignatureService
         }
 
         $canonical = $this->canonicalizeValue($command);
+
         return $this->encodeCanonical($canonical);
     }
 
@@ -127,6 +131,7 @@ class CommandSignatureService
                 foreach ($value as $item) {
                     $result[] = $this->canonicalizeValue($item);
                 }
+
                 return $result;
             }
 
@@ -136,6 +141,7 @@ class CommandSignatureService
             foreach ($keys as $key) {
                 $result[$key] = $this->canonicalizeValue($value[$key]);
             }
+
             return $result;
         }
 
@@ -171,9 +177,10 @@ class CommandSignatureService
                 if ($encodedKey === false) {
                     throw new \RuntimeException('Failed to encode command key for signature');
                 }
-                $items[] = $encodedKey . ':' . $this->encodeCanonical($this->canonicalizeValue($vars[$key]));
+                $items[] = $encodedKey.':'.$this->encodeCanonical($this->canonicalizeValue($vars[$key]));
             }
-            return '{' . implode(',', $items) . '}';
+
+            return '{'.implode(',', $items).'}';
         }
 
         if (is_string($value)) {
@@ -181,6 +188,7 @@ class CommandSignatureService
             if ($encoded === false) {
                 throw new \RuntimeException('Failed to encode command string for signature');
             }
+
             return $encoded;
         }
 
@@ -190,7 +198,8 @@ class CommandSignatureService
                 foreach ($value as $item) {
                     $items[] = $this->encodeCanonical($item);
                 }
-                return '[' . implode(',', $items) . ']';
+
+                return '['.implode(',', $items).']';
             }
 
             $items = [];
@@ -199,9 +208,10 @@ class CommandSignatureService
                 if ($encodedKey === false) {
                     throw new \RuntimeException('Failed to encode command key for signature');
                 }
-                $items[] = $encodedKey . ':' . $this->encodeCanonical($item);
+                $items[] = $encodedKey.':'.$this->encodeCanonical($item);
             }
-            return '{' . implode(',', $items) . '}';
+
+            return '{'.implode(',', $items).'}';
         }
 
         throw new \InvalidArgumentException('Unsupported command payload type for signature');
@@ -221,7 +231,7 @@ class CommandSignatureService
         $formatted = str_replace(',', '.', $formatted);
 
         $test = (float) $formatted;
-        if (!$this->compareDouble($test, $value)) {
+        if (! $this->compareDouble($test, $value)) {
             $formatted = sprintf('%.17g', $value);
             $formatted = str_replace(',', '.', $formatted);
         }
@@ -232,6 +242,7 @@ class CommandSignatureService
     private function compareDouble(float $a, float $b): bool
     {
         $max = max(abs($a), abs($b));
+
         return abs($a - $b) <= $max * PHP_FLOAT_EPSILON;
     }
 
@@ -244,14 +255,12 @@ class CommandSignatureService
             }
             $expected++;
         }
+
         return true;
     }
 
     /**
      * Получить секрет узла для подписи команд.
-     * 
-     * @param DeviceNode $node
-     * @return string|null
      */
     private function getNodeSecret(DeviceNode $node): ?string
     {

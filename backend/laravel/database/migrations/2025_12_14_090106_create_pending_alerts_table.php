@@ -28,7 +28,7 @@ return new class extends Migration
             $table->string('status')->default('pending'); // pending, failed, dlq
             $table->text('last_error')->nullable();
             $table->timestamps();
-            
+
             // Индексы для эффективного поиска
             $table->index(['status', 'created_at'], 'pending_alerts_status_created_idx');
             $table->index(['status', 'attempts', 'last_attempt_at'], 'pending_alerts_retry_idx');
@@ -44,4 +44,3 @@ return new class extends Migration
         Schema::dropIfExists('pending_alerts');
     }
 };
-

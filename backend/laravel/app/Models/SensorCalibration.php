@@ -11,11 +11,17 @@ class SensorCalibration extends Model
     use HasFactory;
 
     public const STATUS_STARTED = 'started';
+
     public const STATUS_POINT_1_PENDING = 'point_1_pending';
+
     public const STATUS_POINT_1_DONE = 'point_1_done';
+
     public const STATUS_POINT_2_PENDING = 'point_2_pending';
+
     public const STATUS_COMPLETED = 'completed';
+
     public const STATUS_FAILED = 'failed';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const TERMINAL_STATUSES = [

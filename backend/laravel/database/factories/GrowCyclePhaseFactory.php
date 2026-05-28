@@ -22,7 +22,7 @@ class GrowCyclePhaseFactory extends Factory
             'grow_cycle_id' => GrowCycle::factory(),
             'recipe_revision_phase_id' => RecipeRevisionPhase::factory(),
             'phase_index' => $this->faker->numberBetween(0, 10),
-            'name' => 'Phase ' . $this->faker->numberBetween(1, 10),
+            'name' => 'Phase '.$this->faker->numberBetween(1, 10),
             'ph_target' => $this->faker->randomFloat(2, 5.5, 6.5),
             'ph_min' => $this->faker->randomFloat(2, 5.0, 6.0),
             'ph_max' => $this->faker->randomFloat(2, 6.0, 7.0),

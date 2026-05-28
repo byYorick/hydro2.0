@@ -40,8 +40,8 @@ class WebSocketConnectionTest extends DuskTestCase
             // Соединение может быть в разных состояниях (connected, connecting, disconnected)
             $this->assertNotNull($connectionState, 'Connection state should be available');
             $validStates = ['connected', 'connecting', 'disconnected'];
-            $this->assertTrue(in_array($connectionState, $validStates, true), 
-                "Connection state '{$connectionState}' should be one of: " . implode(', ', $validStates));
+            $this->assertTrue(in_array($connectionState, $validStates, true),
+                "Connection state '{$connectionState}' should be one of: ".implode(', ', $validStates));
         });
     }
 
@@ -93,4 +93,3 @@ class WebSocketConnectionTest extends DuskTestCase
         });
     }
 }
-

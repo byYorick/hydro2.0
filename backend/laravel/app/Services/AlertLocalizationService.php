@@ -21,8 +21,7 @@ class AlertLocalizationService
     ) {}
 
     /**
-     * @param array<string, mixed>|null $details
-     *
+     * @param  array<string, mixed>|null  $details
      * @return array{code:string,title:string,description:string,recommendation:string,message:string}
      */
     public function present(?string $code, ?string $type = null, ?array $details = null, ?string $source = null): array

@@ -4,12 +4,11 @@ namespace Tests\Unit\Middleware;
 
 use App\Http\Middleware\VerifyPythonServiceToken;
 use App\Models\User;
-use Tests\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class VerifyPythonServiceTokenTest extends TestCase
@@ -21,7 +20,7 @@ class VerifyPythonServiceTokenTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->middleware = new VerifyPythonServiceToken();
+        $this->middleware = new VerifyPythonServiceToken;
     }
 
     public function test_allows_authenticated_user_via_sanctum(): void

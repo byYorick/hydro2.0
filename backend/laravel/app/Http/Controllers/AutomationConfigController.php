@@ -5,12 +5,12 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Jobs\PublishNodeConfigJob;
 use App\Models\AutomationConfigVersion;
+use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Models\ChannelBinding;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigPresetService;
 use App\Services\AutomationConfigRegistry;
@@ -28,8 +28,7 @@ class AutomationConfigController extends Controller
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigRegistry $registry,
         private readonly AutomationConfigPresetService $presets,
-    ) {
-    }
+    ) {}
 
     public function show(Request $request, string $scopeType, int $scopeId, string $namespace): JsonResponse
     {
@@ -628,8 +627,7 @@ class AutomationConfigController extends Controller
         int $scopeId,
         string $namespace,
         bool $writeAccess,
-    ): void
-    {
+    ): void {
         $user = $request->user();
         if (! $user) {
             abort(401, 'Unauthorized');

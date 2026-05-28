@@ -85,11 +85,11 @@ return new class extends Migration
         ");
 
         DB::statement('ALTER TABLE ae_tasks DROP CONSTRAINT IF EXISTS ae_tasks_irrigation_replay_count_check');
-        DB::statement("
+        DB::statement('
             ALTER TABLE ae_tasks
             ADD CONSTRAINT ae_tasks_irrigation_replay_count_check
             CHECK (irrigation_replay_count >= 0)
-        ");
+        ');
     }
 
     public function down(): void

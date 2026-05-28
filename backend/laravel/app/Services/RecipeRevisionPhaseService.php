@@ -18,7 +18,7 @@ class RecipeRevisionPhaseService
         }
 
         // Если phase_index не указан, используем следующий доступный
-        if (!isset($data['phase_index'])) {
+        if (! isset($data['phase_index'])) {
             $maxIndex = $revision->phases()->max('phase_index') ?? -1;
             $data['phase_index'] = $maxIndex + 1;
         }
@@ -61,4 +61,3 @@ class RecipeRevisionPhaseService
         ]);
     }
 }
-

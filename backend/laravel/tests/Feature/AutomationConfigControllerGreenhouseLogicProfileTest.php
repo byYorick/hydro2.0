@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Greenhouse;
+use App\Models\User;
 use App\Models\Zone;
 use App\Services\AutomationConfigRegistry;
 use Tests\RefreshDatabase;

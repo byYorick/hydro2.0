@@ -2,24 +2,24 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Обновляет статусы команд согласно единому контракту:
      * QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
      */
     public function up(): void
     {
         // Проверяем, существует ли таблица commands
-        if (!Schema::hasTable('commands')) {
+        if (! Schema::hasTable('commands')) {
             return; // Таблица будет создана в другой миграции
         }
-        
+
         // Сначала обновляем существующие данные для миграции старых статусов
         DB::statement("
             UPDATE commands 
@@ -63,10 +63,10 @@ return new class extends Migration
     public function down(): void
     {
         // Проверяем, существует ли таблица commands
-        if (!Schema::hasTable('commands')) {
+        if (! Schema::hasTable('commands')) {
             return; // Таблица не существует, нечего откатывать
         }
-        
+
         // Удаляем CHECK constraint
         DB::statement('ALTER TABLE commands DROP CONSTRAINT IF EXISTS commands_status_check');
 

@@ -22,6 +22,7 @@ class ExtendedHarvestsSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -35,7 +36,7 @@ class ExtendedHarvestsSeeder extends Seeder
 
         $this->command->info("Создано урожаев: {$harvestsCreated}");
         $this->command->info("Создано аналитики: {$analyticsCreated}");
-        $this->command->info("Всего урожаев: " . Harvest::count());
+        $this->command->info('Всего урожаев: '.Harvest::count());
     }
 
     private function seedHarvestsForZone(Zone $zone): int
@@ -69,7 +70,7 @@ class ExtendedHarvestsSeeder extends Seeder
                 'quality_score' => rand(70, 99) / 10,
                 'notes' => [
                     'comment' => "Урожай из зоны {$zone->name}",
-                    'batch_label' => $cycle->batch_label ?? 'BATCH-' . rand(1000, 9999),
+                    'batch_label' => $cycle->batch_label ?? 'BATCH-'.rand(1000, 9999),
                     'cycle_id' => $cycle->id,
                 ],
                 'created_at' => $harvestDate,
@@ -89,7 +90,7 @@ class ExtendedHarvestsSeeder extends Seeder
 
         for ($i = 0; $i < $historicalCount; $i++) {
             $recipe = Recipe::inRandomOrder()->first();
-            if (!$recipe) {
+            if (! $recipe) {
                 continue;
             }
 
@@ -104,7 +105,7 @@ class ExtendedHarvestsSeeder extends Seeder
                 'quality_score' => rand(70, 99) / 10,
                 'notes' => [
                     'comment' => "Исторический урожай из зоны {$zone->name}",
-                    'batch_label' => 'BATCH-' . rand(1000, 9999),
+                    'batch_label' => 'BATCH-'.rand(1000, 9999),
                 ],
                 'created_at' => $harvestDate,
                 'updated_at' => $harvestDate,
@@ -151,14 +152,14 @@ class ExtendedHarvestsSeeder extends Seeder
             $successRate = $totalCycles > 0 ? rand(80, 100) / 100 : 0;
 
             $completedCycles = $cycles->where('status', GrowCycleStatus::HARVESTED->value)->count();
-            
+
             // Получаем даты первого и последнего цикла
             $firstCycle = $cycles->sortBy('started_at')->first();
             $lastCycle = $cycles->sortByDesc('started_at')->first();
-            
+
             $startDate = $firstCycle?->started_at ?? now()->subDays(rand(30, 90));
             $endDate = $lastCycle?->finished_at ?? ($completedCycles > 0 ? now()->subDays(rand(1, 30)) : null);
-            $totalDurationHours = $endDate && $startDate ? (int)round($startDate->diffInHours($endDate)) : null;
+            $totalDurationHours = $endDate && $startDate ? (int) round($startDate->diffInHours($endDate)) : null;
 
             DB::table('recipe_analytics')->insert([
                 'zone_id' => $zone->id,
@@ -191,4 +192,3 @@ class ExtendedHarvestsSeeder extends Seeder
         return $created;
     }
 }
-

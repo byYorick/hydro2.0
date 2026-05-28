@@ -4,8 +4,8 @@ namespace Tests\Feature\AutomationScheduler;
 
 use App\Models\Zone;
 use App\Services\AutomationScheduler\ScheduleCycleContext;
-use App\Services\AutomationScheduler\ScheduleItem;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
+use App\Services\AutomationScheduler\ScheduleItem;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;

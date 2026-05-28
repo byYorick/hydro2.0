@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Привязка каналов к инфраструктуре (owner-agnostic)
      * Заменяет zone_channel_bindings
      */
@@ -38,4 +38,3 @@ return new class extends Migration
         Schema::dropIfExists('channel_bindings');
     }
 };
-

@@ -2,11 +2,11 @@
 
 namespace App\Policies;
 
-use App\Models\User;
-use App\Models\Command;
-use App\Models\Zone;
-use App\Models\DeviceNode;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Command;
+use App\Models\DeviceNode;
+use App\Models\User;
+use App\Models\Zone;
 
 class CommandPolicy
 {
@@ -27,7 +27,7 @@ class CommandPolicy
         if ($command->zone_id) {
             return ZoneAccessHelper::canAccessZone($user, $command->zone_id);
         }
-        
+
         // Если команда привязана к узлу, проверяем доступ к узлу
         if ($command->node_id) {
             $node = DeviceNode::find($command->node_id);
@@ -35,7 +35,7 @@ class CommandPolicy
                 return ZoneAccessHelper::canAccessNode($user, $node);
             }
         }
-        
+
         return false;
     }
 
@@ -46,18 +46,18 @@ class CommandPolicy
     {
         // Для команд зоны
         if ($zone) {
-            if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $zone->id)) {
                 return false;
             }
         }
-        
+
         // Для команд узла
         if ($node) {
-            if (!ZoneAccessHelper::canAccessNode($user, $node)) {
+            if (! ZoneAccessHelper::canAccessNode($user, $node)) {
                 return false;
             }
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -69,11 +69,11 @@ class CommandPolicy
     {
         // Команды обычно не обновляются, но если нужно - проверяем доступ
         if ($command->zone_id) {
-            if (!ZoneAccessHelper::canAccessZone($user, $command->zone_id)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $command->zone_id)) {
                 return false;
             }
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -85,13 +85,12 @@ class CommandPolicy
     {
         // Команды обычно не удаляются, но если нужно - проверяем доступ
         if ($command->zone_id) {
-            if (!ZoneAccessHelper::canAccessZone($user, $command->zone_id)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $command->zone_id)) {
                 return false;
             }
         }
-        
+
         // Требуется роль admin
         return $user->isAdmin();
     }
 }
-

@@ -21,4 +21,3 @@ class DashboardAccessTest extends TestCase
         $response->assertOk();
     }
 }
-

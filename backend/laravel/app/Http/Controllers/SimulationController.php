@@ -2,16 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\TelemetryLast;
+use App\Jobs\RunSimulationJob;
 use App\Models\Command;
+use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Models\ZoneSimulation;
-use App\Jobs\RunSimulationJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,9 +21,6 @@ class SimulationController extends Controller
     /**
      * Симулировать зону (асинхронно через очередь).
      *
-     * @param Request $request
-     * @param Zone $zone
-     * @return JsonResponse
      * @throws ValidationException
      */
     public function simulateZone(Request $request, Zone $zone): JsonResponse
@@ -44,23 +41,23 @@ class SimulationController extends Controller
         // Формируем сценарий
         // Получаем recipe_id из активного GrowCycle, если не указан явно
         $recipeId = $data['recipe_id'] ?? null;
-        if (!$recipeId) {
+        if (! $recipeId) {
             $zone->load('activeGrowCycle.recipeRevision');
             if ($zone->activeGrowCycle && $zone->activeGrowCycle->recipeRevision) {
                 $recipeId = $zone->activeGrowCycle->recipeRevision->recipe_id;
             }
         }
-        
+
         $scenario = [
             'recipe_id' => $recipeId,
             'initial_state' => $data['initial_state'] ?? [],
         ];
-        if (!empty($data['node_sim']) && is_array($data['node_sim'])) {
+        if (! empty($data['node_sim']) && is_array($data['node_sim'])) {
             $nodeSim = $data['node_sim'];
             if (isset($nodeSim['drift_per_minute']) && is_array($nodeSim['drift_per_minute'])) {
                 $nodeSim['drift_per_minute'] = array_filter(
                     $nodeSim['drift_per_minute'],
-                    fn($value) => $value !== null && $value !== ''
+                    fn ($value) => $value !== null && $value !== ''
                 );
                 if (empty($nodeSim['drift_per_minute'])) {
                     unset($nodeSim['drift_per_minute']);
@@ -69,7 +66,7 @@ class SimulationController extends Controller
             if (array_key_exists('drift_noise_per_minute', $nodeSim) && $nodeSim['drift_noise_per_minute'] === null) {
                 unset($nodeSim['drift_noise_per_minute']);
             }
-            if (!empty($nodeSim)) {
+            if (! empty($nodeSim)) {
                 $scenario['node_sim'] = $nodeSim;
             }
         }
@@ -87,7 +84,7 @@ class SimulationController extends Controller
                 ->select([
                     'sensors.type as metric_type',
                     'sensors.label as channel',
-                    'telemetry_last.last_value as value'
+                    'telemetry_last.last_value as value',
                 ])
                 ->get()
                 ->mapWithKeys(function ($item) {
@@ -95,6 +92,7 @@ class SimulationController extends Controller
                     if ($key === '') {
                         return [];
                     }
+
                     return [$key => $item->value];
                 })
                 ->toArray();
@@ -110,7 +108,7 @@ class SimulationController extends Controller
         }
 
         // Генерируем уникальный ID для job
-        $jobId = 'sim_' . Str::uuid()->toString();
+        $jobId = 'sim_'.Str::uuid()->toString();
 
         // Создаем job и отправляем в очередь
         RunSimulationJob::dispatch(
@@ -143,16 +141,12 @@ class SimulationController extends Controller
 
     /**
      * Получить статус симуляции.
-     *
-     * @param Request $request
-     * @param string $jobId
-     * @return JsonResponse
      */
     public function show(Request $request, string $jobId): JsonResponse
     {
         $status = Cache::get("simulation:{$jobId}");
 
-        if (!$status) {
+        if (! $status) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'NOT_FOUND',
@@ -207,10 +201,9 @@ class SimulationController extends Controller
         array $payload,
         array $simMeta,
         ?string $lastActionAt,
-    ): ?array
-    {
+    ): ?array {
         $realDurationMinutes = $simMeta['real_duration_minutes'] ?? ($payload['sim_duration_minutes'] ?? null);
-        if (!is_numeric($realDurationMinutes) || (float) $realDurationMinutes <= 0) {
+        if (! is_numeric($realDurationMinutes) || (float) $realDurationMinutes <= 0) {
             return null;
         }
 

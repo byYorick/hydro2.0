@@ -10,8 +10,7 @@ class PublishZoneConfigUpdate
 {
     public function __construct(
         private PythonBridgeService $pythonBridge
-    ) {
-    }
+    ) {}
 
     /**
      * Handle the event.
@@ -24,7 +23,7 @@ class PublishZoneConfigUpdate
             Log::info('Zone config updated, notifying Python service', [
                 'zone_id' => $event->zone->id,
             ]);
-            
+
             // Прямой вызов API Python-сервиса для уведомления об обновлении
             $this->pythonBridge->notifyConfigUpdate($event->zone);
         } catch (\Exception $e) {
@@ -35,4 +34,3 @@ class PublishZoneConfigUpdate
         }
     }
 }
-

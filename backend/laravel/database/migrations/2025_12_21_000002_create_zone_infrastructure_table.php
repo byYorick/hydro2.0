@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Оборудование, установленное в зоне
      */
     public function up(): void
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('flow_rate', 10, 2)->nullable(); // Для насосов/мистеров
             $table->jsonb('specs')->nullable(); // Дополнительные характеристики
             $table->timestamps();
-            
+
             $table->index(['zone_id', 'asset_type']);
             $table->index(['zone_id', 'required']);
         });
@@ -37,4 +37,3 @@ return new class extends Migration
         Schema::dropIfExists('zone_infrastructure');
     }
 };
-

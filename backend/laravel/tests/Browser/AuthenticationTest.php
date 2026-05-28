@@ -64,4 +64,3 @@ class AuthenticationTest extends DuskTestCase
         });
     }
 }
-

@@ -12,8 +12,7 @@ class ZoneAutomationIntentService
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
         private readonly ZoneLogicProfileService $logicProfiles,
-    ) {
-    }
+    ) {}
 
     /**
      * Топология для AE3 intent (resolved из zone logic profile).

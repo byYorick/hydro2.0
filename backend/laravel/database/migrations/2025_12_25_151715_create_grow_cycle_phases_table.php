@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Снапшоты фаз ревизии рецепта для конкретного цикла выращивания.
      * После старта цикла можно удалить/изменить шаблонные фазы — снапшот остаётся валиден.
      */
@@ -20,7 +20,7 @@ return new class extends Migration
             $table->foreignId('recipe_revision_phase_id')->nullable()->constrained('recipe_revision_phases')->nullOnDelete(); // Для трассировки
             $table->integer('phase_index')->default(0); // Порядок фазы в цикле
             $table->string('name'); // Название фазы
-            
+
             // Уставки по колонкам (те же что у recipe_revision_phases)
             $table->decimal('ph_target', 4, 2)->nullable();
             $table->decimal('ph_min', 4, 2)->nullable();
@@ -39,7 +39,7 @@ return new class extends Migration
             $table->decimal('temp_air_target', 5, 2)->nullable();
             $table->decimal('humidity_target', 5, 2)->nullable();
             $table->integer('co2_target')->nullable();
-            
+
             // Прогресс
             $table->string('progress_model')->nullable(); // TIME|TIME_WITH_TEMP_CORRECTION|GDD
             $table->integer('duration_hours')->nullable();
@@ -47,13 +47,13 @@ return new class extends Migration
             $table->decimal('base_temp_c', 4, 2)->nullable();
             $table->decimal('target_gdd', 8, 2)->nullable();
             $table->decimal('dli_target', 6, 2)->nullable();
-            
+
             $table->jsonb('extensions')->nullable(); // Только для расширений
-            
+
             // Временные метки выполнения фазы в цикле
             $table->timestamp('started_at')->nullable(); // Когда началась эта фаза в цикле
             $table->timestamp('ended_at')->nullable(); // Когда закончилась эта фаза в цикле
-            
+
             $table->timestamps();
 
             // Уникальность: один цикл не может иметь две фазы с одинаковым индексом
@@ -71,4 +71,3 @@ return new class extends Migration
         Schema::dropIfExists('grow_cycle_phases');
     }
 };
-

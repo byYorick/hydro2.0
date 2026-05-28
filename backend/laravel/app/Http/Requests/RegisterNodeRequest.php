@@ -31,7 +31,7 @@ class RegisterNodeRequest extends FormRequest
                 'provisioning_meta' => ['nullable', 'array'],
             ];
         }
-        
+
         // Обычная регистрация через API
         return [
             'node_uid' => ['required', 'string', 'max:64'],

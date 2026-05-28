@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\ParameterPrediction;
 use App\Models\Zone;
-use App\Models\ZoneModelParams;
 use App\Models\ZoneSimulation;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +20,7 @@ class ExtendedAIPredictionsSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -37,8 +37,8 @@ class ExtendedAIPredictionsSeeder extends Seeder
         $this->command->info("Создано прогнозов: {$predictionsCreated}");
         $this->command->info("Создано симуляций: {$simulationsCreated}");
         $this->command->info("Создано параметров моделей: {$modelParamsCreated}");
-        $this->command->info("Всего прогнозов: " . ParameterPrediction::count());
-        $this->command->info("Всего симуляций: " . ZoneSimulation::count());
+        $this->command->info('Всего прогнозов: '.ParameterPrediction::count());
+        $this->command->info('Всего симуляций: '.ZoneSimulation::count());
     }
 
     private function seedPredictionsForZone(Zone $zone): int
@@ -53,10 +53,10 @@ class ExtendedAIPredictionsSeeder extends Seeder
             foreach ($metricTypes as $metricType) {
                 // Получаем базовое значение из пресета или используем дефолтное
                 $baseValue = $this->getBaseValue($metricType, $zone);
-                
+
                 // Генерируем прогнозируемое значение с небольшим отклонением
                 $predictedValue = $baseValue + (rand(-20, 20) / 100);
-                
+
                 // Ограничиваем значения разумными пределами
                 $predictedValue = match ($metricType) {
                     'ph' => max(0, min(14, $predictedValue)),
@@ -198,7 +198,7 @@ class ExtendedAIPredictionsSeeder extends Seeder
     private function getBaseValue(string $metricType, Zone $zone): float
     {
         $preset = $zone->preset;
-        
+
         if ($preset) {
             return match ($metricType) {
                 'ph' => ($preset->ph_optimal_range['min'] ?? 6.0) + (($preset->ph_optimal_range['max'] ?? 6.5) - ($preset->ph_optimal_range['min'] ?? 6.0)) / 2,
@@ -218,4 +218,3 @@ class ExtendedAIPredictionsSeeder extends Seeder
         };
     }
 }
-

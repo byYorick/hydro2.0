@@ -21,7 +21,7 @@ return new class extends Migration
             $table->string('status')->default('pending'); // pending, running, completed, failed
             $table->text('error_message')->nullable();
             $table->timestamps();
-            
+
             $table->index(['zone_id', 'created_at']);
             $table->index('status');
         });

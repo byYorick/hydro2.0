@@ -3,8 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\Harvest;
-use App\Models\Zone;
 use App\Models\Recipe;
+use App\Models\Zone;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**

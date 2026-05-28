@@ -13,8 +13,7 @@ class ZoneAutomationPresetController extends Controller
 {
     public function __construct(
         private readonly ZoneAutomationPresetService $presets,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {

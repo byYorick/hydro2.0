@@ -3,12 +3,8 @@
 namespace App\Services;
 
 use App\Enums\ZoneStatus;
-use App\Helpers\ZoneAccessHelper;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
-use App\Services\ZoneReadinessService;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 
 class ZoneOperationsService
 {
@@ -55,7 +51,7 @@ class ZoneOperationsService
                 'sensors.label as channel',
                 'sensors.type as metric_type',
                 'telemetry_last.last_value as value',
-                'telemetry_last.updated_at'
+                'telemetry_last.updated_at',
             ])
             ->orderBy('telemetry_last.updated_at', 'desc')
             ->get();
@@ -66,7 +62,7 @@ class ZoneOperationsService
             $nodeId = $metric->node_id;
             $channel = $metric->channel ?: 'default';
 
-            if (!isset($telemetry[$nodeId])) {
+            if (! isset($telemetry[$nodeId])) {
                 $telemetry[$nodeId] = [];
             }
 
@@ -91,7 +87,7 @@ class ZoneOperationsService
 
         // Дополнительные проверки для конкретных операций
         if ($operation === 'fill' || $operation === 'drain') {
-            if (!$zone->activeGrowCycle) {
+            if (! $zone->activeGrowCycle) {
                 throw new \DomainException("Zone must have an active grow cycle to perform {$operation} operation");
             }
         }

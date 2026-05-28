@@ -55,6 +55,7 @@ class NodeChannelController extends Controller
                 && ! Arr::isList($currentValue)
             ) {
                 $merged[$key] = $this->mergeAssocConfig($currentValue, $value);
+
                 continue;
             }
 

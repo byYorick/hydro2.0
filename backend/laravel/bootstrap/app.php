@@ -36,7 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
             'ae.legacy.sql.guard' => \App\Http\Middleware\AutomationEngineLegacySqlGuard::class,
         ]);
-        
+
         // Rate limiting для регистрации нод будет настроен в AppServiceProvider
 
         // Rate Limiting для API роутов
@@ -129,11 +129,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Это важно для правильной обработки ошибок валидации в Inertia.js
         $exceptions->render(function (\Illuminate\Validation\ValidationException $e, \Illuminate\Http\Request $request) {
             $isInertia = $request->header('X-Inertia') !== null;
-            $isApi = $request->is('api/*') || ($request->expectsJson() && !$isInertia);
-            
+            $isApi = $request->is('api/*') || ($request->expectsJson() && ! $isInertia);
+
             // Для Inertia запросов используем redirect()->back() для правильной обработки
             // Это вернет на предыдущую страницу (страницу логина) с ошибками валидации
-            if ($isInertia && !$isApi) {
+            if ($isInertia && ! $isApi) {
                 // Используем redirect()->back() для правильной обработки ошибок валидации
                 // Это вернет на страницу логина с ошибками в форме
                 // Inertia автоматически обработает это и покажет ошибки в форме
@@ -141,7 +141,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     ->withErrors($e->errors(), $e->errorBag)
                     ->withInput($request->except('password'));
             }
-            
+
             // Для API запросов возвращаем JSON
             if ($isApi) {
                 return response()->json([
@@ -151,7 +151,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'errors' => $e->errors(),
                 ], 422);
             }
-            
+
             // Для обычных веб-запросов используем стандартную обработку Laravel
             // которая делает back()->withErrors()
             return redirect()->back()
@@ -163,7 +163,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Используем HttpException вместо ThrottleRequestsException, так как ThrottleRequestsException наследуется от HttpException
         $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
             $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
-            
+
             if ($request->is('broadcasting/auth')) {
                 \Log::warning('Broadcasting auth: Rate limit exceeded', [
                     'ip' => $request->ip(),
@@ -177,7 +177,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'Retry-After' => $retryAfter,
                 ]);
             }
-            
+
             // Для API роутов возвращаем JSON с 429
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json([
@@ -188,7 +188,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'Retry-After' => $retryAfter,
                 ]);
             }
-            
+
             // Для веб-роутов возвращаем стандартный ответ
             return response()->view('errors.429', [
                 'correlation_id' => $generateCorrelationId(),
@@ -231,7 +231,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // НЕ логируем ValidationException как ошибку для Inertia запросов
             // Это нормальная ситуация валидации формы
-            if (!($e instanceof \Illuminate\Validation\ValidationException && $isInertia)) {
+            if (! ($e instanceof \Illuminate\Validation\ValidationException && $isInertia)) {
                 // Логируем исключение с контекстом
                 $logContext = [
                     'correlation_id' => $correlationId,
@@ -284,6 +284,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 // Обработка специфичных исключений
                 if ($e instanceof \Illuminate\Http\Exceptions\ThrottleRequestsException) {
                     $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+
                     return response()->json([
                         'status' => 'error',
                         'code' => 'RATE_LIMIT_EXCEEDED',
@@ -292,7 +293,7 @@ return Application::configure(basePath: dirname(__DIR__))
                         'Retry-After' => $retryAfter,
                     ]);
                 }
-                
+
                 if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                     return response()->json([
                         'status' => 'error',
@@ -503,7 +504,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return null;
         });
-
 
         // Обрабатываем исключения для broadcasting/auth
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {

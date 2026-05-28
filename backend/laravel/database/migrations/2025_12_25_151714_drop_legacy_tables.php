@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Удаление legacy таблиц, которые больше не используются:
      * - zone_recipe_instances (заменено на grow_cycles + recipe_revisions)
      * - recipe_phases (legacy JSON targets, заменено на recipe_revision_phases)
@@ -16,7 +16,7 @@ return new class extends Migration
      * - plant_cycles (если существует, дублирование)
      * - commands_archive, zone_events_archive (дубли, retention через политики)
      * - recipe_stage_maps (заменено на stage_template_id в recipe_revision_phases)
-     * 
+     *
      * Также удаляем старые таблицы инфраструктуры:
      * - zone_infrastructure (заменено на infrastructure_instances)
      * - infrastructure_assets (заменено на infrastructure_instances)
@@ -30,11 +30,11 @@ return new class extends Migration
         Schema::dropIfExists('recipe_phases');
         Schema::dropIfExists('zone_cycles');
         Schema::dropIfExists('plant_cycles'); // Если существует
-        
+
         // Удаляем архивные таблицы (retention через политики)
         Schema::dropIfExists('commands_archive');
         Schema::dropIfExists('zone_events_archive');
-        
+
         // Удаляем старые таблицы инфраструктуры
         Schema::dropIfExists('zone_channel_bindings');
         Schema::dropIfExists('zone_infrastructure');
@@ -43,7 +43,7 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
-     * 
+     *
      * ВНИМАНИЕ: Rollback не восстанавливает данные!
      * Это breaking change миграция.
      */
@@ -51,7 +51,7 @@ return new class extends Migration
     {
         // Восстановление таблиц для rollback (без данных)
         // Это только для возможности отката структуры, данные не восстанавливаются
-        
+
         // recipe_phases (legacy)
         Schema::create('recipe_phases', function (Blueprint $table) {
             $table->id();
@@ -62,7 +62,7 @@ return new class extends Migration
             $table->jsonb('targets')->nullable();
             $table->timestamps();
         });
-        
+
         // zone_recipe_instances (legacy)
         Schema::create('zone_recipe_instances', function (Blueprint $table) {
             $table->id();
@@ -72,7 +72,7 @@ return new class extends Migration
             $table->timestamp('started_at')->nullable();
             $table->timestamps();
         });
-        
+
         // zone_cycles (legacy)
         Schema::create('zone_cycles', function (Blueprint $table) {
             $table->id();
@@ -85,7 +85,7 @@ return new class extends Migration
             $table->timestampsTz();
             $table->index(['zone_id', 'status']);
         });
-        
+
         // recipe_stage_maps (legacy)
         Schema::create('recipe_stage_maps', function (Blueprint $table) {
             $table->id();
@@ -100,7 +100,7 @@ return new class extends Migration
             $table->index(['recipe_id', 'order_index'], 'recipe_stage_maps_recipe_order_idx');
             $table->index('stage_template_id', 'recipe_stage_maps_stage_template_idx');
         });
-        
+
         // zone_infrastructure (legacy)
         Schema::create('zone_infrastructure', function (Blueprint $table) {
             $table->id();
@@ -115,7 +115,7 @@ return new class extends Migration
             $table->index(['zone_id', 'asset_type']);
             $table->index(['zone_id', 'required']);
         });
-        
+
         // infrastructure_assets (legacy)
         Schema::create('infrastructure_assets', function (Blueprint $table) {
             $table->id();
@@ -125,7 +125,7 @@ return new class extends Migration
             $table->timestamps();
             $table->index('type');
         });
-        
+
         // zone_channel_bindings (legacy)
         Schema::create('zone_channel_bindings', function (Blueprint $table) {
             $table->id();
@@ -140,14 +140,14 @@ return new class extends Migration
             $table->index(['zone_id', 'asset_id']);
             $table->index(['node_id', 'channel']);
         });
-        
+
         // Архивные таблицы (legacy)
         Schema::create('commands_archive', function (Blueprint $table) {
             $table->id();
             // Структура зависит от commands таблицы
             $table->timestamps();
         });
-        
+
         Schema::create('zone_events_archive', function (Blueprint $table) {
             $table->id();
             // Структура зависит от zone_events таблицы
@@ -155,4 +155,3 @@ return new class extends Migration
         });
     }
 };
-

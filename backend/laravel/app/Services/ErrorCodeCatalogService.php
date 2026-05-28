@@ -211,6 +211,7 @@ class ErrorCodeCatalogService
 
         if (preg_match('/^Intent skipped: zone busy(?: \(zone_id=(\d+)\))?$/i', $message, $matches) === 1) {
             $zoneId = isset($matches[1]) && $matches[1] !== '' ? (int) $matches[1] : null;
+
             return $zoneId !== null
                 ? sprintf('Повторный запуск отклонён: зона %d уже занята активной задачей или intent.', $zoneId)
                 : 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.';

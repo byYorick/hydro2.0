@@ -1,17 +1,15 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * PHASE 5.2: Добавление обязательных constraints и indexes для финального ужесточения схемы.
-     * 
+     *
      * Добавляет:
      * - Уникальность каналов ноды (node_channels)
      * - Уникальность версий рецепта (recipe_revisions)
@@ -30,16 +28,16 @@ return new class extends Migration
                 AND (indexname LIKE '%node_id%channel%' OR indexname LIKE '%node_channels%unique%')
             ) as exists
         ");
-        
+
         // Если нет индекса, создаём (но он должен быть уже создан)
-        if (!$nodeChannelsUniqueExists || !$nodeChannelsUniqueExists->exists) {
+        if (! $nodeChannelsUniqueExists || ! $nodeChannelsUniqueExists->exists) {
             DB::statement('
                 CREATE UNIQUE INDEX IF NOT EXISTS node_channels_node_channel_unique 
                 ON node_channels(node_id, channel) 
                 WHERE node_id IS NOT NULL AND channel IS NOT NULL
             ');
         }
-        
+
         // 2. Уникальность версий рецепта (recipe_revisions)
         // Проверяем, существует ли уже такой индекс (по revision_number, не version)
         // Индекс уже создан в миграции create_recipe_revisions_table как recipe_revisions_recipe_revision_unique
@@ -51,16 +49,16 @@ return new class extends Migration
                 AND (indexname = 'recipe_revisions_recipe_revision_unique' OR indexname = 'recipe_revisions_recipe_version_unique')
             ) as exists
         ");
-        
+
         // Если нет индекса, создаём (но он должен быть уже создан)
-        if (!$recipeRevisionsUniqueExists || !$recipeRevisionsUniqueExists->exists) {
+        if (! $recipeRevisionsUniqueExists || ! $recipeRevisionsUniqueExists->exists) {
             DB::statement('
                 CREATE UNIQUE INDEX IF NOT EXISTS recipe_revisions_recipe_version_unique 
                 ON recipe_revisions(recipe_id, revision_number) 
                 WHERE recipe_id IS NOT NULL AND revision_number IS NOT NULL
             ');
         }
-        
+
         // 3. Уникальность фаз в рецепте (recipe_revision_phases)
         // Проверяем, существует ли уже такой индекс
         // Индекс уже создан в миграции create_recipe_revision_phases_table
@@ -71,16 +69,16 @@ return new class extends Migration
                 AND indexname = 'recipe_revision_phases_revision_phase_unique'
             ) as exists
         ");
-        
+
         // Если нет индекса, создаём (но он должен быть уже создан)
-        if (!$recipePhasesUniqueExists || !$recipePhasesUniqueExists->exists) {
+        if (! $recipePhasesUniqueExists || ! $recipePhasesUniqueExists->exists) {
             DB::statement('
                 CREATE UNIQUE INDEX IF NOT EXISTS recipe_revision_phases_revision_phase_unique 
                 ON recipe_revision_phases(recipe_revision_id, phase_index) 
                 WHERE recipe_revision_id IS NOT NULL AND phase_index IS NOT NULL
             ');
         }
-        
+
         // 4. Уникальность шагов в фазе (recipe_revision_phase_steps)
         // Проверяем, существует ли уже такой индекс
         // Индекс уже создан в миграции create_recipe_revision_phase_steps_table
@@ -91,16 +89,16 @@ return new class extends Migration
                 AND indexname = 'recipe_revision_phase_steps_phase_step_unique'
             ) as exists
         ");
-        
+
         // Если нет индекса, создаём (но он должен быть уже создан)
-        if (!$recipeStepsUniqueExists || !$recipeStepsUniqueExists->exists) {
+        if (! $recipeStepsUniqueExists || ! $recipeStepsUniqueExists->exists) {
             DB::statement('
                 CREATE UNIQUE INDEX IF NOT EXISTS recipe_revision_phase_steps_phase_step_unique 
                 ON recipe_revision_phase_steps(recipe_revision_phase_id, step_index) 
                 WHERE recipe_revision_phase_id IS NOT NULL AND step_index IS NOT NULL
             ');
         }
-        
+
         // 5. Уникальность 1 зона = 1 нода (nodes)
         // Проверяем, существует ли уже такой индекс
         $nodesZoneUniqueExists = DB::selectOne("
@@ -110,19 +108,19 @@ return new class extends Migration
                 AND indexname = 'nodes_zone_unique'
             ) as exists
         ");
-        
-        if (!$nodesZoneUniqueExists || !$nodesZoneUniqueExists->exists) {
+
+        if (! $nodesZoneUniqueExists || ! $nodesZoneUniqueExists->exists) {
             DB::statement('
                 CREATE UNIQUE INDEX IF NOT EXISTS nodes_zone_unique 
                 ON nodes(zone_id) 
                 WHERE zone_id IS NOT NULL
             ');
         }
-        
+
         // 6. CHECK constraints для enum-полей (если не native enum)
         // PostgreSQL использует CHECK constraints для enum-полей, созданных через Laravel
         // Они уже создаются автоматически при использовании ->enum(), но проверим критичные
-        
+
         // Проверяем CHECK constraint для grow_cycles.status
         $growCyclesStatusCheckExists = DB::selectOne("
             SELECT EXISTS (
@@ -130,7 +128,7 @@ return new class extends Migration
                 WHERE conname = 'grow_cycles_status_check'
             ) as exists
         ");
-        
+
         // Если нет CHECK constraint, добавляем (хотя Laravel должен был создать)
         // Но на всякий случай проверим и добавим если нужно
     }
@@ -148,4 +146,3 @@ return new class extends Migration
         DB::statement('DROP INDEX IF EXISTS nodes_zone_unique');
     }
 };
-

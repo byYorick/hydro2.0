@@ -15,38 +15,39 @@ class GreenhouseController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         $accessibleGreenhouseIds = ZoneAccessHelper::getAccessibleGreenhouseIds($user);
-        
+
         $query = Greenhouse::query();
-        
-        if (!$user->isAdmin()) {
+
+        if (! $user->isAdmin()) {
             $query->whereIn('id', $accessibleGreenhouseIds ?: [0]);
         }
-        
+
         $items = $query
             ->with('greenhouseType:id,code,name,description')
             ->latest('id')
             ->paginate(25);
+
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Права доступа проверяются на уровне маршрута (middleware role:operator,admin,agronomist,engineer)
         $normalizedInput = [];
         if ($request->exists('uid')) {
@@ -58,7 +59,7 @@ class GreenhouseController extends Controller
         if ($normalizedInput !== []) {
             $request->merge($normalizedInput);
         }
-        
+
         $data = $request->validate([
             'uid' => ['required', 'string', 'max:64'],
             'name' => ['required', 'string', 'max:255'],
@@ -71,12 +72,12 @@ class GreenhouseController extends Controller
 
         $data['uid'] = $this->makeUniqueGreenhouseUid($data['uid']);
 
-        if (!empty($data['greenhouse_type_id'])) {
+        if (! empty($data['greenhouse_type_id'])) {
             $selectedType = GreenhouseType::query()->find($data['greenhouse_type_id']);
             if ($selectedType) {
                 $data['type'] = $selectedType->code;
             }
-        } elseif (!empty($data['type'])) {
+        } elseif (! empty($data['type'])) {
             $selectedType = GreenhouseType::query()
                 ->whereRaw('lower(code) = ?', [strtolower((string) $data['type'])])
                 ->first();
@@ -85,12 +86,13 @@ class GreenhouseController extends Controller
                 $data['type'] = $selectedType->code;
             }
         }
-        
+
         // Генерируем уникальный provisioning_token для регистрации нод
         // Этот токен не должен быть доступен через API (скрыт в модели)
-        $data['provisioning_token'] = 'gh_' . \Illuminate\Support\Str::random(32);
-        
+        $data['provisioning_token'] = 'gh_'.\Illuminate\Support\Str::random(32);
+
         $greenhouse = Greenhouse::create($data);
+
         return response()->json([
             'status' => 'ok',
             'data' => $greenhouse->load('greenhouseType:id,code,name,description'),
@@ -100,37 +102,38 @@ class GreenhouseController extends Controller
     public function show(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к теплице
-        if (!ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this greenhouse',
             ], 403);
         }
-        
+
         $greenhouse->load('zones', 'greenhouseType:id,code,name,description');
+
         return response()->json(['status' => 'ok', 'data' => $greenhouse]);
     }
 
     public function update(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к теплице
-        if (!ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this greenhouse',
@@ -147,7 +150,7 @@ class GreenhouseController extends Controller
         if ($normalizedInput !== []) {
             $request->merge($normalizedInput);
         }
-        
+
         $data = $request->validate([
             'uid' => ['sometimes', 'string', 'max:64', 'unique:greenhouses,uid,'.$greenhouse->id],
             'name' => ['sometimes', 'string', 'max:255'],
@@ -167,7 +170,7 @@ class GreenhouseController extends Controller
             } else {
                 $data['type'] = null;
             }
-        } elseif (!empty($data['type'])) {
+        } elseif (! empty($data['type'])) {
             $selectedType = GreenhouseType::query()
                 ->whereRaw('lower(code) = ?', [strtolower((string) $data['type'])])
                 ->first();
@@ -178,6 +181,7 @@ class GreenhouseController extends Controller
         }
 
         $greenhouse->update($data);
+
         return response()->json([
             'status' => 'ok',
             'data' => $greenhouse->load('greenhouseType:id,code,name,description'),
@@ -187,29 +191,29 @@ class GreenhouseController extends Controller
     public function destroy(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Только админы могут удалять теплицы
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only administrators can delete greenhouses',
             ], 403);
         }
-        
+
         // Проверяем доступ к теплице
-        if (!ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this greenhouse',
             ], 403);
         }
-        
+
         // Проверяем наличие привязанных зон
         $zonesCount = \App\Models\Zone::where('greenhouse_id', $greenhouse->id)->count();
         if ($zonesCount > 0) {
@@ -218,27 +222,28 @@ class GreenhouseController extends Controller
                 'message' => "Cannot delete greenhouse: it has {$zonesCount} associated zone(s). Please delete or reassign zones first.",
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
-        
+
         // Проверяем наличие привязанных узлов (на всякий случай, если есть прямая связь)
         // Обычно узлы привязаны через зоны, но проверка не помешает
         $nodesCount = \App\Models\DeviceNode::whereHas('zone', function ($q) use ($greenhouse) {
             $q->where('greenhouse_id', $greenhouse->id);
         })->count();
-        
+
         if ($nodesCount > 0) {
             return response()->json([
                 'status' => 'error',
                 'message' => "Cannot delete greenhouse: it has {$nodesCount} associated node(s) through zones. Please delete or reassign nodes first.",
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
-        
+
         $greenhouse->delete();
+
         return response()->json(['status' => 'ok']);
     }
 
     private function normalizeStringInput(mixed $value): mixed
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             return $value;
         }
 
@@ -268,7 +273,7 @@ class GreenhouseController extends Controller
     {
         $baseUid = trim($requestedUid);
 
-        if (!Greenhouse::query()->where('uid', $baseUid)->exists()) {
+        if (! Greenhouse::query()->where('uid', $baseUid)->exists()) {
             return $baseUid;
         }
 
@@ -292,7 +297,7 @@ class GreenhouseController extends Controller
     public function dashboard(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -300,7 +305,7 @@ class GreenhouseController extends Controller
         }
 
         // Проверяем доступ к теплице
-        if (!ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this greenhouse',
@@ -335,7 +340,7 @@ class GreenhouseController extends Controller
 
         // Получаем топ-2 активных алерта для каждой зоны
         $alertsByZone = [];
-        if (!empty($zoneIds)) {
+        if (! empty($zoneIds)) {
             $alerts = \App\Models\Alert::query()
                 ->whereIn('zone_id', $zoneIds)
                 ->where('status', 'ACTIVE')

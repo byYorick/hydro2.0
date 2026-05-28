@@ -19,6 +19,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
         ]);
 
         $trackWsAuth('zone', 'denied');
+
         return false;
     }
 
@@ -35,6 +36,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
         ]);
 
         $trackWsAuth('zone', 'denied');
+
         return false;
     }
 
@@ -47,6 +49,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
         ]);
 
         $trackWsAuth('zone', 'denied');
+
         return false;
     }
 
@@ -61,6 +64,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
             ]);
 
             $trackWsAuth('zone', 'denied');
+
             return false;
         }
 
@@ -76,6 +80,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
             ]);
 
             $trackWsAuth('zone', 'denied');
+
             return false;
         }
     } catch (\Exception $e) {
@@ -89,6 +94,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
         ]);
 
         $trackWsAuth('zone', 'error');
+
         return false;
     }
 
@@ -100,6 +106,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) use ($track
     ]);
 
     $trackWsAuth('zone', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 });
 
@@ -114,6 +121,7 @@ $authorizeCommandsGlobal = static function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'denied');
+
         return false;
     }
 
@@ -130,6 +138,7 @@ $authorizeCommandsGlobal = static function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'denied');
+
         return false;
     }
 
@@ -140,6 +149,7 @@ $authorizeCommandsGlobal = static function ($user) use ($trackWsAuth) {
     ]);
 
     $trackWsAuth('commands', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 };
 
@@ -157,6 +167,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'denied');
+
         return false;
     }
 
@@ -174,6 +185,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'denied');
+
         return false;
     }
 
@@ -186,6 +198,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'denied');
+
         return false;
     }
 
@@ -201,6 +214,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
             ]);
 
             $trackWsAuth('commands', 'denied');
+
             return false;
         }
 
@@ -216,6 +230,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
             ]);
 
             $trackWsAuth('commands', 'denied');
+
             return false;
         }
     } catch (\Exception $e) {
@@ -228,6 +243,7 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('commands', 'error');
+
         return false;
     }
 
@@ -239,12 +255,12 @@ $authorizeCommandsZone = static function ($user, $zoneId) use ($trackWsAuth) {
     ]);
 
     $trackWsAuth('commands', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 };
 
 Broadcast::channel('hydro.commands.{zoneId}', $authorizeCommandsZone);
 Broadcast::channel('commands.{zoneId}', $authorizeCommandsZone);
-
 
 // Канал для глобальных событий (приватный)
 Broadcast::channel('hydro.events.global', function ($user) use ($trackWsAuth) {
@@ -255,6 +271,7 @@ Broadcast::channel('hydro.events.global', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('events', 'denied');
+
         return false;
     }
 
@@ -271,6 +288,7 @@ Broadcast::channel('hydro.events.global', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('events', 'denied');
+
         return false;
     }
 
@@ -281,6 +299,7 @@ Broadcast::channel('hydro.events.global', function ($user) use ($trackWsAuth) {
     ]);
 
     $trackWsAuth('events', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 });
 
@@ -293,6 +312,7 @@ Broadcast::channel('hydro.devices', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('devices', 'denied');
+
         return false;
     }
 
@@ -309,6 +329,7 @@ Broadcast::channel('hydro.devices', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('devices', 'denied');
+
         return false;
     }
 
@@ -319,6 +340,7 @@ Broadcast::channel('hydro.devices', function ($user) use ($trackWsAuth) {
     ]);
 
     $trackWsAuth('devices', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 });
 
@@ -331,6 +353,7 @@ Broadcast::channel('hydro.alerts', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('alerts', 'denied');
+
         return false;
     }
 
@@ -347,6 +370,7 @@ Broadcast::channel('hydro.alerts', function ($user) use ($trackWsAuth) {
         ]);
 
         $trackWsAuth('alerts', 'denied');
+
         return false;
     }
 
@@ -357,6 +381,7 @@ Broadcast::channel('hydro.alerts', function ($user) use ($trackWsAuth) {
     ]);
 
     $trackWsAuth('alerts', 'success');
+
     return ['id' => $user->id, 'name' => $user->name];
 });
 

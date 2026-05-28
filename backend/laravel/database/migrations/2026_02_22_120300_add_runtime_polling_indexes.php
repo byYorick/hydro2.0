@@ -79,13 +79,13 @@ return new class extends Migration
     private function indexExists(string $table, string $indexName): bool
     {
         $result = DB::selectOne(
-            "
+            '
             SELECT EXISTS (
                 SELECT 1
                 FROM pg_indexes
                 WHERE tablename = ? AND indexname = ?
             ) as exists
-            ",
+            ',
             [$table, $indexName]
         );
 

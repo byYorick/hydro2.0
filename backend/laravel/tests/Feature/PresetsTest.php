@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Preset;
 use App\Models\Recipe;
+use App\Models\User;
 use App\Models\Zone;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -103,4 +103,3 @@ class PresetsTest extends TestCase
             ->assertJsonPath('status', 'error');
     }
 }
-

@@ -70,4 +70,3 @@ class WebSocketMessagesTest extends DuskTestCase
         });
     }
 }
-

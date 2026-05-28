@@ -19,12 +19,12 @@ return new class extends Migration
         });
 
         DB::statement(
-            "ALTER TABLE zones ADD CONSTRAINT zones_config_mode_check "
-            . "CHECK (config_mode IN ('locked','live'))"
+            'ALTER TABLE zones ADD CONSTRAINT zones_config_mode_check '
+            ."CHECK (config_mode IN ('locked','live'))"
         );
         DB::statement(
-            "ALTER TABLE zones ADD CONSTRAINT zones_live_requires_until "
-            . "CHECK (config_mode = 'locked' OR live_until IS NOT NULL)"
+            'ALTER TABLE zones ADD CONSTRAINT zones_live_requires_until '
+            ."CHECK (config_mode = 'locked' OR live_until IS NOT NULL)"
         );
 
         Schema::create('zone_config_changes', function (Blueprint $table) {

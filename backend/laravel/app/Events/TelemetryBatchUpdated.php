@@ -4,8 +4,8 @@ namespace App\Events;
 
 use App\Services\EventSequenceService;
 use App\Services\TelemetryLedgerFilter;
-use App\Traits\RecordsZoneEvent;
 use App\Traits\RecordsWsBroadcastMetric;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -14,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class TelemetryBatchUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent, RecordsWsBroadcastMetric;
+    use Dispatchable, InteractsWithSockets, RecordsWsBroadcastMetric, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -23,7 +23,7 @@ class TelemetryBatchUpdated implements ShouldBroadcast
     public int $serverTs;
 
     /**
-     * @param array<int, array{node_id:int, channel:string|null, metric_type:string, value:float, ts:int}> $updates
+     * @param  array<int, array{node_id:int, channel:string|null, metric_type:string, value:float, ts:int}>  $updates
      */
     public function __construct(
         public int $zoneId,

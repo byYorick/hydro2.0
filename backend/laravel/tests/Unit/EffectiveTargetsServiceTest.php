@@ -2,19 +2,19 @@
 
 namespace Tests\Unit;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
+use App\Models\NutrientProduct;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Models\NutrientProduct;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\EffectiveTargetsService;
-use App\Enums\GrowCycleStatus;
-use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class EffectiveTargetsServiceTest extends TestCase
@@ -317,78 +317,78 @@ class EffectiveTargetsServiceTest extends TestCase
         ]);
 
         $this->storeZoneLogicProfile($zone->id, 'working', [
-                'ph' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'target' => 5.4,
-                        'min' => 5.2,
-                        'max' => 5.6,
+            'ph' => [
+                'enabled' => true,
+                'execution' => [
+                    'target' => 5.4,
+                    'min' => 5.2,
+                    'max' => 5.6,
+                ],
+            ],
+            'ec' => [
+                'enabled' => true,
+                'execution' => [
+                    'target' => 2.4,
+                    'min' => 2.1,
+                    'max' => 2.7,
+                ],
+            ],
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 45,
+                    'system_type' => 'nft',
+                ],
+            ],
+            'lighting' => [
+                'enabled' => false,
+                'execution' => [
+                    'photoperiod' => ['hours_on' => 10],
+                    'schedule' => [['start' => '08:00', 'end' => '18:00']],
+                    'interval_minutes' => 120,
+                ],
+            ],
+            'climate' => [
+                'enabled' => false,
+                'execution' => [
+                    'temperature' => ['day' => 24],
+                    'humidity' => ['day' => 64],
+                    'interval_minutes' => 15,
+                ],
+            ],
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'interval_minutes' => 30,
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'workflow' => 'cycle_start',
+                    'required_node_types' => ['irrig', 'climate'],
+                    'clean_tank_full_threshold' => 0.9,
+                    'refill_duration_sec' => 40,
+                    'refill_timeout_sec' => 600,
+                    'startup' => [
+                        'clean_fill_timeout_sec' => 1200,
+                        'solution_fill_timeout_sec' => 1800,
+                        'level_poll_interval_sec' => 60,
+                        'clean_fill_retry_cycles' => 1,
+                        'prepare_recirculation_timeout_sec' => 1200,
+                    ],
+                    'dosing_rules' => [
+                        'prepare_allowed_components' => ['npk'],
+                    ],
+                    'refill' => [
+                        'channel' => 'fill_valve',
                     ],
                 ],
-                'ec' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'target' => 2.4,
-                        'min' => 2.1,
-                        'max' => 2.7,
-                    ],
+            ],
+            'solution_change' => [
+                'enabled' => true,
+                'execution' => [
+                    'interval_minutes' => 180,
+                    'duration_seconds' => 120,
                 ],
-                'irrigation' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'interval_minutes' => 20,
-                        'duration_seconds' => 45,
-                        'system_type' => 'nft',
-                    ],
-                ],
-                'lighting' => [
-                    'enabled' => false,
-                    'execution' => [
-                        'photoperiod' => ['hours_on' => 10],
-                        'schedule' => [['start' => '08:00', 'end' => '18:00']],
-                        'interval_minutes' => 120,
-                    ],
-                ],
-                'climate' => [
-                    'enabled' => false,
-                    'execution' => [
-                        'temperature' => ['day' => 24],
-                        'humidity' => ['day' => 64],
-                        'interval_minutes' => 15,
-                    ],
-                ],
-                'diagnostics' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'interval_minutes' => 30,
-                        'topology' => 'two_tank_drip_substrate_trays',
-                        'workflow' => 'cycle_start',
-                        'required_node_types' => ['irrig', 'climate'],
-                        'clean_tank_full_threshold' => 0.9,
-                        'refill_duration_sec' => 40,
-                        'refill_timeout_sec' => 600,
-                        'startup' => [
-                            'clean_fill_timeout_sec' => 1200,
-                            'solution_fill_timeout_sec' => 1800,
-                            'level_poll_interval_sec' => 60,
-                            'clean_fill_retry_cycles' => 1,
-                            'prepare_recirculation_timeout_sec' => 1200,
-                        ],
-                        'dosing_rules' => [
-                            'prepare_allowed_components' => ['npk'],
-                        ],
-                        'refill' => [
-                            'channel' => 'fill_valve',
-                        ],
-                    ],
-                ],
-                'solution_change' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'interval_minutes' => 180,
-                        'duration_seconds' => 120,
-                    ],
-                ],
+            ],
         ], true);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([
@@ -544,25 +544,25 @@ class EffectiveTargetsServiceTest extends TestCase
         ]);
 
         $this->storeZoneLogicProfile($zone->id, 'working', [
-                'ph' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'target' => 5.4,
-                    ],
+            'ph' => [
+                'enabled' => true,
+                'execution' => [
+                    'target' => 5.4,
                 ],
-                'ec' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'target' => 2.3,
-                    ],
+            ],
+            'ec' => [
+                'enabled' => true,
+                'execution' => [
+                    'target' => 2.3,
                 ],
-                'irrigation' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'interval_minutes' => 10,
-                        'duration_seconds' => 15,
-                    ],
+            ],
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'interval_minutes' => 10,
+                    'duration_seconds' => 15,
                 ],
+            ],
         ], false);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([
@@ -610,12 +610,12 @@ class EffectiveTargetsServiceTest extends TestCase
         ]);
 
         $this->storeZoneLogicProfile($zone->id, 'working', [
-                'lighting' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'force_skip' => false,
-                    ],
+            'lighting' => [
+                'enabled' => true,
+                'execution' => [
+                    'force_skip' => false,
                 ],
+            ],
         ], true);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([

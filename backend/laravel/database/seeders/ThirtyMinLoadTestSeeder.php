@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\Greenhouse;
-use App\Models\Zone;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\NodeChannel;
+use App\Models\Zone;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
@@ -41,7 +41,7 @@ class ThirtyMinLoadTestSeeder extends Seeder
                     'name' => "30min Test Zone {$i}",
                 ],
                 [
-                    'uid' => 'zone-30min-test-' . $i,
+                    'uid' => 'zone-30min-test-'.$i,
                     'description' => "Zone for 30min test #{$i}",
                     'status' => 'RUNNING',
                 ]
@@ -52,14 +52,14 @@ class ThirtyMinLoadTestSeeder extends Seeder
         // Создаем 100 нод, распределяя их по зонам
         for ($i = 0; $i < 100; $i++) {
             $zone = $zones[$i % $zonesCount];
-            
+
             $node = DeviceNode::firstOrCreate(
                 [
                     'uid' => "node-30min-test-{$i}",
                 ],
                 [
                     'zone_id' => $zone->id,
-                    'name' => "Node {$i} - Zone " . $zone->name,
+                    'name' => "Node {$i} - Zone ".$zone->name,
                     'type' => $i % 4 === 0 ? 'ph' : ($i % 4 === 1 ? 'ec' : 'climate'),
                     'status' => 'online',
                     'lifecycle_state' => 'ACTIVE',
@@ -93,7 +93,7 @@ class ThirtyMinLoadTestSeeder extends Seeder
             }
         }
 
-        $this->command->info("✓ Создано зон: " . count($zones));
-        $this->command->info("✓ Создано нод: " . count($nodes));
+        $this->command->info('✓ Создано зон: '.count($zones));
+        $this->command->info('✓ Создано нод: '.count($nodes));
     }
 }

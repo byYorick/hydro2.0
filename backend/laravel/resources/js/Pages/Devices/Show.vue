@@ -160,7 +160,9 @@
             <Link
               :href="`/launch/${linkedZoneId}`"
               class="text-[color:var(--accent-cyan)] hover:underline"
-            >Launch</Link>
+            >
+              Launch
+            </Link>
             → калибровка сенсоров.
           </p>
           <div
@@ -377,6 +379,7 @@
         >
           JSON скрыт, чтобы не занимать экран.
         </div>
+        <!-- eslint-disable-next-line vue/no-v-html -- highlightJson sanitizes input via escapeHtml() (см. функцию ниже) -->
         <pre
           v-else
           class="node-config-json max-h-[32rem] overflow-auto rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs leading-relaxed text-[color:var(--text-muted)]"

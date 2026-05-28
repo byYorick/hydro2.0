@@ -11,8 +11,7 @@ class PresetController extends Controller
 {
     public function __construct(
         private PresetService $presetService
-    ) {
-    }
+    ) {}
 
     public function index()
     {
@@ -20,6 +19,7 @@ class PresetController extends Controller
             ->with('defaultRecipe')
             ->latest('id')
             ->paginate(25);
+
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -40,12 +40,14 @@ class PresetController extends Controller
         ]);
 
         $preset = $this->presetService->create($data);
+
         return response()->json(['status' => 'ok', 'data' => $preset], Response::HTTP_CREATED);
     }
 
     public function show(Preset $preset)
     {
         $preset->load('defaultRecipe');
+
         return response()->json(['status' => 'ok', 'data' => $preset]);
     }
 
@@ -65,6 +67,7 @@ class PresetController extends Controller
             'description' => ['nullable', 'string'],
         ]);
         $preset = $this->presetService->update($preset, $data);
+
         return response()->json(['status' => 'ok', 'data' => $preset]);
     }
 
@@ -72,6 +75,7 @@ class PresetController extends Controller
     {
         try {
             $this->presetService->delete($preset);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
@@ -81,4 +85,3 @@ class PresetController extends Controller
         }
     }
 }
-

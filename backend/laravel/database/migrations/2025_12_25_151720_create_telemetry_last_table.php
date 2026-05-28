@@ -8,10 +8,10 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Кэш последних значений сенсоров для быстрого доступа.
      * Обновляется триггерами или отдельным job'ом.
-     * 
+     *
      * ВНИМАНИЕ: Заменяет старую структуру telemetry_last (zone_id, node_id, metric_type)
      * на новую структуру с sensor_id.
      */
@@ -20,7 +20,7 @@ return new class extends Migration
         // Удаляем старую таблицу, если она существует (без обратной совместимости)
         // Используем CASCADE для удаления зависимых объектов
         DB::statement('DROP TABLE IF EXISTS telemetry_last CASCADE');
-        
+
         Schema::create('telemetry_last', function (Blueprint $table) {
             $table->foreignId('sensor_id')->primary()->constrained('sensors')->cascadeOnDelete();
             $table->decimal('last_value', 10, 4); // Последнее значение
@@ -41,4 +41,3 @@ return new class extends Migration
         Schema::dropIfExists('telemetry_last');
     }
 };
-

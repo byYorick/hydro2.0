@@ -29,7 +29,7 @@ class AuthTest extends TestCase
         ]);
         $resp->assertOk()->assertJsonStructure(['status', 'data' => ['token', 'user' => ['id', 'name', 'email', 'role', 'roles']]]);
         $token = $resp->json('data.token');
-        
+
         // Проверяем, что роль возвращается
         $expectedRole = $user->role ?? 'viewer';
         $resp->assertJsonPath('data.user.role', $expectedRole);
@@ -44,5 +44,3 @@ class AuthTest extends TestCase
         $logout->assertOk();
     }
 }
-
-

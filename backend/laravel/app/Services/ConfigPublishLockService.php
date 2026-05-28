@@ -3,17 +3,16 @@
 namespace App\Services;
 
 use App\Models\DeviceNode;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
 class ConfigPublishLockService
 {
     /**
      * Получить pessimistic lock для публикации конфигурации узла.
      * Использует SELECT FOR UPDATE для блокировки строки в БД.
-     * 
-     * @param DeviceNode $node
+     *
      * @return DeviceNode|null Заблокированная модель узла или null при ошибке
      */
     public function acquirePessimisticLock(DeviceNode $node): ?DeviceNode
@@ -28,10 +27,11 @@ class ConfigPublishLockService
                     ->lockForUpdate()
                     ->first();
 
-                if (!$locked) {
+                if (! $locked) {
                     Log::warning('ConfigPublishLockService: Node not found for locking', [
                         'node_id' => $node->id,
                     ]);
+
                     return null;
                 }
 
@@ -55,6 +55,7 @@ class ConfigPublishLockService
                 'error' => $e->getMessage(),
                 'exception' => get_class($e),
             ]);
+
             return null;
         }
     }
@@ -62,18 +63,17 @@ class ConfigPublishLockService
     /**
      * Получить optimistic lock для публикации конфигурации узла.
      * Использует версионирование через поле updated_at или version.
-     * 
-     * @param DeviceNode $node
+     *
      * @return array ['node' => DeviceNode, 'version' => int] или null при ошибке
      */
     public function acquireOptimisticLock(DeviceNode $node): ?array
     {
         try {
             $node->refresh();
-            
+
             // Используем updated_at как версию для optimistic locking
             $version = $node->updated_at?->timestamp ?? time();
-            
+
             Log::debug('ConfigPublishLockService: Optimistic lock acquired', [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
@@ -89,28 +89,29 @@ class ConfigPublishLockService
                 'node_id' => $node->id,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
 
     /**
      * Проверить, не изменилась ли версия узла (для optimistic locking).
-     * 
-     * @param DeviceNode $node
-     * @param int $expectedVersion Ожидаемая версия
+     *
+     * @param  int  $expectedVersion  Ожидаемая версия
      * @return bool true если версия не изменилась, false иначе
      */
     public function checkOptimisticLock(DeviceNode $node, int $expectedVersion): bool
     {
         $node->refresh();
         $currentVersion = $node->updated_at?->timestamp ?? time();
-        
+
         if ($currentVersion !== $expectedVersion) {
             Log::warning('ConfigPublishLockService: Optimistic lock check failed - version changed', [
                 'node_id' => $node->id,
                 'expected_version' => $expectedVersion,
                 'current_version' => $currentVersion,
             ]);
+
             return false;
         }
 
@@ -120,9 +121,8 @@ class ConfigPublishLockService
     /**
      * Получить advisory lock для дедупликации публикации конфигурации.
      * Использует PostgreSQL advisory locks для предотвращения одновременной публикации.
-     * 
-     * @param DeviceNode $node
-     * @param int $timeout Таймаут в секундах (по умолчанию 10)
+     *
+     * @param  int  $timeout  Таймаут в секундах (по умолчанию 10)
      * @return bool true если lock получен, false иначе
      */
     public function acquireAdvisoryLock(DeviceNode $node, int $timeout = 10): bool
@@ -135,16 +135,17 @@ class ConfigPublishLockService
                     'node_id' => $node->id,
                     'driver' => $driver,
                 ]);
+
                 return false; // Возвращаем false, так как advisory locks требуются для безопасности
             }
 
             // Используем PostgreSQL advisory lock
             // Используем node_id как ключ для lock
             $lockKey = $node->id;
-            
+
             // pg_try_advisory_lock не блокирует, возвращает true/false сразу
             $result = DB::selectOne(
-                "SELECT pg_try_advisory_lock(?) as locked",
+                'SELECT pg_try_advisory_lock(?) as locked',
                 [$lockKey]
             );
 
@@ -154,6 +155,7 @@ class ConfigPublishLockService
                     'node_uid' => $node->uid,
                     'lock_key' => $lockKey,
                 ]);
+
                 return true;
             }
 
@@ -162,6 +164,7 @@ class ConfigPublishLockService
                 'node_uid' => $node->uid,
                 'lock_key' => $lockKey,
             ]);
+
             return false;
         } catch (\Exception $e) {
             Log::error('ConfigPublishLockService: Error acquiring advisory lock', [
@@ -169,14 +172,14 @@ class ConfigPublishLockService
                 'error' => $e->getMessage(),
                 'driver' => DB::connection()->getDriverName(),
             ]);
+
             return false;
         }
     }
 
     /**
      * Освободить advisory lock.
-     * 
-     * @param DeviceNode $node
+     *
      * @return bool true если lock освобожден, false иначе
      */
     public function releaseAdvisoryLock(DeviceNode $node): bool
@@ -189,13 +192,14 @@ class ConfigPublishLockService
                     'node_id' => $node->id,
                     'driver' => $driver,
                 ]);
+
                 return false;
             }
 
             $lockKey = $node->id;
-            
+
             $result = DB::selectOne(
-                "SELECT pg_advisory_unlock(?) as unlocked",
+                'SELECT pg_advisory_unlock(?) as unlocked',
                 [$lockKey]
             );
 
@@ -222,22 +226,22 @@ class ConfigPublishLockService
                 'error' => $e->getMessage(),
                 'driver' => DB::connection()->getDriverName(),
             ]);
+
             return false;
         }
     }
 
     /**
      * Проверить дедупликацию через кеш (дополнительный уровень защиты).
-     * 
-     * @param DeviceNode $node
-     * @param string $configHash Хеш конфигурации
+     *
+     * @param  string  $configHash  Хеш конфигурации
      * @return bool true если конфиг уже был опубликован недавно, false иначе
      */
     public function isDuplicate(DeviceNode $node, string $configHash): bool
     {
         $cacheKey = "config_publish:{$node->id}:{$configHash}";
         $exists = Cache::has($cacheKey);
-        
+
         if ($exists) {
             Log::debug('ConfigPublishLockService: Duplicate config detected', [
                 'node_id' => $node->id,
@@ -251,17 +255,15 @@ class ConfigPublishLockService
 
     /**
      * Пометить конфигурацию как опубликованную (для дедупликации).
-     * 
-     * @param DeviceNode $node
-     * @param string $configHash Хеш конфигурации
-     * @param int $ttl Время жизни в секундах (по умолчанию 60)
-     * @return void
+     *
+     * @param  string  $configHash  Хеш конфигурации
+     * @param  int  $ttl  Время жизни в секундах (по умолчанию 60)
      */
     public function markAsPublished(DeviceNode $node, string $configHash, int $ttl = 60): void
     {
         $cacheKey = "config_publish:{$node->id}:{$configHash}";
         Cache::put($cacheKey, true, $ttl);
-        
+
         Log::debug('ConfigPublishLockService: Config marked as published', [
             'node_id' => $node->id,
             'node_uid' => $node->uid,
@@ -270,4 +272,3 @@ class ConfigPublishLockService
         ]);
     }
 }
-

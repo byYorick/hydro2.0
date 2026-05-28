@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\NodeChannel;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class CleanupNodeChannelsGpio extends Command
 {
@@ -41,6 +40,7 @@ class CleanupNodeChannelsGpio extends Command
         });
 
         $this->info("Processed {$updated} channel configs");
+
         return Command::SUCCESS;
     }
 

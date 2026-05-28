@@ -3,16 +3,15 @@
 namespace App\Services;
 
 use App\Enums\NodeLifecycleState;
-use App\Models\DeviceNode;
 use App\Helpers\TransactionHelper;
-use Illuminate\Support\Facades\DB;
+use App\Models\DeviceNode;
 use Illuminate\Support\Facades\Log;
 
 class NodeLifecycleService
 {
     /**
      * Разрешённые переходы между состояниями.
-     * 
+     *
      * Ключ - текущее состояние, значение - массив разрешённых целевых состояний.
      */
     private const ALLOWED_TRANSITIONS = [
@@ -58,10 +57,8 @@ class NodeLifecycleService
 
     /**
      * Переход узла в указанное состояние с валидацией.
-     * 
-     * @param DeviceNode $node
-     * @param NodeLifecycleState $targetState
-     * @param string|null $reason Причина перехода (для логирования)
+     *
+     * @param  string|null  $reason  Причина перехода (для логирования)
      * @return bool Успешно ли выполнен переход
      */
     public function transition(
@@ -75,7 +72,7 @@ class NodeLifecycleService
             $targetValue = $targetState->value;
 
             // Проверяем, разрешён ли переход
-            if (!$this->isTransitionAllowed($currentState, $targetState)) {
+            if (! $this->isTransitionAllowed($currentState, $targetState)) {
                 Log::warning('Node lifecycle transition not allowed', [
                     'node_id' => $node->id,
                     'node_uid' => $node->uid,
@@ -83,12 +80,13 @@ class NodeLifecycleService
                     'target_state' => $targetValue,
                     'reason' => $reason,
                 ]);
+
                 return false;
             }
 
             // Обновляем состояние
             $node->lifecycle_state = $targetState;
-            
+
             // Дополнительные действия в зависимости от целевого состояния
             match ($targetState) {
                 NodeLifecycleState::ACTIVE => $node->status = 'online',
@@ -125,6 +123,7 @@ class NodeLifecycleService
         }
 
         $allowedTargets = self::ALLOWED_TRANSITIONS[$current->value] ?? [];
+
         return in_array($target->value, $allowedTargets, true);
     }
 
@@ -184,4 +183,3 @@ class NodeLifecycleService
         return $this->transition($node, NodeLifecycleState::DECOMMISSIONED, $reason);
     }
 }
-

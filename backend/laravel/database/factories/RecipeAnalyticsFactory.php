@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\RecipeAnalytics;
 use App\Models\Recipe;
+use App\Models\RecipeAnalytics;
 use App\Models\Zone;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -37,4 +37,3 @@ class RecipeAnalyticsFactory extends Factory
         ];
     }
 }
-

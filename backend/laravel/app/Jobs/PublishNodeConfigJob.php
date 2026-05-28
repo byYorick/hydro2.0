@@ -2,9 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Helpers\TransactionHelper;
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
-use App\Helpers\TransactionHelper;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -15,7 +15,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -78,7 +77,7 @@ class PublishNodeConfigJob implements ShouldQueue
                         $node = DeviceNode::where('id', $this->nodeId)
                             ->lockForUpdate()
                             ->first();
-                        
+
                         if (! $node) {
                             Log::warning('PublishNodeConfigJob: Node not found', [
                                 'node_id' => $this->nodeId,
@@ -113,14 +112,14 @@ class PublishNodeConfigJob implements ShouldQueue
                         $originalZoneId = $node->zone_id;
                         $originalPendingZoneId = $node->pending_zone_id;
                         $zoneForConfig = null;
-                        
+
                         // КРИТИЧНО: Определяем, нужно ли публиковать на временный топик
                         // Публикуем на временный топик ТОЛЬКО при привязке узла (pending_zone_id установлен, zone_id еще null)
                         // После успешной привязки временный топик больше не нужен
                         // BUGFIX: Проверяем ДО изменения zone_id
-                        $isNodeBinding = $originalPendingZoneId && !$originalZoneId;
-                        
-                        if ($node->pending_zone_id && !$node->zone_id) {
+                        $isNodeBinding = $originalPendingZoneId && ! $originalZoneId;
+
+                        if ($node->pending_zone_id && ! $node->zone_id) {
                             // Загружаем зону из pending_zone_id
                             $zoneForConfig = \App\Models\Zone::with('greenhouse')->find($node->pending_zone_id);
                             if ($zoneForConfig) {
@@ -189,7 +188,7 @@ class PublishNodeConfigJob implements ShouldQueue
                             'node_id' => $node->id,
                             'uid' => $node->uid,
                             'base_url' => $baseUrl,
-                            'has_token' => !empty($token),
+                            'has_token' => ! empty($token),
                             'target_zone_id' => $targetZoneId,
                             'greenhouse_uid' => $greenhouseUid,
                         ]);
@@ -216,7 +215,7 @@ class PublishNodeConfigJob implements ShouldQueue
 
                         // Используем короткий таймаут
                         $timeout = 10; // секунд
-                        
+
                         $requestData = [
                             'zone_id' => $targetZoneId,
                             'greenhouse_uid' => $greenhouseUid,
@@ -225,14 +224,14 @@ class PublishNodeConfigJob implements ShouldQueue
                         if ($zoneUid) {
                             $requestData['zone_uid'] = $zoneUid;
                         }
-                        
+
                         Log::info('PublishNodeConfigJob: Request data prepared', [
                             'publish_id' => $publishId,
                             'node_id' => $node->id,
                             'is_node_binding' => $isNodeBinding,
                             'pending_zone_id' => $node->pending_zone_id,
                             'zone_id' => $node->zone_id,
-                            'has_zone_uid' => !empty($zoneUid),
+                            'has_zone_uid' => ! empty($zoneUid),
                         ]);
 
                         Log::info('PublishNodeConfigJob: Sending request to history-logger', [
@@ -247,7 +246,7 @@ class PublishNodeConfigJob implements ShouldQueue
                         $response = Http::withHeaders($headers)
                             ->timeout($timeout)
                             ->post("{$baseUrl}/nodes/{$node->uid}/config", $requestData);
-                        
+
                         // Восстанавливаем оригинальный zone_id и relation если они были изменены
                         if ($originalZoneId !== $node->zone_id) {
                             $node->zone_id = $originalZoneId;
@@ -273,16 +272,17 @@ class PublishNodeConfigJob implements ShouldQueue
                             throw new RequestException($response);
                         }
                     });
-                
+
                 // Если блокировка не получена, возвращаем null
                 return $lockResult;
             });
-            
+
             // Если результат null, значит блокировка не была получена (дубликат операции)
             if ($result === null) {
                 Log::debug('PublishNodeConfigJob: Skipping duplicate job (advisory lock not acquired)', [
                     'node_id' => $this->nodeId,
                 ]);
+
                 return;
             }
         } catch (ConnectionException|TimeoutException|RequestException $e) {
