@@ -127,7 +127,18 @@ return [
     ],
 
     'node_registration' => [
-        'allowed_ips' => env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
+        /*
+         * Список CIDR/IP, которым разрешена регистрация нод через публичные ingress endpoints.
+         *
+         * Раньше значение возвращалось как строка через запятую — middleware
+         * `NodeRegistrationIpWhitelist` ждёт массив и при `!is_array()` пропускал проверку
+         * (de facto whitelist был выключен). Приводим к массиву через `explode()`, чтобы
+         * `services.node_registration.allowed_ips` соответствовало контракту в `SECURITY_ARCHITECTURE.md` §4.3.
+         */
+        'allowed_ips' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'))
+        ))),
     ],
 
 ];
