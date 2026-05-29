@@ -709,8 +709,8 @@ actions:
                   target_ph: 5.1
                   target_ec: 2.33
                   prepare_tolerance:
-                    ph_pct: 2
-                    ec_pct: 2
+                    ph_pct: 9
+                    ec_pct: 15
                   two_tank_commands:
                     clean_fill_start:
                       - channel: valve_clean_fill

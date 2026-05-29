@@ -708,8 +708,8 @@ actions:
                   target_ph: 5.1
                   target_ec: 2.33
                   prepare_tolerance:
-                    ph_pct: 2
-                    ec_pct: 2
+                    ph_pct: 9
+                    ec_pct: 15
                   correction:
                     dose_ec_channel: dose_ec_a
                     dose_ph_up_channel: dose_ph_up

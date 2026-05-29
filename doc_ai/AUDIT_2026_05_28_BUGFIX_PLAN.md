@@ -1054,6 +1054,23 @@ Handler получает `ZoneConfigRepository` через ctor injection из b
   `test_format_sync_integration.py` — заменить mocking `httpx.AsyncClient`
   context manager на `get_http_client()`. На текущем этапе попытка перевода
   сломала 8 production тестов; откат сделан в Stage 2 коммите.
+- **B12.** ~~`PipelineMetricsService`: `Http::pendingRequest()` на фасаде Laravel~~
+  **Исправлено 2026-05-29:** `Http::timeout()->async()` в
+  `backend/laravel/app/Services/PipelineMetricsService.php`; unit-тест
+  `PipelineMetricsServiceTest`.
+- **B13.** ~~Гонка `ae3_zone_lease_release_failed` при завершении task~~
+  **Смягчено 2026-05-29:** retry release + не алертить, если lease уже у другого
+  owner (`ae3lite/runtime/worker.py`); интеграционный тест
+  `test_runtime_worker_release_treats_foreign_owner_as_resolved`.
+- **B14.** ~~E107 real-hardware: `insert_ready` до config/reset → 409
+  `start_irrigation_setup_pending`~~ **Исправлено 2026-05-29:** UPSERT
+  `workflow_phase=ready` непосредственно перед `start-irrigation`
+  (`E107_ae3_irrigation_runtime_test_node.yaml`).
+- **B15.** E2E real-hardware correction convergence (E102/E106/E112):
+  `zone.logic_profile.prepare_tolerance` 2%/2% конфликтовал с `zone.correction`
+  9–15%; таймаут `wait_fill_ec_correction` в E106; на `test_node` — удержание
+  pH/EC после `set_fault_mode` (`CORRECTION_FORCED_METRIC_HOLD_SEC`). Перепрошить
+  `firmware/test_node` на стенде после merge.
 
 ---
 

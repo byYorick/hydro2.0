@@ -30,8 +30,10 @@ class PipelineMetricsService
      */
     private static function buildHttpClient(float $timeoutSeconds, bool $async = false)
     {
-        $client = $async ? Http::async() : Http::pendingRequest();
-        $client = $client->timeout($timeoutSeconds);
+        $client = Http::timeout($timeoutSeconds);
+        if ($async) {
+            $client = $client->async();
+        }
 
         $token = self::historyLoggerToken();
         if ($token !== null) {

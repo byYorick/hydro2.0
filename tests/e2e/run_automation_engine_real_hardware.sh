@@ -1833,6 +1833,9 @@ echo "🚀 Запуск E2E на реальном железе (set=$SCENARIO_SE
 prepare_real_hardware_node
 echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID workflow_node=$TEST_WORKFLOW_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
 
+FAILED_SCENARIOS=()
+CONTINUE_ON_FAILURE="${E2E_CONTINUE_ON_FAILURE:-0}"
+
 for scenario in "${SCENARIOS[@]}"; do
   echo "\n=== $scenario ==="
   started_at="$(date +%s)"
@@ -1843,6 +1846,10 @@ for scenario in "${SCENARIOS[@]}"; do
     scan_logs_since_epoch "$started_at" || true
     scenario_db_metrics_since_epoch "$started_at" || true
     rm -f "$scenario_log_tmp"
+    if [ "$CONTINUE_ON_FAILURE" = "1" ]; then
+      FAILED_SCENARIOS+=("$scenario")
+      continue
+    fi
     exit 1
   fi
 
@@ -1860,11 +1867,21 @@ for scenario in "${SCENARIOS[@]}"; do
     echo "❌ Сценарий прошел, но в логах найдены ошибки (STRICT_SERVICE_LOG_SCAN=1)"
     scenario_db_metrics_since_epoch "$started_at" || true
     rm -f "$scenario_log_tmp"
+    if [ "$CONTINUE_ON_FAILURE" = "1" ]; then
+      FAILED_SCENARIOS+=("$scenario (log scan)")
+      continue
+    fi
     exit 1
   fi
 
   scenario_db_metrics_since_epoch "$started_at" || true
   rm -f "$scenario_log_tmp"
 done
+
+if [ "${#FAILED_SCENARIOS[@]}" -gt 0 ]; then
+  echo "\n❌ Завершено с ошибками: ${#FAILED_SCENARIOS[@]} / ${#SCENARIOS[@]}"
+  printf '  - %s\n' "${FAILED_SCENARIOS[@]}"
+  exit 1
+fi
 
 echo "\n🎉 Все сценарии для real hardware завершены успешно (set=$SCENARIO_SET)"

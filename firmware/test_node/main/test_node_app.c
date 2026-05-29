@@ -93,6 +93,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
 #define CORRECTION_FLOW_DRIFT_HOLD_SEC 120
 #define CORRECTION_IDLE_DRIFT_HOLD_SEC 24
+/** Удержание pH/EC после set_fault_mode (E2E force near-target) без passive drift. */
+#define CORRECTION_FORCED_METRIC_HOLD_SEC 90
 #define CONTROL_DELAY_MIN_MS 120
 #define CONTROL_DELAY_MAX_MS 260
 #define TRANSIENT_DELAY_BASE_MIN_MS 220
@@ -1112,6 +1114,29 @@ static uint8_t correction_drift_hold_ticks(float phase_factor) {
         ticks = 255;
     }
     return (uint8_t)ticks;
+}
+
+static uint8_t forced_metric_hold_ticks(void) {
+    int ticks = (int)ceilf(
+        ((float)CORRECTION_FORCED_METRIC_HOLD_SEC * 1000.0f) / (float)TELEMETRY_INTERVAL_MS
+    );
+
+    if (ticks < 1) {
+        ticks = 1;
+    }
+    if (ticks > 255) {
+        ticks = 255;
+    }
+    return (uint8_t)ticks;
+}
+
+static void apply_forced_metric_drift_hold(bool ec_channel) {
+    uint8_t hold_ticks = forced_metric_hold_ticks();
+    uint8_t *drift_hold_ticks = ec_channel ? &s_virtual_state.ec_drift_hold_ticks : &s_virtual_state.ph_drift_hold_ticks;
+
+    if (*drift_hold_ticks < hold_ticks) {
+        *drift_hold_ticks = hold_ticks;
+    }
 }
 
 static void schedule_correction_response(bool ec_channel, float delta, float phase_factor) {
@@ -3629,11 +3654,13 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             if (job->ph_value_present) {
                 clear_correction_response_state();
                 s_virtual_state.ph_value = clamp_ph_value(job->ph_value);
+                apply_forced_metric_drift_hold(false);
                 publish_ph = true;
             }
             if (job->ec_value_present) {
                 clear_correction_response_state();
                 s_virtual_state.ec_value = clamp_ec_value(job->ec_value);
+                apply_forced_metric_drift_hold(true);
                 publish_ec = true;
             }
             if (job->soil_moisture_present) {
