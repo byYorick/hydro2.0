@@ -345,7 +345,12 @@ class E2ERunner:
         irrig = _pick("irrig") or rows[0]
         ph = _pick("ph") or irrig
         ec = _pick("ec") or (ph if ph is not irrig else irrig)
-        soil = _pick("water_sensor") or _pick("soil") or irrig
+        soil = _pick("water_sensor") or _pick("soil")
+        if soil is None:
+            for row in rows:
+                if str(row.get("uid") or "").strip() == "nd-test-soil-1":
+                    soil = row
+                    break
 
         if _needs_resolution("TEST_NODE_UID"):
             self.context["TEST_NODE_UID"] = irrig["uid"]

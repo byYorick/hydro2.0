@@ -41,7 +41,7 @@ fi
 : "${TEST_WORKFLOW_NODE_UID:=auto}"
 : "${TEST_PH_NODE_UID:=auto}"
 : "${TEST_EC_NODE_UID:=auto}"
-: "${TEST_SOIL_NODE_UID:=auto}"
+: "${TEST_SOIL_NODE_UID:=nd-test-soil-1}"
 : "${TEST_NODE_HW_ID:=auto}"
 : "${REAL_HW_USE_NODE_SIM_SESSION:=0}"
 : "${REAL_HW_REBOOT_CMD:=restart}"
@@ -1209,11 +1209,14 @@ build_bind_uids_from_runtime() {
 
   : > "$explicit_file"
   local explicit_uid
-  for explicit_uid in "${TEST_NODE_UID:-}" "${TEST_WORKFLOW_NODE_UID:-}" "${TEST_PH_NODE_UID:-}" "${TEST_EC_NODE_UID:-}"; do
+  for explicit_uid in "${TEST_NODE_UID:-}" "${TEST_WORKFLOW_NODE_UID:-}" "${TEST_PH_NODE_UID:-}" "${TEST_EC_NODE_UID:-}" "${TEST_SOIL_NODE_UID:-}"; do
     if ! is_auto_uid "$explicit_uid"; then
       printf '%s\n' "$explicit_uid" >> "$explicit_file"
     fi
   done
+  if uid_matches_discovery_filter "nd-test-soil-1"; then
+    printf '%s\n' "nd-test-soil-1" >> "$explicit_file"
+  fi
 
   {
     cat "$filtered_file" 2>/dev/null || true
