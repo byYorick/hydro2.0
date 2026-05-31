@@ -592,12 +592,12 @@ static esp_err_t handle_test_sensor(
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+    if (!i2c_bus_is_initialized_bus(trema_ec_get_i2c_bus())) {
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
             "i2c_not_initialized",
-            "I2C bus is not initialized",
+            "I2C bus (EC sensor) is not initialized",
             NULL
         );
         return ESP_ERR_INVALID_STATE;
@@ -688,8 +688,7 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
     float temp_check = 0.0f;
     bool sensor_ready = trema_ec_get_temperature(&temp_check);
     
-    // trema_ec использует дефолтную шину (I2C_BUS_0)
-    if (!sensor_ready && i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+    if (!sensor_ready && i2c_bus_is_initialized_bus(trema_ec_get_i2c_bus())) {
         if (trema_ec_init()) {
             ESP_LOGI(TAG, "Trema EC sensor initialized");
             sensor_ready = true;

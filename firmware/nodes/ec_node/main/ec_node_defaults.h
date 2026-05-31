@@ -25,10 +25,11 @@ extern "C" {
 #define EC_NODE_DEFAULT_MQTT_PORT    1883
 #define EC_NODE_DEFAULT_MQTT_KEEPALIVE 30
 
-// I2C bus defaults
-// trema_ec использует дефолтную шину (I2C_BUS_0), поэтому EC sensor тоже на I2C_BUS_0
-#define EC_NODE_I2C_BUS_0_SDA        21  // ESP32 стандартный SDA (OLED + EC sensor)
-#define EC_NODE_I2C_BUS_0_SCL        22  // ESP32 стандартный SCL
+// I2C bus defaults (как ph_node: шина 0 — периферия, шина 1 — химический датчик)
+#define EC_NODE_I2C_BUS_0_SDA        21  // OLED + INA209 (ток насосов)
+#define EC_NODE_I2C_BUS_0_SCL        22
+#define EC_NODE_I2C_BUS_1_SDA        18  // Trema EC
+#define EC_NODE_I2C_BUS_1_SCL        19
 #define EC_NODE_I2C_CLOCK_SPEED      100000
 
 // OLED defaults

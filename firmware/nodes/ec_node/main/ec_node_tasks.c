@@ -114,10 +114,9 @@ static void task_sensors(void *pvParameters) {
                         model.mqtt_port = mqtt_port_val;
                     }
                     
-                    // Get current EC value and sensor status (EC-специфичная логика)
-                    // trema_ec использует дефолтную шину (I2C_BUS_0)
+                    // Get current EC value and sensor status (EC-специфичная логика); Trema EC на I2C_BUS_1
                     bool sensor_initialized = ec_node_is_ec_sensor_initialized();
-                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_0);
+                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(trema_ec_get_i2c_bus());
                     
                     // Инициализируем статус датчика
                     model.sensor_status.i2c_connected = false;
@@ -128,12 +127,20 @@ static void task_sensors(void *pvParameters) {
                     model.ec_value = NAN;
                     
                     if (i2c_bus_ok) {
-                        // Проверяем подключение I2C - пытаемся прочитать model ID
-                        uint8_t reg_model = 0x04;  // REG_MODEL для Trema EC
+                        // Проверяем I²C: заводской адрес Trema Flash-I2C 0x09, legacy 0x08
+                        uint8_t reg_model = 0x04;  // REG_MODEL
                         uint8_t model_id = 0;
-                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_0, 0x08, &reg_model, 1, &model_id, 1, 200);  // TREMA_EC_ADDR = 0x08
-                        
-                        if (i2c_err == ESP_OK && model_id == 0x19) {  // EC sensor model ID = 0x19
+                        esp_err_t i2c_err = ESP_ERR_NOT_FOUND;
+                        const uint8_t ec_probe[] = { TREMA_EC_ADDR, TREMA_EC_ADDR_ALT, TREMA_EC_ADDR_LEGACY };
+                        for (size_t pa = 0; pa < sizeof(ec_probe); pa++) {
+                            i2c_err = i2c_bus_read_bus(trema_ec_get_i2c_bus(), ec_probe[pa], &reg_model, 1, &model_id, 1,
+                                                       200);
+                            if (i2c_err == ESP_OK && model_id == TREMA_EC_MODEL_ID) {
+                                break;
+                            }
+                        }
+
+                        if (i2c_err == ESP_OK && model_id == TREMA_EC_MODEL_ID) {
                             model.sensor_status.i2c_connected = true;
                             
                             // Если датчик подключен, пытаемся прочитать значение

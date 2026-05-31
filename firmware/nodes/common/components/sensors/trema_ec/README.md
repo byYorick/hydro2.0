@@ -91,7 +91,7 @@ if (trema_ec_set_temperature(25.0f)) {
 
 ## Технические характеристики
 
-- I²C адрес: 0x08
+- I²C 7-bit адрес: **0x09** заводской (Flash-I2C, программируемый); в `trema_ec_init()` выполняется discovery **0x09 → 0x08** для старых сборок. См. [карточку модуля iarduino](https://iarduino.ru/shop/Sensory-Datchiki/solemer-tds-ec-flash-i2c.html).
 - Диапазон EC: 0.0 - 10.0 mS/cm
 - Диапазон TDS: 0 - 10000 ppm
 - Разрешение: 0.001 mS/cm

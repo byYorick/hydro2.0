@@ -19,11 +19,21 @@
 extern "C" {
 #endif
 
+#include "i2c_bus.h"
 #include <stdint.h>
 #include <stdbool.h>
 
-// Default I2C address for the EC sensor
-#define TREMA_EC_ADDR 0x08
+/**
+ * I²C 7-bit адрес Trema TDS/EC Flash-I2C: заводской 0x09 (программируемый), см.
+ * https://iarduino.ru/shop/Sensory-Datchiki/solemer-tds-ec-flash-i2c.html
+ */
+#define TREMA_EC_ADDR         0x09
+/** Второй типичный адрес линейки Flash-I2C на одной шине (как pH 0x0A) */
+#define TREMA_EC_ADDR_ALT     0x0A
+/** Старые сборки / совместимость с кодом mesh_hydro (0x08) */
+#define TREMA_EC_ADDR_LEGACY  0x08
+/** Регистр 0x04 «MODEL», см. wiki TDS-EC-i2c-datasheet */
+#define TREMA_EC_MODEL_ID     0x19
 
 // Register addresses
 #define REG_TDS_KNOWN_TDS   0x0A  // Known TDS value for calibration (2 bytes)
@@ -45,6 +55,21 @@ typedef enum {
     TREMA_EC_ERROR_I2C = 2,
     TREMA_EC_ERROR_INVALID_VALUE = 3
 } trema_ec_error_t;
+
+/**
+ * @brief I²C шина для Trema EC (по умолчанию I2C_BUS_0).
+ * ec_node выставляет I2C_BUS_1 (GPIO 18/19), как ph_node для pH — до trema_ec_init().
+ */
+void trema_ec_set_i2c_bus(i2c_bus_id_t bus_id);
+
+/** Текущая шина Trema EC (после set; по умолчанию I2C_BUS_0). */
+i2c_bus_id_t trema_ec_get_i2c_bus(void);
+
+/** Текущий 7-bit I²C адрес модуля (после init / discovery или trema_ec_set_i2c_address). */
+uint8_t trema_ec_get_i2c_address(void);
+
+/** Задать ожидаемый 7-bit адрес до init (0x08–0x77); discovery всё равно проверит 0x09 и 0x08. */
+void trema_ec_set_i2c_address(uint8_t addr_7bit);
 
 /**
  * @brief Initialize the Trema EC sensor

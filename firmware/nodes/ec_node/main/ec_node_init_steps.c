@@ -121,10 +121,9 @@ esp_err_t ec_node_init_step_i2c(ec_node_init_context_t *ctx,
     
     esp_err_t err = ESP_OK;
     
-    // Инициализация I2C 0 для OLED и EC сенсора
-    // trema_ec использует дефолтную шину (I2C_BUS_0), поэтому EC sensor тоже на I2C_BUS_0
+    // I2C 0: OLED + INA209 (как ph_node)
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED + EC sensor)...");
+        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED + INA209)...");
         i2c_bus_config_t i2c0_config = {
             .sda_pin = EC_NODE_I2C_BUS_0_SDA,
             .scl_pin = EC_NODE_I2C_BUS_0_SCL,
@@ -137,10 +136,35 @@ esp_err_t ec_node_init_step_i2c(ec_node_init_context_t *ctx,
             if (result) result->err = err;
             return err;
         }
-        ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d", 
+        ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d",
                  i2c0_config.sda_pin, i2c0_config.scl_pin);
     }
-    
+
+    ESP_LOGI(TAG, "Configured I2C bus 1 pins: SDA=%d, SCL=%d (ec_node_defaults.h)",
+             EC_NODE_I2C_BUS_1_SDA, EC_NODE_I2C_BUS_1_SCL);
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 1 (Trema EC)...");
+        i2c_bus_config_t i2c1_config = {
+            .sda_pin = EC_NODE_I2C_BUS_1_SDA,
+            .scl_pin = EC_NODE_I2C_BUS_1_SCL,
+            .clock_speed = EC_NODE_I2C_CLOCK_SPEED,
+            .pullup_enable = true
+        };
+        err = i2c_bus_init_bus(I2C_BUS_1, &i2c1_config);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "I2C bus 1 init failed (%s): Trema EC остаётся на шине 0 (GPIO %d/%d) — как до разводки ph_node",
+                     esp_err_to_name(err), EC_NODE_I2C_BUS_0_SDA, EC_NODE_I2C_BUS_0_SCL);
+            trema_ec_set_i2c_bus(I2C_BUS_0);
+        } else {
+            ESP_LOGI(TAG, "I2C bus 1 initialized: SDA=%d, SCL=%d",
+                     i2c1_config.sda_pin, i2c1_config.scl_pin);
+            trema_ec_set_i2c_bus(I2C_BUS_1);
+        }
+    } else {
+        trema_ec_set_i2c_bus(I2C_BUS_1);
+    }
+
     if (result) {
         result->err = ESP_OK;
         result->component_initialized = true;
@@ -159,9 +183,9 @@ esp_err_t ec_node_init_step_ec_sensor(ec_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    // trema_ec использует дефолтную шину (I2C_BUS_0)
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGW(TAG, "I2C bus 0 not available, EC sensor initialization skipped");
+    if (!i2c_bus_is_initialized_bus(trema_ec_get_i2c_bus())) {
+        ESP_LOGW(TAG, "I2C bus %d (Trema EC) not available, EC sensor init skipped",
+                 (int)trema_ec_get_i2c_bus());
         if (result) {
             result->err = ESP_ERR_INVALID_STATE;
         }
