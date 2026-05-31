@@ -26,7 +26,7 @@ class CommandResource extends JsonResource
             'error_message' => $this->error_message,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
-            
+
             // Relationships
             'zone' => $this->whenLoaded('zone', function () {
                 return [
@@ -45,4 +45,3 @@ class CommandResource extends JsonResource
         ];
     }
 }
-

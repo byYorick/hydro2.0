@@ -10,6 +10,7 @@
 - обеспечить предсказуемую работу FreeRTOS-задач;
 - упростить работу ИИ-агентов с кодом.
 
+**Дата обновления:** 2026-05-28 (расширен фактический список common-компонентов и runtime tasks).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -44,42 +45,65 @@ firmware/nodes/ph_node/
 └─ Kconfig
 
 firmware/nodes/common/components/  # Общие компоненты для всех нод
-├─ i2c_bus/          # I²C шина
+├─ node_framework/   # Унифицированный каркас ноды (FSM, state, telemetry/command engine,
+│                    # config_handler, safe-mode, watchdog integration)
+├─ node_utils/       # Утилиты: bootstrap network stack, time sync, ts helpers, log helpers
+├─ node_watchdog/    # Task watchdog wrapper
+├─ config_storage/   # NVS persistence NodeConfig (load/save/validate)
+├─ config_apply/     # Применение конфига к runtime (channels, wifi, mqtt apply hooks)
+├─ mqtt_manager/     # MQTT клиент + topic router (canonical runtime path)
+├─ mqtt_client/      # Низкоуровневая обёртка над esp-mqtt (legacy/internal)
+├─ wifi_manager/     # Wi-Fi подключение и переподключение
+├─ setup_portal/     # Setup portal для provisioning (captive portal)
+├─ heartbeat_task/   # Периодическая публикация heartbeat
+├─ connection_status/# Агрегатор состояния (wifi/mqtt/time_sync)
+├─ diagnostics/      # Engineering diagnostics publish
+├─ factory_reset_button/  # Hardware factory reset (long-press)
+├─ i2c_bus/          # I²C шина (mutex, recover, кэш handles)
+├─ i2c_cache/        # Device handle cache
+├─ memory_pool/      # Memory pool для горячих путей (no malloc)
+├─ logging/          # Система логирования (ESP_LOG обёртка с TAG conventions)
+├─ oled_ui/          # OLED UI
 ├─ sensors/          # Драйверы сенсоров
 │  ├─ ph_sensor/
 │  ├─ trema_ph/
 │  ├─ ec_sensor/
 │  ├─ trema_ec/
 │  ├─ sht3x/
-│  └─ ina209/
-├─ mqtt_client/      # MQTT клиент
-├─ mqtt_manager/     # MQTT менеджер
-├─ wifi_manager/     # Wi-Fi менеджер
-├─ config_storage/   # Хранение NodeConfig в NVS
-├─ logging/          # Система логирования
-├─ setup_portal/     # Setup portal для provisioning
-└─ oled_ui/          # OLED UI
+│  ├─ ccs811/        # CO2 sensor
+│  └─ ina209/        # Pump current sensor
+├─ pump_driver/      # Driver: pump on/off + current monitoring
+├─ relay_driver/     # Driver: relay control с interlock
+├─ pwm_driver/       # Driver: PWM channel (light/heater dim)
+└─ ws2811_driver/    # Driver: addressable LED strip
 ```
+
+Документация конкретного компонента — в его `README.md` (например, `firmware/nodes/common/components/i2c_bus/README.md`).
 
 ---
 
 ## 2. FreeRTOS-задачи
 
-Рекомендуемый набор задач:
+В актуальной реализации задачи запускаются `node_framework` через bootstrap-pipeline (`node_framework_start_*`). Каждая нода вызывает общий `node_utils_bootstrap_network_stack()` из `app_main()` и затем `node_framework_*` для подъёма доменных задач.
 
-- `task_main` — координация, FSM узла.
-- `task_wifi` — управление подключением Wi-Fi.
-- `task_mqtt` — обработка входящих и исходящих MQTT-сообщений.
-- `task_sensors` — опрос датчиков.
-- `task_actuators` — управление актуаторами по событиям.
-- `task_ui` — обновление дисплея/обработка кнопок.
-- `task_ota` — OTA-обновления.
+Канонический набор задач:
 
-Между задачами используются очереди/очереди событий:
+- **`task_main`** / `node_framework_main` — координация, FSM узла.
+- **`task_wifi`** / `wifi_manager_task` — управление подключением Wi-Fi.
+- **`task_mqtt`** / `mqtt_manager_task` — обработка входящих и исходящих MQTT-сообщений.
+- **`task_sensors`** — опрос датчиков (per-channel polling).
+- **`task_actuators`** — управление актуаторами по событиям.
+- **`heartbeat_task`** — периодическая публикация heartbeat (`uptime`, `free_heap`, `rssi`).
+- **`node_watchdog`** task — глобальный watchdog wrapper, регистрирует все долгоживущие задачи.
+- **`task_ui`** / `oled_ui_task` — обновление OLED и обработка factory reset кнопки.
+- **`task_ota`** — OTA-обновления (status: planned, реализация per-node).
 
-- `queue_commands` — команды от MQTT → actuators;
-- `queue_telemetry` — данные от sensors → mqtt;
+Между задачами используются очереди/event groups:
+
+- `queue_commands` — команды от MQTT → actuators (через `node_command_handler`);
+- `queue_telemetry` — данные от sensors → mqtt (через `telemetry_engine`);
 - `queue_ui_events` — события UI.
+- `event_group_connection` — wifi/mqtt/time_sync bits для синхронизации старта публикаций.
 
 ---
 
@@ -116,23 +140,31 @@ NodeConfig хранится в NVS и включает:
 
 ## 5. Command Engine
 
+Реализация: `firmware/nodes/common/components/node_framework/node_command_handler.c`.
+
 Задачи:
 
-- подписка на `hydro/{gh}/{zone}/{node}/{channel}/command`;
+- подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard) и `hydro/{gh}/{zone}/{node}/system/command` (отдельная подписка, см. `MQTT_SPEC_FULL.md` §7.5.6);
 - парсинг JSON-payload;
-- проверка TTL, типов команд;
-- постановка задач в `queue_commands`.
+- проверка timestamp (`HMAC_TIMESTAMP_TOLERANCE_SEC=10`) и HMAC-подписи (через `node_secret`);
+- дедуп по `cmd_id` (кэш final status);
+- маршрутизация к зарегистрированным channel handlers;
+- публикация `command_response` (с `ts` в **миллисекундах**).
 
-Команды не должны содержать тяжёлой логики — только простые действия.
-Набор конкретных команд зависит от типа ноды и зарегистрированных handler'ов.
-Типичные команды:
+Команды не должны содержать тяжёлой логики — только простые действия. Набор конкретных команд зависит от типа ноды и зарегистрированных handler'ов. Канонические команды (см. `NODE_CHANNELS_REFERENCE.md` и `MQTT_SPEC_FULL.md` §7):
 
-- `set_relay`;
-- `set_pwm`;
-- `run_pump`.
+- `run_pump` (timed pump on);
+- `dose` (peristaltic pump, `params.ml`);
+- `set_relay` (вкл/выкл; для IRR — также timed-start с `timeout_ms+stage`);
+- `set_pwm` (climate/light dimming);
+- `set_position` (drive/roof vent, `params.position_pct`);
+- `calibrate` (sensor calibration, stage-based);
+- `test_sensor` (разовое чтение);
+- `restart` / `reboot` (требуется для всех нод);
+- `state` (требуется для всех нод; для `irrig` возвращает `details.snapshot` с дискретными состояниями);
+- `activate_sensor_mode` / `deactivate_sensor_mode` (system-level, для pH/EC нод).
 
-Примечание: `dose` и другие alias-команды могут поддерживаться только в отдельных прошивках
-или через orchestration adapter и не являются универсальным firmware-инвариантом.
+Дополнительно firmware принимает: `report_config`, `calibrate_ph` / `calibrate_ec` aliases, `exit_safe_mode`, `get_diagnostics`, `toggle` (relay) — это node-specific extensions, не являются universal contract.
 
 ---
 

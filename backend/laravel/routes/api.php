@@ -3,6 +3,7 @@
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
+use App\Http\Controllers\Api\GreenhouseClimateController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AutomationBundleController;
 use App\Http\Controllers\AutomationConfigController;
@@ -12,8 +13,9 @@ use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
-use App\Http\Controllers\LaunchFlow\LaunchFlowManifestController;
+use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\InfrastructureInstanceController;
+use App\Http\Controllers\LaunchFlow\LaunchFlowManifestController;
 use App\Http\Controllers\NodeChannelController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
@@ -40,27 +42,26 @@ use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
-use App\Http\Controllers\GrowCyclePhaseConfigController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
-use App\Http\Controllers\ZoneConfigModeController;
-use App\Http\Controllers\ZoneAutomationPresetController;
-use App\Http\Controllers\ZoneCorrectionLiveEditController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
+use App\Http\Controllers\ZoneAutomationPresetController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
+use App\Http\Controllers\ZoneConfigModeController;
 use App\Http\Controllers\ZoneController;
+use App\Http\Controllers\ZoneCorrectionLiveEditController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-$defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
-    ? '1000,1'
-    : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
-$apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
-$internalApiThrottle = env('INTERNAL_API_THROTTLE', $apiThrottle);
+// S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): throttle-значения теперь читаются из
+// config-слоя (`services.api.throttle_default` / `throttle_internal`), что
+// поддерживает `php artisan config:cache` в production.
+$apiThrottle = config('services.api.throttle_default', '120,1');
+$internalApiThrottle = config('services.api.throttle_internal', $apiThrottle);
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
@@ -166,6 +167,7 @@ Route::middleware([
     Route::get('zones/{zone}/effective-targets', [ZoneController::class, 'effectiveTargets'])
         ->middleware('ae.legacy.sql.guard');
     Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
+    Route::get('greenhouses/{greenhouse}/climate/state', [GreenhouseClimateController::class, 'state']);
 
     // Recipe revisions
     Route::get('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'show']);
@@ -202,6 +204,10 @@ Route::middleware([
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::patch('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::delete('greenhouses/{greenhouse}', [GreenhouseController::class, 'destroy']);
+
+        Route::post('greenhouses/{greenhouse}/climate/control-mode', [GreenhouseClimateController::class, 'updateControlMode']);
+        Route::post('greenhouses/{greenhouse}/climate/manual-override', [GreenhouseClimateController::class, 'storeManualOverride']);
+        Route::delete('greenhouses/{greenhouse}/climate/manual-override', [GreenhouseClimateController::class, 'destroyManualOverride']);
 
         // Zones
         Route::post('zones', [ZoneController::class, 'store']);

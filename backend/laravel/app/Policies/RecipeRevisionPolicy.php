@@ -2,8 +2,8 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\RecipeRevision;
+use App\Models\User;
 
 class RecipeRevisionPolicy
 {
@@ -58,4 +58,3 @@ class RecipeRevisionPolicy
         return true;
     }
 }
-

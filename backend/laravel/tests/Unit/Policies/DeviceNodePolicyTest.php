@@ -18,7 +18,7 @@ class DeviceNodePolicyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->policy = new DeviceNodePolicy();
+        $this->policy = new DeviceNodePolicy;
     }
 
     public function test_viewer_can_view_nodes(): void

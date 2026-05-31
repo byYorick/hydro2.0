@@ -28,4 +28,3 @@ class AiLog extends Model
         return $this->belongsTo(Zone::class);
     }
 }
-

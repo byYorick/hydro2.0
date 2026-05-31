@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Добавляет поля для единого контракта CommandResponse:
      * - error_code: символический код ошибки
      * - error_message: сообщение об ошибке
@@ -18,7 +18,7 @@ return new class extends Migration
     public function up(): void
     {
         // Проверяем, существует ли таблица commands
-        if (!Schema::hasTable('commands')) {
+        if (! Schema::hasTable('commands')) {
             return; // Таблица будет создана в другой миграции
         }
         Schema::table('commands', function (Blueprint $table) {
@@ -35,10 +35,10 @@ return new class extends Migration
     public function down(): void
     {
         // Проверяем, существует ли таблица commands
-        if (!Schema::hasTable('commands')) {
+        if (! Schema::hasTable('commands')) {
             return; // Таблица не существует, нечего откатывать
         }
-        
+
         Schema::table('commands', function (Blueprint $table) {
             $table->dropColumn(['error_code', 'error_message', 'result_code', 'duration_ms']);
         });

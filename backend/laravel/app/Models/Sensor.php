@@ -94,12 +94,11 @@ class Sensor extends Model
     {
         $query = $query->where('greenhouse_id', $greenhouseId)
             ->whereNull('zone_id');
-        
+
         if ($scope) {
             $query->where('scope', $scope);
         }
-        
+
         return $query;
     }
 }
-

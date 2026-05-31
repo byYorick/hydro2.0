@@ -301,6 +301,7 @@ class ZoneAccessHelper
     ): bool {
         if ($strictAllowed === null) {
             self::logStrictDataUnavailableIfNeeded($resource, $userId, $resourceId);
+
             return false;
         }
 
@@ -311,6 +312,7 @@ class ZoneAccessHelper
     {
         if ($strictZoneIds === null) {
             self::logStrictDataUnavailableIfNeeded('zone_list', $userId, null);
+
             return [];
         }
 
@@ -321,6 +323,7 @@ class ZoneAccessHelper
     {
         if ($strictGreenhouseIds === null) {
             self::logStrictDataUnavailableIfNeeded('greenhouse_list', $userId, null);
+
             return [];
         }
 

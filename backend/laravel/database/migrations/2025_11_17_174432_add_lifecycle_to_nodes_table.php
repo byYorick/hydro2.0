@@ -9,18 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('nodes', function (Blueprint $table) {
-            if (!Schema::hasColumn('nodes', 'lifecycle_state')) {
+            if (! Schema::hasColumn('nodes', 'lifecycle_state')) {
                 $table->string('lifecycle_state', 32)->default('UNPROVISIONED')->after('status');
                 // MANUFACTURED, UNPROVISIONED, PROVISIONED_WIFI, REGISTERED_BACKEND, ASSIGNED_TO_ZONE, ACTIVE, DEGRADED, MAINTENANCE, DECOMMISSIONED
             }
-            if (!Schema::hasColumn('nodes', 'hardware_id')) {
+            if (! Schema::hasColumn('nodes', 'hardware_id')) {
                 $table->string('hardware_id', 128)->nullable()->unique()->after('uid');
                 // MAC-адрес или серийный номер устройства
             }
-            
+
             // Индекс на hardware_id уже создаётся через unique()
             // Можно добавить индекс на lifecycle_state для быстрого поиска
-            if (!$this->hasIndex('nodes', 'nodes_lifecycle_state_idx')) {
+            if (! $this->hasIndex('nodes', 'nodes_lifecycle_state_idx')) {
                 $table->index('lifecycle_state', 'nodes_lifecycle_state_idx');
             }
         });
@@ -39,7 +39,7 @@ return new class extends Migration
             }
         });
     }
-    
+
     /**
      * Проверить наличие индекса в таблице.
      */
@@ -47,7 +47,7 @@ return new class extends Migration
     {
         $connection = Schema::getConnection();
         $databaseName = $connection->getDatabaseName();
-        
+
         $result = $connection->selectOne(
             "SELECT COUNT(*) as count 
              FROM pg_indexes 
@@ -56,7 +56,7 @@ return new class extends Migration
              AND indexname = ?",
             [$table, $indexName]
         );
-        
+
         return $result && $result->count > 0;
     }
 };

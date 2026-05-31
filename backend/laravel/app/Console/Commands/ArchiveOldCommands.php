@@ -2,11 +2,10 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command as ConsoleCommand;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use App\Models\Command;
 use App\Models\CommandsArchive;
+use Carbon\Carbon;
+use Illuminate\Console\Command as ConsoleCommand;
 
 class ArchiveOldCommands extends ConsoleCommand
 {
@@ -37,6 +36,7 @@ class ArchiveOldCommands extends ConsoleCommand
                     // Если уже заархивирована, просто удаляем из основной таблицы
                     $command->delete();
                     $archivedCount++;
+
                     continue;
                 }
 
@@ -65,7 +65,7 @@ class ArchiveOldCommands extends ConsoleCommand
         }
 
         $this->info("Заархивировано команд: {$archivedCount}");
+
         return ConsoleCommand::SUCCESS;
     }
 }
-

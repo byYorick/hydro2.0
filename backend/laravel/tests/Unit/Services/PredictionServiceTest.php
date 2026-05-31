@@ -2,10 +2,10 @@
 
 namespace Tests\Unit\Services;
 
-use App\Models\Zone;
+use App\Models\ParameterPrediction;
 use App\Models\Sensor;
 use App\Models\TelemetrySample;
-use App\Models\ParameterPrediction;
+use App\Models\Zone;
 use App\Services\PredictionService;
 use Carbon\Carbon;
 use Tests\RefreshDatabase;
@@ -20,7 +20,7 @@ class PredictionServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new PredictionService();
+        $this->service = new PredictionService;
     }
 
     public function test_predict_with_sufficient_data(): void

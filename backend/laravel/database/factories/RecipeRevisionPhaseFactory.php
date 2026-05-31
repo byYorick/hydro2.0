@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\RecipeRevision;
 use App\Models\GrowStageTemplate;
+use App\Models\RecipeRevision;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -22,7 +22,7 @@ class RecipeRevisionPhaseFactory extends Factory
             'recipe_revision_id' => RecipeRevision::factory(),
             'stage_template_id' => GrowStageTemplate::factory(),
             'phase_index' => $this->faker->unique()->numberBetween(0, 10000),
-            'name' => 'Phase ' . $this->faker->numberBetween(1, 10),
+            'name' => 'Phase '.$this->faker->numberBetween(1, 10),
             // Обязательные параметры
             'ph_target' => $this->faker->randomFloat(2, 5.5, 6.5),
             'ph_min' => $this->faker->randomFloat(2, 5.0, 6.0),

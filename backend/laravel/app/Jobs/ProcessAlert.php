@@ -26,7 +26,7 @@ class ProcessAlert implements ShouldQueue
     public int $backoff = 60; // Exponential backoff: 60s, 120s, 240s
 
     /**
-     * @param array $alertData Данные алерта для создания
+     * @param  array  $alertData  Данные алерта для создания
      */
     public function __construct(
         public array $alertData,
@@ -80,7 +80,7 @@ class ProcessAlert implements ShouldQueue
                 ->where('id', $this->pendingAlertId)
                 ->first();
 
-            if (!$pending) {
+            if (! $pending) {
                 return;
             }
 

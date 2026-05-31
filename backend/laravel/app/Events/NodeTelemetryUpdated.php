@@ -13,11 +13,12 @@ use Illuminate\Queue\SerializesModels;
 
 class NodeTelemetryUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
     public int $eventId;
+
     public int $serverTs;
 
     /**
@@ -82,7 +83,7 @@ class NodeTelemetryUpdated implements ShouldBroadcast
 
     /**
      * Записывает событие в zone_events только при значимых изменениях.
-     * 
+     *
      * Использует TelemetryLedgerFilter для фильтрации незначимых изменений
      * и предотвращения раздувания ledger при высокой частоте телеметрии.
      */

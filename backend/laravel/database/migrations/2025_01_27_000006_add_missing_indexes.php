@@ -2,8 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
@@ -19,7 +19,7 @@ return new class extends Migration
             if (
                 $this->columnExists('telemetry_samples', 'sensor_id')
                 && $this->columnExists('telemetry_samples', 'ts')
-                && !$this->indexExists('telemetry_samples', 'telemetry_samples_sensor_ts_idx')
+                && ! $this->indexExists('telemetry_samples', 'telemetry_samples_sensor_ts_idx')
             ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
                     $table->index(['sensor_id', 'ts'], 'telemetry_samples_sensor_ts_idx');
@@ -29,7 +29,7 @@ return new class extends Migration
             if (
                 $this->columnExists('telemetry_samples', 'zone_id')
                 && $this->columnExists('telemetry_samples', 'ts')
-                && !$this->indexExists('telemetry_samples', 'telemetry_samples_zone_ts_idx')
+                && ! $this->indexExists('telemetry_samples', 'telemetry_samples_zone_ts_idx')
             ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
                     $table->index(['zone_id', 'ts'], 'telemetry_samples_zone_ts_idx');
@@ -39,7 +39,7 @@ return new class extends Migration
             if (
                 $this->columnExists('telemetry_samples', 'cycle_id')
                 && $this->columnExists('telemetry_samples', 'ts')
-                && !$this->indexExists('telemetry_samples', 'telemetry_samples_cycle_ts_idx')
+                && ! $this->indexExists('telemetry_samples', 'telemetry_samples_cycle_ts_idx')
             ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
                     $table->index(['cycle_id', 'ts'], 'telemetry_samples_cycle_ts_idx');
@@ -48,7 +48,7 @@ return new class extends Migration
 
             if (
                 $this->columnExists('telemetry_samples', 'ts')
-                && !$this->indexExists('telemetry_samples', 'telemetry_samples_ts_idx')
+                && ! $this->indexExists('telemetry_samples', 'telemetry_samples_ts_idx')
             ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
                     $table->index('ts', 'telemetry_samples_ts_idx');
@@ -57,7 +57,7 @@ return new class extends Migration
 
             if (
                 $this->columnExists('telemetry_samples', 'quality')
-                && !$this->indexExists('telemetry_samples', 'telemetry_samples_quality_idx')
+                && ! $this->indexExists('telemetry_samples', 'telemetry_samples_quality_idx')
             ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
                     $table->index('quality', 'telemetry_samples_quality_idx');
@@ -68,28 +68,28 @@ return new class extends Migration
         // 2. commands - дополнительные индексы
         if ($this->tableExists('commands')) {
             // Индекс для запросов по zone_id и status (часто используется вместе)
-            if (!$this->indexExists('commands', 'commands_zone_status_idx')) {
+            if (! $this->indexExists('commands', 'commands_zone_status_idx')) {
                 Schema::table('commands', function (Blueprint $table) {
                     $table->index(['zone_id', 'status'], 'commands_zone_status_idx');
                 });
             }
 
             // Индекс для запросов по node_id и status
-            if (!$this->indexExists('commands', 'commands_node_status_idx')) {
+            if (! $this->indexExists('commands', 'commands_node_status_idx')) {
                 Schema::table('commands', function (Blueprint $table) {
                     $table->index(['node_id', 'status'], 'commands_node_status_idx');
                 });
             }
 
             // Индекс для запросов по created_at (для cleanup и архивации)
-            if (!$this->indexExists('commands', 'commands_created_at_idx')) {
+            if (! $this->indexExists('commands', 'commands_created_at_idx')) {
                 Schema::table('commands', function (Blueprint $table) {
                     $table->index('created_at', 'commands_created_at_idx');
                 });
             }
 
             // Индекс для запросов по sent_at (для таймаутов)
-            if (!$this->indexExists('commands', 'commands_sent_at_idx')) {
+            if (! $this->indexExists('commands', 'commands_sent_at_idx')) {
                 Schema::table('commands', function (Blueprint $table) {
                     $table->index('sent_at', 'commands_sent_at_idx');
                 });
@@ -99,42 +99,42 @@ return new class extends Migration
         // 3. alerts - дополнительные индексы
         if ($this->tableExists('alerts')) {
             // Индекс для запросов по type (часто используется для фильтрации)
-            if (!$this->indexExists('alerts', 'alerts_type_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_type_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index('type', 'alerts_type_idx');
                 });
             }
 
             // Индекс для запросов по source и code (новые поля)
-            if (!$this->indexExists('alerts', 'alerts_source_code_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_source_code_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index(['source', 'code'], 'alerts_source_code_idx');
                 });
             }
 
             // Индекс для запросов по created_at (для фильтрации по времени)
-            if (!$this->indexExists('alerts', 'alerts_created_at_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_created_at_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index('created_at', 'alerts_created_at_idx');
                 });
             }
 
             // Индекс для запросов по resolved_at (для фильтрации разрешенных алертов)
-            if (!$this->indexExists('alerts', 'alerts_resolved_at_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_resolved_at_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index('resolved_at', 'alerts_resolved_at_idx');
                 });
             }
 
             // Композитный индекс для zone_id, type и status (часто используется вместе)
-            if (!$this->indexExists('alerts', 'alerts_zone_type_status_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_zone_type_status_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index(['zone_id', 'type', 'status'], 'alerts_zone_type_status_idx');
                 });
             }
 
             // Композитный индекс для zone_id, code и status (для дедупликации алертов)
-            if (!$this->indexExists('alerts', 'alerts_zone_code_status_idx')) {
+            if (! $this->indexExists('alerts', 'alerts_zone_code_status_idx')) {
                 Schema::table('alerts', function (Blueprint $table) {
                     $table->index(['zone_id', 'code', 'status'], 'alerts_zone_code_status_idx');
                 });
@@ -144,14 +144,14 @@ return new class extends Migration
         // 4. zone_events - дополнительные индексы
         if ($this->tableExists('zone_events')) {
             // Композитный индекс для zone_id, type и created_at (часто используется вместе)
-            if (!$this->indexExists('zone_events', 'zone_events_zone_type_created_idx')) {
+            if (! $this->indexExists('zone_events', 'zone_events_zone_type_created_idx')) {
                 Schema::table('zone_events', function (Blueprint $table) {
                     $table->index(['zone_id', 'type', 'created_at'], 'zone_events_zone_type_created_idx');
                 });
             }
 
             // Индекс для запросов только по created_at (для cleanup операций)
-            if (!$this->indexExists('zone_events', 'zone_events_created_at_idx')) {
+            if (! $this->indexExists('zone_events', 'zone_events_created_at_idx')) {
                 Schema::table('zone_events', function (Blueprint $table) {
                     $table->index('created_at', 'zone_events_created_at_idx');
                 });
@@ -186,11 +186,11 @@ return new class extends Migration
             $table->dropIndex('commands_zone_status_idx');
         });
 
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_cycle_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_quality_idx;");
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;');
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;');
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_cycle_ts_idx;');
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_ts_idx;');
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_quality_idx;');
     }
 
     /**
@@ -230,13 +230,13 @@ return new class extends Migration
      */
     private function indexExists(string $table, string $indexName): bool
     {
-        $result = DB::selectOne("
+        $result = DB::selectOne('
             SELECT EXISTS (
                 SELECT 1 
                 FROM pg_indexes 
                 WHERE tablename = ? AND indexname = ?
             ) as exists
-        ", [$table, $indexName]);
+        ', [$table, $indexName]);
 
         return $result && $result->exists;
     }

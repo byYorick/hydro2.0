@@ -22,6 +22,7 @@ class ScheduleDispatcher
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
     ];
+
     private const ZONE_SETUP_PENDING_REASON = 'zone_setup_pending';
 
     public function __construct(
@@ -86,6 +87,7 @@ class ScheduleDispatcher
             );
             if (! (bool) ($prepared['ready'] ?? false)) {
                 $results[$index] = $prepared['result'];
+
                 continue;
             }
             $preparedByIndex[$index] = $prepared;

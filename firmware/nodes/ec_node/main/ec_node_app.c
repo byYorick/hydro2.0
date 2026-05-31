@@ -32,9 +32,7 @@ static SemaphoreHandle_t s_node_id_cache_mutex = NULL;  // Mutex для защи
 // State getters/setters - делегируют в компоненты
 // Проверяем состояние сенсора через trema_ec напрямую
 bool ec_node_is_ec_sensor_initialized(void) {
-    // Проверяем через попытку чтения температуры (если сенсор не инициализирован, вернет false)
-    float temp_check = 0.0f;
-    return trema_ec_get_temperature(&temp_check);
+    return trema_ec_is_initialized();
 }
 
 bool ec_node_is_oled_initialized(void) {

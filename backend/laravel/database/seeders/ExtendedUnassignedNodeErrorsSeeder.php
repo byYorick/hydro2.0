@@ -19,7 +19,7 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
 
         // Создаем ошибки для непривязанных узлов
         $unassignedNodes = DeviceNode::whereNull('zone_id')->get();
-        
+
         foreach ($unassignedNodes as $node) {
             $created += $this->seedErrorsForNode($node);
         }
@@ -28,7 +28,7 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
         $created += $this->seedRandomUnassignedErrors();
 
         $this->command->info("Создано ошибок: {$created}");
-        $this->command->info("Всего ошибок: " . UnassignedNodeError::count());
+        $this->command->info('Всего ошибок: '.UnassignedNodeError::count());
     }
 
     private function seedErrorsForNode(DeviceNode $node): int
@@ -41,19 +41,19 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
                 'error_message' => 'Узел не может подключиться к MQTT брокеру',
                 'error_code' => 'MQTT_CONNECTION_FAILED',
                 'severity' => 'ERROR',
-                'topic' => 'hydro/node/' . $node->hardware_id . '/error',
+                'topic' => 'hydro/node/'.$node->hardware_id.'/error',
             ],
             [
                 'error_message' => 'Ошибка чтения датчика pH',
                 'error_code' => 'SENSOR_READ_ERROR',
                 'severity' => 'WARNING',
-                'topic' => 'hydro/node/' . $node->hardware_id . '/sensor/ph/error',
+                'topic' => 'hydro/node/'.$node->hardware_id.'/sensor/ph/error',
             ],
             [
                 'error_message' => 'Низкий уровень сигнала WiFi',
                 'error_code' => 'WIFI_LOW_SIGNAL',
                 'severity' => 'WARNING',
-                'topic' => 'hydro/node/' . $node->hardware_id . '/wifi/status',
+                'topic' => 'hydro/node/'.$node->hardware_id.'/wifi/status',
             ],
         ];
 
@@ -62,7 +62,7 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
 
             UnassignedNodeError::updateOrCreate(
                 [
-                    'hardware_id' => $node->hardware_id ?? 'HW-' . rand(1000, 9999),
+                    'hardware_id' => $node->hardware_id ?? 'HW-'.rand(1000, 9999),
                     'topic' => $errorType['topic'],
                 ],
                 [
@@ -114,7 +114,7 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
         for ($i = 0; $i < $errorCount; $i++) {
             $hardwareId = $hardwareIds[rand(0, count($hardwareIds) - 1)];
             $errorType = $errorTypes[rand(0, count($errorTypes) - 1)];
-            $topic = 'hydro/temp/' . $hardwareId . '/error';
+            $topic = 'hydro/temp/'.$hardwareId.'/error';
 
             UnassignedNodeError::updateOrCreate(
                 [
@@ -142,4 +142,3 @@ class ExtendedUnassignedNodeErrorsSeeder extends Seeder
         return $created;
     }
 }
-

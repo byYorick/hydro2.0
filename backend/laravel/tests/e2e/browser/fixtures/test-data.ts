@@ -8,7 +8,32 @@ type TestDataFixtures = {
   testZone: TestZone;
 };
 
+async function loginTestingUser(page: import('@playwright/test').Page): Promise<void> {
+  const email = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
+  const url = `/testing/login?email=${encodeURIComponent(email)}`;
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.waitForSelector('#app[data-page]', { state: 'attached', timeout: 45_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await page.waitForTimeout(1500 * attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
 export const test = base.extend<TestDataFixtures>({
+  page: async ({ page }, use) => {
+    await loginTestingUser(page);
+    await use(page);
+  },
+
   apiHelper: async ({ context }, use) => {
     const authEmail = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
     const authRole = process.env.E2E_AUTH_ROLE || 'agronomist';
@@ -33,8 +58,6 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testGreenhouse: async ({ apiHelper }, use) => {
-    // Добавляем задержку для избежания rate limiting
-    await new Promise(resolve => setTimeout(resolve, 1000));
     const greenhouse = await apiHelper.createTestGreenhouse();
     await use(greenhouse);
     // Очистка после теста
@@ -42,8 +65,6 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testRecipe: async ({ apiHelper }, use) => {
-    // Добавляем задержку для избежания rate limiting
-    await new Promise(resolve => setTimeout(resolve, 500));
     const phases: TestRecipePhase[] = [
       {
         phase_index: 0,
@@ -81,8 +102,6 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testZone: async ({ apiHelper, testGreenhouse, testRecipe }, use) => {
-    // Добавляем задержку для избежания rate limiting
-    await new Promise(resolve => setTimeout(resolve, 500));
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
     const seededNode = await apiHelper.seedZoneReadinessNode(zone.id, `pw-zone-${zone.id}-${Date.now()}`);
     await apiHelper.attachRecipeToZone(zone.id, testRecipe.id);

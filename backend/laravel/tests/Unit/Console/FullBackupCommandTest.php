@@ -19,7 +19,7 @@ class FullBackupCommandTest extends TestCase
         // Проверяем описание команды
         $commands = Artisan::all();
         $this->assertArrayHasKey('backup:full', $commands);
-        
+
         $command = $commands['backup:full'];
         $this->assertStringContainsString('Создает полный бэкап', $command->getDescription());
     }
@@ -29,7 +29,7 @@ class FullBackupCommandTest extends TestCase
         // Проверяем, что команда принимает опцию --skip-docker
         $commands = Artisan::all();
         $this->assertArrayHasKey('backup:full', $commands);
-        
+
         $command = $commands['backup:full'];
         $this->assertNotNull($command);
     }
@@ -39,7 +39,7 @@ class FullBackupCommandTest extends TestCase
         // Проверяем, что команда принимает опцию --skip-mqtt
         $commands = Artisan::all();
         $this->assertArrayHasKey('backup:full', $commands);
-        
+
         $command = $commands['backup:full'];
         $this->assertNotNull($command);
     }
@@ -49,10 +49,9 @@ class FullBackupCommandTest extends TestCase
         // Проверяем, что команда корректно обрабатывает отсутствие скрипта бэкапа
         $commands = Artisan::all();
         $this->assertArrayHasKey('backup:full', $commands);
-        
+
         // Команда должна существовать и иметь обработку отсутствия скрипта
         $command = $commands['backup:full'];
         $this->assertNotNull($command);
     }
 }
-

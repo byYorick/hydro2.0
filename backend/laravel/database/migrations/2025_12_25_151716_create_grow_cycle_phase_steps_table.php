@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Снапшоты шагов фазы для конкретного цикла выращивания.
      * После старта цикла можно удалить/изменить шаблонные шаги — снапшот остаётся валиден.
      */
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->integer('offset_hours')->default(0); // Смещение от начала фазы в часах
             $table->string('action')->nullable(); // Действие/задача шага
             $table->text('description')->nullable();
-            
+
             // Уставки по колонкам (те же что у recipe_revision_phase_steps, nullable)
             $table->decimal('ph_target', 4, 2)->nullable();
             $table->decimal('ph_min', 4, 2)->nullable();
@@ -42,13 +42,13 @@ return new class extends Migration
             $table->decimal('temp_air_target', 5, 2)->nullable();
             $table->decimal('humidity_target', 5, 2)->nullable();
             $table->integer('co2_target')->nullable();
-            
+
             $table->jsonb('extensions')->nullable(); // Только для расширений
-            
+
             // Временные метки выполнения шага в цикле
             $table->timestamp('started_at')->nullable(); // Когда начался этот шаг в цикле
             $table->timestamp('ended_at')->nullable(); // Когда закончился этот шаг в цикле
-            
+
             $table->timestamps();
 
             // Уникальность: одна фаза цикла не может иметь два шага с одинаковым индексом
@@ -66,4 +66,3 @@ return new class extends Migration
         Schema::dropIfExists('grow_cycle_phase_steps');
     }
 };
-

@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\DeviceNode;
-use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
 use App\Helpers\TransactionHelper;
+use App\Models\DeviceNode;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -15,7 +15,43 @@ class NodeService
     public function __construct(
         private NodeLifecycleService $lifecycleService,
         private NodeRegistryService $registryService,
-    ) {
+    ) {}
+
+    /**
+     * Targeted invalidation для кеша списка устройств.
+     *
+     * S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): раньше использовался
+     * `Cache::flush()` как fallback, если cache driver не поддерживает теги
+     * (file/array/database). Это полный wipe shared cache, что выбивает
+     * сессии, rate-limit counters, scheduler state и т.д. → de facto DoS.
+     *
+     * Корректная стратегия:
+     *  1. Если cache driver поддерживает теги (Redis/Memcached) — `tags(...)->flush()`.
+     *  2. Иначе — `Cache::forget()` только по известным fixed-ключам.
+     *  3. Per-user ключи (`devices_list_<userId>`) имеют TTL=2-10 сек и сами
+     *     быстро освежатся; их не трогаем — было бы O(users) вызовов.
+     */
+    private function invalidateDevicesListCache(?int $affectedZoneId = null): void
+    {
+        try {
+            Cache::tags(['devices_list'])->flush();
+
+            return;
+        } catch (\BadMethodCallException $e) {
+            // driver без поддержки тегов → targeted forget ниже
+        }
+
+        $keys = [
+            'devices_list_all',
+            'devices_list_unassigned',
+        ];
+        if ($affectedZoneId !== null) {
+            $keys[] = 'devices_list_zone_'.$affectedZoneId;
+        }
+
+        foreach ($keys as $key) {
+            Cache::forget($key);
+        }
     }
 
     /**
@@ -26,23 +62,11 @@ class NodeService
         return DB::transaction(function () use ($data) {
             $node = DeviceNode::create($data);
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
-            
-            // Очищаем кеш списка устройств для всех пользователей
-            // Используем точечную очистку вместо глобального flush для предотвращения DoS
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем только конкретные ключи
-                $cacheKeys = [
-                    'devices_list_all',
-                    'devices_list_unassigned',
-                ];
-                foreach ($cacheKeys as $key) {
-                    \Illuminate\Support\Facades\Cache::forget($key);
-                }
-                // НЕ используем Cache::flush() - это может привести к DoS при массовых обновлениях
-            }
-            
+
+            // S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): targeted cache invalidation,
+            // никогда `Cache::flush()`. См. NodeService::invalidateDevicesListCache().
+            $this->invalidateDevicesListCache($node->zone_id);
+
             return $node;
         });
     }
@@ -55,16 +79,16 @@ class NodeService
         // Используем SERIALIZABLE isolation level для критичной операции обновления узла
         // с retry логикой на serialization failures
         return TransactionHelper::withSerializableRetry(function () use ($node, $data) {
-            
+
             // Блокируем строку для предотвращения lost updates
             $node = DeviceNode::where('id', $node->id)
                 ->lockForUpdate()
                 ->first();
-            
-            if (!$node) {
+
+            if (! $node) {
                 throw new \RuntimeException('Node not found');
             }
-            
+
             Log::info('NodeService::update START', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -72,9 +96,9 @@ class NodeService
                 'current_zone_id' => $node->zone_id,
                 'current_lifecycle' => $node->lifecycle_state?->value,
             ]);
-            
+
             $oldZoneId = $node->zone_id;
-            
+
             /**
              * ВАЖНАЯ ЛОГИКА: Разделяем UI bind/rebind и финализацию bind в Laravel.
              *
@@ -89,22 +113,21 @@ class NodeService
              *   - Устанавливаем: zone_id = 6, pending_zone_id = null
              *   - Конфиг НЕ публикуется (узел уже имеет конфиг)
              */
-            
             $hasZoneIdInRequest = array_key_exists('zone_id', $data);
             $hasPendingZoneIdInRequest = array_key_exists('pending_zone_id', $data);
             $newZoneId = $hasZoneIdInRequest ? $data['zone_id'] : null;
             $newPendingZoneId = $hasPendingZoneIdInRequest ? $data['pending_zone_id'] : null;
             $oldPendingZoneId = $node->pending_zone_id;
             $shouldRepublishConfig = false;
-            
+
             /**
              * КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI.
              * Не важно, первая это привязка или перепривязка - всегда через pending_zone_id.
              * Если в запросе есть И zone_id И pending_zone_id - это завершение привязки внутри Laravel.
              */
-            $isAssignmentFromUI = $hasZoneIdInRequest && !$hasPendingZoneIdInRequest && $newZoneId;
+            $isAssignmentFromUI = $hasZoneIdInRequest && ! $hasPendingZoneIdInRequest && $newZoneId;
             $isBindingCompletion = $hasZoneIdInRequest && $hasPendingZoneIdInRequest && $newZoneId && $newPendingZoneId === null;
-            
+
             Log::info('NodeService::update zone assignment check', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -118,7 +141,7 @@ class NodeService
                 'isBindingCompletion' => $isBindingCompletion,
                 'lifecycle_state' => $node->lifecycle_state?->value,
             ]);
-            
+
             if ($isAssignmentFromUI) {
                 // Проверяем lifecycle state - допускаются REGISTERED_BACKEND и ASSIGNED_TO_ZONE (переприв язка)
                 $currentState = $node->lifecycleState();
@@ -127,8 +150,8 @@ class NodeService
                     NodeLifecycleState::ASSIGNED_TO_ZONE,
                     NodeLifecycleState::ACTIVE,
                 ]);
-                
-                if (!$canAssign) {
+
+                if (! $canAssign) {
                     Log::warning('Cannot assign node to zone - invalid lifecycle state', [
                         'node_id' => $node->id,
                         'requested_zone_id' => $newZoneId,
@@ -140,8 +163,8 @@ class NodeService
 
                 $sameStableZoneAssignment = $oldZoneId
                     && (int) $oldZoneId === (int) $newZoneId
-                    && !$oldPendingZoneId;
-                $samePendingZoneAssignment = !$oldZoneId
+                    && ! $oldPendingZoneId;
+                $samePendingZoneAssignment = ! $oldZoneId
                     && $oldPendingZoneId
                     && (int) $oldPendingZoneId === (int) $newZoneId;
 
@@ -176,6 +199,8 @@ class NodeService
                         'lifecycle_state' => $node->lifecycle_state?->value,
                     ]);
                 } else {
+                    app(ZoneNodeAutomationBindingValidator::class)->assertBindAllowed($node, (int) $newZoneId);
+
                     /**
                      * КРИТИЧНО: bind/rebind всегда идут через pending_zone_id.
                      * zone_id подтверждается только после config_report из целевого namespace.
@@ -214,7 +239,7 @@ class NodeService
                     ]);
                 }
             }
-            
+
             $node->update($data);
 
             if ($shouldRepublishConfig) {
@@ -222,16 +247,16 @@ class NodeService
                     event(new NodeConfigUpdated($node->fresh()));
                 });
             }
-            
+
             // БАГ #2 FIX: Убрана дублирующая публикация конфига
             // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
             // Это предотвращает двойную публикацию конфига
             // if ($isAssignmentFromUI) {
             //     \App\Jobs\PublishNodeConfigJob::dispatch($node->id);
             // }
-            
+
             // Логируем завершение bind/rebind после observed config_report.
-            if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
+            if ($isBindingCompletion && $node->zone_id && ! $node->pending_zone_id) {
                 Log::info('NodeService: Binding completed in Laravel (zone_id set, pending_zone_id cleared)', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
@@ -257,18 +282,18 @@ class NodeService
                     ]);
                 }
             }
-            
+
             /**
              * Если узел отвязан от зоны (zone_id стал null), но НЕ при привязке от UI
              * КРИТИЧНО: Не срабатывает при привязке от UI, так как там pending_zone_id установлен
              */
-            if (!$node->zone_id && $oldZoneId && !$isAssignmentFromUI) {
+            if (! $node->zone_id && $oldZoneId && ! $isAssignmentFromUI) {
                 // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
                 $node->save();
                 $this->clearNodeChannelBindings($node->id, 'zone_cleared_via_update');
-                
+
                 Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
@@ -277,7 +302,7 @@ class NodeService
                     'new_lifecycle_state' => $node->lifecycle_state?->value,
                 ]);
             }
-            
+
             Log::info('Node updated', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -285,18 +310,18 @@ class NodeService
                 'pending_zone_id' => $node->pending_zone_id,
                 'lifecycle_state' => $node->lifecycle_state?->value,
             ]);
-            
+
             /**
-             * Очищаем кеш списка устройств для всех пользователей
-             * Используем теги для точечной очистки, если поддерживаются
+             * Очищаем кеш списка устройств.
+             *
+             * S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): без поддержки тегов мы НЕ
+             * вызываем `Cache::flush()` (это DoS на shared cache, выбивая
+             * сессии, throttle-rate-counters, scheduler state). Очищаем только
+             * известные fixed-ключи; per-user ключи `devices_list_<uid>` имеют
+             * TTL=2 сек (см. routes/web.php) и сами быстро освежатся.
              */
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем весь кеш
-                \Illuminate\Support\Facades\Cache::flush();
-            }
-            
+            $this->invalidateDevicesListCache($node->zone_id);
+
             return $node->fresh();
         }, maxRetries: 6, baseDelayMs: 75, useSerializable: false);
     }
@@ -310,33 +335,34 @@ class NodeService
         return DB::transaction(function () use ($node) {
             $oldZoneId = $node->zone_id;
             $oldPendingZoneId = $node->pending_zone_id;
-            
+
             // Если нода уже отвязана (нет ни zone_id, ни pending_zone_id), ничего не делаем
-            if (!$oldZoneId && !$oldPendingZoneId) {
+            if (! $oldZoneId && ! $oldPendingZoneId) {
                 Log::info('Node already detached', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                 ]);
+
                 return $node;
             }
-            
+
             // Отвязываем от зоны
             $node->zone_id = null;
-            
+
             /**
              * КРИТИЧНО: Очищаем pending_zone_id при отвязке
              * Если нода была в процессе привязки (pending_zone_id установлен, но zone_id еще null),
              * необходимо очистить pending_zone_id, чтобы избежать проблем
              */
             $node->pending_zone_id = null;
-            
+
             // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
             // Это позволит ей снова появиться в списке новых нод для привязки
             $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            
+
             $node->save();
             $this->clearNodeChannelBindings($node->id, 'explicit_detach');
-            
+
             Log::info('Node detached from zone', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -344,17 +370,13 @@ class NodeService
                 'old_pending_zone_id' => $oldPendingZoneId,
                 'new_lifecycle_state' => $node->lifecycle_state?->value,
             ]);
-            
-            // Очищаем кеш списка устройств
-            try {
-                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
-            } catch (\BadMethodCallException $e) {
-                \Illuminate\Support\Facades\Cache::flush();
-            }
-            
+
+            // S2.1: targeted cache invalidation (см. NodeService::update()).
+            $this->invalidateDevicesListCache($oldZoneId);
+
             // Генерируем событие для обновления фронтенда через WebSocket
             event(new NodeConfigUpdated($node->fresh()));
-            
+
             return $node->fresh();
         });
     }

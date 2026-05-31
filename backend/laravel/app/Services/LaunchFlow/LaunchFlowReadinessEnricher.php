@@ -10,9 +10,7 @@ use App\Services\ZoneReadinessService;
  */
 class LaunchFlowReadinessEnricher
 {
-    public function __construct(private readonly ZoneReadinessService $readiness)
-    {
-    }
+    public function __construct(private readonly ZoneReadinessService $readiness) {}
 
     /**
      * @return array{ready: bool, blockers: list<array{code: string, message: string, severity: string, action?: array<string, mixed>}>, warnings: list<string>}
@@ -69,7 +67,7 @@ class LaunchFlowReadinessEnricher
     }
 
     /**
-     * @param array<string, mixed> $issue
+     * @param  array<string, mixed>  $issue
      * @return list<array<string, mixed>>
      */
     private function translateIssue(Zone $zone, array $issue): array

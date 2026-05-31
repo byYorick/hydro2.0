@@ -11,7 +11,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 
 /**
  * Phase 5.6: live edit активной recipe phase в текущем цикле (Q4).
@@ -106,7 +105,7 @@ class GrowCyclePhaseConfigController extends Controller
             ], 422);
         }
 
-        $result = DB::transaction(function () use ($growCycle, $fields, $reason, $user, $zone): array {
+        $result = DB::transaction(function () use ($growCycle, $fields, $reason, $user): array {
             /** @var GrowCyclePhase|null $phase */
             $phase = GrowCyclePhase::lockForUpdate()->find($growCycle->current_phase_id);
             if ($phase === null) {

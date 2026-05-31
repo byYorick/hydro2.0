@@ -25,33 +25,34 @@ class CheckSecurityConfig extends Command
      */
     public function handle(): int
     {
-        if (!app()->isProduction()) {
+        if (! app()->isProduction()) {
             $this->info('Not in production, skipping security checks');
+
             return self::SUCCESS;
         }
 
         $errors = [];
 
         // Проверка токенов
-        if (!config('services.python_bridge.token')) {
+        if (! config('services.python_bridge.token')) {
             $errors[] = 'PY_API_TOKEN not set';
         }
 
-        if (!config('services.python_bridge.ingest_token')) {
+        if (! config('services.python_bridge.ingest_token')) {
             $errors[] = 'PY_INGEST_TOKEN not set';
         }
 
-        if (!config('services.history_logger.token')) {
+        if (! config('services.history_logger.token')) {
             $errors[] = 'HISTORY_LOGGER_API_TOKEN not set';
         }
 
         // Проверка DB password
-        if (!config('database.connections.pgsql.password')) {
+        if (! config('database.connections.pgsql.password')) {
             $errors[] = 'DB_PASSWORD not set';
         }
 
         // Проверка MQTT password
-        if (!config('services.mqtt.password')) {
+        if (! config('services.mqtt.password')) {
             $errors[] = 'MQTT_PASSWORD not set';
         }
 
@@ -61,16 +62,17 @@ class CheckSecurityConfig extends Command
             $errors[] = 'APP_KEY is default or empty (insecure)';
         }
 
-        if (!empty($errors)) {
+        if (! empty($errors)) {
             $this->error('Security configuration errors:');
             foreach ($errors as $error) {
                 $this->error("  - {$error}");
             }
+
             return self::FAILURE;
         }
 
         $this->info('✓ Security configuration OK');
+
         return self::SUCCESS;
     }
 }
-

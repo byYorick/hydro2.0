@@ -40,7 +40,7 @@ class ZoneConfigRevisionService
             // `zone_config_changes (zone_id, revision)` is our correctness net.
             $rows = DB::select(
                 'UPDATE zones SET config_revision = COALESCE(config_revision, 0) + 1 '
-                . 'WHERE id = ? RETURNING config_revision',
+                .'WHERE id = ? RETURNING config_revision',
                 [$scopeId],
             );
             if (empty($rows)) {

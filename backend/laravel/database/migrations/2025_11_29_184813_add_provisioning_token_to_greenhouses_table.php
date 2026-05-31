@@ -18,7 +18,7 @@ return new class extends Migration
             \DB::table('greenhouses')
                 ->where('id', $greenhouse->id)
                 ->update([
-                    'provisioning_token' => 'gh_' . Str::random(32),
+                    'provisioning_token' => 'gh_'.Str::random(32),
                 ]);
         });
 

@@ -18,8 +18,7 @@ class ZoneAutomationManualStepController extends Controller
 {
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
-    ) {
-    }
+    ) {}
 
     public function store(Request $request, Zone $zone): JsonResponse
     {

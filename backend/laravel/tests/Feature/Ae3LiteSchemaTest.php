@@ -166,4 +166,4 @@ class Ae3LiteSchemaTest extends TestCase
             $this->assertStringContainsString($expectedNeedle, strtolower($exception->getMessage()));
         }
     }
-};
+}

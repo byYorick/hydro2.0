@@ -14,9 +14,9 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\SimulationReport;
+use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +32,7 @@ class SimulationOrchestratorService
     /**
      * Создать отдельную сим-зону и grow-cycle для live симуляции.
      *
-     * @param array{full_simulation?: bool} $options
+     * @param  array{full_simulation?: bool}  $options
      * @return array{zone: Zone, grow_cycle: \App\Models\GrowCycle, plant?: Plant|null, recipe?: Recipe|null, recipe_revision?: RecipeRevision|null, node?: DeviceNode|null}
      */
     public function createSimulationContext(Zone $sourceZone, ?int $recipeId, array $options = []): array
@@ -62,10 +62,10 @@ class SimulationOrchestratorService
             }
 
             $simZone = Zone::create([
-                'uid' => 'sim-' . Str::uuid()->toString(),
+                'uid' => 'sim-'.Str::uuid()->toString(),
                 'greenhouse_id' => $sourceZone->greenhouse_id,
                 'preset_id' => $sourceZone->preset_id,
-                'name' => 'SIM ' . ($sourceZone->name ?: ('Zone ' . $sourceZone->id)),
+                'name' => 'SIM '.($sourceZone->name ?: ('Zone '.$sourceZone->id)),
                 'description' => $sourceZone->description,
                 'status' => 'RUNNING',
                 'health_score' => $sourceZone->health_score,
@@ -432,12 +432,12 @@ class SimulationOrchestratorService
         foreach ($this->selectSimulationSourceNodes($sourceZone->nodes) as $node) {
             $newNode = DeviceNode::create([
                 'zone_id' => $simZone->id,
-                'uid' => 'sim-' . Str::uuid()->toString(),
-                'name' => $node->name ? 'SIM ' . $node->name : null,
+                'uid' => 'sim-'.Str::uuid()->toString(),
+                'name' => $node->name ? 'SIM '.$node->name : null,
                 'type' => $node->type,
                 'fw_version' => $node->fw_version,
                 'hardware_revision' => $node->hardware_revision,
-                'hardware_id' => 'sim-' . Str::uuid()->toString(),
+                'hardware_id' => 'sim-'.Str::uuid()->toString(),
                 'status' => 'online',
                 'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
                 'validated' => true,
@@ -663,13 +663,13 @@ class SimulationOrchestratorService
     {
         $suffix = Str::uuid()->toString();
         $plant = Plant::create([
-            'slug' => 'sim-' . $suffix,
-            'name' => 'SIM Plant ' . $suffix,
+            'slug' => 'sim-'.$suffix,
+            'name' => 'SIM Plant '.$suffix,
             'species' => 'Simulation Plant',
         ]);
 
         $recipe = Recipe::create([
-            'name' => 'SIM Recipe ' . $suffix,
+            'name' => 'SIM Recipe '.$suffix,
             'description' => 'Simulation recipe for full cycle',
         ]);
         $recipe->plants()->sync([$plant->id]);
@@ -803,12 +803,12 @@ class SimulationOrchestratorService
 
         return DeviceNode::create([
             'zone_id' => $simZone->id,
-            'uid' => 'sim-node-' . Str::uuid()->toString(),
+            'uid' => 'sim-node-'.Str::uuid()->toString(),
             'name' => $name,
             'type' => $type,
             'fw_version' => 'sim',
             'hardware_revision' => 'sim',
-            'hardware_id' => 'sim-hw-' . Str::uuid()->toString(),
+            'hardware_id' => 'sim-hw-'.Str::uuid()->toString(),
             'status' => 'online',
             'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
             'validated' => true,
@@ -846,6 +846,7 @@ class SimulationOrchestratorService
 
             if ($channel) {
                 $channel->forceFill($payload)->save();
+
                 continue;
             }
 
@@ -1007,7 +1008,7 @@ class SimulationOrchestratorService
 
             $targetNode = $preferredNode && $preferredNode->type === $definition['node_type']
                 ? $preferredNode->fresh()
-                : $this->resolveOrCreateSimulationNode($simZone, (string) $definition['node_type'], 'SIM ' . strtoupper((string) $definition['node_type']) . ' Node');
+                : $this->resolveOrCreateSimulationNode($simZone, (string) $definition['node_type'], 'SIM '.strtoupper((string) $definition['node_type']).' Node');
 
             $nodeChannel = NodeChannel::query()
                 ->where('node_id', $targetNode->id)
@@ -1070,7 +1071,7 @@ class SimulationOrchestratorService
     /**
      * Выполнить полный цикл симуляции и сформировать отчет.
      *
-     * @param array{zone: Zone, grow_cycle: GrowCycle, plant?: Plant|null, recipe?: Recipe|null, recipe_revision?: RecipeRevision|null, node?: DeviceNode|null} $context
+     * @param  array{zone: Zone, grow_cycle: GrowCycle, plant?: Plant|null, recipe?: Recipe|null, recipe_revision?: RecipeRevision|null, node?: DeviceNode|null}  $context
      */
     public function executeFullSimulation(ZoneSimulation $simulation, array $context): SimulationReport
     {

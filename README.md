@@ -42,17 +42,16 @@ make logs-core         # хвост логов laravel + AE + HL + mqtt-bridge
 Основные сервисы:
 - Laravel API: http://localhost:8080
 - mqtt-bridge: http://localhost:9000
-- history-logger REST: http://localhost:9300
-- history-logger metrics: http://localhost:9301/metrics
-- automation-engine REST: http://localhost:9405
-- automation-engine metrics: http://localhost:9401/metrics
+- history-logger REST + metrics: http://localhost:9300 (`/metrics` смонтирован на тот же FastAPI app)
+- automation-engine REST + metrics: http://localhost:9405 (`/metrics/` смонтирован на тот же FastAPI app)
 - Laravel scheduler-dispatch metrics (Prometheus text): http://localhost:8080/api/system/scheduler/metrics
 
 Поток команд к узлам (инвариант): `Laravel scheduler-dispatch → automation-engine → history-logger → MQTT → ESP32`. Подробнее: `QUICK_START.md`, `backend/README.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ## WebSocket (realtime)
 
-- Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
+- Архитектура (canonical): `doc_ai/11_WEBSOCKET_ARCHITECTURE.md`
+- Laravel-инженерные детали (Reverb запуск, supervisor): `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
 - Smoke test: `tools/ws-smoke-test.sh`
 - Переменные окружения:
   - Dev через nginx (рекомендуется, `backend/docker-compose.dev.yml`):

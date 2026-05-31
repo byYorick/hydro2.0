@@ -13,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 
 class NodeConfigUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 

@@ -111,7 +111,7 @@ void relay_node_publish_status(void) {
     }
     
     // Версия прошивки
-    const char *fw_version = IDF_VER;
+    const char *fw_version = node_utils_get_firmware_version();
     
     // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
     cJSON *status = cJSON_CreateObject();

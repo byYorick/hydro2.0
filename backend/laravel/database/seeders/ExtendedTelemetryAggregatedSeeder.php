@@ -186,7 +186,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         'value_min' => $value - 0.5,
                         'value_max' => $value + 0.5,
                         'value_median' => $value,
-                    'sample_count' => rand(20, 40),
+                        'sample_count' => rand(20, 40),
                         'created_at' => $date,
                     ];
 

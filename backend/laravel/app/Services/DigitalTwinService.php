@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class DigitalTwinService
@@ -13,11 +13,7 @@ class DigitalTwinService
     /**
      * Запустить симуляцию зоны
      *
-     * @param Zone $zone
-     * @param array $scenario {recipe_id, initial_state: {ph, ec, temp_air, temp_water, humidity_air}}
-     * @param int $durationHours
-     * @param int $stepMinutes
-     * @return ZoneSimulation
+     * @param  array  $scenario  {recipe_id, initial_state: {ph, ec, temp_air, temp_water, humidity_air}}
      */
     public function simulateZone(
         Zone $zone,
@@ -90,13 +86,9 @@ class DigitalTwinService
 
     /**
      * Получить результаты симуляции
-     *
-     * @param int $simulationId
-     * @return ZoneSimulation|null
      */
     public function getSimulation(int $simulationId): ?ZoneSimulation
     {
         return ZoneSimulation::find($simulationId);
     }
 }
-

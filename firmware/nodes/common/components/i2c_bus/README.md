@@ -1,132 +1,74 @@
 # I²C Bus Component
 
-Общий драйвер I²C шины с thread-safe доступом для всех ESP32-нод системы Hydro 2.0.
+Общий драйвер I²C шины (ESP-IDF `i2c_master` v2) с thread-safe доступом для ESP32-нод Hydro 2.0.
 
-## Описание
+## Контракт и инварианты (A)
 
-Компонент предоставляет единый интерфейс для работы с I²C шиной:
-- Инициализация с конфигурируемыми параметрами (SDA, SCL, скорость)
-- Thread-safe доступ через mutex
-- Функции чтения/записи с обработкой ошибок и retry логикой
-- I²C recovery при ошибках (reset bus)
-- Интеграция с NodeConfig
+- **Порядок блокировок:** сначала mutex **драйвера** сенсора/подсистемы, затем вызовы `i2c_bus_*`. Не вызывать код драйвера, который снова берёт I²C, **удерживая** mutex `i2c_bus` — риск deadlock.
+- **Повторы:** автоматические повторы **только для чтения** и только в `i2c_bus_read_bus_ex` при `read_extra_retries > 0`. `i2c_bus_read_bus` / `read_byte` — **одна** попытка (обратная совместимость). **Запись** — всегда одна попытка (без автоповтора), чтобы не дублировать неидемпотентные команды.
+- **Кэш `i2c_master_dev_handle_t`:** per (шина, 7-bit адрес). Сброс кэша: `i2c_bus_deinit`, `i2c_bus_recover`, успешный `i2c_bus_reset_bus`, `i2c_bus_forget_device` (обязателен при **смене 7-bit адреса** Trema и т.п.).
+- **Таймауты:** `xfer_timeout_ms` — лимит одной транзакции IDF; `lock_timeout_ms == 0` в `i2c_bus_xfer_opts_t` означает авто: `max(xfer + 50 мс, 50 мс)` для ожидания mutex.
+- **Запись без heap:** суммарная длина `reg_prefix + payload` ≤ `I2C_BUS_MAX_COMBINED_WRITE` (64); иначе `ESP_ERR_INVALID_ARG`.
 
-## Использование
+## Инициализация
 
-### Инициализация
+Ручная (основной путь — пины и скорость задаются в коде ноды, не в NodeConfig):
 
 ```c
-#include "i2c_bus.h"
-
-// Ручная инициализация
 i2c_bus_config_t config = {
     .sda_pin = 21,
     .scl_pin = 22,
-    .clock_speed = 100000,  // 100 kHz
-    .pullup_enable = true
+    .clock_speed = 100000,
+    .pullup_enable = false
 };
-
-esp_err_t err = i2c_bus_init(&config);
-if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to initialize I²C bus");
-    return err;
-}
-
-// Или инициализация из NodeConfig
-err = i2c_bus_init_from_config();
+ESP_ERROR_CHECK(i2c_bus_init_bus(I2C_BUS_0, &config));
 ```
 
-### Чтение/запись
+`i2c_bus_init_from_config()` — **не** читает NodeConfig; инициализирует только шину **0** дефолтами компонента (`I2C_BUS_DEFAULT_*`). Сохранено для совместимости API. Вторая шина — только `i2c_bus_init_bus(I2C_BUS_1, &config)` из кода ноды.
+
+**По умолчанию** внутренние pull-up ESP на шине **выключены** (`pullup_enable = false`); включайте только если нужны слабые внутренние подтяжки и это согласовано со схемой платы.
+
+См. `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — пины и скорость I²C задаются в коде ноды, не в JSON NodeConfig.
+
+## Чтение / запись
+
+Legacy (одна попытка чтения):
 
 ```c
-// Чтение одного байта из регистра
-uint8_t value;
-esp_err_t err = i2c_bus_read_byte(0x40, 0x00, &value, 1000);
-if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Read value: 0x%02X", value);
-}
-
-// Запись одного байта в регистр
-err = i2c_bus_write_byte(0x40, 0x00, 0x12, 1000);
-
-// Чтение нескольких байт
-uint8_t buffer[16];
-err = i2c_bus_read(0x40, NULL, 0, buffer, 16, 1000);
-
-// Запись с адресом регистра
-uint8_t reg = 0x10;
-uint8_t data[] = {0x01, 0x02, 0x03};
-err = i2c_bus_write(0x40, &reg, 1, data, 3, 1000);
+uint8_t buf[2];
+esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, 0x09, &reg, 1, buf, 2, 1000);
 ```
 
-### Сканирование шины
+С опциями (повторы read + раздельные таймауты):
 
 ```c
-uint8_t addresses[128];
-size_t found_count = 0;
-
-esp_err_t err = i2c_bus_scan(addresses, 128, &found_count);
-if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Found %zu I²C device(s)", found_count);
-    for (size_t i = 0; i < found_count; i++) {
-        ESP_LOGI(TAG, "  Device at 0x%02X", addresses[i]);
-    }
-}
+i2c_bus_xfer_opts_t o = {
+    .xfer_timeout_ms = 500,
+    .lock_timeout_ms = 0,       /* авто */
+    .read_extra_retries = 2,    /* до 3 попыток всего */
+};
+err = i2c_bus_read_bus_ex(I2C_BUS_1, 0x09, &reg, 1, buf, 2, &o);
 ```
 
-### Восстановление при ошибках
+После смены адреса устройства на шине:
 
 ```c
-// Автоматическое восстановление при ошибках чтения/записи
-// Или ручное восстановление
-esp_err_t err = i2c_bus_recover();
+/* ESP_OK — слот удалён; ESP_ERR_NOT_FOUND — адреса не было в кэше (часто безвредно) */
+(void)i2c_bus_forget_device(I2C_BUS_1, old_addr_7bit);
 ```
 
-## Интеграция с NodeConfig
+## Сканирование / recover
 
-Компонент может автоматически загружать конфигурацию из NodeConfig:
+- `i2c_bus_scan_bus` — временные dev-handle, кэш шины не засоряется.
+- `i2c_bus_recover` — полный deinit+init шины **0** (как в API ранее).
+- `i2c_bus_reset_bus` — FSM reset; при успехе кэш dev на этой шине очищается.
 
-```json
-{
-  "hardware": {
-    "i2c": {
-      "sda": 21,
-      "scl": 22,
-      "speed": 100000
-    }
-  }
-}
-```
+## Зависимости
 
-## API
-
-### Инициализация
-
-- `i2c_bus_init(const i2c_bus_config_t *config)` - инициализация с конфигурацией
-- `i2c_bus_init_from_config(void)` - инициализация из NodeConfig
-- `i2c_bus_deinit(void)` - деинициализация
-- `i2c_bus_is_initialized(void)` - проверка инициализации
-
-### Чтение/запись
-
-- `i2c_bus_read()` - чтение данных с указанием адреса регистра
-- `i2c_bus_write()` - запись данных с указанием адреса регистра
-- `i2c_bus_read_byte()` - чтение одного байта из регистра
-- `i2c_bus_write_byte()` - запись одного байта в регистр
-
-### Утилиты
-
-- `i2c_bus_scan()` - сканирование шины для поиска устройств
-- `i2c_bus_recover()` - восстановление шины при ошибках
-
-## Требования
-
-- ESP-IDF 5.x
-- FreeRTOS
-- config_storage (для i2c_bus_init_from_config)
+ESP-IDF 5.x, FreeRTOS.
 
 ## Документация
 
-- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- Архитектура нод: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-
+- `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`
+- Компонент `i2c_cache`: политика кэширования чтений — `../i2c_cache/README.md`

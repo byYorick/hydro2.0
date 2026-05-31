@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Alert;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Alert;
 use App\Services\AlertCatalogService;
 use App\Services\AlertService;
 use Illuminate\Http\Request;

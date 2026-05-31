@@ -34,6 +34,7 @@ class RevertExpiredLiveModesCommand extends Command
 
         if ($candidateIds->isEmpty()) {
             $this->info('Нет истёкших live зон.');
+
             return self::SUCCESS;
         }
 
@@ -53,6 +54,7 @@ class RevertExpiredLiveModesCommand extends Command
                     optional($zone?->live_until)->toIso8601String(),
                     optional($zone?->live_started_at)->toIso8601String() ?? '—',
                 ));
+
                 continue;
             }
 
@@ -104,6 +106,7 @@ class RevertExpiredLiveModesCommand extends Command
                     ]),
                     'created_at' => $now,
                 ]);
+
                 return $zone;
             });
             if ($reverted === null) {
@@ -119,6 +122,7 @@ class RevertExpiredLiveModesCommand extends Command
         }
 
         $this->info(sprintf('Готово: %d зон переключено в locked.', $count));
+
         return self::SUCCESS;
     }
 }

@@ -31,7 +31,7 @@ class ZoneResource extends JsonResource
             'settings' => $this->settings,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
-            
+
             // Relationships
             'greenhouse' => $this->whenLoaded('greenhouse', function () {
                 return [
@@ -57,4 +57,3 @@ class ZoneResource extends JsonResource
         ];
     }
 }
-

@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Ревизии рецептов - версионирование рецептов
      * Каждый рецепт может иметь несколько ревизий (DRAFT, PUBLISHED, ARCHIVED)
      */
@@ -39,4 +39,3 @@ return new class extends Migration
         Schema::dropIfExists('recipe_revisions');
     }
 };
-

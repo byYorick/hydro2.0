@@ -27,6 +27,7 @@ class GrowCycleOrchestrator
      * Создаёт цикл, синхронизирует конфиги и, если запрошено, стартует.
      *
      * @param  array<string, mixed>  $data  Валидированный payload запроса store().
+     *
      * @throws ZoneNotReadyException Если start_immediately=true и зона не готова.
      * @throws \DomainException Бизнес-ошибка (пробрасывается из GrowCycleService).
      */

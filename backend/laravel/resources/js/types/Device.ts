@@ -43,6 +43,8 @@ export interface DeviceChannel {
   id?: number
   node_channel_id?: number
   node_id?: number
+  /** Человекочитаемое имя канала (если задано в API / node_channels). */
+  name?: string | null
   channel: string
   type: 'SENSOR' | 'ACTUATOR' | string
   metric: string | number | null

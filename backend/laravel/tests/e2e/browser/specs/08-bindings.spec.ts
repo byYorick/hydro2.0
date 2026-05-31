@@ -3,8 +3,8 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Bindings', () => {
   test('should create binding through UI', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('domcontentloaded', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -61,8 +61,8 @@ test.describe('Bindings', () => {
   });
 
   test('should display binding resolution in UI', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('domcontentloaded', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -87,8 +87,8 @@ test.describe('Bindings', () => {
   });
 
   test('should send command by role and verify correct node/channel', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
-    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('domcontentloaded', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 

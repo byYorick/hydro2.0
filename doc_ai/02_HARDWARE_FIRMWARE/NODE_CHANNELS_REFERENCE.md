@@ -14,7 +14,7 @@ Breaking-change: обратная совместимость со старыми
 
 Каждый канал описывается:
 
-- полем `channels.key` в БД;
+- полем `node_channels.channel` в БД (каноническая таблица — `node_channels`, см. `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §3.2);
 - типом (`SENSOR`, `ACTUATOR`, `VIRTUAL`);
 - типом данных (`float`, `int`, `bool`);
 - единицами измерения (для сенсоров);
@@ -72,6 +72,16 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
  "ts": 1737355600
 }
 ```
+
+- **TDS (ppm)** с того же Trema-модуля публикуется **отдельным** firmware channel id **`ec_tds_ppm`** (топик `.../ec_tds_ppm/telemetry`, `metric_type`: **`TDS`**, `unit`: `ppm`). В history-logger это резолвится в сенсор типа `OTHER` с label `ec_tds_ppm`, а не в канал `ec_sensor` (EC, mS/cm). Публикация TDS на `ec_sensor` с тем же `metric_type` **EC** запрещена контрактом: смешивает ppm и mS/cm в одной серии на графике и в `telemetry_samples`.
+
+#### I²C: Trema Flash TDS/EC (`ec_node`, драйвер `trema_ec`)
+
+- **Шина:** на `ec_node` Trema EC висит на **отдельном контроллере I²C — `I2C_BUS_1`**, GPIO по умолчанию **SDA 18 / SCL 19** (как Trema pH на `ph_node`); **шина 0** (21/22) — OLED и INA209, **не** смешивать с Trema на одной линии в штатной разводке.
+- Заводской **дефолт iarduino** для Trema Flash-I²C TDS/EC — 7-bit адрес **0x09** (см. библиотеку [iarduino_I2C_TDS](https://github.com/tremaru/iarduino_I2C_TDS), регистр `REG_ADDRESS`).
+- Модуль может отвечать на **ином 7-bit адресе** (например **0x08**), если адрес был сохранён во FLASH (`changeAddress` и т.п.) или иная конфигурация поставки.
+- Прошивка: первая попытка `trema_ec_init()` — адрес **`TREMA_EC_ADDR` (0x09)**; при неудаче — перебор **0x08–0x77** на **шине 1**; фактический адрес после успешного init — `trema_ec_get_i2c_address()` (в логах телеметрии `ec_node_fw`: строка `ec_sensor: I2C 7-bit=0x..`).
+- **Зафиксировано по логам референс-узла (hydro2.0):** рабочий 7-bit адрес **0x08** (сенсор отвечает, `stub=no`).
 
 ### 2.3. Температура воздуха
 
@@ -184,14 +194,24 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 Канонические ключи:
 
 - `wind_speed` — скорость ветра;
-- `outside_temp` — наружная температура.
+- `wind_direction` — направление ветра (метеорологические градусы: **откуда дует**);
+- `outside_temp` — наружная температура;
+- `outside_humidity` — наружная влажность;
+- `outside_pressure` — наружное давление (опционально);
+- `outside_light` — наружная освещённость (lux или PPFD);
+- `rain_detected` — дождь (bool / пороговый датчик).
 
 Тип:
-- `SENSOR` (`float`).
+- `SENSOR` (`float` или bool по каналу).
 
 Канонические `metric_type`:
 - `WIND_SPEED`;
-- `OUTSIDE_TEMP`.
+- `WIND_DIRECTION`;
+- `OUTSIDE_TEMP`;
+- `OUTSIDE_HUMIDITY`;
+- `OUTSIDE_PRESSURE`;
+- `OUTSIDE_LIGHT`;
+- `RAIN_DETECTED`.
 
 Рекомендуемый telemetry payload:
 
@@ -317,7 +337,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `fan_air` — вентилятор;
 - `heater_air` / `heater` — нагреватель воздуха (имя зависит от прошивки);
 - `white_light` — основное освещение;
-- `uv_light` — УФ-лампы.
+- `uv_light` — УФ-лампы;
+- `roof_vent_left` / `roof_vent_right` — крышные форточки (greenhouse climate); команда `set_position`, параметр `position_pct` 0..100, опционально `max_step_pct`.
 
 Тип: `ACTUATOR`.
 
@@ -341,6 +362,19 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   "cmd": "set_pwm",
   "params": {
     "value": 255
+  }
+}
+```
+
+Пример `set_position` для крышной форточки:
+
+```json
+{
+  "cmd_id": "cmd-30003",
+  "cmd": "set_position",
+  "params": {
+    "position_pct": 40,
+    "max_step_pct": 25
   }
 }
 ```
@@ -592,7 +626,7 @@ Runtime-оговорка:
 
 1. Любой новый канал должен быть добавлен:
  - сюда;
- - в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` (таблица `channels`);
+ - в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` §3.2 (таблица `node_channels`);
  - при необходимости — в NodeConfig прошивки.
 2. Нельзя использовать один и тот же ключ для разных физических значений.
 3. Для ИИ-агентов:

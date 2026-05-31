@@ -29,6 +29,7 @@ function createForms(): ZoneAutomationForms {
       outsideHumidityMax: 90,
       manualOverrideEnabled: true,
       overrideMinutes: 30,
+      maxVentStepPct: 25,
     },
     waterForm: {
       systemType: 'drip',

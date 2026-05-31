@@ -45,7 +45,7 @@ void pump_node_run_setup_mode(void) {
             .sda_pin = PUMP_NODE_I2C_BUS_0_SDA,
             .scl_pin = PUMP_NODE_I2C_BUS_0_SCL,
             .clock_speed = PUMP_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
+            .pullup_enable = false
         };
         esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (i2c_err == ESP_OK) {
@@ -83,13 +83,6 @@ static void pump_node_publish_hello(void) {
     snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
-    // Получаем версию прошивки
-    // Используем версию ESP-IDF, так как версия прошивки не хранится в config_storage
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    // esp_get_idf_version() уже возвращает версию с префиксом "v", не добавляем еще один
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
     // Создаем JSON сообщение node_hello
     cJSON *hello = cJSON_CreateObject();
     if (!hello) {
@@ -100,7 +93,7 @@ static void pump_node_publish_hello(void) {
     cJSON_AddStringToObject(hello, "message_type", "node_hello");
     cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
     cJSON_AddStringToObject(hello, "node_type", "pump");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
+    cJSON_AddStringToObject(hello, "fw_version", node_utils_get_firmware_version());
     
     // Добавляем capabilities
     cJSON *capabilities = cJSON_CreateArray();
@@ -149,9 +142,6 @@ void pump_node_mqtt_connection_cb(bool connected, void *user_ctx) {
             // Устройство еще не зарегистрировано - публикуем node_hello
             pump_node_publish_hello();
         }
-        
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - pump_node is offline");
     }

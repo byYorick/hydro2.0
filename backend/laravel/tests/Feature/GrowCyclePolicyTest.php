@@ -2,15 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\User;
 use App\Models\Zone;
-use App\Enums\GrowCycleStatus;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class GrowCyclePolicyTest extends TestCase
@@ -18,9 +18,13 @@ class GrowCyclePolicyTest extends TestCase
     use RefreshDatabase;
 
     private User $agronomist;
+
     private User $operator;
+
     private User $viewer;
+
     private Zone $zone;
+
     private GrowCycle $cycle;
 
     protected function setUp(): void
@@ -30,7 +34,7 @@ class GrowCyclePolicyTest extends TestCase
         $this->operator = User::factory()->create(['role' => 'operator']);
         $this->viewer = User::factory()->create(['role' => 'viewer']);
         $this->zone = Zone::factory()->create();
-        
+
         $recipe = Recipe::factory()->create();
         $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,

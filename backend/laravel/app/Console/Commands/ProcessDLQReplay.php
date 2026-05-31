@@ -43,6 +43,7 @@ class ProcessDLQReplay extends Command
 
         if ($dlqAlerts->isEmpty()) {
             $this->info('No DLQ alerts found to replay');
+
             return Command::SUCCESS;
         }
 
@@ -96,6 +97,7 @@ class ProcessDLQReplay extends Command
         }
 
         $this->info("Replayed {$replayed} alert(s)");
+
         return Command::SUCCESS;
     }
 }

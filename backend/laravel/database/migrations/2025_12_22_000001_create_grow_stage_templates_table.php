@@ -27,4 +27,3 @@ return new class extends Migration
         Schema::dropIfExists('grow_stage_templates');
     }
 };
-

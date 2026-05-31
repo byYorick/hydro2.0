@@ -52,17 +52,19 @@ class BackfillEffectiveBundlesCommand extends Command
 
         if ($dryRun && $validateOnly) {
             $this->error('Cannot combine --dry-run and --validate-only.');
+
             return self::FAILURE;
         }
 
         $validScopes = ['system', 'zone', 'grow_cycle', 'all'];
         if (! in_array($scope, $validScopes, true)) {
-            $this->error("Invalid scope: {$scope}. Valid values: " . implode(', ', $validScopes));
+            $this->error("Invalid scope: {$scope}. Valid values: ".implode(', ', $validScopes));
+
             return self::FAILURE;
         }
 
         $this->line('');
-        $this->info("=== automation:backfill-effective-bundles ===");
+        $this->info('=== automation:backfill-effective-bundles ===');
         if ($dryRun) {
             $this->warn('DRY RUN — no changes will be written');
         }
@@ -133,9 +135,10 @@ class BackfillEffectiveBundlesCommand extends Command
 
             if ($missing !== [] || $validateOnly) {
                 if ($missing !== []) {
-                    $this->warn("  Zone {$zid}: missing sections — " . implode(', ', $missing));
+                    $this->warn("  Zone {$zid}: missing sections — ".implode(', ', $missing));
                 } else {
                     $this->line("  Zone {$zid}: OK");
+
                     continue;
                 }
 
@@ -146,6 +149,7 @@ class BackfillEffectiveBundlesCommand extends Command
 
                 if ($dryRun) {
                     $this->line("  [dry-run] Would recompile zone bundle for zone {$zid}");
+
                     continue;
                 }
 
@@ -195,9 +199,10 @@ class BackfillEffectiveBundlesCommand extends Command
 
             if ($missing !== [] || $validateOnly) {
                 if ($missing !== []) {
-                    $this->warn("  Cycle {$cid} (zone {$cycle->zone_id}): missing sections — " . implode(', ', $missing));
+                    $this->warn("  Cycle {$cid} (zone {$cycle->zone_id}): missing sections — ".implode(', ', $missing));
                 } else {
                     $this->line("  Cycle {$cid}: OK");
+
                     continue;
                 }
 
@@ -208,6 +213,7 @@ class BackfillEffectiveBundlesCommand extends Command
 
                 if ($dryRun) {
                     $this->line("  [dry-run] Would recompile grow_cycle bundle for cycle {$cid}");
+
                     continue;
                 }
 

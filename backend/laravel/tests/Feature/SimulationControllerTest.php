@@ -10,12 +10,12 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
 use App\Services\GrowCycleService;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class SimulationControllerTest extends TestCase

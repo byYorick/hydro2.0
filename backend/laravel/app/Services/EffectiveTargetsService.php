@@ -13,14 +13,13 @@ class EffectiveTargetsService
     public function __construct(
         private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly AutomationConfigDocumentService $documents,
-    ) {
-    }
+    ) {}
 
     /**
      * Получить эффективные целевые параметры для цикла выращивания
-     * 
-     * @param int $growCycleId
+     *
      * @return array Структурированный JSON согласно контракту
+     *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
     public function getEffectiveTargets(int $growCycleId): array
@@ -39,18 +38,18 @@ class EffectiveTargetsService
             'zone',
         ])->findOrFail($growCycleId);
 
-        if (!$cycle->currentPhase) {
+        if (! $cycle->currentPhase) {
             throw new \RuntimeException("Grow cycle {$growCycleId} has no current phase");
         }
 
         $phase = $cycle->currentPhase;
-        
+
         // Получаем базовые параметры из фазы
         $phaseTargets = $this->extractPhaseTargets($phase);
-        
+
         // Получаем активные перекрытия
         $overrides = $this->getActiveOverrides($cycle);
-        
+
         // Сливаем перекрытия с базовыми параметрами
         $effectiveTargets = $this->mergeOverrides($phaseTargets, $overrides);
 
@@ -58,16 +57,16 @@ class EffectiveTargetsService
         $runtimeProfile = $this->resolveRuntimeProfileForCycle($cycle);
         $effectiveTargets = $this->mergeCycleSettings($effectiveTargets, $runtimeProfile['subsystems'] ?? null);
         $effectiveTargets = $this->appendRuntimeProfileMeta($effectiveTargets, $runtimeProfile);
-        
+
         // Вычисляем due_at для фазы
         $phaseDueAt = $this->calculatePhaseDueAt($cycle, $phase);
-        
+
         // Формируем метаданные фазы
         // Для снапшота получаем stageTemplate через recipeRevisionPhase, для шаблона напрямую
-        $stageTemplate = $phase instanceof GrowCyclePhase 
-            ? $phase->recipeRevisionPhase?->stageTemplate 
+        $stageTemplate = $phase instanceof GrowCyclePhase
+            ? $phase->recipeRevisionPhase?->stageTemplate
             : $phase->stageTemplate;
-        
+
         $phaseMeta = [
             'id' => $phase->id,
             'code' => $stageTemplate?->code ?? 'UNKNOWN',
@@ -90,14 +89,13 @@ class EffectiveTargetsService
 
     /**
      * Получить эффективные параметры для нескольких циклов (batch)
-     * 
-     * @param array $growCycleIds
+     *
      * @return array Массив результатов, ключ - grow_cycle_id
      */
     public function getEffectiveTargetsBatch(array $growCycleIds): array
     {
         $results = [];
-        
+
         foreach ($growCycleIds as $cycleId) {
             try {
                 $results[$cycleId] = $this->getEffectiveTargets($cycleId);
@@ -107,14 +105,14 @@ class EffectiveTargetsService
                 ];
             }
         }
-        
+
         return $results;
     }
 
     /**
      * Извлечь целевые параметры из фазы (снапшот или шаблон)
-     * 
-     * @param GrowCyclePhase|RecipeRevisionPhase $phase
+     *
+     * @param  GrowCyclePhase|RecipeRevisionPhase  $phase
      */
     protected function extractPhaseTargets($phase): array
     {
@@ -201,7 +199,7 @@ class EffectiveTargetsService
             'solution_volume_l' => $nutrientSolutionVolumeL !== null ? (float) $nutrientSolutionVolumeL : null,
         ];
         $nutrition = $this->cleanNullValues($nutrition);
-        if (!empty($nutrition)) {
+        if (! empty($nutrition)) {
             $targets['nutrition'] = $nutrition;
         }
 
@@ -227,9 +225,9 @@ class EffectiveTargetsService
         if ($phase->lighting_photoperiod_hours !== null) {
             $targets['lighting'] = [
                 'photoperiod_hours' => $phase->lighting_photoperiod_hours,
-                'start_time' => $phase->lighting_start_time 
-                    ? (is_string($phase->lighting_start_time) 
-                        ? $phase->lighting_start_time 
+                'start_time' => $phase->lighting_start_time
+                    ? (is_string($phase->lighting_start_time)
+                        ? $phase->lighting_start_time
                         : Carbon::parse($phase->lighting_start_time)->format('H:i:s'))
                     : null,
             ];
@@ -246,7 +244,7 @@ class EffectiveTargetsService
         if ($phase->co2_target !== null) {
             $climateRequest['co2_target'] = $phase->co2_target;
         }
-        if (!empty($climateRequest)) {
+        if (! empty($climateRequest)) {
             $targets['climate_request'] = $climateRequest;
         }
 
@@ -300,11 +298,11 @@ class EffectiveTargetsService
             // Поддержка вложенных параметров (например, ph.target, irrigation.interval_sec)
             if (str_contains($parameter, '.')) {
                 [$section, $key] = explode('.', $parameter, 2);
-                
-                if (!isset($effective[$section])) {
+
+                if (! isset($effective[$section])) {
                     $effective[$section] = [];
                 }
-                
+
                 $effective[$section][$key] = $value;
             } else {
                 // Простые параметры (если есть такие)
@@ -365,7 +363,7 @@ class EffectiveTargetsService
     protected function resolveRuntimeProfileForCycle(GrowCycle $cycle): ?array
     {
         $profile = $this->automationLogicProfiles->resolveActiveProfileForZone($cycle->zone_id);
-        if ($profile && is_array($profile->subsystems) && !empty($profile->subsystems)) {
+        if ($profile && is_array($profile->subsystems) && ! empty($profile->subsystems)) {
             return [
                 'source' => 'zone_automation_logic_profile',
                 'mode' => $profile->mode,
@@ -383,7 +381,7 @@ class EffectiveTargetsService
      */
     protected function mergeCycleSettings(array $targets, mixed $subsystems): array
     {
-        if (!is_array($subsystems) || empty($subsystems)) {
+        if (! is_array($subsystems) || empty($subsystems)) {
             return $targets;
         }
 
@@ -399,7 +397,7 @@ class EffectiveTargetsService
 
     protected function appendRuntimeProfileMeta(array $targets, ?array $runtimeProfile): array
     {
-        if (!is_array($runtimeProfile) || empty($runtimeProfile)) {
+        if (! is_array($runtimeProfile) || empty($runtimeProfile)) {
             return $targets;
         }
 
@@ -418,7 +416,7 @@ class EffectiveTargetsService
     {
         $enabled = $this->extractSubsystemEnabled($subsystems, 'irrigation');
         $irrigationTargets = $this->extractSubsystemTargets($subsystems, 'irrigation');
-        if ($enabled === null && !is_array($irrigationTargets)) {
+        if ($enabled === null && ! is_array($irrigationTargets)) {
             return $targets;
         }
 
@@ -453,7 +451,7 @@ class EffectiveTargetsService
             $irrigation = $this->mergeTaskExecution($irrigation, ['force_skip' => false]);
         }
 
-        if (!empty($irrigation)) {
+        if (! empty($irrigation)) {
             $targets['irrigation'] = $irrigation;
         }
 
@@ -464,7 +462,7 @@ class EffectiveTargetsService
     {
         $enabled = $this->extractSubsystemEnabled($subsystems, 'lighting');
         $lightingTargets = $this->extractSubsystemTargets($subsystems, 'lighting');
-        if ($enabled === null && !is_array($lightingTargets)) {
+        if ($enabled === null && ! is_array($lightingTargets)) {
             return $targets;
         }
 
@@ -505,7 +503,7 @@ class EffectiveTargetsService
             $lighting = $this->mergeTaskExecution($lighting, ['force_skip' => false]);
         }
 
-        if (!empty($lighting)) {
+        if (! empty($lighting)) {
             $targets['lighting'] = $lighting;
         }
 
@@ -516,7 +514,7 @@ class EffectiveTargetsService
     {
         $enabled = $this->extractSubsystemEnabled($subsystems, 'climate');
         $climateTargets = $this->extractSubsystemTargets($subsystems, 'climate');
-        if ($enabled === null && !is_array($climateTargets)) {
+        if ($enabled === null && ! is_array($climateTargets)) {
             return $targets;
         }
 
@@ -533,7 +531,7 @@ class EffectiveTargetsService
                 $climateRequest['humidity_target'] = $dayHumidity;
             }
 
-            if (!empty($climateRequest)) {
+            if (! empty($climateRequest)) {
                 $targets['climate_request'] = $climateRequest;
             }
         }
@@ -556,7 +554,7 @@ class EffectiveTargetsService
             $ventilation = $this->mergeTaskExecution($ventilation, ['force_skip' => false]);
         }
 
-        if (!empty($ventilation)) {
+        if (! empty($ventilation)) {
             $targets['ventilation'] = $ventilation;
         }
 
@@ -567,7 +565,7 @@ class EffectiveTargetsService
     {
         $enabled = $this->extractSubsystemEnabled($subsystems, 'diagnostics');
         $diagnosticsTargets = $this->extractSubsystemTargets($subsystems, 'diagnostics');
-        if ($enabled === null && !is_array($diagnosticsTargets)) {
+        if ($enabled === null && ! is_array($diagnosticsTargets)) {
             return $targets;
         }
 
@@ -614,7 +612,7 @@ class EffectiveTargetsService
                 $executionPatch['refill'] = $diagnosticsTargets['refill'];
             }
 
-            if (!empty($executionPatch)) {
+            if (! empty($executionPatch)) {
                 $diagnostics = $this->mergeTaskExecution($diagnostics, $executionPatch);
             }
         }
@@ -625,7 +623,7 @@ class EffectiveTargetsService
             $diagnostics = $this->mergeTaskExecution($diagnostics, ['force_skip' => false]);
         }
 
-        if (!empty($diagnostics)) {
+        if (! empty($diagnostics)) {
             $targets['diagnostics'] = $diagnostics;
         }
 
@@ -649,7 +647,7 @@ class EffectiveTargetsService
         $solutionTargets = is_string($solutionKey)
             ? $this->extractSubsystemTargets($subsystems, $solutionKey)
             : null;
-        if ($solutionEnabled === null && !is_array($solutionTargets)) {
+        if ($solutionEnabled === null && ! is_array($solutionTargets)) {
             return $targets;
         }
 
@@ -676,7 +674,7 @@ class EffectiveTargetsService
             $solution = $this->mergeTaskExecution($solution, ['force_skip' => false]);
         }
 
-        if (!empty($solution)) {
+        if (! empty($solution)) {
             $targets['solution_change'] = $solution;
         }
 
@@ -697,13 +695,14 @@ class EffectiveTargetsService
     {
         $existingExecution = is_array($taskConfig['execution'] ?? null) ? $taskConfig['execution'] : [];
         $taskConfig['execution'] = $this->mergeRecursive($existingExecution, $executionPatch);
+
         return $taskConfig;
     }
 
     protected function extractSubsystemTargets(array $subsystems, string $subsystem): ?array
     {
         $execution = $subsystems[$subsystem]['execution'] ?? null;
-        if (!is_array($execution)) {
+        if (! is_array($execution)) {
             return null;
         }
 
@@ -712,9 +711,10 @@ class EffectiveTargetsService
 
     protected function extractSubsystemEnabled(array $subsystems, string $subsystem): ?bool
     {
-        if (!isset($subsystems[$subsystem]) || !is_array($subsystems[$subsystem])) {
+        if (! isset($subsystems[$subsystem]) || ! is_array($subsystems[$subsystem])) {
             return null;
         }
+
         return $this->toBool($subsystems[$subsystem]['enabled'] ?? null);
     }
 
@@ -750,12 +750,12 @@ class EffectiveTargetsService
 
     protected function resolveScheduleStartTime(mixed $rawSchedule): ?string
     {
-        if (!is_array($rawSchedule) || empty($rawSchedule)) {
+        if (! is_array($rawSchedule) || empty($rawSchedule)) {
             return null;
         }
 
         $first = $rawSchedule[0] ?? null;
-        if (!is_array($first)) {
+        if (! is_array($first)) {
             return null;
         }
 
@@ -764,7 +764,7 @@ class EffectiveTargetsService
 
     protected function normalizeTimeString(mixed $value): ?string
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             return null;
         }
 
@@ -782,17 +782,18 @@ class EffectiveTargetsService
 
     protected function toPositiveInt(mixed $value): ?int
     {
-        if (!is_numeric($value)) {
+        if (! is_numeric($value)) {
             return null;
         }
 
         $result = (int) round((float) $value);
+
         return $result > 0 ? $result : null;
     }
 
     protected function toFloat(mixed $value): ?float
     {
-        if (!is_numeric($value)) {
+        if (! is_numeric($value)) {
             return null;
         }
 
@@ -837,23 +838,22 @@ class EffectiveTargetsService
 
     /**
      * Вычислить due_at для фазы на основе progress_model
-     * 
-     * @param GrowCycle $cycle
-     * @param GrowCyclePhase|RecipeRevisionPhase $phase
+     *
+     * @param  GrowCyclePhase|RecipeRevisionPhase  $phase
      */
     protected function calculatePhaseDueAt(GrowCycle $cycle, $phase): ?Carbon
     {
-        if (!$cycle->phase_started_at) {
+        if (! $cycle->phase_started_at) {
             return null;
         }
 
         // phase_started_at уже cast в datetime, но parse безопасно работает и с Carbon объектами
-        $startedAt = $cycle->phase_started_at instanceof Carbon 
-            ? $cycle->phase_started_at 
+        $startedAt = $cycle->phase_started_at instanceof Carbon
+            ? $cycle->phase_started_at
             : Carbon::parse($cycle->phase_started_at);
 
         // Простая модель по времени
-        if ($phase->progress_model === 'TIME' || !$phase->progress_model) {
+        if ($phase->progress_model === 'TIME' || ! $phase->progress_model) {
             if ($phase->duration_hours) {
                 return $startedAt->copy()->addHours($phase->duration_hours);
             }
@@ -866,7 +866,7 @@ class EffectiveTargetsService
         if ($phase->progress_model === 'TIME_WITH_TEMP_CORRECTION') {
             $baseDuration = $phase->duration_hours ?? ($phase->duration_days * 24);
             $speedFactor = $this->calculateSpeedFactor($cycle, $phase);
-            
+
             if ($baseDuration && $speedFactor) {
                 return $startedAt->copy()->addHours($baseDuration / $speedFactor);
             }
@@ -883,9 +883,8 @@ class EffectiveTargetsService
 
     /**
      * Вычислить коэффициент скорости роста на основе температуры
-     * 
-     * @param GrowCycle $cycle
-     * @param GrowCyclePhase|RecipeRevisionPhase $phase
+     *
+     * @param  GrowCyclePhase|RecipeRevisionPhase  $phase
      */
     protected function calculateSpeedFactor(GrowCycle $cycle, $phase): ?float
     {
@@ -893,7 +892,7 @@ class EffectiveTargetsService
         $avgTemp24h = $progressMeta['temp_avg_24h'] ?? null;
         $baseTemp = $phase->base_temp_c;
 
-        if (!$avgTemp24h || !$baseTemp) {
+        if (! $avgTemp24h || ! $baseTemp) {
             return null;
         }
 
@@ -902,6 +901,7 @@ class EffectiveTargetsService
         // Формула: +1% скорости на каждые 1°C выше базовой температуры
         if ($avgTemp24h > $baseTemp) {
             $tempDiff = $avgTemp24h - $baseTemp;
+
             return 1.0 + ($tempDiff * 0.01); // +1% на каждый градус выше базовой
         }
 
@@ -914,19 +914,19 @@ class EffectiveTargetsService
     protected function cleanNullValues(array $array): array
     {
         $cleaned = [];
-        
+
         foreach ($array as $key => $value) {
             if (is_array($value)) {
                 $cleanedValue = $this->cleanNullValues($value);
                 // Не добавляем пустые массивы
-                if (!empty($cleanedValue)) {
+                if (! empty($cleanedValue)) {
                     $cleaned[$key] = $cleanedValue;
                 }
             } elseif ($value !== null) {
                 $cleaned[$key] = $value;
             }
         }
-        
+
         return $cleaned;
     }
 }

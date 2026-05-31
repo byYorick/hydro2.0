@@ -101,7 +101,7 @@ actions:
     timeout_command_id: ${timeout_command_response.data.command_id}
     condition: ${timeout_command_response and timeout_command_response.data and timeout_command_response.data.command_id}
 
-  - step: fetch_timeout_command_id_from_db_if_needed
+  - step: fetch_timeout_command_id_from_db
     type: database_query
     query: |
       SELECT cmd_id
@@ -118,12 +118,11 @@ actions:
       node_id: ${test_node_id}
       test_started_at: ${test_started_at}
     save: timeout_command_row
-    condition: ${!timeout_command_id || timeout_command_id == '' || timeout_command_id == null}
 
   - step: set_timeout_command_id_from_db
     type: set
     timeout_command_id: ${timeout_command_row.0.cmd_id}
-    condition: ${timeout_command_row && len(timeout_command_row) > 0 && timeout_command_row[0].cmd_id}
+    condition: ${context.get('timeout_command_row') and len(context.get('timeout_command_row')) > 0 and context.get('timeout_command_row')[0].get('cmd_id')}
 
   # Ждем WS события timeout
   - step: wait_for_timeout_ws_event

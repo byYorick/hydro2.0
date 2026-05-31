@@ -22,23 +22,25 @@ class VerifyAlertmanagerWebhook
     public function handle(Request $request, Closure $next): Response
     {
         $expectedSecret = Config::get('services.alertmanager.webhook_secret');
-        
+
         // Если секрет не настроен, разрешаем доступ только в dev/testing окружении
-        if (!$expectedSecret) {
+        if (! $expectedSecret) {
             $env = config('app.env');
             if (in_array($env, ['local', 'testing', 'dev'])) {
                 Log::warning('Alertmanager webhook secret not configured, allowing access in dev mode', [
                     'url' => $request->fullUrl(),
                     'ip' => $request->ip(),
                 ]);
+
                 return $next($request);
             }
-            
+
             Log::error('Alertmanager webhook secret not configured', [
                 'url' => $request->fullUrl(),
                 'ip' => $request->ip(),
                 'env' => $env,
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Webhook authentication not configured',
@@ -49,6 +51,7 @@ class VerifyAlertmanagerWebhook
         $bearerToken = $request->bearerToken();
         if ($bearerToken && hash_equals($expectedSecret, $bearerToken)) {
             Log::debug('Alertmanager webhook authenticated via Bearer token');
+
             return $next($request);
         }
 
@@ -56,6 +59,7 @@ class VerifyAlertmanagerWebhook
         $webhookSecret = $request->header('X-Webhook-Secret');
         if ($webhookSecret && hash_equals($expectedSecret, $webhookSecret)) {
             Log::debug('Alertmanager webhook authenticated via X-Webhook-Secret header');
+
             return $next($request);
         }
 
@@ -67,6 +71,7 @@ class VerifyAlertmanagerWebhook
                 [$username, $password] = explode(':', $credentials, 2) + ['', ''];
                 if (hash_equals($expectedSecret, $password)) {
                     Log::debug('Alertmanager webhook authenticated via Basic Auth');
+
                     return $next($request);
                 }
             }
@@ -74,15 +79,16 @@ class VerifyAlertmanagerWebhook
 
         // Проверяем IP-адрес источника (опционально, если настроен список разрешенных IP)
         $allowedIps = Config::get('services.alertmanager.allowed_ips', []);
-        if (!empty($allowedIps) && is_array($allowedIps)) {
+        if (! empty($allowedIps) && is_array($allowedIps)) {
             $clientIp = $request->ip();
             // Проверяем точное совпадение или подсеть
             foreach ($allowedIps as $allowedIp) {
-                if ($clientIp === $allowedIp || 
+                if ($clientIp === $allowedIp ||
                     (str_contains($allowedIp, '/') && $this->ipInRange($clientIp, $allowedIp))) {
                     Log::debug('Alertmanager webhook authenticated via IP whitelist', [
                         'ip' => $clientIp,
                     ]);
+
                     return $next($request);
                 }
             }
@@ -93,9 +99,9 @@ class VerifyAlertmanagerWebhook
             'url' => $request->fullUrl(),
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
-            'has_bearer' => !empty($bearerToken),
-            'has_webhook_secret' => !empty($webhookSecret),
-            'has_basic_auth' => !empty($authHeader) && str_starts_with($authHeader, 'Basic '),
+            'has_bearer' => ! empty($bearerToken),
+            'has_webhook_secret' => ! empty($webhookSecret),
+            'has_basic_auth' => ! empty($authHeader) && str_starts_with($authHeader, 'Basic '),
         ]);
 
         return response()->json([
@@ -109,16 +115,17 @@ class VerifyAlertmanagerWebhook
      */
     private function ipInRange(string $ip, string $range): bool
     {
-        if (!str_contains($range, '/')) {
+        if (! str_contains($range, '/')) {
             return false;
         }
 
         [$subnet, $mask] = explode('/', $range, 2);
-        
+
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             $ipLong = ip2long($ip);
             $subnetLong = ip2long($subnet);
-            $maskLong = -1 << (32 - (int)$mask);
+            $maskLong = -1 << (32 - (int) $mask);
+
             return ($ipLong & $maskLong) === ($subnetLong & $maskLong);
         }
 
@@ -130,4 +137,3 @@ class VerifyAlertmanagerWebhook
         return false;
     }
 }
-

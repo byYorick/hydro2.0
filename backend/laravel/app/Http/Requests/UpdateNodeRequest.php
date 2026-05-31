@@ -20,7 +20,7 @@ class UpdateNodeRequest extends FormRequest
     public function rules(): array
     {
         $nodeId = $this->route('node')?->id;
-        
+
         return [
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             // pending_zone_id — внутренний state-machine field bind/rebind.

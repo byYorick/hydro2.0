@@ -41,6 +41,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 {
   "node_id": "nd-ph-1",
   "version": 3,
+  "fw_version": "1.0.0",
   "type": "ph",
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
@@ -59,6 +60,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 |------|-----|--------------|----------|
 | `node_id` | string | Да | Уникальный идентификатор узла (UID) |
 | `version` | integer | Да | Версия формата конфигурации |
+| `fw_version` | string | Нет | Версия прикладной прошивки, которую сообщает сама нода в `config_report`/`heartbeat`; backend только сохраняет последнее полученное значение в `nodes.fw_version`. Не использовать версию ESP-IDF SDK как версию прошивки. |
 | `type` | string | Да | Тип узла: `ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
@@ -125,6 +127,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Примеры:**
 - `"zn-3"` — зона #3
 - `"zn-main"` — главная зона
+
+**Физические шины I²C** (GPIO SDA/SCL, скорость, внутренние pull-up) **не** описываются в NodeConfig: они задаются кодом ноды (`*_defaults.h`, `*_init_steps.c`, вызовы `i2c_bus_init` / `i2c_bus_init_bus`). Вспомогательная функция `i2c_bus_init_from_config()` в компоненте `i2c_bus` поднимает только шину **0** с дефолтами компонента и **не** читает JSON конфигурации.
 
 ### 3.6. `channels`
 

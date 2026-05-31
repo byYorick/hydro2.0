@@ -87,7 +87,7 @@ class CommandObserver
                     'error' => $e->getMessage(),
                 ]);
             }
-            
+
             // Записываем метрики latency для команды
             if (in_array($newStatus, [
                 Command::STATUS_ACK,

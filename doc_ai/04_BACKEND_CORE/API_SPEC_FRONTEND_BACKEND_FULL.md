@@ -595,7 +595,27 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - **Описание:** Полностью сохраняет authority-документ `greenhouse.logic_profile`.
 - **Доступ:** `admin` и `agronomist` могут сохранять документ в setup/provisioning flow без explicit `user_greenhouses`; `operator|engineer` требуют direct greenhouse ACL или доступ хотя бы к одной зоне внутри теплицы.
-- **Ограничение v1:** greenhouse runtime-dispatch не использует bundle-path; документ нужен для UI и future runtime.
+- **Runtime v1:** после compile `automation-engine` читает только
+  `automation_effective_bundles(scope_type='greenhouse', scope_id={id})`; raw document не является hot-path source.
+- **Минимальный `execution`:** `decision_interval_sec`, `emergency_decision_interval_sec`,
+  `min_command_interval_sec`, `max_step_pct`, `position_deadband_pct`,
+  `fallback_open_pct`, `weather_stale_max_open_pct`, `day_schedule`,
+  `daylight_lux_threshold`, day/night base/min/max, wind/rain clamps,
+  `sensor_freshness_sec`, `target_policy`, `greenhouse_targets`,
+  `manual_override_max_sec`.
+
+### 3.5.6.1. Greenhouse climate state/control API
+
+- `GET /api/greenhouses/{id}/climate/state` возвращает snapshot из
+  `greenhouse_automation_state`.
+- `POST /api/greenhouses/{id}/climate/control-mode` принимает
+  `{ "control_mode": "auto|semi|manual" }`.
+- `POST /api/greenhouses/{id}/climate/manual-override` принимает
+  `{ "left_position_pct": 0..100, "right_position_pct": 0..100, "ttl_sec": 60..86400,
+  "return_mode": "auto|semi|manual", "reason"?: string }`.
+- `DELETE /api/greenhouses/{id}/climate/manual-override` удаляет active overrides.
+- Laravel не публикует MQTT-команды; physical command path остаётся
+  `automation-engine -> history-logger -> MQTT`.
 
 ### 3.5.7. GET /api/zones/{id}/state
 

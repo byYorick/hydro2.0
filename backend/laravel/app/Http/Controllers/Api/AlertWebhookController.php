@@ -22,7 +22,7 @@ class AlertWebhookController extends Controller
         // Валидация webhook данных от Alertmanager
         // Формат: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
         // Поле alerts может быть пустым массивом или отсутствовать (для совместимости)
-        
+
         // Базовые правила валидации
         $rules = [
             'version' => ['nullable', 'string'],
@@ -31,23 +31,23 @@ class AlertWebhookController extends Controller
             'receiver' => ['nullable', 'string'],
             'alerts' => ['nullable', 'array'],
         ];
-        
+
         // Добавляем вложенные правила для alerts только если alerts присутствует и не пустое
-        if ($request->has('alerts') && !empty($request->input('alerts'))) {
+        if ($request->has('alerts') && ! empty($request->input('alerts'))) {
             $rules['alerts.*.status'] = ['required', 'string', 'in:firing,resolved'];
             $rules['alerts.*.labels'] = ['required', 'array'];
             $rules['alerts.*.annotations'] = ['nullable', 'array'];
             $rules['alerts.*.startsAt'] = ['nullable', 'date'];
             $rules['alerts.*.endsAt'] = ['nullable', 'date'];
         }
-        
+
         $data = $request->validate($rules);
-        
+
         Log::info('Alertmanager webhook received', ['data' => $data]);
 
         // Alertmanager отправляет массив алертов
         // Обрабатываем только если массив не пустой
-        if (!empty($data['alerts']) && is_array($data['alerts'])) {
+        if (! empty($data['alerts']) && is_array($data['alerts'])) {
             foreach ($data['alerts'] as $alertData) {
                 $this->processAlert($alertData);
             }
@@ -77,7 +77,7 @@ class AlertWebhookController extends Controller
             // Ищем активный алерт с таким типом
             $alert = \App\Models\Alert::where('type', $alertName)
                 ->where('status', 'ACTIVE')
-                ->when($zoneId, fn($q) => $q->where('zone_id', $zoneId))
+                ->when($zoneId, fn ($q) => $q->where('zone_id', $zoneId))
                 ->first();
 
             if ($alert) {
@@ -88,6 +88,7 @@ class AlertWebhookController extends Controller
                     'resolved_alertname' => $alertName,
                 ]);
             }
+
             return;
         }
 
@@ -119,6 +120,7 @@ class AlertWebhookController extends Controller
     {
         $step = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $alertName);
         $step = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $step);
+
         return strtolower($step);
     }
 }

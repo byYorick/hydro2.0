@@ -6,8 +6,8 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
-use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class RecipeRevisionControllerTest extends TestCase
@@ -15,7 +15,9 @@ class RecipeRevisionControllerTest extends TestCase
     use RefreshDatabase;
 
     private User $agronomist;
+
     private User $operator;
+
     private Recipe $recipe;
 
     protected function setUp(): void

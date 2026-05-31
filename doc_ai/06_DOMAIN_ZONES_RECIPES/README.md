@@ -41,6 +41,13 @@ Breaking-change: обратная совместимость со старыми
 - Расписания света
 - Расписания климата
 
+#### [GREENHOUSE_CLIMATE_CONTROL_PLAN.md](GREENHOUSE_CLIMATE_CONTROL_PLAN.md)
+**План общего управления климатом теплицы**
+- Greenhouse-level runtime для roof-форточек
+- Алгоритм сравнения внутренних и внешних параметров
+- Ветер, дождь, direction-aware ограничения
+- Интеграция с AE3/history-logger pipeline
+
 #### [EVENTS_AND_ALERTS_ENGINE.md](EVENTS_AND_ALERTS_ENGINE.md)
 **События и алерты**
 - Типы событий

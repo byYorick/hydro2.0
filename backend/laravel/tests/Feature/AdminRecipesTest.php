@@ -6,8 +6,8 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
-use Tests\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class AdminRecipesTest extends TestCase

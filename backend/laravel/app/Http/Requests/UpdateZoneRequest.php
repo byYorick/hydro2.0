@@ -29,4 +29,3 @@ class UpdateZoneRequest extends FormRequest
         ];
     }
 }
-

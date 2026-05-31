@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
-**Версия:** 2.2  
-**Дата обновления:** 2026-04-15
+**Версия:** 2.3
+**Дата обновления:** 2026-05-28 (большая sync-итерация: AE3 runtime, NOTIFY каналы, error codes, MQTT message types, frontend Unified Dashboard, firmware lifecycle, security HMAC tolerance, scheduler chain, Laravel роли, IP whitelist fix)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 
@@ -127,6 +127,7 @@ Breaking-change: обратная совместимость со старыми
 - `06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` — зоны и пресеты культур
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` — dispatch не-полива для AE3 (lighting реализован, diagnostics через compat-path)
+- `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` — план общего greenhouse climate runtime и алгоритма форточек
 - `06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md` — справочник PID-конфигов
 - `06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — движок водного потока
 - `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты

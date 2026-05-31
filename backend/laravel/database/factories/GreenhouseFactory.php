@@ -28,4 +28,3 @@ class GreenhouseFactory extends Factory
         ];
     }
 }
-

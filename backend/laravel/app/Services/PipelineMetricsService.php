@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Command;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PipelineMetricsService
 {
@@ -13,14 +13,44 @@ class PipelineMetricsService
         return config('services.history_logger.url', 'http://history-logger:9300');
     }
 
+    private static function historyLoggerToken(): ?string
+    {
+        $token = config('services.history_logger.token');
+
+        return is_string($token) && $token !== '' ? $token : null;
+    }
+
+    /**
+     * Builds an Http client with Bearer token if token is configured.
+     *
+     * History-logger `/internal/metrics/*` endpoints требуют auth начиная с
+     * S1.1 в `AUDIT_2026_05_28_BUGFIX_PLAN.md`. Если токен не задан (legacy
+     * dev-окружение), запросы уйдут без Authorization — HL допускает это для
+     * localhost dev-режима.
+     */
+    private static function buildHttpClient(float $timeoutSeconds, bool $async = false)
+    {
+        $client = Http::timeout($timeoutSeconds);
+        if ($async) {
+            $client = $client->async();
+        }
+
+        $token = self::historyLoggerToken();
+        if ($token !== null) {
+            $client = $client->withToken($token);
+        }
+
+        return $client;
+    }
+
     private static function postInternalMetric(string $path, array $payload, float $timeoutSeconds = 1.0): void
     {
-        Http::timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+        self::buildHttpClient($timeoutSeconds, false)->post(self::historyLoggerUrl().$path, $payload);
     }
 
     private static function postInternalMetricAsync(string $path, array $payload, float $timeoutSeconds = 1.0): void
     {
-        Http::async()->timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+        self::buildHttpClient($timeoutSeconds, true)->post(self::historyLoggerUrl().$path, $payload);
     }
 
     public static function trackWsBroadcast(string $eventType): void
@@ -65,21 +95,21 @@ class PipelineMetricsService
 
     /**
      * Записывает метрики latency команды.
-     * 
+     *
      * Отправляет метрики в history-logger для экспорта в Prometheus.
      */
     public function recordCommandLatency(Command $command): void
     {
         try {
             // Вычисляем latency только если есть все необходимые timestamps
-            if (!$command->sent_at) {
+            if (! $command->sent_at) {
                 return;
             }
-            
+
             $sentAt = $command->sent_at;
             $acceptedAt = $command->ack_at; // ack_at используется для ACK/DONE/NO_EFFECT
             $doneAt = null;
-            
+
             // Определяем done_at в зависимости от статуса
             if (in_array($command->status, [Command::STATUS_DONE, Command::STATUS_NO_EFFECT], true)) {
                 $doneAt = $command->ack_at ?? now(); // Если DONE, используем ack_at или текущее время
@@ -92,25 +122,25 @@ class PipelineMetricsService
             ], true)) {
                 $doneAt = $command->failed_at ?? now();
             }
-            
+
             $metrics = [];
-            
+
             if ($acceptedAt) {
                 $sentToAccepted = $sentAt->diffInSeconds($acceptedAt);
                 $metrics['sent_to_accepted_seconds'] = $sentToAccepted;
             }
-            
+
             if ($doneAt) {
                 if ($acceptedAt) {
                     $acceptedToDone = $acceptedAt->diffInSeconds($doneAt);
                     $metrics['accepted_to_done_seconds'] = $acceptedToDone;
                 }
-                
+
                 $e2eLatency = $sentAt->diffInSeconds($doneAt);
                 $metrics['e2e_latency_seconds'] = $e2eLatency;
             }
-            
-            if (!empty($metrics)) {
+
+            if (! empty($metrics)) {
                 self::postInternalMetric('/internal/metrics/command-latency', [
                     'cmd_id' => $command->cmd_id,
                     'metrics' => $metrics,
@@ -124,7 +154,7 @@ class PipelineMetricsService
             ]);
         }
     }
-    
+
     /**
      * Записывает метрики latency доставки ошибки.
      */
@@ -135,23 +165,23 @@ class PipelineMetricsService
     ): void {
         try {
             $metrics = [];
-            
+
             if ($laravelReceivedAt) {
                 $mqttToLaravel = $mqttReceivedAt->diffInSeconds($laravelReceivedAt);
                 $metrics['mqtt_to_laravel_seconds'] = $mqttToLaravel;
             }
-            
+
             if ($wsSentAt) {
                 if ($laravelReceivedAt) {
                     $laravelToWs = $laravelReceivedAt->diffInSeconds($wsSentAt);
                     $metrics['laravel_to_ws_seconds'] = $laravelToWs;
                 }
-                
+
                 $totalLatency = $mqttReceivedAt->diffInSeconds($wsSentAt);
                 $metrics['total_latency_seconds'] = $totalLatency;
             }
-            
-            if (!empty($metrics)) {
+
+            if (! empty($metrics)) {
                 self::postInternalMetric('/internal/metrics/error-delivery-latency', [
                     'metrics' => $metrics,
                 ]);

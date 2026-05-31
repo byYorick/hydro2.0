@@ -3,13 +3,15 @@
 namespace Tests\Unit\Services;
 
 use App\Enums\NodeLifecycleState;
+use App\Exceptions\ZoneNodeAutomationBindingException;
 use App\Models\DeviceNode;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeServiceBindingTest extends TestCase
@@ -193,5 +195,42 @@ class NodeServiceBindingTest extends TestCase
         $this->expectExceptionMessage('Cannot assign node to zone in current state: UNPROVISIONED');
 
         $this->service->update($node, ['zone_id' => $zone->id]);
+    }
+
+    public function test_cannot_ui_attach_second_ec_node_when_zone_already_has_ec(): void
+    {
+        $zone = Zone::factory()->create();
+        $existing = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+        NodeChannel::create([
+            'node_id' => $existing->id,
+            'channel' => 'ec0',
+            'type' => 'sensor',
+            'metric' => 'EC',
+            'unit' => null,
+            'config' => [],
+            'is_active' => true,
+        ]);
+
+        $incoming = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+            'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        NodeChannel::create([
+            'node_id' => $incoming->id,
+            'channel' => 'ec0',
+            'type' => 'sensor',
+            'metric' => 'EC',
+            'unit' => null,
+            'config' => [],
+            'is_active' => true,
+        ]);
+
+        $this->expectException(ZoneNodeAutomationBindingException::class);
+        $this->service->update($incoming, ['zone_id' => $zone->id]);
     }
 }

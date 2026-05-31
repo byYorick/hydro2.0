@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class TimescaleDBRetentionTest extends TestCase
@@ -28,6 +28,7 @@ class TimescaleDBRetentionTest extends TestCase
     {
         if ($this->isHypertable('telemetry_samples')) {
             $this->assertTrue(true);
+
             return;
         }
 
@@ -43,6 +44,7 @@ class TimescaleDBRetentionTest extends TestCase
 
         if ($dropAfter !== null) {
             $this->assertStringContainsString('90 days', $dropAfter);
+
             return;
         }
 
@@ -58,6 +60,7 @@ class TimescaleDBRetentionTest extends TestCase
 
         if ($dropAfter !== null) {
             $this->assertStringContainsString('30 days', $dropAfter);
+
             return;
         }
 
@@ -73,6 +76,7 @@ class TimescaleDBRetentionTest extends TestCase
 
         if ($dropAfter !== null) {
             $this->assertStringContainsString('365 days', $dropAfter);
+
             return;
         }
 
@@ -101,12 +105,12 @@ class TimescaleDBRetentionTest extends TestCase
         }
 
         try {
-            $isHypertable = DB::selectOne("
+            $isHypertable = DB::selectOne('
                 SELECT EXISTS (
                     SELECT 1 FROM timescaledb_information.hypertables
                     WHERE hypertable_name = ?
                 ) as exists
-            ", [$tableName]);
+            ', [$tableName]);
 
             return (bool) ($isHypertable->exists ?? false);
         } catch (\Throwable) {

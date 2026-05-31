@@ -2,7 +2,6 @@
 
 namespace App\Services\AutomationScheduler;
 
-use App\Models\Zone;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 

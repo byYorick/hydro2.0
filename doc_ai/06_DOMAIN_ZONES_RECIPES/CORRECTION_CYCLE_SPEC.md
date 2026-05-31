@@ -4,6 +4,7 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
+**Дата обновления:** 2026-05-28 (добавлены секции 3.5 dose limits и 3.6 `ec_dosing_mode` под актуальный код `correction_planner.py`)
 **Статус:** Рабочий документ (требует валидации)
 
 ---
@@ -339,6 +340,40 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 **Макс попытки:** 2
 **Интервал:** 1 мин
+
+---
+
+### 3.5. Ограничения дозы (dose limits)
+
+Контракт ограничений per dose реализован в `backend/services/automation-engine/ae3lite/domain/services/correction_planner.py::_dose_ml_to_ms`.
+
+**Из `pump_calibration` (per pump):**
+- `pump_calibration.max_dose_ms` — **runaway guard**, hard cap длительности одной дозы. Default `300_000` ms (5 минут — совпадает с `_MAX_DURATION_MS_SANITY` в history-logger). Если расчётный `duration_ms` больше, доза **clamps** до этого значения и в events идёт warning. Для зон с медленными насосами cap можно увеличить явно в `pump_calibration`.
+- `pump_calibration.min_dose_ms` — **нижний порог**. Если расчётный `duration_ms` ниже — доза **discarded** с reason `below_min_dose_ms` (без публикации команды). Это защита от микро-доз ниже физического разрешения насоса.
+- `pump_calibration.ml_per_sec` — калибровка потока, базовый коэффициент для расчёта `duration_ms = ml / ml_per_sec * 1000`.
+
+**Из `controllers.{ec,ph}` (per controller):**
+- `controllers.{ec,ph}.max_dose_ml` — controller-level cap per dose в мл (применяется до перевода в ms).
+- `controllers.{ec,ph}.min_interval_sec` — минимальный интервал между дозами одного controller'а. Конфигурируемо per controller; типовые production-значения: pH 60–120 с, EC 60–120 с. Прежние комментарии «pH ≥ 20 с, EC ≥ 10 с» устарели — на них не опираться.
+
+**Защита PID от нефизичных значений (`base._sensor_value_in_bounds`):**
+- pH ∈ `[0, 14]`, EC ∈ `[0, 20]` mS/cm.
+- Выход за пределы (error code типа `-1` / `999`, NaN, inf) → reason `sensor_out_of_bounds`, PID-state не обновляется, доза не публикуется.
+
+**No-effect лимит:**
+- `3` consecutive `no-effect` для одного `pid_type` → alert + fail-closed correction window. Обычные attempts и `no-effect` attempts считаются отдельно.
+
+### 3.6. `ec_dosing_mode` для EC контура
+
+Параметр `correction_config.ec_dosing_mode` управляет тем, как `correction_planner` распределяет gap EC по компонентам (NPK / Ca / Mg / Micro). Реализация — `correction_planner.py::_assert_distinct_parallel_actuators` и связанные функции.
+
+Допустимые значения:
+- `single` (default) — один pump на весь EC контур (legacy / SUBSTRATE без компонентов).
+- `multi_sequential` — gap делится на компоненты по `ec_component_ratios`, дозируется **последовательностью импульсов** на разные насосы в рамках одного `corr_dose_ec`. Защита от runaway — каждый импульс ограничен `max_dose_ms`.
+- `multi_parallel` — gap делится по `ec_component_ratios` и компоненты дозируются **одним batch** через `history-logger`. **Fail-closed правило:** все компоненты обязаны иметь distinct `(node_uid, channel)` — иначе суперпозиция команд на один насос даст неверные дозы; `_assert_distinct_parallel_actuators` raise'ит `PlannerConfigurationError`.
+
+**`ec_excluded_components`:**
+- Для стадии `irrigation_check` обычно `["npk"]` — NPK уже добавлен в `solution_fill`, во время полива дозируется только Ca/Mg/Micro. Оставшиеся компоненты перенормируются (сумма ratios → 1.0).
 
 ---
 

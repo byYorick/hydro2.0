@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\Greenhouse;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 

@@ -40,6 +40,7 @@ class AutoAdvancePhases extends Command
 
         if ($candidates->isEmpty()) {
             $this->info('No grow cycles to auto-advance');
+
             return self::SUCCESS;
         }
 
@@ -68,11 +69,13 @@ class AutoAdvancePhases extends Command
                         'reason' => $blockReason,
                     ]);
                     $this->observeOutcome($strategy, "blocked_{$blockReason}");
+
                     continue;
                 }
 
                 if ($dryRun) {
                     $this->line(" - cycle_id={$cycleId} zone_id={$zoneId} strategy={$strategy} would advance");
+
                     continue;
                 }
 
@@ -86,6 +89,7 @@ class AutoAdvancePhases extends Command
                         'cycle_id' => $cycleId,
                         'zone_id' => $zoneId,
                     ]);
+
                     continue;
                 }
 
@@ -132,7 +136,7 @@ class AutoAdvancePhases extends Command
             ->where(function ($q) use ($now) {
                 // started_at + duration_hours + duration_days*24 < now
                 $q->whereRaw(
-                    "gcp.started_at + make_interval(hours => COALESCE(gcp.duration_hours,0)) + make_interval(days => COALESCE(gcp.duration_days,0)) < ?",
+                    'gcp.started_at + make_interval(hours => COALESCE(gcp.duration_hours,0)) + make_interval(days => COALESCE(gcp.duration_days,0)) < ?',
                     [$now->toDateTimeString()],
                 );
             })

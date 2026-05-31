@@ -21,6 +21,7 @@ class ExtendedCommandsSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -35,14 +36,14 @@ class ExtendedCommandsSeeder extends Seeder
             $commandsCreated += $this->seedCommandsForZone($zone, $nodes);
         }
 
-        $this->command->info("Создано команд: " . number_format($commandsCreated));
-        $this->command->info("Всего команд: " . Command::count());
+        $this->command->info('Создано команд: '.number_format($commandsCreated));
+        $this->command->info('Всего команд: '.Command::count());
     }
 
     private function seedCommandsForZone(Zone $zone, $nodes): int
     {
         $commandsCreated = 0;
-        
+
         // Количество дней истории зависит от статуса зоны
         $daysBack = match ($zone->status) {
             'RUNNING' => 30,
@@ -92,10 +93,10 @@ class ExtendedCommandsSeeder extends Seeder
                 $node = $nodes->random();
                 $cmdType = array_rand($commandTypes);
                 $cmdSubType = $commandTypes[$cmdType][array_rand($commandTypes[$cmdType])];
-                
+
                 // Выбираем статус по весам
                 $status = $this->selectWeightedStatus($statuses);
-                
+
                 // Генерируем временные метки
                 $createdAt = $currentDate->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
                 $sentAt = in_array($status, [
@@ -110,7 +111,7 @@ class ExtendedCommandsSeeder extends Seeder
                 ])
                     ? $createdAt->copy()->addSeconds(rand(1, 30))
                     : null;
-                
+
                 $ackAt = in_array($status, [
                     Command::STATUS_ACK,
                     Command::STATUS_DONE,
@@ -118,7 +119,7 @@ class ExtendedCommandsSeeder extends Seeder
                 ])
                     ? ($sentAt ? $sentAt->copy()->addSeconds(rand(1, 60)) : $createdAt->copy()->addSeconds(rand(1, 60)))
                     : null;
-                
+
                 $failedAt = in_array($status, [
                     Command::STATUS_ERROR,
                     Command::STATUS_INVALID,
@@ -130,7 +131,7 @@ class ExtendedCommandsSeeder extends Seeder
                     : null;
 
                 $params = $this->generateCommandParams($cmdType, $cmdSubType);
-                
+
                 $errorCode = in_array($status, [
                     Command::STATUS_ERROR,
                     Command::STATUS_INVALID,
@@ -140,7 +141,7 @@ class ExtendedCommandsSeeder extends Seeder
                 ])
                     ? rand(1000, 9999)
                     : null;
-                
+
                 $errorMessage = $errorCode
                     ? "Ошибка выполнения команды: {$cmdType}"
                     : null;

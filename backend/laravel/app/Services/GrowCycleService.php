@@ -46,7 +46,7 @@ class GrowCycleService
     ) {}
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function createCycle(
         Zone $zone,
@@ -64,7 +64,7 @@ class GrowCycleService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
     {
@@ -100,7 +100,7 @@ class GrowCycleService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function harvest(GrowCycle $cycle, array $data, int $userId): GrowCycle
     {
@@ -108,7 +108,7 @@ class GrowCycleService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function abort(GrowCycle $cycle, array $data, int $userId): GrowCycle
     {

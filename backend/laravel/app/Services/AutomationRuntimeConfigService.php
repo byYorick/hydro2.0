@@ -14,6 +14,7 @@ class AutomationRuntimeConfigService
     ) {}
 
     private const KNOWN_CATCHUP_POLICIES = ['replay_limited', 'skip'];
+
     private const DEFAULT_AUTOMATION_ENGINE_API_URL = 'http://automation-engine:9405';
 
     /**
@@ -575,6 +576,7 @@ class AutomationRuntimeConfigService
             $definition = self::DEFINITIONS[$key] ?? null;
             if (! is_array($definition) || ! (bool) ($definition['editable'] ?? false)) {
                 $errors["settings.{$key}"] = "Unknown or read-only setting key: {$key}";
+
                 continue;
             }
 
@@ -582,6 +584,7 @@ class AutomationRuntimeConfigService
                 $normalized = $this->normalizeIncomingValue($key, $value, $definition);
             } catch (\InvalidArgumentException $e) {
                 $errors["settings.{$key}"] = $e->getMessage();
+
                 continue;
             }
 

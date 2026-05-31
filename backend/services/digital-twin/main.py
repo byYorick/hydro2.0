@@ -2,6 +2,7 @@
 Digital Twin Engine - симуляция зон для тестирования рецептов и сценариев.
 """
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -38,6 +39,62 @@ LIVE_SIM_TASKS: Dict[int, asyncio.Task] = {}
 
 NODE_SIM_MANAGER_URL = os.getenv("NODE_SIM_MANAGER_URL", "http://node-sim-manager:9100")
 NODE_SIM_MANAGER_TOKEN = os.getenv("NODE_SIM_MANAGER_TOKEN")
+
+# S1.2 (AUDIT_2026_05_28_BUGFIX_PLAN): authorization для mutating endpoints.
+# Если `DIGITAL_TWIN_API_TOKEN` задан — требуется Bearer header. В dev (no token)
+# допускаются только localhost-запросы; внешние получают 401. В production
+# (`APP_ENV=production|prod`) токен обязателен.
+DIGITAL_TWIN_API_TOKEN = os.getenv("DIGITAL_TWIN_API_TOKEN")
+
+
+def _require_dt_token(request: Request) -> None:
+    """Проверка Bearer-токена для mutating digital-twin endpoints.
+
+    - `/health` обходит этот guard;
+    - в production токен обязателен;
+    - в dev без токена допускается только localhost;
+    - сравнение токенов через `hmac.compare_digest` (timing-safe).
+    """
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
+
+    if DIGITAL_TWIN_API_TOKEN:
+        provided = request.headers.get("Authorization", "")
+        expected = f"Bearer {DIGITAL_TWIN_API_TOKEN}"
+        if not provided or not hmac.compare_digest(provided, expected):
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                "digital-twin: rejected request without valid token",
+                extra={"client_ip": client_ip, "path": str(request.url.path)},
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: digital-twin API token required",
+            )
+        return
+
+    if is_prod:
+        logger.error(
+            "DIGITAL_TWIN_API_TOKEN must be set in production environment"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: digital-twin token not configured",
+        )
+
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in {"127.0.0.1", "::1", "localhost"}:
+        logger.warning(
+            "digital-twin: rejected non-localhost request without token (dev mode)",
+            extra={"client_ip": client_ip, "path": str(request.url.path)},
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Unauthorized: token required. Set DIGITAL_TWIN_API_TOKEN "
+                "environment variable."
+            ),
+        )
 
 DEFAULT_MQTT_CONFIG = {
     "host": os.getenv("NODE_SIM_MQTT_HOST", os.getenv("MQTT_HOST", "mqtt")),
@@ -801,8 +858,9 @@ async def _complete_live_simulation(
 
 
 @app.post("/simulate/zone", response_model=SimulationResponse)
-async def simulate_zone_endpoint(request: SimulationRequest):
+async def simulate_zone_endpoint(request: SimulationRequest, http_request: Request):
     """Запустить симуляцию зоны."""
+    _require_dt_token(http_request)
     try:
         result = await simulate_zone(request)
         return JSONResponse(content=result)
@@ -823,7 +881,8 @@ async def simulate_zone_endpoint(request: SimulationRequest):
 
 
 @app.post("/simulations/live/start", response_model=LiveSimulationStartResponse)
-async def start_live_simulation(request: LiveSimulationStartRequest):
+async def start_live_simulation(request: LiveSimulationStartRequest, http_request: Request):
+    _require_dt_token(http_request)
     try:
         simulation_id, session_id, time_scale, scenario_payload = await _create_live_simulation(request)
         gh_uid, zone_uid, nodes = await _load_node_configs(request.zone_id)
@@ -955,7 +1014,8 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
 
 
 @app.post("/simulations/live/stop")
-async def stop_live_simulation(request: LiveSimulationStopRequest):
+async def stop_live_simulation(request: LiveSimulationStopRequest, http_request: Request):
+    _require_dt_token(http_request)
     try:
         rows = await fetch(
             "SELECT scenario, zone_id FROM zone_simulations WHERE id = $1",
@@ -1028,19 +1088,24 @@ async def stop_live_simulation(request: LiveSimulationStopRequest):
 
 
 @app.post("/calibrate/zone/{zone_id}")
-async def calibrate_zone(zone_id: int, days: int = Query(7, ge=1, le=30)):
+async def calibrate_zone(
+    zone_id: int,
+    http_request: Request,
+    days: int = Query(7, ge=1, le=30),
+):
     """
     Калибровка параметров модели по историческим данным.
-    
+
     Args:
         zone_id: ID зоны для калибровки
         days: Количество дней исторических данных для анализа (по умолчанию 7)
-    
+
     Returns:
         Калиброванные параметры моделей
     """
+    _require_dt_token(http_request)
     from calibration import calibrate_zone_models
-    
+
     try:
         result = await calibrate_zone_models(zone_id, days)
         

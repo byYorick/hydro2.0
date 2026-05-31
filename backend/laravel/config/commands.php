@@ -12,4 +12,3 @@ return [
 
     'timeout_minutes' => env('COMMAND_TIMEOUT_MINUTES', 5),
 ];
-

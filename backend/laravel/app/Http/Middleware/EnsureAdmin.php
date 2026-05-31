@@ -11,11 +11,10 @@ class EnsureAdmin
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if (!$user || ($user->role ?? 'operator') !== 'admin') {
+        if (! $user || ($user->role ?? 'operator') !== 'admin') {
             return response()->json(['status' => 'error', 'message' => 'Forbidden'], 403);
         }
+
         return $next($request);
     }
 }
-
-

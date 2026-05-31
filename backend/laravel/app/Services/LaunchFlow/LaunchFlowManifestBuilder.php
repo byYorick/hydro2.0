@@ -10,9 +10,7 @@ use App\Models\Zone;
  */
 class LaunchFlowManifestBuilder
 {
-    public function __construct(private readonly LaunchFlowReadinessEnricher $readiness)
-    {
-    }
+    public function __construct(private readonly LaunchFlowReadinessEnricher $readiness) {}
 
     /**
      * @return array{

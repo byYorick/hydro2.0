@@ -76,7 +76,7 @@ export function payloadFromGreenhouseLogicDocument(document: { payload?: unknown
       ? root.active_mode
       : (typeof payload?.active_mode === 'string' ? payload.active_mode : null),
     profiles: normalizeProfiles(root?.profiles ?? payload?.profiles ?? null),
-    bindings: asRecord(root?.bindings ?? null) as Partial<GreenhouseClimateBindingsState> | undefined,
+    bindings: asRecord(root?.bindings ?? payload?.bindings ?? null) as Partial<GreenhouseClimateBindingsState> | undefined,
     storage_ready: Boolean(root?.storage_ready ?? true),
   }
 }

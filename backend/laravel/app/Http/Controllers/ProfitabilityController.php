@@ -11,9 +11,7 @@ use Illuminate\Http\Request;
 
 class ProfitabilityController extends Controller
 {
-    public function __construct(private readonly ProfitabilityCalculator $profitability)
-    {
-    }
+    public function __construct(private readonly ProfitabilityCalculator $profitability) {}
 
     public function calculate(Request $request): JsonResponse
     {
@@ -25,7 +23,7 @@ class ProfitabilityController extends Controller
 
         // Получаем доступные зоны для пользователя
         $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         $at = isset($data['date']) ? Carbon::parse($data['date']) : null;
 
         // Загружаем растения с зонами и фильтруем по доступным зонам
@@ -37,12 +35,12 @@ class ProfitabilityController extends Controller
                 // Растения связаны с зонами через many-to-many
                 // Проверяем, есть ли хотя бы одна доступная зона у растения
                 $plantZoneIds = $plant->zones->pluck('id')->toArray();
-                $hasAccessibleZone = !empty(array_intersect($plantZoneIds, $accessibleZoneIds));
-                
+                $hasAccessibleZone = ! empty(array_intersect($plantZoneIds, $accessibleZoneIds));
+
                 if ($hasAccessibleZone) {
                     return true;
                 }
-                
+
                 // Если растение не привязано ни к одной доступной зоне, разрешаем доступ только админам
                 return $user->isAdmin();
             });
@@ -59,33 +57,33 @@ class ProfitabilityController extends Controller
     public function plant(Request $request, Plant $plant): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Загружаем зоны растения
         $plant->load('zones');
-        
+
         // Получаем доступные зоны для пользователя
         $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         // Проверяем доступ к растению через зоны
         $plantZoneIds = $plant->zones->pluck('id')->toArray();
-        $hasAccessibleZone = !empty(array_intersect($plantZoneIds, $accessibleZoneIds));
-        
-        if (!$hasAccessibleZone) {
+        $hasAccessibleZone = ! empty(array_intersect($plantZoneIds, $accessibleZoneIds));
+
+        if (! $hasAccessibleZone) {
             // Если растение не привязано ни к одной доступной зоне, разрешаем доступ только админам
-            if (!$user->isAdmin()) {
+            if (! $user->isAdmin()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this plant',
                 ], 403);
             }
         }
-        
+
         $request->validate([
             'date' => ['nullable', 'date'],
         ]);

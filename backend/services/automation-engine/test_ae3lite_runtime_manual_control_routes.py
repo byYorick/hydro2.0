@@ -65,6 +65,7 @@ def _app(monkeypatch: pytest.MonkeyPatch):
         zone_intent_repository=None,
         worker=worker,
         http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
     )
 
     monkeypatch.setattr("ae3lite.runtime.app.build_ae3_runtime_bundle", lambda **_kwargs: bundle)

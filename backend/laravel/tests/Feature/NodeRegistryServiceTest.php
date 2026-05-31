@@ -17,7 +17,7 @@ class NodeRegistryServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new NodeRegistryService();
+        $this->service = new NodeRegistryService;
     }
 
     public function test_register_node_creates_new_node(): void
@@ -29,7 +29,7 @@ class NodeRegistryServiceTest extends TestCase
                 'firmware_version' => '1.0.0',
                 'hardware_revision' => 'rev-A',
                 'name' => 'pH Node 1',
-                'type' => 'ph'
+                'type' => 'ph',
             ]
         );
 
@@ -58,7 +58,7 @@ class NodeRegistryServiceTest extends TestCase
             null,
             [
                 'firmware_version' => '1.0.0',
-                'name' => 'New Name'
+                'name' => 'New Name',
             ]
         );
 
@@ -92,7 +92,7 @@ class NodeRegistryServiceTest extends TestCase
 
         $node = $this->service->registerNode(
             'nd-ph-1',
-            (string)$zone->id,  // zone_uid предоставлен, но должен быть проигнорирован
+            (string) $zone->id,  // zone_uid предоставлен, но должен быть проигнорирован
             []
         );
 

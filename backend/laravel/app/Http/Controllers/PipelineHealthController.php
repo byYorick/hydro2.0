@@ -2,16 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 
 class PipelineHealthController extends Controller
 {
     /**
      * Health endpoint для визуализации состояния пайплайна.
-     * 
+     *
      * Показывает состояние каждого компонента пайплайна:
      * - MQTT
      * - History Logger
@@ -28,7 +26,7 @@ class PipelineHealthController extends Controller
             'queues' => [],
             'latencies' => [],
         ];
-        
+
         // Проверка БД
         $dbOk = false;
         try {
@@ -41,7 +39,7 @@ class PipelineHealthController extends Controller
             'status' => $dbOk ? 'ok' : 'fail',
             'name' => 'Database',
         ];
-        
+
         // Проверка MQTT через mqtt-bridge
         $mqttOk = false;
         try {
@@ -55,10 +53,10 @@ class PipelineHealthController extends Controller
             'status' => $mqttOk ? 'ok' : 'fail',
             'name' => 'MQTT Bridge',
         ];
-        if (!$mqttOk) {
+        if (! $mqttOk) {
             $health['status'] = 'degraded';
         }
-        
+
         // Проверка History Logger
         $hlOk = false;
         $hlHealth = null;
@@ -77,10 +75,10 @@ class PipelineHealthController extends Controller
             'name' => 'History Logger',
             'details' => $hlHealth,
         ];
-        if (!$hlOk) {
+        if (! $hlOk) {
             $health['status'] = 'degraded';
         }
-        
+
         // Проверка очередей из History Logger health
         if ($hlHealth && isset($hlHealth['components'])) {
             if (isset($hlHealth['components']['queue_alerts'])) {
@@ -96,20 +94,20 @@ class PipelineHealthController extends Controller
                 ];
             }
         }
-        
+
         // Проверка WebSocket (через проверку подключения Laravel Echo)
         $health['components']['websocket'] = [
             'status' => 'ok', // WebSocket проверяется на клиенте
             'name' => 'WebSocket',
             'note' => 'Checked on client side',
         ];
-        
+
         // Laravel API всегда доступен, если запрос получен
         $health['components']['laravel_api'] = [
             'status' => 'ok',
             'name' => 'Laravel API',
         ];
-        
+
         return response()->json($health);
     }
 }

@@ -2,31 +2,51 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class DigitalTwinClient
 {
     public function __construct(
-        private string $baseUrl
-    ) {
+        private string $baseUrl,
+        private ?string $apiToken = null,
+    ) {}
+
+    /**
+     * Builds an Http client with Bearer token if API token is configured.
+     *
+     * Digital-twin требует Bearer token на mutating endpoints начиная с
+     * S1.2 в AUDIT_2026_05_28_BUGFIX_PLAN.md. Без токена клиент строит
+     * запросы без Authorization и DT в dev-режиме принимает localhost-вызовы.
+     */
+    private function http(int $timeoutSeconds = 30): PendingRequest
+    {
+        $client = Http::timeout($timeoutSeconds);
+
+        if (is_string($this->apiToken) && $this->apiToken !== '') {
+            $client = $client->withToken($this->apiToken);
+        }
+
+        return $client;
     }
 
     /**
      * Симулировать зону.
      *
-     * @param int $zoneId ID зоны
-     * @param array $params Параметры симуляции:
-     *   - duration_hours: int (по умолчанию 72)
-     *   - step_minutes: int (по умолчанию 10)
-     *   - scenario: array {recipe_id, initial_state: {...}}
+     * @param  int  $zoneId  ID зоны
+     * @param  array  $params  Параметры симуляции:
+     *                         - duration_hours: int (по умолчанию 72)
+     *                         - step_minutes: int (по умолчанию 10)
+     *                         - scenario: array {recipe_id, initial_state: {...}}
      * @return array Результат симуляции
+     *
      * @throws \Exception
      */
     public function simulateZone(int $zoneId, array $params): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulate/zone';
-        
+        $url = rtrim($this->baseUrl, '/').'/simulate/zone';
+
         $payload = [
             'zone_id' => $zoneId,
             'duration_hours' => $params['duration_hours'] ?? 72,
@@ -37,8 +57,7 @@ class DigitalTwinClient
         try {
             // Используем более короткий таймаут для синхронных запросов
             // Для длительных симуляций рекомендуется использовать очередь (RunSimulationJob)
-            $response = Http::timeout(30) // 30 секунд - короткий таймаут для проверки доступности
-                ->post($url, $payload);
+            $response = $this->http(30)->post($url, $payload);
 
             if ($response->successful()) {
                 return $response->json();
@@ -51,7 +70,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin simulation failed: " . $response->body(),
+                'Digital Twin simulation failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -61,7 +80,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }
@@ -71,10 +90,10 @@ class DigitalTwinClient
      */
     public function startLiveSimulation(array $payload): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulations/live/start';
+        $url = rtrim($this->baseUrl, '/').'/simulations/live/start';
 
         try {
-            $response = Http::timeout(30)->post($url, $payload);
+            $response = $this->http(30)->post($url, $payload);
             if ($response->successful()) {
                 return $response->json();
             }
@@ -85,7 +104,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin live simulation start failed: " . $response->body(),
+                'Digital Twin live simulation start failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -94,7 +113,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }
@@ -104,10 +123,10 @@ class DigitalTwinClient
      */
     public function stopLiveSimulation(array $payload): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulations/live/stop';
+        $url = rtrim($this->baseUrl, '/').'/simulations/live/stop';
 
         try {
-            $response = Http::timeout(30)->post($url, $payload);
+            $response = $this->http(30)->post($url, $payload);
             if ($response->successful()) {
                 return $response->json();
             }
@@ -118,7 +137,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Digital Twin live simulation stop failed: " . $response->body(),
+                'Digital Twin live simulation stop failed: '.$response->body(),
                 $response->status()
             );
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -127,7 +146,7 @@ class DigitalTwinClient
             ]);
 
             throw new \Exception(
-                "Failed to connect to Digital Twin service: " . $e->getMessage()
+                'Failed to connect to Digital Twin service: '.$e->getMessage()
             );
         }
     }

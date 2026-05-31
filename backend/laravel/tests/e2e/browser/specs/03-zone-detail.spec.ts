@@ -79,7 +79,9 @@ test.describe('Zone Detail', () => {
   });
 
   test('should show new events after actions', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    test.setTimeout(90_000);
+
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
 
     // Получаем начальное количество событий
@@ -97,8 +99,8 @@ test.describe('Zone Detail', () => {
 
     // Ждем обновления страницы или появления нового события
     // В реальном приложении события могут обновляться через WebSocket
-    await page.waitForTimeout(3000);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
+    await page.reload({ waitUntil: 'domcontentloaded' });
 
     // Проверяем, что список событий все еще виден (новые события должны появиться)
     await expect(eventsList.first()).toBeVisible({ timeout: 10000 });

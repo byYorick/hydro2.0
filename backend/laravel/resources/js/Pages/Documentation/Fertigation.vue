@@ -90,173 +90,173 @@
               type="search"
               placeholder="Например: EC, дренаж, КиберЛенинка…"
               class="w-full rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
-            >
+            />
           </Card>
 
           <!-- Вкладка: Обзор и Россия -->
           <template v-if="librarySection === 'intro'">
-        <Card class="mb-4">
-          <h2 class="text-sm font-semibold text-[color:var(--text-primary)] mb-3">
-            {{ RUSSIAN_SEGMENT_OVERVIEW.title }}
-          </h2>
-          <div class="space-y-3 text-xs text-[color:var(--text-muted)] leading-relaxed">
-            <p
-              v-for="(para, pi) in RUSSIAN_SEGMENT_OVERVIEW.paragraphs"
-              :key="pi"
-            >
-              {{ para }}
-            </p>
-          </div>
-        </Card>
-        <TopicCardGrid
-          v-if="filteredSectionTopics.length > 0"
-          :topics="filteredSectionTopics"
-        />
-        <Card
-          v-if="filteredSectionTopics.length === 0"
-          class="mb-4"
-        >
-          <p class="text-sm text-[color:var(--text-muted)]">
-            Ничего не найдено в этом разделе.
-          </p>
-        </Card>
-      </template>
-
-      <!-- Вкладки с темами (раствор, субстрат, системы) -->
-      <template v-else-if="librarySection !== 'references'">
-        <TopicCardGrid
-          v-if="filteredSectionTopics.length > 0"
-          :topics="filteredSectionTopics"
-        />
-        <Card
-          v-if="filteredSectionTopics.length === 0"
-          class="mb-4"
-        >
-          <p class="text-sm text-[color:var(--text-muted)]">
-            Ничего не найдено. Измените поисковый запрос.
-          </p>
-        </Card>
-      </template>
-
-      <!-- Справочники -->
-      <template v-else>
-        <Card class="mb-4">
-          <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Фильтр культуры</label>
-          <input
-            v-model="cropQuery"
-            type="search"
-            placeholder="Начните вводить название…"
-            class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
-          >
-        </Card>
-
-        <Card class="mb-4">
-          <h2 class="text-sm font-semibold mb-2 text-[color:var(--text-primary)]">
-            Ориентиры EC и pH по культурам (международная таблица)
-          </h2>
-          <p class="text-xs text-[color:var(--text-muted)] mb-3 leading-relaxed">
-            Значения по Oklahoma State University Extension. Для перекрёстной проверки с российскими ориентирами см. карточки раздела «Вода и раствор» и каталог РФ ниже.
-          </p>
-          <div class="overflow-auto rounded-lg border border-[color:var(--border-muted)]">
-            <table class="w-full border-collapse text-xs">
-              <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
-                <tr>
-                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                    Культура
-                  </th>
-                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                    EC, mS/cm
-                  </th>
-                  <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
-                    pH
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in filteredCrops"
-                  :key="row.cropEn"
-                  class="border-b border-[color:var(--border-muted)] last:border-0"
+            <Card class="mb-4">
+              <h2 class="text-sm font-semibold text-[color:var(--text-primary)] mb-3">
+                {{ RUSSIAN_SEGMENT_OVERVIEW.title }}
+              </h2>
+              <div class="space-y-3 text-xs text-[color:var(--text-muted)] leading-relaxed">
+                <p
+                  v-for="(para, pi) in RUSSIAN_SEGMENT_OVERVIEW.paragraphs"
+                  :key="pi"
                 >
-                  <td class="px-3 py-2 text-[color:var(--text-primary)]">
-                    {{ row.cropRu }}
-                    <span class="text-[color:var(--text-dim)]">({{ row.cropEn }})</span>
-                  </td>
-                  <td class="px-3 py-2 text-[color:var(--text-muted)]">
-                    {{ row.ecRange }}
-                  </td>
-                  <td class="px-3 py-2 text-[color:var(--text-muted)]">
-                    {{ row.phRange }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p
-            v-if="filteredCrops.length === 0"
-            class="text-sm text-[color:var(--text-muted)] mt-3"
-          >
-            Нет совпадений по фильтру.
-          </p>
-          <p class="text-[11px] text-[color:var(--text-dim)] mt-3">
-            Первоисточник:
-            <a
-              :href="CROP_TABLE_SOURCE.url"
-              class="text-[color:var(--accent-cyan)] hover:underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >{{ CROP_TABLE_SOURCE.label }}</a>
-          </p>
-        </Card>
-
-        <Card class="mb-4">
-          <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
-            Российские открытые материалы
-          </h2>
-          <ul class="space-y-3">
-            <li
-              v-for="(g, gi) in AUTHORITATIVE_RUSSIAN_GUIDES"
-              :key="gi"
-              class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+                  {{ para }}
+                </p>
+              </div>
+            </Card>
+            <TopicCardGrid
+              v-if="filteredSectionTopics.length > 0"
+              :topics="filteredSectionTopics"
+            />
+            <Card
+              v-if="filteredSectionTopics.length === 0"
+              class="mb-4"
             >
-              <a
-                :href="g.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="font-medium text-[color:var(--accent-cyan)] hover:underline"
-              >{{ g.title }}</a>
-              <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
-              <p class="mt-1 leading-relaxed">
-                {{ g.note }}
+              <p class="text-sm text-[color:var(--text-muted)]">
+                Ничего не найдено в этом разделе.
               </p>
-            </li>
-          </ul>
-        </Card>
+            </Card>
+          </template>
 
-        <Card>
-          <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
-            Международные extension-руководства
-          </h2>
-          <ul class="space-y-3">
-            <li
-              v-for="(g, gi) in AUTHORITATIVE_EXTERNAL_GUIDES"
-              :key="gi"
-              class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+          <!-- Вкладки с темами (раствор, субстрат, системы) -->
+          <template v-else-if="librarySection !== 'references'">
+            <TopicCardGrid
+              v-if="filteredSectionTopics.length > 0"
+              :topics="filteredSectionTopics"
+            />
+            <Card
+              v-if="filteredSectionTopics.length === 0"
+              class="mb-4"
             >
-              <a
-                :href="g.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="font-medium text-[color:var(--accent-cyan)] hover:underline"
-              >{{ g.title }}</a>
-              <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
-              <p class="mt-1 leading-relaxed">
-                {{ g.note }}
+              <p class="text-sm text-[color:var(--text-muted)]">
+                Ничего не найдено. Измените поисковый запрос.
               </p>
-            </li>
-          </ul>
-        </Card>
-      </template>
+            </Card>
+          </template>
+
+          <!-- Справочники -->
+          <template v-else>
+            <Card class="mb-4">
+              <label class="block text-[11px] uppercase tracking-wider text-[color:var(--text-dim)] mb-1">Фильтр культуры</label>
+              <input
+                v-model="cropQuery"
+                type="search"
+                placeholder="Начните вводить название…"
+                class="w-full max-w-md rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-sm text-[color:var(--text-primary)] placeholder:text-[color:var(--text-dim)] focus:outline-none focus:ring-1 focus:ring-[color:var(--accent-green)]"
+              />
+            </Card>
+
+            <Card class="mb-4">
+              <h2 class="text-sm font-semibold mb-2 text-[color:var(--text-primary)]">
+                Ориентиры EC и pH по культурам (международная таблица)
+              </h2>
+              <p class="text-xs text-[color:var(--text-muted)] mb-3 leading-relaxed">
+                Значения по Oklahoma State University Extension. Для перекрёстной проверки с российскими ориентирами см. карточки раздела «Вода и раствор» и каталог РФ ниже.
+              </p>
+              <div class="overflow-auto rounded-lg border border-[color:var(--border-muted)]">
+                <table class="w-full border-collapse text-xs">
+                  <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
+                    <tr>
+                      <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                        Культура
+                      </th>
+                      <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                        EC, mS/cm
+                      </th>
+                      <th class="text-left px-3 py-2 border-b border-[color:var(--border-muted)]">
+                        pH
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in filteredCrops"
+                      :key="row.cropEn"
+                      class="border-b border-[color:var(--border-muted)] last:border-0"
+                    >
+                      <td class="px-3 py-2 text-[color:var(--text-primary)]">
+                        {{ row.cropRu }}
+                        <span class="text-[color:var(--text-dim)]">({{ row.cropEn }})</span>
+                      </td>
+                      <td class="px-3 py-2 text-[color:var(--text-muted)]">
+                        {{ row.ecRange }}
+                      </td>
+                      <td class="px-3 py-2 text-[color:var(--text-muted)]">
+                        {{ row.phRange }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p
+                v-if="filteredCrops.length === 0"
+                class="text-sm text-[color:var(--text-muted)] mt-3"
+              >
+                Нет совпадений по фильтру.
+              </p>
+              <p class="text-[11px] text-[color:var(--text-dim)] mt-3">
+                Первоисточник:
+                <a
+                  :href="CROP_TABLE_SOURCE.url"
+                  class="text-[color:var(--accent-cyan)] hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >{{ CROP_TABLE_SOURCE.label }}</a>
+              </p>
+            </Card>
+
+            <Card class="mb-4">
+              <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+                Российские открытые материалы
+              </h2>
+              <ul class="space-y-3">
+                <li
+                  v-for="(g, gi) in AUTHORITATIVE_RUSSIAN_GUIDES"
+                  :key="gi"
+                  class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+                >
+                  <a
+                    :href="g.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+                  >{{ g.title }}</a>
+                  <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
+                  <p class="mt-1 leading-relaxed">
+                    {{ g.note }}
+                  </p>
+                </li>
+              </ul>
+            </Card>
+
+            <Card>
+              <h2 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+                Международные extension-руководства
+              </h2>
+              <ul class="space-y-3">
+                <li
+                  v-for="(g, gi) in AUTHORITATIVE_EXTERNAL_GUIDES"
+                  :key="gi"
+                  class="text-xs text-[color:var(--text-muted)] border-b border-[color:var(--border-muted)] pb-3 last:border-0 last:pb-0"
+                >
+                  <a
+                    :href="g.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-medium text-[color:var(--accent-cyan)] hover:underline"
+                  >{{ g.title }}</a>
+                  <span class="text-[color:var(--text-dim)]"> — {{ g.organization }}</span>
+                  <p class="mt-1 leading-relaxed">
+                    {{ g.note }}
+                  </p>
+                </li>
+              </ul>
+            </Card>
+          </template>
         </div>
       </div>
     </template>

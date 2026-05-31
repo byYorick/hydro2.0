@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Http\Requests\UpdateZonePidConfigRequest;
 use App\Models\Zone;
 use App\Services\ZonePidConfigService;
-use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -23,21 +23,21 @@ class ZonePidConfigController extends Controller
     public function index(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
-        
+
         $configs = $this->pidConfigService->getAllConfigs($zone->id);
 
         // Если конфигов нет, возвращаем дефолтные
@@ -66,21 +66,21 @@ class ZonePidConfigController extends Controller
     public function show(Request $request, Zone $zone, string $type): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
-        
+
         // Валидация типа
         if (! in_array($type, ['ph', 'ec'])) {
             return response()->json([
@@ -115,21 +115,21 @@ class ZonePidConfigController extends Controller
     public function update(UpdateZonePidConfigRequest $request, Zone $zone, string $type): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
-        
+
         // Валидация типа
         if (! in_array($type, ['ph', 'ec'])) {
             return response()->json([

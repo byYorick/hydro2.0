@@ -46,7 +46,7 @@ class EventCreated implements ShouldBroadcast
         $this->zoneId = $zoneId;
         $this->occurredAt = $occurredAt ?? now()->toIso8601String();
         $this->payload = $payload;
-        
+
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
         $this->eventId = $sequence['event_id'];

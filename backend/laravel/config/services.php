@@ -35,6 +35,14 @@ return [
         'base_url' => env('PY_API_URL', 'http://mqtt-bridge:9000'),
         'token' => env('PY_API_TOKEN'),
         'ingest_token' => env('PY_INGEST_TOKEN'),
+        /*
+         * S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): дополнительный токен для
+         * service-to-service вызовов Python → Laravel. Раньше читался
+         * через `env('LARAVEL_API_TOKEN')` прямо из middleware
+         * (`VerifyPythonServiceToken`); это ломалось при `config:cache`
+         * в production. Перевозим в config-слой, чтобы поддерживать кеш.
+         */
+        'laravel_api_token' => env('LARAVEL_API_TOKEN'),
         /** id | uid — сегмент зоны в MQTT (`zn-{id}` vs `zones.uid`), должен совпадать с MQTT_ZONE_FORMAT в Python. */
         'mqtt_zone_format' => env('MQTT_ZONE_FORMAT', 'id'),
         'verify_ssl' => env('PY_API_VERIFY_SSL', true),
@@ -90,6 +98,13 @@ return [
 
     'digital_twin' => [
         'url' => env('DIGITAL_TWIN_URL', 'http://digital-twin:8003'),
+        /*
+         * Bearer token для digital-twin mutating endpoints (см. S1.2 в
+         * AUDIT_2026_05_28_BUGFIX_PLAN.md). Должен совпадать с
+         * `DIGITAL_TWIN_API_TOKEN` на стороне digital-twin сервиса.
+         * В production токен обязателен.
+         */
+        'token' => env('DIGITAL_TWIN_API_TOKEN'),
     ],
 
     'node_sim_manager' => [
@@ -126,8 +141,45 @@ return [
         'password' => env('WIFI_PASSWORD', ''),
     ],
 
+    /*
+     * S1.7 (AUDIT_2026_05_28_BUGFIX_PLAN): API throttle вынесен из routes/api.php
+     * и bootstrap/app.php (где `env()` ломал `config:cache`). См. также правила
+     * Laravel: env() допустим только в config-файлах.
+     *
+     * Default: 1000/min для testing/e2e, 2000/min для local, 120/min для остальных.
+     * Override через API_THROTTLE / INTERNAL_API_THROTTLE.
+     */
+    'api' => [
+        'throttle_default' => env(
+            'API_THROTTLE',
+            in_array(env('APP_ENV'), ['testing', 'e2e'], true)
+                ? '1000,1'
+                : (env('APP_ENV') === 'local' ? '2000,1' : '120,1')
+        ),
+        'throttle_internal' => env(
+            'INTERNAL_API_THROTTLE',
+            env(
+                'API_THROTTLE',
+                in_array(env('APP_ENV'), ['testing', 'e2e'], true)
+                    ? '1000,1'
+                    : (env('APP_ENV') === 'local' ? '2000,1' : '120,1')
+            )
+        ),
+    ],
+
     'node_registration' => [
-        'allowed_ips' => env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
+        /*
+         * Список CIDR/IP, которым разрешена регистрация нод через публичные ingress endpoints.
+         *
+         * Раньше значение возвращалось как строка через запятую — middleware
+         * `NodeRegistrationIpWhitelist` ждёт массив и при `!is_array()` пропускал проверку
+         * (de facto whitelist был выключен). Приводим к массиву через `explode()`, чтобы
+         * `services.node_registration.allowed_ips` соответствовало контракту в `SECURITY_ARCHITECTURE.md` §4.3.
+         */
+        'allowed_ips' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'))
+        ))),
     ],
 
 ];

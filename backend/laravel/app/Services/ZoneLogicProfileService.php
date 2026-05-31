@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Zone;
-use App\Support\Automation\ZoneLogicProfileNormalizer;
 use App\Support\Automation\ZoneLogicProfile;
+use App\Support\Automation\ZoneLogicProfileNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +14,7 @@ class ZoneLogicProfileService
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
         private readonly ZoneLogicProfileNormalizer $normalizer,
-    ) {
-    }
+    ) {}
 
     /**
      * Получить профили логики автоматики зоны, сгруппированные по режимам.

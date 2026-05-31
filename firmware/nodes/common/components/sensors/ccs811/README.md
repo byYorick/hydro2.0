@@ -28,7 +28,7 @@ i2c_bus_config_t i2c_config = {
     .sda_pin = 21,
     .scl_pin = 22,
     .clock_speed = 100000,
-    .pullup_enable = true
+    .pullup_enable = false
 };
 i2c_bus_init_bus(I2C_BUS_1, &i2c_config);
 

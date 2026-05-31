@@ -2,18 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Events\AlertCreated;
+use App\Events\CommandStatusUpdated;
+use App\Models\Command;
+use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\Greenhouse;
-use App\Models\DeviceNode;
-use App\Models\Command;
-use App\Models\Alert;
-use App\Events\CommandStatusUpdated;
-use App\Events\AlertCreated;
-use App\Events\ZoneUpdated;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZoneEventLedgerTest extends TestCase
@@ -24,6 +20,7 @@ class ZoneEventLedgerTest extends TestCase
     {
         $user = User::factory()->create(['role' => $role]);
         $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 
@@ -35,7 +32,7 @@ class ZoneEventLedgerTest extends TestCase
         );
 
         $columns = DB::getSchemaBuilder()->getColumnListing('zone_events');
-        
+
         $this->assertContains('id', $columns);
         $this->assertContains('zone_id', $columns);
         $this->assertContains('type', $columns);
@@ -50,13 +47,13 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         // Создаем команду напрямую через DB (вне транзакции теста)
-        $cmdId = 'test-cmd-' . uniqid();
-        
+        $cmdId = 'test-cmd-'.uniqid();
+
         // Завершаем транзакцию теста перед вставкой команды
         DB::commit();
-        
+
         $commandId = DB::table('commands')->insertGetId([
             'zone_id' => $zone->id,
             'cmd' => 'test',
@@ -76,7 +73,7 @@ class ZoneEventLedgerTest extends TestCase
 
         // Вызываем метод broadcasted() напрямую (в реальности вызывается после broadcast)
         $event->broadcasted();
-        
+
         // Начинаем новую транзакцию для проверок
         DB::beginTransaction();
 
@@ -96,7 +93,7 @@ class ZoneEventLedgerTest extends TestCase
         $this->assertNotNull($zoneEvent);
         $this->assertNotNull($zoneEvent->server_ts);
         $this->assertNotNull($zoneEvent->payload_json);
-        
+
         $payload = json_decode($zoneEvent->payload_json, true);
         $this->assertEquals(Command::STATUS_SENT, $payload['status']);
         $this->assertEquals('Command sent', $payload['message']);
@@ -107,7 +104,7 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $alertData = [
             'id' => 1,
             'zone_id' => $zone->id,
@@ -131,13 +128,13 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Создаем несколько событий с задержкой для проверки порядка
         $now = now();
         $eventIds = [];
-        
+
         for ($i = 1; $i <= 5; $i++) {
             $eventId = DB::table('zone_events')->insertGetId([
                 'zone_id' => $zone->id,
@@ -166,7 +163,7 @@ class ZoneEventLedgerTest extends TestCase
 
         $data = $response->json('data');
         $this->assertCount(5, $data);
-        
+
         // Проверяем порядок по id (строго возрастающий)
         $ids = array_column($data, 'event_id');
         $sortedIds = $ids;
@@ -178,7 +175,7 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Создаем 10 событий
@@ -305,7 +302,7 @@ class ZoneEventLedgerTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone1 = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $zone2 = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         // Создаем пользователя с доступом только к zone1
         $user = User::factory()->create(['role' => 'operator']);
         $token = $user->createToken('test')->plainTextToken;
@@ -322,11 +319,11 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         // Симулируем параллельную запись событий
         $eventIds = [];
         $iterations = 10;
-        
+
         // Используем транзакции для симуляции параллельности
         for ($i = 0; $i < $iterations; $i++) {
             DB::beginTransaction();
@@ -356,11 +353,11 @@ class ZoneEventLedgerTest extends TestCase
             ->get();
 
         $this->assertCount($iterations, $events);
-        
+
         // Проверяем монотонное возрастание id
         $ids = $events->pluck('id')->toArray();
         for ($i = 1; $i < count($ids); $i++) {
-            $this->assertGreaterThan($ids[$i - 1], $ids[$i], "ID должны монотонно возрастать");
+            $this->assertGreaterThan($ids[$i - 1], $ids[$i], 'ID должны монотонно возрастать');
         }
     }
 
@@ -368,13 +365,13 @@ class ZoneEventLedgerTest extends TestCase
     {
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        
+
         $token = $this->token();
 
         // Симулируем события, которые были отправлены, пока клиент был отключен
         $baseTime = now()->subMinutes(10);
         $eventIds = [];
-        
+
         for ($i = 1; $i <= 20; $i++) {
             $eventId = DB::table('zone_events')->insertGetId([
                 'zone_id' => $zone->id,
@@ -394,7 +391,7 @@ class ZoneEventLedgerTest extends TestCase
         $limit = 10;
 
         do {
-            $url = "/api/zones/{$zone->id}/events" . ($afterId ? "?after_id={$afterId}&limit={$limit}" : "?limit={$limit}");
+            $url = "/api/zones/{$zone->id}/events".($afterId ? "?after_id={$afterId}&limit={$limit}" : "?limit={$limit}");
             $response = $this->withHeader('Authorization', "Bearer {$token}")
                 ->getJson($url);
 

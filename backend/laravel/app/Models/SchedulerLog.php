@@ -22,4 +22,3 @@ class SchedulerLog extends Model
         'created_at' => 'datetime',
     ];
 }
-

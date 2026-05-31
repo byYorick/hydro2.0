@@ -13,25 +13,25 @@ return new class extends Migration
     {
         Schema::table('nodes', function (Blueprint $table) {
             // Добавляем поля для регистрации нод, если их еще нет
-            if (!Schema::hasColumn('nodes', 'hardware_revision')) {
+            if (! Schema::hasColumn('nodes', 'hardware_revision')) {
                 $table->string('hardware_revision', 64)->nullable()->after('hardware_id');
             }
-            if (!Schema::hasColumn('nodes', 'first_seen_at')) {
+            if (! Schema::hasColumn('nodes', 'first_seen_at')) {
                 $table->timestamp('first_seen_at')->nullable()->after('last_seen_at');
             }
-            if (!Schema::hasColumn('nodes', 'last_heartbeat_at')) {
+            if (! Schema::hasColumn('nodes', 'last_heartbeat_at')) {
                 $table->timestamp('last_heartbeat_at')->nullable()->after('first_seen_at');
             }
-            if (!Schema::hasColumn('nodes', 'validated')) {
+            if (! Schema::hasColumn('nodes', 'validated')) {
                 $table->boolean('validated')->default(false)->after('lifecycle_state');
             }
-            if (!Schema::hasColumn('nodes', 'uptime_seconds')) {
+            if (! Schema::hasColumn('nodes', 'uptime_seconds')) {
                 $table->unsignedBigInteger('uptime_seconds')->nullable()->after('validated');
             }
-            if (!Schema::hasColumn('nodes', 'free_heap_bytes')) {
+            if (! Schema::hasColumn('nodes', 'free_heap_bytes')) {
                 $table->unsignedInteger('free_heap_bytes')->nullable()->after('uptime_seconds');
             }
-            if (!Schema::hasColumn('nodes', 'rssi')) {
+            if (! Schema::hasColumn('nodes', 'rssi')) {
                 $table->integer('rssi')->nullable()->after('free_heap_bytes');
             }
         });

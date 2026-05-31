@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Preset;
+use Illuminate\Database\Seeder;
 
 class PresetSeeder extends Seeder
 {
@@ -160,4 +160,3 @@ class PresetSeeder extends Seeder
         );
     }
 }
-

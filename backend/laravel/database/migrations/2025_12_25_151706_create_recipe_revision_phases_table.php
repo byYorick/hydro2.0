@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Фазы ревизии рецепта - целевые параметры по колонкам (не JSONB)
      * Каждая фаза имеет stage_template_id для UI отображения
      */
@@ -20,7 +20,7 @@ return new class extends Migration
             $table->foreignId('stage_template_id')->nullable()->constrained('grow_stage_templates')->nullOnDelete();
             $table->integer('phase_index')->default(0); // Порядок фазы в рецепте (0, 1, 2...)
             $table->string('name'); // Название фазы
-            
+
             // Обязательные параметры (MVP)
             $table->decimal('ph_target', 4, 2)->nullable();
             $table->decimal('ph_min', 4, 2)->nullable();
@@ -31,7 +31,7 @@ return new class extends Migration
             $table->enum('irrigation_mode', ['SUBSTRATE', 'RECIRC'])->nullable();
             $table->integer('irrigation_interval_sec')->nullable();
             $table->integer('irrigation_duration_sec')->nullable();
-            
+
             // Опциональные параметры
             $table->integer('lighting_photoperiod_hours')->nullable();
             $table->time('lighting_start_time')->nullable();
@@ -41,7 +41,7 @@ return new class extends Migration
             $table->decimal('temp_air_target', 5, 2)->nullable(); // Запрос к климату теплицы
             $table->decimal('humidity_target', 5, 2)->nullable();
             $table->integer('co2_target')->nullable(); // ppm
-            
+
             // Прогресс фазы
             $table->string('progress_model')->nullable(); // TIME|TIME_WITH_TEMP_CORRECTION|GDD|DLI
             $table->integer('duration_hours')->nullable();
@@ -49,10 +49,10 @@ return new class extends Migration
             $table->decimal('base_temp_c', 4, 2)->nullable(); // Для GDD
             $table->decimal('target_gdd', 8, 2)->nullable(); // Градусо-дни
             $table->decimal('dli_target', 6, 2)->nullable(); // Daily Light Integral
-            
+
             // Расширения (JSON только для нестандартных параметров)
             $table->jsonb('extensions')->nullable();
-            
+
             $table->timestamps();
 
             // Уникальность: одна ревизия не может иметь две фазы с одинаковым индексом
@@ -70,4 +70,3 @@ return new class extends Migration
         Schema::dropIfExists('recipe_revision_phases');
     }
 };
-

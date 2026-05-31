@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command as ConsoleCommand;
-use Carbon\Carbon;
 use App\Models\ZoneEvent;
 use App\Models\ZoneEventsArchive;
+use Carbon\Carbon;
+use Illuminate\Console\Command as ConsoleCommand;
 
 class ArchiveOldZoneEvents extends ConsoleCommand
 {
@@ -46,7 +46,7 @@ class ArchiveOldZoneEvents extends ConsoleCommand
         }
 
         $this->info("Заархивировано событий: {$archivedCount}");
+
         return ConsoleCommand::SUCCESS;
     }
 }
-

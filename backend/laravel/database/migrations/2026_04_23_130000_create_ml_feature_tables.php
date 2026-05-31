@@ -35,7 +35,7 @@ return new class extends Migration
         Schema::dropIfExists('ml_data_quality_windows');
         Schema::dropIfExists('ml_labels');
 
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
                 DB::statement("SELECT drop_hypertable('zone_features_5m', if_exists => TRUE)");
             } catch (\Exception $e) {
@@ -47,7 +47,7 @@ return new class extends Migration
 
     private function createZoneFeatures5m(): void
     {
-        DB::statement(<<<SQL
+        DB::statement(<<<'SQL'
             CREATE TABLE zone_features_5m (
                 ts                        timestamptz NOT NULL,
                 zone_id                   bigint      NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
@@ -105,13 +105,13 @@ return new class extends Migration
             )
         SQL);
 
-        DB::statement("CREATE INDEX zone_features_5m_ts_idx ON zone_features_5m (ts)");
-        DB::statement("CREATE INDEX zone_features_5m_cycle_idx ON zone_features_5m (cycle_id, ts)");
+        DB::statement('CREATE INDEX zone_features_5m_ts_idx ON zone_features_5m (ts)');
+        DB::statement('CREATE INDEX zone_features_5m_cycle_idx ON zone_features_5m (cycle_id, ts)');
 
         // Timescale hypertable + compression (>14 дней)
-        if (DB::getDriverName() === 'pgsql' && !app()->environment('testing')) {
+        if (DB::getDriverName() === 'pgsql' && ! app()->environment('testing')) {
             try {
-                DB::unprepared(<<<SQL
+                DB::unprepared(<<<'SQL'
                     SELECT create_hypertable(
                         'zone_features_5m',
                         'ts',
@@ -120,14 +120,14 @@ return new class extends Migration
                     )
                 SQL);
 
-                DB::statement(<<<SQL
+                DB::statement(<<<'SQL'
                     ALTER TABLE zone_features_5m SET (
                         timescaledb.compress,
                         timescaledb.compress_segmentby = 'zone_id'
                     )
                 SQL);
 
-                DB::statement(<<<SQL
+                DB::statement(<<<'SQL'
                     SELECT add_compression_policy(
                         'zone_features_5m',
                         INTERVAL '14 days',
@@ -135,7 +135,7 @@ return new class extends Migration
                     )
                 SQL);
             } catch (\Exception $e) {
-                \Log::warning('ML Phase 2: zone_features_5m hypertable/compression skipped: ' . $e->getMessage());
+                \Log::warning('ML Phase 2: zone_features_5m hypertable/compression skipped: '.$e->getMessage());
             }
         }
     }
@@ -144,7 +144,7 @@ return new class extends Migration
     {
         // ml_labels ОТДЕЛЬНО от zone_features_5m, чтобы исключить утечку
         // таргетов в фичи при обучении. См. §5.4 и §8 (point-in-time).
-        DB::statement(<<<SQL
+        DB::statement(<<<'SQL'
             CREATE TABLE ml_labels (
                 ts                     timestamptz NOT NULL,
                 zone_id                bigint      NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
@@ -165,13 +165,13 @@ return new class extends Migration
             )
         SQL);
 
-        DB::statement("CREATE INDEX ml_labels_ts_idx ON ml_labels (ts)");
-        DB::statement("CREATE INDEX ml_labels_zone_horizon_idx ON ml_labels (zone_id, horizon_minutes, ts)");
+        DB::statement('CREATE INDEX ml_labels_ts_idx ON ml_labels (ts)');
+        DB::statement('CREATE INDEX ml_labels_zone_horizon_idx ON ml_labels (zone_id, horizon_minutes, ts)');
     }
 
     private function createMlDataQualityWindows(): void
     {
-        DB::statement(<<<SQL
+        DB::statement(<<<'SQL'
             CREATE TABLE ml_data_quality_windows (
                 id           bigserial   PRIMARY KEY,
                 zone_id      bigint      NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
@@ -188,7 +188,7 @@ return new class extends Migration
             )
         SQL);
 
-        DB::statement("CREATE INDEX ml_dq_zone_range_idx ON ml_data_quality_windows (zone_id, start_ts, end_ts)");
-        DB::statement("CREATE INDEX ml_dq_reason_idx ON ml_data_quality_windows (reason)");
+        DB::statement('CREATE INDEX ml_dq_zone_range_idx ON ml_data_quality_windows (zone_id, start_ts, end_ts)');
+        DB::statement('CREATE INDEX ml_dq_reason_idx ON ml_data_quality_windows (reason)');
     }
 };

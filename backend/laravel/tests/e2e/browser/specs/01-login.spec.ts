@@ -1,28 +1,22 @@
 import { test, expect } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import { TEST_IDS } from '../constants';
+import { waitForDashboardReady, waitForLoginForm } from '../helpers/navigation';
 
-async function waitForDashboardReady(page: Page) {
-  await expect.poll(
-    async () => {
-      const indicators = [
-        page.locator('[data-testid="dashboard-zones-count"]'),
-        page.locator('[data-testid="ws-status-indicator"]'),
-        page.locator('nav a[href="/zones"]'),
-        page.getByText('В работе', { exact: true }),
-        page.getByText('Активные зоны', { exact: true }),
-      ];
+async function logoutSession(page: Page, context: BrowserContext, baseURL: string): Promise<void> {
+  const cookies = await context.cookies();
+  const xsrfCookie = cookies.find((cookie) => cookie.name === 'XSRF-TOKEN');
+  const xsrfToken = xsrfCookie?.value ? decodeURIComponent(xsrfCookie.value) : '';
 
-      for (const indicator of indicators) {
-        if (await indicator.first().isVisible().catch(() => false)) {
-          return true;
-        }
-      }
-
-      return false;
+  await page.request.post(`${baseURL}/logout`, {
+    headers: {
+      'X-XSRF-TOKEN': xsrfToken,
+      'X-Requested-With': 'XMLHttpRequest',
+      Accept: 'text/html, application/xhtml+xml',
     },
-    { timeout: 20000, message: 'Dashboard did not expose any stable ready indicator' },
-  ).toBe(true);
+  });
+
+  await context.clearCookies();
 }
 
 test.describe('Login/Logout', () => {
@@ -88,19 +82,7 @@ test.describe('Login/Logout', () => {
 
     await loginViaForm(page, context, baseURL, email, password);
 
-    const userMenuButton = page.getByRole('button', { name: /\? .*|[А-Яа-яA-Za-z].*(Админ|Агроном|Инженер|Оператор|Viewer|Admin)/ }).first();
-    if (await userMenuButton.isVisible().catch(() => false)) {
-      await userMenuButton.click();
-    }
-
-    const logoutButton = page.getByRole('button', { name: 'Выход' })
-      .or(page.getByRole('button', { name: 'Logout' }))
-      .or(page.locator('[href*="logout"]'));
-
-    await expect(logoutButton.first()).toBeVisible({ timeout: 10000 });
-    await logoutButton.first().click();
-
-    await page.waitForURL(/\/login(?:\?.*)?$/, { timeout: 10000 });
-    await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });
+    await logoutSession(page, context, baseURL);
+    await waitForLoginForm(page);
   });
 });

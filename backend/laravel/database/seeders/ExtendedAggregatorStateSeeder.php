@@ -33,8 +33,7 @@ class ExtendedAggregatorStateSeeder extends Seeder
             ]);
         }
 
-        $this->command->info("Инициализировано типов агрегации: " . count($aggregationTypes));
-        $this->command->info("Всего записей состояния: " . DB::table('aggregator_state')->count());
+        $this->command->info('Инициализировано типов агрегации: '.count($aggregationTypes));
+        $this->command->info('Всего записей состояния: '.DB::table('aggregator_state')->count());
     }
 }
-

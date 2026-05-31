@@ -22,6 +22,7 @@ class ExtendedPlantsSeeder extends Seeder
         $plants = Plant::all();
         if ($plants->isEmpty()) {
             $this->command->warn('Растения не найдены. Запустите PlantTaxonomySeeder сначала.');
+
             return;
         }
 
@@ -38,13 +39,13 @@ class ExtendedPlantsSeeder extends Seeder
         foreach ($plants as $plant) {
             // Добавляем дополнительные версии цен
             $priceVersionsCreated += $this->seedPriceVersions($plant);
-            
+
             // Добавляем статьи затрат
             $costItemsCreated += $this->seedCostItems($plant);
-            
+
             // Добавляем цены продажи
             $salePricesCreated += $this->seedSalePrices($plant);
-            
+
             // Связываем с рецептами
             if ($recipes->isNotEmpty()) {
                 $recipeLinksCreated += $this->linkPlantsToRecipes($plant, $recipes);
@@ -145,7 +146,7 @@ class ExtendedPlantsSeeder extends Seeder
             ->orderBy('effective_from', 'desc')
             ->first();
 
-        if (!$priceVersion) {
+        if (! $priceVersion) {
             return 0;
         }
 

@@ -28,7 +28,7 @@ class CommandsTest extends TestCase
             'channel' => 'ph_pump',
             'type' => 'ACTUATOR',
         ]);
-        
+
         $user = User::factory()->create(['role' => 'operator']);
         $this->actingAs($user);
         $token = $user->createToken('t')->plainTextToken;

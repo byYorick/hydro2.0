@@ -123,6 +123,7 @@ class RecipePhaseTargetValidator
 
                 if ($min !== null && $max !== null && $min > $max) {
                     $validator->errors()->add($attrBase.'_min', "{$label}: min не может быть больше max.");
+
                     continue;
                 }
                 if ($target !== null && $min !== null && $max !== null && ($target < $min || $target > $max)) {
@@ -146,6 +147,7 @@ class RecipePhaseTargetValidator
         if ($value === null || $value === '') {
             return null;
         }
+
         return is_numeric($value) ? (float) $value : null;
     }
 

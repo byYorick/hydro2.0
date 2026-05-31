@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes')) {
             return;
         }
 
@@ -54,7 +54,7 @@ return new class extends Migration
         ");
 
         DB::statement("ALTER TABLE nodes ALTER COLUMN type SET DEFAULT 'unknown'");
-        DB::statement("ALTER TABLE nodes ALTER COLUMN type SET NOT NULL");
+        DB::statement('ALTER TABLE nodes ALTER COLUMN type SET NOT NULL');
     }
 
     /**
@@ -62,7 +62,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        if (!Schema::hasTable('nodes')) {
+        if (! Schema::hasTable('nodes')) {
             return;
         }
 

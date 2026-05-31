@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * История переходов фаз в цикле выращивания
      * Логирует все переходы: авто по времени, ручной switch, изменение рецепта
      */
@@ -42,4 +42,3 @@ return new class extends Migration
         Schema::dropIfExists('grow_cycle_transitions');
     }
 };
-

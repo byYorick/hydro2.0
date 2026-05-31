@@ -236,6 +236,36 @@ class E2ERunner:
             merged[key] = value
         return merged
 
+    def _apply_scenario_auth_context(self, scenario: Dict[str, Any]) -> None:
+        """Apply auth_email/auth_role from scenario YAML before setup/token fetch."""
+        auth_email = scenario.get("auth_email")
+        auth_role = scenario.get("auth_role")
+
+        email = (
+            auth_email.strip()
+            if isinstance(auth_email, str) and auth_email.strip() != ""
+            else self.auth_client.email
+        )
+        role = (
+            auth_role.strip()
+            if isinstance(auth_role, str) and auth_role.strip() != ""
+            else self.auth_client.role
+        )
+
+        if email == self.auth_client.email and role == self.auth_client.role:
+            return
+
+        self.auth_client = AuthClient(
+            api_url=self.api_url,
+            email=email,
+            role=role,
+        )
+        logger.info(
+            "Auth context updated from scenario: email=%s, role=%s",
+            email,
+            role,
+        )
+
     def _refresh_test_node_context(self) -> None:
         """Resolve TEST_NODE_* from DB when env still contains legacy placeholders."""
         if not self.db:
@@ -315,7 +345,12 @@ class E2ERunner:
         irrig = _pick("irrig") or rows[0]
         ph = _pick("ph") or irrig
         ec = _pick("ec") or (ph if ph is not irrig else irrig)
-        soil = _pick("water_sensor") or _pick("soil") or irrig
+        soil = _pick("water_sensor") or _pick("soil")
+        if soil is None:
+            for row in rows:
+                if str(row.get("uid") or "").strip() == "nd-test-soil-1":
+                    soil = row
+                    break
 
         if _needs_resolution("TEST_NODE_UID"):
             self.context["TEST_NODE_UID"] = irrig["uid"]
@@ -641,6 +676,12 @@ class E2ERunner:
                         timeout=30
                     )
                 if result.returncode != 0:
+                    stderr_text = (result.stderr or "").strip()
+                    if "already paused" in stderr_text.lower():
+                        logger.info(
+                            f"[FAULT_INJECT] Service {compose_service} already paused; skipping duplicate pause"
+                        )
+                        return
                     logger.error(f"[FAULT_INJECT] Failed to pause {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to pause service {compose_service}: {result.stderr}")
                 logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} paused")
@@ -1883,7 +1924,9 @@ class E2ERunner:
         self.reporter.test_suite_name = scenario_name
         
         logger.info(f"Running scenario: {scenario_name}")
-        
+
+        self._apply_scenario_auth_context(scenario)
+
         # Инициализация
         await self.setup()
 

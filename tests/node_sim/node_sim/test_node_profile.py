@@ -1079,6 +1079,12 @@ class TestNodeSimulator:
         transient_main_pump_initial_state = False
         transient_restore_main_pump = False
 
+        # Real test_node firmware does not implement point-submission calibrate on sensor channels.
+        if job.cmd == "calibrate" and job.channel in {"ph_sensor", "ec_sensor"}:
+            details["error"] = "unsupported_channel_cmd"
+            self.publish_command_response(job.node_uid, job.channel, job.cmd_id, "INVALID", details)
+            return
+
         if job.kind == CommandKind.ACTUATOR and not self.is_supported_actuator_command(job.channel, job.cmd):
             details["error"] = "unsupported_channel_cmd"
             self.publish_command_response(job.node_uid, job.channel, job.cmd_id, "INVALID", details)

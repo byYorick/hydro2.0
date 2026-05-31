@@ -3,8 +3,8 @@
 namespace Tests\Unit\Requests;
 
 use App\Http\Requests\StoreNodeRequest;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class StoreNodeRequestTest extends TestCase
@@ -13,7 +13,7 @@ class StoreNodeRequestTest extends TestCase
 
     public function test_validates_required_uid(): void
     {
-        $request = new StoreNodeRequest();
+        $request = new StoreNodeRequest;
         $rules = $request->rules();
 
         $validator = Validator::make([], $rules);
@@ -23,7 +23,7 @@ class StoreNodeRequestTest extends TestCase
 
     public function test_validates_uid_is_unique(): void
     {
-        $request = new StoreNodeRequest();
+        $request = new StoreNodeRequest;
         $rules = $request->rules();
 
         $validator = Validator::make([
@@ -36,7 +36,7 @@ class StoreNodeRequestTest extends TestCase
 
     public function test_validates_zone_id_exists(): void
     {
-        $request = new StoreNodeRequest();
+        $request = new StoreNodeRequest;
         $rules = $request->rules();
 
         $validator = Validator::make([

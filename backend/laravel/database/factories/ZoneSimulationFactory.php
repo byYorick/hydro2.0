@@ -2,9 +2,9 @@
 
 namespace Database\Factories;
 
-use App\Models\ZoneSimulation;
-use App\Models\Zone;
 use App\Models\Recipe;
+use App\Models\Zone;
+use App\Models\ZoneSimulation;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**

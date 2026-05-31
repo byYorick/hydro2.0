@@ -32,7 +32,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 Где:
 
 - `{gh}` — UID теплицы (`greenhouses.uid`),
-- `{zone}` — UID зоны (`zones.uid`),
+- `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`); иерархия сегментов топика не меняется.
 - `{node}` — UID узла (`nodes.uid`),
 - `{channel}` — ключ канала (`channels.key`), используется только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 
@@ -66,7 +66,7 @@ Payload (пример):
 ```
 
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
-> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`.
+> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `WIND_DIRECTION`, `OUTSIDE_TEMP`, `OUTSIDE_HUMIDITY`, `OUTSIDE_PRESSURE`, `OUTSIDE_LIGHT`, `RAIN_DETECTED`.
 
 ### 2.2. command
 

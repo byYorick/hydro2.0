@@ -86,6 +86,29 @@
           @update:zone-climate-form="onZoneClimateFormUpdate"
         />
 
+        <GreenhouseClimateConfiguration
+          v-else-if="currentSub === 'greenhouse_climate' && greenhouseId"
+          :enabled="greenhouseClimateEnabled"
+          :climate-form="greenhouseClimateForm"
+          :bindings="greenhouseClimateBindings"
+          :available-nodes="greenhouseNodes"
+          :can-configure="true"
+          :applying="greenhouseClimateSubmitting"
+          :show-apply-button="true"
+          apply-label="Сохранить климат теплицы"
+          @update:enabled="$emit('update:greenhouse-climate-enabled', $event)"
+          @update:climate-form="$emit('update:greenhouse-climate-form', $event)"
+          @update:bindings="$emit('update:greenhouse-climate-bindings', $event)"
+          @apply="$emit('save-greenhouse-climate')"
+        />
+
+        <div
+          v-else-if="currentSub === 'greenhouse_climate'"
+          class="rounded-md border border-dashed border-[var(--border-muted)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-muted)]"
+        >
+          Климат теплицы станет доступен после выбора зоны с привязанной теплицей.
+        </div>
+
         <div
           class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-dashed border-[var(--border-muted)] bg-[var(--bg-elevated)] px-3 py-2"
         >
@@ -145,6 +168,7 @@ import IrrigationSubview from './Subviews/IrrigationSubview.vue'
 import CorrectionTargetsSubview from './Subviews/CorrectionTargetsSubview.vue'
 import LightingSubview from './Subviews/LightingSubview.vue'
 import ClimateSubview from './Subviews/ClimateSubview.vue'
+import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
 import Button from '@/Components/Button.vue'
 import {
   useAutomationContracts,
@@ -153,11 +177,13 @@ import {
 import type { AutomationProfile } from '@/schemas/automationProfile'
 import type {
   LightingFormState,
+  ClimateFormState,
   WaterFormState,
   ZoneAutomationSectionAssignments,
   ZoneClimateFormState,
 } from '@/composables/zoneAutomationTypes'
 import type { AutomationNode as SetupWizardNode } from '@/types/AutomationNode'
+import type { GreenhouseClimateBindingsState } from '@/composables/greenhouseLogicProfileAuthority'
 
 interface RecipeSummary {
   name?: string | null
@@ -180,6 +206,12 @@ const props = withDefaults(
     bindingFailedNodeIds?: ReadonlySet<number>
     recipeSummary?: RecipeSummary | null
     workflowPhase?: string | null
+    greenhouseId?: number | null
+    greenhouseClimateEnabled?: boolean
+    greenhouseClimateForm: ClimateFormState
+    greenhouseClimateBindings: GreenhouseClimateBindingsState
+    greenhouseNodes?: SetupWizardNode[]
+    greenhouseClimateSubmitting?: boolean
   }>(),
   {
     currentRecipePhase: null,
@@ -189,6 +221,10 @@ const props = withDefaults(
     bindingFailedNodeIds: () => new Set<number>(),
     recipeSummary: null,
     workflowPhase: null,
+    greenhouseId: null,
+    greenhouseClimateEnabled: false,
+    greenhouseNodes: () => [],
+    greenhouseClimateSubmitting: false,
   },
 )
 
@@ -196,11 +232,15 @@ const emit = defineEmits<{
   (e: 'update:water-form', v: WaterFormState): void
   (e: 'update:lighting-form', v: LightingFormState): void
   (e: 'update:zone-climate-form', v: ZoneClimateFormState): void
+  (e: 'update:greenhouse-climate-enabled', v: boolean): void
+  (e: 'update:greenhouse-climate-form', v: ClimateFormState): void
+  (e: 'update:greenhouse-climate-bindings', v: GreenhouseClimateBindingsState): void
   (e: 'update:assignments', v: ZoneAutomationSectionAssignments): void
   (e: 'bind-devices', roles: string[]): void
   (e: 'bind-node', nodeId: number): void
   (e: 'refresh-nodes'): void
   (e: 'refresh'): void
+  (e: 'save-greenhouse-climate'): void
   (e: 'preset-applied', preset: unknown): void
   (e: 'preset-cleared'): void
 }>()
@@ -261,6 +301,13 @@ const navMap = computed<AutomationNavMap>(() => {
         ? 'включён · CO₂ / вентиляция'
         : 'выключен',
     },
+    greenhouse_climate: {
+      state: 'optional',
+      count: 'опц.',
+      subtitle: props.greenhouseClimateEnabled
+        ? 'включён · форточки'
+        : 'выключен',
+    },
   }
 })
 
@@ -315,6 +362,10 @@ const SUB_META: Record<AutomationSubKey, { title: string; desc: string }> = {
     title: 'Климат зоны',
     desc: 'CO₂, корневая вентиляция — если включено.',
   },
+  greenhouse_climate: {
+    title: 'Климат теплицы',
+    desc: 'Greenhouse-level profile: датчики, форточки, погодные ограничения и runtime-параметры AE.',
+  },
 }
 
 const currentSubMeta = computed(() => SUB_META[currentSub.value])
@@ -328,7 +379,8 @@ function onContractClick(contract: AutomationContract) {
     target === 'irrigation' ||
     target === 'correction' ||
     target === 'lighting' ||
-    target === 'climate'
+    target === 'climate' ||
+    target === 'greenhouse_climate'
   ) {
     currentSub.value = target as AutomationSubKey
   }

@@ -21,4 +21,3 @@ class GreenhouseTypeController extends Controller
         ]);
     }
 }
-

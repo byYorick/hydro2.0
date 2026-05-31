@@ -16,6 +16,7 @@ class PresetService
         return DB::transaction(function () use ($data) {
             $preset = Preset::create($data);
             Log::info('Preset created', ['preset_id' => $preset->id, 'name' => $preset->name]);
+
             return $preset;
         });
     }
@@ -28,6 +29,7 @@ class PresetService
         return DB::transaction(function () use ($preset, $data) {
             $preset->update($data);
             Log::info('Preset updated', ['preset_id' => $preset->id]);
+
             return $preset->fresh();
         });
     }
@@ -51,4 +53,3 @@ class PresetService
         });
     }
 }
-

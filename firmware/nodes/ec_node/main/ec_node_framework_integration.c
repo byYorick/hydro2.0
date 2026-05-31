@@ -35,6 +35,125 @@
 static const char *TAG = "ec_node_fw";
 static bool s_sensor_mode_active = false;
 
+/** Последний ec_node_ec_poll_sensor_once: trema_ec_probe_present() до init/read (для OLED). */
+static bool s_ec_last_poll_probe_present;
+
+/** Последний удачный EC для телеметрии (mS/cm): при срыве чтения не шлём 1.2 на график. */
+static float s_ec_telemetry_last_good = NAN;
+static bool s_ec_telemetry_have_last_good = false;
+
+/**
+ * Макс. |ΔEC| между опросами телеметрии (~2 с): выше — считаем глитчем по шине/байтам.
+ * 2.5 mS/cm: режет скачки вида 0.1→5, не режет типичный шаг после дозы/смены раствора.
+ */
+#define EC_TELEMETRY_MAX_JUMP_MS_CM 2.5f
+
+void ec_node_ec_poll_sensor_once(void)
+{
+    s_ec_last_poll_probe_present = false;
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        return;
+    }
+    if (!trema_ec_probe_present()) {
+        return;
+    }
+    s_ec_last_poll_probe_present = true;
+
+    bool sensor_ready = trema_ec_is_initialized();
+    if (!sensor_ready) {
+        if (trema_ec_init()) {
+            ESP_LOGI(TAG, "Trema EC sensor initialized");
+        }
+        sensor_ready = trema_ec_is_initialized();
+    }
+
+    float temp_check = 0.0f;
+    if (sensor_ready) {
+        (void)trema_ec_get_temperature(&temp_check);
+    }
+
+    float compensation_temp = 25.0f;
+    bool stored_temp_valid = (config_storage_get_last_temperature(&compensation_temp) == ESP_OK);
+    if (!stored_temp_valid) {
+        compensation_temp = 25.0f;
+    }
+    if (sensor_ready) {
+        if (!trema_ec_set_temperature(compensation_temp)) {
+            ESP_LOGW(TAG, "Failed to apply stored temperature %.2fC", compensation_temp);
+        }
+    }
+
+    float ec_value = NAN;
+    bool using_stub = false;
+
+    if (!sensor_ready) {
+        ESP_LOGD(TAG, "EC poll: skip push (sensor not initialized)");
+        return;
+    }
+
+    float v = NAN;
+    bool ok = trema_ec_read(&v);
+    bool stub_drv = trema_ec_is_using_stub_values();
+
+    const bool numeric_ok = ok && !stub_drv && isfinite(v) && !isnan(v);
+    bool resolved = false;
+
+    if (numeric_ok) {
+        if (s_ec_telemetry_have_last_good && isfinite(s_ec_telemetry_last_good)) {
+            const float d = fabsf(v - s_ec_telemetry_last_good);
+            if (d > EC_TELEMETRY_MAX_JUMP_MS_CM) {
+                ESP_LOGI(TAG, "EC spike rej %.3f (last %.3f)", (double)v, (double)s_ec_telemetry_last_good);
+                ec_value = s_ec_telemetry_last_good;
+                using_stub = true;
+                resolved = true;
+            } else {
+                ec_value = v;
+                using_stub = false;
+                s_ec_telemetry_last_good = ec_value;
+                s_ec_telemetry_have_last_good = true;
+                resolved = true;
+            }
+        } else {
+            ec_value = v;
+            using_stub = false;
+            s_ec_telemetry_last_good = ec_value;
+            s_ec_telemetry_have_last_good = true;
+            resolved = true;
+        }
+    }
+
+    if (!resolved) {
+        if (s_ec_telemetry_have_last_good && isfinite(s_ec_telemetry_last_good)) {
+            ec_value = s_ec_telemetry_last_good;
+            using_stub = true;
+            ESP_LOGI(TAG, "EC stub last %.3f", (double)ec_value);
+        } else {
+            ESP_LOGW(TAG, "EC read fail");
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "ec_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read EC sensor value");
+            ec_value = 1.2f;
+            using_stub = true;
+        }
+    }
+
+    uint16_t raw_for_push = 0;
+    if (!trema_ec_get_last_ec_register_raw(&raw_for_push)) {
+        raw_for_push = 0;
+    }
+    uint16_t tds_ppm = 0;
+    if (sensor_ready) {
+        tds_ppm = trema_ec_get_tds();
+    }
+    trema_ec_push_telemetry_snapshot(ec_value, raw_for_push, using_stub, tds_ppm);
+    ESP_LOGI(TAG, "EC %.3f TDS=%u st=%d", (double)ec_value, (unsigned)tds_ppm, (int)using_stub);
+    (void)temp_check;
+    (void)stored_temp_valid;
+}
+
+bool ec_node_ec_last_poll_probe_present(void)
+{
+    return s_ec_last_poll_probe_present;
+}
+
 // Параметры для отложенного ответа DONE после теста насоса
 #define EC_NODE_MAX_TEST_CHANNELS 8
 #define EC_NODE_MAX_CHANNEL_NAME_LEN 64
@@ -437,6 +556,7 @@ static esp_err_t handle_sensor_mode_command(
     }
 
     if (activate) {
+        ec_node_ec_poll_sensor_once();
         (void)ec_node_publish_telemetry_callback(NULL);
     }
 
@@ -675,7 +795,7 @@ static esp_err_t handle_test_sensor(
     return ESP_OK;
 }
 
-// Публикация телеметрии через node_framework
+// Публикация телеметрии через node_framework (EC только из очереди после ec_node_ec_poll_sensor_once)
 esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
     (void)user_ctx;
 
@@ -683,56 +803,39 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Инициализация сенсора, если не инициализирован
-    // Проверяем через попытку чтения температуры (если сенсор не инициализирован, вернет false)
-    float temp_check = 0.0f;
-    bool sensor_ready = trema_ec_get_temperature(&temp_check);
-    
-    if (!sensor_ready && i2c_bus_is_initialized_bus(trema_ec_get_i2c_bus())) {
-        if (trema_ec_init()) {
-            ESP_LOGI(TAG, "Trema EC sensor initialized");
-            sensor_ready = true;
-        }
-    }
+    const bool sensor_ready = trema_ec_is_initialized();
 
-    // Получение температуры для компенсации
-    float compensation_temp = 25.0f;
-    bool stored_temp_valid = (config_storage_get_last_temperature(&compensation_temp) == ESP_OK);
-    if (!stored_temp_valid) {
-        compensation_temp = 25.0f;
-    }
-
-    // Применение температурной компенсации
-    if (sensor_ready) {
-        if (!trema_ec_set_temperature(compensation_temp)) {
-            ESP_LOGW(TAG, "Failed to apply stored temperature %.2fC", compensation_temp);
-        }
-    }
-
-    // Чтение значения EC
     float ec_value = NAN;
-    bool read_success = false;
     bool using_stub = false;
     uint16_t tds_value = 0;
     trema_ec_error_t read_error = TREMA_EC_ERROR_NOT_INITIALIZED;
 
-    if (sensor_ready) {
-        read_success = trema_ec_read(&ec_value);
-        using_stub = trema_ec_is_using_stub_values();
-        read_error = trema_ec_get_error();
-        if (!read_success || isnan(ec_value)) {
-            ESP_LOGW(TAG, "Failed to read EC value, using stub");
-            node_state_manager_report_error(ERROR_LEVEL_ERROR, "ec_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read EC sensor value");
-            ec_value = 1.2f;
-            using_stub = true;
-        }
-        tds_value = trema_ec_get_tds();
+    trema_ec_measurement_t snap;
+    if (trema_ec_try_cached_measurement(&snap, EC_NODE_EC_CACHE_MAX_AGE_MS) && snap.valid && !isnan(snap.ec_mScm) &&
+        isfinite(snap.ec_mScm) && snap.ec_mScm >= 0.0f && snap.ec_mScm <= 20.0f) {
+        ec_value = snap.ec_mScm;
+        using_stub = snap.using_stub;
+        tds_value = snap.tds_ppm;
+        read_error = TREMA_EC_ERROR_NONE;
+    } else if (s_ec_telemetry_have_last_good && isfinite(s_ec_telemetry_last_good)) {
+        ec_value = s_ec_telemetry_last_good;
+        using_stub = true;
+        read_error = TREMA_EC_ERROR_NONE;
+        ESP_LOGI(TAG, "EC tx cache miss st=1");
     } else {
-        ESP_LOGW(TAG, "EC sensor not initialized, using stub value");
-        node_state_manager_report_error(ERROR_LEVEL_WARNING, "ec_sensor", ESP_ERR_INVALID_STATE, "EC sensor not initialized");
+        ESP_LOGW(TAG, "EC no cache");
+        node_state_manager_report_error(
+            ERROR_LEVEL_WARNING,
+            "ec_sensor",
+            ESP_ERR_INVALID_STATE,
+            "EC sensor not initialized or telemetry cache empty"
+        );
         ec_value = 1.2f;
         using_stub = true;
+        read_error = sensor_ready ? TREMA_EC_ERROR_I2C : TREMA_EC_ERROR_NOT_INITIALIZED;
     }
+
+    ESP_LOGD(TAG, "EC tx prep EC=%.3f TDS=%u st=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub);
 
     // Публикация EC через node_telemetry_engine
     int32_t raw_value = (int32_t)(ec_value * 1000);  // Raw value в тысячных
@@ -747,25 +850,27 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
     );
 
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to publish EC telemetry: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "EC pub fail %s", esp_err_to_name(err));
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish EC telemetry");
-    }
-
-    // Публикация TDS (если доступно) - используем METRIC_TYPE_CUSTOM
-    if (sensor_ready && read_error == TREMA_EC_ERROR_NONE && tds_value > 0) {
-        err = node_telemetry_publish_sensor(
-            "ec_sensor",
-            METRIC_TYPE_CUSTOM,
-            (float)tds_value,
-            "ppm",
-            tds_value,
-            false,  // not stub
-            true     // is_stable
-        );
-
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to publish TDS telemetry: %s", esp_err_to_name(err));
+    } else {
+        esp_err_t tds_err = ESP_OK;
+        if (sensor_ready && read_error == TREMA_EC_ERROR_NONE && tds_value > 0) {
+            /* Отдельный MQTT channel id: иначе channel_to_metric_type("ec_sensor") → EC и TDS (ppm)
+             * попадает в тот же sensor row, что и EC (mS/cm) — «всплески» на графике. */
+            tds_err = node_telemetry_publish_sensor(
+                "ec_tds_ppm",
+                METRIC_TYPE_CUSTOM,
+                (float)tds_value,
+                "ppm",
+                (int32_t)tds_value,
+                false,
+                true
+            );
+            if (tds_err != ESP_OK) {
+                ESP_LOGW(TAG, "TDS pub fail %s", esp_err_to_name(tds_err));
+            }
         }
+        ESP_LOGI(TAG, "EC pub %.3f tds=%u st=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub);
     }
 
     return ESP_OK;

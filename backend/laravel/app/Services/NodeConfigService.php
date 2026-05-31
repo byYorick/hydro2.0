@@ -10,10 +10,7 @@ class NodeConfigService
     /**
      * Сформировать NodeConfig для отправки ноде.
      *
-     * @param DeviceNode $node
-     * @param array<int, array<string, mixed>>|null $overrideChannels
-     * @param bool $includeCredentials
-     * @param bool $isNodeBinding
+     * @param  array<int, array<string, mixed>>|null  $overrideChannels
      * @return array<string, mixed>
      */
     public function generateNodeConfig(
@@ -55,9 +52,7 @@ class NodeConfigService
     /**
      * Получить сохраненный NodeConfig из базы.
      *
-     * @param DeviceNode $node
-     * @param bool $includeCredentials Включать ли чувствительные данные (по умолчанию false)
-     * @return array
+     * @param  bool  $includeCredentials  Включать ли чувствительные данные (по умолчанию false)
      */
     public function getStoredConfig(DeviceNode $node, bool $includeCredentials = false): array
     {
@@ -128,7 +123,7 @@ class NodeConfigService
 
         if ($type === 'ACTUATOR' && in_array($actuatorType, ['RELAY', 'VALVE', 'FAN', 'HEATER'], true)) {
             $relayType = strtoupper((string) ($config['relay_type'] ?? ''));
-            if (!in_array($relayType, ['NC', 'NO'], true)) {
+            if (! in_array($relayType, ['NC', 'NO'], true)) {
                 $config['relay_type'] = 'NO';
             }
         }
@@ -150,7 +145,7 @@ class NodeConfigService
     }
 
     /**
-     * @param array<string, mixed> $config
+     * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
     private function mergeIrrigationFailSafeMirror(DeviceNode $node, array $config): array

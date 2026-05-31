@@ -12,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
 
 class AlertUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -25,7 +25,7 @@ class AlertUpdated implements ShouldBroadcast
     public function __construct(array $alert)
     {
         $this->alert = $alert;
-        
+
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
         $this->eventId = $sequence['event_id'];

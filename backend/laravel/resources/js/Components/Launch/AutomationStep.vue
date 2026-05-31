@@ -28,14 +28,24 @@
         :binding-failed-node-ids="bindingFailedNodeIds"
         :recipe-summary="recipeSummary"
         :workflow-phase="zoneWorkflowPhase"
+        :greenhouse-id="greenhouseId"
+        :greenhouse-climate-enabled="greenhouseClimateEnabled"
+        :greenhouse-climate-form="greenhouseClimateForm"
+        :greenhouse-climate-bindings="greenhouseClimateBindings"
+        :greenhouse-nodes="greenhouseNodes"
+        :greenhouse-climate-submitting="greenhouseClimateSubmitting"
         @update:water-form="(v) => (state.waterForm = v)"
         @update:lighting-form="(v) => (state.lightingForm = v)"
         @update:zone-climate-form="(v) => (state.zoneClimateForm = v)"
+        @update:greenhouse-climate-enabled="(v) => (greenhouseClimateEnabled = v)"
+        @update:greenhouse-climate-form="(v) => Object.assign(greenhouseClimateForm, v)"
+        @update:greenhouse-climate-bindings="(v) => Object.assign(greenhouseClimateBindings, v)"
         @update:assignments="(v) => (state.assignments = v)"
         @bind-devices="onBindDevices"
         @bind-node="onBindNode"
         @refresh-nodes="onRefreshNodes"
         @refresh="reloadAll"
+        @save-greenhouse-climate="saveGreenhouseClimate"
         @preset-applied="onPresetApplied"
         @preset-cleared="onPresetCleared"
       />
@@ -62,6 +72,26 @@ import type { ZoneAutomationPreset } from '@/types/ZoneAutomationPreset';
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes';
 import { resolveRecipePhaseSystemType } from '@/composables/recipeSystemType';
 import { autoSelectAssignmentsByNodeType } from '@/composables/zoneAutomationAssignmentAutoSelect';
+import { applyAutomationFromRecipe } from '@/composables/zoneAutomationFormLogic';
+import {
+    buildGreenhouseClimateSubsystemPayload,
+    validateGreenhouseClimateForm,
+} from '@/composables/zoneAutomationProfilePayload';
+import {
+    GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+    payloadFromGreenhouseLogicDocument,
+    resolveGreenhouseProfileEntry,
+    toNodeIdArray,
+    type GreenhouseClimateBindingsState,
+} from '@/composables/greenhouseLogicProfileAuthority';
+import {
+    createDefaultClimateForm,
+    FALLBACK_AUTOMATION_DEFAULTS,
+} from '@/composables/useAutomationDefaults';
+import { resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets';
+import { extractHumanErrorMessage } from '@/utils/errorMessage';
+import { logger } from '@/utils/logger';
+import type { ClimateFormState } from '@/composables/zoneAutomationTypes';
 
 interface RecipeSummary {
     name?: string | null;
@@ -109,6 +139,56 @@ function emitProfileFromState(): void {
     });
 }
 const availableNodes: SetupWizardNode[] = reactive([]);
+const greenhouseNodes: SetupWizardNode[] = reactive([]);
+const greenhouseId = ref<number | null>(null);
+const greenhouseClimateEnabled = ref(false);
+const greenhouseClimateSubmitting = ref(false);
+const greenhouseClimateForm = reactive<ClimateFormState>(
+    createDefaultClimateForm(FALLBACK_AUTOMATION_DEFAULTS),
+);
+const greenhouseClimateBindings = reactive<GreenhouseClimateBindingsState>({
+    climate_sensors: [],
+    weather_station_sensors: [],
+    vent_actuators: [],
+    fan_actuators: [],
+});
+
+function resetGreenhouseClimateForm(): void {
+    Object.assign(
+        greenhouseClimateForm,
+        createDefaultClimateForm(FALLBACK_AUTOMATION_DEFAULTS),
+    );
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
+
+function applyRecipeTargetsToGreenhouseClimate(): void {
+    const targets = resolveRecipePhaseTargets(props.currentRecipePhase);
+    if (!targets) {
+        return;
+    }
+
+    applyAutomationFromRecipe(
+        targets,
+        {
+            climateForm: greenhouseClimateForm,
+            waterForm: structuredClone(state.waterForm),
+            lightingForm: structuredClone(state.lightingForm),
+            zoneClimateForm: { ...state.zoneClimateForm },
+        },
+    );
+
+    const extensions = asPlainRecord(targets.extensions);
+    const subsystems = asPlainRecord(extensions?.subsystems);
+    const climate = asPlainRecord(subsystems?.climate);
+    if (typeof climate?.enabled === 'boolean') {
+        greenhouseClimateEnabled.value = climate.enabled;
+    }
+}
 
 const loading = ref(false);
 const refreshingNodes = ref(false);
@@ -247,10 +327,15 @@ async function loadBindings(zoneId: number): Promise<void> {
     try {
         const resp = await api.zones.getById(zoneId);
         const data = resp as unknown as {
+            greenhouse_id?: unknown;
             channel_bindings?: unknown;
             workflow_phase?: unknown;
             zone_workflow_state?: { workflow_phase?: unknown } | null;
         };
+        const rawGreenhouseId = Number(data.greenhouse_id);
+        greenhouseId.value = Number.isInteger(rawGreenhouseId) && rawGreenhouseId > 0
+            ? rawGreenhouseId
+            : null;
         const rawWorkflowPhase =
             data.workflow_phase
             ?? data.zone_workflow_state?.workflow_phase
@@ -272,6 +357,7 @@ async function loadBindings(zoneId: number): Promise<void> {
             if (changed) state.assignments = next;
         }
     } catch {
+        greenhouseId.value = null;
         zoneWorkflowPhase.value = null;
         // keep defaults
     }
@@ -351,6 +437,143 @@ async function loadNodes(zoneId: number) {
     }
 }
 
+async function loadGreenhouseNodes(id: number): Promise<void> {
+    try {
+        const nodes = await api.nodes.list({
+            greenhouse_id: id,
+            include_unassigned: true,
+            per_page: 100,
+        });
+        const list = Array.isArray(nodes)
+            ? nodes
+            : Array.isArray((nodes as { data?: unknown[] })?.data)
+              ? ((nodes as { data: unknown[] }).data as unknown[])
+              : [];
+        greenhouseNodes.splice(0, greenhouseNodes.length, ...(list as SetupWizardNode[]));
+    } catch {
+        greenhouseNodes.splice(0, greenhouseNodes.length);
+    }
+}
+
+async function loadGreenhouseClimate(id: number): Promise<void> {
+    try {
+        const document = await api.automationConfigs.get(
+            'greenhouse',
+            id,
+            GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+        );
+        const payload = payloadFromGreenhouseLogicDocument(document);
+        const entry = resolveGreenhouseProfileEntry(payload ?? null);
+        const bindings = payload?.bindings ?? {};
+
+        greenhouseClimateBindings.climate_sensors = toNodeIdArray(bindings.climate_sensors);
+        greenhouseClimateBindings.weather_station_sensors = toNodeIdArray(bindings.weather_station_sensors);
+        greenhouseClimateBindings.vent_actuators = toNodeIdArray(bindings.vent_actuators);
+        greenhouseClimateBindings.fan_actuators = toNodeIdArray(bindings.fan_actuators);
+
+        const climateSubsystem = entry?.subsystems?.climate;
+        if (climateSubsystem && typeof climateSubsystem === 'object' && !Array.isArray(climateSubsystem)) {
+            greenhouseClimateEnabled.value = Boolean((climateSubsystem as { enabled?: unknown }).enabled ?? false);
+            applyAutomationFromRecipe(
+                {
+                    extensions: {
+                        subsystems: {
+                            climate: climateSubsystem,
+                        },
+                    },
+                },
+                {
+                    climateForm: greenhouseClimateForm,
+                    waterForm: state.waterForm,
+                    lightingForm: state.lightingForm,
+                    zoneClimateForm: state.zoneClimateForm,
+                },
+            );
+        }
+        applyRecipeTargetsToGreenhouseClimate();
+    } catch {
+        resetGreenhouseClimateForm();
+        greenhouseClimateEnabled.value = false;
+        greenhouseClimateBindings.climate_sensors = [];
+        greenhouseClimateBindings.weather_station_sensors = [];
+        greenhouseClimateBindings.vent_actuators = [];
+        greenhouseClimateBindings.fan_actuators = [];
+        applyRecipeTargetsToGreenhouseClimate();
+    }
+}
+
+async function saveGreenhouseClimate(): Promise<void> {
+    if (!greenhouseId.value || greenhouseClimateSubmitting.value) {
+        return;
+    }
+
+    greenhouseClimateSubmitting.value = true;
+    try {
+        const climateError = validateGreenhouseClimateForm(greenhouseClimateForm);
+        if (climateError) {
+            showToast(climateError, 'warning');
+            return;
+        }
+
+        const bindingsPayload = {
+            greenhouse_id: greenhouseId.value,
+            enabled: greenhouseClimateEnabled.value,
+            climate_sensors: [...greenhouseClimateBindings.climate_sensors],
+            weather_station_sensors: [...greenhouseClimateBindings.weather_station_sensors],
+            vent_actuators: [...greenhouseClimateBindings.vent_actuators],
+            fan_actuators: [...greenhouseClimateBindings.fan_actuators],
+        };
+
+        if (greenhouseClimateEnabled.value) {
+            await api.setupWizard.validateGreenhouseClimateDevices(bindingsPayload);
+        }
+        await api.setupWizard.applyGreenhouseClimateBindings(bindingsPayload);
+
+        const currentDocument = await api.automationConfigs.get(
+            'greenhouse',
+            greenhouseId.value,
+            GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+        ).catch(() => null);
+        const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument);
+        const nextProfiles = {
+            ...(currentPayload?.profiles ?? {}),
+            setup: {
+                mode: 'setup',
+                is_active: true,
+                subsystems: buildGreenhouseClimateSubsystemPayload(
+                    greenhouseClimateForm,
+                    greenhouseClimateEnabled.value,
+                ),
+                updated_at: new Date().toISOString(),
+            },
+        };
+
+        await api.automationConfigs.update(
+            'greenhouse',
+            greenhouseId.value,
+            GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+            {
+                active_mode: 'setup',
+                profiles: nextProfiles,
+            },
+        );
+
+        showToast('Климат теплицы сохранён.', 'success');
+        await Promise.all([
+            loadGreenhouseClimate(greenhouseId.value),
+            loadGreenhouseNodes(greenhouseId.value),
+        ]);
+    } catch (error) {
+        logger.error('[AutomationStep] saveGreenhouseClimate failed', {
+            message: extractHumanErrorMessage(error, 'Ошибка сохранения климата теплицы'),
+            error,
+        });
+        showToast('Не удалось сохранить климат теплицы.', 'error');
+    } finally {
+        greenhouseClimateSubmitting.value = false;
+    }
+}
+
 async function reloadAll() {
     if (!props.zoneId) return;
     if (props.emitProfileAfterHydrate) {
@@ -368,6 +591,16 @@ async function reloadAll() {
         deriveBindingsFromNodes(props.zoneId);
         // Автопривязка по типам/каналам: заполняем только пустые роли.
         autoSelectAssignments(props.zoneId);
+        if (greenhouseId.value) {
+            await Promise.all([
+                loadGreenhouseNodes(greenhouseId.value),
+                loadGreenhouseClimate(greenhouseId.value),
+            ]);
+        } else {
+            greenhouseNodes.splice(0, greenhouseNodes.length);
+            resetGreenhouseClimateForm();
+            greenhouseClimateEnabled.value = false;
+        }
     } finally {
         loading.value = false;
         if (props.emitProfileAfterHydrate) {
@@ -382,22 +615,24 @@ async function onRefreshNodes() {
     refreshingNodes.value = true;
     try {
         await loadNodes(props.zoneId);
+        if (greenhouseId.value) {
+            await loadGreenhouseNodes(greenhouseId.value);
+        }
         deriveBindingsFromNodes(props.zoneId);
         autoSelectAssignments(props.zoneId);
         showToast('Список нод обновлён', 'success');
     } catch (error) {
-        showToast((error as Error).message || 'Ошибка обновления списка нод', 'error');
+        logger.error('[AutomationStep] onRefreshNodes failed', {
+            message: extractHumanErrorMessage(error, 'Ошибка обновления списка нод'),
+            error,
+        });
     } finally {
         refreshingNodes.value = false;
     }
 }
 
 async function attachNodeToZone(nodeId: number, zoneId: number): Promise<void> {
-    try {
-        await api.nodes.update(nodeId, { zone_id: zoneId });
-    } catch {
-        // node уже привязан — игнорируем
-    }
+    await api.nodes.update(nodeId, { zone_id: zoneId });
 }
 
 async function onBindDevices(roles: string[]) {
@@ -444,7 +679,10 @@ async function onBindDevices(roles: string[]) {
         deriveBindingsFromNodes(props.zoneId);
         autoSelectAssignments(props.zoneId);
     } catch (error) {
-        showToast((error as Error).message || 'Ошибка привязки', 'error');
+        logger.error('[AutomationStep] onBindDevices failed', {
+            message: extractHumanErrorMessage(error, 'Ошибка привязки'),
+            error,
+        });
     } finally {
         bindingInProgress.value = false;
     }
@@ -478,7 +716,11 @@ async function onBindNode(nodeId: number) {
     } catch (error) {
         clearBindingUiTimeout(nodeId);
         bindingFailedNodeIds.value = new Set([...bindingFailedNodeIds.value, nodeId]);
-        showToast((error as Error).message || 'Ошибка привязки ноды', 'error');
+        logger.error('[AutomationStep] onBindNode failed', {
+            nodeId,
+            message: extractHumanErrorMessage(error, 'Ошибка привязки ноды'),
+            error,
+        });
         const next = new Set(bindingNodeIds.value);
         next.delete(nodeId);
         bindingNodeIds.value = next;
@@ -601,6 +843,14 @@ watch(
 );
 
 watch(
+    () => props.currentRecipePhase,
+    () => {
+        applyRecipeTargetsToGreenhouseClimate();
+    },
+    { deep: true },
+);
+
+watch(
     () => availableNodes.map((n) => `${n.id}:${n.zone_id ?? 0}:${n.pending_zone_id ?? 0}`).join('|'),
     () => {
         if (props.zoneId) {
@@ -634,4 +884,3 @@ function onPresetCleared() {
     showToast('Пресет снят — используются defaults', 'info');
 }
 </script>
-

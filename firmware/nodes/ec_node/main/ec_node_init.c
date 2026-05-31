@@ -42,7 +42,7 @@ void ec_node_run_setup_mode(void) {
             .sda_pin = EC_NODE_I2C_BUS_0_SDA,
             .scl_pin = EC_NODE_I2C_BUS_0_SCL,
             .clock_speed = EC_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
+            .pullup_enable = false
         };
         esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (i2c_err == ESP_OK) {
@@ -103,9 +103,6 @@ void ec_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         if (node_utils_should_send_node_hello()) {
             ec_node_publish_hello();
         }
-        
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
 
         // Публикуем текущий NodeConfig на сервер
         node_utils_publish_config_report();

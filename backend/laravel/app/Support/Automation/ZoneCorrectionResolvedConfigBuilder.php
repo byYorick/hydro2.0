@@ -12,8 +12,7 @@ class ZoneCorrectionResolvedConfigBuilder
 {
     public function __construct(
         private readonly AutomationConfigRegistry $registry,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload

@@ -4,8 +4,6 @@ namespace App\Services;
 
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
-use App\Models\RecipeRevisionPhase;
-use App\Models\RecipeRevisionPhaseStep;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -16,8 +14,8 @@ class RecipeRevisionService
      */
     public function createRevision(
         Recipe $recipe,
-        ?int $cloneFromRevisionId = null,
-        ?string $description = null,
+        ?int $cloneFromRevisionId,
+        ?string $description,
         int $userId
     ): RecipeRevision {
         return DB::transaction(function () use ($recipe, $cloneFromRevisionId, $description, $userId) {
@@ -33,8 +31,8 @@ class RecipeRevisionService
                 ->orderByDesc('revision_number')
                 ->first();
 
-            $newRevisionNumber = $lastRevision 
-                ? $lastRevision->revision_number + 1 
+            $newRevisionNumber = $lastRevision
+                ? $lastRevision->revision_number + 1
                 : 1;
 
             // Если указана ревизия для клонирования, клонируем её

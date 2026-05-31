@@ -4,8 +4,8 @@ namespace Tests\Unit;
 
 use App\Models\GrowStageTemplate;
 use App\Models\RecipeRevisionPhase;
-use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class GrowStageTemplateTest extends TestCase

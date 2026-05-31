@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Greenhouse;
-use App\Models\Zone;
 use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 class E2EAuthBootstrap extends Command
 {
     protected $signature = 'e2e:auth-bootstrap {--email=e2e@test.local} {--role=admin} {--with-zone : Создать тестовую теплицу и зону для E2E}';
-    
+
     protected $description = 'Создает пользователя и токен для E2E тестов';
 
     public function handle(): int
@@ -54,7 +54,7 @@ class E2EAuthBootstrap extends Command
         // В non-verbose режиме выводим только токен
         if ($this->getOutput()->isVerbose()) {
             $this->info("E2E User: {$email} | Role: {$role}");
-            $this->info("Token:");
+            $this->info('Token:');
             $this->line($token);
         } else {
             // В non-verbose режиме выводим только токен

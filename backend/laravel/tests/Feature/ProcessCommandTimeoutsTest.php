@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Zone;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 

@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\GrowCycleStatus;
-use App\Enums\ZoneStatus;
 use App\Models\Alert;
 use App\Models\Command;
 use App\Models\DeviceNode;
@@ -13,9 +12,7 @@ use App\Models\UnassignedNodeError;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class ZoneDataService
 {
@@ -368,7 +365,7 @@ class ZoneDataService
                 'sensors.label as channel',
                 'sensors.type as metric_type',
                 'telemetry_last.last_value as value',
-                'telemetry_last.updated_at'
+                'telemetry_last.updated_at',
             ])
             ->orderBy('telemetry_last.updated_at', 'desc')
             ->get();
@@ -379,7 +376,7 @@ class ZoneDataService
             $nodeId = $item->node_id ?? 'unknown';
             $channel = $item->channel ?: 'default';
 
-            if (!isset($telemetry[$nodeId])) {
+            if (! isset($telemetry[$nodeId])) {
                 $telemetry[$nodeId] = [];
             }
 
@@ -415,11 +412,11 @@ class ZoneDataService
             $channel = $item->channel ?: 'default';
             $nodeId = $item->node_id ?? 'unknown';
 
-            if (!isset($telemetry[$channel])) {
+            if (! isset($telemetry[$channel])) {
                 $telemetry[$channel] = [];
             }
 
-            if (!isset($telemetry[$channel][$nodeId])) {
+            if (! isset($telemetry[$channel][$nodeId])) {
                 $telemetry[$channel][$nodeId] = [];
             }
 

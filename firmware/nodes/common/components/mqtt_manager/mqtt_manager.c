@@ -1013,7 +1013,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             }
             
             // Запрос времени у сервера для синхронизации часов устройства
-            // Это обеспечивает единую временную линию между устройствами и бэкендом
+            // Выполняется один раз на connect до user callback; колбэки узлов не вызывают node_utils_request_time() повторно.
             esp_err_t time_req_err = node_utils_request_time();
             if (time_req_err == ESP_OK) {
                 ESP_LOGD(TAG, "Requested time synchronization from server");

@@ -242,6 +242,9 @@ class Ae3RuntimeWorker:
                     task.id,
                 )
             released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
+            if not released:
+                await asyncio.sleep(0.05)
+                released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
             if released:
                 await self._resolve_zone_lease_release_alert(task=task)
             else:
@@ -252,6 +255,15 @@ class Ae3RuntimeWorker:
                         task.zone_id,
                         self._owner,
                         task.id,
+                    )
+                    await self._resolve_zone_lease_release_alert(task=task)
+                elif lease_after_release.owner != self._owner:
+                    self._log_debug(
+                        "AE3 runtime lease owned by another worker after task finish: zone_id=%s owner=%s task_id=%s lease_owner=%s",
+                        task.zone_id,
+                        self._owner,
+                        task.id,
+                        lease_after_release.owner,
                     )
                     await self._resolve_zone_lease_release_alert(task=task)
                 else:

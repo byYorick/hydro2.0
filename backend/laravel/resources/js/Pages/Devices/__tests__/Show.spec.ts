@@ -9,6 +9,15 @@ const { sampleDevice, resetSampleDevice } = vi.hoisted(() => {
     type: 'ph',
     status: 'online',
     fw_version: '1.0.0',
+    lifecycle_state: 'ACTIVE',
+    hardware_revision: 'rev-a',
+    hardware_id: 'hw-001',
+    last_seen_at: '2026-05-13T06:30:00Z',
+    last_heartbeat_at: '2026-05-13T06:31:00Z',
+    uptime_seconds: 3660,
+    free_heap_bytes: 98304,
+    rssi: -62,
+    validated: true,
     config: { sample_rate: 60 },
     zone: {
       id: 1,
@@ -266,6 +275,25 @@ describe('Devices/Show.vue', () => {
     expect(wrapper.text()).toContain('Type: ph')
   })
 
+  it('отображает метаданные ноды в header', () => {
+    const wrapper = mount(DevicesShow)
+
+    expect(wrapper.text()).toContain('Node ID:')
+    expect(wrapper.text()).toContain('UID:')
+    expect(wrapper.text()).toContain('node-ph-1')
+    expect(wrapper.text()).toContain('HW:')
+    expect(wrapper.text()).toContain('rev-a')
+    expect(wrapper.text()).toContain('Heartbeat:')
+    expect(wrapper.text()).toContain('RSSI:')
+    expect(wrapper.text()).toContain('-62 dBm')
+    expect(wrapper.text()).toContain('Heap:')
+    expect(wrapper.text()).toContain('96 KB')
+    expect(wrapper.text()).toContain('Uptime:')
+    expect(wrapper.text()).toContain('1ч 1м')
+    expect(wrapper.text()).toContain('Привязка:')
+    expect(wrapper.text()).toContain('Zone A1')
+  })
+
   it('отображает версию прошивки', () => {
     const wrapper = mount(DevicesShow)
     
@@ -329,16 +357,29 @@ describe('Devices/Show.vue', () => {
     expect(channelsTable.props('channels')).toEqual(sampleDevice.channels)
   })
 
-  it('отображает NodeConfig', () => {
+  it('отображает свернутый NodeConfig', () => {
     const wrapper = mount(DevicesShow)
     
     expect(wrapper.text()).toContain('NodeConfig')
-    // Проверяем, что конфиг отображается как JSON
+    expect(wrapper.text()).toContain('JSON скрыт')
+    expect(wrapper.find('pre').exists()).toBe(false)
+  })
+
+  it('раскрывает NodeConfig по кнопке', async () => {
+    const wrapper = mount(DevicesShow)
+
+    const buttons = wrapper.findAllComponents({ name: 'Button' })
+    const toggleButton = buttons.find((btn) => btn.text().includes('Показать'))
+    expect(toggleButton).toBeTruthy()
+
+    await toggleButton?.trigger('click')
+
     const pre = wrapper.find('pre')
     expect(pre.exists()).toBe(true)
-    const configText = pre.text()
-    expect(configText).toContain('ph')
-    expect(configText).toContain('online')
+    expect(pre.classes()).toContain('node-config-json')
+    expect(pre.text()).toContain('ph')
+    expect(pre.text()).toContain('online')
+    expect(pre.html()).toContain('json-key')
   })
 
   it('отображает кнопку Restart', () => {
@@ -444,11 +485,16 @@ describe('Devices/Show.vue', () => {
     expect(badge.props('variant')).toBe('danger')
   })
 
-  it('форматирует NodeConfig как JSON', () => {
+  it('форматирует NodeConfig как JSON после раскрытия', async () => {
     const wrapper = mount(DevicesShow)
+
+    const buttons = wrapper.findAllComponents({ name: 'Button' })
+    const toggleButton = buttons.find((btn) => btn.text().includes('Показать'))
+    await toggleButton?.trigger('click')
     
     const nodeConfig = wrapper.find('pre')
     expect(nodeConfig.exists()).toBe(true)
+    expect(nodeConfig.classes()).toContain('node-config-json')
     
     // Проверяем, что конфиг содержит ключевые поля
     const configText = nodeConfig.text()
@@ -456,6 +502,7 @@ describe('Devices/Show.vue', () => {
     expect(configText).toContain('online')
     // id может быть в конфиге
     expect(configText).toMatch(/"id"|"name"|"type"/)
+    expect(nodeConfig.html()).toContain('json-string')
   })
 
   it('использует uid или name или id для отображения названия', () => {

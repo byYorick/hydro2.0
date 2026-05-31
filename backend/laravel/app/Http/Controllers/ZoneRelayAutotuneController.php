@@ -20,8 +20,7 @@ class ZoneRelayAutotuneController extends Controller
 {
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
-    ) {
-    }
+    ) {}
 
     public function start(Request $request, Zone $zone): JsonResponse
     {
@@ -108,6 +107,7 @@ class ZoneRelayAutotuneController extends Controller
 
         try {
             $upstreamPayload = $this->statusFromAutomationEngine($zone->id, $pidType);
+
             return response()->json([
                 'status' => 'ok',
                 'data' => $upstreamPayload,

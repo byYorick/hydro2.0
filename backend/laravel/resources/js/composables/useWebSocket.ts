@@ -174,6 +174,31 @@ if (isBrowser()) {
 
   pendingSubscriptionMonitor.start()
 
+  /*
+   * S4 (AUDIT_2026_05_28_BUGFIX_PLAN): synchronous cleanup при teardownEcho.
+   *
+   * Раньше `echoClient.teardownEcho()` вызывал `cleanupWebSocketChannels`
+   * через async dynamic import — между `emitState('disconnected')` и
+   * фактическим cleanup образовывалось окно race condition (новый
+   * `scheduleReconnect` мог стартовать раньше cleanup'а).
+   *
+   * Теперь `teardownEcho()` dispatch'ит `echo:teardown` ДО `emitState`,
+   * а этот sync-listener гарантирует cleanup в том же синхронном call-stack.
+   * `addEventListener` гарантирует синхронное выполнение sync handler'ов
+   * во всех современных браузерах.
+   */
+  if (typeof window !== 'undefined') {
+    window.addEventListener('echo:teardown', () => {
+      try {
+        cleanupWebSocketChannels()
+      } catch (error) {
+        logger.warn('[useWebSocket] Error during echo:teardown cleanup', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })
+  }
+
   // Очистка при HMR
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {

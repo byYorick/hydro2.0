@@ -25,4 +25,3 @@ return new class extends Migration
         DB::statement('DROP INDEX IF EXISTS scheduler_logs_zone_created_idx');
     }
 };
-

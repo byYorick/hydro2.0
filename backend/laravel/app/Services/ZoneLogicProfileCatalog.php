@@ -5,6 +5,7 @@ namespace App\Services;
 final class ZoneLogicProfileCatalog
 {
     public const MODE_SETUP = 'setup';
+
     public const MODE_WORKING = 'working';
 
     /**

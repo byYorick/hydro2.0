@@ -59,4 +59,3 @@ class DevicesTest extends DuskTestCase
         });
     }
 }
-

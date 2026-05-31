@@ -39,7 +39,7 @@ class AlertCatalogService
     }
 
     /**
-     * @param array<string, mixed>|null $details
+     * @param  array<string, mixed>|null  $details
      * @return array<string, mixed>
      */
     public function resolve(?string $code, ?string $source = null, ?array $details = null): array
@@ -184,8 +184,8 @@ class AlertCatalogService
     }
 
     /**
-     * @param array<string, mixed>|null $entry
-     * @param array<string, mixed>|null $details
+     * @param  array<string, mixed>|null  $entry
+     * @param  array<string, mixed>|null  $details
      */
     private function resolveSource(?string $source, string $code, ?array $entry, ?array $details): string
     {
@@ -220,8 +220,8 @@ class AlertCatalogService
     }
 
     /**
-     * @param array<string, mixed>|null $details
-     * @param array<string, mixed>|null $entry
+     * @param  array<string, mixed>|null  $details
+     * @param  array<string, mixed>|null  $entry
      */
     private function resolveSeverity(?array $details, ?array $entry, string $code): string
     {
@@ -254,8 +254,8 @@ class AlertCatalogService
     }
 
     /**
-     * @param array<string, mixed>|null $details
-     * @param array<string, mixed>|null $entry
+     * @param  array<string, mixed>|null  $details
+     * @param  array<string, mixed>|null  $entry
      */
     private function resolveCategory(?array $details, ?array $entry, string $code): string
     {
@@ -293,8 +293,8 @@ class AlertCatalogService
     }
 
     /**
-     * @param array<string, mixed>|null $details
-     * @param array<string, mixed>|null $entry
+     * @param  array<string, mixed>|null  $details
+     * @param  array<string, mixed>|null  $entry
      */
     private function resolveNodeRelated(?array $details, ?array $entry, string $code): bool
     {

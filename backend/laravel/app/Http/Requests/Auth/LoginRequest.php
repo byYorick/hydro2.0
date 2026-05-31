@@ -86,7 +86,7 @@ class LoginRequest extends FormRequest
         $minutes = ceil($seconds / 60);
 
         throw ValidationException::withMessages([
-            'email' => "Слишком много попыток входа. Пожалуйста, попробуйте снова через {$minutes} " . ($minutes === 1 ? 'минуту' : ($minutes < 5 ? 'минуты' : 'минут')) . ".",
+            'email' => "Слишком много попыток входа. Пожалуйста, попробуйте снова через {$minutes} ".($minutes === 1 ? 'минуту' : ($minutes < 5 ? 'минуты' : 'минут')).'.',
         ]);
     }
 
@@ -102,7 +102,7 @@ class LoginRequest extends FormRequest
      * Get the URL to redirect to on a validation error.
      * Для Inertia запросов возвращаем URL страницы логина,
      * чтобы форма оставалась на месте при ошибке валидации.
-     * 
+     *
      * Примечание: Этот метод используется только для стандартной обработки Laravel.
      * Для Inertia запросов ValidationException обрабатывается в bootstrap/app.php
      * через redirect()->back()->withErrors(), который автоматически возвращает на страницу логина.

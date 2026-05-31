@@ -15,8 +15,7 @@ class RecipeRevisionController extends Controller
 {
     public function __construct(
         private RecipeRevisionService $recipeRevisionService
-    ) {
-    }
+    ) {}
 
     /**
      * Получить ревизию рецепта с фазами
@@ -43,7 +42,7 @@ class RecipeRevisionController extends Controller
     public function store(Request $request, Recipe $recipe): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -51,7 +50,7 @@ class RecipeRevisionController extends Controller
         }
 
         // Проверка прав: только агроном может создавать ревизии
-        if (!Gate::allows('create', RecipeRevision::class)) {
+        if (! Gate::allows('create', RecipeRevision::class)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can create recipe revisions',
@@ -95,7 +94,7 @@ class RecipeRevisionController extends Controller
     public function update(Request $request, RecipeRevision $recipeRevision): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -104,7 +103,7 @@ class RecipeRevisionController extends Controller
 
         // Проверка прав: только агроном может редактировать ревизии
         // Policy также проверяет статус DRAFT
-        if (!Gate::allows('update', $recipeRevision)) {
+        if (! Gate::allows('update', $recipeRevision)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can edit recipe revisions, and only DRAFT revisions can be edited',
@@ -147,7 +146,7 @@ class RecipeRevisionController extends Controller
     public function publish(Request $request, RecipeRevision $recipeRevision): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -155,7 +154,7 @@ class RecipeRevisionController extends Controller
         }
 
         // Проверка прав: только агроном может публиковать ревизии
-        if (!Gate::allows('publish', $recipeRevision)) {
+        if (! Gate::allows('publish', $recipeRevision)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can publish recipe revisions',
@@ -187,4 +186,3 @@ class RecipeRevisionController extends Controller
         }
     }
 }
-

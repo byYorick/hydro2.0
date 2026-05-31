@@ -2,10 +2,10 @@
 
 namespace App\Services\AutomationScheduler;
 
+use App\Services\AutomationRuntimeConfigService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use App\Services\AutomationRuntimeConfigService;
 
 class SchedulerPrometheusMetricsExporter
 {
@@ -298,8 +298,8 @@ class SchedulerPrometheusMetricsExporter
     private function escapeLabelValue(string $value): string
     {
         return str_replace(
-            ["\\", "\n", '"'],
-            ["\\\\", "\\n", '\\"'],
+            ['\\', "\n", '"'],
+            ['\\\\', '\\n', '\\"'],
             $value,
         );
     }

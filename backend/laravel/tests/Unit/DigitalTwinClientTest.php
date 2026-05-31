@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use App\Services\DigitalTwinClient;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -38,6 +37,7 @@ class DigitalTwinClientTest extends TestCase
         Http::assertSent(function ($request) {
             $url = $request->url();
             $data = $request->data();
+
             return str_contains($url, 'simulate/zone')
                 && $request->method() === 'POST'
                 && $data['zone_id'] === 1
@@ -95,9 +95,9 @@ class DigitalTwinClientTest extends TestCase
 
         Http::assertSent(function ($request) {
             $data = $request->data();
+
             return $data['duration_hours'] === 72
                 && $data['step_minutes'] === 10;
         });
     }
 }
-

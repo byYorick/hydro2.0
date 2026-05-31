@@ -64,7 +64,7 @@ class ValidateZoneConfigsCommand extends Command
         $invalidCount = 0;
 
         foreach ($documents as $doc) {
-            if (!in_array($doc->namespace, $supported, true)) {
+            if (! in_array($doc->namespace, $supported, true)) {
                 continue;
             }
 
@@ -86,10 +86,11 @@ class ValidateZoneConfigsCommand extends Command
                     ]],
                 ];
                 $invalidCount++;
+
                 continue;
             }
 
-            if (!empty($violations)) {
+            if (! empty($violations)) {
                 $report[] = [
                     'namespace' => $doc->namespace,
                     'scope_type' => $doc->scope_type,
@@ -114,12 +115,13 @@ class ValidateZoneConfigsCommand extends Command
     }
 
     /**
-     * @param list<array{namespace:string,scope_type:string,scope_id:int,violations:array}> $report
+     * @param  list<array{namespace:string,scope_type:string,scope_id:int,violations:array}>  $report
      */
     private function renderHumanTable(array $report, int $totalChecked, int $invalidCount): void
     {
         if (empty($report)) {
             $this->info("All {$totalChecked} documents valid.");
+
             return;
         }
 
@@ -151,6 +153,7 @@ class ValidateZoneConfigsCommand extends Command
         if (mb_strlen($message) <= $max) {
             return $message;
         }
-        return mb_substr($message, 0, $max - 3) . '...';
+
+        return mb_substr($message, 0, $max - 3).'...';
     }
 }

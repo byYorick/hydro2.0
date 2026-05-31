@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\RecipePhase;
 use App\Models\Recipe;
+use App\Models\RecipePhase;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -29,4 +29,3 @@ class RecipePhaseFactory extends Factory
         ];
     }
 }
-

@@ -2,12 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\Zone;
-use App\Models\DeviceNode;
 use App\Models\Alert;
+use App\Models\Zone;
 use App\Models\ZoneEvent;
 use Carbon\Carbon;
+use Illuminate\Database\Seeder;
 
 /**
  * Seeder для создания дополнительных данных для демонстрации мониторинга
@@ -18,9 +17,10 @@ class MonitoringDataSeeder extends Seeder
     public function run(): void
     {
         $zones = Zone::with('nodes')->get();
-        
+
         if ($zones->isEmpty()) {
             $this->command->warn('Нет зон для создания данных мониторинга. Сначала запустите DemoDataSeeder.');
+
             return;
         }
 
@@ -29,7 +29,7 @@ class MonitoringDataSeeder extends Seeder
         // Создаем события для каждой зоны за последние 7 дней
         foreach ($zones as $zone) {
             $this->command->info("Создание событий для зоны: {$zone->name}...");
-            
+
             // События за последние 7 дней
             $eventTypes = [
                 'PH_CORRECTION' => ['dose_ml' => 0.5, 'before' => 6.2, 'after' => 5.9],
@@ -46,7 +46,7 @@ class MonitoringDataSeeder extends Seeder
                 for ($i = 0; $i < rand(2, 3); $i++) {
                     $daysAgo = rand(0, 7);
                     $hoursAgo = rand(0, 23);
-                    
+
                     ZoneEvent::create([
                         'zone_id' => $zone->id,
                         'type' => $eventType,
@@ -61,7 +61,7 @@ class MonitoringDataSeeder extends Seeder
 
         // Создаем дополнительные алерты для демонстрации
         $this->command->info('Создание дополнительных алертов...');
-        
+
         $alertTypes = [
             'PH_HIGH' => ['threshold' => 6.0, 'current' => 6.3],
             'PH_LOW' => ['threshold' => 5.5, 'current' => 5.2],
@@ -82,13 +82,13 @@ class MonitoringDataSeeder extends Seeder
             for ($i = 0; $i < $activeAlerts; $i++) {
                 $alertType = array_rand($alertTypes);
                 $details = $alertTypes[$alertType];
-                
+
                 // Проверяем, нет ли уже такого алерта
                 if (Alert::where('zone_id', $zone->id)
                     ->where('type', strtolower($alertType))
                     ->where('status', 'active')
                     ->count() === 0) {
-                    
+
                     Alert::create([
                         'zone_id' => $zone->id,
                         'type' => strtolower($alertType),
@@ -108,7 +108,7 @@ class MonitoringDataSeeder extends Seeder
                 $details = $alertTypes[$alertType];
                 $daysAgo = rand(1, 7);
                 $resolvedHoursAgo = rand(1, 12);
-                
+
                 Alert::create([
                     'zone_id' => $zone->id,
                     'type' => strtolower($alertType),
@@ -125,8 +125,8 @@ class MonitoringDataSeeder extends Seeder
         $totalEvents = ZoneEvent::count();
         $totalAlerts = Alert::count();
         $activeAlerts = Alert::where('status', 'active')->count();
-        
-        $this->command->info("Данные для мониторинга созданы успешно!");
+
+        $this->command->info('Данные для мониторинга созданы успешно!');
         $this->command->info("- Всего событий: {$totalEvents}");
         $this->command->info("- Всего алертов: {$totalAlerts}");
         $this->command->info("- Активных алертов: {$activeAlerts}");
@@ -150,4 +150,3 @@ class MonitoringDataSeeder extends Seeder
         };
     }
 }
-

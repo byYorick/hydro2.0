@@ -5,6 +5,8 @@
 Здесь указаны форматы топиков, JSON‑payload, правила QoS, LWT, NodeConfig, Telemetry,
 Command, Responses и системные события.
 
+**Дата обновления:** 2026-05-28 (sync с кодом history-logger и firmware: полный список message types, telemetry_last на PostgreSQL, QoS таблица расширена).
+
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
@@ -48,14 +50,33 @@ hydro/{gh}/{zone}/{node}/{type}
 - `channel` — имя канала (например `ph_sensor` или `pump_acid`).
 - `type` — тип сообщения:
 
-Типы:
-- **telemetry**
-- **command**
-- **command_response**
-- **config_report**
-- **config** (опционально, сервисный сценарий)
-- **status**
-- **lwt**
+Полный список типов сообщений (`{type}`), которые реально публикуются/обрабатываются runtime:
+
+**Узел → backend (channel-level):**
+- `telemetry` — измерения с канала
+- `command_response` — ответ на команду
+- `event` — channel-level node event (`level_switch_changed`, ...)
+
+**Узел → backend (node-level, без `{channel}`):**
+- `status` — online/offline status (retained)
+- `lwt` — Last Will and Testament (retained, payload `"offline"`)
+- `config_report` — текущий NodeConfig
+- `heartbeat` — uptime/free_heap/rssi
+- `node_hello` — первая регистрация (доп. также безсегментный `hydro/node_hello`)
+- `diagnostics` — опциональный engineering snapshot
+- `error` — узловые ошибки
+- `storage_state/event` — aggregate state event (только для `irrig` нод)
+
+**Backend → узел:**
+- `command` — команда на канал
+- `config` — push NodeConfig (опционально, сервисный сценарий)
+- `system/command` — system-level команда без `{channel}` (`activate_sensor_mode`, `deactivate_sensor_mode`)
+
+**Системные / broadcast:**
+- `hydro/time/request` (узел → backend)
+- `hydro/time/response` (backend → узлы)
+
+Status: **planned / not implemented** — `hydro/{node}/debug` (см. §9.4); обработчик в history-logger отсутствует, оставлен как опциональная диагностика.
 
 Пример:
 ```
@@ -88,7 +109,11 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - `unit` (string) — единица измерения (например, "pH", "°C", "%")
 - `raw` (integer) — сырое значение сенсора
 - `stub` (boolean) — флаг, указывающий на симулированное значение
-- `stable` (boolean) — флаг, указывающий на стабильность значения
+- `stable` (boolean) — флаг стабильности значения (для активированных sensor-нод)
+- `flow_active` (boolean) — индикатор активного потока через сенсор (pH/EC)
+- `corrections_allowed` (boolean) — runtime-флаг доступности коррекции
+- `tds` (number) — производное TDS-значение для EC-нод
+- `health` (object) — sensor-side health context (`status`, `error_count`)
 
 > **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim, который успешно проходит E2E тесты.
 
@@ -96,9 +121,10 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - QoS = 1
 - Retain = false
 - Узел публикует telemetry только после time sync через `hydro/time/response`
-- Backend сохраняет TelemetrySample
-- Backend обновляет last_value в Redis
-- Backend может триггерить Alerts
+- `history-logger` сохраняет запись в hypertable `telemetry_samples` (Timescale, chunk 1 day) и обновляет кэш последнего значения в PostgreSQL `telemetry_last` (PK по `sensor_id`).
+- `history-logger` использует точечные подписки MQTT — `hydro/+/+/+/+/{telemetry|command_response|event}` и `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello|storage_state/event}`, без подписки на широкий wildcard `hydro/#`.
+- `history-logger` также пишет business-trigger в `zone_events` и эмитит `AlertService` ingest при выходе за пороги/freshness.
+- Last-value хранится в **PostgreSQL** (`telemetry_last`), Redis для последних значений **не используется** (исторический паттерн ранних версий, removed).
 
 ## 3.4. Telemetry для дискретных датчиков уровня (2-бака)
 
@@ -200,6 +226,7 @@ hydro/{gh}/{zone}/{node}/config_report
 {
  "node_id": "nd-ph-1",
  "version": 3,
+ "fw_version": "1.0.0",
  "channels": [
  {
  "name": "ph_sensor",
@@ -234,6 +261,7 @@ hydro/{gh}/{zone}/{node}/config_report
 - Retain = false
 - Узел сохраняет конфиг в NVS
 - Узел отправляет `config_report` при подключении
+- `fw_version` — версия прикладной прошивки, сформированная самой нодой; это не версия ESP-IDF SDK. Backend сохраняет её в `nodes.fw_version`.
 
 ---
 
@@ -313,7 +341,25 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
-### 5) Калибровка
+### 5) Позиция привода (roof vent, greenhouse climate)
+
+Каналы `roof_vent_left` / `roof_vent_right` (см. `NODE_CHANNELS_REFERENCE.md`, `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
+Сегмент `{zone}` в топике — UID anchor-зоны при greenhouse-only приводе (см. `MQTT_NAMESPACE.md`).
+
+```json
+{
+ "cmd": "set_position",
+ "params": {
+   "position_pct": 40,
+   "max_step_pct": 25
+ },
+ "cmd_id": "cmd-594b",
+ "ts": 1737355115,
+ "sig": "..."
+}
+```
+
+### 6) Калибровка
 ```json
 {
  "cmd": "calibrate",
@@ -326,7 +372,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
-### 6) Тест сенсора канала
+### 7) Тест сенсора канала
 ```json
 {
  "cmd": "test_sensor",
@@ -343,7 +389,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
   `metric_type`, опционально `raw`, `stable`, `tvoc_ppb` и т.п.);
 - при ошибке чтения/инициализации: `status=ERROR` или `INVALID` + `error_code`/`error_message`.
 
-### 7) Перезапуск ноды
+### 8) Перезапуск ноды
 ```json
 {
  "cmd": "restart",
@@ -356,7 +402,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 **Правило (для всех нод):** команда `restart` доступна для любых узлов. Узел обязан отправить
 `command_response` со статусом `DONE`, а затем выполнить перезагрузку устройства.
 
-### 8) Снимок состояния IRR-ноды (`state`)
+### 9) Снимок состояния IRR-ноды (`state`)
 ```json
 {
  "cmd": "state",
@@ -1100,7 +1146,8 @@ hydro/{gh}/{zone}/{node}/heartbeat
 {
   "uptime": 3600,
   "free_heap": 102000,
-  "rssi": -62
+  "rssi": -62,
+  "fw_version": "1.0.0"
 }
 ```
 
@@ -1110,13 +1157,14 @@ hydro/{gh}/{zone}/{node}/heartbeat
 
 **Опциональные поля:**
 - `rssi` (integer) — сила сигнала Wi-Fi в dBm (от -100 до 0)
+- `fw_version` (string) — версия прикладной прошивки, которую сообщает сама нода; backend не задаёт её вручную и только сохраняет последнее полученное значение.
 
 > **Важно:** Поле `ts` **не включается** в heartbeat согласно эталону node-sim. Формат соответствует эталону, который успешно проходит E2E тесты.
 
 **Requirements:**
 - QoS = 1 (обновлено: было 0, теперь 1 для надёжности)
 - Retain = false
-- Backend обновляет поля `last_heartbeat_at`, `uptime_seconds`, `free_heap_bytes`, `rssi` в таблице `nodes`
+- Backend обновляет поля `last_heartbeat_at`, `uptime_seconds`, `free_heap_bytes`, `rssi`, `fw_version` в таблице `nodes`
 - Обновляет также `last_seen_at` при получении heartbeat
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_heartbeat` в history-logger, поля в БД добавлены)
@@ -1177,10 +1225,18 @@ hydro/{node}/debug
 | command | 1 | false |
 | command_response | 1 | false |
 | config_report | 1 | false |
+| config (backend → node) | 1 | false |
 | status | 1 | true |
 | lwt | 1 | true |
 | node_hello | 1 | false |
 | heartbeat | 1 | false |
+| event (channel-level) | 1 | false |
+| storage_state/event | 1 | false |
+| diagnostics | 1 | false |
+| error | 1 | false |
+| system/command | 1 | false |
+| hydro/time/request | 1 | false |
+| hydro/time/response | 1 | false |
 
 ---
 

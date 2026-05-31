@@ -106,7 +106,7 @@ class SimulationEventController extends Controller
                         'iterations' => $iterations,
                     ]);
                     echo "event: close\n";
-                    echo "data: " . json_encode(['message' => 'Stream timeout']) . "\n\n";
+                    echo 'data: '.json_encode(['message' => 'Stream timeout'])."\n\n";
                     @ob_flush();
                     @flush();
                     break;
@@ -129,7 +129,7 @@ class SimulationEventController extends Controller
                         'memory' => memory_get_usage(true),
                     ]);
                     echo "event: error\n";
-                    echo "data: " . json_encode(['message' => 'Server memory limit']) . "\n\n";
+                    echo 'data: '.json_encode(['message' => 'Server memory limit'])."\n\n";
                     @ob_flush();
                     @flush();
                     break;
@@ -155,7 +155,7 @@ class SimulationEventController extends Controller
                         $lastId = max($lastId, (int) $normalized['id']);
 
                         echo "event: simulation_event\n";
-                        echo "data: " . json_encode($normalized, JSON_UNESCAPED_UNICODE) . "\n\n";
+                        echo 'data: '.json_encode($normalized, JSON_UNESCAPED_UNICODE)."\n\n";
                         @ob_flush();
                         @flush();
                     }
@@ -167,7 +167,7 @@ class SimulationEventController extends Controller
                         'exception' => get_class($e),
                     ]);
                     echo "event: error\n";
-                    echo "data: " . json_encode(['message' => 'Stream error occurred']) . "\n\n";
+                    echo 'data: '.json_encode(['message' => 'Stream error occurred'])."\n\n";
                     @ob_flush();
                     @flush();
                     break;

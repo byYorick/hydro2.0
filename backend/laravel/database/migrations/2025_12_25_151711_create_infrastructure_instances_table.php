@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Полиморфная инфраструктура - заменяет zone_infrastructure + infrastructure_assets
      * owner_type: 'zone' | 'greenhouse'
      * owner_id: ID зоны или теплицы
@@ -31,7 +31,7 @@ return new class extends Migration
                 'HEATER',
                 'FAN',
                 'CO2_INJECTOR',
-                'OTHER'
+                'OTHER',
             ]);
             $table->string('label'); // Название/метка оборудования
             $table->boolean('required')->default(false); // Обязательное ли оборудование
@@ -55,4 +55,3 @@ return new class extends Migration
         Schema::dropIfExists('infrastructure_instances');
     }
 };
-

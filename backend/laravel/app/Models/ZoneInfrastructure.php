@@ -54,4 +54,3 @@ class ZoneInfrastructure extends Model
         return $this->channelBindings()->exists();
     }
 }
-

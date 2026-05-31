@@ -2,10 +2,10 @@
 
 namespace Database\Factories;
 
-use App\Models\TelemetrySample;
 use App\Models\Sensor;
-use Illuminate\Database\Eloquent\Factories\Factory;
+use App\Models\TelemetrySample;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\TelemetrySample>
@@ -25,6 +25,7 @@ class TelemetrySampleFactory extends Factory
                 }
 
                 $sensor = $sensorAttr ? Sensor::find($sensorAttr) : null;
+
                 return $sensor?->zone_id;
             },
             'cycle_id' => null,

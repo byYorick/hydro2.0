@@ -30,15 +30,16 @@ return new class extends Migration
                 ) as exists;
             ");
 
-            if (!$hasTimescaleDB || !$hasTimescaleDB->exists) {
+            if (! $hasTimescaleDB || ! $hasTimescaleDB->exists) {
                 \Log::warning('TimescaleDB extension not found, skipping partitioning optimization');
+
                 return;
             }
 
             // 1. Оптимизация chunk_time_interval для telemetry_samples
             // Текущий интервал: 1 день, оставляем как есть (оптимально для наших объемов)
             // Но можно настроить retention policy для автоматического удаления старых chunks
-            
+
             // Проверяем, является ли таблица hypertable
             $isHypertable = DB::selectOne("
                 SELECT EXISTS (
@@ -50,7 +51,7 @@ return new class extends Migration
             if ($isHypertable && $isHypertable->exists) {
                 // Для telemetry_samples chunk_time_interval = 1 день (уже настроено в предыдущей миграции)
                 // Это оптимальный интервал для наших объемов данных
-                
+
                 // Добавляем retention policy для автоматического удаления старых chunks
                 // Удаляем chunks старше 90 дней (соответствует retention policy в aggregator)
                 try {
@@ -64,7 +65,7 @@ return new class extends Migration
                     \Log::info('Added retention policy for telemetry_samples (90 days)');
                 } catch (\Exception $e) {
                     // Retention policy может уже существовать
-                    \Log::warning('Failed to add retention policy for telemetry_samples: ' . $e->getMessage());
+                    \Log::warning('Failed to add retention policy for telemetry_samples: '.$e->getMessage());
                 }
             }
 
@@ -88,7 +89,7 @@ return new class extends Migration
                     ");
                     \Log::info('Added retention policy for telemetry_agg_1m (30 days)');
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for telemetry_agg_1m: ' . $e->getMessage());
+                    \Log::warning('Failed to add retention policy for telemetry_agg_1m: '.$e->getMessage());
                 }
             }
 
@@ -112,7 +113,7 @@ return new class extends Migration
                     ");
                     \Log::info('Added retention policy for telemetry_agg_1h (365 days)');
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for telemetry_agg_1h: ' . $e->getMessage());
+                    \Log::warning('Failed to add retention policy for telemetry_agg_1h: '.$e->getMessage());
                 }
             }
 
@@ -121,7 +122,7 @@ return new class extends Migration
             // Это делается через scheduled jobs в TimescaleDB (не требует миграции)
 
         } catch (\Exception $e) {
-            \Log::warning('Failed to optimize TimescaleDB partitioning: ' . $e->getMessage());
+            \Log::warning('Failed to optimize TimescaleDB partitioning: '.$e->getMessage());
             // Не прерываем миграцию, так как это оптимизация
         }
     }
@@ -138,7 +139,7 @@ return new class extends Migration
         try {
             // Удаляем retention policies
             $hypertables = ['telemetry_samples', 'telemetry_agg_1m', 'telemetry_agg_1h'];
-            
+
             foreach ($hypertables as $hypertable) {
                 try {
                     // Получаем ID retention policy
@@ -151,17 +152,16 @@ return new class extends Migration
                     ", [$hypertable]);
 
                     if ($policyId && isset($policyId->job_id)) {
-                        DB::statement("
+                        DB::statement('
                             SELECT remove_retention_policy(?, if_exists => TRUE);
-                        ", [$hypertable]);
+                        ', [$hypertable]);
                     }
                 } catch (\Exception $e) {
                     // Игнорируем ошибки при удалении
                 }
             }
         } catch (\Exception $e) {
-            \Log::warning('Failed to remove retention policies: ' . $e->getMessage());
+            \Log::warning('Failed to remove retention policies: '.$e->getMessage());
         }
     }
 };
-

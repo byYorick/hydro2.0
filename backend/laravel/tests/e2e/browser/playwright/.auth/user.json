@@ -2,34 +2,24 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6IjI2dDJTRk5jcEtkZ0xmMTVKQkEvK0E9PSIsInZhbHVlIjoiMnp1aWVWS25TWFlrZ2p6TWVydWpESEpRdXVZVGorTXBIdjVXMHZJUW1SOGhTM0hrMzRDTFpTZVk4SGFXZjlLb1hLbnE3UFRockprMi9iWExiYjF6TmNaSnFiWWg2c0JZZGlrNGJWdXpDRHJ1dkRJYVN3WC9KUzljeFNsOEpmbUIiLCJtYWMiOiJmOWY0YzIyMzdlNzk4MTk2ODgyMTBjNjQwNmM5ZjVkY2IxNDMwOWNkZDRiMDIwNDliNmJjMzJjM2M1OTE2MzkzIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IkJWLzhxVitCNXZuZXBubk9zekZDaGc9PSIsInZhbHVlIjoiNDRsMzEya0QzZkwrT0VrK1lrQ1k0c2pMWlQxN0FYcmlzVU03Vm96L2crSnltbFByTi9yRnRaK1Y1ckt2cEI1R1FTb0hDN3RXYXVmUHhiMHRYMUhLUmR6Ni9GalNTempjSVdNU0dZWHZ1a3Zvb1pHMExMUVpac3NPdW1JOHFRNFciLCJtYWMiOiI3NTgxMTlmMGQwNWVmZTczNzQ2MDI1MzMyZDYyMWM3MWQ1ZDMzNzkxMmEwYzYxNDA5MWNjMjc3YjM4ZmRmMjRkIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1777806360.696019,
+      "expires": 1779793120.53754,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "avtomatika_teplicy_session",
-      "value": "eyJpdiI6IllsaS85bzUvbUVpVXBqQTV6NHJZL0E9PSIsInZhbHVlIjoieTN1Kzk0UnRQT1NDZ2p5V3NJak8vK05rczQ3dVJ4dWhTRHcrcXNuU2FsRVFCb1ltN3pyQWdWZmpWZGZybHp6dUJhZ0l2eG9LNTNYd1ZJWXNpYzFRTmx5eDkyTDdGV1VvTUNINGhYeXZZWXpKMmpiNXB6b3VRNmpBTFoyL2c4dU0iLCJtYWMiOiJmZWJmMGYwYzNhODAxYzFkNjEzNjY4ZDdjZGMxN2MwM2JlYWUxMjcwNWI4MWRjMTVmMmZhYTQ5MDQ1NmRkNTU1IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6ImJzSytDQ0xuZEE1TEZrdElLOUgrRUE9PSIsInZhbHVlIjoiRWV0ZWhKdm1XREgvY3g4SXhWRnVLWC9TbjF0MDZrcWlJd2J4U1BHeVNPb3AwaExDTnZJUDdxbDlCSUVxUW9iWDNUb0c4Q2xiNC8vVUQ0RTh5em0yQVE2bWgyd2tCMHdCc1lQVnVXb1ArTnlzL1l3eXZFZXFLWk9JVWtOTnhyYnciLCJtYWMiOiI4NWMxOWFiZWRlMGQxMjMzMjdmZTc0YTJhYzk3ZmU1Yjk5ZDM1YTQxOGJjY2M5NzY3YzUyODc5NjMzNzczZWQ4IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1777806361.062628,
+      "expires": 1779793120.537597,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
     }
   ],
-  "origins": [
-    {
-      "origin": "http://localhost",
-      "localStorage": [
-        {
-          "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1777799161039,\"transport\":\"ws\",\"latency\":69,\"cacheSkipCount\":0}"
-        }
-      ]
-    }
-  ]
+  "origins": []
 }

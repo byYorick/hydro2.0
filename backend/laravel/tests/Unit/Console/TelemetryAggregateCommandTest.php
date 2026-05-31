@@ -7,7 +7,6 @@ use Tests\TestCase;
 
 class TelemetryAggregateCommandTest extends TestCase
 {
-
     public function test_command_signature_exists(): void
     {
         // Проверяем, что команда зарегистрирована
@@ -20,7 +19,7 @@ class TelemetryAggregateCommandTest extends TestCase
         // Проверяем только регистрацию команды
         $commands = Artisan::all();
         $this->assertArrayHasKey('telemetry:aggregate', $commands);
-        
+
         $command = $commands['telemetry:aggregate'];
         $this->assertStringContainsString('Агрегирует raw данные', $command->getDescription());
     }
@@ -37,9 +36,8 @@ class TelemetryAggregateCommandTest extends TestCase
         // Проверяем только регистрацию команды
         $commands = Artisan::all();
         $this->assertArrayHasKey('telemetry:aggregate', $commands);
-        
+
         $command = $commands['telemetry:aggregate'];
         $this->assertStringContainsString('Агрегирует raw данные', $command->getDescription());
     }
 }
-

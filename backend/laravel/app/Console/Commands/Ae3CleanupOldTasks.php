@@ -28,6 +28,7 @@ class Ae3CleanupOldTasks extends Command
     protected $description = 'Удаляет старые completed/failed/cancelled ae_tasks и intents';
 
     private const TERMINAL_TASK_STATUSES = ['completed', 'failed', 'cancelled', 'timeout', 'expired'];
+
     private const TERMINAL_INTENT_STATUSES = ['completed', 'failed', 'cancelled', 'expired'];
 
     public function handle(): int

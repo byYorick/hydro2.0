@@ -7,7 +7,6 @@ use Tests\TestCase;
 
 class TelemetryCleanupCommandTest extends TestCase
 {
-
     public function test_command_signature_exists(): void
     {
         // Проверяем, что команда зарегистрирована
@@ -20,7 +19,7 @@ class TelemetryCleanupCommandTest extends TestCase
         // Проверяем, что команда принимает опцию --days
         // Используем --help чтобы не выполнять реальную очистку
         $exitCode = Artisan::call('telemetry:cleanup-raw', ['--help' => true]);
-        
+
         // Команда должна существовать (exit code 0 или другой, но не ошибка несуществующей команды)
         $this->assertNotEquals(1, $exitCode);
     }
@@ -30,9 +29,8 @@ class TelemetryCleanupCommandTest extends TestCase
         // Проверяем только регистрацию команды, без выполнения
         $commands = Artisan::all();
         $this->assertArrayHasKey('telemetry:cleanup-raw', $commands);
-        
+
         $command = $commands['telemetry:cleanup-raw'];
         $this->assertStringContainsString('Удаляет старые raw данные', $command->getDescription());
     }
 }
-

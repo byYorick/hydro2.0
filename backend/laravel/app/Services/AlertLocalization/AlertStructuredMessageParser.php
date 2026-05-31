@@ -33,6 +33,7 @@ class AlertStructuredMessageParser
     {
         if (preg_match('/^Intent skipped: zone busy(?: \(zone_id=(\d+)\))?$/i', $s, $m) === 1) {
             $zoneId = isset($m[1]) && $m[1] !== '' ? (int) $m[1] : null;
+
             return $zoneId !== null
                 ? sprintf('Повторный запуск отклонён: зона %d уже занята активной задачей или intent.', $zoneId)
                 : 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.';

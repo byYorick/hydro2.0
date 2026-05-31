@@ -15,8 +15,7 @@ class AutomationBundleController extends Controller
 {
     public function __construct(
         private readonly AutomationConfigCompiler $compiler,
-    ) {
-    }
+    ) {}
 
     public function show(Request $request, string $scopeType, int $scopeId): JsonResponse
     {

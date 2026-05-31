@@ -93,7 +93,7 @@ resources/js/Pages/
 
 ### UX требования:
 - стабильное меню слева, скрытие на мобильных;
-- тёмная тема по умолчанию, переключатель в Settings.
+- темизация: тёмная тема по умолчанию (или `prefers-color-scheme` если нет сохранённого выбора), переключатель доступен из `HeaderStatusBar.vue` (`ThemeToggle.vue`) и из Launch popover. Status: planned / not implemented — отдельный переключатель в `/settings`; пока темизация управляется только из header'а. Реализация через CSS custom properties + `document.documentElement.dataset.theme`, не через Tailwind `dark:` classes (см. `useTheme.ts`, `resources/css/app.css`).
 - `/launch/{zoneId?}` также рендерится внутри `AppLayout`, но использует
   собственный embedded `LaunchShell` для topbar/stepper/footer мастера. Full-screen
   режим для launch wizard не используется.
@@ -207,7 +207,7 @@ resources/js/Pages/
 
 ## 6.5. Events (История событий)
 
-`ZoneEventsList.vue`
+`Pages/Zones/Tabs/ZoneEventsTab.vue` (исторически назывался `ZoneEventsList.vue` в этом документе — переименован при переходе на таб-структуру страницы зоны)
 
 - сортировка по времени
 - цветовая кодировка типов событий

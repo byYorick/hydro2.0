@@ -3,8 +3,8 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class PasswordUpdateTest extends TestCase

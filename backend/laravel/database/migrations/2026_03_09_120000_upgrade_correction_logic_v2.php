@@ -18,12 +18,12 @@ return new class extends Migration
             }
         });
 
-        DB::statement("
+        DB::statement('
             UPDATE ae_tasks
             SET corr_ec_attempt = COALESCE(corr_ec_attempt, corr_attempt),
                 corr_ph_attempt = COALESCE(corr_ph_attempt, corr_attempt)
             WHERE corr_step IS NOT NULL
-        ");
+        ');
 
         DB::statement('ALTER TABLE ae_tasks DROP CONSTRAINT IF EXISTS ae_tasks_corr_step_check');
         DB::statement("

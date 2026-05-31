@@ -8,7 +8,6 @@ use App\Models\RecipeAnalytics;
 use App\Models\Zone;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ReportController extends Controller
@@ -125,9 +124,9 @@ class ReportController extends Controller
         }
 
         $comparison = RecipeAnalytics::whereIn('recipe_id', $recipeIds)
-            ->when($startDate, fn($q) => $q->where('start_date', '>=', $startDate))
-            ->when($endDate, fn($q) => $q->where('end_date', '<=', $endDate))
-            ->when($zoneId, fn($q) => $q->where('zone_id', $zoneId))
+            ->when($startDate, fn ($q) => $q->where('start_date', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->where('end_date', '<=', $endDate))
+            ->when($zoneId, fn ($q) => $q->where('zone_id', $zoneId))
             ->selectRaw('
                 recipe_id,
                 AVG(efficiency_score) as avg_efficiency,
@@ -144,6 +143,7 @@ class ReportController extends Controller
         $recipes = Recipe::whereIn('id', $recipeIds)->get()->keyBy('id');
         $comparison = $comparison->map(function ($item) use ($recipes) {
             $item->recipe = $recipes->get($item->recipe_id);
+
             return $item;
         });
 
@@ -180,7 +180,7 @@ class ReportController extends Controller
                 }
             } catch (\Exception $e) {
                 // В тестах Job может не работать - игнорируем ошибку
-                if (!app()->environment('testing')) {
+                if (! app()->environment('testing')) {
                     Log::warning('Failed to dispatch CalculateRecipeAnalyticsJob', [
                         'zone_id' => $harvest->zone_id,
                         'error' => $e->getMessage(),
@@ -195,4 +195,3 @@ class ReportController extends Controller
         ], Response::HTTP_CREATED);
     }
 }
-

@@ -83,6 +83,16 @@ def _validate_command_params(*, cmd: str, params: dict) -> None:
                 f"command {cmd} params.duration_ms={duration_ms} exceeds sanity "
                 f"ceiling {_MAX_DURATION_MS_SANITY}"
             )
+    if cmd == "set_position":
+        pct = params.get("position_pct")
+        if pct is None or not isinstance(pct, (int, float)):
+            raise ValueError(f"command {cmd} requires numeric params.position_pct")
+        if float(pct) < 0 or float(pct) > 100:
+            raise ValueError(f"command {cmd} params.position_pct={pct} must be within 0..100")
+        mstep = params.get("max_step_pct")
+        if mstep is not None and isinstance(mstep, (int, float)):
+            if float(mstep) < 0 or float(mstep) > 100:
+                raise ValueError(f"command {cmd} params.max_step_pct={mstep} must be within 0..100")
 
 
 def _create_command_payload(

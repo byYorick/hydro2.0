@@ -50,6 +50,35 @@ describe('resolveRecipePhaseTargets', () => {
     expect(resolveRecipePhaseTargets(null)).toBeNull()
   })
 
+  it('maps recipe day_night extensions to climate subsystem targets', () => {
+    expect(
+      resolveRecipePhaseTargets({
+        extensions: {
+          day_night: {
+            temperature: { day: 24, night: 20 },
+            humidity: { day: 63, night: 70 },
+            lighting: { day_start_time: '06:30:00', day_hours: 16 },
+          },
+        },
+      })
+    ).toEqual({
+      extensions: {
+        subsystems: {
+          climate: {
+            targets: {
+              temperature: { day: 24, night: 20 },
+              humidity: { day: 63, night: 70 },
+              schedule: [
+                { profile: 'day', start: '06:30' },
+                { profile: 'night', start: '22:30' },
+              ],
+            },
+          },
+        },
+      },
+    })
+  })
+
   it('resolves current recipe phase from recipe revision phases', () => {
     expect(resolveCurrentRecipePhase({
       currentPhase: {

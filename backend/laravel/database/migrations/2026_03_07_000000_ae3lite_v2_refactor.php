@@ -222,7 +222,7 @@ return new class extends Migration
         ");
 
         // ae_tasks: stage_retry_count >= 0
-        DB::statement("
+        DB::statement('
             DO $$
             BEGIN
                 ALTER TABLE ae_tasks
@@ -231,10 +231,10 @@ return new class extends Migration
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END $$;
-        ");
+        ');
 
         // ae_tasks: clean_fill_cycle >= 0
-        DB::statement("
+        DB::statement('
             DO $$
             BEGIN
                 ALTER TABLE ae_tasks
@@ -243,7 +243,7 @@ return new class extends Migration
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END $$;
-        ");
+        ');
 
         // ae_tasks: corr_step enum (или NULL)
         DB::statement("
@@ -281,17 +281,17 @@ return new class extends Migration
         ");
 
         // Index: ae_commands по (task_id, stage_name)
-        DB::statement("
+        DB::statement('
             CREATE INDEX IF NOT EXISTS ae_commands_stage_idx
             ON ae_commands (task_id, stage_name)
             WHERE stage_name IS NOT NULL
-        ");
+        ');
 
         // Index: ae_stage_transitions по (task_id, triggered_at)
-        DB::statement("
+        DB::statement('
             CREATE INDEX IF NOT EXISTS ae_stage_transitions_task_idx
             ON ae_stage_transitions (task_id, triggered_at)
-        ");
+        ');
     }
 
     private function dropPgsqlConstraintsAndIndexes(): void

@@ -13,17 +13,16 @@ class NodeRegistryService
 {
     /**
      * Зарегистрировать узел в системе.
-     * 
+     *
      * Если узел уже существует, обновляет его атрибуты.
      * Если узел новый, создаёт его и отмечает как validated.
-     * 
+     *
      * ВАЖНО: Автопривязка к зоне отключена. Привязка должна происходить только
      * через явное действие пользователя (кнопка "Привязать" в UI).
-     * 
-     * @param string $nodeUid Уникальный идентификатор узла (MAC/UID)
-     * @param string|null $zoneUid UID зоны (игнорируется, оставлен для обратной совместимости)
-     * @param array $attributes Дополнительные атрибуты (firmware_version, hardware_revision и т.д.)
-     * @return DeviceNode
+     *
+     * @param  string  $nodeUid  Уникальный идентификатор узла (MAC/UID)
+     * @param  string|null  $zoneUid  UID зоны (игнорируется, оставлен для обратной совместимости)
+     * @param  array  $attributes  Дополнительные атрибуты (firmware_version, hardware_revision и т.д.)
      */
     public function registerNode(
         string $nodeUid,
@@ -41,8 +40,8 @@ class NodeRegistryService
                         ->lockForUpdate()
                         ->first();
 
-                    if (!$node) {
-                        $node = new DeviceNode();
+                    if (! $node) {
+                        $node = new DeviceNode;
                         $node->uid = $nodeUid;
                     }
 
@@ -79,7 +78,7 @@ class NodeRegistryService
                     }
 
                     // Устанавливаем first_seen_at при первом появлении
-                    if (!$node->id || !$node->first_seen_at) {
+                    if (! $node->id || ! $node->first_seen_at) {
                         $node->first_seen_at = now();
                     }
 
@@ -87,7 +86,7 @@ class NodeRegistryService
                     $node->validated = true;
 
                     // Устанавливаем lifecycle_state в REGISTERED_BACKEND при регистрации
-                    if (!$node->id || !$node->lifecycle_state) {
+                    if (! $node->id || ! $node->lifecycle_state) {
                         $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                     }
 
@@ -104,7 +103,7 @@ class NodeRegistryService
                     return $node;
                 });
             } catch (\Throwable $e) {
-                if (!($this->isRetryableDatabaseFailure($e) || $this->isUidCollision($e))) {
+                if (! ($this->isRetryableDatabaseFailure($e) || $this->isUidCollision($e))) {
                     throw $e;
                 }
 
@@ -118,6 +117,7 @@ class NodeRegistryService
                             'attempts' => $attempt,
                             'max_retries' => $maxRetries,
                         ]);
+
                         return $fallbackNode;
                     }
                     throw $e;
@@ -133,22 +133,21 @@ class NodeRegistryService
             }
         }
     }
-    
+
     /**
      * Зарегистрировать узел из node_hello сообщения (MQTT).
-     * 
+     *
      * ВАЖНО: Автопривязка к зоне отключена. Даже если в provisioning_meta указаны
      * greenhouse_token и zone_id, они игнорируются. Привязка должна происходить только
      * через явное действие пользователя (кнопка "Привязать" в UI).
-     * 
-     * @param array $helloData Данные из node_hello:
-     *   - hardware_id: string
-     *   - node_type: string
-     *   - fw_version: string|null
-     *   - hardware_revision: string|null
-     *   - capabilities: array (используются только как метаданные, каналы по ним не создаются)
-     *   - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
-     * @return DeviceNode
+     *
+     * @param  array  $helloData  Данные из node_hello:
+     *                            - hardware_id: string
+     *                            - node_type: string
+     *                            - fw_version: string|null
+     *                            - hardware_revision: string|null
+     *                            - capabilities: array (используются только как метаданные, каналы по ним не создаются)
+     *                            - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
      */
     public function registerNodeFromHello(array $helloData): DeviceNode
     {
@@ -157,14 +156,14 @@ class NodeRegistryService
         $uidAttempt = 0;
         $maxUidAttempts = 5;
         $requestedNodeUid = $this->extractRequestedNodeUid($helloData);
-        $useRequestedNodeUid = !empty($requestedNodeUid);
-        
+        $useRequestedNodeUid = ! empty($requestedNodeUid);
+
         while ($attempt < $maxRetries) {
             DB::beginTransaction();
 
             try {
                 $hardwareId = $helloData['hardware_id'] ?? null;
-                if (!$hardwareId) {
+                if (! $hardwareId) {
                     throw new \InvalidArgumentException('hardware_id is required');
                 }
 
@@ -172,13 +171,13 @@ class NodeRegistryService
                     ->lockForUpdate()
                     ->first();
 
-                if (!$node) {
+                if (! $node) {
                     $nodeType = $this->normalizeNodeType((string) ($helloData['node_type'] ?? 'unknown'));
                     $uid = $useRequestedNodeUid
                         ? $requestedNodeUid
                         : $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
 
-                    $node = new DeviceNode();
+                    $node = new DeviceNode;
                     $node->uid = $uid;
                     $node->hardware_id = $hardwareId;
                     $node->type = $nodeType;
@@ -199,7 +198,7 @@ class NodeRegistryService
                         ->where('id', '!=', $node->id)
                         ->exists();
 
-                    if (!$uidAlreadyUsed) {
+                    if (! $uidAlreadyUsed) {
                         Log::info('NodeRegistryService: Aligning existing node uid with provisioning_meta.node_uid', [
                             'node_id' => $node->id,
                             'old_uid' => $node->uid,
@@ -230,14 +229,14 @@ class NodeRegistryService
                     ]);
                 }
 
-                if (!$node->zone_id && !$node->pending_zone_id) {
+                if (! $node->zone_id && ! $node->pending_zone_id) {
                     $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                     Log::info('NodeRegistryService: Reset lifecycle_state to REGISTERED_BACKEND for unbound node', [
                         'node_id' => $node->id,
                         'uid' => $node->uid,
                         'hardware_id' => $hardwareId,
                     ]);
-                } elseif (!$node->lifecycle_state) {
+                } elseif (! $node->lifecycle_state) {
                     $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 }
 
@@ -271,6 +270,7 @@ class NodeRegistryService
                 ]);
 
                 DB::commit();
+
                 return $node;
             } catch (\Throwable $e) {
                 DB::rollBack();
@@ -284,6 +284,7 @@ class NodeRegistryService
                         $useRequestedNodeUid = false;
                         $uidAttempt = 0;
                         usleep(100000);
+
                         continue;
                     }
 
@@ -301,13 +302,14 @@ class NodeRegistryService
                                 'attempts' => $uidAttempt,
                                 'max_attempts' => $maxUidAttempts,
                             ]);
+
                             return $fallbackNode;
                         }
                         Log::error('Failed to generate unique UID after max attempts', [
                             'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
                             'max_attempts' => $maxUidAttempts,
                         ]);
-                        throw new \RuntimeException('Failed to register node: UID generation failed after ' . $maxUidAttempts . ' attempts');
+                        throw new \RuntimeException('Failed to register node: UID generation failed after '.$maxUidAttempts.' attempts');
                     }
 
                     Log::warning('UID collision detected, retrying', [
@@ -316,6 +318,7 @@ class NodeRegistryService
                     ]);
 
                     usleep(100000 * $uidAttempt);
+
                     continue;
                 }
 
@@ -334,13 +337,14 @@ class NodeRegistryService
                                 'attempts' => $attempt,
                                 'max_retries' => $maxRetries,
                             ]);
+
                             return $fallbackNode;
                         }
                         Log::error('Failed to register node after max retries due to serialization failure', [
                             'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
                             'max_retries' => $maxRetries,
                         ]);
-                        throw new \RuntimeException('Failed to register node: serialization failure after ' . $maxRetries . ' attempts');
+                        throw new \RuntimeException('Failed to register node: serialization failure after '.$maxRetries.' attempts');
                     }
 
                     Log::warning('Serialization failure detected, retrying transaction', [
@@ -349,6 +353,7 @@ class NodeRegistryService
                     ]);
 
                     usleep(50000 * $attempt);
+
                     continue;
                 }
 
@@ -365,6 +370,7 @@ class NodeRegistryService
                 'hardware_id' => $helloData['hardware_id'] ?? null,
                 'requested_uid' => $requestedNodeUid,
             ]);
+
             return $fallbackNode;
         }
 
@@ -409,7 +415,7 @@ class NodeRegistryService
 
         return $sqlState === '23505' || str_contains($message, 'duplicate key value');
     }
-    
+
     /**
      * Обновить атрибуты узла из helloData.
      */
@@ -422,11 +428,11 @@ class NodeRegistryService
         if (isset($helloData['fw_version'])) {
             $node->fw_version = $helloData['fw_version'];
         }
-        
+
         if (isset($helloData['hardware_revision'])) {
             $node->hardware_revision = $helloData['hardware_revision'];
         }
-        
+
         $provisioningMeta = $helloData['provisioning_meta'] ?? [];
         if (isset($provisioningMeta['node_name'])) {
             $node->name = $provisioningMeta['node_name'];
@@ -460,19 +466,16 @@ class NodeRegistryService
 
     /**
      * Извлечь запрошенный UID из provisioning_meta.node_uid.
-     *
-     * @param array $helloData
-     * @return string|null
      */
     private function extractRequestedNodeUid(array $helloData): ?string
     {
         $provisioningMeta = $helloData['provisioning_meta'] ?? null;
-        if (!is_array($provisioningMeta)) {
+        if (! is_array($provisioningMeta)) {
             return null;
         }
 
         $rawNodeUid = $provisioningMeta['node_uid'] ?? null;
-        if (!is_string($rawNodeUid)) {
+        if (! is_string($rawNodeUid)) {
             return null;
         }
 
@@ -481,25 +484,23 @@ class NodeRegistryService
             return null;
         }
 
-        if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $nodeUid)) {
+        if (! preg_match('/^[a-z0-9][a-z0-9_-]*$/', $nodeUid)) {
             Log::warning('NodeRegistryService: Invalid provisioning_meta.node_uid format, fallback to generated uid', [
                 'node_uid' => $rawNodeUid,
             ]);
+
             return null;
         }
 
         return $nodeUid;
     }
-    
+
     /**
      * Генерировать uid для узла на основе hardware_id и типа.
-     * 
-     * @param string $hardwareId
-     * @param string $nodeType
-     * @param int $counter Для уникальности, если uid уже существует
-     * @return string
+     *
+     * @param  int  $counter  Для уникальности, если uid уже существует
      */
-     private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
+    private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
     {
         // Нормализуем hardware_id, убирая разделители и префиксы
         $normalized = strtolower(str_replace([':', '-', '_'], '', $hardwareId));
@@ -513,7 +514,7 @@ class NodeRegistryService
         } else {
             $shortId = strlen($normalized) > 12 ? substr($normalized, 0, 12) : $normalized;
         }
-        
+
         // Определяем префикс типа узла
         $typePrefix = 'node';
         if ($nodeType === 'ph') {
@@ -533,20 +534,19 @@ class NodeRegistryService
         } elseif ($nodeType === 'recirculation') {
             $typePrefix = 'recirc';
         }
-        
+
         $uid = "nd-{$typePrefix}-{$shortId}";
         if ($counter > 0) {
             $uid .= "-{$counter}";
         }
-        
+
         return $uid;
     }
-    
+
     /**
      * Найти теплицу по токену.
-     * 
-     * @param string $token Greenhouse provisioning_token (секретный токен, не uid!)
-     * @return Greenhouse|null
+     *
+     * @param  string  $token  Greenhouse provisioning_token (секретный токен, не uid!)
      */
     private function findGreenhouseByToken(string $token): ?Greenhouse
     {
@@ -554,12 +554,11 @@ class NodeRegistryService
         // Это предотвращает регистрацию нод в чужие теплицы, т.к. uid доступен всем viewer'ам
         return Greenhouse::where('provisioning_token', $token)->first();
     }
-    
+
     /**
      * Разрешить zone_uid в zone_id.
-     * 
-     * @param string $zoneUid Может быть в формате "zn-1" или просто "1"
-     * @return int|null
+     *
+     * @param  string  $zoneUid  Может быть в формате "zn-1" или просто "1"
      */
     private function resolveZoneId(string $zoneUid): ?int
     {
@@ -568,54 +567,56 @@ class NodeRegistryService
             $zoneIdStr = substr($zoneUid, 3);
             if (is_numeric($zoneIdStr)) {
                 // Проверяем, существует ли зона
-                $zone = Zone::find((int)$zoneIdStr);
+                $zone = Zone::find((int) $zoneIdStr);
+
                 return $zone?->id;
             }
         }
-        
+
         // Если это просто число
         if (is_numeric($zoneUid)) {
-            $zone = Zone::find((int)$zoneUid);
+            $zone = Zone::find((int) $zoneUid);
+
             return $zone?->id;
         }
-        
+
         // В будущем можно добавить поиск по uid, если он появится в таблице zones
         return null;
     }
-    
+
     /**
      * Привязать накопленные ошибки неназначенного узла к зарегистрированному узлу.
-     * 
+     *
      * После успешного attach:
      * - Создает alerts для каждой ошибки
      * - Архивирует записи в unassigned_node_errors_archive
      * - Создает zone_event для прозрачности
-     * 
-     * @param DeviceNode $node Зарегистрированный узел
+     *
+     * @param  DeviceNode  $node  Зарегистрированный узел
      */
     protected function attachUnassignedErrors(DeviceNode $node): void
     {
-        if (!$node->hardware_id) {
+        if (! $node->hardware_id) {
             return;
         }
-        
+
         try {
             // Получаем все непривязанные ошибки для этого hardware_id
             $errors = DB::table('unassigned_node_errors')
                 ->where('hardware_id', $node->hardware_id)
                 ->whereNull('node_id')
                 ->get();
-            
+
             if ($errors->isEmpty()) {
                 return;
             }
-            
+
             $alertsCreated = 0;
-            
+
             // Если у ноды есть zone_id, создаем alerts для ошибок
             if ($node->zone_id) {
                 $alertService = app(\App\Services\AlertService::class);
-                
+
                 foreach ($errors as $error) {
                     // Определяем source и code для алерта
                     // Используем infra_node_error как базовый код, добавляем error_code если есть
@@ -626,10 +627,10 @@ class NodeRegistryService
                         $normalizedErrorCode = preg_replace('/[^a-z0-9_]/', '_', $normalizedErrorCode) ?? $normalizedErrorCode;
 
                         if ($normalizedErrorCode !== '') {
-                            $alertCode = 'infra_node_error_' . $normalizedErrorCode;
+                            $alertCode = 'infra_node_error_'.$normalizedErrorCode;
                         }
                     }
-                    
+
                     // Преобразуем даты из строк в ISO8601 формат если нужно
                     $firstSeenAt = $error->first_seen_at;
                     if (is_string($firstSeenAt)) {
@@ -637,27 +638,27 @@ class NodeRegistryService
                     } elseif ($firstSeenAt instanceof \Carbon\Carbon || $firstSeenAt instanceof \DateTime) {
                         $firstSeenAt = $firstSeenAt->toIso8601String();
                     }
-                    
+
                     $lastSeenAt = $error->last_seen_at;
                     if (is_string($lastSeenAt)) {
                         $lastSeenAt = \Carbon\Carbon::parse($lastSeenAt)->toIso8601String();
                     } elseif ($lastSeenAt instanceof \Carbon\Carbon || $lastSeenAt instanceof \DateTime) {
                         $lastSeenAt = $lastSeenAt->toIso8601String();
                     }
-                    
+
                     // Создаем или обновляем алерт с сохранением count, first_seen_at, last_seen_at
                     // Проверяем, существует ли уже активный алерт с таким code
                     $existingAlert = \App\Models\Alert::where('zone_id', $node->zone_id)
                         ->where('code', $alertCode)
                         ->where('status', 'ACTIVE')
                         ->first();
-                    
+
                     if ($existingAlert) {
                         // Обновляем существующий алерт, сохраняя максимальный count и earliest first_seen_at
                         $existingDetails = $existingAlert->details ?? [];
                         $existingCount = $existingDetails['count'] ?? 0;
                         $newCount = max($existingCount, $error->count ?? 1);
-                        
+
                         // Сохраняем earliest first_seen_at
                         $existingFirstSeenAt = $existingDetails['first_seen_at'] ?? null;
                         if ($existingFirstSeenAt && $firstSeenAt) {
@@ -673,12 +674,12 @@ class NodeRegistryService
                                 // Если не удалось распарсить, используем новый
                             }
                         }
-                        
+
                         $alertService->createOrUpdateActive([
                             'zone_id' => $node->zone_id,
                             'source' => 'infra',
                             'code' => $alertCode,
-                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'type' => 'Node Error: '.($error->error_message ?: 'Unknown error'),
                             'severity' => $error->severity ?? 'ERROR',
                             'details' => [
                                 'error_message' => $error->error_message,
@@ -700,7 +701,7 @@ class NodeRegistryService
                             'zone_id' => $node->zone_id,
                             'source' => 'infra',
                             'code' => $alertCode,
-                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'type' => 'Node Error: '.($error->error_message ?: 'Unknown error'),
                             'status' => 'ACTIVE',
                             'details' => [
                                 'error_message' => $error->error_message,
@@ -715,7 +716,7 @@ class NodeRegistryService
                                 'payload' => $error->last_payload,
                             ],
                         ]);
-                        
+
                         // Устанавливаем error_count напрямую, если колонка существует
                         if (\Illuminate\Support\Facades\Schema::hasColumn('alerts', 'error_count')) {
                             $newAlert->error_count = $error->count ?? 1;
@@ -724,7 +725,7 @@ class NodeRegistryService
                     }
                     $alertsCreated++;
                 }
-                
+
                 Log::info('Created alerts from unassigned errors', [
                     'node_id' => $node->id,
                     'node_uid' => $node->uid,
@@ -732,48 +733,48 @@ class NodeRegistryService
                     'hardware_id' => $node->hardware_id,
                     'errors_count' => $errors->count(),
                     'alerts_created' => $alertsCreated,
-                    'errors_details' => $errors->map(fn($e) => [
+                    'errors_details' => $errors->map(fn ($e) => [
                         'error_code' => $e->error_code,
                         'error_message' => $e->error_message,
                         'count' => $e->count ?? 1,
                     ])->toArray(),
                 ]);
-                
+
                 // Архивируем ошибки только после успешного создания alerts (когда есть zone_id)
                 // Проверяем наличие таблицы архива перед архивированием
                 if (DB::getSchemaBuilder()->hasTable('unassigned_node_errors_archive')) {
                     foreach ($errors as $error) {
-                    DB::table('unassigned_node_errors_archive')->insert([
-                        'hardware_id' => $error->hardware_id,
-                        'error_message' => $error->error_message,
-                        'error_code' => $error->error_code,
-                        'severity' => $error->severity,
-                        'topic' => $error->topic,
-                        'last_payload' => $error->last_payload,
-                        'count' => $error->count,
-                        'first_seen_at' => $error->first_seen_at,
-                        'last_seen_at' => $error->last_seen_at,
-                        'node_id' => $node->id,
-                        'attached_at' => now(),
-                        'attached_zone_id' => $node->zone_id,
-                        'archived_at' => now(),
-                    ]);
+                        DB::table('unassigned_node_errors_archive')->insert([
+                            'hardware_id' => $error->hardware_id,
+                            'error_message' => $error->error_message,
+                            'error_code' => $error->error_code,
+                            'severity' => $error->severity,
+                            'topic' => $error->topic,
+                            'last_payload' => $error->last_payload,
+                            'count' => $error->count,
+                            'first_seen_at' => $error->first_seen_at,
+                            'last_seen_at' => $error->last_seen_at,
+                            'node_id' => $node->id,
+                            'attached_at' => now(),
+                            'attached_zone_id' => $node->zone_id,
+                            'archived_at' => now(),
+                        ]);
                     }
                 }
-                
+
                 // Удаляем записи из unassigned_node_errors только после успешного архивирования
                 $deleted = DB::table('unassigned_node_errors')
                     ->where('hardware_id', $node->hardware_id)
                     ->whereNull('node_id')
                     ->delete();
-                
+
                 if ($deleted > 0) {
                     Log::info('Archived and removed unassigned errors', [
                         'node_id' => $node->id,
                         'hardware_id' => $node->hardware_id,
                         'errors_archived' => $deleted,
                     ]);
-                    
+
                     // Создаем zone_event для прозрачности операции
                     try {
                         // Используем DB::table для zone_events, так как структура изменена (payload_json вместо details)
@@ -802,7 +803,7 @@ class NodeRegistryService
                     }
                 }
             }
-            
+
         } catch (\Exception $e) {
             Log::error('Failed to attach unassigned errors to node', [
                 'node_id' => $node->id,
@@ -810,9 +811,9 @@ class NodeRegistryService
                 'hardware_id' => $node->hardware_id,
                 'zone_id' => $node->zone_id ?? null,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             // Ошибка не должна блокировать привязку узла
             // Ошибки остаются в unassigned_node_errors и могут быть обработаны позже
         }

@@ -21,8 +21,8 @@ return new class extends Migration
             }
         });
 
-        DB::statement("
-            DO \$\$
+        DB::statement('
+            DO $$
             BEGIN
                 ALTER TABLE ae_tasks
                 ADD CONSTRAINT ae_tasks_irr_probe_failure_streak_check
@@ -30,8 +30,8 @@ return new class extends Migration
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END
-            \$\$;
-        ");
+            $$;
+        ');
     }
 
     public function down(): void

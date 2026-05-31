@@ -19,14 +19,14 @@ return new class extends Migration
         // Пропускаем для тестового окружения, если расширение недоступно
         if (app()->environment('testing')) {
             try {
-                DB::statement("CREATE EXTENSION IF NOT EXISTS timescaledb;");
+                DB::statement('CREATE EXTENSION IF NOT EXISTS timescaledb;');
             } catch (\Exception $e) {
                 // TimescaleDB недоступно в тестовом окружении - пропускаем
                 return;
             }
         } else {
             // Убеждаемся, что расширение TimescaleDB установлено
-            DB::statement("CREATE EXTENSION IF NOT EXISTS timescaledb;");
+            DB::statement('CREATE EXTENSION IF NOT EXISTS timescaledb;');
         }
 
         // Преобразуем telemetry_samples в hypertable
@@ -40,48 +40,48 @@ return new class extends Migration
                     WHERE hypertable_name = 'telemetry_samples'
                 ) as exists;
             ");
-            
+
             if ($isHypertable && $isHypertable->exists) {
                 // Уже является hypertable, пропускаем
                 return;
             }
-            
+
             // Удаляем существующий primary key
-            DB::statement("ALTER TABLE telemetry_samples DROP CONSTRAINT IF EXISTS telemetry_samples_pkey;");
-            
+            DB::statement('ALTER TABLE telemetry_samples DROP CONSTRAINT IF EXISTS telemetry_samples_pkey;');
+
             // Создаем составной primary key с ts
-            DB::statement("ALTER TABLE telemetry_samples ADD PRIMARY KEY (id, ts);");
-            
+            DB::statement('ALTER TABLE telemetry_samples ADD PRIMARY KEY (id, ts);');
+
             // Преобразуем в hypertable с миграцией данных, если таблица не пустая
-            $rowCount = DB::selectOne("SELECT COUNT(*) as count FROM telemetry_samples")->count;
+            $rowCount = DB::selectOne('SELECT COUNT(*) as count FROM telemetry_samples')->count;
             $migrateData = $rowCount > 0;
-            
+
             DB::statement("
                 SELECT create_hypertable(
                     'telemetry_samples',
                     'ts',
                     chunk_time_interval => INTERVAL '1 day',
-                    migrate_data => " . ($migrateData ? 'true' : 'false') . ",
+                    migrate_data => ".($migrateData ? 'true' : 'false').',
                     if_not_exists => TRUE
                 );
-            ");
+            ');
         } catch (\Exception $e) {
             // TimescaleDB недоступно - пропускаем создание hypertable
-            if (!app()->environment('testing')) {
+            if (! app()->environment('testing')) {
                 throw $e;
             }
         }
 
         // Добавляем дополнительные индексы для оптимизации запросов
-        DB::statement("
+        DB::statement('
             CREATE INDEX IF NOT EXISTS telemetry_samples_sensor_ts_idx 
             ON telemetry_samples (sensor_id, ts DESC);
-        ");
+        ');
 
-        DB::statement("
+        DB::statement('
             CREATE INDEX IF NOT EXISTS telemetry_samples_zone_ts_idx 
             ON telemetry_samples (zone_id, ts DESC);
-        ");
+        ');
     }
 
     /**
@@ -95,8 +95,8 @@ return new class extends Migration
         }
 
         // Удаляем индексы
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;");
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;');
+        DB::statement('DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;');
 
         // Удаляем hypertable (преобразует обратно в обычную таблицу)
         try {
@@ -107,7 +107,7 @@ return new class extends Migration
                     WHERE hypertable_name = 'telemetry_samples'
                 ) as exists;
             ");
-            
+
             if ($isHypertable && $isHypertable->exists) {
                 DB::statement("SELECT drop_hypertable('telemetry_samples', if_exists => TRUE);");
             }

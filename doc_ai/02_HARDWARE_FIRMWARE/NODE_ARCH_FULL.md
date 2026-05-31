@@ -80,7 +80,7 @@ firmware/nodes/common/components/
 │  ├─ ph_sensor/                # Универсальный драйвер pH
 │  ├─ trema_ph/                 # Trema pH-сенсор (iarduino)
 │  ├─ ec_sensor/                # Универсальный драйвер EC
-│  ├─ trema_ec/                 # Trema EC-сенсор (iarduino)
+│  ├─ trema_ec/                 # Trema EC (iarduino), I2C_BUS_1 — отдельная линия 18/19 как pH на ph_node; адрес см. NODE_CHANNELS_REFERENCE раздел 2.2
 │  ├─ sht3x/                    # Температура/влажность
 │  └─ ina209/                   # Датчик тока
 ├─ i2c_bus/                     # I²C шина
@@ -434,11 +434,17 @@ payload: "offline"
   - Перезагрузка устройства
   - Подключение к указанной Wi-Fi сети
 
-**Реализовано для всех прошивочных модулей:**
-- `ph_node`
-- `ec_node`
-- `climate_node`
-- `storage_irrigation_node`
+**Реализовано для всех прошивочных модулей** (актуальный набор проектов в `firmware/nodes/`):
+- `ph_node` — pH-нода + dosing pumps (`pump_acid`, `pump_base`)
+- `ec_node` — EC/TDS-нода + nutrient pumps (`pump_a..pump_d`)
+- `climate_node` — climate sensors/actuators (temp/humidity/co2, fan/heater/light)
+- `storage_irrigation_node` (`node_type="irrig"`) — production two-tank irrigation runtime
+- `light_node` — управление освещением (PWM/адресные светодиоды)
+- `relay_node` — универсальное управление реле
+- `pump_node` — отдельная насосная нода
+- `test_node` — тестовый проект (не для production)
+
+> **Note:** имя папки проекта (`storage_irrigation_node`) и `node_type` в NodeConfig (`irrig`) — **разные** идентификаторы. Имя папки — структура firmware-репо; `node_type` — канон из `NODE_CONFIG_SPEC.md` §3.3. Backend и MQTT topics используют `node_type`.
 
 **Компонент:** `firmware/nodes/common/components/setup_portal/`
 

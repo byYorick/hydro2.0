@@ -25,7 +25,11 @@ extern "C" {
 #define EC_NODE_DEFAULT_MQTT_PORT    1883
 #define EC_NODE_DEFAULT_MQTT_KEEPALIVE 30
 
-// I2C bus defaults (как ph_node: шина 0 — периферия, шина 1 — химический датчик)
+/*
+ * I²C (как ph_node): **bus 0** — SDA 21 / SCL 22 — OLED (0x3C), INA209 (0x40).
+ * **bus 1** — SDA 18 / SCL 19 — Trema Flash TDS/EC (100 kHz).
+ * Если bus 1 недоступна, Trema может работать на bus 0 (legacy wiring) — см. ec_node_init_step_i2c.
+ */
 #define EC_NODE_I2C_BUS_0_SDA        21  // OLED + INA209 (ток насосов)
 #define EC_NODE_I2C_BUS_0_SCL        22
 #define EC_NODE_I2C_BUS_1_SDA        18  // Trema EC
@@ -37,7 +41,10 @@ extern "C" {
 #define EC_NODE_OLED_UPDATE_INTERVAL_MS 1500
 
 // EC sensor defaults
-#define EC_NODE_EC_SENSOR_POLL_INTERVAL_MS 3000
+#define EC_NODE_EC_SENSOR_POLL_INTERVAL_MS 2000
+
+/** Макс. возраст снимка EC из очереди для MQTT/OLED (чуть больше периода опроса). */
+#define EC_NODE_EC_CACHE_MAX_AGE_MS 2500U
 #define EC_NODE_EC_SENSOR_PRECISION 2
 
 // Pump defaults

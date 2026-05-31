@@ -314,6 +314,7 @@ class ZoneCorrectionConfigCatalog
 
             if (is_array($value) && isset($base[$key]) && is_array($base[$key]) && ! array_is_list($value) && ! array_is_list($base[$key])) {
                 $base[$key] = self::merge($base[$key], $value);
+
                 continue;
             }
 
@@ -329,6 +330,7 @@ class ZoneCorrectionConfigCatalog
         foreach ($target as $key => $value) {
             if (! array_key_exists($key, $base)) {
                 $result[$key] = $value;
+
                 continue;
             }
 
@@ -341,6 +343,7 @@ class ZoneCorrectionConfigCatalog
                 if ($nested !== []) {
                     $result[$key] = $nested;
                 }
+
                 continue;
             }
 
@@ -370,6 +373,7 @@ class ZoneCorrectionConfigCatalog
 
             if (self::isLeafPath($path)) {
                 self::validateLeaf($path, $value);
+
                 continue;
             }
 
@@ -389,6 +393,7 @@ class ZoneCorrectionConfigCatalog
     public static function defaultResolvedConfig(): array
     {
         $base = self::defaults();
+
         return [
             'base' => $base,
             'phases' => [
@@ -484,6 +489,7 @@ class ZoneCorrectionConfigCatalog
             if (! is_bool($value)) {
                 throw new InvalidArgumentException("Поле {$path} должно быть boolean.");
             }
+
             return;
         }
 
@@ -491,6 +497,7 @@ class ZoneCorrectionConfigCatalog
             if (! is_string($value) || ! in_array($value, $field['options'], true)) {
                 throw new InvalidArgumentException("Поле {$path} должно быть одним из: ".implode(', ', $field['options']));
             }
+
             return;
         }
 
@@ -501,6 +508,7 @@ class ZoneCorrectionConfigCatalog
             if (isset($field['max_length']) && mb_strlen($value) > (int) $field['max_length']) {
                 throw new InvalidArgumentException("Поле {$path} превышает максимальную длину {$field['max_length']}.");
             }
+
             return;
         }
 
@@ -514,6 +522,7 @@ class ZoneCorrectionConfigCatalog
             if (isset($field['max']) && $value > $field['max']) {
                 throw new InvalidArgumentException("Поле {$path} должно быть <= {$field['max']}.");
             }
+
             return;
         }
 

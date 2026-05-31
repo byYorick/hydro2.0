@@ -48,6 +48,7 @@ class RunSimulationReportJob implements ShouldQueue
             Log::warning('RunSimulationReportJob: simulation not found', [
                 'simulation_id' => $this->simulationId,
             ]);
+
             return;
         }
 
@@ -63,6 +64,7 @@ class RunSimulationReportJob implements ShouldQueue
             Log::warning('RunSimulationReportJob: scenario missing', [
                 'simulation_id' => $this->simulationId,
             ]);
+
             return;
         }
         $simMeta = $scenario['simulation'] ?? null;
@@ -70,6 +72,7 @@ class RunSimulationReportJob implements ShouldQueue
             Log::warning('RunSimulationReportJob: simulation meta missing', [
                 'simulation_id' => $this->simulationId,
             ]);
+
             return;
         }
 
@@ -81,6 +84,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'sim_zone_id' => $simZoneId,
                 'sim_grow_cycle_id' => $simGrowCycleId,
             ]);
+
             return;
         }
 
@@ -92,6 +96,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'sim_zone_id' => $simZoneId,
                 'sim_grow_cycle_id' => $simGrowCycleId,
             ]);
+
             return;
         }
 
@@ -107,6 +112,7 @@ class RunSimulationReportJob implements ShouldQueue
         $realDurationMinutes = $this->resolveRealDurationMinutes($simMeta);
         if (! $realDurationMinutes) {
             $orchestrator->executeFullSimulation($simulation, $context);
+
             return;
         }
 
@@ -117,6 +123,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'simulation_id' => $this->simulationId,
                 'grow_cycle_id' => $growCycle->id,
             ]);
+
             return;
         }
 
@@ -126,6 +133,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'simulation_id' => $this->simulationId,
                 'grow_cycle_id' => $growCycle->id,
             ]);
+
             return;
         }
 
@@ -135,6 +143,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'simulation_id' => $this->simulationId,
                 'recipe_revision_id' => $recipeRevision->id,
             ]);
+
             return;
         }
 
@@ -188,6 +197,7 @@ class RunSimulationReportJob implements ShouldQueue
             );
             $delaySeconds = $this->resolvePhaseDelaySeconds($currentPhase->phase_index, $phaseSchedule);
             $this->scheduleNextStep($delaySeconds);
+
             return;
         }
 
@@ -201,6 +211,7 @@ class RunSimulationReportJob implements ShouldQueue
 
         if ($currentPhase->phase_index >= $lastPhaseIndex) {
             $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport, [], $isLiveSimulation);
+
             return;
         }
 
@@ -213,6 +224,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
             $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport, [], $isLiveSimulation);
+
             return;
         }
 
@@ -232,6 +244,7 @@ class RunSimulationReportJob implements ShouldQueue
                 ],
                 $isLiveSimulation
             );
+
             return;
         }
 
@@ -263,6 +276,7 @@ class RunSimulationReportJob implements ShouldQueue
         }
 
         $minutes = (int) $realDuration;
+
         return $minutes > 0 ? $minutes : null;
     }
 
@@ -320,6 +334,7 @@ class RunSimulationReportJob implements ShouldQueue
     private function resolvePhaseDelaySeconds(int $phaseIndex, array $schedule): int
     {
         $seconds = $schedule[$phaseIndex] ?? 60;
+
         return max(1, (int) $seconds);
     }
 

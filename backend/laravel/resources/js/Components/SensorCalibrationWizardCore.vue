@@ -70,7 +70,7 @@
           <div
             class="shrink-0 w-10 h-10 rounded-full border-2 border-brand border-t-transparent animate-spin"
             aria-hidden="true"
-          />
+          ></div>
           <div class="min-w-0 space-y-2 flex-1">
             <div class="text-sm font-semibold text-[color:var(--text-primary)]">
               Стадия 1 на модуле
@@ -103,7 +103,7 @@
           <div
             class="shrink-0 w-10 h-10 rounded-full border-2 border-brand border-t-transparent animate-spin"
             aria-hidden="true"
-          />
+          ></div>
           <div class="min-w-0 space-y-2 flex-1">
             <div class="text-sm font-semibold text-[color:var(--text-primary)]">
               Стадия 2 на модуле
@@ -121,7 +121,7 @@
           <div
             class="shrink-0 w-10 h-10 rounded-full border-2 border-[color:var(--border-muted)] border-t-[color:var(--text-muted)] animate-spin"
             aria-hidden="true"
-          />
+          ></div>
           <div class="min-w-0 space-y-1 flex-1">
             <div class="text-sm font-semibold text-[color:var(--text-primary)]">
               Сохранение калибровки в узле
@@ -138,11 +138,11 @@
           aria-hidden="true"
         >
           <div class="flex flex-col items-center gap-1">
-            <div :class="[tremaLedDiskBase, tremaLedDisks.d1]" />
+            <div :class="[tremaLedDiskBase, tremaLedDisks.d1]"></div>
             <span class="text-[10px] text-[color:var(--text-dim)] font-mono">1</span>
           </div>
           <div class="flex flex-col items-center gap-1">
-            <div :class="[tremaLedDiskBase, tremaLedDisks.d2]" />
+            <div :class="[tremaLedDiskBase, tremaLedDisks.d2]"></div>
             <span class="text-[10px] text-[color:var(--text-dim)] font-mono">2</span>
           </div>
         </div>

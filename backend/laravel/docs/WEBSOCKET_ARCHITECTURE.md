@@ -2,6 +2,10 @@
 
 Архитектура WebSocket системы для real-time обновлений в приложении.
 
+> **Canonical source of truth:** [`doc_ai/11_WEBSOCKET_ARCHITECTURE.md`](../../../doc_ai/11_WEBSOCKET_ARCHITECTURE.md). Этот файл — Laravel-side инженерная заметка (Reverb запуск, supervisor, env-переменные); таблица каналов и payload контрактов — в canonical документе.
+>
+> **Дата обновления:** 2026-05-28 — sync имён каналов с реальной реализацией (`hydro.` префикс на ВСЕХ каналах включая `commands.*`, `events.global`; роль-based authorization для `hydro.devices`).
+
 ## Общая схема
 
 ```
@@ -59,29 +63,22 @@
 - Клиент обязан корректно работать в dev (через Vite proxy) и prod (через балансировщик/TLS) окружениях с одинаковым кодом.
 - Наблюдаемость (системные метрики + браузерные метрики) является частью поставки: без них релиз считается неполным.
 
-### Каналы и авторизация
+### Каналы и авторизация (актуальные имена в коде)
 
-| Канал | Тип | Источник событий | Авторизация (`routes/channels.php`) | Клиентское использование |
-| --- | --- | --- | --- | --- |
-| `hydro.alerts` | Public Channel | `AlertCreated` | Любой аутентифицированный пользователь | Глобальная панель алертов (`HeaderStatusBar.vue`) |
-| `hydro.devices` | Public Channel | `NodeConfigUpdated` (только без зоны) | Любой аутентифицированный пользователь | Список устройств (unassigned) |
-| `hydro.zones.{zoneId}` | Private Channel | `ZoneUpdated`, `NodeConfigUpdated`, `TelemetryBatchUpdated` | Проверка `user !== null`, логирование отказов с `zoneId` | Подписка компонент зоны (`Zones/Show.vue`), realtime телеметрия |
-| `commands.{zoneId}` | Private Channel | `CommandStatusUpdated`, `CommandFailed` | Проверка `user !== null` | Карточка команды конкретной зоны, всплывающие статусы |
-| `commands.global` | Private Channel | `CommandStatusUpdated`, `CommandFailed` без `zoneId` | Проверка `user !== null` | Глобальный список команд, дашборд |
-| `events.global` | Public Channel | `EventCreated` | Публичный канал, авторизация не требуется | Лента событий/активностей |
+> Полный реестр каналов и событий — в [`doc_ai/11_WEBSOCKET_ARCHITECTURE.md`](../../../doc_ai/11_WEBSOCKET_ARCHITECTURE.md). Здесь — короткая шпаргалка для Laravel-разработчика, с фокусом на authorization.
 
-### События
+| Канал | Тип | Авторизация (`routes/channels.php`) | Прим. |
+| --- | --- | --- | --- |
+| `hydro.zones.{zoneId}` | Private | `ZoneAccessHelper::canAccessZone()` + role ∈ `[viewer, operator, admin, agronomist, engineer]` | основной zone-data канал |
+| `hydro.commands.{zoneId}` | Private | role-check + zone access | имена `commands.{zoneId}` (без `hydro.` префикса) — **deprecated**, не используются клиентом |
+| `hydro.commands.global` | Private | требует authenticated user | имена `commands.global` — **deprecated** |
+| `hydro.events.global` | Private | требует authenticated user (НЕ public!) | имена `events.global` без `hydro.` — **deprecated** |
+| `hydro.alerts` | Public | без auth | `AlertCreated`, `AlertUpdated` |
+| `hydro.devices` | Public | роли `admin` или `agronomist` (несёт unassigned device snapshot) | НЕ «любой authenticated», как было раньше |
+| `hydro.zone.executions.{zoneId}` | Private | role-check + zone access | scheduler cockpit causal chain (`ExecutionChainUpdated`) |
 
-| Event класс | Broadcast name | Канал | Payload | Очередь |
-| --- | --- | --- | --- | --- |
-| `AlertCreated` | по умолчанию имя класса | `hydro.alerts` | `alert` (массив) | очередь `broadcasts` (через `ShouldBroadcast`) |
-| `NodeConfigUpdated` | `device.updated` | `hydro.zones.{id}` (fallback: `hydro.devices` без зоны) | `device` с ключевыми полями `DeviceNode` | очередь `broadcasts` |
-| `TelemetryBatchUpdated` | `telemetry.batch.updated` | `hydro.zones.{id}` | `zone_id`, `updates[]` | очередь `broadcasts` |
-| `ZoneUpdated` | по умолчанию имя класса | `hydro.zones.{id}` | `zone.id`, `zone.name`, `zone.status` | очередь `broadcasts` |
-| `CommandStatusUpdated` | `CommandStatusUpdated` | `commands.{zoneId}` или `commands.global` | `commandId`, `status`, `message`, `error`, `zoneId` | очередь `broadcasts` |
-| `CommandFailed` | `CommandFailed` | `commands.{zoneId}` или `commands.global` | `commandId`, `status=failed`, `message`, `error`, `zoneId` | очередь `broadcasts` |
-| `EventCreated` | `EventCreated` | `events.global` | `id`, `kind`, `message`, `zoneId`, `occurredAt` | очередь `broadcasts` |
-
+> События (broadcast name, payload, источники) перечислены в [`doc_ai/11_WEBSOCKET_ARCHITECTURE.md`](../../../doc_ai/11_WEBSOCKET_ARCHITECTURE.md). В Laravel классы лежат в `app/Events/`.
+>
 > Все события используют `ShouldBroadcast` и по умолчанию ставятся в очередь `broadcasts`. Для критичных случаев допускается `ShouldBroadcastNow`, но это должно быть задокументировано в этом файле перед использованием.
 
 ## Компоненты системы
@@ -197,9 +194,9 @@ php artisan reverb:start
 
 ### `routes/channels.php`
 
-- Каждый приватный канал выполняет проверку `user !== null` и логирует отказ (`Log::info`) с указанием канала, user_id и заголовка `Origin`. Это позволяет быстро расследовать проблемы авторизации.
-- Для публичных каналов (`events.global`) Laravel не вызывает авторизацию; если понадобится ограничение доступа, нужно перевести канал в `PrivateChannel` и добавить условие.
-- При добавлении новых каналов обязательно описываем их назначение и политику в таблице выше.
+- Каждый приватный канал выполняет проверку `user !== null` (+ role check для большинства каналов) и логирует отказ (`Log::info`) с указанием канала, user_id и заголовка `Origin`. Это позволяет быстро расследовать проблемы авторизации.
+- Публичные каналы в текущей реализации — `hydro.alerts` и `hydro.devices` (последний дополнительно ограничен ролями `admin`/`agronomist` через application-level проверку). `hydro.events.global` — **private**, не public.
+- При добавлении новых каналов обязательно описываем их назначение и политику в таблице выше и в canonical `doc_ai/11_WEBSOCKET_ARCHITECTURE.md`.
 
 ### Очереди и `ShouldBroadcast`
 
@@ -248,7 +245,7 @@ php artisan reverb:start
 
 ## Авторизация и безопасность каналов
 
-- **Private каналы** (`hydro.zones.{id}`, `commands.{id}`, `commands.global`) — используются, когда данные видны только авторизованным пользователям. Авторизация в `routes/channels.php` проверяет, что пользователь существует, и логирует отказ.
+- **Private каналы** (`hydro.zones.{id}`, `hydro.commands.{id}`, `hydro.commands.global`, `hydro.events.global`, `hydro.zone.executions.{id}`) — используются, когда данные видны только авторизованным пользователям. Авторизация в `routes/channels.php` проверяет, что пользователь существует, и логирует отказ. Для zone-каналов дополнительно проверяется `ZoneAccessHelper::canAccessZone()`.
 - **Presence каналы** — сейчас не используются, но при необходимости (например, для совместной работы) нужно будет завести `PresenceChannel` и вернуть информацию о пользователе; Laravel автоматически добавит список участников в `Echo.join`.
 - **Rate limiting** — применяйте middleware `throttle:60,1` на `Broadcast::routes()` чтобы защититься от флуд-атак на авторизацию.  
 - **TLS** — включите `REVERB_TLS=true` и предоставьте сертификаты (либо term на балансировщике) для production.
@@ -275,8 +272,8 @@ php artisan reverb:start
 
 ### Vue компоненты
 
-- `Zones/Show.vue` — подписывается на `hydro.zones.{id}` и `commands.{id}` через `useWebSocket`, отображает актуальные статусы.
-- `Dashboard/Index.vue` — использует глобальные каналы (`events.global`, `commands.global`).
+- `Zones/Show.vue` — подписывается на `hydro.zones.{id}` и `hydro.commands.{id}` через `useWebSocket`, отображает актуальные статусы.
+- `Dashboard/Index.vue` — использует глобальные каналы (`hydro.events.global`, `hydro.commands.global`).
 - `HeaderStatusBar.vue` и `useSystemStatus` — визуализируют состояние WebSocket и количество попыток reconnect.
 - Любые новые компоненты должны использовать `useWebSocket`, а не напрямую `Echo.channel`, чтобы Reference counting и resubscribe работали автоматически.
 

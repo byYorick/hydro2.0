@@ -91,11 +91,11 @@ class DeviceNode extends Model
             // - Изменении других полей (config, zone_id, type, uid)
             // - Обновлении узла от history-logger (завершение привязки)
             // - Первичной регистрации узла (node_hello)
-            $shouldBroadcastOnAttach = !$isNewNode && $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
-            
+            $shouldBroadcastOnAttach = ! $isNewNode && $node->pending_zone_id && ! $node->zone_id && $node->wasChanged('pending_zone_id');
+
             // НЕ отправляем событие если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
             $skipAlreadyAssigned = $node->lifecycleState() === NodeLifecycleState::ASSIGNED_TO_ZONE && $node->zone_id;
-            
+
             if (! $isNewNode && ! $skipAlreadyAssigned && $shouldBroadcastOnAttach) {
                 // Отправляем событие только при привязке узла к зоне (изменение pending_zone_id)
                 if (! app()->environment('testing')) {
@@ -108,13 +108,13 @@ class DeviceNode extends Model
                         'reason' => 'pending_zone_id changed - node attached to zone',
                     ]);
                 }
-                
+
                 // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
                 \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
                     event(new NodeConfigUpdated($node));
                 });
             }
-            
+
             // Очищаем кеш списка устройств при создании или обновлении ноды
             // Используем точечную очистку вместо глобального flush для предотвращения DoS
             try {
@@ -124,7 +124,7 @@ class DeviceNode extends Model
                 // Используем паттерн для поиска ключей кеша устройств
                 $cacheKeys = [
                     'devices_list_all',
-                    'devices_list_zone_' . ($node->zone_id ?? 'null'),
+                    'devices_list_zone_'.($node->zone_id ?? 'null'),
                     'devices_list_unassigned',
                 ];
                 foreach ($cacheKeys as $key) {

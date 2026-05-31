@@ -18,7 +18,7 @@ return new class extends Migration
             $table->jsonb('params'); // параметры модели (буферная ёмкость, коэффициенты и т.д.)
             $table->timestamp('calibrated_at')->nullable();
             $table->timestamps();
-            
+
             $table->unique(['zone_id', 'model_type']);
             $table->index('zone_id');
         });

@@ -15,7 +15,7 @@ class GrowStageTemplateFactory extends Factory
         $names = ['Посадка', 'Укоренение', 'Вега', 'Цветение', 'Плодоношение', 'Сбор'];
         $icons = ['🌱', '🌿', '🌳', '🌸', '🍅', '✂️'];
         $colors = ['#10b981', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'];
-        
+
         $index = $this->faker->numberBetween(0, count($codes) - 1);
         $suffix = strtoupper($this->faker->unique()->lexify('????'));
 

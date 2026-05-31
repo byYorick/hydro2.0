@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Создает таблицу архива для unassigned_node_errors.
      * Используется для аудита и отслеживания истории ошибок,
      * которые были привязаны к нодам при регистрации.
@@ -46,4 +46,3 @@ return new class extends Migration
         Schema::dropIfExists('unassigned_node_errors_archive');
     }
 };
-

@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
 use App\Models\SystemLog;
+use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -46,7 +46,7 @@ class AutomationEngineLegacySqlGuard
     public function handle(Request $request, Closure $next): Response
     {
         // Проверяем, относится ли запрос к Automation Engine
-        if (!$this->isAutomationEngineRequest($request)) {
+        if (! $this->isAutomationEngineRequest($request)) {
             return $next($request);
         }
 

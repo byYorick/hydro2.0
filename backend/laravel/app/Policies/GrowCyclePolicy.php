@@ -2,8 +2,8 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\GrowCycle;
+use App\Models\User;
 use App\Models\Zone;
 
 class GrowCyclePolicy
@@ -57,4 +57,3 @@ class GrowCyclePolicy
         return $user->role === 'agronomist';
     }
 }
-

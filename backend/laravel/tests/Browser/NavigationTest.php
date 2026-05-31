@@ -69,4 +69,3 @@ class NavigationTest extends DuskTestCase
         });
     }
 }
-

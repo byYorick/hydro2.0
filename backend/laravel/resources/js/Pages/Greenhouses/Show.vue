@@ -298,7 +298,11 @@ import {
   toNodeIdArray,
   type GreenhouseClimateBindingsState,
 } from '@/composables/greenhouseLogicProfileAuthority'
-import { applyAutomationFromRecipe, buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
+import { applyAutomationFromRecipe } from '@/composables/zoneAutomationFormLogic'
+import {
+  buildGreenhouseClimateSubsystemPayload,
+  validateGreenhouseClimateForm,
+} from '@/composables/zoneAutomationProfilePayload'
 import { formatTime } from '@/utils/formatTime'
 import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
@@ -393,6 +397,7 @@ const climateForm = reactive<ClimateFormState>({
   outsideHumidityMax: 90,
   manualOverrideEnabled: true,
   overrideMinutes: 30,
+  maxVentStepPct: 25,
 })
 
 const maintenanceSubmitting = ref(false)
@@ -463,26 +468,7 @@ const lightingForm = reactive<LightingFormState>({
 const zoneClimateForm = reactive<ZoneClimateFormState>({ enabled: false })
 
 function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
-  const payload = buildGrowthCycleConfigPayload(
-    {
-      climateForm,
-      waterForm,
-      lightingForm,
-      zoneClimateForm,
-    },
-    {
-      includeClimateSubsystem: true,
-    }
-  )
-  const subsystems = asRecord(payload.subsystems ?? null)
-  const climate = asRecord(subsystems?.climate ?? null)
-
-  return {
-    climate: {
-      enabled: greenhouseClimateEnabled.value,
-      execution: asRecord(climate?.execution ?? null) ?? {},
-    },
-  }
+  return buildGreenhouseClimateSubsystemPayload(climateForm, greenhouseClimateEnabled.value)
 }
 
 async function loadAvailableNodes(): Promise<void> {
@@ -561,6 +547,12 @@ async function saveGreenhouseClimate(): Promise<void> {
 
   climateSubmitting.value = true
   try {
+    const climateErr = validateGreenhouseClimateForm(climateForm)
+    if (climateErr) {
+      showToast(climateErr, 'warning', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
     const bindingsPayload = {
       greenhouse_id: props.greenhouse.id,
       enabled: greenhouseClimateEnabled.value,

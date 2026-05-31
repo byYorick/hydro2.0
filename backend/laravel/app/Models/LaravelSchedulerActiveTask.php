@@ -35,4 +35,3 @@ class LaravelSchedulerActiveTask extends Model
         'details' => 'array',
     ];
 }
-

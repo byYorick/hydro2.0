@@ -168,6 +168,7 @@ class ZoneScheduleItemBuilder
         if (! is_array($subsystem)) {
             return null;
         }
+
         return $this->coerceSubsystemEnabledFlag($subsystem['enabled'] ?? null);
     }
 

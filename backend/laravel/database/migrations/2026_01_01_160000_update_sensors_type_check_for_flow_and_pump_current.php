@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('sensors')) {
+        if (! Schema::hasTable('sensors')) {
             return;
         }
 
@@ -44,7 +44,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        if (!Schema::hasTable('sensors')) {
+        if (! Schema::hasTable('sensors')) {
             return;
         }
 

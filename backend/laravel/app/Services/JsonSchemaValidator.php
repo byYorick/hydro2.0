@@ -56,6 +56,7 @@ class JsonSchemaValidator
         if (is_dir('/schemas')) {
             return '/schemas';
         }
+
         return base_path('../../schemas');
     }
 
@@ -75,15 +76,13 @@ class JsonSchemaValidator
     /**
      * Валидирует payload против канонической schema.
      *
-     * @param string $namespace
-     * @param array<string,mixed>|string $payload — либо PHP array, либо JSON string
-     *   (предпочтительно string для сохранения object-vs-array семантики пустых `{}`).
-     * @param int $schemaVersion
+     * @param  array<string,mixed>|string  $payload  — либо PHP array, либо JSON string
+     *                                               (предпочтительно string для сохранения object-vs-array семантики пустых `{}`).
      * @return list<array{path:string,code:string,message:string}>
      */
     public function validate(string $namespace, array|string $payload, int $schemaVersion = 1): array
     {
-        if (!isset(self::NAMESPACE_SCHEMA_MAP[$namespace])) {
+        if (! isset(self::NAMESPACE_SCHEMA_MAP[$namespace])) {
             throw new RuntimeException("Unsupported namespace: {$namespace}");
         }
         if ($schemaVersion !== 1) {
@@ -92,7 +91,7 @@ class JsonSchemaValidator
 
         $baseName = self::NAMESPACE_SCHEMA_MAP[$namespace];
         $schemaFile = "{$this->schemasRoot}/{$baseName}.v{$schemaVersion}.json";
-        if (!is_file($schemaFile)) {
+        if (! is_file($schemaFile)) {
             throw new RuntimeException("Schema file missing: {$schemaFile}");
         }
 
@@ -104,12 +103,12 @@ class JsonSchemaValidator
         } else {
             $payloadJson = json_encode($this->preserveObjects($payload), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             if ($payloadJson === false) {
-                throw new RuntimeException("Cannot encode payload: " . json_last_error_msg());
+                throw new RuntimeException('Cannot encode payload: '.json_last_error_msg());
             }
         }
         $payloadObject = json_decode($payloadJson, false);
         if ($payloadObject === null && json_last_error() !== JSON_ERROR_NONE) {
-            throw new RuntimeException("Invalid JSON payload: " . json_last_error_msg());
+            throw new RuntimeException('Invalid JSON payload: '.json_last_error_msg());
         }
 
         $result = $validator->validate($payloadObject, $schemaId);
@@ -117,7 +116,7 @@ class JsonSchemaValidator
             return [];
         }
 
-        $formatter = new ErrorFormatter();
+        $formatter = new ErrorFormatter;
         $output = $formatter->formatOutput($result->error(), 'basic');
 
         $violations = [];
@@ -128,6 +127,7 @@ class JsonSchemaValidator
                 'message' => $err['error'] ?? 'unknown violation',
             ];
         }
+
         return $violations;
     }
 
@@ -139,31 +139,29 @@ class JsonSchemaValidator
      * (integer keys 0..N) → array. Пустой `[]` — неоднозначный, по умолчанию
      * трактуем как object (безопасно для config structures, где empty-object
      * встречается чаще, чем empty-list).
-     *
-     * @param mixed $value
-     * @return mixed
      */
     private function preserveObjects(mixed $value): mixed
     {
-        if (!is_array($value)) {
+        if (! is_array($value)) {
             return $value;
         }
         if (empty($value)) {
-            return new \stdClass();
+            return new \stdClass;
         }
         if (array_is_list($value)) {
-            return array_map(fn($v) => $this->preserveObjects($v), $value);
+            return array_map(fn ($v) => $this->preserveObjects($v), $value);
         }
-        $obj = new \stdClass();
+        $obj = new \stdClass;
         foreach ($value as $k => $v) {
             $obj->{(string) $k} = $this->preserveObjects($v);
         }
+
         return $obj;
     }
 
     private function buildValidator(): Validator
     {
-        $validator = new Validator();
+        $validator = new Validator;
         /** @var SchemaResolver $resolver */
         $resolver = $validator->resolver();
         // File layout is `schemas/<name>.v<N>.json` (dot, not slash), so we register
@@ -186,6 +184,7 @@ class JsonSchemaValidator
                 $baseCorrection,
             );
         }
+
         return $validator;
     }
 }

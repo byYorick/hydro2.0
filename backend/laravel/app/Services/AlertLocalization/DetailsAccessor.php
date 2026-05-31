@@ -10,8 +10,8 @@ namespace App\Services\AlertLocalization;
 class DetailsAccessor
 {
     /**
-     * @param array<string, mixed> $details
-     * @param string[]             $keys
+     * @param  array<string, mixed>  $details
+     * @param  string[]  $keys
      */
     public function stringValue(array $details, array $keys): ?string
     {
@@ -31,8 +31,8 @@ class DetailsAccessor
     }
 
     /**
-     * @param array<string, mixed> $details
-     * @param string[]             $keys
+     * @param  array<string, mixed>  $details
+     * @param  string[]  $keys
      */
     public function scalarValue(array $details, array $keys): ?string
     {
@@ -56,8 +56,8 @@ class DetailsAccessor
     }
 
     /**
-     * @param array<string, mixed> $details
-     * @param string[]             $keys
+     * @param  array<string, mixed>  $details
+     * @param  string[]  $keys
      */
     public function integerValue(array $details, array $keys): ?int
     {

@@ -2,7 +2,8 @@
 
 **Stack:** Laravel Reverb (self-hosted Pusher-compatible, port 6001) + Laravel Echo (Pusher.js) on frontend.
 **Queue:** All broadcasts use Redis queue `broadcasts`.
-**Auth:** All channels are `private` — require `POST /broadcasting/auth` with Sanctum session or Bearer token.
+**Auth:** Большинство каналов — `private` (требуют `POST /broadcasting/auth` с Sanctum session или Bearer token). Public: `hydro.alerts`; Conditionally public: `hydro.devices` (application-level role-gate `admin`/`agronomist`).
+**Дата обновления:** 2026-05-28 (sync с реальным кодом: добавлен `hydro.zone.executions.*`, уточнены auth-уровни каналов, Laravel class-name event listeners).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -10,19 +11,21 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## Channels
 
-| Channel | Renamed from | Events broadcast | Who subscribes |
-|---------|-------------|-----------------|----------------|
-| `hydro.zones.{zoneId}` | — | TelemetryBatchUpdated, NodeTelemetryUpdated, NodeConfigUpdated, AlertCreated, AlertUpdated, GrowCycleUpdated, ZoneUpdated | Users with zone access |
-| `hydro.commands.{zoneId}` | `commands.{zoneId}` | CommandStatusUpdated, CommandFailed | Users with zone access |
-| `hydro.commands.global` | `commands.global` | CommandStatusUpdated, CommandFailed (no zone) | All authenticated users |
-| `hydro.events.global` | `events.global` | EventCreated | All authenticated users |
-| `hydro.alerts` | — | AlertCreated, AlertUpdated | All authenticated users |
-| `hydro.devices` | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | `admin`, `agronomist` |
+| Channel | Type | Renamed from | Events broadcast | Who subscribes |
+|---------|------|-------------|-----------------|----------------|
+| `hydro.zones.{zoneId}` | Private | — | TelemetryBatchUpdated, NodeTelemetryUpdated, NodeConfigUpdated, AlertCreated, AlertUpdated, GrowCycleUpdated, ZoneUpdated, EventCreated (zone-scoped) | Users with zone access |
+| `hydro.zone.executions.{zoneId}` | Private | — | ExecutionChainUpdated (Scheduler Cockpit causal chain) | Users with zone access |
+| `hydro.commands.{zoneId}` | Private | `commands.{zoneId}` *(deprecated alias)* | CommandStatusUpdated, CommandFailed | Users with zone access |
+| `hydro.commands.global` | Private | `commands.global` *(deprecated alias)* | CommandStatusUpdated, CommandFailed (no zone) | All authenticated users |
+| `hydro.events.global` | Private | `events.global` *(deprecated alias)* | EventCreated (global) | All authenticated users |
+| `hydro.alerts` | Public | — | AlertCreated, AlertUpdated | Any (no auth needed) |
+| `hydro.devices` | Public + app-gate | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | `admin`, `agronomist` |
 
 **Authorization** (`backend/laravel/routes/channels.php`):
-- Zone channels check `ZoneAccessHelper::canAccessZone()` + role in `['viewer', 'operator', 'admin', 'agronomist', 'engineer']`
-- `hydro.devices` допускает только роли `admin` и `agronomist`, так как канал несёт unassigned device snapshot
-- Global channels require authenticated user + valid role
+- Zone channels (`hydro.zones.{id}`, `hydro.zone.executions.{id}`, `hydro.commands.{id}`) check `ZoneAccessHelper::canAccessZone()` + role in `['viewer', 'operator', 'admin', 'agronomist', 'engineer']`
+- `hydro.devices` — public канал на уровне broadcasting, но клиент применяет role-check `admin`/`agronomist` (несёт unassigned device snapshot)
+- Global private channels (`hydro.events.global`, `hydro.commands.global`) require authenticated user + valid role
+- `hydro.alerts` — public, без auth, любой клиент может подписаться
 - Auth failures return `false` (403), DB errors return `false` instead of throwing
 
 ---
@@ -217,8 +220,8 @@ Batch limits: max 200 updates, max 256 KB (`REALTIME_BATCH_MAX_UPDATES`, `REALTI
 
 ### `EventCreated`
 
-**Channel:** `hydro.events.global`
-**Source:** System event service
+**Channel:** `hydro.events.global` (global, без `zone_id`) или `hydro.zones.{zoneId}` (если `zone_id` известен)
+**Source:** System event service / `EventCreated` Laravel event
 
 ```json
 {
@@ -231,6 +234,51 @@ Batch limits: max 200 updates, max 256 KB (`REALTIME_BATCH_MAX_UPDATES`, `REALTI
   "server_ts": 1704067200130
 }
 ```
+
+---
+
+### `ExecutionChainUpdated`
+
+**Channel:** `hydro.zone.executions.{zoneId}`
+**Source:** Laravel `App\Services\Scheduler\ExecutionChainAssembler` (после webhook от history-logger или AE3 task lifecycle change)
+**Purpose:** Real-time обновление Scheduler Cockpit "причинно-следственной цепочки" для зоны.
+
+```json
+{
+  "zone_id": 1,
+  "task_id": 42,
+  "chain": [
+    {"step": "SNAPSHOT", "at": "2026-05-28T10:00:00Z", "ref": "...", "status": "ok"},
+    {"step": "DECISION", "at": "2026-05-28T10:00:01Z", "ref": "...", "status": "ok"},
+    {"step": "TASK", "at": "2026-05-28T10:00:02Z", "ref": 42, "status": "ok"},
+    {"step": "DISPATCH", "at": "2026-05-28T10:00:03Z", "ref": "cmd-123", "status": "ok"},
+    {"step": "RUNNING", "at": "2026-05-28T10:00:04Z", "ref": "cmd-123", "status": "run", "live": true}
+  ],
+  "event_id": 12345686,
+  "server_ts": 1704067200131
+}
+```
+
+Frontend подписывается через `backend/laravel/resources/js/ws/schedulerChainChannel.ts` и рендерит таб «Планировщик» в `Pages/Zones/Tabs/ZoneSchedulerTab.vue`.
+
+---
+
+### Frontend event listener naming
+
+Frontend слушает события **через имена Laravel-класса** (не только через broadcast name). Это допускается Laravel Echo и используется для тех событий, которые ещё не нормализованы в `useWebSocket()`.
+
+```typescript
+subscribeManagedChannelEvents({
+  channelName: `hydro.zones.${zoneId}`,
+  eventHandlers: {
+    '.App\\Events\\GrowCycleUpdated': (payload) => { /* ... */ },
+    '.App\\Events\\ZoneUpdated': (payload) => { /* ... */ },
+    'telemetry.batch.updated': (payload) => { /* ... */ },  // broadcastAs() явно задан
+  },
+})
+```
+
+Точка `.` в начале — Laravel Echo синтаксис для escape namespace. Полный canonical name класса — `App\Events\GrowCycleUpdated`, в JSON он сериализуется как `App\\Events\\GrowCycleUpdated`.
 
 ---
 

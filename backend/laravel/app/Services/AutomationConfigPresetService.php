@@ -11,8 +11,7 @@ class AutomationConfigPresetService
 {
     public function __construct(
         private readonly AutomationConfigRegistry $registry,
-    ) {
-    }
+    ) {}
 
     public function list(string $namespace): array
     {

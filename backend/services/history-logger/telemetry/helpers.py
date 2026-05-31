@@ -70,6 +70,9 @@ def normalize_metric_type(metric_type: str) -> str:
 
 def infer_sensor_type(metric_type: str) -> str:
     normalized = normalize_metric_type(metric_type)
+    # TDS (ppm) с ec_node — отдельный MQTT channel `ec_tds_ppm`; в схеме БД нет типа TDS → OTHER.
+    if normalized == "TDS":
+        return "OTHER"
     # Дискретные датчики уровня приводим к каноническому типу WATER_LEVEL.
     if normalized == "WATER_LEVEL_SWITCH":
         return "WATER_LEVEL"
@@ -80,15 +83,19 @@ def infer_sensor_type(metric_type: str) -> str:
         "HUMIDITY",
         "CO2",
         "LIGHT_INTENSITY",
+        "OUTSIDE_LIGHT",
         "WATER_LEVEL",
         "FLOW_RATE",
         "PUMP_CURRENT",
         "SOIL_MOISTURE",
         "SOIL_TEMP",
         "PRESSURE",
+        "OUTSIDE_HUMIDITY",
+        "OUTSIDE_PRESSURE",
         "WIND_SPEED",
         "OUTSIDE_TEMP",
         "WIND_DIRECTION",
+        "RAIN_DETECTED",
         "OTHER",
     }
     if normalized in valid_types:

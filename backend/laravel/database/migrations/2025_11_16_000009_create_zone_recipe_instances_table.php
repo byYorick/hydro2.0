@@ -23,5 +23,3 @@ return new class extends Migration
         Schema::dropIfExists('zone_recipe_instances');
     }
 };
-
-

@@ -2,6 +2,8 @@
 # Полная система авторизации и аутентификации 2.0
 # Laravel Sanctum • Roles • Permissions • Tokens • API Security • UI Restrictions
 
+**Дата обновления:** 2026-05-28 (sync с `User::AVAILABLE_ROLES`: 5 ролей — admin, operator, viewer, agronomist, engineer).
+
 Документ описывает всю модель авторизации (Auth System) в системе 2.0:
 от входа пользователя до распределения прав, токенов и API-доступа.
 

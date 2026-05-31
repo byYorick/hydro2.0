@@ -8,8 +8,8 @@ use App\Models\NodeChannel;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ChannelBindingsTest extends TestCase

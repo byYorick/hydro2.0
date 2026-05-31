@@ -14,4 +14,3 @@ class Channel extends Model
         return $this->belongsTo(Device::class);
     }
 }
-

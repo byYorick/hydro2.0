@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -18,21 +18,21 @@ class ZonePidLogController extends Controller
     public function index(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
-        
+
         $validated = $request->validate([
             'type' => ['nullable', 'string', 'in:ph,ec'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
@@ -64,7 +64,7 @@ class ZonePidLogController extends Controller
 
         // Считаем total ДО применения offset/limit для корректной пагинации
         $total = $query->count();
-        
+
         $events = $query->orderBy('created_at', 'desc')
             ->offset($offset)
             ->limit($limit)

@@ -72,4 +72,3 @@ class RecipeRevision extends Model
         return $this->status === 'DRAFT';
     }
 }
-

@@ -176,7 +176,7 @@ class ServiceLogController extends Controller
     /**
      * Сохранить структурированный payload в system_logs.
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function storeStructuredPayload(array $payload): SystemLog
     {

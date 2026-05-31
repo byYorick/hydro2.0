@@ -17,6 +17,17 @@ from ._shared import apply_trace_context
 logger = logging.getLogger(__name__)
 
 
+def _extract_fw_version(data: dict) -> str | None:
+    for key in ("fw_version", "firmware_version", "fw"):
+        raw = data.get(key)
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            return value
+    return None
+
+
 async def handle_heartbeat(topic: str, payload: bytes) -> None:
     """Обновляет ``nodes`` на heartbeat: uptime / free_heap / rssi / last_seen."""
     try:
@@ -67,6 +78,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         uptime = data.get("uptime")
         free_heap = data.get("free_heap") or data.get("free_heap_bytes")
         rssi = data.get("rssi")
+        fw_version = _extract_fw_version(data)
 
         updates: list[str] = []
         params: list = [node_uid]
@@ -102,6 +114,11 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 param_index += 1
             except (ValueError, TypeError):
                 logger.warning(f"Invalid rssi value: {rssi}")
+
+        if fw_version is not None:
+            updates.append(f"fw_version=${param_index + 1}")
+            params.append(fw_version)
+            param_index += 1
 
         updates.append("last_heartbeat_at=NOW()")
         updates.append("updated_at=NOW()")
@@ -156,14 +173,22 @@ async def handle_status(topic: str, payload: bytes) -> None:
             return
 
         status = data.get("status", "").upper()
+        fw_version = _extract_fw_version(data)
 
         logger.info("[STATUS] Processing status for node_uid: %s, status: %s", node_uid, status)
 
         if status == "ONLINE":
-            await execute(
-                "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-                node_uid,
-            )
+            if fw_version is not None:
+                await execute(
+                    "UPDATE nodes SET status='online', fw_version=$2, last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+                    node_uid,
+                    fw_version,
+                )
+            else:
+                await execute(
+                    "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+                    node_uid,
+                )
             logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
         elif status == "OFFLINE":
             await execute(

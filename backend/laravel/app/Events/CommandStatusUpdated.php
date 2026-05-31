@@ -3,8 +3,8 @@
 namespace App\Events;
 
 use App\Services\EventSequenceService;
-use App\Traits\RecordsZoneEvent;
 use App\Traits\RecordsWsBroadcastMetric;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class CommandStatusUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent, RecordsWsBroadcastMetric;
+    use Dispatchable, InteractsWithSockets, RecordsWsBroadcastMetric, RecordsZoneEvent, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -48,7 +48,7 @@ class CommandStatusUpdated implements ShouldBroadcast
         $this->error = $error;
         $this->errorCode = $errorCode;
         $this->zoneId = $zoneId;
-        
+
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
         $this->eventId = $sequence['event_id'];

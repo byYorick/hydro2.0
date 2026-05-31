@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Таблица подтверждений команд для двухфазного подтверждения.
      * Поддерживает несколько типов подтверждений: accepted, executed, verified, error.
      */
@@ -39,4 +39,3 @@ return new class extends Migration
         Schema::dropIfExists('command_acks');
     }
 };
-

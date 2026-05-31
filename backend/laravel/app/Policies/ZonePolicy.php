@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\User;
 use App\Models\Zone;
-use App\Helpers\ZoneAccessHelper;
 
 class ZonePolicy
 {
@@ -38,10 +38,10 @@ class ZonePolicy
      */
     public function update(User $user, Zone $zone): bool
     {
-        if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone->id)) {
             return false;
         }
-        
+
         // Требуется роль operator или выше
         return in_array($user->role, ['operator', 'admin', 'agronomist', 'engineer']);
     }
@@ -51,10 +51,10 @@ class ZonePolicy
      */
     public function delete(User $user, Zone $zone): bool
     {
-        if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone->id)) {
             return false;
         }
-        
+
         // Требуется роль admin
         return $user->isAdmin();
     }
@@ -64,7 +64,7 @@ class ZonePolicy
      */
     public function sendCommand(User $user, Zone $zone): bool
     {
-        if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone->id)) {
             return false;
         }
 
@@ -81,11 +81,10 @@ class ZonePolicy
      */
     public function setLive(User $user, Zone $zone): bool
     {
-        if (!ZoneAccessHelper::canAccessZone($user, $zone->id)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone->id)) {
             return false;
         }
 
         return in_array($user->role, ['agronomist', 'engineer', 'admin']);
     }
 }
-

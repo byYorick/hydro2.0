@@ -1,5 +1,7 @@
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
+import { getActivePinia } from 'pinia'
+import { useWebSocketStore, type WsConnectionState } from '@/stores/websocket'
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
 import { buildEchoConfig, resolveHost, resolvePort, resolveScheme } from './echoConfig'
@@ -17,24 +19,24 @@ export type EchoInstance = Echo<'reverb'>
 // Ленивая загрузка store для избежания ошибок до инициализации Pinia
 function getWebSocketStore() {
   try {
-    // Проверяем доступность Pinia перед использованием store
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getActivePinia } = require('pinia')
     const pinia = getActivePinia()
     if (!pinia) {
       return null
     }
-    // Динамический импорт для избежания циклических зависимостей
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { useWebSocketStore } = require('@/stores/websocket')
     return useWebSocketStore()
-  } catch (err) {
-    // Pinia еще не инициализирована или store недоступен - это нормально при начальной загрузке
+  } catch {
     return null
   }
 }
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
+
+function toStoreConnectionState(state: WsState): WsConnectionState {
+  if (state === 'unavailable') {
+    return 'failed'
+  }
+  return state
+}
 type StateListener = (state: WsState) => void
 
 interface ConnectionError {
@@ -89,7 +91,7 @@ function emitState(state: WsState): void {
     const wsStore = getWebSocketStore()
     if (wsStore) {
       const connectionState = getConnectionState()
-      wsStore.setState(state)
+      wsStore.setState(toStoreConnectionState(state))
       wsStore.setReconnectAttempts(connectionState.reconnectAttempts)
       wsStore.setLastError(connectionState.lastError)
       wsStore.setSocketId(connectionState.socketId || null)
@@ -168,30 +170,25 @@ function teardownEcho(): void {
   isReconnecting = false
   connectingStartTime = 0
   lastError = null
-  
-  // Устанавливаем состояние disconnected
-  emitState('disconnected')
-  
-  // Очищаем каналы useWebSocket при teardown
-  if (typeof window !== 'undefined') {
-    // Динамически импортируем cleanupWebSocketChannels, чтобы избежать циклических зависимостей
-    import('../composables/useWebSocket').then(({ cleanupWebSocketChannels }) => {
-      try {
-        cleanupWebSocketChannels()
-      } catch (error) {
-        logger.warn('[echoClient] Error cleaning up WebSocket channels', {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }).catch(() => {
-      // Игнорируем ошибки импорта (может быть недоступен в некоторых контекстах)
-    })
-  }
-  
-  // Уведомляем bootstrap.js о сбросе состояния через событие
+
+  /*
+   * S4 (AUDIT_2026_05_28_BUGFIX_PLAN): порядок dispatch критичен.
+   *
+   *   1. Dispatch `echo:teardown` — это синхронный event, на который
+   *      `useWebSocket` подписан и выполняет `cleanupWebSocketChannels()`
+   *      в том же call-stack. Раньше cleanup делался через async
+   *      `import('../composables/useWebSocket').then(...)`, что создавало
+   *      race: между `emitState('disconnected')` и реальным cleanup мог
+   *      запуститься `scheduleReconnect()`.
+   *   2. ТОЛЬКО затем `emitState('disconnected')` — теперь все listeners
+   *      получают финальное состояние уже после cleanup'а каналов.
+   */
   if (typeof window !== 'undefined' && window.dispatchEvent) {
     window.dispatchEvent(new CustomEvent('echo:teardown'))
   }
+
+  // Устанавливаем состояние disconnected (после cleanup'а каналов).
+  emitState('disconnected')
 }
 
 function scheduleReconnect(reason: string): void {
@@ -513,20 +510,24 @@ export function initEcho(forceReinit = false): EchoInstance | null {
     reconnectLockUntil = 0
     isReconnecting = false
     connectingStartTime = 0
-    
-    // Устанавливаем состояние failed и disconnected
-    emitState('failed')
-    emitState('disconnected')
-    
+
     // Очищаем экземпляр
     window.Echo = undefined
     echoInstance = null
-    
-    // Уведомляем bootstrap.js о сбросе состояния
+
+    /*
+     * S4 (AUDIT_2026_05_28_BUGFIX_PLAN): synchronous cleanup перед emitState,
+     * чтобы между состоянием failed/disconnected и реальным cleanup'ом
+     * каналов не возникало race condition.
+     */
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       window.dispatchEvent(new CustomEvent('echo:teardown'))
     }
-    
+
+    // Устанавливаем состояние failed и disconnected (после cleanup'а каналов).
+    emitState('failed')
+    emitState('disconnected')
+
     return null
   } finally {
     initializing = false

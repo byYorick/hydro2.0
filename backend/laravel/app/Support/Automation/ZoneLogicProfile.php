@@ -21,6 +21,5 @@ final class ZoneLogicProfile
         public readonly ?int $updatedBy,
         public readonly ?CarbonInterface $createdAt,
         public readonly ?CarbonInterface $updatedAt,
-    ) {
-    }
+    ) {}
 }

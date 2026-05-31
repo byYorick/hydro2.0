@@ -715,9 +715,15 @@ class PythonIngestController extends Controller
                 'data' => $data,
             ]);
 
+            /*
+             * S1.6 (AUDIT_2026_05_28_BUGFIX_PLAN): не возвращаем raw exception
+             * message клиенту (это internal ingest endpoint, но он защищён
+             * сетевым периметром, не auth — поэтому утечка деталей в response
+             * нежелательна). Детали сохраняются в Log::error.
+             */
             return Response::json([
                 'status' => 'error',
-                'message' => 'Failed to create/update alert: '.$e->getMessage(),
+                'message' => 'Failed to create/update alert. See server logs for details.',
             ], 500);
         }
     }

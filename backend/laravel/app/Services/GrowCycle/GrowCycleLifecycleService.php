@@ -185,7 +185,7 @@ class GrowCycleLifecycleService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function harvest(GrowCycle $cycle, array $data, int $userId): GrowCycle
     {
@@ -241,7 +241,7 @@ class GrowCycleLifecycleService
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      */
     public function abort(GrowCycle $cycle, array $data, int $userId): GrowCycle
     {

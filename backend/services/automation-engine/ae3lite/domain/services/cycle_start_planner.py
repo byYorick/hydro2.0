@@ -116,12 +116,29 @@ class CycleStartPlanner:
                 )
             )
 
+        default_node_types = self._normalize_node_types(execution.get("required_node_types"))
+        irr_node_uid = self._resolve_single_node_uid(
+            actuators=snapshot.actuators,
+            node_types=default_node_types,
+        )
+        named_plans = {
+            "irr_state_probe": (
+                PlannedCommand(
+                    step_no=1,
+                    node_uid=irr_node_uid,
+                    channel="storage_state",
+                    payload={"name": "irr_state_probe", "cmd": "state", "params": {}},
+                ),
+            ),
+        }
+
         return CommandPlan(
             task_type=task.task_type,
             workflow=workflow,
             topology=topology,
             steps=tuple(planned_steps),
             targets=snapshot.targets,
+            named_plans=named_plans,
         )
 
     def _build_two_tank_plan(

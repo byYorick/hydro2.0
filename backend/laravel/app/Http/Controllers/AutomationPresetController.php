@@ -13,8 +13,7 @@ class AutomationPresetController extends Controller
     public function __construct(
         private readonly AutomationConfigPresetService $presets,
         private readonly AutomationConfigRegistry $registry,
-    ) {
-    }
+    ) {}
 
     public function index(string $namespace): JsonResponse
     {

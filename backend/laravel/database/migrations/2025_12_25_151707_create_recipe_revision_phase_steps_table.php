@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Подшаги внутри фазы (опционально)
      * Например, в фазе "Вега" могут быть подшаги: "начало веги", "середина веги", "конец веги"
      */
@@ -22,7 +22,7 @@ return new class extends Migration
             $table->integer('offset_hours')->default(0); // Смещение от начала фазы в часах
             $table->string('action')->nullable(); // Действие/задача подшага
             $table->text('description')->nullable();
-            
+
             // Уставки по колонкам (те же что у фаз, nullable)
             $table->decimal('ph_target', 4, 2)->nullable();
             $table->decimal('ph_min', 4, 2)->nullable();
@@ -41,7 +41,7 @@ return new class extends Migration
             $table->decimal('temp_air_target', 5, 2)->nullable();
             $table->decimal('humidity_target', 5, 2)->nullable();
             $table->integer('co2_target')->nullable();
-            
+
             $table->jsonb('extensions')->nullable(); // Только для расширений
             $table->timestamps();
 
@@ -59,4 +59,3 @@ return new class extends Migration
         Schema::dropIfExists('recipe_revision_phase_steps');
     }
 };
-

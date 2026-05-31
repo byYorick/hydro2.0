@@ -43,7 +43,7 @@ static esp_err_t init_i2c_bus_if_needed(void) {
         .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
         .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
         .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
-        .pullup_enable = true
+        .pullup_enable = false
     };
 
     esp_err_t err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
@@ -145,9 +145,6 @@ void storage_irrigation_node_mqtt_connection_cb(bool connected, void *user_ctx) 
         // На старте и после reconnect всегда публикуем node_hello, чтобы backend
         // видел факт присутствия реальной IRR-ноды независимо от namespace.
         storage_irrigation_node_publish_hello();
-        
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
 
         // Публикуем текущий NodeConfig на сервер
         node_utils_publish_config_report();

@@ -5,16 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Zone;
 use App\Services\AiService;
 use App\Services\PredictionService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class AiController extends Controller
 {
     public function __construct(
         private AiService $aiService,
         private PredictionService $predictionService
-    ) {
-    }
+    ) {}
 
     /**
      * POST /api/ai/predict
@@ -37,7 +36,7 @@ class AiController extends Controller
             $horizonMinutes
         );
 
-        if (!$prediction) {
+        if (! $prediction) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to generate prediction. Not enough data.',
@@ -90,7 +89,7 @@ class AiController extends Controller
                 'status' => $zone->status,
                 'explanations' => $explanations,
                 'forecasts' => $forecasts,
-                'telemetry' => $telemetry->map(fn($t) => [
+                'telemetry' => $telemetry->map(fn ($t) => [
                     'metric_type' => $t->metric_type,
                     'value' => $t->value,
                     'updated_at' => $t->updated_at?->toIso8601String(),

@@ -23,19 +23,20 @@ class ExtendedGreenhousesZonesSeeder extends Seeder
         $presets = Preset::all();
         if ($presets->isEmpty()) {
             $this->command->warn('Пресеты не найдены. Запустите PresetSeeder сначала.');
+
             return;
         }
 
         // Создаем теплицы
         $greenhouses = $this->seedGreenhouses();
-        
+
         // Создаем зоны для каждой теплицы
         foreach ($greenhouses as $greenhouse) {
             $this->seedZonesForGreenhouse($greenhouse, $presets);
         }
 
-        $this->command->info("Создано теплиц: " . Greenhouse::count());
-        $this->command->info("Создано зон: " . Zone::count());
+        $this->command->info('Создано теплиц: '.Greenhouse::count());
+        $this->command->info('Создано зон: '.Zone::count());
     }
 
     private function seedGreenhouses(): array
@@ -89,7 +90,7 @@ class ExtendedGreenhousesZonesSeeder extends Seeder
             $greenhouse = Greenhouse::firstOrCreate(
                 ['uid' => $data['uid']],
                 array_merge($data, [
-                    'provisioning_token' => 'gh_' . Str::random(32),
+                    'provisioning_token' => 'gh_'.Str::random(32),
                 ])
             );
             $greenhouses[] = $greenhouse;
@@ -141,9 +142,9 @@ class ExtendedGreenhousesZonesSeeder extends Seeder
 
         foreach ($configs as $config) {
             $preset = $presets->get($config['preset_index'] % $presets->count());
-            
+
             $zoneData = [
-                'uid' => 'zone-' . Str::random(16),
+                'uid' => 'zone-'.Str::random(16),
                 'description' => "Зона для выращивания в {$greenhouse->name}",
                 'status' => $config['status'],
                 'preset_id' => $preset->id,
@@ -227,4 +228,3 @@ class ExtendedGreenhousesZonesSeeder extends Seeder
         ];
     }
 }
-

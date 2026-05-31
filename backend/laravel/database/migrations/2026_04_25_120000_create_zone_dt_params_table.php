@@ -27,7 +27,7 @@ return new class extends Migration
             $table->index(['zone_id', 'param_group', 'superseded_at'], 'zone_dt_params_active_idx');
         });
 
-        DB::statement(<<<SQL
+        DB::statement(<<<'SQL'
             ALTER TABLE zone_dt_params
             ADD CONSTRAINT zone_dt_params_param_group_chk
             CHECK (param_group IN ('tank','ph','ec','climate','substrate','uptake','actuator'))

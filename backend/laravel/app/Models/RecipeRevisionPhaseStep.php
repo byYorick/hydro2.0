@@ -57,4 +57,3 @@ class RecipeRevisionPhaseStep extends Model
         return $this->hasMany(GrowCycleTransition::class, 'to_step_id');
     }
 }
-

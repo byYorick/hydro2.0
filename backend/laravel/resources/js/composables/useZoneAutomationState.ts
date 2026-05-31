@@ -92,6 +92,7 @@ function sanitizeClimateForm(raw: Partial<ClimateFormState> | undefined, fallbac
     outsideHumidityMax: clamp(toRoundedNumber(raw?.outsideHumidityMax, fallback.outsideHumidityMax), 20, 100),
     manualOverrideEnabled: toBoolean(raw?.manualOverrideEnabled, fallback.manualOverrideEnabled),
     overrideMinutes: clamp(toRoundedNumber(raw?.overrideMinutes, fallback.overrideMinutes), 5, 120),
+    maxVentStepPct: clamp(toRoundedNumber(raw?.maxVentStepPct, fallback.maxVentStepPct), 1, 100),
   }
 }
 

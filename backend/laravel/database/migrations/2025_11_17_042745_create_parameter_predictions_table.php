@@ -20,7 +20,7 @@ return new class extends Migration
             $table->integer('horizon_minutes'); // горизонт прогноза в минутах
             $table->timestamp('predicted_at'); // время, на которое сделан прогноз
             $table->timestamps();
-            
+
             $table->index(['zone_id', 'metric_type', 'predicted_at']);
             $table->index(['zone_id', 'created_at']);
         });

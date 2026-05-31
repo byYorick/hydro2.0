@@ -26,8 +26,8 @@ class SeederFactory
      */
     public function make(string $seederClass): SeederInterface
     {
-        if (!isset($this->seeders[$seederClass])) {
-            if (!class_exists($seederClass)) {
+        if (! isset($this->seeders[$seederClass])) {
+            if (! class_exists($seederClass)) {
                 throw new \InvalidArgumentException("Seeder class {$seederClass} does not exist");
             }
 
@@ -43,6 +43,7 @@ class SeederFactory
     public function getOrderedSeeders(array $seederClasses): Collection
     {
         $graph = $this->buildDependencyGraph($seederClasses);
+
         return $this->topologicalSort($graph);
     }
 
@@ -122,7 +123,7 @@ class SeederFactory
                 throw new \RuntimeException("Circular dependency detected involving {$node}");
             }
 
-            if (!isset($visited[$node])) {
+            if (! isset($visited[$node])) {
                 $visiting[$node] = true;
 
                 foreach ($graph[$node] ?? [] as $dependency) {
@@ -136,7 +137,7 @@ class SeederFactory
         };
 
         foreach (array_keys($graph) as $node) {
-            if (!isset($visited[$node])) {
+            if (! isset($visited[$node])) {
                 $visit($node);
             }
         }

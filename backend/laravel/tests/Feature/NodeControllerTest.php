@@ -2,18 +2,18 @@
 
 namespace Tests\Feature;
 
-use App\Models\DeviceNode;
+use App\Jobs\PublishNodeConfigJob;
 use App\Models\ChannelBinding;
+use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\User;
-use App\Models\Greenhouse;
 use App\Models\Zone;
-use App\Jobs\PublishNodeConfigJob;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -242,8 +242,8 @@ class NodeControllerTest extends TestCase
     public function test_node_registration_with_service_token(): void
     {
         $token = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
-        
-        if (!$token) {
+
+        if (! $token) {
             $this->markTestSkipped('Service token not configured');
         }
 
@@ -259,8 +259,8 @@ class NodeControllerTest extends TestCase
     public function test_node_registration_rate_limited(): void
     {
         $token = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
-        
-        if (!$token) {
+
+        if (! $token) {
             $this->markTestSkipped('Service token not configured');
         }
 
@@ -280,7 +280,7 @@ class NodeControllerTest extends TestCase
     {
         $token = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
 
-        if (!$token) {
+        if (! $token) {
             $this->markTestSkipped('Service token not configured');
         }
 

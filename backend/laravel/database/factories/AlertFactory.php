@@ -37,4 +37,3 @@ class AlertFactory extends Factory
         ]);
     }
 }
-

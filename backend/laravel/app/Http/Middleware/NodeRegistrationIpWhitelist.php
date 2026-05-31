@@ -11,8 +11,6 @@ class NodeRegistrationIpWhitelist
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
      * @return mixed
      */
     public function handle(Request $request, Closure $next)
@@ -26,14 +24,16 @@ class NodeRegistrationIpWhitelist
         $clientIp = $request->ip();
 
         // Если список разрешенных IP пуст, пропускаем проверку
-        if (empty($allowedIps) || !is_array($allowedIps)) {
+        if (empty($allowedIps) || ! is_array($allowedIps)) {
             Log::debug('NodeRegistrationIpWhitelist: No allowed IPs configured, skipping whitelist check.');
+
             return $next($request);
         }
 
         // Проверяем, находится ли IP клиента в списке разрешенных (поддержка CIDR)
         if ($this->isIpAllowed($clientIp, $allowedIps)) {
             Log::debug('NodeRegistrationIpWhitelist: Client IP is whitelisted.', ['ip' => $clientIp]);
+
             return $next($request);
         }
 
@@ -48,9 +48,7 @@ class NodeRegistrationIpWhitelist
     /**
      * Проверить, разрешен ли IP адрес.
      *
-     * @param string $ip
-     * @param array $allowedRanges Массив CIDR нотаций или IP адресов
-     * @return bool
+     * @param  array  $allowedRanges  Массив CIDR нотаций или IP адресов
      */
     private function isIpAllowed(string $ip, array $allowedRanges): bool
     {
@@ -59,15 +57,14 @@ class NodeRegistrationIpWhitelist
                 return true;
             }
         }
+
         return false;
     }
 
     /**
      * Проверить, находится ли IP в диапазоне.
      *
-     * @param string $ip
-     * @param string $range CIDR нотация (например, "192.168.1.0/24") или точный IP
-     * @return bool
+     * @param  string  $range  CIDR нотация (например, "192.168.1.0/24") или точный IP
      */
     private function ipInRange(string $ip, string $range): bool
     {
@@ -78,24 +75,24 @@ class NodeRegistrationIpWhitelist
 
         // Если это CIDR нотация
         if (str_contains($range, '/')) {
-            list($subnet, $mask) = explode('/', $range);
-            
-            if (!filter_var($subnet, FILTER_VALIDATE_IP)) {
+            [$subnet, $mask] = explode('/', $range);
+
+            if (! filter_var($subnet, FILTER_VALIDATE_IP)) {
                 return false;
             }
 
             $ipLong = ip2long($ip);
             $subnetLong = ip2long($subnet);
-            
+
             if ($ipLong === false || $subnetLong === false) {
                 return false;
             }
 
-            $maskLong = -1 << (32 - (int)$mask);
+            $maskLong = -1 << (32 - (int) $mask);
+
             return ($ipLong & $maskLong) === ($subnetLong & $maskLong);
         }
 
         return false;
     }
 }
-

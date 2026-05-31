@@ -2,15 +2,15 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
-use App\Models\Greenhouse;
-use App\Models\Zone;
 use App\Models\DeviceNode;
-use Tests\RefreshDatabase;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Http;
+use App\Models\Greenhouse;
+use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class SystemControllerTest extends TestCase
@@ -30,7 +30,7 @@ class SystemControllerTest extends TestCase
         // Health endpoint должен быть публичным
         // Для неаутентифицированных пользователей возвращается только базовый статус
         $response = $this->getJson('/api/system/health');
-        
+
         $response->assertOk()
             ->assertJsonStructure(['status', 'data' => ['app']]);
     }
@@ -60,25 +60,25 @@ class SystemControllerTest extends TestCase
     {
         // Убеждаемся, что токен не настроен для этого теста
         Config::set('services.python_bridge.token', null);
-        
+
         // Без авторизации должен вернуть 401
         $response = $this->getJson('/api/system/config/full');
-        
+
         $response->assertStatus(401);
     }
 
     public function test_system_config_full_with_auth(): void
     {
         $token = $this->token();
-        
+
         // Создаём тестовые данные
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/system/config/full');
-        
+
         $response->assertOk()
             ->assertJsonStructure([
                 'status',
@@ -104,7 +104,7 @@ class SystemControllerTest extends TestCase
                     ],
                 ],
             ]);
-        
+
         $greenhouses = $response->json('data.greenhouses');
         $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
         $this->assertNotNull($targetGreenhouse);
@@ -144,16 +144,16 @@ class SystemControllerTest extends TestCase
     public function test_system_config_full_includes_all_relations(): void
     {
         $token = $this->token();
-        
+
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/system/config/full');
-        
+
         $response->assertOk();
-        
+
         $greenhouses = $response->json('data.greenhouses');
         $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
         $this->assertNotNull($targetGreenhouse);
@@ -182,7 +182,7 @@ class SystemControllerTest extends TestCase
         $zone2 = Zone::factory()->create(['greenhouse_id' => $greenhouse2->id]);
         $node2 = DeviceNode::factory()->create(['zone_id' => $zone2->id]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $viewerToken)
+        $response = $this->withHeader('Authorization', 'Bearer '.$viewerToken)
             ->getJson('/api/system/config/full');
 
         $response->assertOk();
@@ -191,7 +191,7 @@ class SystemControllerTest extends TestCase
         DB::table('user_zones')->where('user_id', $viewer->id)->delete();
         $viewer->greenhouses()->syncWithoutDetaching([$greenhouse1->id]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $viewerToken)
+        $response = $this->withHeader('Authorization', 'Bearer '.$viewerToken)
             ->getJson('/api/system/config/full');
 
         $response->assertOk();
@@ -217,11 +217,11 @@ class SystemControllerTest extends TestCase
             ],
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/system/config/full');
 
         $response->assertOk();
-        
+
         $greenhouses = $response->json('data.greenhouses');
         $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
         $this->assertNotNull($targetGreenhouse);
@@ -231,7 +231,7 @@ class SystemControllerTest extends TestCase
 
         $firstNode = collect($targetZone['nodes'] ?? [])->firstWhere('id', $node->id);
         $this->assertNotNull($firstNode);
-        
+
         // Проверяем, что config не включен в ответ (защита от утечки креденшалов)
         $this->assertArrayNotHasKey('config', $firstNode);
     }

@@ -7,21 +7,21 @@ use App\Events\ZoneUpdated;
 use App\Listeners\PublishNodeConfigOnUpdate;
 use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
+use App\Models\Greenhouse;
+use App\Models\User;
+use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Observers\CommandObserver;
 use App\Observers\GreenhouseObserver;
 use App\Observers\UserObserver;
-use App\Observers\ZoneObserver;
 use App\Observers\ZoneEventObserver;
-use App\Models\Greenhouse;
+use App\Observers\ZoneObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
-use App\Models\User;
-use App\Models\Zone;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,8 +34,12 @@ class AppServiceProvider extends ServiceProvider
         // Регистрация DigitalTwinClient
         $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {
             $baseUrl = config('services.digital_twin.url', 'http://digital-twin:8003');
+            $token = config('services.digital_twin.token');
 
-            return new \App\Services\DigitalTwinClient($baseUrl);
+            return new \App\Services\DigitalTwinClient(
+                $baseUrl,
+                is_string($token) && $token !== '' ? $token : null,
+            );
         });
 
         $this->app->singleton(\App\Services\NodeSimManagerClient::class, function ($app) {

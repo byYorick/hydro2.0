@@ -504,21 +504,52 @@ class PgAutomationTaskRepository:
             now=now,
         )
 
-    async def recover_waiting_command(self, *, task_id: int, now: datetime) -> AutomationTask | None:
+    async def recover_waiting_command(
+        self,
+        *,
+        task_id: int,
+        now: datetime,
+        owner: str | None = None,
+    ) -> AutomationTask | None:
+        """Перевод task в `waiting_command` после рестарта worker'а.
+
+        S2.3 (AUDIT_2026_05_28_BUGFIX_PLAN): если передан `owner`, в SQL
+        добавляется guard `claimed_by IN (owner, NULL)` — иначе при гонке
+        двух worker'ов второй может перехватить `running/claimed` task,
+        которую уже взял первый. ``owner=None`` сохраняет старое поведение
+        для startup_recovery, где claim ещё не выполнен.
+        """
         normalized_now = self._normalize_timestamp(now)
-        row = await self._fetchrow(
-            """
-            UPDATE ae_tasks
-            SET status = 'waiting_command',
-                updated_at = $2
-            WHERE id = $1
-              AND status = ANY($3::text[])
-            RETURNING *
-            """,
-            task_id,
-            normalized_now,
-            list(RUNNING_TASK_STATUSES),
-        )
+        if owner is None:
+            row = await self._fetchrow(
+                """
+                UPDATE ae_tasks
+                SET status = 'waiting_command',
+                    updated_at = $2
+                WHERE id = $1
+                  AND status = ANY($3::text[])
+                RETURNING *
+                """,
+                task_id,
+                normalized_now,
+                list(RUNNING_TASK_STATUSES),
+            )
+        else:
+            row = await self._fetchrow(
+                """
+                UPDATE ae_tasks
+                SET status = 'waiting_command',
+                    updated_at = $2
+                WHERE id = $1
+                  AND status = ANY($3::text[])
+                  AND (claimed_by = $4 OR claimed_by IS NULL)
+                RETURNING *
+                """,
+                task_id,
+                normalized_now,
+                list(RUNNING_TASK_STATUSES),
+                owner,
+            )
         return self._task_from_row(row)
 
     # ── Stage transition (replaces requeue_pending) ─────────────────

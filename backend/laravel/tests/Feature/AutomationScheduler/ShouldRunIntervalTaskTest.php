@@ -2,13 +2,13 @@
 
 namespace Tests\Feature\AutomationScheduler;
 
+use App\Models\Zone;
 use App\Services\AutomationScheduler\ActiveTaskStore;
 use App\Services\AutomationScheduler\ScheduleItem;
 use App\Services\AutomationScheduler\ScheduleLoader;
 use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
-use App\Models\Zone;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Mockery;

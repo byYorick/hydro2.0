@@ -408,12 +408,12 @@ class TelemetryController extends Controller
             $bindings = array_merge($bindings, $preferredChannels);
         }
 
-        $query .= "
+        $query .= '
                 AND ts >= ?
                 AND ts <= ?
             GROUP BY ts
             ORDER BY ts ASC
-        ";
+        ';
 
         return DB::select($query, array_merge($bindings, [$from, $to]));
     }

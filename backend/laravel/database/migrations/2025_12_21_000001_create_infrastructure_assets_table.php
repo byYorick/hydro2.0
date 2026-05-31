@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Глобальный каталог типов оборудования
      */
     public function up(): void
@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('name');
             $table->jsonb('metadata')->nullable(); // Дополнительные метаданные
             $table->timestamps();
-            
+
             $table->index('type');
         });
     }
@@ -32,4 +32,3 @@ return new class extends Migration
         Schema::dropIfExists('infrastructure_assets');
     }
 };
-

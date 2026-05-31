@@ -12,11 +12,9 @@ use App\Events\ZoneUpdated;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
-use App\Models\User;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class EventBroadcastingTest extends TestCase

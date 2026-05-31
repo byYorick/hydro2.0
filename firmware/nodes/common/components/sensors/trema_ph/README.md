@@ -2,6 +2,35 @@
 
 Драйвер для Trema pH-сенсора (iarduino) через I²C.
 
+## Соответствие iarduino и флаги сборки
+
+После успешного обнаружения модуля `trema_ph_init()` по умолчанию выполняет **программный reset** (как
+`iarduino_I2C_pH::_begin` → `reset()`), затем паузу **5 ms** (`TREMA_PH_POST_INIT_RESET_MS`), чтобы регистры
+модуля соответствовали состоянию после `begin()` в Arduino.
+
+| Макрос | По умолчанию | Назначение |
+|--------|----------------|------------|
+| `TREMA_PH_INIT_SOFTWARE_RESET` | `1` | `1` — soft reset после probe; `0` — только задержка 5 ms без сброса (быстрее, не 1:1 с iarduino). |
+| `TREMA_PH_POST_INIT_RESET_MS` | `5` | Пауза после reset при init (в оригинале `delay(5)`). |
+| `TREMA_PH_READ_SOFT_RESET_RECOVERY` | `0` | `1` — во второй фазе `trema_ph_read` при сыром `0xFFFF` выполняется soft reset и доп. попытки (расширение, не из оригинального `getPH`). |
+
+Переопределение (чтобы **не** сбрасывать модуль при каждом `trema_ph_init`):
+
+1. В `trema_ph/CMakeLists.txt` сразу после `idf_component_register(...)` добавьте строку  
+   `target_compile_definitions(${COMPONENT_LIB} PRIVATE TREMA_PH_INIT_SOFTWARE_RESET=0)`  
+   (так макрос попадёт в компиляцию `trema_ph.c`).
+
+2. Либо задайте значение до включения заголовка только в отдельной обёртке (редко нужно).
+
+## Интеграция ph_node (один poll за тик)
+
+На **ph_node** периодический путь: **`ph_node_ph_poll_sensor_once()`** — лёгкий **`trema_ph_probe_chip_quick()`**
+(байт `REG_MODEL` и несколько типичных адресов, без полного discovery), при необходимости **`trema_ph_init()`**,
+затем **`trema_ph_read()`** (снимок в очереди драйвера). MQTT и OLED берут значение только из
+**`trema_ph_try_cached_measurement`**; для индикации «модуль на шине» в том же тике —
+**`ph_node_ph_last_poll_chip_present()`**. Полный **`trema_ph_probe_presence()`** / discovery остаётся для
+диагностики и init.
+
 ## Описание
 
 Компонент реализует драйвер для Trema pH-датчика:
@@ -23,7 +52,7 @@ i2c_bus_config_t i2c_config = {
     .sda_pin = 21,
     .scl_pin = 22,
     .clock_speed = 100000,
-    .pullup_enable = true
+    .pullup_enable = false
 };
 i2c_bus_init(&i2c_config);
 

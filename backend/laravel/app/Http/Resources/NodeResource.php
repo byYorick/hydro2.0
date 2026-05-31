@@ -34,7 +34,7 @@ class NodeResource extends JsonResource
             'rssi' => $this->rssi,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
-            
+
             // Relationships
             'zone' => $this->whenLoaded('zone', function () {
                 return [
@@ -48,4 +48,3 @@ class NodeResource extends JsonResource
         ];
     }
 }
-

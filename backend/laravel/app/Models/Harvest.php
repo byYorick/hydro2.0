@@ -37,4 +37,3 @@ class Harvest extends Model
         return $this->belongsTo(Recipe::class);
     }
 }
-

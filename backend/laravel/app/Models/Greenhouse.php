@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Greenhouse extends Model
 {
@@ -54,4 +55,8 @@ class Greenhouse extends Model
             ->where('owner_type', 'greenhouse');
     }
 
+    public function automationState(): HasOne
+    {
+        return $this->hasOne(GreenhouseAutomationState::class);
+    }
 }
