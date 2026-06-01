@@ -130,6 +130,35 @@ _NODE_EVENT_LABELS = {
 }
 _IDLE_NODE_EVENT_LOOKBACK_SEC = 15 * 60
 
+# Порядок подэтапов cycle_start / irrigation для оценки progress_percent в UI.
+_CYCLE_START_STAGE_ORDER: tuple[str, ...] = (
+    "startup",
+    "clean_fill_start",
+    "clean_fill_check",
+    "clean_fill_stop_to_solution",
+    "solution_fill_start",
+    "solution_fill_check",
+    "solution_fill_stop_to_prepare",
+    "prepare_recirculation_start",
+    "prepare_recirculation_check",
+    "complete_ready",
+    "await_ready",
+    "decision_gate",
+    "irrigation_start",
+    "irrigation_check",
+    "irrigation_recovery_start",
+    "irrigation_recovery_check",
+    "completed_run",
+)
+
+_WORKFLOW_PHASE_PROGRESS: dict[str, int] = {
+    "tank_filling": 20,
+    "tank_recirc": 45,
+    "ready": 65,
+    "irrigating": 85,
+    "irrig_recirc": 95,
+}
+
 
 class GetZoneAutomationStateUseCase:
     """Возвращает полный payload зоны в формате AutomationState.
@@ -363,6 +392,56 @@ class GetZoneAutomationStateUseCase:
 
         return _STATE_LABELS.get(mapped_macro_state, "Ожидание")
 
+    def _estimate_progress_percent(self, *, current_stage: str, workflow_phase: str) -> int:
+        """Оценка прогресса для UI: подэтап в cycle_start, иначе macro workflow_phase."""
+        cs_key = str(current_stage or "").strip().lower()
+        if cs_key in _CYCLE_START_STAGE_ORDER:
+            idx = _CYCLE_START_STAGE_ORDER.index(cs_key)
+            return min(99, int(((idx + 1) / len(_CYCLE_START_STAGE_ORDER)) * 100))
+
+        phase_key = str(workflow_phase or "").strip().lower()
+        return int(_WORKFLOW_PHASE_PROGRESS.get(phase_key, 0))
+
+    def _elapsed_sec_since(self, entered_at: datetime | None) -> int:
+        if not isinstance(entered_at, datetime):
+            return 0
+        entered_naive = self._normalize_utc_naive(entered_at)
+        now = self._now()
+        if not isinstance(now, datetime):
+            return 0
+        return max(0, int((now - entered_naive).total_seconds()))
+
+    def _iso_or_none(self, value: Any) -> str | None:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return None
+
+    def _build_state_details(
+        self,
+        *,
+        is_failed: bool,
+        error_code: Any = None,
+        error_message: Any = None,
+        stage_entered_at: datetime | None = None,
+        task_created_at: datetime | None = None,
+        current_stage: str = "",
+        workflow_phase: str = "idle",
+        workflow_started_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        anchor = stage_entered_at or task_created_at or workflow_started_at
+        return {
+            "started_at": self._iso_or_none(anchor),
+            "stage_entered_at": self._iso_or_none(stage_entered_at),
+            "elapsed_sec": self._elapsed_sec_since(anchor),
+            "progress_percent": 0 if is_failed else self._estimate_progress_percent(
+                current_stage=current_stage,
+                workflow_phase=workflow_phase,
+            ),
+            "failed": is_failed,
+            "error_code": error_code if is_failed else None,
+            "error_message": error_message if is_failed else None,
+        }
+
     def _merge_last_failed_task_into_workflow_view(self, payload: dict[str, Any], last_task: Optional[Any]) -> dict[str, Any]:
         """Снимок workflow в БД может оставаться ready, пока последняя ae_task уже failed — не маскируем сбой."""
         if last_task is None:
@@ -443,14 +522,15 @@ class GetZoneAutomationStateUseCase:
                 current_stage=str(current_stage) if current_stage is not None else "",
                 is_terminal_failed=is_failed,
             ),
-            "state_details": {
-                "started_at": None,
-                "elapsed_sec": 0,
-                "progress_percent": 0,
-                "failed": is_failed,
-                "error_code": error_code if is_failed else None,
-                "error_message": error_message if is_failed else None,
-            },
+            "state_details": self._build_state_details(
+                is_failed=is_failed,
+                error_code=error_code,
+                error_message=error_message,
+                stage_entered_at=getattr(wf, "stage_entered_at", None) if wf is not None else None,
+                task_created_at=getattr(task, "created_at", None),
+                current_stage=str(current_stage or ""),
+                workflow_phase=workflow_phase,
+            ),
             "workflow_phase": workflow_phase,
             "current_stage": current_stage,
             "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),
@@ -525,14 +605,13 @@ class GetZoneAutomationStateUseCase:
             "zone_id": zone_id,
             "state": state,
             "state_label": state_label,
-            "state_details": {
-                "started_at": getattr(workflow_state, "started_at", None),
-                "elapsed_sec": 0,
-                "progress_percent": 0,
-                "failed": False,
-                "error_code": None,
-                "error_message": None,
-            },
+            "state_details": self._build_state_details(
+                is_failed=False,
+                stage_entered_at=getattr(workflow_state, "updated_at", None),
+                current_stage=str(current_stage or ""),
+                workflow_phase=workflow_phase,
+                workflow_started_at=getattr(workflow_state, "started_at", None),
+            ),
             "workflow_phase": workflow_phase,
             "current_stage": current_stage,
             "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),

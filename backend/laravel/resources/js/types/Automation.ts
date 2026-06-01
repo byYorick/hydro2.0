@@ -47,6 +47,7 @@ export interface AutomationState {
   state_label: string
   state_details: {
     started_at: string | null
+    stage_entered_at?: string | null
     elapsed_sec: number
     progress_percent: number
     failed?: boolean

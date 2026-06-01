@@ -164,6 +164,39 @@ class ZoneLogicProfileServiceTest extends TestCase
         $this->assertCount(1, data_get($profile->commandPlans, 'plans.diagnostics.steps', []));
     }
 
+    public function test_it_injects_startup_wait_timeout_when_startup_block_is_missing(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create();
+
+        $profile = $this->service->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_SETUP,
+            subsystems: [
+                'diagnostics' => [
+                    'enabled' => true,
+                    'execution' => [
+                        'workflow' => 'cycle_start',
+                        'topology' => 'two_tank_drip_substrate_trays',
+                        'two_tank_commands' => [
+                            'clean_fill_start' => [
+                                [
+                                    'channel' => 'valve_clean_fill',
+                                    'cmd' => 'set_relay',
+                                    'params' => ['state' => true],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            activate: true,
+            userId: (int) $user->id,
+        );
+
+        $this->assertSame(5.0, data_get($profile->commandPlans, 'plans.diagnostics.execution.startup.irr_state_wait_timeout_sec'));
+    }
+
     public function test_it_syncs_zone_capabilities_from_saved_subsystems(): void
     {
         $zone = Zone::factory()->create([

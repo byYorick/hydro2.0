@@ -39,7 +39,7 @@ vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: () => () => {},
 }))
 
-import AutomationProcessPanel from '../AutomationProcessPanel.vue'
+import ZoneAutomationRuntimeSection from '../ZoneAutomation/ZoneAutomationRuntimeSection.vue'
 import { useZonesStore } from '@/stores/zones'
 
 const mockStateResponse = {
@@ -101,7 +101,7 @@ describe('AutomationProcessPanel realtime refresh', () => {
       leave: vi.fn(),
     }
 
-    const wrapper = shallowMount(AutomationProcessPanel, {
+    const wrapper = shallowMount(ZoneAutomationRuntimeSection, {
       props: { zoneId: 7 },
     })
 
@@ -145,7 +145,7 @@ describe('AutomationProcessPanel realtime refresh', () => {
       leave: vi.fn(),
     }
 
-    const wrapper = shallowMount(AutomationProcessPanel, {
+    const wrapper = shallowMount(ZoneAutomationRuntimeSection, {
       props: { zoneId: 7 },
     })
 

@@ -1,5 +1,14 @@
 <template>
-  <div class="space-y-4">
+  <div class="zone-automation-tab space-y-6">
+    <header class="space-y-1">
+      <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">
+        Автоматика зоны
+      </h1>
+      <p class="text-sm text-[color:var(--text-muted)]">
+        Процесс AE3, операторское управление, профиль и параметры движка
+      </p>
+    </header>
+
     <div
       v-if="!zoneId"
       class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 text-sm text-[color:var(--text-dim)]"
@@ -8,15 +17,13 @@
     </div>
 
     <template v-else>
-      <!-- Полоса 1: Статус workflow -->
-      <AutomationWorkflowCard
+      <ZoneAutomationRuntimeSection
         :zone-id="zoneId"
         :fallback-tanks-count="waterForm.tanksCount"
         :fallback-system-type="waterForm.systemType"
         @state-snapshot="handleProcessStateSnapshot"
       />
 
-      <!-- Полоса 2: Режим управления + быстрые действия -->
       <ZoneAutomationOpsPanel
         :can-operate-automation="canOperateAutomation"
         :quick-actions="quickActions"
@@ -35,213 +42,220 @@
         @manual-ec="runManualEc"
       />
 
-      <!-- Phase 5/6: Config mode (locked/live) + history -->
-      <ConfigModeCard
-        v-if="props.zoneId"
-        :zone-id="Number(props.zoneId)"
-        :control-mode="configModeControlMode"
-        :role="currentUserRole"
-        @changed="onConfigModeChanged"
-        @state-loaded="onConfigModeStateLoaded"
-      />
-      <!-- Phase 6.1: live-only inline edit активной recipe phase -->
-      <RecipePhaseLiveEditCard
-        v-if="liveEditEnabled && activeGrowCycleId"
-        :grow-cycle-id="activeGrowCycleId"
-        :initial="recipePhaseInitial"
-        @applied="onConfigModeChanged"
-      />
-      <CorrectionLiveEditCard
-        v-if="liveEditEnabled && props.zoneId"
-        :zone-id="Number(props.zoneId)"
-        @applied="onCorrectionLiveEditApplied"
-      />
-      <ConfigChangesTimeline
-        v-if="props.zoneId"
-        :zone-id="Number(props.zoneId)"
-        :reload-key="configChangesReloadKey"
-      />
-
-      <!-- Аккордеон 1: Профиль зоны -->
-      <ZoneAutomationAccordionSection
-        title="Профиль зоны"
-        :default-open="true"
-      >
-        <p class="text-xs text-[color:var(--text-dim)] leading-relaxed">
-          Документ автоматики зоны в БД (<code class="text-[11px] text-[color:var(--text-muted)]">zone.logic_profile</code>).
-          Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в блоке «Коррекция и калибровка» ниже.
-        </p>
-        <AutomationProfileCard
-          :can-configure-automation="canConfigureAutomation"
-          :telemetry-label="telemetryLabel"
-          :water-topology-label="waterTopologyLabel"
-          :water-form="waterForm"
-          :lighting-form="lightingForm"
-          :zone-climate-enabled="zoneClimateForm.enabled"
-          @edit="showEditWizard = true"
+      <ZoneAutomationConfigSection>
+        <ConfigModeCard
+          v-if="props.zoneId"
+          :zone-id="Number(props.zoneId)"
+          :control-mode="configModeControlMode"
+          :role="currentUserRole"
+          @changed="onConfigModeChanged"
+          @state-loaded="onConfigModeStateLoaded"
         />
+        <RecipePhaseLiveEditCard
+          v-if="liveEditEnabled && activeGrowCycleId"
+          :grow-cycle-id="activeGrowCycleId"
+          :initial="recipePhaseInitial"
+          @applied="onConfigModeChanged"
+        />
+        <CorrectionLiveEditCard
+          v-if="liveEditEnabled && props.zoneId"
+          :zone-id="Number(props.zoneId)"
+          @applied="onCorrectionLiveEditApplied"
+        />
+        <ConfigChangesTimeline
+          v-if="props.zoneId"
+          :zone-id="Number(props.zoneId)"
+          :reload-key="configChangesReloadKey"
+        />
+      </ZoneAutomationConfigSection>
 
-        <p
-          v-if="isSystemTypeLocked"
-          class="text-xs text-[color:var(--text-dim)]"
+      <div class="space-y-3">
+        <h2 class="text-sm font-semibold text-[color:var(--text-primary)] px-0.5">
+          Настройки зоны
+        </h2>
+
+        <ZoneAutomationAccordionSection
+          title="Профиль зоны"
+          :default-open="true"
         >
-          Тип системы зафиксирован для активного цикла.
-        </p>
+          <p class="text-xs text-[color:var(--text-dim)] leading-relaxed">
+            Документ автоматики зоны в БД (<code class="text-[11px] text-[color:var(--text-muted)]">zone.logic_profile</code>).
+            Климат теплицы — отдельно на странице теплицы; канонические pH/EC цикла — в фазе рецепта и в блоке «Коррекция и калибровка» ниже.
+          </p>
+          <AutomationProfileCard
+            :can-configure-automation="canConfigureAutomation"
+            :telemetry-label="telemetryLabel"
+            :water-topology-label="waterTopologyLabel"
+            :water-form="waterForm"
+            :lighting-form="lightingForm"
+            :zone-climate-enabled="zoneClimateForm.enabled"
+            @edit="showEditWizard = true"
+          />
 
-        <div class="border-t border-[color:var(--border-muted)] pt-4 space-y-4">
-          <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div>
-              <p class="text-sm font-medium text-[color:var(--text-primary)]">
-                Применение профиля автоматики
-              </p>
-              <p class="text-xs text-[color:var(--text-dim)] mt-0.5">
-                Профиль сначала сохраняется в БД, затем отправляется <code class="text-[11px]">GROWTH_CYCLE_CONFIG</code>
-                (<code class="text-[11px]">mode=adjust</code>, <code class="text-[11px]">profile_mode</code>).
-                Сетпоинты pH/EC фазы рецепта этим действием не меняются — используйте live edit фазы или редактор рецепта.
-              </p>
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)] shrink-0">
-              <span v-if="lastAppliedAt">Применён: {{ formatDateTime(lastAppliedAt) }}</span>
-              <span v-else>Профиль ещё не применялся</span>
-            </div>
-          </div>
+          <p
+            v-if="isSystemTypeLocked"
+            class="text-xs text-[color:var(--text-dim)]"
+          >
+            Тип системы зафиксирован для активного цикла.
+          </p>
 
-          <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Режим профиля
-              <select
-                v-model="automationLogicMode"
-                class="input-select mt-1 w-full"
+          <div class="border-t border-[color:var(--border-muted)] pt-4 space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <p class="text-sm font-medium text-[color:var(--text-primary)]">
+                  Применение профиля автоматики
+                </p>
+                <p class="text-xs text-[color:var(--text-dim)] mt-0.5">
+                  Профиль сначала сохраняется в БД, затем отправляется <code class="text-[11px]">GROWTH_CYCLE_CONFIG</code>
+                  (<code class="text-[11px]">mode=adjust</code>, <code class="text-[11px]">profile_mode</code>).
+                  Сетпоинты pH/EC фазы рецепта этим действием не меняются — используйте live edit фазы или редактор рецепта.
+                </p>
+              </div>
+              <div class="text-xs text-[color:var(--text-muted)] shrink-0">
+                <span v-if="lastAppliedAt">Применён: {{ formatDateTime(lastAppliedAt) }}</span>
+                <span v-else>Профиль ещё не применялся</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Режим профиля
+                <select
+                  v-model="automationLogicMode"
+                  class="input-select mt-1 w-full"
+                  :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
+                >
+                  <option value="setup">
+                    setup
+                  </option>
+                  <option value="working">
+                    working
+                  </option>
+                </select>
+              </label>
+              <div class="text-xs text-[color:var(--text-muted)]">
+                <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
+                <span v-else-if="lastAutomationLogicSyncAt">Профиль в БД обновлён: {{ formatDateTime(lastAutomationLogicSyncAt) }}</span>
+                <span v-else>Профиль в БД ещё не синхронизирован</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
                 :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
+                @click="applyAutomationProfile"
               >
-                <option value="setup">setup</option>
-                <option value="working">working</option>
-              </select>
-            </label>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
-              <span v-else-if="lastAutomationLogicSyncAt">Профиль в БД обновлён: {{ formatDateTime(lastAutomationLogicSyncAt) }}</span>
-              <span v-else>Профиль в БД ещё не синхронизирован</span>
+                {{ isApplyingProfile ? 'Отправка профиля...' : (isSyncingAutomationLogicProfile ? 'Сохранение профиля...' : 'Применить профиль автоматики') }}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="isApplyingProfile || isSyncingAutomationLogicProfile"
+                @click="resetToRecommended"
+              >
+                Восстановить рекомендуемые значения
+              </Button>
             </div>
           </div>
+        </ZoneAutomationAccordionSection>
 
+        <ZoneAutomationAccordionSection title="Коррекция и калибровка">
+          <ZoneCorrectionCalibrationStack
+            :zone-id="Number(zoneId)"
+            :sensor-calibration-settings="sensorCalibrationSettings"
+            :phase-targets="currentRecipePhaseTargets"
+            :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
+            :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
+            @open-pump-calibration="emit('open-pump-calibration')"
+          />
+        </ZoneAutomationAccordionSection>
+
+        <ZoneAutomationAccordionSection title="Настройки Automation Engine">
+          <template #badge>
+            <Badge variant="info">
+              {{ automationEngineKeySettings.length }} параметров
+            </Badge>
+          </template>
+
+          <p class="text-xs text-[color:var(--text-dim)]">
+            Здесь только low-level runtime параметры AE и zone-level override, которые не должны дублировать верхнеуровневый профиль зоны.
+          </p>
+
+          <section class="space-y-4">
+            <div
+              v-for="group in automationEngineSettingGroups"
+              :key="group.key"
+              class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
+            >
+              <div>
+                <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  {{ group.label }}
+                </div>
+                <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                  {{ group.description }}
+                </div>
+              </div>
+
+              <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                <template
+                  v-for="item in group.items"
+                  :key="item.key"
+                >
+                  <dt class="text-xs text-[color:var(--text-muted)]">
+                    {{ item.label }}
+                  </dt>
+                  <dd class="space-y-1">
+                    <div class="text-sm font-mono text-[color:var(--text-primary)] break-all">
+                      {{ formatAutomationEngineSettingValue(item) }}
+                    </div>
+                    <p
+                      v-if="item.description"
+                      class="text-xs text-[color:var(--text-dim)]"
+                    >
+                      {{ item.description }}
+                    </p>
+                  </dd>
+                </template>
+              </dl>
+            </div>
+          </section>
           <div class="flex flex-wrap items-center gap-2">
             <Button
+              v-if="canConfigureAutomation"
               size="sm"
-              :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
-              @click="applyAutomationProfile"
+              @click="showEditWizard = true"
             >
-              {{ isApplyingProfile ? 'Отправка профиля...' : (isSyncingAutomationLogicProfile ? 'Сохранение профиля...' : 'Применить профиль автоматики') }}
+              Редактировать в мастере запуска
             </Button>
             <Button
               size="sm"
               variant="secondary"
-              :disabled="isApplyingProfile || isSyncingAutomationLogicProfile"
-              @click="resetToRecommended"
+              @click="showRuntimePayload = !showRuntimePayload"
             >
-              Восстановить рекомендуемые значения
+              {{ showRuntimePayload ? 'Скрыть payload JSON' : 'Показать payload JSON' }}
             </Button>
           </div>
-        </div>
-      </ZoneAutomationAccordionSection>
-
-      <!-- Аккордеон 2: Коррекция и калибровка -->
-      <ZoneAutomationAccordionSection title="Коррекция и калибровка">
-        <ZoneCorrectionCalibrationStack
-          :zone-id="Number(zoneId)"
-          :sensor-calibration-settings="sensorCalibrationSettings"
-          :phase-targets="currentRecipePhaseTargets"
-          :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
-          :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
-          @open-pump-calibration="emit('open-pump-calibration')"
-        />
-      </ZoneAutomationAccordionSection>
-
-      <!-- Аккордеон 3: Настройки Automation Engine -->
-      <ZoneAutomationAccordionSection title="Настройки Automation Engine">
-        <template #badge>
-          <Badge variant="info">
-            {{ automationEngineKeySettings.length }} параметров
-          </Badge>
-        </template>
-
-        <p class="text-xs text-[color:var(--text-dim)]">
-          Здесь только low-level runtime параметры AE и zone-level override, которые не должны дублировать верхнеуровневый профиль зоны.
-        </p>
-
-        <section class="space-y-4">
-          <div
-            v-for="group in automationEngineSettingGroups"
-            :key="group.key"
-            class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
+          <p
+            v-if="!canConfigureAutomation"
+            class="text-xs text-[color:var(--text-dim)]"
           >
-            <div>
-              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-                {{ group.label }}
-              </div>
-              <div class="text-xs text-[color:var(--text-dim)] mt-1">
-                {{ group.description }}
-              </div>
-            </div>
+            Редактирование конфига доступно ролям `agronomist` и `admin`. Текущая роль: {{ role }}.
+          </p>
+          <pre
+            v-if="showRuntimePayload"
+            class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-primary)] overflow-auto max-h-[520px]"
+          >{{ automationEngineRuntimePayloadPretty }}</pre>
 
-            <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-              <template
-                v-for="item in group.items"
-                :key="item.key"
-              >
-                <dt class="text-xs text-[color:var(--text-muted)]">
-                  {{ item.label }}
-                </dt>
-                <dd class="space-y-1">
-                  <div class="text-sm font-mono text-[color:var(--text-primary)] break-all">
-                    {{ formatAutomationEngineSettingValue(item) }}
-                  </div>
-                  <p
-                    v-if="item.description"
-                    class="text-xs text-[color:var(--text-dim)]"
-                  >
-                    {{ item.description }}
-                  </p>
-                </dd>
-              </template>
-            </dl>
-          </div>
-        </section>
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            v-if="canConfigureAutomation"
-            size="sm"
-            @click="showEditWizard = true"
-          >
-            Редактировать в мастере запуска
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="showRuntimePayload = !showRuntimePayload"
-          >
-            {{ showRuntimePayload ? 'Скрыть payload JSON' : 'Показать payload JSON' }}
-          </Button>
-        </div>
-        <p
-          v-if="!canConfigureAutomation"
-          class="text-xs text-[color:var(--text-dim)]"
-        >
-          Редактирование конфига доступно ролям `agronomist` и `admin`. Текущая роль: {{ role }}.
-        </p>
-        <pre
-          v-if="showRuntimePayload"
-          class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-primary)] overflow-auto max-h-[520px]"
-        >{{ automationEngineRuntimePayloadPretty }}</pre>
-
-        <AIPredictionsSection
-          :zone-id="zoneId"
-          :targets="predictionTargets"
-          :horizon-minutes="60"
-          :auto-refresh="true"
-          :default-expanded="false"
-        />
-      </ZoneAutomationAccordionSection>
+          <AIPredictionsSection
+            :zone-id="zoneId"
+            :targets="predictionTargets"
+            :horizon-minutes="60"
+            :auto-refresh="true"
+            :default-expanded="false"
+          />
+        </ZoneAutomationAccordionSection>
+      </div>
 
       <ZoneAutomationEditWizard
         :open="showEditWizard"
@@ -264,7 +278,8 @@
 import { computed, ref, toRef } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'
-import AutomationWorkflowCard from '@/Components/AutomationWorkflowCard.vue'
+import ZoneAutomationRuntimeSection from '@/Components/ZoneAutomation/ZoneAutomationRuntimeSection.vue'
+import ZoneAutomationConfigSection from '@/Components/ZoneAutomation/ZoneAutomationConfigSection.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordionSection.vue'
 import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
@@ -315,7 +330,6 @@ const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
 
-// Phase 5/6 — config mode UI
 const { role: userRoleRef } = useRole()
 const currentUserRole = computed(() => String(userRoleRef.value ?? 'viewer'))
 const configChangesReloadKey = ref(0)
@@ -331,7 +345,6 @@ function onCorrectionLiveEditApplied(): void {
   configChangesReloadKey.value += 1
 }
 
-// Phase 6.1 — inline recipe phase edit card visibility
 const liveEditEnabled = computed(() =>
   configModeState.value?.config_mode === 'live'
   && ['agronomist', 'engineer', 'admin'].includes(currentUserRole.value),
@@ -506,7 +519,6 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
   const currentMode = automationControlMode.value
   let reason: string | undefined
 
-  // Confirm при переходе в manual — прервёт активную task (см. CONTROL_MODES_SPEC §6.2).
   if (mode === 'manual' && (currentMode === 'auto' || currentMode === 'semi')) {
     const confirmMessage =
       'Переход в manual прервёт активную задачу автоматики (полив / заполнение / рециркуляцию). ' +
@@ -514,15 +526,12 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
     if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
       return
     }
-    // Для operator-role бэкенд требует reason. Для agronomist поле необязательное,
-    // но если пользователь введёт — сохранится в audit event.
     const reasonInput = typeof window !== 'undefined'
       ? window.prompt('Причина перехода в manual (необязательно):', '')
       : null
     reason = reasonInput ?? undefined
   }
 
-  // Confirm при выходе из manual — система сделает reconcile через startup probe.
   if ((mode === 'auto' || mode === 'semi') && currentMode === 'manual') {
     const confirmMessage =
       `Возврат в ${mode} запустит автоматическую проверку состояния оборудования. ` +

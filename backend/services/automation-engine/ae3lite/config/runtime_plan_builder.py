@@ -236,9 +236,9 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.solution_fill.timing.irr_state_max_age_sec",
             minimum=5,
         ),
-        "irr_state_wait_timeout_sec": _require_float(
+        "irr_state_wait_timeout_sec": _resolve_float(
             _to_mapping(execution.get("startup")).get("irr_state_wait_timeout_sec"),
-            path="diagnostics_execution.startup.irr_state_wait_timeout_sec",
+            default=5.0,
             minimum=0.0,
             maximum=30.0,
         ),

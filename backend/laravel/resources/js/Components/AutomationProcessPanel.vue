@@ -1,45 +1,17 @@
 <template>
-  <section class="automation-process-panel surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 md:p-5">
-    <AutomationStatusHeader
-      :state-code="stateCode"
-      :state-label="stateLabel"
-      :state-variant="stateVariant"
-      :is-process-active="isProcessActive"
-      :progress-summary="progressSummary"
-      :error-message="errorMessage"
-      :warning-message="connectivityWarning"
-      :workflow-stages="workflowStages"
-      :current-workflow-stage-label="currentWorkflowStageLabel"
-    />
-
-    <AutomationProcessDiagram
-      :flow-offset="flowOffset"
-      :clean-tank-level="cleanTankLevel"
-      :nutrient-tank-level="nutrientTankLevel"
-      :buffer-tank-level="bufferTankLevel"
-      :is-pump-in-active="isPumpInActive"
-      :is-circulation-active="isCirculationActive"
-      :is-ph-correction-active="isPhCorrectionActive"
-      :is-ec-correction-active="isEcCorrectionActive"
-      :is-water-inlet-active="isWaterInletActive"
-      :is-tank-refill-active="isTankRefillActive"
-      :is-irrigation-active="isIrrigationActive"
-      :is-process-active="isProcessActive"
-      :automation-state="automationState"
-      :irr-node-state="irrNodeState"
-    />
-
-    <AutomationTimeline :events="timelineEvents" />
-  </section>
+  <ZoneAutomationRuntimeSection
+    :zone-id="zoneId"
+    :fallback-tanks-count="fallbackTanksCount"
+    :fallback-system-type="fallbackSystemType"
+    @state-change="(state) => emit('state-change', state)"
+    @state-snapshot="(snapshot) => emit('state-snapshot', snapshot)"
+  />
 </template>
 
 <script setup lang="ts">
-import AutomationStatusHeader from '@/Components/AutomationStatusHeader.vue'
-import AutomationProcessDiagram from '@/Components/AutomationProcessDiagram.vue'
-import AutomationTimeline from '@/Components/AutomationTimeline.vue'
+import ZoneAutomationRuntimeSection from '@/Components/ZoneAutomation/ZoneAutomationRuntimeSection.vue'
 import type { AutomationState, AutomationStateType } from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
-import { useAutomationPanel } from '@/composables/useAutomationPanel'
 
 interface Props {
   zoneId: number | null
@@ -47,7 +19,7 @@ interface Props {
   fallbackSystemType?: IrrigationSystem
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   fallbackTanksCount: 2,
   fallbackSystemType: 'drip',
 })
@@ -56,36 +28,4 @@ const emit = defineEmits<{
   (e: 'state-change', state: AutomationStateType): void
   (e: 'state-snapshot', snapshot: AutomationState): void
 }>()
-
-const {
-  automationState,
-  errorMessage,
-  connectivityWarning,
-  flowOffset,
-  stateCode,
-  stateLabel,
-  stateVariant,
-  isProcessActive,
-  cleanTankLevel,
-  nutrientTankLevel,
-  bufferTankLevel,
-  isPumpInActive,
-  isCirculationActive,
-  isPhCorrectionActive,
-  isEcCorrectionActive,
-  isWaterInletActive,
-  isTankRefillActive,
-  isIrrigationActive,
-  workflowStages,
-  currentWorkflowStageLabel,
-  progressSummary,
-  timelineEvents,
-  irrNodeState,
-} = useAutomationPanel(props, emit)
 </script>
-
-<style scoped>
-.automation-process-panel {
-  position: relative;
-}
-</style>

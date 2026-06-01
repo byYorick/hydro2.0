@@ -506,14 +506,11 @@ def test_resolve_two_tank_runtime_prepare_recirculation_slack_from_tank_recirc_r
     assert runtime["prepare_recirculation_correction_slack_sec"] == 0
 
 
-def test_resolve_two_tank_runtime_raises_when_startup_wait_timeout_missing() -> None:
+def test_resolve_two_tank_runtime_uses_default_when_startup_wait_timeout_missing() -> None:
     snap = _snapshot(correction={})
     snap.diagnostics_execution["startup"] = {}
-    with pytest.raises(
-        PlannerConfigurationError,
-        match="diagnostics_execution.startup.irr_state_wait_timeout_sec",
-    ):
-        resolve_two_tank_runtime(snap)
+    runtime = resolve_two_tank_runtime(snap)
+    assert runtime["irr_state_wait_timeout_sec"] == 5.0
 
 
 def test_resolve_two_tank_runtime_raises_when_ec_dosing_mode_missing() -> None:

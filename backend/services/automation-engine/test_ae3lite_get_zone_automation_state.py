@@ -173,6 +173,44 @@ async def test_idle_state_includes_non_blocking_solution_tank_guard_reason() -> 
     }
 
 
+async def test_state_details_include_elapsed_and_progress_from_stage_entered_at() -> None:
+    entered = NOW.replace(tzinfo=None) - timedelta(seconds=125)
+    task = SimpleNamespace(
+        id=31,
+        status="running",
+        created_at=entered,
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="irrigation_check",
+            workflow_phase="irrigating",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=entered,
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+    use_case._now = lambda: NOW.replace(tzinfo=None)
+
+    result = await use_case.run(zone_id=3)
+
+    assert result["state_details"]["elapsed_sec"] == 125
+    assert result["state_details"]["progress_percent"] > 0
+    assert result["current_stage_label"] == "Полив"
+
+
 async def test_state_marks_ec_correction_active_during_solution_fill() -> None:
     task = SimpleNamespace(
         id=22,

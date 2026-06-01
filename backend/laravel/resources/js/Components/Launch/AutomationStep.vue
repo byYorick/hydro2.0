@@ -54,7 +54,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue';
 import AutomationHub from '@/Components/Launch/Automation/AutomationHub.vue';
 import { api } from '@/services/api';
 import { useToast } from '@/composables/useToast';
@@ -176,8 +176,8 @@ function applyRecipeTargetsToGreenhouseClimate(): void {
         targets,
         {
             climateForm: greenhouseClimateForm,
-            waterForm: structuredClone(state.waterForm),
-            lightingForm: structuredClone(state.lightingForm),
+            waterForm: structuredClone(toRaw(state.waterForm)),
+            lightingForm: structuredClone(toRaw(state.lightingForm)),
             zoneClimateForm: { ...state.zoneClimateForm },
         },
     );

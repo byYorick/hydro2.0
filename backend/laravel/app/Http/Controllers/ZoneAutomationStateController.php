@@ -206,6 +206,13 @@ class ZoneAutomationStateController extends Controller
         $state = $this->mapWorkflowPhaseToAutomationState($workflowPhase);
         $lastTaskState = $this->fetchLastTaskStateFromDatabase($zoneId);
 
+        if ($currentStage === null && is_string($lastTaskState['current_stage'] ?? null)) {
+            $currentStage = $lastTaskState['current_stage'];
+        }
+        if ($workflowPhase === 'idle' && is_string($lastTaskState['workflow_phase'] ?? null)) {
+            $workflowPhase = strtolower($lastTaskState['workflow_phase']);
+        }
+
         $stateLabel = $this->automationStateLabel($state);
         if (($lastTaskState['failed'] ?? false) === true) {
             $failedHeadline = is_string($lastTaskState['human_error_message'] ?? null)
@@ -220,15 +227,11 @@ class ZoneAutomationStateController extends Controller
             'zone_id' => $zoneId,
             'state' => $state,
             'state_label' => $stateLabel,
-            'state_details' => [
-                'started_at' => $lastTaskState['created_at'] ?? null,
-                'elapsed_sec' => 0,
-                'progress_percent' => 0,
-                'failed' => $lastTaskState['failed'] ?? false,
-                'error_code' => $lastTaskState['error_code'] ?? null,
-                'error_message' => $lastTaskState['error_message'] ?? null,
-                'human_error_message' => $lastTaskState['human_error_message'] ?? null,
-            ],
+            'state_details' => $this->buildCompatibilityStateDetails(
+                $lastTaskState,
+                $currentStage,
+                $workflowPhase,
+            ),
             'system_config' => [
                 'tanks_count' => 2,
                 'system_type' => 'drip',
@@ -254,6 +257,7 @@ class ZoneAutomationStateController extends Controller
             'control_mode' => $controlMode,
             'workflow_phase' => $workflowPhase,
             'current_stage' => $currentStage,
+            'current_stage_label' => $this->automationStageLabel($currentStage),
             'allowed_manual_steps' => $allowedManualSteps,
             'compatibility' => [
                 'source' => 'ae3_control_mode_fallback',
@@ -265,19 +269,40 @@ class ZoneAutomationStateController extends Controller
      * Query ae_tasks directly to get the last task status for a zone.
      * Used in the control-mode fallback to surface real failed state.
      *
-     * @return array{failed: bool, error_code: ?string, error_message: ?string, human_error_message: ?string, created_at: ?string}
+     * @return array{
+     *     failed: bool,
+     *     error_code: ?string,
+     *     error_message: ?string,
+     *     human_error_message: ?string,
+     *     created_at: ?string,
+     *     stage_entered_at: ?string,
+     *     workflow_phase: ?string,
+     *     current_stage: ?string,
+     *     status: ?string
+     * }
      */
     private function fetchLastTaskStateFromDatabase(int $zoneId): array
     {
         try {
             $row = DB::selectOne(
-                'SELECT status, error_code, error_message, created_at FROM ae_tasks
+                'SELECT status, error_code, error_message, created_at, stage_entered_at, workflow_phase, current_stage
+                 FROM ae_tasks
                  WHERE zone_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1',
                 [$zoneId]
             );
 
             if ($row === null) {
-                return ['failed' => false, 'error_code' => null, 'error_message' => null, 'human_error_message' => null, 'created_at' => null];
+                return [
+                    'failed' => false,
+                    'error_code' => null,
+                    'error_message' => null,
+                    'human_error_message' => null,
+                    'created_at' => null,
+                    'stage_entered_at' => null,
+                    'workflow_phase' => null,
+                    'current_stage' => null,
+                    'status' => null,
+                ];
             }
 
             $presentation = $this->errorCodeCatalog->present(
@@ -291,6 +316,10 @@ class ZoneAutomationStateController extends Controller
                 'error_message' => $row->error_message,
                 'human_error_message' => $presentation['message'],
                 'created_at' => $row->created_at,
+                'stage_entered_at' => $row->stage_entered_at,
+                'workflow_phase' => $row->workflow_phase,
+                'current_stage' => $row->current_stage,
+                'status' => $row->status,
             ];
         } catch (\Throwable $e) {
             Log::warning('ZoneAutomationStateController: could not fetch last task state from DB', [
@@ -298,8 +327,130 @@ class ZoneAutomationStateController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return ['failed' => false, 'error_code' => null, 'error_message' => null, 'human_error_message' => null, 'created_at' => null];
+            return [
+                'failed' => false,
+                'error_code' => null,
+                'error_message' => null,
+                'human_error_message' => null,
+                'created_at' => null,
+                'stage_entered_at' => null,
+                'workflow_phase' => null,
+                'current_stage' => null,
+                'status' => null,
+            ];
         }
+    }
+
+    /**
+     * @param  array<string,mixed>  $lastTaskState
+     * @return array<string,mixed>
+     */
+    private function buildCompatibilityStateDetails(
+        array $lastTaskState,
+        ?string $currentStage,
+        string $workflowPhase,
+    ): array {
+        $isFailed = ($lastTaskState['failed'] ?? false) === true;
+        $anchorRaw = $lastTaskState['stage_entered_at'] ?? $lastTaskState['created_at'] ?? null;
+        $elapsedSec = 0;
+        $startedAt = null;
+        $stageEnteredAt = null;
+
+        if ($anchorRaw !== null) {
+            try {
+                $anchor = \Illuminate\Support\Carbon::parse((string) $anchorRaw);
+                $elapsedSec = max(0, $anchor->diffInSeconds(now()));
+                $startedAt = $anchor->toIso8601String();
+                if ($lastTaskState['stage_entered_at'] ?? null) {
+                    $stageEnteredAt = \Illuminate\Support\Carbon::parse((string) $lastTaskState['stage_entered_at'])->toIso8601String();
+                }
+            } catch (\Throwable) {
+                $startedAt = is_string($anchorRaw) ? $anchorRaw : null;
+            }
+        }
+
+        $stageKey = strtolower(trim((string) ($currentStage ?? $lastTaskState['current_stage'] ?? '')));
+        $phaseKey = strtolower(trim($workflowPhase !== 'idle'
+            ? $workflowPhase
+            : (string) ($lastTaskState['workflow_phase'] ?? 'idle')));
+
+        $activeStatuses = ['pending', 'claimed', 'running', 'waiting_command'];
+        $status = strtolower((string) ($lastTaskState['status'] ?? ''));
+        $progressPercent = 0;
+        if (! $isFailed && in_array($status, $activeStatuses, true)) {
+            $progressPercent = $this->estimateCompatibilityProgressPercent($stageKey, $phaseKey);
+        }
+
+        return [
+            'started_at' => $startedAt,
+            'stage_entered_at' => $stageEnteredAt,
+            'elapsed_sec' => $elapsedSec,
+            'progress_percent' => $progressPercent,
+            'failed' => $isFailed,
+            'error_code' => $lastTaskState['error_code'] ?? null,
+            'error_message' => $lastTaskState['error_message'] ?? null,
+            'human_error_message' => $lastTaskState['human_error_message'] ?? null,
+        ];
+    }
+
+    private function estimateCompatibilityProgressPercent(string $currentStage, string $workflowPhase): int
+    {
+        $stageOrder = [
+            'startup',
+            'clean_fill_start',
+            'clean_fill_check',
+            'clean_fill_stop_to_solution',
+            'solution_fill_start',
+            'solution_fill_check',
+            'solution_fill_stop_to_prepare',
+            'prepare_recirculation_start',
+            'prepare_recirculation_check',
+            'complete_ready',
+            'await_ready',
+            'decision_gate',
+            'irrigation_start',
+            'irrigation_check',
+            'irrigation_recovery_start',
+            'irrigation_recovery_check',
+            'completed_run',
+        ];
+
+        if ($currentStage !== '' && in_array($currentStage, $stageOrder, true)) {
+            $index = array_search($currentStage, $stageOrder, true);
+
+            return min(99, (int) round((($index + 1) / count($stageOrder)) * 100));
+        }
+
+        return match ($workflowPhase) {
+            'tank_filling' => 20,
+            'tank_recirc' => 45,
+            'ready' => 65,
+            'irrigating' => 85,
+            'irrig_recirc' => 95,
+            default => 0,
+        };
+    }
+
+    private function automationStageLabel(?string $stage): ?string
+    {
+        if ($stage === null || trim($stage) === '') {
+            return null;
+        }
+
+        return match (strtolower(trim($stage))) {
+            'startup' => 'Инициализация',
+            'clean_fill_start' => 'Запуск наполнения чистой водой',
+            'clean_fill_check' => 'Наполнение чистой водой',
+            'solution_fill_start' => 'Запуск наполнения раствором',
+            'solution_fill_check' => 'Наполнение раствором',
+            'prepare_recirculation_start' => 'Запуск рециркуляции',
+            'prepare_recirculation_check' => 'Подготовка рециркуляции',
+            'complete_ready' => 'Готов к поливу',
+            'irrigation_start' => 'Запуск полива',
+            'irrigation_check' => 'Полив',
+            'irrigation_recovery_check' => 'Рециркуляция после полива',
+            default => null,
+        };
     }
 
     private function mapWorkflowPhaseToAutomationState(string $workflowPhase): string

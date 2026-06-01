@@ -21,6 +21,13 @@ import {
   normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
 } from '@/composables/zoneAutomationUtils'
+import {
+  buildProgressSummary,
+  computeDisplayElapsedSec,
+  resolveMacroPhaseLabel,
+  resolveStageHeadline,
+  shouldShowProgressPercent,
+} from '@/utils/automationStatusDisplay'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -265,6 +272,7 @@ export function useAutomationPanel(
   const errorMessage = ref<string | null>(null)
   const connectivityWarning = ref<string | null>(null)
   const flowOffset = ref(0)
+  const elapsedTickMs = ref(Date.now())
 
   let fetchInFlight = false
   let fetchQueued = false
@@ -272,6 +280,7 @@ export function useAutomationPanel(
   // ─── Timer / channel vars ─────────────────────────────────────────────────
 
   let flowTimer: ReturnType<typeof setInterval> | null = null
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null
   let fallbackPollingTimer: ReturnType<typeof setInterval> | null = null
   let wsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let wsStateListenerCleanup: (() => void) | null = null
@@ -306,6 +315,7 @@ export function useAutomationPanel(
       state_label: String(source.state_label || ''),
       state_details: {
         started_at: source.state_details?.started_at ?? null,
+        stage_entered_at: (source.state_details as Record<string, unknown> | undefined)?.stage_entered_at as string | null ?? null,
         elapsed_sec: Number(source.state_details?.elapsed_sec ?? 0),
         progress_percent: clampPercent(source.state_details?.progress_percent ?? 0),
         failed: Boolean(source.state_details?.failed ?? false),
@@ -488,15 +498,7 @@ export function useAutomationPanel(
 
   const stateCode = computed<AutomationStateType>(() => automationState.value?.state ?? 'IDLE')
 
-  const stateLabel = computed(() => {
-    const details = automationState.value?.state_details
-    if (details?.failed) {
-      const human = details.human_error_message?.trim()
-      if (human) return human
-      const raw = details.error_message?.trim()
-      if (raw) return raw
-    }
-    if (automationState.value?.state_label) return automationState.value.state_label
+  const fallbackStateLabel = computed(() => {
     const labels: Record<AutomationStateType, string> = {
       IDLE: 'Система в ожидании',
       TANK_FILLING: 'Набор бака с раствором',
@@ -506,6 +508,18 @@ export function useAutomationPanel(
       IRRIG_RECIRC: 'Рециркуляция после полива',
     }
     return labels[stateCode.value]
+  })
+
+  const stateLabel = computed(() => resolveStageHeadline(automationState.value, fallbackStateLabel.value))
+
+  const macroPhaseLabel = computed(() =>
+    resolveMacroPhaseLabel(automationState.value, stateCode.value),
+  )
+
+  const showMacroPhaseSubtitle = computed(() => {
+    const headline = stateLabel.value.trim().toLowerCase()
+    const macro = macroPhaseLabel.value.trim().toLowerCase()
+    return macro !== '' && macro !== headline
   })
 
   const stateVariant = computed<'neutral' | 'info' | 'warning' | 'success' | 'danger'>(() => {
@@ -573,6 +587,18 @@ export function useAutomationPanel(
     return stateCode.value === 'IRRIGATING' || stateCode.value === 'IRRIG_RECIRC'
   })
 
+  // Любой сегмент трубопровода, по которому на схеме рисуется «движущаяся капля».
+  // Используется для гейтинга анимации потока (tickFlow).
+  const isAnyFlowActive = computed(() =>
+    isPumpInActive.value
+    || isCirculationActive.value
+    || isPhCorrectionActive.value
+    || isEcCorrectionActive.value
+    || isWaterInletActive.value
+    || isTankRefillActive.value
+    || isIrrigationActive.value,
+  )
+
   const hasFailedState = computed(() => {
     if (automationState.value?.state_details.failed) return true
     // Fallback: только terminal-события провала всего процесса.
@@ -590,6 +616,11 @@ export function useAutomationPanel(
   })
 
   const currentWorkflowStageLabel = computed(() => {
+    const fromApi = automationState.value?.current_stage_label?.trim()
+    if (fromApi) {
+      return fromApi
+    }
+
     const running = workflowStages.value.find((stage) => stage.status === 'running')
     if (running) return running.label
 
@@ -604,14 +635,28 @@ export function useAutomationPanel(
     return pending?.label ?? 'Ожидание данных процесса'
   })
 
-  const progressSummary = computed(() => {
-    const elapsed = formatDuration(automationState.value?.state_details.elapsed_sec ?? 0)
-    const eta = automationState.value?.estimated_completion_sec
-    if (eta && eta > 0) {
-      return `${Math.round(progressPercent.value)}% · ${elapsed} · ~${formatDuration(eta)}`
-    }
-    return `${Math.round(progressPercent.value)}% · ${elapsed}`
-  })
+  const displayElapsedSec = computed(() =>
+    computeDisplayElapsedSec({
+      elapsedSec: automationState.value?.state_details.elapsed_sec ?? 0,
+      stageEnteredAt: automationState.value?.state_details.stage_entered_at
+        ?? automationState.value?.state_details.started_at,
+      servedAt: automationState.value?.state_meta?.served_at ?? null,
+      nowMs: elapsedTickMs.value,
+    }),
+  )
+
+  const showProgressPercent = computed(() =>
+    shouldShowProgressPercent(progressPercent.value, isProcessActive.value),
+  )
+
+  const progressSummary = computed(() =>
+    buildProgressSummary({
+      progressPercent: progressPercent.value,
+      elapsedSec: displayElapsedSec.value,
+      estimatedCompletionSec: automationState.value?.estimated_completion_sec,
+      isProcessActive: isProcessActive.value,
+    }),
+  )
 
   const timelineEvents = computed<AutomationTimelineEvent[]>(() => {
     const timeline = automationState.value?.timeline ?? []
@@ -624,7 +669,7 @@ export function useAutomationPanel(
   // ─── Flow animation ───────────────────────────────────────────────────────
 
   function tickFlow(): void {
-    if (!(isPumpInActive.value || isCirculationActive.value)) return
+    if (!isAnyFlowActive.value) return
     flowOffset.value += 0.03
     if (flowOffset.value > 1) flowOffset.value = 0
   }
@@ -713,6 +758,10 @@ export function useAutomationPanel(
     flowTimer = setInterval(() => {
       tickFlow()
     }, FLOW_TICK_INTERVAL_MS)
+
+    elapsedTimer = setInterval(() => {
+      elapsedTickMs.value = Date.now()
+    }, 1000)
   })
 
   onUnmounted(() => {
@@ -727,6 +776,10 @@ export function useAutomationPanel(
       clearInterval(flowTimer)
       flowTimer = null
     }
+    if (elapsedTimer !== null) {
+      clearInterval(elapsedTimer)
+      elapsedTimer = null
+    }
   })
 
   return {
@@ -736,8 +789,13 @@ export function useAutomationPanel(
     flowOffset,
     stateCode,
     stateLabel,
+    macroPhaseLabel,
+    showMacroPhaseSubtitle,
     stateVariant,
     isProcessActive,
+    displayElapsedSec,
+    progressPercent,
+    showProgressPercent,
     cleanTankLevel,
     nutrientTankLevel,
     bufferTankLevel,

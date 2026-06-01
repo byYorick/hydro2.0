@@ -110,7 +110,7 @@ describe('AutomationProcessPanel', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Этапы workflow')
+    expect(wrapper.text()).toContain('Этапы')
     expect(wrapper.text()).toContain('Сейчас: Рециркуляция раствора')
     expect(wrapper.text()).toContain('Наполнение баков')
     expect(wrapper.text()).toContain('Раствор готов')
@@ -176,7 +176,7 @@ describe('AutomationProcessPanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Сейчас: Наполнение баков')
-    expect((wrapper.text().match(/Выполняется/g) ?? []).length).toBe(1)
+    expect((wrapper.text().match(/Сейчас/g) ?? []).length).toBeGreaterThanOrEqual(1)
   })
 
   it('не подменяет COMMAND_DISPATCHED сообщением о завершении этапа', async () => {

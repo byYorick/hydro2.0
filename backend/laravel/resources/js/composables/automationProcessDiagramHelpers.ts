@@ -30,14 +30,18 @@ export function clampPercent(value: unknown): number {
   return Math.max(0, Math.min(100, parsed))
 }
 
+/** Геометрия бака на SVG-схеме (см. AutomationProcessDiagram). */
+export const DIAGRAM_TANK_TOP = 28
+export const DIAGRAM_TANK_HEIGHT = 84
+
 export function tankFillY(levelPercent: number): number {
   const normalized = clampPercent(levelPercent)
-  return 70 + 250 * (1 - normalized / 100)
+  return DIAGRAM_TANK_TOP + DIAGRAM_TANK_HEIGHT * (1 - normalized / 100)
 }
 
 export function tankFillHeight(levelPercent: number): number {
   const normalized = clampPercent(levelPercent)
-  return 250 * (normalized / 100)
+  return DIAGRAM_TANK_HEIGHT * (normalized / 100)
 }
 
 export function formatNumber(value: number | null | undefined, digits = 1): string {
@@ -55,7 +59,8 @@ const ELEMENT_TITLE_MAP: Record<string, string> = {
   correction: 'Контур коррекции',
   correction_node: 'Узел коррекции',
   valve_in: 'Входной клапан',
-  valve_out: 'Выходной клапан',
+  valve_out: 'Отбор из баков',
+  valve_irr: 'Клапан полива',
   pump_in: 'Насос набора',
   pump: 'Главный насос',
   circulation: 'Насос рециркуляции',

@@ -131,14 +131,14 @@ class ZoneLogicProfileNormalizer
         }
 
         $topology = strtolower(trim((string) ($execution['topology'] ?? '')));
-        $startup = $execution['startup'] ?? null;
-        if (
-            in_array($topology, ['two_tank', 'two_tank_drip_substrate_trays'], true)
-            && is_array($startup)
-            && ($startup === [] || ! array_is_list($startup))
-            && ! array_key_exists('irr_state_wait_timeout_sec', $startup)
-        ) {
-            $startup['irr_state_wait_timeout_sec'] = 5.0;
+        if (in_array($topology, ['two_tank', 'two_tank_drip_substrate_trays'], true)) {
+            $startup = $execution['startup'] ?? null;
+            if (! is_array($startup) || array_is_list($startup)) {
+                $startup = [];
+            }
+            if (! array_key_exists('irr_state_wait_timeout_sec', $startup)) {
+                $startup['irr_state_wait_timeout_sec'] = 5.0;
+            }
             $execution['startup'] = $startup;
         }
 

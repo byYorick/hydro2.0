@@ -1,9 +1,18 @@
 <template>
-  <div class="mt-4 border-t border-[color:var(--border-muted)] pt-3">
-    <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)] mb-2">
-      Timeline
+  <div class="rounded-xl border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/50 p-3">
+    <h4 class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-dim)] mb-2">
+      События
     </h4>
-    <ul class="space-y-2 max-h-44 overflow-y-auto pr-1">
+    <p
+      v-if="events.length === 0"
+      class="text-xs text-[color:var(--text-muted)] py-4 text-center"
+    >
+      Событий workflow пока нет
+    </p>
+    <ul
+      v-else
+      class="space-y-1 max-h-52 overflow-y-auto pr-1"
+    >
       <li
         v-for="(event, index) in events"
         :key="`${index}-${event.event}-${event.timestamp}`"
