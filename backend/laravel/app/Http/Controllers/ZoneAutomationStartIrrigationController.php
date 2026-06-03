@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\Ae3IrrigationBridgeService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
-use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
 
 class ZoneAutomationStartIrrigationController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly Ae3IrrigationBridgeService $bridge,
     ) {}
@@ -43,7 +45,7 @@ class ZoneAutomationStartIrrigationController extends Controller
         try {
             return response()->json($this->bridge->dispatchStartIrrigation($zone->id, $payload));
         } catch (RequestException $e) {
-            $proxyResponse = $this->buildUpstreamErrorResponse($e);
+            $proxyResponse = $this->buildAutomationEngineErrorResponse($e);
             if ($proxyResponse instanceof JsonResponse) {
                 return $proxyResponse;
             }
@@ -53,22 +55,14 @@ class ZoneAutomationStartIrrigationController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка при запуске полива в automation-engine.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка при запуске полива в automation-engine.', 503);
         } catch (ConnectionException $e) {
             Log::warning('ZoneAutomationStartIrrigationController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         }
     }
 
@@ -89,22 +83,4 @@ class ZoneAutomationStartIrrigationController extends Controller
         return Str::lower("zone-{$zoneId}-irrigation-{$mode}-".Str::uuid());
     }
 
-    private function buildUpstreamErrorResponse(RequestException $e): ?JsonResponse
-    {
-        $response = $e->response;
-        if (! $response instanceof Response) {
-            return null;
-        }
-
-        $decoded = $response->json();
-        if (is_array($decoded)) {
-            return response()->json($decoded, $response->status());
-        }
-
-        return response()->json([
-            'status' => 'error',
-            'code' => 'UPSTREAM_ERROR',
-            'message' => 'Ошибка upstream сервиса automation-engine.',
-        ], $response->status());
-    }
 }

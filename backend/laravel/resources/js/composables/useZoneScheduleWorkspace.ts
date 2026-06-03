@@ -1,6 +1,7 @@
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { logger } from '@/utils/logger'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { api } from '@/services/api'
 import type { ToastHandler } from '@/services/api'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
@@ -54,6 +55,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
   const updatedAt = ref<string | null>(null)
 
   let pollTimer: ReturnType<typeof setTimeout> | null = null
+  let unsubscribeControlModeEvents: (() => void) | null = null
 
   /**
    * `apiGet` уже снимает status-envelope `{status, data: ...}` через `extractData`,
@@ -362,6 +364,52 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     }
     clearPollTimer()
   }
+
+  function stopControlModeEventSubscription(): void {
+    if (unsubscribeControlModeEvents) {
+      unsubscribeControlModeEvents()
+      unsubscribeControlModeEvents = null
+    }
+  }
+
+  function startControlModeEventSubscription(): void {
+    stopControlModeEventSubscription()
+    const zoneId = props.zoneId
+    if (zoneId === null || zoneId === undefined || import.meta.env.MODE === 'test') {
+      return
+    }
+
+    const refreshOnControlModeEvent = (payload: { kind?: unknown }): void => {
+      const kind = String(payload.kind ?? '').trim().toUpperCase()
+      if (kind === 'AUTOMATION_CONTROL_MODE_UPDATED') {
+        void fetchWorkspace()
+      }
+    }
+
+    unsubscribeControlModeEvents = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${zoneId}`,
+      componentTag: `zone-scheduler-workspace:events:${zoneId}`,
+      eventHandlers: {
+        '.EventCreated': refreshOnControlModeEvent,
+        '.App\\Events\\EventCreated': refreshOnControlModeEvent,
+      },
+    })
+  }
+
+  onMounted(() => {
+    startControlModeEventSubscription()
+  })
+
+  onUnmounted(() => {
+    stopControlModeEventSubscription()
+  })
+
+  watch(
+    () => props.zoneId,
+    () => {
+      startControlModeEventSubscription()
+    },
+  )
 
   function formatDateTime(value: string | null | undefined): string {
     if (!value) return '—'

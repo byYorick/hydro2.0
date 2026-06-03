@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
@@ -14,21 +15,17 @@ use Illuminate\Support\Facades\Log;
 
 class NodeCommandController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge)
     {
         $user = $request->user();
         if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         if (! ZoneAccessHelper::canAccessNode($user, $node)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ], 403);
+            return $this->localizedError('forbidden', 'Нет доступа к этому узлу.', 403);
         }
 
         $data = $request->validated();
@@ -70,12 +67,9 @@ class NodeCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'SERVICE_UNAVAILABLE',
-                'message' => 'Unable to connect to command service. Please try again later.',
+            return $this->localizedError('service_unavailable', null, 503, [
                 'details' => $e->getMessage(),
-            ], 503);
+            ]);
         } catch (TimeoutException $e) {
             Log::error('NodeCommandController: Timeout error', [
                 'node_id' => $node->id,
@@ -84,12 +78,9 @@ class NodeCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'SERVICE_TIMEOUT',
-                'message' => 'Command service did not respond in time. Please try again later.',
+            return $this->localizedError('service_timeout', null, 503, [
                 'details' => $e->getMessage(),
-            ], 503);
+            ]);
         } catch (RequestException $e) {
             $upstreamStatus = $e->response?->status();
             Log::error('NodeCommandController: Request error', [
@@ -101,20 +92,24 @@ class NodeCommandController extends Controller
             ]);
 
             if ($upstreamStatus !== null && $upstreamStatus >= 500) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'SERVICE_UNAVAILABLE',
-                    'message' => 'Command service is temporarily unavailable. Please try again later.',
+                return $this->localizedError('service_unavailable', null, 503, [
                     'details' => $this->extractRequestExceptionDetails($e),
-                ], 503);
+                ]);
             }
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'COMMAND_FAILED',
-                'message' => 'Failed to send command. The command may have been queued but failed validation.',
+            $decoded = $e->response?->json();
+            if (is_array($decoded) && $upstreamStatus !== null && $upstreamStatus >= 400 && $upstreamStatus < 500) {
+                return $this->enrichedUpstreamResponse(
+                    array_merge($decoded, [
+                        'details' => $this->extractRequestExceptionDetails($e),
+                    ]),
+                    $upstreamStatus,
+                );
+            }
+
+            return $this->localizedError('command_failed', null, 422, [
                 'details' => $this->extractRequestExceptionDetails($e),
-            ], 422);
+            ]);
         } catch (\InvalidArgumentException $e) {
             Log::warning('NodeCommandController: Invalid argument', [
                 'node_id' => $node->id,
@@ -123,12 +118,7 @@ class NodeCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INVALID_ARGUMENT',
-                'message' => $e->getMessage(),
-                'details' => $e->getMessage(),
-            ], 422);
+            return $this->localizedError('invalid_argument', 'Аргумент команды недопустим. Подробности — в журнале сервера.', 422);
         } catch (\Exception $e) {
             Log::error('NodeCommandController: Unexpected error', [
                 'node_id' => $node->id,
@@ -139,12 +129,7 @@ class NodeCommandController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'An unexpected error occurred while sending the command.',
-                'details' => $e->getMessage(),
-            ], 500);
+            return $this->localizedError('internal_error', 'Неожиданная ошибка при отправке команды.', 500);
         }
     }
 

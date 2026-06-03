@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Alert;
 use App\Models\Command;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\Log;
  */
 class SyncController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     /**
      * Получить snapshot телеметрии для всех доступных зон пользователя.
      *
@@ -29,11 +32,7 @@ class SyncController extends Controller
     public function telemetry(Request $request): JsonResponse
     {
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $user = Auth::user();
@@ -85,11 +84,7 @@ class SyncController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'Failed to fetch telemetry snapshot',
-            ], 500);
+            return $this->localizedError('internal_error', 'Не удалось получить снимок телеметрии.', 500);
         }
     }
 
@@ -102,11 +97,7 @@ class SyncController extends Controller
     public function commands(Request $request): JsonResponse
     {
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $user = Auth::user();
@@ -160,11 +151,7 @@ class SyncController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'Failed to fetch commands snapshot',
-            ], 500);
+            return $this->localizedError('internal_error', 'Не удалось получить снимок команд.', 500);
         }
     }
 
@@ -177,11 +164,7 @@ class SyncController extends Controller
     public function alerts(Request $request): JsonResponse
     {
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $user = Auth::user();
@@ -237,11 +220,7 @@ class SyncController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'Failed to fetch alerts snapshot',
-            ], 500);
+            return $this->localizedError('internal_error', 'Не удалось получить снимок алертов.', 500);
         }
     }
 
@@ -254,11 +233,7 @@ class SyncController extends Controller
     public function full(Request $request): JsonResponse
     {
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $user = Auth::user();
@@ -299,11 +274,7 @@ class SyncController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'Failed to fetch full snapshot',
-            ], 500);
+            return $this->localizedError('internal_error', 'Не удалось получить полный снимок данных.', 500);
         }
     }
 }

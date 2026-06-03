@@ -185,6 +185,7 @@ services:
       - PHP_FPM_PM_MAX_REQUESTS=500
     volumes:
       - ./laravel:/app
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
       # Монтируем конфигурацию nginx для Vite прокси, чтобы изменения применялись без пересборки
       - ./laravel/nginx-vite-proxy.conf:/opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf:ro
       # Canonical JSON Schemas (repo root) — JsonSchemaValidator & artisan zones:validate-configs.
@@ -294,6 +295,8 @@ services:
     volumes:
       - ./services/history-logger:/app
       - ./services/common:/app/common
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
+      - ./error_codes.json:/app/error_codes.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 10s
@@ -344,6 +347,8 @@ services:
     volumes:
       - ./services/automation-engine:/app
       - ./services/common:/app/common
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
+      - ./error_codes.json:/app/error_codes.json:ro
       # Canonical JSON Schemas (repo root) — для parity test (Pydantic ↔ JSON Schema)
       - ../schemas:/schemas:ro
     healthcheck:

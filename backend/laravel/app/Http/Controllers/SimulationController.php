@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Jobs\RunSimulationJob;
 use App\Models\Command;
 use App\Models\TelemetryLast;
@@ -18,6 +19,8 @@ use Illuminate\Validation\ValidationException;
 
 class SimulationController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     /**
      * Симулировать зону (асинхронно через очередь).
      *
@@ -147,11 +150,11 @@ class SimulationController extends Controller
         $status = Cache::get("simulation:{$jobId}");
 
         if (! $status) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NOT_FOUND',
-                'message' => 'Simulation job not found or expired.',
-            ], 404);
+            return $this->localizedError(
+                'not_found',
+                'Задача симуляции не найдена или срок её хранения истёк.',
+                404,
+            );
         }
 
         $payload = $status;

@@ -67,6 +67,7 @@ data class Alert(
     @Json(name = "node_id") val nodeId: Int? = null,
     @Json(name = "node_name") val nodeName: String? = null,
     val message: String,
+    val code: String? = null,
     val timestamp: String,
     val status: String? = null,
     @Json(name = "acknowledged_at") val acknowledgedAt: String? = null
@@ -84,7 +85,8 @@ data class CommandResponse(
     val status: String,
     val ts: Long? = null,
     @Json(name = "error_code") val errorCode: String? = null,
-    @Json(name = "error_message") val errorMessage: String? = null
+    @Json(name = "error_message") val errorMessage: String? = null,
+    @Json(name = "human_error_message") val humanErrorMessage: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

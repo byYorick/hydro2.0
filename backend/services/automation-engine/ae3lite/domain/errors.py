@@ -96,6 +96,7 @@ class ErrorCodes:
     AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS = "ae3_snapshot_no_online_actuator_channels"
     AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE = "ae3_snapshot_required_node_persistently_offline"
     AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING = "ae3_snapshot_required_node_type_missing"
+    AE3_REQUIRED_NODE_OFFLINE = "ae3_required_node_offline"
     AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES = "ae3_snapshot_conflicting_config_values"
 
     # Отправка и reconcile команд

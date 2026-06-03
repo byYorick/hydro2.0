@@ -823,7 +823,7 @@ Backend никогда не остаётся "в неизвестности": п
 
 **Опциональные поля:**
 - `details` (object) — детали выполнения команды
-- `error_code` (string) — машинночитаемый код ошибки для `status=ERROR`
+- `error_code` (string) — машинночитаемый код ошибки для `status=ERROR` (полный каталог русских текстов: `backend/node_error_codes.json`, слияние в `backend/error_codes.json`; см. `doc_ai/04_BACKEND_CORE/ERROR_CODE_CATALOG.md` § Фаза 5)
 - `error_message` (string) — человекочитаемое пояснение для `status=ERROR`
 - `message` (string) — краткое top-level сообщение; допустимо как runtime fallback для `error_message`
 

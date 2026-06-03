@@ -28,6 +28,7 @@ from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
+from ae3lite.domain.services.zone_node_availability import resolve_task_error_with_node_offline
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
@@ -207,9 +208,17 @@ class WorkflowRouter:
                 f"Не найден handler для key={handler_key!r} (stage={current_stage})",
             )
 
-        outcome = await handler.run(
-            task=task, plan=plan, stage_def=stage_def, now=now,
-        )
+        try:
+            outcome = await handler.run(
+                task=task, plan=plan, stage_def=stage_def, now=now,
+            )
+        except TaskExecutionError as exc:
+            code, message = await self._remap_execution_error_for_task(
+                task=task,
+                error_code=str(exc.code),
+                error_message=str(exc),
+            )
+            raise TaskExecutionError(code, message) from exc
         return await self._apply_outcome(
             task=task, plan=plan, outcome=outcome, now=now,
         )
@@ -248,10 +257,15 @@ class WorkflowRouter:
             return await self._complete_task(task=current_task, now=now)
 
         if outcome.kind == "fail":
-            return await self._fail_task(
-                task=current_task, now=now,
+            error_code, error_message = await self._remap_execution_error_for_task(
+                task=current_task,
                 error_code=outcome.error_code or "ae3_stage_failed",
                 error_message=outcome.error_message or "Этап завершился ошибкой",
+            )
+            return await self._fail_task(
+                task=current_task, now=now,
+                error_code=error_code,
+                error_message=error_message,
             )
 
         raise TaskExecutionError(
@@ -515,6 +529,26 @@ class WorkflowRouter:
     ) -> Any:
         TASK_FAILED.labels(topology=task.topology, error_code=error_code).inc()
         raise TaskExecutionError(error_code, error_message)
+
+    async def _remap_execution_error_for_task(
+        self,
+        *,
+        task: Any,
+        error_code: str,
+        error_message: str,
+        node_uid: str | None = None,
+    ) -> tuple[str, str]:
+        offline = await resolve_task_error_with_node_offline(
+            zone_id=int(getattr(task, "zone_id", 0) or 0),
+            topology=str(getattr(task, "topology", "") or ""),
+            error_code=error_code,
+            error_message=error_message,
+            node_uid=node_uid,
+            runtime_monitor=self._runtime_monitor,
+        )
+        if offline is not None:
+            return offline.code, offline.message
+        return error_code, error_message
 
     # ── Helpers ─────────────────────────────────────────────────────
 

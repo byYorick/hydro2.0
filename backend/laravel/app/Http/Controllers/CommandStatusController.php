@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Command;
 use App\Services\AutomationRuntimeConfigService;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 
 class CommandStatusController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
         private readonly AutomationRuntimeConfigService $runtimeConfig,
@@ -29,11 +32,7 @@ class CommandStatusController extends Controller
     {
         // Проверяем авторизацию
         if (! auth()->check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $command = Command::where('cmd_id', $cmdId)->first();
@@ -44,11 +43,7 @@ class CommandStatusController extends Controller
             }
 
             // Не раскрываем информацию о существовании команды неавторизованным пользователям
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NOT_FOUND',
-                'message' => 'Command not found',
-            ], 404);
+            return $this->localizedError('not_found', null, 404);
         }
 
         // Проверяем права доступа через zone_id или node_id
@@ -74,11 +69,7 @@ class CommandStatusController extends Controller
                 'command_node_id' => $command->node_id,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         return response()->json([
@@ -114,11 +105,7 @@ class CommandStatusController extends Controller
                 ->get("{$apiUrl}/internal/tasks/{$taskId}");
 
             if ($response->status() === 404) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'NOT_FOUND',
-                    'message' => 'Command not found',
-                ], 404);
+                return $this->localizedError('not_found', null, 404);
             }
 
             $response->throw();
@@ -126,11 +113,7 @@ class CommandStatusController extends Controller
             $data = is_array($payload) && is_array($payload['data'] ?? null) ? $payload['data'] : [];
             $zoneId = isset($data['zone_id']) ? (int) $data['zone_id'] : null;
             if ($zoneId === null || ! ZoneAccessHelper::canAccessZone($request->user(), $zoneId)) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'FORBIDDEN',
-                    'message' => 'Access denied',
-                ], 403);
+                return $this->localizedError('forbidden', null, 403);
             }
             $status = strtoupper((string) ($data['status'] ?? 'QUEUED'));
             if ($status === 'COMPLETED') {
@@ -167,11 +150,7 @@ class CommandStatusController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         }
     }
 }

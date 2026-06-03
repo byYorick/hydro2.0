@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
@@ -25,6 +26,8 @@ use Illuminate\Support\Facades\Log;
  */
 class ZoneCorrectionLiveEditController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     /**
      * Dot-notation paths для live-edit в zone.correction payload.
      *
@@ -130,21 +133,21 @@ class ZoneCorrectionLiveEditController extends Controller
     {
         $user = $request->user();
         if ($user === null) {
-            return response()->json(['status' => 'error', 'code' => 'UNAUTHENTICATED'], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
         if (! $user->can('setLive', $zone)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN_SET_LIVE',
-                'message' => 'Роль не позволяет править correction.',
-            ], 403);
+            return $this->localizedError(
+                'forbidden_set_live',
+                'Роль не позволяет править correction.',
+                403,
+            );
         }
         if (($zone->config_mode ?? 'locked') !== 'live') {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'ZONE_NOT_IN_LIVE_MODE',
-                'message' => 'Правка correction на лету доступна только в config_mode=live.',
-            ], 409);
+            return $this->localizedError(
+                'zone_not_in_live_mode',
+                'Правка correction на лету доступна только в config_mode=live.',
+                409,
+            );
         }
 
         $validated = $request->validate([
@@ -166,54 +169,56 @@ class ZoneCorrectionLiveEditController extends Controller
         $calibrationPatch = array_filter($calibrationPatch, fn ($v) => $v !== null);
 
         if (empty($correctionPatch) && empty($calibrationPatch)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NO_FIELDS_PROVIDED',
-                'message' => 'Передай хотя бы одно поле в correction_patch или calibration_patch.',
-                'details' => [
-                    'allowed_correction_paths' => self::LIVE_EDITABLE_CORRECTION_PATHS,
-                    'allowed_calibration_paths' => self::LIVE_EDITABLE_CALIBRATION_PATHS,
-                    'allowed_calibration_phases' => array_keys(self::ALLOWED_CALIBRATION_PHASES),
+            return $this->localizedError(
+                'no_fields_provided',
+                'Передай хотя бы одно поле в correction_patch или calibration_patch.',
+                422,
+                [
+                    'details' => [
+                        'allowed_correction_paths' => self::LIVE_EDITABLE_CORRECTION_PATHS,
+                        'allowed_calibration_paths' => self::LIVE_EDITABLE_CALIBRATION_PATHS,
+                        'allowed_calibration_phases' => array_keys(self::ALLOWED_CALIBRATION_PHASES),
+                    ],
                 ],
-            ], 422);
+            );
         }
 
         // Whitelist validation
         foreach (array_keys($correctionPatch) as $path) {
             if (! in_array($path, self::LIVE_EDITABLE_CORRECTION_PATHS, true)) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'PATH_NOT_WHITELISTED',
-                    'message' => "Correction path '{$path}' не в whitelist для live-edit.",
-                    'details' => ['allowed' => self::LIVE_EDITABLE_CORRECTION_PATHS],
-                ], 422);
+                return $this->localizedError(
+                    'path_not_whitelisted',
+                    "Correction path '{$path}' не в whitelist для live-edit.",
+                    422,
+                    ['details' => ['allowed' => self::LIVE_EDITABLE_CORRECTION_PATHS]],
+                );
             }
         }
         foreach (array_keys($calibrationPatch) as $path) {
             if (! in_array($path, self::LIVE_EDITABLE_CALIBRATION_PATHS, true)) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'PATH_NOT_WHITELISTED',
-                    'message' => "Calibration path '{$path}' не в whitelist для live-edit.",
-                    'details' => ['allowed' => self::LIVE_EDITABLE_CALIBRATION_PATHS],
-                ], 422);
+                return $this->localizedError(
+                    'path_not_whitelisted',
+                    "Calibration path '{$path}' не в whitelist для live-edit.",
+                    422,
+                    ['details' => ['allowed' => self::LIVE_EDITABLE_CALIBRATION_PATHS]],
+                );
             }
         }
 
         if (! empty($calibrationPatch) && $phase === '') {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'CALIBRATION_PHASE_REQUIRED',
-                'message' => 'calibration_patch требует указания phase (generic/solution_fill/tank_recirc/irrigation).',
-            ], 422);
+            return $this->localizedError(
+                'calibration_phase_required',
+                'calibration_patch требует указания phase (generic/solution_fill/tank_recirc/irrigation).',
+                422,
+            );
         }
         if (! empty($calibrationPatch) && ! isset(self::ALLOWED_CALIBRATION_PHASES[$phase])) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'CALIBRATION_PHASE_UNKNOWN',
-                'message' => "Неизвестная calibration phase '{$phase}'.",
-                'details' => ['allowed' => array_keys(self::ALLOWED_CALIBRATION_PHASES)],
-            ], 422);
+            return $this->localizedError(
+                'calibration_phase_unknown',
+                "Неизвестная calibration phase '{$phase}'.",
+                422,
+                ['details' => ['allowed' => array_keys(self::ALLOWED_CALIBRATION_PHASES)]],
+            );
         }
 
         $result = DB::transaction(function () use (

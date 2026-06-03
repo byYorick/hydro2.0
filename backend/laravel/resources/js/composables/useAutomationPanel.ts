@@ -17,6 +17,7 @@ import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { api } from '@/services/api'
 import { useZonesStore } from '@/stores/zones'
 import {
+  hasExplicitControlMode,
   normalizeAutomationControlMode,
   normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
@@ -112,6 +113,7 @@ export interface AutomationPanelProps {
   zoneId: number | null
   fallbackTanksCount?: number
   fallbackSystemType?: IrrigationSystem
+  automationStateRefreshSeq?: number
 }
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
@@ -349,9 +351,13 @@ export function useAutomationPanel(
       next_state: source.next_state ?? null,
       estimated_completion_sec: source.estimated_completion_sec ?? null,
       irr_node_state: irrNodeState,
-      control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
-      control_mode_available: normalizeAutomationControlModes(sourceAny.control_mode_available),
-      allowed_manual_steps: normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
+      ...(hasExplicitControlMode(sourceAny.control_mode)
+        ? {
+            control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
+            control_mode_available: normalizeAutomationControlModes(sourceAny.control_mode_available),
+            allowed_manual_steps: normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
+          }
+        : {}),
       state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'
         ? {
             source: String((sourceAny.state_meta as Record<string, unknown>).source ?? ''),
@@ -695,6 +701,15 @@ export function useAutomationPanel(
         scheduleRealtimeRefresh()
       }
     }
+  )
+
+  watch(
+    () => props.automationStateRefreshSeq ?? 0,
+    () => {
+      if (props.zoneId) {
+        void fetchAutomationState()
+      }
+    },
   )
 
   watch(() => props.zoneId, (newZoneId, oldZoneId) => {

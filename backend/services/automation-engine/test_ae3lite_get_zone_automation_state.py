@@ -211,6 +211,43 @@ async def test_state_details_include_elapsed_and_progress_from_stage_entered_at(
     assert result["current_stage_label"] == "Полив"
 
 
+async def test_state_includes_control_mode_from_zones_table() -> None:
+    task = SimpleNamespace(
+        id=40,
+        status="running",
+        created_at=NOW.replace(tzinfo=None),
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="startup",
+            workflow_phase="idle",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        if "control_mode FROM zones" in query:
+            return [{"control_mode": "semi"}]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["control_mode"] == "semi"
+    assert "clean_fill_start" in result["allowed_manual_steps"]
+
+
 async def test_state_marks_ec_correction_active_during_solution_fill() -> None:
     task = SimpleNamespace(
         id=22,
@@ -777,7 +814,7 @@ async def test_ready_macro_shows_irrigation_substage_label_for_active_task() -> 
     assert result["state_details"]["failed"] is False
 
 
-async def test_workflow_ready_snapshot_merges_newer_workflow_with_older_failed_terminal_task() -> None:
+async def test_workflow_ready_snapshot_ignores_older_failed_terminal_task() -> None:
     workflow = ZoneWorkflow(
         zone_id=3,
         workflow_phase="ready",
@@ -818,7 +855,6 @@ async def test_workflow_ready_snapshot_merges_newer_workflow_with_older_failed_t
     result = await use_case.run(zone_id=3)
 
     assert result["state"] == "READY"
-    assert result["state_details"]["failed"] is True
-    assert result["state_details"]["error_code"] == "test_irrigation_stop"
-    assert "сбой" in result["state_label"]
-    assert "источник чистой воды пуст" in result["state_label"]
+    assert result["state_details"]["failed"] is False
+    assert result["state_details"]["error_code"] is None
+    assert "сбой" not in result["state_label"]

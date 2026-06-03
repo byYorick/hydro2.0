@@ -178,16 +178,21 @@ export type ZoneAutomationSectionSaveKey =
 
 // ─── Zone Automation Tab types ────────────────────────────────────────────────
 
+import type { AutomationControlMode } from '@/types/Automation'
 import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
 
 export type PredictionTargets = Record<string, { min?: number; max?: number }>
 
 export interface ZoneAutomationTabProps {
   zoneId: number | null
+  /** Inertia `zones.control_mode` — начальная гидратация UI до ответа AE. */
+  zoneControlMode?: AutomationControlMode | null
   targets: ZoneTargetsType | PredictionTargets
   telemetry?: ZoneTelemetry | null
   activeGrowCycle?: { id?: number | null; status?: string | null } | null
   currentRecipePhase?: unknown | null
   pumpCalibrationSaveSeq?: number
   pumpCalibrationRunSeq?: number
+  /** Инкремент после ack policy-managed алерта — форсирует refetch `/zones/{id}/state`. */
+  automationStateRefreshSeq?: number
 }

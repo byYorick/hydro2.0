@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Support\Facades\Cache;
@@ -162,6 +163,33 @@ class ZoneAutomationStateControllerTest extends TestCase
                 'state_details.human_error_message',
                 'Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.'
             );
+    }
+
+    public function test_automation_state_overlays_control_mode_from_zone_row(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create(['control_mode' => 'semi']);
+        $apiUrl = $this->automationEngineUrl();
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'IDLE',
+                'state_label' => 'Ожидание',
+                'control_mode' => 'auto',
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('control_mode', 'semi')
+            ->assertJsonPath('control_mode_available', ['auto', 'semi', 'manual']);
     }
 
     public function test_automation_state_returns_upstream_unavailable_on_request_exception(): void
@@ -338,5 +366,102 @@ class ZoneAutomationStateControllerTest extends TestCase
             'status' => 'NEW',
             'water_state' => 'WATER_CHANGE_STABILIZE',
         ]);
+    }
+
+    public function test_automation_state_clears_terminal_failure_when_policy_managed_alert_is_resolved(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_ae3_task_failed',
+            'status' => 'RESOLVED',
+            'details' => [
+                'error_code' => 'irr_state_mismatch',
+                'human_error_message' => 'Состояние IRR-ноды не совпало по признаку valve_solution_supply: ожидалось=True, получено=False',
+            ],
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'READY',
+                'state_label' => 'Полив — сбой',
+                'current_stage' => 'irrigation_check',
+                'current_stage_label' => 'Полив',
+                'state_details' => [
+                    'failed' => true,
+                    'error_code' => 'irr_state_mismatch',
+                    'error_message' => 'IRR state mismatch for valve_solution_supply: expected=True, got=False',
+                ],
+                'workflow_phase' => 'ready',
+                'system_config' => ['tanks_count' => 2, 'system_type' => 'drip'],
+                'current_levels' => [
+                    'clean_tank_level_percent' => 50,
+                    'nutrient_tank_level_percent' => 50,
+                ],
+                'active_processes' => [
+                    'pump_in' => false,
+                    'circulation_pump' => false,
+                    'ph_correction' => false,
+                    'ec_correction' => false,
+                ],
+                'timeline' => [],
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_details.failed', false)
+            ->assertJsonPath('state_details.error_code', null)
+            ->assertJsonPath('state_details.human_error_message', null)
+            ->assertJsonPath('state_label', 'Полив');
+    }
+
+    public function test_automation_state_keeps_terminal_failure_while_policy_managed_alert_is_active(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_ae3_task_failed',
+            'status' => 'ACTIVE',
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'IDLE',
+                'state_label' => 'Полив — сбой',
+                'state_details' => [
+                    'failed' => true,
+                    'error_code' => 'irr_state_mismatch',
+                    'error_message' => 'IRR state mismatch for valve_solution_supply: expected=True, got=False',
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_details.failed', true)
+            ->assertJsonPath('state_details.error_code', 'irr_state_mismatch')
+            ->assertJsonPath(
+                'state_details.human_error_message',
+                'Состояние IRR-ноды не совпало с ожиданиями автоматики.'
+            );
     }
 }

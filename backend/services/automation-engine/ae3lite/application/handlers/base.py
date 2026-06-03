@@ -70,6 +70,114 @@ class BaseStageHandler:
         # `WorkflowRouter` enables it when constructing handlers.
         self._live_reload_enabled = live_reload_enabled
 
+    @staticmethod
+    def _first_command_node_uid(commands: Sequence[Any]) -> str | None:
+        for cmd in commands:
+            uid = getattr(cmd, "node_uid", None)
+            if uid is None and isinstance(cmd, Mapping):
+                uid = cmd.get("node_uid")
+            if uid:
+                return str(uid).strip() or None
+        return None
+
+    async def _remap_execution_error(
+        self,
+        *,
+        task: Any,
+        error_code: str,
+        error_message: str,
+        node_uid: str | None = None,
+        plan: Any = None,
+    ) -> tuple[str, str]:
+        from ae3lite.domain.services.zone_node_availability import (
+            resolve_task_error_with_node_offline,
+        )
+
+        effective_node = node_uid or self._extract_irr_probe_node_uid(plan=plan)
+        offline = await resolve_task_error_with_node_offline(
+            zone_id=int(getattr(task, "zone_id", 0) or 0),
+            topology=str(getattr(task, "topology", "") or ""),
+            error_code=error_code,
+            error_message=error_message,
+            node_uid=effective_node,
+            runtime_monitor=self._runtime_monitor,
+        )
+        if offline is not None:
+            return offline.code, offline.message
+        return error_code, error_message
+
+    async def _raise_execution_error(
+        self,
+        *,
+        task: Any,
+        error_code: str,
+        error_message: str,
+        node_uid: str | None = None,
+        plan: Any = None,
+    ) -> None:
+        code, message = await self._remap_execution_error(
+            task=task,
+            error_code=error_code,
+            error_message=error_message,
+            node_uid=node_uid,
+            plan=plan,
+        )
+        raise TaskExecutionError(code, message)
+
+    async def _ensure_command_targets_online(
+        self,
+        *,
+        task: Any,
+        commands: Sequence[Any],
+    ) -> None:
+        from ae3lite.domain.services.zone_node_availability import (
+            offline_failure_for_node_liveness,
+        )
+
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if zone_id <= 0:
+            return
+        seen: set[str] = set()
+        for cmd in commands:
+            uid = getattr(cmd, "node_uid", None)
+            if uid is None and isinstance(cmd, Mapping):
+                uid = cmd.get("node_uid")
+            uid = str(uid or "").strip()
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            failure = await offline_failure_for_node_liveness(
+                zone_id=zone_id,
+                node_uid=uid,
+                runtime_monitor=self._runtime_monitor,
+            )
+            if failure is not None:
+                raise TaskExecutionError(failure.code, failure.message)
+
+    async def _run_command_batch_checked(
+        self,
+        *,
+        task: Any,
+        commands: Sequence[Any],
+        now: datetime,
+        track_task_state: bool = True,
+    ) -> Mapping[str, Any]:
+        await self._ensure_command_targets_online(task=task, commands=commands)
+        result = await self._command_gateway.run_batch(
+            task=task,
+            commands=commands,
+            now=now,
+            track_task_state=track_task_state,
+        )
+        if not result["success"]:
+            await self._raise_execution_error(
+                task=task,
+                error_code=str(result["error_code"]),
+                error_message=str(result["error_message"]),
+                node_uid=self._first_command_node_uid(commands),
+            )
+        return result
+
     async def run(
         self,
         *,
@@ -434,6 +542,7 @@ class BaseStageHandler:
         expected: Mapping[str, bool],
     ) -> None:
         """Отправляет probe-команду и проверяет, что состояние hardware совпадает с ожиданиями."""
+        await self._ensure_irr_probe_node_online(task=task, plan=plan)
         probe_cmds = plan.named_plans.get("irr_state_probe", ())
         if not probe_cmds:
             raise TaskExecutionError(
@@ -446,16 +555,12 @@ class BaseStageHandler:
         total_attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
 
         for attempt_index in range(total_attempts):
-            result = await self._command_gateway.run_batch(
+            result = await self._run_command_batch_checked(
                 task=task,
                 commands=probe_cmds,
                 now=now,
                 track_task_state=False,
             )
-            if not result["success"]:
-                raise TaskExecutionError(
-                    str(result["error_code"]), str(result["error_message"]),
-                )
             probe_cmd_id = self._extract_probe_cmd_id(result=result)
             state = await self._read_probe_state_with_retry(
                 task=task,
@@ -510,8 +615,48 @@ class BaseStageHandler:
                         "irr_state_mismatch",
                         f"Состояние IRR-ноды не совпало по признаку {key}: ожидалось={value}, получено={snapshot.get(key)}",
                     )
+        if await self._irr_probe_node_is_offline(task=task, plan=plan):
+            failure = await self._offline_failure_for_irr_probe(task=task, plan=plan)
+            raise TaskExecutionError(failure.code, failure.message)
         raise TaskExecutionError(
             "irr_state_unavailable", "Снимок состояния IRR-ноды недоступен",
+        )
+
+    async def _ensure_irr_probe_node_online(self, *, task: Any, plan: Any) -> None:
+        if not await self._irr_probe_node_is_offline(task=task, plan=plan):
+            return
+        failure = await self._offline_failure_for_irr_probe(task=task, plan=plan)
+        raise TaskExecutionError(failure.code, failure.message)
+
+    async def _irr_probe_node_is_offline(self, *, task: Any, plan: Any) -> bool:
+        node_uid = self._extract_irr_probe_node_uid(plan=plan)
+        if not node_uid:
+            return False
+        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
+        if not callable(read_node_liveness):
+            return False
+        from ae3lite.domain.services.zone_node_availability import liveness_is_unreachable
+
+        liveness = await read_node_liveness(node_uid=node_uid)
+        return liveness_is_unreachable(
+            liveness,
+            heartbeat_age_limit_sec=self._IRR_PROBE_NODE_UNREACHABLE_HEARTBEAT_AGE_SEC,
+        )
+
+    async def _offline_failure_for_irr_probe(self, *, task: Any, plan: Any) -> Any:
+        from ae3lite.domain.services.zone_node_availability import offline_failure_from_liveness
+
+        node_uid = self._extract_irr_probe_node_uid(plan=plan) or ""
+        liveness: Mapping[str, Any] = {}
+        read_node_liveness = getattr(self._runtime_monitor, "read_node_liveness", None)
+        if node_uid and callable(read_node_liveness):
+            raw = await read_node_liveness(node_uid=node_uid)
+            if isinstance(raw, Mapping):
+                liveness = raw
+        return offline_failure_from_liveness(
+            zone_id=int(getattr(task, "zone_id", 0) or 0),
+            node_uid=node_uid,
+            liveness=liveness,
         )
 
     @staticmethod
@@ -800,6 +945,19 @@ class BaseStageHandler:
             IRR_PROBE_STREAK_EXHAUSTED.labels(
                 topology=topology_label, stage=stage_label,
             ).inc()
+            if reason in {"node_unreachable", "irr_state_unavailable", "irr_state_stale"} and node_uid:
+                from ae3lite.domain.services.zone_node_availability import offline_failure_from_liveness
+
+                failure = offline_failure_from_liveness(
+                    zone_id=int(getattr(task, "zone_id", 0) or 0),
+                    node_uid=node_uid,
+                    liveness=liveness if isinstance(liveness, Mapping) else {},
+                )
+                return StageOutcome(
+                    kind="fail",
+                    error_code=failure.code,
+                    error_message=failure.message,
+                )
             try:
                 await send_biz_alert(
                     code="biz_irr_probe_streak_exhausted",
@@ -1163,8 +1321,10 @@ class BaseStageHandler:
                 )
                 return probe_level
         if not level["has_level"]:
-            raise TaskExecutionError(
-                unavailable_error, f"Недоступен датчик уровня: {labels}",
+            await self._raise_execution_error(
+                task=task,
+                error_code=unavailable_error,
+                error_message=f"Недоступен датчик уровня: {labels}",
             )
         if level["is_stale"]:
             self._log_level_state(
@@ -1200,8 +1360,10 @@ class BaseStageHandler:
                     telemetry_max_age_sec=telemetry_max_age_sec,
                     reason="stale_recheck_failed",
                 )
-            raise TaskExecutionError(
-                stale_error, f"Данные датчика уровня устарели: {labels}",
+            await self._raise_execution_error(
+                task=task,
+                error_code=stale_error,
+                error_message=f"Данные датчика уровня устарели: {labels}",
             )
         return level
 

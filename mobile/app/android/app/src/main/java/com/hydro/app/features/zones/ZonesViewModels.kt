@@ -11,6 +11,7 @@ import com.hydro.app.core.domain.TelemetryHistoryPoint
 import com.hydro.app.core.domain.TelemetryLast
 import com.hydro.app.core.domain.Zone
 import com.hydro.app.core.data.ZonesApi
+import com.hydro.app.core.network.ApiErrorParser
 import com.hydro.app.core.domain.usecase.GetZonesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,7 +71,8 @@ class ZoneDetailsViewModel @Inject constructor(
     private val zonesRepository: ZonesRepository,
     private val telemetryRepository: TelemetryRepository,
     private val zonesApi: ZonesApi,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val apiErrorParser: ApiErrorParser,
 ) : ViewModel() {
     private val _zoneId = MutableStateFlow<Int?>(null)
     private val _telemetryLast = MutableStateFlow<TelemetryLast?>(null)
@@ -125,10 +127,17 @@ class ZoneDetailsViewModel @Inject constructor(
                 if (response.status == "ok" && response.data != null) {
                     _commandState.value = CommandState.Success(response.data)
                 } else {
-                    _commandState.value = CommandState.Error(response.message ?: "Command failed")
+                    _commandState.value = CommandState.Error(
+                        apiErrorParser.fromApiResponse(
+                            status = response.status,
+                            message = response.message,
+                            code = response.code,
+                            humanErrorMessage = response.humanErrorMessage,
+                        ),
+                    )
                 }
             } catch (e: Exception) {
-                _commandState.value = CommandState.Error(e.message ?: "Command failed")
+                _commandState.value = CommandState.Error(apiErrorParser.localizedMessage(e))
             }
         }
     }

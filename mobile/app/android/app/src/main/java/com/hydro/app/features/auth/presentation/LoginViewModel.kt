@@ -67,8 +67,8 @@ class LoginViewModel @Inject constructor(
 						when (error) {
 							is AppError.ValidationError -> error.message
 							is AppError.AuthError -> error.message
-							is AppError.NetworkError -> "Network error. Please check your connection."
-							else -> error.message ?: "An error occurred"
+							is AppError.NetworkError -> error.message ?: "Ошибка сети. Проверьте подключение."
+							else -> error.message ?: "Произошла ошибка"
 						}
 					)
 				}

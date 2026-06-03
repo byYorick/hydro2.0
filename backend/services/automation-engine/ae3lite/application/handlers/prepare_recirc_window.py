@@ -175,9 +175,9 @@ class PrepareRecircWindowHandler(BaseStageHandler):
                 "ae3_empty_command_plan",
                 f"Для окна подготовки рециркуляции не удалось разрешить команды: {plan_names}",
             )
-        result = await self._command_gateway.run_batch(task=task, commands=tuple(commands), now=now)
-        if not result["success"]:
-            raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+        result = await self._run_command_batch_checked(
+            task=task, commands=tuple(commands), now=now,
+        )
         return result.get("task") or task
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:

@@ -3,6 +3,7 @@ package com.hydro.app.features.alerts
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hydro.app.core.data.AlertsRepository
+import com.hydro.app.core.network.ApiErrorParser
 import com.hydro.app.core.domain.Alert
 import com.hydro.app.core.realtime.RealtimeService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,7 +17,8 @@ import javax.inject.Inject
 @HiltViewModel
 class AlertsViewModel @Inject constructor(
     private val repository: AlertsRepository,
-    private val realtimeService: RealtimeService
+    private val realtimeService: RealtimeService,
+    private val apiErrorParser: ApiErrorParser,
 ) : ViewModel() {
     private val _filterStatus = MutableStateFlow<String?>(null)
     private val _filterZoneId = MutableStateFlow<Int?>(null)
@@ -62,7 +64,7 @@ class AlertsViewModel @Inject constructor(
             val result = repository.acknowledge(alertId)
             _acknowledgeState.value = result.fold(
                 onSuccess = { AcknowledgeState.Success },
-                onFailure = { AcknowledgeState.Error(it.message ?: "Failed to acknowledge") }
+                onFailure = { AcknowledgeState.Error(apiErrorParser.localizedMessage(it)) }
             )
             // Reset after a delay
             kotlinx.coroutines.delay(2000)

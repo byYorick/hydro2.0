@@ -8,7 +8,7 @@
           v-if="!automationControlModeLoading"
           :variant="automationControlMode === 'auto' ? 'info' : 'warning'"
         >
-          {{ automationControlMode }}
+          {{ controlModeLabels[automationControlMode] }}
         </Badge>
         <span
           v-else
@@ -24,7 +24,7 @@
         :class="{ 'opacity-60': automationControlModeLoading }"
       >
         <button
-          v-for="mode in (['auto', 'semi', 'manual'] as const)"
+          v-for="mode in controlModeAvailable"
           :key="mode"
           type="button"
           class="rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-150 min-w-[4.5rem]"
@@ -32,15 +32,17 @@
             automationControlMode === mode
               ? 'bg-[color:var(--accent,#3b82f6)] text-white shadow-sm'
               : 'text-[color:var(--text-muted)] hover:bg-[color:var(--surface-muted)]/60 hover:text-[color:var(--text-primary)]',
+            !canSelectMode(mode) ? 'opacity-40 cursor-not-allowed' : '',
           ]"
-          :disabled="!canOperateAutomation || automationControlModeLoading || automationControlModeSaving"
+          :disabled="!canSelectMode(mode) || automationControlModeLoading || automationControlModeSaving"
+          :title="modeDisabledTitle(mode)"
           @click="$emit('select-mode', mode)"
         >
           <span
             v-if="automationControlModeSaving && pendingControlModeValue === mode"
             class="inline-block animate-spin mr-1 opacity-60"
           >⟳</span>
-          {{ mode }}
+          {{ controlModeLabels[mode] }}
         </button>
       </div>
     </div>
@@ -131,6 +133,11 @@ import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import type { AutomationControlMode, AutomationManualStep } from '@/types/Automation'
+import {
+  CONTROL_MODE_LABELS,
+  controlModeDisabledReason,
+  isControlModeTransitionAllowed,
+} from '@/utils/zoneAutomationControlMode'
 
 type ModeValue = 'auto' | 'semi' | 'manual'
 
@@ -143,8 +150,10 @@ interface QuickActionsState {
 
 interface Props {
   canOperateAutomation: boolean
+  userRole: string
   quickActions: QuickActionsState
   automationControlMode: AutomationControlMode
+  controlModeAvailable: AutomationControlMode[]
   allowedManualSteps: AutomationManualStep[]
   automationControlModeLoading: boolean
   automationControlModeSaving: boolean
@@ -154,6 +163,28 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const controlModeLabels = CONTROL_MODE_LABELS
+
+function canSelectMode(mode: AutomationControlMode): boolean {
+  if (!props.canOperateAutomation) {
+    return false
+  }
+  return isControlModeTransitionAllowed(
+    props.userRole,
+    props.automationControlMode,
+    mode,
+  )
+}
+
+function modeDisabledTitle(mode: AutomationControlMode): string | undefined {
+  const reason = controlModeDisabledReason(
+    props.userRole,
+    props.automationControlMode,
+    mode,
+  )
+  return reason ?? undefined
+}
 
 defineEmits<{
   (e: 'manual-irrigation'): void

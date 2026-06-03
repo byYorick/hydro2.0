@@ -7,6 +7,11 @@ use Illuminate\Support\Facades\Log;
 class ErrorCodeCatalogService
 {
     /**
+     * @var array{code_by_exact_message: array<string, string>, exact: array<string, string>, patterns: array<int, array{regex: string, message: string}>}|null
+     */
+    private static ?array $cachedRawTranslations = null;
+
+    /**
      * @var array<int, array<string, mixed>>|null
      */
     private static ?array $cachedCodes = null;
@@ -41,6 +46,137 @@ class ErrorCodeCatalogService
         }
 
         return preg_replace('/[^a-z0-9_\-]/', '_', $normalized) ?? $normalized;
+    }
+
+    /**
+     * Канонический JSON-тело ошибки API (фаза 2: human_error_message).
+     *
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    public function errorPayload(?string $code, ?string $message = null, array $extra = []): array
+    {
+        $presentation = $this->present($code, $message);
+
+        return array_merge([
+            'status' => 'error',
+            'code' => $presentation['code'] ?? $this->normalizeCode($code),
+            'message' => $presentation['message'],
+            'human_error_message' => $presentation['message'],
+            'title' => $presentation['title'],
+        ], $extra);
+    }
+
+    /**
+     * Обогащает payload ошибки (в т.ч. ответ AE3/FastAPI с ключом detail).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function enrichErrorPayload(array $payload): array
+    {
+        if (isset($payload['detail']) && is_array($payload['detail'])) {
+            $payload['detail'] = $this->enrichErrorPayload($payload['detail']);
+        }
+
+        [$rawCode, $rawMessage] = $this->extractCodeAndMessage($payload);
+        if ($rawCode === '' && ($rawMessage === null || trim($rawMessage) === '')) {
+            return $payload;
+        }
+
+        if ($rawCode === '') {
+            $rawCode = $this->inferCodeFromMessage($rawMessage ?? '') ?? 'api_error';
+        }
+
+        return $this->mergePresentationIntoPayload(
+            $payload,
+            $this->present($rawCode, $rawMessage),
+        );
+    }
+
+    /**
+     * Локализует ad-hoc JSON-ответы API (middleware фазы 4, 100% покрытие контроллеров).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function localizeResponsePayload(array $payload): array
+    {
+        $status = $payload['status'] ?? null;
+        if ($status !== 'error' && $status !== 'failed') {
+            return $payload;
+        }
+
+        if (isset($payload['error']) && is_array($payload['error'])) {
+            $nested = $this->localizeResponsePayload(array_merge(['status' => 'error'], $payload['error']));
+
+            return $this->mergePresentationIntoPayload($payload, [
+                'code' => $nested['code'] ?? null,
+                'title' => $nested['title'] ?? 'Системная ошибка',
+                'message' => $nested['message'] ?? $nested['human_error_message'] ?? null,
+            ]);
+        }
+
+        $human = $payload['human_error_message'] ?? null;
+        if (is_string($human) && trim($human) !== '' && $this->looksLocalized($human)) {
+            [$rawCode, $rawMessage] = $this->extractCodeAndMessage($payload);
+            $code = $rawCode !== '' ? $rawCode : ($this->inferCodeFromMessage($rawMessage ?? $human) ?? 'api_error');
+
+            return $this->mergePresentationIntoPayload($payload, $this->present($code, $human));
+        }
+
+        return $this->enrichErrorPayload($payload);
+    }
+
+    public function inferCodeFromMessage(string $message): ?string
+    {
+        $trimmed = trim($message);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $raw = $this->rawTranslations();
+        $byMessage = $raw['code_by_exact_message'];
+        if (isset($byMessage[$trimmed])) {
+            return $this->normalizeCode($byMessage[$trimmed]);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array{code:?string,title:string,message:?string}  $presentation
+     * @return array<string, mixed>
+     */
+    private function mergePresentationIntoPayload(array $payload, array $presentation): array
+    {
+        $payload['status'] = 'error';
+        $payload['code'] = $presentation['code'] ?? $this->normalizeCode((string) ($payload['code'] ?? 'api_error'));
+        $payload['message'] = $presentation['message'];
+        $payload['human_error_message'] = $presentation['message'];
+        $payload['title'] = $payload['title'] ?? $presentation['title'];
+
+        if (! isset($payload['error']) || ! is_string($payload['error']) || trim($payload['error']) === '') {
+            $payload['error'] = $payload['code'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{0:string,1:?string}
+     */
+    private function extractCodeAndMessage(array $payload): array
+    {
+        $code = $payload['code'] ?? $payload['error_code'] ?? $payload['error'] ?? null;
+        $message = $payload['message'] ?? $payload['error_message'] ?? null;
+
+        return [
+            is_string($code) ? $code : '',
+            is_string($message) ? $message : null,
+        ];
     }
 
     /**
@@ -141,21 +277,79 @@ class ErrorCodeCatalogService
             if ($translated !== null) {
                 return $translated;
             }
+
+            return $rawMessage;
         }
 
         if ($code !== '') {
             return sprintf('Внутренняя ошибка системы (код: %s).', $code);
         }
 
-        if ($rawMessage !== '') {
-            return 'Произошла ошибка сервиса. Проверьте логи и повторите попытку.';
+        return null;
+    }
+
+    /**
+     * @return array{code_by_exact_message: array<string, string>, exact: array<string, string>, patterns: array<int, array{regex: string, message: string}>}
+     */
+    private function rawTranslations(): array
+    {
+        if (self::$cachedRawTranslations !== null) {
+            return self::$cachedRawTranslations;
         }
 
-        return null;
+        $paths = [
+            base_path('api_error_raw_translations.json'),
+            base_path('../api_error_raw_translations.json'),
+        ];
+
+        foreach ($paths as $path) {
+            if (! is_file($path)) {
+                continue;
+            }
+
+            $decoded = json_decode((string) file_get_contents($path), true);
+            if (is_array($decoded)) {
+                self::$cachedRawTranslations = [
+                    'code_by_exact_message' => is_array($decoded['code_by_exact_message'] ?? null)
+                        ? $decoded['code_by_exact_message']
+                        : [],
+                    'exact' => is_array($decoded['exact'] ?? null) ? $decoded['exact'] : [],
+                    'patterns' => is_array($decoded['patterns'] ?? null) ? $decoded['patterns'] : [],
+                ];
+
+                return self::$cachedRawTranslations;
+            }
+        }
+
+        self::$cachedRawTranslations = [
+            'code_by_exact_message' => [],
+            'exact' => [],
+            'patterns' => [],
+        ];
+
+        return self::$cachedRawTranslations;
     }
 
     private function translateRawMessage(string $message): ?string
     {
+        $raw = $this->rawTranslations();
+        if (isset($raw['exact'][$message])) {
+            return $raw['exact'][$message];
+        }
+
+        foreach ($raw['patterns'] as $pattern) {
+            $regex = $pattern['regex'] ?? '';
+            $replacement = $pattern['message'] ?? '';
+            if ($regex === '' || $replacement === '') {
+                continue;
+            }
+
+            $translated = preg_replace('/'.$regex.'/i', $replacement, $message, 1);
+            if (is_string($translated) && $translated !== $message) {
+                return $translated;
+            }
+        }
+
         $exactMap = [
             'Intent skipped: zone busy' => 'Повторный запуск отклонён: зона уже занята активной задачей.',
             'Task execution exceeded runtime timeout' => 'Выполнение задачи превысило допустимый runtime timeout.',

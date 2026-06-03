@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Enums\GrowCycleStatus;
 use App\Http\Requests\StoreZoneCommandRequest;
 use App\Models\GrowCycle;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\Log;
 
 class ZoneCommandController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly Ae3IrrigationBridgeService $ae3IrrigationBridge,
@@ -56,11 +59,11 @@ class ZoneCommandController extends Controller
                 ->exists();
 
             if ($hasActiveCycle) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'CYCLE_ALREADY_ACTIVE',
-                    'message' => 'В этой зоне уже есть активный цикл выращивания. Сначала завершите или остановите текущий цикл.',
-                ], 422);
+                return $this->localizedError(
+                    'cycle_already_active',
+                    'В этой зоне уже есть активный цикл выращивания. Сначала завершите или остановите текущий цикл.',
+                    422,
+                );
             }
 
             // Проверка готовности зоны к старту цикла
@@ -69,28 +72,29 @@ class ZoneCommandController extends Controller
 
             // Если есть критические ошибки - блокируем старт
             if (! $readiness['valid']) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'ZONE_NOT_READY',
-                    'message' => 'Зона не готова к запуску цикла',
+                return $this->localizedError('zone_not_ready', 'Зона не готова к запуску цикла', 422, [
                     'data' => [
                         'errors' => $readiness['errors'],
                         'warnings' => $readiness['warnings'],
                     ],
-                ], 422);
+                ]);
             }
 
             // Если есть предупреждения и не указан флаг "start_anyway" - возвращаем предупреждения
             if (! empty($readiness['warnings']) && ! ($data['params']['start_anyway'] ?? false)) {
-                return response()->json([
-                    'status' => 'warning',
-                    'code' => 'ZONE_READINESS_WARNINGS',
-                    'message' => 'Зона готова к запуску, но есть предупреждения',
-                    'data' => [
-                        'warnings' => $readiness['warnings'],
-                        'can_start_anyway' => true,
+                $payload = $this->errorCodeCatalog()->errorPayload(
+                    'zone_readiness_warnings',
+                    'Зона готова к запуску, но есть предупреждения',
+                    [
+                        'data' => [
+                            'warnings' => $readiness['warnings'],
+                            'can_start_anyway' => true,
+                        ],
                     ],
-                ], 422);
+                );
+                $payload['status'] = 'warning';
+
+                return response()->json($payload, 422);
             }
         }
 
@@ -108,19 +112,19 @@ class ZoneCommandController extends Controller
                 if (is_string($requestedSystemType) && $requestedSystemType !== '') {
                     $currentSystemType = Arr::get($activeCycle->settings ?? [], 'irrigation.system_type');
                     if (! is_string($currentSystemType) || trim($currentSystemType) === '') {
-                        return response()->json([
-                            'status' => 'error',
-                            'code' => 'CYCLE_IRRIGATION_NOT_INITIALIZED',
-                            'message' => 'Тип системы цикла не инициализирован. Создайте цикл через мастер запуска с параметрами irrigation.',
-                        ], 422);
+                        return $this->localizedError(
+                            'cycle_irrigation_not_initialized',
+                            'Тип системы цикла не инициализирован. Создайте цикл через мастер запуска с параметрами irrigation.',
+                            422,
+                        );
                     }
 
                     if ($currentSystemType !== $requestedSystemType) {
-                        return response()->json([
-                            'status' => 'error',
-                            'code' => 'SYSTEM_TYPE_LOCKED',
-                            'message' => 'Тип системы нельзя изменять в активном цикле. Он задаётся только при старте.',
-                        ], 422);
+                        return $this->localizedError(
+                            'system_type_locked',
+                            'Тип системы нельзя изменять в активном цикле. Он задаётся только при старте.',
+                            422,
+                        );
                     }
                 }
             }
@@ -153,12 +157,9 @@ class ZoneCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'SERVICE_UNAVAILABLE',
-                'message' => 'Unable to connect to command service. Please try again later.',
+            return $this->localizedError('service_unavailable', null, 503, [
                 'details' => $e->getMessage(),
-            ], 503);
+            ]);
         } catch (TimeoutException $e) {
             Log::error('ZoneCommandController: Timeout error', [
                 'zone_id' => $zone->id,
@@ -166,12 +167,9 @@ class ZoneCommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'SERVICE_TIMEOUT',
-                'message' => 'Command service did not respond in time. Please try again later.',
+            return $this->localizedError('service_timeout', null, 503, [
                 'details' => $e->getMessage(),
-            ], 503);
+            ]);
         } catch (RequestException $e) {
             $upstreamStatus = $e->response?->status();
             Log::error('ZoneCommandController: Request error', [
@@ -182,20 +180,24 @@ class ZoneCommandController extends Controller
             ]);
 
             if ($upstreamStatus !== null && $upstreamStatus >= 500) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'SERVICE_UNAVAILABLE',
-                    'message' => 'Command service is temporarily unavailable. Please try again later.',
+                return $this->localizedError('service_unavailable', null, 503, [
                     'details' => $this->extractRequestExceptionDetails($e),
-                ], 503);
+                ]);
             }
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'COMMAND_FAILED',
-                'message' => 'Failed to send command. The command may have been queued but failed validation.',
+            $decoded = $e->response?->json();
+            if (is_array($decoded) && $upstreamStatus !== null && $upstreamStatus >= 400 && $upstreamStatus < 500) {
+                return $this->enrichedUpstreamResponse(
+                    array_merge($decoded, [
+                        'details' => $this->extractRequestExceptionDetails($e),
+                    ]),
+                    $upstreamStatus,
+                );
+            }
+
+            return $this->localizedError('command_failed', null, 422, [
                 'details' => $this->extractRequestExceptionDetails($e),
-            ], 422);
+            ]);
         } catch (\InvalidArgumentException $e) {
             Log::warning('ZoneCommandController: Invalid argument', [
                 'zone_id' => $zone->id,
@@ -209,11 +211,7 @@ class ZoneCommandController extends Controller
              * детали реализации. Сообщение остаётся в Log::warning для
              * отладки.
              */
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INVALID_ARGUMENT',
-                'message' => 'Command argument is invalid. See logs for details.',
-            ], 422);
+            return $this->localizedError('invalid_argument', 'Аргумент команды недопустим. Подробности — в журнале сервера.', 422);
         } catch (\Exception $e) {
             Log::error('ZoneCommandController: Unexpected error', [
                 'zone_id' => $zone->id,
@@ -224,11 +222,7 @@ class ZoneCommandController extends Controller
             ]);
 
             // S1.6: не возвращаем raw exception message клиенту.
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => 'An unexpected error occurred while sending the command.',
-            ], 500);
+            return $this->localizedError('internal_error', 'Неожиданная ошибка при отправке команды.', 500);
         }
     }
 

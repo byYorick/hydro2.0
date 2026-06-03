@@ -27,6 +27,15 @@ export function normalizeAutomationControlMode(value: unknown): AutomationContro
   return 'auto'
 }
 
+/** true только если API явно передал control_mode (не пустой / не undefined). */
+export function hasExplicitControlMode(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false
+  }
+  const normalized = String(value).trim().toLowerCase()
+  return normalized === 'auto' || normalized === 'semi' || normalized === 'manual'
+}
+
 const ALL_CONTROL_MODES: AutomationControlMode[] = ['auto', 'semi', 'manual']
 
 export function normalizeAutomationControlModes(value: unknown): AutomationControlMode[] {

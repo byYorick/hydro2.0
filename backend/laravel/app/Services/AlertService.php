@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Alert;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -378,6 +379,10 @@ class AlertService
 
         // Сбрасываем кеш unified-дашборда: алерт переведён в RESOLVED.
         UnifiedDashboardService::invalidate();
+
+        if ($fresh->zone_id) {
+            Cache::forget('zone_automation_state:'.(int) $fresh->zone_id);
+        }
 
         return $fresh;
     }

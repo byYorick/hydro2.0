@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\Log;
 
 class TelemetryController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ZoneFrontendTelemetryService $zoneFrontendTelemetry
     ) {}
@@ -21,11 +24,7 @@ class TelemetryController extends Controller
     {
         // Проверяем авторизацию
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         // Проверяем доступ к зоне
@@ -35,11 +34,7 @@ class TelemetryController extends Controller
                 'zone_id' => $zoneId,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         $data = $this->zoneFrontendTelemetry->getZoneSnapshot($zoneId, true);
@@ -54,11 +49,7 @@ class TelemetryController extends Controller
     {
         // Проверяем авторизацию
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         // Проверяем доступ к зоне
@@ -68,11 +59,7 @@ class TelemetryController extends Controller
                 'zone_id' => $zoneId,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         $validated = $request->validate([
@@ -114,11 +101,7 @@ class TelemetryController extends Controller
     {
         // Проверяем авторизацию
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         // Проверяем доступ к ноде
@@ -128,11 +111,7 @@ class TelemetryController extends Controller
                 'node_id' => $nodeId,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         $rows = TelemetryLast::query()
@@ -164,11 +143,7 @@ class TelemetryController extends Controller
     {
         // Проверяем авторизацию
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         // Проверяем доступ к ноде
@@ -178,11 +153,7 @@ class TelemetryController extends Controller
                 'node_id' => $nodeId,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         $validated = $request->validate([
@@ -233,11 +204,7 @@ class TelemetryController extends Controller
     {
         // Проверяем авторизацию
         if (! Auth::check()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNAUTHENTICATED',
-                'message' => 'Authentication required',
-            ], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $validated = $request->validate([
@@ -255,11 +222,7 @@ class TelemetryController extends Controller
                 'zone_id' => $zoneId,
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
         $metric = strtoupper($validated['metric']); // Преобразуем в верхний регистр (ph -> PH)
         $period = $validated['period'];

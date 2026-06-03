@@ -36,11 +36,9 @@ class CommandStatusControllerTest extends TestCase
             ->getJson('/api/commands/nonexistent-cmd-id/status');
 
         $response->assertStatus(404)
-            ->assertJson([
-                'status' => 'error',
-                'code' => 'NOT_FOUND',
-                'message' => 'Command not found',
-            ]);
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'not_found')
+            ->assertJsonStructure(['message', 'human_error_message']);
     }
 
     public function test_command_status_allows_access_for_admin(): void
@@ -166,10 +164,8 @@ class CommandStatusControllerTest extends TestCase
             ->getJson("/api/commands/{$command->cmd_id}/status");
 
         $response->assertStatus(403)
-            ->assertJson([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Access denied',
-            ]);
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'forbidden')
+            ->assertJsonStructure(['message', 'human_error_message']);
     }
 }

@@ -6,7 +6,7 @@ import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
-import { pickApiMessageFromPayload } from '@/utils/errorMessage'
+import { buildHumanErrorInputFromPayload, pickApiMessageFromPayload } from '@/utils/errorMessage'
 import type { ToastHandler } from '@/services/api'
 
 /**
@@ -92,12 +92,16 @@ export function useErrorHandler(showToast?: ToastHandler) {
         responseData && typeof responseData === 'object' && !Array.isArray(responseData)
           ? (responseData as Record<string, unknown>)
           : null
-      const responseCode =
-        typeof responseRecord?.code === 'string' ? responseRecord.code : undefined
-      const message = resolveHumanErrorMessage({
-        code: responseCode,
-        message: payloadMessage || axiosError.message || ERROR_MESSAGES.UNKNOWN,
-      }) || payloadMessage || axiosError.message || ERROR_MESSAGES.UNKNOWN
+      const humanInput = responseRecord
+        ? buildHumanErrorInputFromPayload(responseRecord)
+        : {}
+      if (!humanInput.message) {
+        humanInput.message = payloadMessage || axiosError.message || ERROR_MESSAGES.UNKNOWN
+      }
+      const message = resolveHumanErrorMessage(humanInput)
+        || payloadMessage
+        || axiosError.message
+        || ERROR_MESSAGES.UNKNOWN
 
       // Ошибки валидации (422)
       if (status === 422 && responseRecord?.errors) {

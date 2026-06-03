@@ -12,6 +12,8 @@ import com.hydro.app.core.domain.Node
 import com.hydro.app.core.domain.TelemetryHistoryPoint
 import com.hydro.app.core.domain.TelemetryLast
 import com.hydro.app.core.domain.Zone
+import com.hydro.app.core.i18n.AlertCatalog
+import com.hydro.app.core.network.ApiErrorParser
 import com.hydro.app.core.prefs.PreferencesDataSource
 import com.hydro.app.features.auth.data.AuthRepository
 import kotlinx.coroutines.flow.Flow
@@ -202,7 +204,9 @@ class TelemetryRepository @Inject constructor(
 @Singleton
 class AlertsRepository @Inject constructor(
     private val api: AlertsApi,
-    private val db: HydroDatabase
+    private val db: HydroDatabase,
+    private val alertCatalog: AlertCatalog,
+    private val apiErrorParser: ApiErrorParser,
 ) {
     fun getAll(): Flow<List<Alert>> {
         return db.alertDao().getAll().map { entities ->
@@ -226,7 +230,11 @@ class AlertsRepository @Inject constructor(
         try {
             val response = api.list(zoneId, status)
             if (response.status == "ok" && response.data != null) {
-                val entities = response.data.map { it.toEntity() }
+                val entities = response.data.map { alert ->
+                    alert.copy(
+                        message = alertCatalog.resolveMessage(alert.code, alert.message),
+                    ).toEntity()
+                }
                 db.alertDao().insertAll(entities)
             } else {
                 android.util.Log.w("AlertsRepository", "API returned error: ${response.message}")
@@ -248,10 +256,19 @@ class AlertsRepository @Inject constructor(
                 )
                 Result.success(alert)
             } else {
-                Result.failure(Exception(response.message ?: "Failed to acknowledge"))
+                Result.failure(
+                    Exception(
+                        apiErrorParser.fromApiResponse(
+                            status = response.status,
+                            message = response.message,
+                            code = response.code,
+                            humanErrorMessage = response.humanErrorMessage,
+                        ),
+                    ),
+                )
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception(apiErrorParser.localizedMessage(e)))
         }
     }
 }

@@ -4,26 +4,59 @@ import { api } from '@/services/api'
 import type { ToastHandler } from '@/services/api'
 import type { AutomationLogicMode } from '@/composables/zoneAutomationUtils'
 import {
+  hasExplicitControlMode,
   normalizeAutomationControlMode,
+  normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
 } from '@/composables/zoneAutomationUtils'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import type { AutomationControlMode, AutomationManualStep, AutomationState } from '@/types/Automation'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 
 export interface ZoneAutomationSchedulerDeps {
   showToast: ToastHandler
+  onControlModeChanged?: () => void
+}
+
+type ControlModePayload = {
+  control_mode?: string
+  allowed_manual_steps?: unknown
+  available_modes?: unknown
+  control_mode_available?: unknown
+  data?: ControlModePayload
+}
+
+function parseControlModePayload(raw: unknown): {
+  control_mode: AutomationControlMode
+  allowed_manual_steps: AutomationManualStep[]
+  control_mode_available: AutomationControlMode[]
+} {
+  const payload = (raw && typeof raw === 'object' ? raw : {}) as ControlModePayload
+  const nested = payload.data && typeof payload.data === 'object'
+    ? (payload.data as ControlModePayload)
+    : null
+  const source = nested ?? payload
+
+  return {
+    control_mode: normalizeAutomationControlMode(source.control_mode),
+    allowed_manual_steps: normalizeAutomationManualSteps(source.allowed_manual_steps),
+    control_mode_available: normalizeAutomationControlModes(
+      source.control_mode_available ?? source.available_modes,
+    ),
+  }
 }
 
 export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: ZoneAutomationSchedulerDeps) {
-  const { showToast } = deps
+  const { showToast, onControlModeChanged } = deps
   const { subscribeToZoneCommands, unsubscribeAll } = useWebSocket(
     showToast,
     'zone-automation-runtime'
   )
 
   const automationControlMode = ref<AutomationControlMode>('auto')
+  const controlModeAvailable = ref<AutomationControlMode[]>(['auto', 'semi', 'manual'])
   const allowedManualSteps = ref<AutomationManualStep[]>([])
   const automationControlModeLoading = ref(false)
   const automationControlModeSaving = ref(false)
@@ -44,24 +77,11 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   let unsubscribeZoneCommands: (() => void) | null = null
   let unsubscribeZoneEvents: (() => void) | null = null
 
-  function extractApiErrorMessage(error: unknown, fallback: string): string {
-    const err = error as { response?: { data?: unknown } }
-    const data = err?.response?.data
-    if (typeof data === 'string' && data.trim() !== '') {
-      return data.trim()
+  function hydrateControlModeFromProp(): void {
+    if (!hasExplicitControlMode(props.zoneControlMode)) {
+      return
     }
-
-    if (data && typeof data === 'object') {
-      const payload = data as Record<string, unknown>
-      for (const key of ['message', 'error', 'code', 'detail'] as const) {
-        const value = payload[key]
-        if (typeof value === 'string' && value.trim() !== '') {
-          return value.trim()
-        }
-      }
-    }
-
-    return fallback
+    automationControlMode.value = normalizeAutomationControlMode(props.zoneControlMode)
   }
 
   function syncControlModeFromAutomationState(snapshot: AutomationState | null): void {
@@ -69,13 +89,36 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       return
     }
 
-    automationControlMode.value = normalizeAutomationControlMode(snapshot.control_mode)
-    allowedManualSteps.value = normalizeAutomationManualSteps(snapshot.allowed_manual_steps)
+    // Не перезаписываем режим, если /state не вернул control_mode (иначе скачок auto↔semi).
+    if (snapshot.control_mode === undefined) {
+      return
+    }
+
+    automationControlMode.value = snapshot.control_mode
+    if (snapshot.allowed_manual_steps !== undefined) {
+      allowedManualSteps.value = snapshot.allowed_manual_steps
+    }
+    if (snapshot.control_mode_available !== undefined && snapshot.control_mode_available.length > 0) {
+      controlModeAvailable.value = snapshot.control_mode_available
+    }
+  }
+
+  function applyControlModePayload(raw: unknown): void {
+    const parsed = parseControlModePayload(raw)
+    automationControlMode.value = parsed.control_mode
+    allowedManualSteps.value = parsed.allowed_manual_steps
+    if (parsed.control_mode_available.length > 0) {
+      controlModeAvailable.value = parsed.control_mode_available
+    }
   }
 
   async function fetchAutomationControlMode(): Promise<void> {
     if (!props.zoneId) {
-      automationControlMode.value = 'auto'
+      if (!hasExplicitControlMode(props.zoneControlMode)) {
+        automationControlMode.value = 'auto'
+      } else {
+        hydrateControlModeFromProp()
+      }
       allowedManualSteps.value = []
       automationControlModeLoading.value = false
       return
@@ -84,18 +127,14 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     const requestedZoneId = props.zoneId
     automationControlModeLoading.value = true
     try {
-      const response = await api.zones.getControlMode<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] }; control_mode?: string; allowed_manual_steps?: unknown[] }>(
-        requestedZoneId
-      )
+      const response = await api.zones.getControlMode<unknown>(requestedZoneId)
       if (props.zoneId !== requestedZoneId) return
 
-      const payload = response?.data ?? response ?? {}
-      automationControlMode.value = normalizeAutomationControlMode(payload.control_mode)
-      allowedManualSteps.value = normalizeAutomationManualSteps(payload.allowed_manual_steps)
+      applyControlModePayload(response)
     } catch (error) {
       if (props.zoneId !== requestedZoneId) return
       logger.warn('[ZoneAutomationTab] Failed to fetch automation control mode', { error, zoneId: requestedZoneId })
-      automationControlMode.value = 'auto'
+      // Не сбрасываем в auto при transient 503 — иначе скачок semi↔auto.
       allowedManualSteps.value = []
     } finally {
       if (props.zoneId === requestedZoneId) {
@@ -116,19 +155,15 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       if (reason && reason.trim() !== '') {
         body.reason = reason.trim()
       }
-      const response = await api.zones.setControlMode<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] }; control_mode?: string; allowed_manual_steps?: unknown[] }>(
-        props.zoneId,
-        body
-      )
+      const response = await api.zones.setControlMode<unknown>(props.zoneId, body)
 
-      const payload = response?.data ?? response ?? {}
-      automationControlMode.value = normalizeAutomationControlMode(payload.control_mode ?? mode)
-      allowedManualSteps.value = normalizeAutomationManualSteps(payload.allowed_manual_steps)
+      applyControlModePayload(response)
+      onControlModeChanged?.()
       showToast('Режим управления автоматикой обновлён.', 'success')
       return true
     } catch (error: unknown) {
       logger.warn('[ZoneAutomationTab] Failed to update automation control mode', { error, zoneId: props.zoneId, mode })
-      showToast(extractApiErrorMessage(error, 'Не удалось обновить режим управления.'), 'error')
+      showToast(extractHumanErrorMessage(error, 'Не удалось обновить режим управления.'), 'error')
       return false
     } finally {
       automationControlModeSaving.value = false
@@ -148,7 +183,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       await fetchAutomationControlMode()
     } catch (error: unknown) {
       logger.warn('[ZoneAutomationTab] Failed to run manual step', { error, zoneId: props.zoneId, step })
-      showToast(extractApiErrorMessage(error, 'Не удалось выполнить manual-step.'), 'error')
+      showToast(extractHumanErrorMessage(error, 'Не удалось выполнить manual-step.'), 'error')
     } finally {
       manualStepLoading.value[step] = false
     }
@@ -181,9 +216,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     if (!props.zoneId) return
     if (import.meta.env.MODE === 'test') return
 
-    unsubscribeZoneCommands = subscribeToZoneCommands(props.zoneId, () => {
-      void refreshRuntimeState()
-    })
+    // Команды MQTT не меняют control_mode — не дёргаем /control-mode на каждый status update.
 
     unsubscribeZoneEvents = subscribeManagedChannelEvents({
       channelName: `hydro.zones.${props.zoneId}`,
@@ -194,7 +227,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
           if (
             kind === 'AUTOMATION_CONTROL_MODE_UPDATED'
             || kind.startsWith('MANUAL_STEP_')
-            || kind.startsWith('COMMAND_')
           ) {
             void refreshRuntimeState()
           }
@@ -204,7 +236,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
           if (
             kind === 'AUTOMATION_CONTROL_MODE_UPDATED'
             || kind.startsWith('MANUAL_STEP_')
-            || kind.startsWith('COMMAND_')
           ) {
             void refreshRuntimeState()
           }
@@ -214,7 +245,11 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   }
 
   function resetForZoneChange(): void {
-    automationControlMode.value = 'auto'
+    hydrateControlModeFromProp()
+    if (!hasExplicitControlMode(props.zoneControlMode)) {
+      automationControlMode.value = 'auto'
+    }
+    controlModeAvailable.value = ['auto', 'semi', 'manual']
     allowedManualSteps.value = []
     automationControlModeLoading.value = false
     automationControlModeSaving.value = false
@@ -240,8 +275,16 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
   )
 
+  watch(
+    () => props.zoneControlMode,
+    () => {
+      hydrateControlModeFromProp()
+    },
+  )
+
   return {
     automationControlMode,
+    controlModeAvailable,
     allowedManualSteps,
     automationControlModeLoading,
     automationControlModeSaving,
@@ -249,6 +292,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     fetchAutomationControlMode,
     setAutomationControlMode,
     syncControlModeFromAutomationState,
+    hydrateControlModeFromProp,
     runManualStep,
     resetForZoneChange,
     formatDateTime: (value: string | null | undefined) => {

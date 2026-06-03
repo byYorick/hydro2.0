@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\LocalizedApiJsonResponse;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -59,6 +60,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);
 
+        $middleware->api(append: [
+            \App\Http\Middleware\LocalizeApiErrorResponse::class,
+        ]);
+
         // CSRF protection: исключаем только token-based API роуты и broadcasting
         // Session-based API роуты должны быть защищены CSRF
         $middleware->validateCsrfTokens(except: [
@@ -116,12 +121,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Для API роутов возвращаем JSON с 401
             if ($isApi) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'UNAUTHENTICATED',
-                    'message' => 'Unauthenticated.',
+                return LocalizedApiJsonResponse::error('unauthenticated', null, 401, [
                     'correlation_id' => $correlationId,
-                ], 401);
+                ]);
             }
 
             // Для Inertia запросов делаем редирект
@@ -152,12 +154,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Для API запросов возвращаем JSON
             if ($isApi) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => 'Validation failed',
+                return LocalizedApiJsonResponse::error('validation_error', null, 422, [
                     'errors' => $e->errors(),
-                ], 422);
+                ]);
             }
 
             // Для обычных веб-запросов используем стандартную обработку Laravel
@@ -188,13 +187,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Для API роутов возвращаем JSON с 429
             if ($request->is('api/*') || $request->expectsJson()) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'RATE_LIMIT_EXCEEDED',
-                    'message' => 'Too many requests. Please try again later.',
-                ], 429)->withHeaders([
-                    'Retry-After' => $retryAfter,
-                ]);
+                return LocalizedApiJsonResponse::error('rate_limit_exceeded', null, 429)
+                    ->withHeaders(['Retry-After' => $retryAfter]);
             }
 
             // Для веб-роутов возвращаем стандартный ответ
@@ -293,51 +287,38 @@ return Application::configure(basePath: dirname(__DIR__))
                 if ($e instanceof \Illuminate\Http\Exceptions\ThrottleRequestsException) {
                     $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
 
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'RATE_LIMIT_EXCEEDED',
-                        'message' => 'Too many requests. Please try again later.',
-                    ], 429)->withHeaders([
-                        'Retry-After' => $retryAfter,
-                    ]);
+                    return LocalizedApiJsonResponse::error('rate_limit_exceeded', null, 429, [
+                        'correlation_id' => $correlationId,
+                    ])->withHeaders(['Retry-After' => $retryAfter]);
                 }
 
                 if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'MODEL_NOT_FOUND',
-                        'message' => 'Resource not found',
+                    return LocalizedApiJsonResponse::error('not_found', null, 404, [
                         'correlation_id' => $correlationId,
-                    ], 404);
+                    ]);
                 }
 
                 if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'NOT_FOUND',
-                        'message' => $isDev ? $e->getMessage() : 'Resource not found',
-                        'correlation_id' => $correlationId,
-                    ], 404);
+                    return LocalizedApiJsonResponse::error(
+                        'not_found',
+                        $isDev ? $e->getMessage() : null,
+                        404,
+                        ['correlation_id' => $correlationId],
+                    );
                 }
 
                 // AuthenticationException уже обработано выше, здесь не должно попасть
                 // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'UNAUTHENTICATED',
-                        'message' => 'Unauthenticated.',
+                    return LocalizedApiJsonResponse::error('unauthenticated', null, 401, [
                         'correlation_id' => $correlationId,
-                    ], 401);
+                    ]);
                 }
 
                 if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'UNAUTHORIZED',
-                        'message' => 'This action is unauthorized',
+                    return LocalizedApiJsonResponse::error('forbidden', null, 403, [
                         'correlation_id' => $correlationId,
-                    ], 403);
+                    ]);
                 }
 
                 // ValidationException уже обработано выше в приоритетном обработчике
@@ -349,64 +330,61 @@ return Application::configure(basePath: dirname(__DIR__))
                 if ($e instanceof \Illuminate\Http\Client\RequestException ||
                     $e instanceof \Illuminate\Http\Client\ConnectionException ||
                     $e instanceof \Illuminate\Http\Client\TimeoutException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'SERVICE_UNAVAILABLE',
-                        'message' => 'External service unavailable',
+                    return LocalizedApiJsonResponse::error('service_unavailable', null, 503, [
                         'correlation_id' => $correlationId,
-                    ], 503);
+                    ]);
                 }
 
                 if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
                     $status = $e->getStatusCode();
-                    $message = $isDev ? $e->getMessage() : match ($status) {
-                        401 => 'Unauthenticated.',
-                        403 => 'Forbidden.',
-                        404 => 'Resource not found',
-                        default => 'Request failed.',
+                    $code = match ($status) {
+                        401 => 'unauthenticated',
+                        403 => 'forbidden',
+                        404 => 'not_found',
+                        429 => 'rate_limit_exceeded',
+                        default => 'internal_error',
                     };
 
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'HTTP_ERROR',
-                        'message' => $message,
-                        'correlation_id' => $correlationId,
-                    ], $status);
+                    return LocalizedApiJsonResponse::error(
+                        $code,
+                        $isDev ? $e->getMessage() : null,
+                        $status,
+                        ['correlation_id' => $correlationId],
+                    );
                 }
 
                 if (method_exists($e, 'getStatusCode')) {
                     $status = $e->getStatusCode();
-                    $message = $isDev ? $e->getMessage() : match ($status) {
-                        401 => 'Unauthenticated.',
-                        403 => 'Forbidden.',
-                        404 => 'Resource not found',
-                        default => 'Request failed.',
+                    $code = match ($status) {
+                        401 => 'unauthenticated',
+                        403 => 'forbidden',
+                        404 => 'not_found',
+                        429 => 'rate_limit_exceeded',
+                        default => 'internal_error',
                     };
 
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'HTTP_ERROR',
-                        'message' => $message,
-                        'correlation_id' => $correlationId,
-                    ], $status);
+                    return LocalizedApiJsonResponse::error(
+                        $code,
+                        $isDev ? $e->getMessage() : null,
+                        $status,
+                        ['correlation_id' => $correlationId],
+                    );
                 }
 
-                // Общая обработка для всех остальных исключений
-                $response = [
-                    'status' => 'error',
-                    'code' => 'INTERNAL_ERROR',
-                    'message' => $isDev ? $e->getMessage() : 'Internal server error',
-                    'correlation_id' => $correlationId,
-                ];
-
+                $extra = ['correlation_id' => $correlationId];
                 if ($isDev) {
-                    $response['exception'] = get_class($e);
-                    $response['file'] = $e->getFile();
-                    $response['line'] = $e->getLine();
-                    $response['trace'] = $e->getTraceAsString();
+                    $extra['exception'] = get_class($e);
+                    $extra['file'] = $e->getFile();
+                    $extra['line'] = $e->getLine();
+                    $extra['trace'] = $e->getTraceAsString();
                 }
 
-                return response()->json($response, 500);
+                return LocalizedApiJsonResponse::error(
+                    'internal_error',
+                    $isDev ? $e->getMessage() : null,
+                    500,
+                    $extra,
+                );
             }
 
             $webStatus = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface

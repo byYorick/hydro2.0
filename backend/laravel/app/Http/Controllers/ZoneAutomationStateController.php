@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Alert;
 use App\Models\Zone;
+use App\Services\AlertPolicyService;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\Client\ConnectionException;
@@ -18,6 +21,8 @@ use Illuminate\Support\Facades\Log;
 
 class ZoneAutomationStateController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     private const STATE_CACHE_TTL_SECONDS = 300;
 
     private const CONTROL_MODE_FALLBACK_BACKOFF_SECONDS = 120;
@@ -25,6 +30,7 @@ class ZoneAutomationStateController extends Controller
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
+        private readonly AlertPolicyService $alertPolicy,
     ) {}
 
     public function show(Request $request, Zone $zone): JsonResponse
@@ -35,7 +41,7 @@ class ZoneAutomationStateController extends Controller
             $payload = $this->fetchAutomationStateFromAutomationEngine($zone->id);
             $this->cacheState($zone->id, $payload);
 
-            return response()->json($this->decorateStatePayload($payload, false, 'live'));
+            return response()->json($this->decorateStatePayload($payload, false, 'live', $zone));
         } catch (ConnectionException|RequestException $e) {
             Log::warning('ZoneAutomationStateController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
@@ -50,14 +56,10 @@ class ZoneAutomationStateController extends Controller
                     'reason' => 'upstream_unavailable',
                 ]);
 
-                return response()->json($this->decorateStatePayload($cachedPayload, true, 'cache'));
+                return response()->json($this->decorateStatePayload($cachedPayload, true, 'cache', $zone));
             }
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (\Throwable $e) {
             Log::warning('ZoneAutomationStateController: unexpected upstream error', [
                 'zone_id' => $zone->id,
@@ -72,14 +74,10 @@ class ZoneAutomationStateController extends Controller
                     'reason' => 'unexpected_upstream_error',
                 ]);
 
-                return response()->json($this->decorateStatePayload($cachedPayload, true, 'cache'));
+                return response()->json($this->decorateStatePayload($cachedPayload, true, 'cache', $zone));
             }
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка при получении состояния автоматизации.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка при получении состояния автоматизации.', 503);
         }
     }
 
@@ -255,6 +253,7 @@ class ZoneAutomationStateController extends Controller
             'next_state' => null,
             'estimated_completion_sec' => null,
             'control_mode' => $controlMode,
+            'control_mode_available' => ['auto', 'semi', 'manual'],
             'workflow_phase' => $workflowPhase,
             'current_stage' => $currentStage,
             'current_stage_label' => $this->automationStageLabel($currentStage),
@@ -481,7 +480,7 @@ class ZoneAutomationStateController extends Controller
      * @param  array<string,mixed>  $payload
      * @return array<string,mixed>
      */
-    private function decorateStatePayload(array $payload, bool $isStale, string $source): array
+    private function decorateStatePayload(array $payload, bool $isStale, string $source, Zone $zone): array
     {
         $stateDetails = is_array($payload['state_details'] ?? null) ? $payload['state_details'] : null;
         if ($stateDetails !== null) {
@@ -493,6 +492,12 @@ class ZoneAutomationStateController extends Controller
             $payload['state_details'] = $stateDetails;
         }
 
+        if ($zone->id > 0) {
+            $payload = $this->clearAcknowledgedTerminalFailure((int) $zone->id, $payload);
+        }
+
+        $payload = $this->enrichPayloadWithZoneControlMode($payload, $zone);
+
         $payload['state_meta'] = [
             'source' => $source,
             'is_stale' => $isStale,
@@ -500,6 +505,98 @@ class ZoneAutomationStateController extends Controller
         ];
 
         return $payload;
+    }
+
+    /**
+     * Канонический control_mode — `zones.control_mode` (актуально при stale cache AE).
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function enrichPayloadWithZoneControlMode(array $payload, Zone $zone): array
+    {
+        $fromDb = strtolower(trim((string) ($zone->control_mode ?? '')));
+        if (in_array($fromDb, ['auto', 'semi', 'manual'], true)) {
+            $payload['control_mode'] = $fromDb;
+        }
+
+        $available = $payload['control_mode_available'] ?? null;
+        if (! is_array($available) || $available === []) {
+            $payload['control_mode_available'] = ['auto', 'semi', 'manual'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * После manual ack policy-managed алерта UI не должен показывать terminal failed,
+     * пока AE3 снова не поднимет ACTIVE-алерт (см. automation_block на дашборде).
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function clearAcknowledgedTerminalFailure(int $zoneId, array $payload): array
+    {
+        if ($this->zoneHasActivePolicyManagedAlerts($zoneId)) {
+            return $payload;
+        }
+
+        $stateDetails = is_array($payload['state_details'] ?? null) ? $payload['state_details'] : [];
+        if (($stateDetails['failed'] ?? false) !== true) {
+            return $payload;
+        }
+
+        $stateDetails['failed'] = false;
+        $stateDetails['error_code'] = null;
+        $stateDetails['error_message'] = null;
+        $stateDetails['human_error_message'] = null;
+        $payload['state_details'] = $stateDetails;
+        $payload['state_label'] = $this->resolveStateLabelWithoutTerminalFailure($payload);
+
+        return $payload;
+    }
+
+    private function zoneHasActivePolicyManagedAlerts(int $zoneId): bool
+    {
+        $whitelist = array_values(array_filter(array_unique(array_map(
+            static fn (string $code): string => strtolower(trim($code)),
+            $this->alertPolicy->policyManagedCodes(),
+        ))));
+
+        if ($whitelist === []) {
+            return false;
+        }
+
+        return Alert::query()
+            ->where('zone_id', $zoneId)
+            ->where('status', 'ACTIVE')
+            ->whereIn(DB::raw('LOWER(code)'), $whitelist)
+            ->exists();
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function resolveStateLabelWithoutTerminalFailure(array $payload): string
+    {
+        $currentStage = isset($payload['current_stage']) ? (string) $payload['current_stage'] : null;
+        $stageLabel = $this->automationStageLabel($currentStage);
+        if ($stageLabel !== null) {
+            return $stageLabel;
+        }
+
+        $state = is_string($payload['state'] ?? null) ? (string) $payload['state'] : 'IDLE';
+
+        return $this->automationStateLabel($state);
+    }
+
+    public static function invalidateZoneStateCache(int $zoneId): void
+    {
+        if ($zoneId <= 0) {
+            return;
+        }
+
+        Cache::forget("zone_automation_state:{$zoneId}");
     }
 
     /**

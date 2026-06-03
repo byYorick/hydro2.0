@@ -60,6 +60,16 @@ class AlertMessageComposer
             return $catalogDescription;
         }
 
+        $annotationText = $this->accessor->annotationString($details, ['description', 'summary', 'message']);
+        if ($annotationText !== null) {
+            return $annotationText;
+        }
+
+        $rawMessage = $this->accessor->stringValue($details, ['message', 'reason', 'error_message']);
+        if ($rawMessage !== null) {
+            return $rawMessage;
+        }
+
         return 'Событие требует проверки по журналам сервиса.';
     }
 

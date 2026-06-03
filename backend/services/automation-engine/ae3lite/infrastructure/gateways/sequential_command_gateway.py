@@ -297,6 +297,12 @@ class SequentialCommandGateway:
                         f"(likely concurrent cleanup): {exc}"
                     ),
                 )
+            await self._maybe_raise_offline_instead_of_command_error(
+                task=task,
+                planned=planned,
+                error_code="command_send_failed",
+                error_message=normalized_error,
+            )
             raise TaskExecutionError("command_send_failed", normalized_error) from exc
 
         _poll_deadline = (
@@ -535,6 +541,35 @@ class SequentialCommandGateway:
             "error_code": failed_task.error_code,
             "error_message": failed_task.error_message,
         }
+
+    async def _maybe_raise_offline_instead_of_command_error(
+        self,
+        *,
+        task: Any,
+        planned: PlannedCommand,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        from ae3lite.domain.services.zone_node_availability import (
+            resolve_task_error_with_node_offline,
+        )
+
+        node_uid = str(getattr(planned, "node_uid", "") or "").strip()
+        if not node_uid:
+            return
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if zone_id <= 0:
+            return
+        offline = await resolve_task_error_with_node_offline(
+            zone_id=zone_id,
+            topology=str(getattr(task, "topology", "") or ""),
+            error_code=error_code,
+            error_message=error_message,
+            node_uid=node_uid,
+            runtime_monitor=None,
+        )
+        if offline is not None:
+            raise TaskExecutionError(offline.code, offline.message)
 
     def _extract_publish_payload(self, command: PlannedCommand) -> tuple[str, Mapping[str, Any]]:
         payload = command.payload if isinstance(command.payload, Mapping) else {}

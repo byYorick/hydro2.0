@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ErrorCodeCatalogService;
+use App\Support\LocalizedApiJsonResponse;
 use App\Events\TelemetryBatchUpdated;
 use App\Models\Command;
 use App\Models\DeviceNode;
@@ -32,10 +34,11 @@ class PythonIngestController extends Controller
         if (! $expected) {
             Log::error('Python ingest token not configured in Laravel');
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
-                response()->json([
-                    'status' => 'error',
-                    'message' => 'Unauthorized: service token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.',
-                ], 401)
+                LocalizedApiJsonResponse::error(
+                    'unauthenticated',
+                    'Сервисный токен ingest не настроен. Укажите PY_INGEST_TOKEN или PY_API_TOKEN.',
+                    401,
+                ),
             );
         }
 
@@ -44,10 +47,11 @@ class PythonIngestController extends Controller
                 'has_given' => ! empty($given),
             ]);
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
-                response()->json([
-                    'status' => 'error',
-                    'message' => 'Unauthorized: invalid or missing service token',
-                ], 401)
+                LocalizedApiJsonResponse::error(
+                    'unauthenticated',
+                    'Недопустимый или отсутствующий сервисный токен.',
+                    401,
+                ),
             );
         }
     }
@@ -396,10 +400,16 @@ class PythonIngestController extends Controller
                 'normalized_status' => $normalizedStatus,
             ]);
 
+            $presentation = app(ErrorCodeCatalogService::class)->present(
+                'command_not_found_ignored',
+                'Command not found; ack ignored',
+            );
+
             return Response::json([
                 'status' => 'ok',
-                'message' => 'Command not found; ack ignored',
-                'code' => 'COMMAND_NOT_FOUND_IGNORED',
+                'code' => $presentation['code'] ?? 'command_not_found_ignored',
+                'message' => $presentation['message'],
+                'human_error_message' => $presentation['message'],
             ]);
         }
 

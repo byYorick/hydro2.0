@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\AutomationScheduler\ExecutionRunReadModel;
@@ -11,6 +12,8 @@ use Illuminate\Http\Request;
 
 class ScheduleExecutionController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ExecutionRunReadModel $executionRunReadModel,
         private readonly ExecutionChainAssembler $chainAssembler,
@@ -21,20 +24,12 @@ class ScheduleExecutionController extends Controller
         $this->authorizeZoneAccess($request, $zone);
 
         if (preg_match('/^\d+$/', trim($executionId)) !== 1) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'VALIDATION_ERROR',
-                'message' => 'Некорректный execution_id',
-            ], 422);
+            return $this->localizedError('validation_error', 'Некорректный execution_id.', 422);
         }
 
         $payload = $this->executionRunReadModel->findForZone($zone->id, $executionId);
         if ($payload === null) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NOT_FOUND',
-                'message' => 'Execution not found',
-            ], 404);
+            return $this->localizedError('not_found', 'Выполнение не найдено.', 404);
         }
 
         $payload['chain'] = $this->chainAssembler->assemble($zone->id, $executionId);

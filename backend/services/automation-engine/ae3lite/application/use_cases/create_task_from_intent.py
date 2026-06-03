@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from ae3lite.application.dto import TaskCreationResult
-from ae3lite.domain.errors import ErrorCodes, TaskCreateError
+from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError, TaskCreateError
 from ae3lite.infrastructure.metrics import TASK_CREATED
 from common.db import get_pool
 
@@ -131,6 +131,11 @@ class CreateTaskFromIntentUseCase:
                     meta=meta,
                     conn=conn,
                 )
+                await self._assert_required_nodes_available_for_task(
+                    zone_id=zone_id,
+                    topology=meta.topology,
+                    conn=conn,
+                )
                 irrigation_snapshot = await self._resolve_irrigation_decision_snapshot(
                     zone_id=zone_id,
                     meta=meta,
@@ -170,6 +175,31 @@ class CreateTaskFromIntentUseCase:
             return TaskCreationResult(task=deduplicated_task, created=False)
 
         raise TaskCreateError("ae3_task_create_failed", f"Не удалось создать каноническую задачу для zone_id={zone_id}")
+
+    async def _assert_required_nodes_available_for_task(
+        self,
+        *,
+        zone_id: int,
+        topology: str,
+        conn: Any,
+    ) -> None:
+        from ae3lite.domain.services.zone_node_availability import (
+            assert_required_nodes_available,
+            fetch_zone_nodes_diagnostics,
+        )
+
+        diagnostics = await fetch_zone_nodes_diagnostics(zone_id=zone_id, conn=conn)
+        try:
+            assert_required_nodes_available(
+                zone_id=zone_id,
+                topology=topology,
+                diagnostics=diagnostics,
+                persistent_only=False,
+            )
+        except SnapshotBuildError as exc:
+            code = str(getattr(exc, "code", "") or ErrorCodes.AE3_REQUIRED_NODE_OFFLINE)
+            details = exc.details if isinstance(getattr(exc, "details", None), dict) else {}
+            raise TaskCreateError(code, str(exc), details=details) from exc
 
     async def _find_blocking_alert(self, *, zone_id: int, conn: Any | None = None) -> dict[str, Any] | None:
         repository = self._zone_alert_repository

@@ -1,0 +1,991 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-06-03T05:38:48Z",
+  "codes": [
+    {
+      "code": "actuator_apply_failed",
+      "title": "Actuator Apply Failed",
+      "message": "Actuator Apply Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "actuator_busy",
+      "title": "Actuator Busy",
+      "message": "Actuator Busy. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "ae3_api_http_5xx",
+      "title": "Ошибка HTTP AE3",
+      "message": "API automation-engine вернул ошибку 5xx."
+    },
+    {
+      "code": "ae3_api_unhandled_exception",
+      "title": "Ошибка API AE3",
+      "message": "Необработанное исключение в API automation-engine."
+    },
+    {
+      "code": "api_error",
+      "title": "Ошибка API",
+      "message": "Не удалось выполнить запрос. Проверьте параметры и журналы сервиса."
+    },
+    {
+      "code": "ae3_background_task_crashed",
+      "title": "Падение фоновой задачи",
+      "message": "Фоновая задача AE3 завершилась с ошибкой."
+    },
+    {
+      "code": "ae3_command_no_routing",
+      "title": "Нет маршрута команды",
+      "message": "Не настроен маршрут для command stage."
+    },
+    {
+      "code": "ae3_command_poll_deadline_exceeded",
+      "title": "Дедлайн опроса команды",
+      "message": "Опрос команды превысил дедлайн этапа."
+    },
+    {
+      "code": "ae3_command_send_retry_exhausted",
+      "title": "Исчерпаны повторы отправки",
+      "message": "Исчерпаны повторы публикации команды."
+    },
+    {
+      "code": "ae3_complete_transition_failed",
+      "title": "Не удалось завершить переход стадии",
+      "message": "AE3 не смог перевести задачу в completed-состояние."
+    },
+    {
+      "code": "ae3_correction_apply_failed",
+      "title": "Не удалось войти в окно коррекции",
+      "message": "Не удалось войти в окно коррекции."
+    },
+    {
+      "code": "ae3_empty_command_plan",
+      "title": "Пустой command plan",
+      "message": "Command plan не содержит шагов."
+    },
+    {
+      "code": "ae3_enter_correction_no_state",
+      "title": "Нет состояния correction",
+      "message": "enter_correction без correction state."
+    },
+    {
+      "code": "ae3_failed_transition_failed",
+      "title": "Ошибка failed",
+      "message": "Не удалось перевести задачу в failed."
+    },
+    {
+      "code": "ae3_invalid_planned_command",
+      "title": "Некорректная PlannedCommand",
+      "message": "PlannedCommand без обязательных cmd/params."
+    },
+    {
+      "code": "ae3_legacy_command_not_found",
+      "title": "Legacy-команда не найдена",
+      "message": "Не найдена запись legacy commands."
+    },
+    {
+      "code": "ae3_missing_ae_command",
+      "title": "Не найдена связанная команда AE3",
+      "message": "Для recovery или ожидания не найдена связанная запись `ae_command`."
+    },
+    {
+      "code": "ae3_missing_cmd_id",
+      "title": "Нет cmd_id",
+      "message": "Отсутствует cmd_id команды."
+    },
+    {
+      "code": "ae3_poll_apply_failed",
+      "title": "Не удалось зарегистрировать повторный опрос этапа",
+      "message": "Не удалось зарегистрировать повторный опрос этапа автоматики."
+    },
+    {
+      "code": "ae3_requeue_failed",
+      "title": "Не удалось поставить следующую задачу",
+      "message": "AE3 не смог перевести workflow в следующий pending task."
+    },
+    {
+      "code": "ae3_running_transition_failed",
+      "title": "Ошибка running",
+      "message": "Не удалось перевести задачу в running."
+    },
+    {
+      "code": "ae3_snapshot_active_logic_profile_missing",
+      "title": "Не выбран активный automation profile",
+      "message": "Для зоны не выбран активный automation logic profile, поэтому запуск AE3 запрещён."
+    },
+    {
+      "code": "ae3_snapshot_build_failed",
+      "title": "Не удалось собрать runtime-снимок зоны",
+      "message": "AE3 не смог собрать консистентный runtime-снимок зоны для запуска автоматического цикла."
+    },
+    {
+      "code": "ae3_snapshot_bundle_invalid",
+      "title": "Повреждён automation bundle",
+      "message": "Compiled automation bundle имеет некорректный формат и не может быть использован AE3."
+    },
+    {
+      "code": "ae3_snapshot_bundle_missing",
+      "title": "Не найден automation bundle",
+      "message": "Для активного цикла отсутствует compiled automation bundle, необходимый для работы AE3."
+    },
+    {
+      "code": "ae3_snapshot_conflicting_config_values",
+      "title": "Конфликт runtime-конфигурации",
+      "message": "AE3 обнаружил конфликтующие значения в runtime-конфигурации и остановил запуск fail-closed."
+    },
+    {
+      "code": "ae3_snapshot_empty_command_plans",
+      "title": "Отсутствуют command plans",
+      "message": "В активном automation profile отсутствуют command plans для выполнения цикла."
+    },
+    {
+      "code": "ae3_snapshot_logic_profile_bundle_missing",
+      "title": "Не найден logic profile bundle",
+      "message": "В конфигурации зоны отсутствует активный logic profile bundle, необходимый для runtime."
+    },
+    {
+      "code": "ae3_snapshot_missing_current_phase",
+      "title": "Не определена текущая фаза цикла",
+      "message": "У активного цикла выращивания не задана текущая фаза, поэтому AE3 не может построить runtime-снимок."
+    },
+    {
+      "code": "ae3_snapshot_no_active_grow_cycle",
+      "title": "Нет активного цикла выращивания",
+      "message": "Для зоны не найден активный цикл выращивания, поэтому автоматический запуск невозможен."
+    },
+    {
+      "code": "ae3_snapshot_no_online_actuator_channels",
+      "title": "Нет доступных исполнительных каналов",
+      "message": "В зоне нет ни одного онлайн-исполнительного канала. Проверьте привязки устройств и состояние нод."
+    },
+    {
+      "code": "ae3_snapshot_required_node_persistently_offline",
+      "title": "Узел зоны давно offline",
+      "message": "Один или несколько узлов зоны давно не выходят на связь. AE3 завершил задачу без повторов — проверьте питание и сеть нод."
+    },
+    {
+      "code": "ae3_required_node_offline",
+      "title": "Узел зоны offline",
+      "message": "Обязательный узел зоны недоступен (offline). Проверьте питание, Wi‑Fi и MQTT, затем дождитесь online в мониторинге."
+    },
+    {
+      "code": "ae3_snapshot_required_node_type_missing",
+      "title": "Не зарегистрированы обязательные ноды",
+      "message": "Для двухбакового цикла в зоне нет нод обязательных типов (irrig/ph/ec). Проверьте регистрацию узлов."
+    },
+    {
+      "code": "ae3_snapshot_retry_exhausted",
+      "title": "Исчерпаны повторы сборки runtime-снимка",
+      "message": "AE3 не смог восстановить transient snapshot gap за допустимое время и завершил задачу с ошибкой."
+    },
+    {
+      "code": "ae3_snapshot_retry_persist_failed",
+      "title": "Не удалось сохранить повтор сборки runtime-снимка",
+      "message": "AE3 не смог сохранить задачу для повторной попытки после transient snapshot gap."
+    },
+    {
+      "code": "ae3_snapshot_zone_bundle_missing",
+      "title": "Не найден zone bundle",
+      "message": "В compiled automation bundle отсутствует конфигурация зоны, обязательная для AE3."
+    },
+    {
+      "code": "ae3_snapshot_zone_not_found",
+      "title": "Зона не найдена",
+      "message": "AE3 не нашёл зону, для которой должен был собрать runtime-снимок."
+    },
+    {
+      "code": "ae3_stage_failed",
+      "title": "Ошибка stage",
+      "message": "Этап workflow завершился с ошибкой."
+    },
+    {
+      "code": "ae3_task_complete_failed",
+      "title": "Ошибка завершения задачи",
+      "message": "Не удалось перевести задачу в completed."
+    },
+    {
+      "code": "ae3_task_create_conflict",
+      "title": "Конфликт создания задачи AE3",
+      "message": "Параллельный worker уже создал задачу для этого запуска."
+    },
+    {
+      "code": "ae3_task_create_failed",
+      "title": "Не удалось создать задачу AE3",
+      "message": "AE3 не смог создать canonical task для запуска цикла."
+    },
+    {
+      "code": "ae3_task_execution_failed",
+      "title": "Ошибка выполнения задачи AE3",
+      "message": "Задача AE3 завершилась с ошибкой выполнения."
+    },
+    {
+      "code": "ae3_task_execution_timeout",
+      "title": "Таймаут задачи AE3",
+      "message": "Выполнение задачи AE3 превысило допустимый runtime timeout."
+    },
+    {
+      "code": "ae3_task_execution_unhandled_exception",
+      "title": "Необработанное исключение AE3",
+      "message": "Во время выполнения задачи AE3 произошло необработанное исключение."
+    },
+    {
+      "code": "ae3_task_finalize_failed",
+      "title": "Ошибка финализации задачи AE3",
+      "message": "AE3 не смог корректно завершить задачу и записать её terminal state."
+    },
+    {
+      "code": "ae3_task_missing_owner",
+      "title": "Нет владельца задачи",
+      "message": "У задачи отсутствует claimed_by."
+    },
+    {
+      "code": "ae3_task_running_transition_failed",
+      "title": "Не удалось активировать задачу",
+      "message": "Не удалось перевести задачу в running."
+    },
+    {
+      "code": "ae3_task_type_not_supported",
+      "title": "Тип задачи не поддерживается",
+      "message": "Планировщик попытался запустить тип задачи, который AE3 сейчас не поддерживает."
+    },
+    {
+      "code": "ae3_transition_apply_failed",
+      "title": "Не удалось зафиксировать переход этапа",
+      "message": "Не удалось зафиксировать переход между этапами автоматики."
+    },
+    {
+      "code": "ae3_transition_no_next_stage",
+      "title": "Нет next_stage",
+      "message": "Transition outcome требует next_stage."
+    },
+    {
+      "code": "ae3_unknown_corr_step",
+      "title": "Неизвестный corr_step",
+      "message": "Неизвестный шаг окна коррекции."
+    },
+    {
+      "code": "ae3_unknown_handler",
+      "title": "Неизвестный handler",
+      "message": "Не найден handler для stage."
+    },
+    {
+      "code": "ae3_unknown_outcome_kind",
+      "title": "Неизвестный outcome",
+      "message": "Handler вернул неподдерживаемый kind outcome."
+    },
+    {
+      "code": "ae3_unsupported_legacy_status",
+      "title": "Неподдерживаемый legacy-статус",
+      "message": "Получен неподдерживаемый legacy-статус команды."
+    },
+    {
+      "code": "ae3_waiting_command_transition_failed",
+      "title": "Ошибка waiting_command",
+      "message": "Не удалось перевести задачу в waiting_command."
+    },
+    {
+      "code": "ae3_zone_lease_lost",
+      "title": "Потерян lease зоны",
+      "message": "Эксклюзивная блокировка зоны была потеряна, задача прервана."
+    },
+    {
+      "code": "ae3_zone_lease_release_failed",
+      "title": "Не удалось освободить lease",
+      "message": "Не удалось освободить блокировку зоны после задачи."
+    },
+    {
+      "code": "biz_recipe_completed_review_required",
+      "title": "Рецепт завершён",
+      "message": "Цикл выращивания завершён, требуется проверка агронома."
+    },
+    {
+      "code": "calibration_phase_required",
+      "title": "Нужна фаза калибровки",
+      "message": "Для process calibration укажите phase."
+    },
+    {
+      "code": "calibration_phase_unknown",
+      "title": "Неизвестная фаза калибровки",
+      "message": "Указан неизвестный phase для process calibration."
+    },
+    {
+      "code": "clean_fill_source_empty",
+      "title": "Источник чистой воды пуст",
+      "message": "Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды."
+    },
+    {
+      "code": "clean_tank_not_filled_timeout",
+      "title": "Бак чистой воды не заполнился",
+      "message": "За отведённое время бак чистой воды не достиг требуемого уровня."
+    },
+    {
+      "code": "command_already_failed",
+      "title": "Ошибка команды",
+      "message": "Команда завершилась с терминальным статусом."
+    },
+    {
+      "code": "command_failed",
+      "title": "Команда не выполнена",
+      "message": "Команда завершилась с ошибкой."
+    },
+    {
+      "code": "command_not_found_ignored",
+      "title": "Команда не найдена",
+      "message": "Команда не найдена — событие проигнорировано."
+    },
+    {
+      "code": "command_send_failed",
+      "title": "Команда не отправлена",
+      "message": "Команду не удалось отправить до исполнительного узла."
+    },
+    {
+      "code": "command_timeout",
+      "title": "Таймаут команды",
+      "message": "Не дождались подтверждения или итогового ответа по команде в допустимое время."
+    },
+    {
+      "code": "config_mode_conflict_with_auto",
+      "title": "Конфликт config_mode",
+      "message": "Нельзя переключить зону в live, пока control_mode=auto."
+    },
+    {
+      "code": "control_mode_forbidden_for_role",
+      "title": "Режим управления запрещён",
+      "message": "Ваша роль не позволяет переключать режим управления зоны."
+    },
+    {
+      "code": "control_mode_switched_to_manual",
+      "title": "Задача отменена: ручной режим",
+      "message": "Задача отменена: оператор переключил зону в ручной режим."
+    },
+    {
+      "code": "cooldown_active",
+      "title": "Активен cooldown",
+      "message": "Команда отклонена: канал ещё находится в интервале защитной паузы."
+    },
+    {
+      "code": "corr_process_calibration_missing",
+      "title": "Нет process calibration",
+      "message": "Для коррекции отсутствует обязательная process calibration."
+    },
+    {
+      "code": "critical_errors_detected",
+      "title": "Критические ошибки",
+      "message": "Обнаружены критические ошибки в потоке обработки."
+    },
+    {
+      "code": "current_not_detected",
+      "title": "Ток не обнаружен",
+      "message": "После включения канала ток не был зафиксирован."
+    },
+    {
+      "code": "current_unavailable",
+      "title": "Current Unavailable",
+      "message": "Current Unavailable. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "cycle_already_active",
+      "title": "Цикл уже активен",
+      "message": "В зоне уже выполняется активный цикл."
+    },
+    {
+      "code": "cycle_irrigation_not_initialized",
+      "title": "Полив не инициализирован",
+      "message": "Контур полива зоны ещё не инициализирован."
+    },
+    {
+      "code": "emergency_stop_activated",
+      "title": "Активирован E-STOP",
+      "message": "Аварийная остановка активирована, безопасное состояние не подтверждено."
+    },
+    {
+      "code": "esp_err_no_mem",
+      "title": "Нехватка памяти ESP",
+      "message": "На узле не хватает памяти (ESP_ERR_NO_MEM)."
+    },
+    {
+      "code": "forbidden",
+      "title": "Доступ запрещён",
+      "message": "У вас нет прав для выполнения этого действия."
+    },
+    {
+      "code": "forbidden_set_live",
+      "title": "Нет прав на live",
+      "message": "Роль не позволяет переключать зону в live."
+    },
+    {
+      "code": "greenhouse_bundle_missing",
+      "title": "Нет bundle теплицы",
+      "message": "Для теплицы отсутствует валидный automation bundle."
+    },
+    {
+      "code": "greenhouse_climate_busy",
+      "title": "Climate tick: теплица занята",
+      "message": "Запуск climate tick отклонён: предыдущий tick ещё выполняется."
+    },
+    {
+      "code": "greenhouse_climate_tick_failed",
+      "title": "Ошибка climate tick",
+      "message": "Выполнение greenhouse climate tick завершилось с ошибкой."
+    },
+    {
+      "code": "infra_ae3_command_send_retry_scheduled",
+      "title": "Запланирован повтор отправки",
+      "message": "Команда будет отправлена повторно."
+    },
+    {
+      "code": "infra_ae3_snapshot_retry_scheduled",
+      "title": "Запланирован повтор снимка",
+      "message": "AE3 повторит сборку runtime-снимка."
+    },
+    {
+      "code": "intent_conflict",
+      "title": "Конфликт intent",
+      "message": "Intent уже существует или конфликтует с активной задачей."
+    },
+    {
+      "code": "internal_error",
+      "title": "Внутренняя ошибка",
+      "message": "Произошла внутренняя ошибка сервера."
+    },
+    {
+      "code": "invalid_argument",
+      "title": "Некорректный аргумент",
+      "message": "Передан некорректный аргумент запроса."
+    },
+    {
+      "code": "invalid_command_format",
+      "title": "Некорректный формат команды",
+      "message": "Формат команды не соответствует протоколу."
+    },
+    {
+      "code": "invalid_json",
+      "title": "Некорректный JSON",
+      "message": "Тело команды содержит некорректный JSON."
+    },
+    {
+      "code": "invalid_params",
+      "title": "Неверные параметры",
+      "message": "Переданы некорректные параметры команды."
+    },
+    {
+      "code": "invalid_state",
+      "title": "Недопустимое состояние",
+      "message": "Операция недоступна в текущем состоянии объекта."
+    },
+    {
+      "code": "irr_state_mismatch",
+      "title": "Состояние IRR не совпало",
+      "message": "Состояние IRR-ноды не совпало с ожиданиями автоматики."
+    },
+    {
+      "code": "irr_state_stale",
+      "title": "Снимок IRR устарел",
+      "message": "Снимок состояния IRR-ноды устарел."
+    },
+    {
+      "code": "irr_state_unavailable",
+      "title": "Снимок IRR недоступен",
+      "message": "Снимок состояния IRR-ноды недоступен."
+    },
+    {
+      "code": "irrigation_decision_strategy_unknown",
+      "title": "Неизвестная стратегия полива",
+      "message": "Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны."
+    },
+    {
+      "code": "irrigation_recovery_probe_exhausted",
+      "title": "Исчерпан лимит probe IRR",
+      "message": "IRR-нода недоступна: исчерпан лимит подряд идущих probe-deferrals."
+    },
+    {
+      "code": "irrigation_recovery_targets_not_restored",
+      "title": "Цели не восстановлены",
+      "message": "Recovery не восстановил целевые параметры после полива."
+    },
+    {
+      "code": "irrigation_recovery_timeout",
+      "title": "Таймаут восстановления после полива",
+      "message": "Превышено время этапа восстановления после полива."
+    },
+    {
+      "code": "irrigation_solution_min_replay_exhausted",
+      "title": "Исчерпан бюджет replay полива",
+      "message": "Исчерпан бюджет повторных запусков после срабатываний нижнего уровня раствора."
+    },
+    {
+      "code": "irrigation_wait_ready_timeout",
+      "title": "Таймаут ожидания READY",
+      "message": "Зона не перешла в workflow_phase=ready за отведённое время."
+    },
+    {
+      "code": "manual_step_forbidden_in_auto_mode",
+      "title": "Ручной шаг запрещён",
+      "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
+    },
+    {
+      "code": "motor_error",
+      "title": "Ошибка мотора",
+      "message": "Ошибка привода/мотора на узле."
+    },
+    {
+      "code": "no_active_phase",
+      "title": "Нет активной фазы",
+      "message": "У цикла нет активной фазы."
+    },
+    {
+      "code": "no_fields_provided",
+      "title": "Нет полей для обновления",
+      "message": "Передайте хотя бы одно поле из whitelist."
+    },
+    {
+      "code": "node_not_activated",
+      "title": "Узел не активирован",
+      "message": "Команда отклонена: узел ещё не активирован."
+    },
+    {
+      "code": "node_operation_rejected",
+      "title": "Операция с узлом отклонена",
+      "message": "Действие с узлом невозможно в текущем состоянии (например, lifecycle). Проверьте состояние узла и повторите попытку."
+    },
+    {
+      "code": "not_found",
+      "title": "Объект не найден",
+      "message": "Запрошенный объект не найден или уже удалён."
+    },
+    {
+      "code": "not_in_live_mode",
+      "title": "Не в live режиме",
+      "message": "Действие доступно только в config_mode=live."
+    },
+    {
+      "code": "overcurrent",
+      "title": "Сверхток",
+      "message": "Зафиксировано превышение допустимого тока канала."
+    },
+    {
+      "code": "path_not_whitelisted",
+      "title": "Поле вне whitelist",
+      "message": "Запрошенное поле нельзя менять через live edit."
+    },
+    {
+      "code": "phase_not_found",
+      "title": "Фаза не найдена",
+      "message": "Активная фаза не найдена."
+    },
+    {
+      "code": "prepare_recirculation_attempt_limit_reached",
+      "title": "Исчерпаны попытки подготовки рециркуляции",
+      "message": "Этап подготовки рециркуляции исчерпал допустимое число повторов."
+    },
+    {
+      "code": "pump_busy",
+      "title": "Pump Busy",
+      "message": "Pump Busy. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "pump_current_over_range",
+      "title": "Переток насоса (INA209)",
+      "message": "Ток насоса выше верхнего порога: проверьте заклинивание, КЗ, согласованность шунта/усилителя и пороги currentMin/currentMax."
+    },
+    {
+      "code": "pump_current_under_range",
+      "title": "Недоток насоса (INA209)",
+      "message": "После включения насоса ток ниже допустимого порога: проверьте питание, цепь MOSFET/реле, насос и калибровку INA209; при необходимости скорректируйте currentMin/currentMax в конфиге ноды."
+    },
+    {
+      "code": "pump_driver_failed",
+      "title": "Pump Driver Failed",
+      "message": "Pump Driver Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "pump_error",
+      "title": "Pump Error",
+      "message": "Pump Error. Проверьте конфигурацию, логи сервиса и состояние зоны."
+    },
+    {
+      "code": "pump_ina_read_failed",
+      "title": "Ошибка чтения INA209",
+      "message": "Не удалось прочитать ток с INA209 при проверке насоса: проверьте I2C, адрес датчика, питание и обрыв шунта."
+    },
+    {
+      "code": "pump_interlock_blocked",
+      "title": "Сработал interlock насоса",
+      "message": "Команда заблокирована защитой interlock для насоса."
+    },
+    {
+      "code": "rate_limit_exceeded",
+      "title": "Превышен лимит запросов",
+      "message": "Слишком много запросов. Повторите позже."
+    },
+    {
+      "code": "reason_required_for_operator_emergency",
+      "title": "Нужна причина",
+      "message": "Для аварийного режима оператора укажите причину переключения."
+    },
+    {
+      "code": "recirculation_solution_low",
+      "title": "Низкий уровень раствора при рециркуляции",
+      "message": "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке."
+    },
+    {
+      "code": "relay_channel_not_found",
+      "title": "Канал реле не найден",
+      "message": "Запрошенный канал реле отсутствует в конфигурации узла."
+    },
+    {
+      "code": "relay_error",
+      "title": "Ошибка реле",
+      "message": "Команда реле завершилась с ошибкой."
+    },
+    {
+      "code": "relay_gpio_error",
+      "title": "Ошибка GPIO реле",
+      "message": "Во время переключения реле произошла ошибка GPIO."
+    },
+    {
+      "code": "relay_invalid_channel",
+      "title": "Неверный канал реле",
+      "message": "Указан неверный канал реле."
+    },
+    {
+      "code": "relay_mutex_timeout",
+      "title": "Таймаут релейного драйвера",
+      "message": "Релейный драйвер не успел выполнить команду в допустимое время."
+    },
+    {
+      "code": "relay_not_initialized",
+      "title": "Релейный драйвер не инициализирован",
+      "message": "Нода не смогла выполнить команду: драйвер реле не готов."
+    },
+    {
+      "code": "revision_not_found",
+      "title": "Ревизия не найдена",
+      "message": "Запрошенная ревизия конфигурации не найдена."
+    },
+    {
+      "code": "runtime_plan_missing",
+      "title": "Нет runtime-плана",
+      "message": "Отсутствует runtime-план для активной задачи."
+    },
+    {
+      "code": "send_failed",
+      "title": "Ошибка отправки",
+      "message": "Команду не удалось поставить в путь до узла."
+    },
+    {
+      "code": "sensor_state_inconsistent",
+      "title": "Несогласованность датчиков",
+      "message": "Показания датчиков уровня противоречат друг другу."
+    },
+    {
+      "code": "service_timeout",
+      "title": "Таймаут сервиса",
+      "message": "Истекло время ожидания ответа сервиса."
+    },
+    {
+      "code": "service_unavailable",
+      "title": "Сервис недоступен",
+      "message": "Внешний сервис временно недоступен."
+    },
+    {
+      "code": "set_time_failed",
+      "title": "Не удалось установить время",
+      "message": "Нода не смогла применить новое системное время."
+    },
+    {
+      "code": "solution_fill_leak_detected",
+      "title": "Падение уровня раствора при наполнении",
+      "message": "Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика."
+    },
+    {
+      "code": "solution_fill_source_empty",
+      "title": "Источник чистой воды пуст при наполнении раствором",
+      "message": "Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи."
+    },
+    {
+      "code": "solution_tank_not_filled_timeout",
+      "title": "Таймаут бака раствора",
+      "message": "Бак раствора не наполнился за отведённое время."
+    },
+    {
+      "code": "stage_timeout",
+      "title": "Таймаут стадии",
+      "message": "Стадия выполнения превысила допустимое время."
+    },
+    {
+      "code": "start_cycle_blocked_by_alert",
+      "title": "Запуск заблокирован алертом",
+      "message": "Активный алерт блокирует запуск цикла."
+    },
+    {
+      "code": "start_cycle_idempotency_key_conflict",
+      "title": "Конфликт idempotency key",
+      "message": "Идентичный запуск уже зарегистрирован, дублирующий запрос отклонён."
+    },
+    {
+      "code": "start_cycle_intent_claim_unavailable",
+      "title": "Intent недоступен",
+      "message": "Intent нельзя захватить для выполнения."
+    },
+    {
+      "code": "start_cycle_intent_not_found",
+      "title": "Intent не найден",
+      "message": "Intent для start-cycle не найден."
+    },
+    {
+      "code": "start_cycle_intent_terminal",
+      "title": "Intent завершён",
+      "message": "Intent уже в terminal-состоянии."
+    },
+    {
+      "code": "start_cycle_missing_idempotency_key",
+      "title": "Нет idempotency key",
+      "message": "В запросе отсутствует ключ идемпотентности."
+    },
+    {
+      "code": "start_cycle_rate_limited",
+      "title": "Rate limit запуска",
+      "message": "Слишком частые запросы start-cycle."
+    },
+    {
+      "code": "start_cycle_zone_busy",
+      "title": "Зона уже занята",
+      "message": "Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача."
+    },
+    {
+      "code": "start_irrigation_setup_pending",
+      "title": "Зона не готова к поливу",
+      "message": "Полив отклонён: зона ещё не готова. Сначала завершите setup/cycle_start."
+    },
+    {
+      "code": "start_irrigation_zone_busy",
+      "title": "Полив отклонён: зона занята",
+      "message": "Повторный запуск полива отклонён: зона уже занята активной задачей."
+    },
+    {
+      "code": "start_lighting_tick_unsupported_runtime",
+      "title": "Lighting tick не поддерживается",
+      "message": "Освещение по AE3 доступно только для зон на AE3 runtime."
+    },
+    {
+      "code": "start_lighting_tick_zone_busy",
+      "title": "Освещение: зона занята",
+      "message": "Запуск lighting tick отклонён: зона уже занята активной задачей."
+    },
+    {
+      "code": "startup_recovery_correction_interrupted",
+      "title": "Startup recovery: прервана коррекция",
+      "message": "Коррекция была прервана во время startup recovery."
+    },
+    {
+      "code": "startup_recovery_inconsistent_command_state",
+      "title": "Несогласованное состояние startup recovery",
+      "message": "Startup recovery обнаружил несогласованное состояние команды и runtime."
+    },
+    {
+      "code": "startup_recovery_missing_owner",
+      "title": "Startup recovery: нет владельца",
+      "message": "У задачи отсутствует claimed_by во время startup recovery."
+    },
+    {
+      "code": "startup_recovery_pending_vs_terminal_workflow",
+      "title": "Startup recovery: конфликт workflow",
+      "message": "Startup recovery обнаружил pending task при terminal workflow."
+    },
+    {
+      "code": "startup_recovery_unconfirmed_command",
+      "title": "Startup recovery не подтвердил команду",
+      "message": "После перезапуска не удалось подтвердить состояние команды startup recovery."
+    },
+    {
+      "code": "startup_recovery_unknown_stage",
+      "title": "Startup recovery: неизвестный stage",
+      "message": "Startup recovery обнаружил неизвестный stage для topology."
+    },
+    {
+      "code": "system_type_locked",
+      "title": "Тип системы заблокирован",
+      "message": "Тип системы зоны заблокирован для изменения."
+    },
+    {
+      "code": "task_execution_timeout",
+      "title": "Таймаут выполнения задачи",
+      "message": "Выполнение задачи превысило допустимый runtime timeout."
+    },
+    {
+      "code": "task_missing_during_publish",
+      "title": "Задача исчезла при publish",
+      "message": "Задача удалена во время публикации команды."
+    },
+    {
+      "code": "timeout",
+      "title": "Таймаут выполнения",
+      "message": "Превышено время ожидания выполнения команды."
+    },
+    {
+      "code": "token_expired",
+      "title": "Токен истёк",
+      "message": "Срок действия токена истёк. Войдите снова."
+    },
+    {
+      "code": "ttl_in_past",
+      "title": "TTL в прошлом",
+      "message": "live_until должен быть в будущем."
+    },
+    {
+      "code": "ttl_out_of_range",
+      "title": "TTL вне диапазона",
+      "message": "TTL должен быть от 5 минут до 7 дней."
+    },
+    {
+      "code": "ttl_total_exceeded",
+      "title": "Превышен суммарный TTL",
+      "message": "Суммарное время live не может превышать 7 дней."
+    },
+    {
+      "code": "two_tank_clean_level_stale",
+      "title": "Датчик чистого бака устарел",
+      "message": "Данные уровня чистого бака устарели."
+    },
+    {
+      "code": "two_tank_clean_level_unavailable",
+      "title": "Датчик чистого бака недоступен",
+      "message": "Нет данных уровня чистого бака."
+    },
+    {
+      "code": "two_tank_clean_min_level_stale",
+      "title": "Min чистого бака устарел",
+      "message": "Данные нижнего уровня чистого бака устарели."
+    },
+    {
+      "code": "two_tank_clean_min_level_unavailable",
+      "title": "Min чистого бака недоступен",
+      "message": "Нет данных нижнего уровня чистого бака."
+    },
+    {
+      "code": "two_tank_prepare_targets_stale",
+      "title": "Цели prepare устарели",
+      "message": "Данные prepare-recirculation targets устарели."
+    },
+    {
+      "code": "two_tank_prepare_targets_unavailable",
+      "title": "Цели prepare недоступны",
+      "message": "Нет данных для prepare-recirculation targets."
+    },
+    {
+      "code": "two_tank_solution_level_stale",
+      "title": "Датчик раствора устарел",
+      "message": "Данные уровня бака раствора устарели."
+    },
+    {
+      "code": "two_tank_solution_level_unavailable",
+      "title": "Датчик раствора недоступен",
+      "message": "Нет данных уровня бака раствора."
+    },
+    {
+      "code": "two_tank_solution_min_level_stale",
+      "title": "Min раствора устарел",
+      "message": "Данные нижнего уровня раствора устарели."
+    },
+    {
+      "code": "two_tank_solution_min_level_unavailable",
+      "title": "Min раствора недоступен",
+      "message": "Нет данных нижнего уровня раствора."
+    },
+    {
+      "code": "unauthenticated",
+      "title": "Требуется авторизация",
+      "message": "Для выполнения действия нужно войти в систему."
+    },
+    {
+      "code": "unknown_command",
+      "title": "Неизвестная команда",
+      "message": "Узел не поддерживает эту команду."
+    },
+    {
+      "code": "unsupported_channel_cmd",
+      "title": "Команда канала не поддерживается",
+      "message": "Данный канал не поддерживает запрошенную команду."
+    },
+    {
+      "code": "unsupported_command_plan_steps",
+      "title": "Некорректный command plan",
+      "message": "AE3 получил command plan без обязательных шагов и остановил выполнение."
+    },
+    {
+      "code": "unsupported_correction_command",
+      "title": "Команда коррекции не поддерживается",
+      "message": "Этот correction-канал не поддерживает запрошенную команду."
+    },
+    {
+      "code": "unsupported_task_type",
+      "title": "Тип задачи не поддерживается",
+      "message": "Повтор dispatch не поддерживается для этого типа задачи."
+    },
+    {
+      "code": "upstream_error",
+      "title": "Ошибка upstream-сервиса",
+      "message": "Не удалось получить данные от automation-engine."
+    },
+    {
+      "code": "upstream_not_supported",
+      "title": "Операция не поддерживается",
+      "message": "Automation-engine не поддерживает запрошенную операцию."
+    },
+    {
+      "code": "upstream_unavailable",
+      "title": "Automation-engine недоступен",
+      "message": "Сервис automation-engine временно недоступен. Повторите попытку позже."
+    },
+    {
+      "code": "validation_error",
+      "title": "Ошибка валидации",
+      "message": "Проверьте корректность переданных параметров."
+    },
+    {
+      "code": "zone_automation_binding_conflict",
+      "title": "Конфликт привязки узла к зоне",
+      "message": "В зоне уже есть узел с тем же критичным датчиком (pH/EC) или занята та же роль полива/коррекции. Отвяжите старый узел или снимите привязку канала в инфраструктуре зоны, затем повторите."
+    },
+    {
+      "code": "zone_correction_config_missing_critical",
+      "title": "Нет конфигурации коррекции",
+      "message": "Отсутствует обязательная конфигурация коррекции зоны."
+    },
+    {
+      "code": "zone_dosing_calibration_missing_critical",
+      "title": "Нет калибровки дозирования",
+      "message": "Отсутствует обязательная калибровка дозирующих насосов."
+    },
+    {
+      "code": "zone_not_found",
+      "title": "Зона не найдена",
+      "message": "Zone не найдена."
+    },
+    {
+      "code": "zone_not_in_live_mode",
+      "title": "Зона не в live",
+      "message": "Редактирование доступно только в config_mode=live."
+    },
+    {
+      "code": "zone_not_ready",
+      "title": "Зона не готова",
+      "message": "Зона не готова к запуску цикла."
+    },
+    {
+      "code": "zone_pid_config_missing_critical",
+      "title": "Нет PID-конфигурации",
+      "message": "Отсутствует обязательная PID-конфигурация контроллера."
+    },
+    {
+      "code": "zone_readiness_warnings",
+      "title": "Предупреждения готовности",
+      "message": "Зона имеет предупреждения готовности, запуск может быть небезопасен."
+    },
+    {
+      "code": "zone_recipe_phase_targets_missing_critical",
+      "title": "Нет targets фазы рецепта",
+      "message": "В активной фазе рецепта отсутствуют обязательные chemical targets."
+    }
+  ]
+}

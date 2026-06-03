@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Internal;
 
 use App\Events\ExecutionChainUpdated;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Http\Controllers\Controller;
 use App\Models\AeTask;
 use Illuminate\Http\JsonResponse;
@@ -30,6 +31,8 @@ use Illuminate\Support\Facades\Validator;
  */
 class HistoryLoggerWebhookController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function executionEvent(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -45,12 +48,9 @@ class HistoryLoggerWebhookController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'VALIDATION_ERROR',
-                'message' => 'Invalid webhook payload',
+            return $this->localizedError('validation_error', 'Некорректное тело webhook.', 422, [
                 'errors' => $validator->errors(),
-            ], 422);
+            ]);
         }
 
         $data = $validator->validated();
@@ -63,11 +63,11 @@ class HistoryLoggerWebhookController extends Controller
             : null;
 
         if ($executionId === null && $cmdId === null) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'VALIDATION_ERROR',
-                'message' => 'Either execution_id or cmd_id required',
-            ], 422);
+            return $this->localizedError(
+                'validation_error',
+                'Укажите execution_id или cmd_id.',
+                422,
+            );
         }
 
         if ($executionId === null) {

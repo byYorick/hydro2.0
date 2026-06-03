@@ -26,6 +26,8 @@
     <fields>;
 }
 -keep class com.hydro.app.core.network.ApiResponse { *; }
+-keep class com.hydro.app.core.network.ApiErrorBody { *; }
+-keep class com.hydro.app.core.i18n.** { *; }
 
 # Keep Room entities
 -keep class com.hydro.app.core.database.entity.** { *; }

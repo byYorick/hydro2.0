@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
@@ -18,6 +19,8 @@ use Illuminate\Validation\Rule;
 
 class ZoneRelayAutotuneController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
     ) {}
@@ -31,16 +34,20 @@ class ZoneRelayAutotuneController extends Controller
         ]);
 
         if (! $zone->activeGrowCycle()->exists()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'No active grow cycle in zone',
-            ], 422);
+            return $this->localizedError(
+                'ae3_snapshot_no_active_grow_cycle',
+                'В зоне нет активного цикла выращивания.',
+                422,
+            );
         }
 
         try {
             $upstreamPayload = $this->startInAutomationEngine($zone->id, $validated['pid_type']);
         } catch (RequestException $e) {
-            $proxyResponse = $this->buildUpstreamErrorResponse($e);
+            $proxyResponse = $this->buildAutomationEngineErrorResponse(
+                $e,
+                'Automation-engine ещё не поддерживает relay-autotune API.',
+            );
             if ($proxyResponse instanceof JsonResponse) {
                 return $proxyResponse;
             }
@@ -51,11 +58,7 @@ class ZoneRelayAutotuneController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (ConnectionException $e) {
             Log::warning('ZoneRelayAutotuneController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
@@ -63,11 +66,7 @@ class ZoneRelayAutotuneController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (\Throwable $e) {
             Log::warning('ZoneRelayAutotuneController: unexpected upstream error', [
                 'zone_id' => $zone->id,
@@ -75,11 +74,7 @@ class ZoneRelayAutotuneController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка запуска relay-autotune.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка запуска relay-autotune.', 503);
         }
 
         ZoneEvent::create([
@@ -198,38 +193,6 @@ class ZoneRelayAutotuneController extends Controller
         }
 
         return $decoded;
-    }
-
-    private function buildUpstreamErrorResponse(RequestException $e): ?JsonResponse
-    {
-        $response = $e->response;
-        if (! $response instanceof Response) {
-            return null;
-        }
-
-        $status = $response->status();
-        if ($status < 400 || $status >= 500) {
-            return null;
-        }
-
-        if ($status === 404) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_NOT_SUPPORTED',
-                'message' => 'Automation-engine ещё не поддерживает relay-autotune API.',
-            ], 501);
-        }
-
-        $decoded = $response->json();
-        if (is_array($decoded)) {
-            return response()->json($decoded, $status);
-        }
-
-        return response()->json([
-            'status' => 'error',
-            'code' => 'UPSTREAM_ERROR',
-            'message' => 'Ошибка upstream сервиса automation-engine.',
-        ], $status);
     }
 
     /**

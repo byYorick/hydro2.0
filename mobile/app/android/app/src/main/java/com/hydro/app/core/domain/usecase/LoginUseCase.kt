@@ -53,21 +53,20 @@ class LoginUseCase @Inject constructor(
             repository.login(email, password).fold(
                 onSuccess = { user -> Result.success(user) },
                 onFailure = { error ->
+                    val message = error.message?.trim().orEmpty().ifEmpty {
+                        "Произошла ошибка при входе."
+                    }
                     Result.failure(
                         when {
                             error.message?.contains("401", ignoreCase = true) == true ||
-                            error.message?.contains("unauthorized", ignoreCase = true) == true ||
-                            error.message?.contains("Invalid email or password", ignoreCase = true) == true ->
-                                AppError.AuthError("Invalid email or password")
-                            error.message?.contains("Cannot connect", ignoreCase = true) == true ||
-                            error.message?.contains("Connection timeout", ignoreCase = true) == true ||
-                            error.message?.contains("Cannot resolve", ignoreCase = true) == true ||
-                            error.message?.contains("Network error", ignoreCase = true) == true ->
-                                AppError.NetworkError(error.message ?: "Network error")
-                            error.message?.contains("HTTP error", ignoreCase = true) == true ->
-                                AppError.ServerError(error.message ?: "Server error")
-                            else -> error.toAppError()
-                        }
+                            error.message?.contains("авториз", ignoreCase = true) == true ->
+                                AppError.AuthError(message)
+                            error.message?.contains("сеть", ignoreCase = true) == true ||
+                            error.message?.contains("подключ", ignoreCase = true) == true ||
+                            error.message?.contains("ожидан", ignoreCase = true) == true ->
+                                AppError.NetworkError(message, error)
+                            else -> AppError.UnknownError(message, error)
+                        },
                     )
                 }
             )

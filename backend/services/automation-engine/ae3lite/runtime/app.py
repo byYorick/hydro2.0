@@ -20,6 +20,7 @@ from ae3lite.api import (
     bind_start_irrigation_route,
     bind_start_lighting_tick_route,
 )
+from ae3lite.api.http_errors import enrich_http_exception_content
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.api.rate_limit import SlidingWindowRateLimiter
 from ae3lite.api.responses import build_start_cycle_response
@@ -436,6 +437,14 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             await bundle.http_client.aclose()
 
     app = FastAPI(title="Automation Engine API", lifespan=_app_lifespan)
+
+    @app.exception_handler(HTTPException)
+    async def localized_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=enrich_http_exception_content(exc),
+        )
+
     app.state.ae3_runtime_bundle = bundle
     app.state.ae3_runtime_config = runtime_config
     app.state.ae3_critical_background_tasks = critical_background_tasks

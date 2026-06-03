@@ -110,16 +110,11 @@ class StartupHandler(BaseStageHandler):
                 "Состояние IRR-ноды по pump_main не совпало, и safety stop plan не настроен",
             )
 
-        result = await self._command_gateway.run_batch(
+        await self._run_command_batch_checked(
             task=task,
             commands=safety_plan,
             now=now,
         )
-        if not result["success"]:
-            raise TaskExecutionError(
-                str(result["error_code"]),
-                str(result["error_message"]),
-            )
 
     async def _clear_manual_to_auto_reconcile_flag(self, *, task: Any) -> None:
         """Очищает `zones.settings.manual_to_auto_reconcile_pending` после

@@ -37,11 +37,17 @@ describe('errorCatalog', () => {
     })).toBe('В зоне нет ни одного онлайн-исполнительного канала. Проверьте привязки устройств и состояние нод.')
   })
 
-  it('даёт русский fallback для неизвестного кода', () => {
+  it('даёт fallback по коду, если текста ошибки нет', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'some_unknown_error',
+    })).toBe('Внутренняя ошибка системы (код: some_unknown_error).')
+  })
+
+  it('без перевода оставляет исходный текст API', () => {
     expect(resolveHumanErrorMessage({
       code: 'some_unknown_error',
       message: 'Unknown failure',
-    })).toBe('Внутренняя ошибка системы (код: some_unknown_error).')
+    })).toBe('Unknown failure')
   })
 
   it('локализует unknown irrigation strategy через каталог кодов', () => {
@@ -101,7 +107,7 @@ describe('errorCatalog', () => {
     })).toContain('419')
   })
 
-  it('без перевода возвращает исходный текст сообщения API', () => {
+  it('без перевода и без кода оставляет legacy raw-message', () => {
     expect(resolveHumanErrorMessage({
       message: 'Node registration rate limit exceeded',
     })).toBe('Node registration rate limit exceeded')

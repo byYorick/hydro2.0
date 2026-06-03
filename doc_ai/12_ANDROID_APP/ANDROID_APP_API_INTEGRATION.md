@@ -49,14 +49,24 @@ Android использует те же REST-эндпоинты, что и веб
 }
 ```
 
-Ошибки:
+Ошибки (контракт фазы 2/3, совпадает с Laravel API и Vue):
+
 ```json
 {
   "status": "error",
-  "message": "Error description",
-  "code": 400
+  "code": "zone_not_ready",
+  "message": "Зона не готова к запуску цикла",
+  "human_error_message": "Зона не готова к запуску цикла",
+  "title": "Зона не готова"
 }
 ```
+
+**Локализация в приложении:**
+
+- Каталоги `error_codes.json` и `alert_codes.json` копируются в `app/src/main/assets/i18n/` при `make i18n-catalog-fix` / `sync_i18n_catalogs.py`.
+- `ApiErrorParser` читает `human_error_message` из ответа; при отсутствии — lookup в `ErrorCatalog` по `code` (snake_case).
+- Сырые English-сообщения **не показываются** оператору (fallback — общий русский текст).
+- Тексты алертов в списке локализуются через `AlertCatalog` по полю `code` из API.
 
 Аутентификация: передача токена в заголовке `Authorization: Bearer <token>`.
 

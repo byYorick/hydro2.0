@@ -1,0 +1,148 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-06-03T00:00:00Z",
+  "code_by_exact_message": {
+    "Unauthorized": "unauthenticated",
+    "Unauthorized: token required": "unauthenticated",
+    "Unauthorized: invalid token": "unauthenticated",
+    "Validation failed": "validation_error",
+    "Zone not found": "zone_not_found",
+    "Node not found": "node_not_found",
+    "Automation bundle not found.": "not_found"
+  },
+  "exact": {
+    "'cmd' is required": "Обязательно поле cmd.",
+    "Alert queued for replay": "Алерт поставлен в очередь на повторную обработку.",
+    "An error occurred while fetching configuration.": "Ошибка при получении конфигурации.",
+    "Asset not found in this zone": "Объект инфраструктуры не найден в этой зоне.",
+    "Automation bundle not found.": "Automation bundle не найден.",
+    "Binding not found in this zone": "Привязка канала не найдена в этой зоне.",
+    "Binding not linked to infrastructure instance": "Привязка не связана с экземпляром инфраструктуры.",
+    "Cannot delete your own account": "Нельзя удалить собственную учётную запись.",
+    "Channel binding deleted": "Привязка канала удалена.",
+    "Channel not bound to this zone": "Канал не привязан к этой зоне.",
+    "Channel not found in node": "Канал не найден на узле.",
+    "Database schema not initialized. Please run migrations.": "Схема БД не инициализирована. Выполните миграции.",
+    "Duplicate taxonomy ids are not allowed": "Дублирующиеся id таксономии запрещены.",
+    "Failed to create binding: ": "Ошибка операции с привязкой канала.",
+    "Failed to create/update alert. See server logs for details.": "Не удалось создать или обновить алерт. См. логи сервера.",
+    "Failed to delete binding: ": "Ошибка операции с привязкой канала.",
+    "Failed to delete node": "Не удалось удалить узел.",
+    "Failed to generate prediction. Not enough data.": "Не удалось построить прогноз: недостаточно данных.",
+    "Failed to get allowed transitions: ": "Не удалось получить допустимые переходы: ",
+    "Failed to get effective targets": "Не удалось получить effective targets.",
+    "Failed to get node config": "Не удалось получить конфигурацию узла.",
+    "Failed to ingest telemetry": "Не удалось записать телеметрию.",
+    "Failed to replay alert: ": "Не удалось повторить обработку алерта: ",
+    "Failed to swap node: ": "Не удалось заменить узел: ",
+    "Failed to update infrastructure: ": "Не удалось обновить инфраструктуру: ",
+    "Forbidden: Access denied": "Недостаточно прав для выполнения действия.",
+    "Forbidden: Access denied to target zone": "Нет доступа к целевой зоне.",
+    "Forbidden: Access denied to this alert": "Нет доступа к этому алерту.",
+    "Forbidden: Access denied to this greenhouse": "Нет доступа к этой теплице.",
+    "Forbidden: Access denied to this node": "Нет доступа к этому узлу.",
+    "Forbidden: Access denied to this plant": "Нет доступа к этому растению.",
+    "Forbidden: Access denied to this zone": "Нет доступа к этой зоне.",
+    "Forbidden: Only administrators can delete greenhouses": "Удалять теплицы могут только администраторы.",
+    "Forbidden: Only agronomists can change recipe revisions": "Изменять ревизии рецептов могут только агрономы.",
+    "Forbidden: Only agronomists can create grow cycles": "Создавать циклы выращивания могут только агрономы.",
+    "Forbidden: Only agronomists can create recipe revisions": "Создавать ревизии рецептов могут только агрономы.",
+    "Forbidden: Only agronomists can edit recipe revisions, and only DRAFT revisions can be edited": "Редактировать ревизии могут только агрономы, и только в статусе DRAFT.",
+    "Forbidden: Only agronomists can manage grow cycles": "Управлять циклами выращивания могут только агрономы.",
+    "Forbidden: Only agronomists can publish recipe revisions": "Публиковать ревизии рецептов могут только агрономы.",
+    "Forbidden: Only agronomists can switch phases": "Переключать фазы могут только агрономы.",
+    "Greenhouse uid missing for node zone": "У зоны узла отсутствует greenhouse uid.",
+    "Infrastructure instance deleted": "Экземпляр инфраструктуры удалён.",
+    "Invalid metric. Allowed: ": "Недопустимая метрика. ",
+    "Invalid severity. Allowed values: info, warning, error, critical": "Недопустимый severity. Допустимо: info, warning, error, critical.",
+    "Invalid source. Allowed values: biz, infra, node": "Недопустимый source. Допустимо: biz, infra, node.",
+    "Invalid status. Allowed values: ACTIVE, RESOLVED": "Недопустимый status. Допустимо: ACTIVE, RESOLVED.",
+    "Invalid type. Must be \"ph\" or \"ec\".": "Недопустимый type. Допустимо: ph или ec.",
+    "MQTT bridge request failed": "Запрос к MQTT bridge не выполнен.",
+    "Node channel not found": "Канал узла не найден.",
+    "Node channel not found in this greenhouse": "Канал узла не найден в этой теплице.",
+    "Node channel not found in this zone": "Канал узла не найден в этой зоне.",
+    "Node detached from zone successfully": "Узел отвязан от зоны.",
+    "Node is not assigned to a zone": "Узел не привязан к зоне.",
+    "Node is not assigned to the specified zone": "Узел не привязан к указанной зоне.",
+    "Node not found": "Узел не найден.",
+    "Node not found in this zone": "Узел не найден в этой зоне.",
+    "Node registration token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.": "Токен регистрации узлов не настроен (PY_INGEST_TOKEN или PY_API_TOKEN).",
+    "Payload too large": "Слишком большой объём запроса.",
+    "Pending alert not found in pending_alerts_dlq": "Алерт не найден в очереди pending_alerts_dlq.",
+    "Phase deleted": "Фаза удалена.",
+    "Server memory limit": "Превышен лимит памяти сервера при потоковой передаче.",
+    "Service temporarily unavailable. Please check database connection.": "Сервис временно недоступен. Проверьте подключение к БД.",
+    "Simulation queued successfully. Use GET /api/simulations/{job_id} to check status.": "Симуляция поставлена в очередь. Статус: GET /api/simulations/{job_id}.",
+    "Stream error occurred": "Ошибка потока событий.",
+    "Stream timeout": "Истекло время ожидания потока событий.",
+    "Substrate deleted": "Субстрат удалён.",
+    "The cmd or type field is required.": "Обязательно поле cmd или type.",
+    "Unauthorized": "Для выполнения действия нужно войти в систему.",
+    "Unauthorized: invalid token": "Недействительный токен авторизации.",
+    "Unauthorized: token required": "Для выполнения действия нужен токен авторизации.",
+    "Unknown taxonomy key": "Неизвестный ключ таксономии.",
+    "Zone not found": "Зона не найдена.",
+    "Zone not found for node": "Для узла не найдена зона.",
+    "Zone not found or has no greenhouse": "Зона не найдена или у неё нет теплицы.",
+    "actual_ml must be submitted in a separate save step after terminal DONE": "actual_ml сохраняется отдельным шагом после terminal DONE.",
+    "ec_after_ms must be greater than ec_before_ms": "ec_after_ms должен быть больше ec_before_ms.",
+    "hardware_id is required for temp config publish": "Для публикации временного конфига нужен hardware_id.",
+    "node is already bound to another zone": "Узел уже привязан к другой зоне.",
+    "node_channel_id must belong to the selected zone": "node_channel_id должен принадлежать выбранной зоне.",
+    "node_default_secret is not configured": "node_default_secret не настроен.",
+    "node_uid does not match node_id": "node_uid не соответствует node_id.",
+    "node_uid not found": "node_uid не найден.",
+    "pending_zone_id does not match requested zone_id": "pending_zone_id не совпадает с запрошенным zone_id.",
+    "run_token is required when saving calibration after a physical run": "После физического прогона калибровки обязателен run_token.",
+    "zone_id is required to resolve greenhouse_uid": "Для определения greenhouse_uid нужен zone_id.",
+    "zone_id must be a positive integer": "zone_id должен быть положительным целым числом.",
+    "zone_uid could not be resolved": "Не удалось определить zone_uid."
+  },
+  "patterns": [
+    {
+      "regex": "^Forbidden: Access denied to target zone$",
+      "message": "Нет доступа к целевой зоне."
+    },
+    {
+      "regex": "^Cannot delete greenhouse: it has (\\d+) associated zone\\(s\\)\\. Please delete or reassign zones first\\.$",
+      "message": "Нельзя удалить теплицу: к ней привязано $1 зон. Сначала удалите или переназначьте зоны."
+    },
+    {
+      "regex": "^Cannot delete greenhouse: it has (\\d+) associated node\\(s\\) through zones\\. Please delete or reassign nodes first\\.$",
+      "message": "Нельзя удалить теплицу: через зоны к ней привязано $1 узлов."
+    },
+    {
+      "regex": "^duration_sec must be within \\[(\\d+), (\\d+)\\]$",
+      "message": "duration_sec должен быть в диапазоне [$1, $2]."
+    },
+    {
+      "regex": "^node_channel_id must belong to the selected zone$",
+      "message": "node_channel_id должен принадлежать выбранной зоне."
+    },
+    {
+      "regex": "^ec_after_ms must be greater than ec_before_ms$",
+      "message": "ec_after_ms должен быть больше ec_before_ms."
+    },
+    {
+      "regex": "^actual_ml must be submitted in a separate save step after terminal DONE$",
+      "message": "actual_ml сохраняется отдельным шагом после terminal DONE."
+    },
+    {
+      "regex": "^run_token is required when saving calibration after a physical run$",
+      "message": "После физического прогона калибровки обязателен run_token."
+    },
+    {
+      "regex": "^Invalid metric\\. Allowed: (.+)$",
+      "message": "Недопустимая метрика. Допустимо: $1."
+    },
+    {
+      "regex": "^zone_id must be a positive integer$",
+      "message": "zone_id должен быть положительным целым числом."
+    },
+    {
+      "regex": "^Failed to (update infrastructure|swap node|get allowed transitions|replay alert): (.+)$",
+      "message": "Ошибка операции: $2."
+    }
+  ]
+}

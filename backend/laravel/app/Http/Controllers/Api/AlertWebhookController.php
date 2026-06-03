@@ -118,9 +118,16 @@ class AlertWebhookController extends Controller
      */
     private static function alertNameToCode(string $alertName): string
     {
-        $step = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $alertName);
+        $step = preg_replace('/(MQTT)(Broker)/i', '$1_$2', $alertName);
+        $step = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $step);
         $step = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $step);
 
-        return strtolower($step);
+        $code = strtolower($step);
+
+        if ($code === 'mqttbroker_down') {
+            return 'mqtt_broker_down';
+        }
+
+        return $code;
     }
 }

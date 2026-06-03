@@ -12,6 +12,11 @@ from ae3lite.application.level_monitor import (
     load_zone_level_monitor_config,
     summarize_zone_telemetry_rows,
 )
+from ae3lite.application.use_cases.manual_control_contract import (
+    AVAILABLE_CONTROL_MODES,
+    allowed_manual_steps_for_stage,
+    normalize_control_mode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +242,7 @@ class GetZoneAutomationStateUseCase:
                 telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
             )
-            return self._merge_last_failed_task_into_workflow_view(built, last_task)
+            return self._merge_last_failed_task_into_workflow_view(built, last_task, workflow_state)
         if task is None:
             task = last_task
 
@@ -442,12 +447,50 @@ class GetZoneAutomationStateUseCase:
             "error_message": error_message if is_failed else None,
         }
 
-    def _merge_last_failed_task_into_workflow_view(self, payload: dict[str, Any], last_task: Optional[Any]) -> dict[str, Any]:
-        """Снимок workflow в БД может оставаться ready, пока последняя ae_task уже failed — не маскируем сбой."""
+    def _should_overlay_failed_task_on_workflow(
+        self,
+        *,
+        workflow_state: Optional[Any],
+        last_task: Any,
+    ) -> bool:
+        """Показывать terminal failed поверх workflow только если сбой не устарел относительно workflow."""
+        scheduler_task_id = (
+            str(getattr(workflow_state, "scheduler_task_id", "") or "").strip()
+            if workflow_state is not None
+            else ""
+        )
+        last_task_id = str(getattr(last_task, "id", "") or "").strip()
+        if scheduler_task_id and last_task_id and scheduler_task_id == last_task_id:
+            return True
+
+        if workflow_state is None:
+            return True
+
+        workflow_updated_at = getattr(workflow_state, "updated_at", None)
+        task_updated_at = getattr(last_task, "updated_at", None)
+        if isinstance(workflow_updated_at, datetime) and isinstance(task_updated_at, datetime):
+            wf_cmp = self._normalize_utc_naive(workflow_updated_at)
+            task_cmp = self._normalize_utc_naive(task_updated_at)
+            return task_cmp >= wf_cmp
+
+        return True
+
+    def _merge_last_failed_task_into_workflow_view(
+        self,
+        payload: dict[str, Any],
+        last_task: Optional[Any],
+        workflow_state: Optional[Any] = None,
+    ) -> dict[str, Any]:
+        """Снимок workflow в БД может оставаться ready, пока последняя ae_task уже failed — не маскируем свежий сбой."""
         if last_task is None:
             return payload
         status = str(getattr(last_task, "status", "") or "").strip().lower()
         if status != "failed":
+            return payload
+        if not self._should_overlay_failed_task_on_workflow(
+            workflow_state=workflow_state,
+            last_task=last_task,
+        ):
             return payload
 
         details = dict(payload.get("state_details") or {})
@@ -471,6 +514,46 @@ class GetZoneAutomationStateUseCase:
             is_terminal_failed=True,
         )
         return payload
+
+    async def _control_mode_context(
+        self,
+        *,
+        zone_id: int,
+        current_stage: str | None,
+    ) -> dict[str, Any]:
+        """control_mode из zones — тот же source of truth, что и GET /control-mode."""
+        control_mode = "auto"
+        if self._fetch_fn is not None:
+            try:
+                rows = await self._fetch_fn(
+                    "SELECT control_mode FROM zones WHERE id = $1",
+                    zone_id,
+                )
+                if rows:
+                    row = rows[0]
+                    raw = (
+                        row.get("control_mode")
+                        if isinstance(row, Mapping)
+                        else getattr(row, "control_mode", None)
+                    )
+                    control_mode = normalize_control_mode(raw)
+            except Exception:
+                logger.warning(
+                    "AE3 automation state: control_mode read failed for zone_id=%s",
+                    zone_id,
+                    exc_info=True,
+                )
+
+        stage_key = str(current_stage or "").strip()
+        allowed_manual_steps: list[str] = []
+        if control_mode in ("manual", "semi") and stage_key:
+            allowed_manual_steps = allowed_manual_steps_for_stage(stage_key)
+
+        return {
+            "control_mode": control_mode,
+            "control_mode_available": list(AVAILABLE_CONTROL_MODES),
+            "allowed_manual_steps": allowed_manual_steps,
+        }
 
     async def _build_state(
         self,
@@ -511,6 +594,10 @@ class GetZoneAutomationStateUseCase:
             workflow_phase=workflow_phase,
             is_active=is_active,
             correction=getattr(task, "correction", None),
+        )
+        control_ctx = await self._control_mode_context(
+            zone_id=zone_id,
+            current_stage=str(current_stage) if current_stage is not None else None,
         )
 
         return {
@@ -565,6 +652,7 @@ class GetZoneAutomationStateUseCase:
             "solution_tank_guard": solution_tank_guard,
             "decision": self._build_decision(task),
             "telemetry_fetch_ok": telemetry_fetch_ok,
+            **control_ctx,
         }
 
     async def _build_workflow_state(
@@ -599,6 +687,10 @@ class GetZoneAutomationStateUseCase:
             zone_id=zone_id,
             transitions=[],
             since_ts=self._timeline_since_workflow(workflow_state=workflow_state),
+        )
+        control_ctx = await self._control_mode_context(
+            zone_id=zone_id,
+            current_stage=current_stage,
         )
 
         return {
@@ -651,6 +743,7 @@ class GetZoneAutomationStateUseCase:
             "solution_tank_guard": solution_tank_guard,
             "decision": None,
             "telemetry_fetch_ok": telemetry_fetch_ok,
+            **control_ctx,
         }
 
     async def _idle_state(
@@ -665,6 +758,7 @@ class GetZoneAutomationStateUseCase:
             transitions=[],
             since_ts=self._idle_timeline_since(),
         )
+        control_ctx = await self._control_mode_context(zone_id=zone_id, current_stage=None)
         return {
             "zone_id": zone_id,
             "state": "IDLE",
@@ -706,6 +800,7 @@ class GetZoneAutomationStateUseCase:
             "solution_tank_guard": solution_tank_guard,
             "decision": None,
             "telemetry_fetch_ok": telemetry_fetch_ok,
+            **control_ctx,
         }
 
     def _build_active_processes(

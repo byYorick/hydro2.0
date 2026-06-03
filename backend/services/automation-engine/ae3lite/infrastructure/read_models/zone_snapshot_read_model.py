@@ -419,55 +419,10 @@ class PgZoneSnapshotReadModel:
         zone_id: int,
         diag_rows: List[Mapping[str, Any]],
     ) -> Dict[str, Any]:
-        """Собирает per-node breakdown для ``AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS``.
+        """Собирает per-node breakdown для ``AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS``."""
+        from ae3lite.domain.services.zone_node_availability import classify_zone_nodes
 
-        Используется ExecuteTaskUseCase, чтобы:
-          1) обогатить runtime-event'ы и алерт ``biz_ae3_task_failed``;
-          2) различать transient (нода вернётся) и persistent (мертва) outage —
-             persistently_offline_uids → fail-closed без retry.
-        """
-        persistent_threshold = _node_persistent_dead_sec()
-        zone_nodes: List[Dict[str, Any]] = []
-        persistently_offline_uids: List[str] = []
-        transiently_offline_uids: List[str] = []
-
-        for row in diag_rows:
-            uid = str(row.get("node_uid") or "").strip()
-            if not uid:
-                continue
-            node_type = str(row.get("node_type") or "").strip().lower() or None
-            status = str(row.get("status") or "").strip().lower() or None
-            try:
-                last_seen_age_sec = int(row.get("last_seen_age_sec")) if row.get("last_seen_age_sec") is not None else None
-            except (TypeError, ValueError):
-                last_seen_age_sec = None
-            try:
-                active_actuator_count = int(row.get("active_actuator_count") or 0)
-            except (TypeError, ValueError):
-                active_actuator_count = 0
-
-            zone_nodes.append({
-                "uid": uid,
-                "type": node_type,
-                "status": status,
-                "last_seen_age_sec": last_seen_age_sec,
-                "active_actuator_count": active_actuator_count,
-            })
-
-            if status == "online":
-                continue
-            if last_seen_age_sec is not None and last_seen_age_sec >= persistent_threshold:
-                persistently_offline_uids.append(uid)
-            else:
-                transiently_offline_uids.append(uid)
-
-        return {
-            "zone_id": int(zone_id),
-            "zone_nodes": zone_nodes,
-            "persistently_offline_uids": persistently_offline_uids,
-            "transiently_offline_uids": transiently_offline_uids,
-            "persistent_dead_threshold_sec": persistent_threshold,
-        }
+        return classify_zone_nodes(zone_id=zone_id, diag_rows=diag_rows)
 
     @staticmethod
     def _bundle_override_rows(cycle_bundle: Any) -> List[Mapping[str, Any]]:

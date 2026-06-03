@@ -60,7 +60,7 @@ class ZoneAutomationControlModeRoleTest extends TestCase
             ]);
 
         $response->assertStatus(422);
-        $response->assertJsonPath('code', 'REASON_REQUIRED_FOR_OPERATOR_EMERGENCY');
+        $response->assertJsonPath('code', 'reason_required_for_operator_emergency');
     }
 
     public function test_operator_cannot_switch_back_from_manual(): void
@@ -75,7 +75,7 @@ class ZoneAutomationControlModeRoleTest extends TestCase
             ]);
 
         $response->assertStatus(403);
-        $response->assertJsonPath('code', 'CONTROL_MODE_FORBIDDEN_FOR_ROLE');
+        $response->assertJsonPath('code', 'control_mode_forbidden_for_role');
     }
 
     public function test_agronomist_can_switch_in_any_direction(): void

@@ -54,6 +54,7 @@ async def test_internal_task_status_returns_404_when_task_not_found() -> None:
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail.get("error") == "task_not_found"
     assert detail.get("task_id") == 91
+    assert detail.get("human_error_message")
 
 
 @pytest.mark.asyncio
@@ -89,6 +90,7 @@ async def test_internal_task_status_returns_canonical_payload() -> None:
             "status": "waiting_command",
             "error_code": None,
             "error_message": None,
+            "human_error_message": None,
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
             "completed_at": None,

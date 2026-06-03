@@ -34,17 +34,16 @@ class CommandHandler(BaseStageHandler):
             "command_handler: running batch stage=%s commands=%s zone_id=%s",
             stage_def.name, len(commands), task.zone_id,
         )
-        result = await self._command_gateway.run_batch(
-            task=task, commands=commands, now=now,
-        )
-        if not result["success"]:
+        try:
+            result = await self._run_command_batch_checked(
+                task=task, commands=commands, now=now,
+            )
+        except TaskExecutionError:
             _logger.warning(
-                "command_handler: batch failed stage=%s error=%s zone_id=%s",
-                stage_def.name, result.get("error_code"), task.zone_id,
+                "command_handler: batch failed stage=%s zone_id=%s",
+                stage_def.name, task.zone_id,
             )
-            raise TaskExecutionError(
-                str(result["error_code"]), str(result["error_message"]),
-            )
+            raise
 
         _logger.debug(
             "command_handler: batch succeeded stage=%s commands_total=%s zone_id=%s",

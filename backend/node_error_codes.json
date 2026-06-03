@@ -1,0 +1,364 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-06-03T06:57:56Z",
+  "description": "Коды error_code из command_response ESP32 и MQTT (фаза 5). Source of truth для слоя узлов.",
+  "codes": [
+    {
+      "code": "actuator_apply_failed",
+      "title": "Ошибка исполнительного канала",
+      "message": "Не удалось применить команду к исполнительному каналу.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "actuator_busy",
+      "title": "Исполнительный канал занят",
+      "message": "Канал занят — команда отклонена (BUSY).",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "clean_fill_completed",
+      "title": "Наполнение чистого бака завершено",
+      "message": "Чистый бак наполнен (level_clean_max).",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "clean_fill_source_empty",
+      "title": "Нет воды для чистого бака",
+      "message": "При наполнении чистого бака нижний датчик уровня не сработал.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "clean_fill_timeout",
+      "title": "Таймаут clean fill",
+      "message": "Этап наполнения чистого бака превысил лимит времени.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "clean_tank_not_filled_timeout",
+      "title": "Таймаут наполнения чистого бака",
+      "message": "Чистый бак не наполнился за отведённое время.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "command_already_failed",
+      "title": "Команда уже завершена с ошибкой",
+      "message": "Повторный ответ по cmd_id после terminal ERROR.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "config_report_failed",
+      "title": "Ошибка config_report",
+      "message": "Узел не смог опубликовать config_report.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "cooldown_active",
+      "title": "Cooldown насоса",
+      "message": "Команда отклонена: активна защитная пауза между включениями.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "current_not_detected",
+      "title": "Ток не обнаружен",
+      "message": "После включения насоса ток ниже минимального порога.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "current_unavailable",
+      "title": "Ток недоступен",
+      "message": "Не удалось получить показание тока (INA209/I²C).",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "emergency_stop_activated",
+      "title": "Аварийный останов (E-STOP)",
+      "message": "На узле активирован аварийный останов.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "esp_esp_err_invalid_state",
+      "title": "Некорректное состояние ESP",
+      "message": "Узел в недопустимом состоянии для операции (ESP_ERR_INVALID_STATE).",
+      "category": "diagnostics",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "hmac_required",
+      "title": "Требуется HMAC",
+      "message": "Команда отклонена: для узла включена обязательная подпись HMAC.",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_command_format",
+      "title": "Некорректный формат команды",
+      "message": "Тело команды не соответствует протоколу hydro.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_hmac_format",
+      "title": "Некорректный HMAC",
+      "message": "Поля ts/sig отсутствуют или заданы частично.",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_json",
+      "title": "Некорректный JSON",
+      "message": "Тело MQTT-сообщения содержит некорректный JSON.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_params_format",
+      "title": "Некорректные параметры",
+      "message": "Параметры команды не прошли проверку формата.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_signature",
+      "title": "Неверная подпись",
+      "message": "HMAC-подпись команды не прошла проверку.",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "missing_node_secret",
+      "title": "Нет node_secret",
+      "message": "В NodeConfig отсутствует node_secret для проверки подписи.",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "motor_error",
+      "title": "Ошибка мотора",
+      "message": "Ошибка привода/мотора на узле.",
+      "category": "diagnostics",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "node_not_activated",
+      "title": "Узел не активирован",
+      "message": "Команда отклонена: узел не активирован в системе.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "overcurrent",
+      "title": "Сверхток",
+      "message": "Ток канала превысил допустимый верхний предел.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "prepare_recirculation_timeout",
+      "title": "Таймаут prepare-recirculation",
+      "message": "Подготовка рециркуляции превысила timeout_ms.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_busy",
+      "title": "Насос занят",
+      "message": "Канал насоса занят предыдущей операцией.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_current_over_range",
+      "title": "Ток насоса выше нормы",
+      "message": "Ток насоса выше допустимого диапазона NodeConfig.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_current_under_range",
+      "title": "Ток насоса ниже нормы",
+      "message": "Ток насоса ниже ожидаемого при работе (недоток).",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_driver_failed",
+      "title": "Ошибка драйвера насоса",
+      "message": "Драйвер насоса не выполнил команду.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_error",
+      "title": "Ошибка насоса",
+      "message": "Общая ошибка драйвера насоса.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_in_cooldown",
+      "title": "Насос в cooldown",
+      "message": "Команда отклонена: канал насоса в интервале cooldown.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_ina_read_failed",
+      "title": "Ошибка чтения INA209",
+      "message": "Не удалось прочитать ток с датчика INA209.",
+      "category": "pump",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_interlock_blocked",
+      "title": "Interlock насоса",
+      "message": "Команда заблокирована гидравлическим interlock (flow-path).",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "recirculation_solution_low",
+      "title": "Низкий уровень при рециркуляции",
+      "message": "Уровень раствора ниже минимума при подготовке рециркуляции.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_channel_not_found",
+      "title": "Канал реле не найден",
+      "message": "Канал реле отсутствует в NodeConfig.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_error",
+      "title": "Ошибка реле",
+      "message": "Команда реле завершилась с ошибкой.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_gpio_error",
+      "title": "Ошибка GPIO реле",
+      "message": "Ошибка GPIO при переключении реле.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_invalid_channel",
+      "title": "Неверный канал реле",
+      "message": "Указан недопустимый канал реле.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_mutex_timeout",
+      "title": "Таймаут реле",
+      "message": "Не удалось захватить mutex реле за отведённое время.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "relay_not_initialized",
+      "title": "Реле не инициализировано",
+      "message": "Драйвер реле не инициализирован.",
+      "category": "relay",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "restart_schedule_failed",
+      "title": "Ошибка перезапуска",
+      "message": "Не удалось запланировать перезапуск узла.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "set_time_failed",
+      "title": "Не удалось установить время",
+      "message": "Узел не применил системное время (set_time).",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_completed",
+      "title": "Наполнение раствора завершено",
+      "message": "Бак раствора наполнен (level_solution_max).",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_leak_detected",
+      "title": "Утечка при наполнении раствора",
+      "message": "Нижний уровень раствора пропал после guard-delay.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_source_empty",
+      "title": "Нет воды для раствора",
+      "message": "При наполнении раствора не хватает воды в чистом баке.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_timeout",
+      "title": "Таймаут solution fill",
+      "message": "Этап наполнения раствора превысил лимит времени.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_tank_not_filled_timeout",
+      "title": "Таймаут бака раствора",
+      "message": "Бак раствора не наполнился за отведённое время.",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "stage_timeout",
+      "title": "Таймаут стадии",
+      "message": "Истекло время stage-guard (pump_main timeout_ms).",
+      "category": "irrigation",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "time_not_synced",
+      "title": "Время не синхронизировано",
+      "message": "Узел ещё не получил время от брокера — команда с ts отклонена.",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "timestamp_expired",
+      "title": "Истёк timestamp",
+      "message": "Метка времени команды вне допустимого окна (±10 с).",
+      "category": "security",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "unsupported_channel_cmd",
+      "title": "Команда не поддерживается",
+      "message": "Канал не поддерживает запрошенную команду.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    },
+    {
+      "code": "unsupported_correction_command",
+      "title": "Коррекция не поддерживается",
+      "message": "Канал не поддерживает correction-команду.",
+      "category": "framework",
+      "layer": "firmware_mqtt"
+    }
+  ]
+}

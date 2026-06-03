@@ -34,6 +34,20 @@ class DetailsAccessor
      * @param  array<string, mixed>  $details
      * @param  string[]  $keys
      */
+    public function annotationString(array $details, array $keys): ?string
+    {
+        $annotations = $details['annotations'] ?? null;
+        if (! is_array($annotations)) {
+            return null;
+        }
+
+        return $this->stringValue($annotations, $keys);
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     * @param  string[]  $keys
+     */
     public function scalarValue(array $details, array $keys): ?string
     {
         foreach ($keys as $key) {

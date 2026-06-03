@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\AutomationRuntimeConfigService;
@@ -10,12 +11,15 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ZoneAutomationControlModeController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
     ) {}
@@ -27,7 +31,10 @@ class ZoneAutomationControlModeController extends Controller
         try {
             $payload = $this->fetchFromAutomationEngine($zone->id);
         } catch (RequestException $e) {
-            $proxyResponse = $this->buildUpstreamErrorResponse($e);
+            $proxyResponse = $this->buildAutomationEngineErrorResponse(
+                $e,
+                'Automation-engine ещё не поддерживает control-mode API.',
+            );
             if ($proxyResponse instanceof JsonResponse) {
                 return $proxyResponse;
             }
@@ -37,33 +44,21 @@ class ZoneAutomationControlModeController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (ConnectionException $e) {
             Log::warning('ZoneAutomationControlModeController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (\Throwable $e) {
             Log::warning('ZoneAutomationControlModeController: unexpected upstream error', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка при получении control mode.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка при получении control mode.', 503);
         }
 
         return response()->json($payload);
@@ -85,25 +80,27 @@ class ZoneAutomationControlModeController extends Controller
         $currentMode = strtolower(trim((string) ($zone->control_mode ?? 'auto')));
 
         if (! $this->isTransitionAllowedForRole($userRole, $currentMode, $newMode)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'CONTROL_MODE_FORBIDDEN_FOR_ROLE',
-                'message' => 'Текущая роль не разрешает переключение control_mode в этом направлении.',
-                'details' => [
-                    'role' => $userRole,
-                    'from' => $currentMode,
-                    'to' => $newMode,
+            return $this->localizedError(
+                'control_mode_forbidden_for_role',
+                'Текущая роль не разрешает переключение control_mode в этом направлении.',
+                403,
+                [
+                    'details' => [
+                        'role' => $userRole,
+                        'from' => $currentMode,
+                        'to' => $newMode,
+                    ],
                 ],
-            ], 403);
+            );
         }
 
         if ($userRole === 'operator' && $newMode === 'manual'
             && empty(trim((string) ($validated['reason'] ?? '')))) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'REASON_REQUIRED_FOR_OPERATOR_EMERGENCY',
-                'message' => 'Operator обязан указать reason при аварийном переходе в manual.',
-            ], 422);
+            return $this->localizedError(
+                'reason_required_for_operator_emergency',
+                'Оператор обязан указать reason при аварийном переходе в manual.',
+                422,
+            );
         }
 
         $payload = [
@@ -117,7 +114,10 @@ class ZoneAutomationControlModeController extends Controller
         try {
             $upstreamPayload = $this->updateInAutomationEngine($zone->id, $payload);
         } catch (RequestException $e) {
-            $proxyResponse = $this->buildUpstreamErrorResponse($e);
+            $proxyResponse = $this->buildAutomationEngineErrorResponse(
+                $e,
+                'Automation-engine ещё не поддерживает control-mode API.',
+            );
             if ($proxyResponse instanceof JsonResponse) {
                 return $proxyResponse;
             }
@@ -127,34 +127,26 @@ class ZoneAutomationControlModeController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (ConnectionException $e) {
             Log::warning('ZoneAutomationControlModeController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (\Throwable $e) {
             Log::warning('ZoneAutomationControlModeController: unexpected upstream error', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка при обновлении control mode.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка при обновлении control mode.', 503);
         }
+
+        ZoneAutomationStateController::invalidateZoneStateCache($zone->id);
+        Cache::forget("zone_automation_state:control_mode_backoff:{$zone->id}");
+        $zone->refresh();
 
         return response()->json($upstreamPayload);
     }
@@ -255,38 +247,6 @@ class ZoneAutomationControlModeController extends Controller
         }
 
         return $decoded;
-    }
-
-    private function buildUpstreamErrorResponse(RequestException $e): ?JsonResponse
-    {
-        $response = $e->response;
-        if (! $response instanceof Response) {
-            return null;
-        }
-
-        $status = $response->status();
-        if ($status < 400 || $status >= 500) {
-            return null;
-        }
-
-        $decoded = $response->json();
-        if (is_array($decoded)) {
-            if ($status === 404) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'UPSTREAM_NOT_SUPPORTED',
-                    'message' => 'Automation-engine ещё не поддерживает control-mode API.',
-                ], 501);
-            }
-
-            return response()->json($decoded, $status);
-        }
-
-        return response()->json([
-            'status' => 'error',
-            'code' => 'UPSTREAM_ERROR',
-            'message' => 'Ошибка upstream сервиса automation-engine.',
-        ], $status);
     }
 
     /**

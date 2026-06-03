@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\AutomationRuntimeConfigService;
@@ -16,6 +17,8 @@ use Illuminate\Support\Str;
 
 class ZoneAutomationManualStepController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
     ) {}
@@ -37,7 +40,10 @@ class ZoneAutomationManualStepController extends Controller
         try {
             $upstreamPayload = $this->forwardManualStep($zone->id, $payload);
         } catch (RequestException $e) {
-            $proxyResponse = $this->buildUpstreamErrorResponse($e);
+            $proxyResponse = $this->buildAutomationEngineErrorResponse(
+                $e,
+                'Automation-engine ещё не поддерживает manual-step API.',
+            );
             if ($proxyResponse instanceof JsonResponse) {
                 return $proxyResponse;
             }
@@ -47,33 +53,21 @@ class ZoneAutomationManualStepController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (ConnectionException $e) {
             Log::warning('ZoneAutomationManualStepController: automation-engine unavailable', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен.',
-            ], 503);
+            return $this->localizedError('upstream_unavailable', null, 503);
         } catch (\Throwable $e) {
             Log::warning('ZoneAutomationManualStepController: unexpected upstream error', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UPSTREAM_ERROR',
-                'message' => 'Ошибка при запуске manual step.',
-            ], 503);
+            return $this->localizedError('upstream_error', 'Ошибка при запуске manual step.', 503);
         }
 
         return response()->json($upstreamPayload);
@@ -115,38 +109,6 @@ class ZoneAutomationManualStepController extends Controller
         }
 
         return $decoded;
-    }
-
-    private function buildUpstreamErrorResponse(RequestException $e): ?JsonResponse
-    {
-        $response = $e->response;
-        if (! $response instanceof Response) {
-            return null;
-        }
-
-        $status = $response->status();
-        if ($status < 400 || $status >= 500) {
-            return null;
-        }
-
-        $decoded = $response->json();
-        if (is_array($decoded)) {
-            if ($status === 404) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'UPSTREAM_NOT_SUPPORTED',
-                    'message' => 'Automation-engine ещё не поддерживает manual-step API.',
-                ], 501);
-            }
-
-            return response()->json($decoded, $status);
-        }
-
-        return response()->json([
-            'status' => 'error',
-            'code' => 'UPSTREAM_ERROR',
-            'message' => 'Ошибка upstream сервиса automation-engine.',
-        ], $status);
     }
 
     /**

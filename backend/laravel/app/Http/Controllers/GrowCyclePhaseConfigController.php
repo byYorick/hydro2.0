@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\Zone;
@@ -28,6 +29,8 @@ use Illuminate\Support\Facades\Log;
  */
 class GrowCyclePhaseConfigController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     /** Safe-to-edit fields in live mode. Extended carefully (audit). */
     private const LIVE_EDITABLE_FIELDS = [
         'ph_target', 'ph_min', 'ph_max',
@@ -47,37 +50,33 @@ class GrowCyclePhaseConfigController extends Controller
     {
         $user = $request->user();
         if ($user === null) {
-            return response()->json(['status' => 'error', 'code' => 'UNAUTHENTICATED'], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $zone = Zone::find($growCycle->zone_id);
         if ($zone === null) {
-            return response()->json(['status' => 'error', 'code' => 'ZONE_NOT_FOUND'], 404);
+            return $this->localizedError('zone_not_found', null, 404);
         }
 
         if (! $user->can('setLive', $zone)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN_SET_LIVE',
-                'message' => 'Роль не позволяет править phase-config.',
-            ], 403);
+            return $this->localizedError(
+                'forbidden_set_live',
+                'Роль не позволяет править phase-config.',
+                403,
+            );
         }
 
         // Phase 5.6 invariant: live edit of recipe phase — только в live mode.
         if (($zone->config_mode ?? 'locked') !== 'live') {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'ZONE_NOT_IN_LIVE_MODE',
-                'message' => 'Редактирование активной фазы доступно только в config_mode=live.',
-            ], 409);
+            return $this->localizedError(
+                'zone_not_in_live_mode',
+                'Редактирование активной фазы доступно только в config_mode=live.',
+                409,
+            );
         }
 
         if ($growCycle->current_phase_id === null) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NO_ACTIVE_PHASE',
-                'message' => 'У цикла нет активной фазы.',
-            ], 409);
+            return $this->localizedError('no_active_phase', 'У цикла нет активной фазы.', 409);
         }
 
         $editableRules = [];
@@ -97,19 +96,19 @@ class GrowCyclePhaseConfigController extends Controller
         // Drop unchanged keys to keep diff signal clean.
         $fields = array_filter($fields, fn ($v) => $v !== null);
         if (empty($fields)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NO_FIELDS_PROVIDED',
-                'message' => 'Передай хотя бы одно поле из whitelist.',
-                'details' => ['allowed' => self::LIVE_EDITABLE_FIELDS],
-            ], 422);
+            return $this->localizedError(
+                'no_fields_provided',
+                'Передай хотя бы одно поле из whitelist.',
+                422,
+                ['details' => ['allowed' => self::LIVE_EDITABLE_FIELDS]],
+            );
         }
 
         $result = DB::transaction(function () use ($growCycle, $fields, $reason, $user): array {
             /** @var GrowCyclePhase|null $phase */
             $phase = GrowCyclePhase::lockForUpdate()->find($growCycle->current_phase_id);
             if ($phase === null) {
-                return ['status' => 404, 'code' => 'PHASE_NOT_FOUND'];
+                return ['status' => 404, 'code' => 'phase_not_found'];
             }
 
             $before = [];
@@ -144,10 +143,11 @@ class GrowCyclePhaseConfigController extends Controller
         });
 
         if ($result['status'] !== 200) {
-            return response()->json([
-                'status' => 'error',
-                'code' => $result['code'] ?? 'ERROR',
-            ], $result['status']);
+            return $this->localizedError(
+                is_string($result['code'] ?? null) ? (string) $result['code'] : 'internal_error',
+                null,
+                (int) $result['status'],
+            );
         }
 
         Log::info('grow_cycle.phase_config.live_edited', [

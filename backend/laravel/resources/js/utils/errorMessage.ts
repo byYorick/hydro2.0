@@ -1,4 +1,4 @@
-import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
+import { resolveHumanErrorMessage, type HumanErrorInput } from '@/utils/errorCatalog'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object') {
@@ -19,6 +19,23 @@ export function pickApiMessageFromPayload(data: Record<string, unknown> | null):
     }
   }
   return null
+}
+
+export function buildHumanErrorInputFromPayload(data: Record<string, unknown> | null): HumanErrorInput {
+  if (!data) {
+    return {}
+  }
+
+  const humanMessage = typeof data.human_error_message === 'string'
+    ? data.human_error_message.trim()
+    : ''
+  const code = typeof data.code === 'string' ? data.code : null
+
+  return {
+    code,
+    message: pickApiMessageFromPayload(data),
+    humanMessage: humanMessage || null,
+  }
 }
 
 function firstValidationError(errors: unknown): string | null {
@@ -50,12 +67,7 @@ export function extractHumanErrorMessage(error: unknown, fallback = 'Произ�
     return validation
   }
 
-  const apiMessage = pickApiMessageFromPayload(data)
-  const apiCode = typeof data?.code === 'string' ? data.code : null
-  const localizedApiMessage = resolveHumanErrorMessage({
-    code: apiCode,
-    message: apiMessage,
-  })
+  const localizedApiMessage = resolveHumanErrorMessage(buildHumanErrorInputFromPayload(data))
   if (localizedApiMessage) {
     return localizedApiMessage
   }

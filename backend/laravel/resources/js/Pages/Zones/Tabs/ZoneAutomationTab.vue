@@ -21,13 +21,16 @@
         :zone-id="zoneId"
         :fallback-tanks-count="waterForm.tanksCount"
         :fallback-system-type="waterForm.systemType"
+        :automation-state-refresh-seq="automationStateRefreshSeq ?? 0"
         @state-snapshot="handleProcessStateSnapshot"
       />
 
       <ZoneAutomationOpsPanel
         :can-operate-automation="canOperateAutomation"
+        :user-role="currentUserRole"
         :quick-actions="quickActions"
         :automation-control-mode="automationControlMode"
+        :control-mode-available="controlModeAvailable"
         :allowed-manual-steps="allowedManualSteps"
         :automation-control-mode-loading="automationControlModeLoading"
         :automation-control-mode-saving="automationControlModeSaving"
@@ -313,6 +316,11 @@ import {
   type AutomationEngineSettingItem,
 } from '@/constants/automationEngineSettings'
 import { readByPath } from '@/utils/object'
+import {
+  controlModeDisabledReason,
+  isControlModeTransitionAllowed,
+} from '@/utils/zoneAutomationControlMode'
+import { useToast } from '@/composables/useToast'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState
@@ -322,10 +330,13 @@ interface ZoneAutomationWizardApplyPayload {
 }
 
 const props = defineProps<ZoneAutomationTabProps>()
-const currentRecipePhaseTargets = computed(() => resolveRecipePhasePidTargets(props.currentRecipePhase ?? null))
+
 const emit = defineEmits<{
+  (e: 'refresh-automation-state'): void
   (e: 'open-pump-calibration'): void
 }>()
+const currentRecipePhaseTargets = computed(() => resolveRecipePhasePidTargets(props.currentRecipePhase ?? null))
+const { showToast } = useToast()
 const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
@@ -398,6 +409,7 @@ const {
   runManualPh,
   runManualEc,
   automationControlMode,
+  controlModeAvailable,
   allowedManualSteps,
   automationControlModeLoading,
   automationControlModeSaving,
@@ -406,7 +418,9 @@ const {
   syncControlModeFromAutomationState,
   runManualStep,
   formatDateTime,
-} = useZoneAutomationTab(props)
+} = useZoneAutomationTab(props, {
+  onControlModeChanged: () => emit('refresh-automation-state'),
+})
 
 const zoneId = toRef(props, 'zoneId')
 const showEditWizard = ref(false)
@@ -519,6 +533,15 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
   const currentMode = automationControlMode.value
   let reason: string | undefined
 
+  if (!isControlModeTransitionAllowed(currentUserRole.value, currentMode, mode)) {
+    showToast(
+      controlModeDisabledReason(currentUserRole.value, currentMode, mode)
+        ?? 'Переход в этот режим запрещён для вашей роли.',
+      'error',
+    )
+    return
+  }
+
   if (mode === 'manual' && (currentMode === 'auto' || currentMode === 'semi')) {
     const confirmMessage =
       'Переход в manual прервёт активную задачу автоматики (полив / заполнение / рециркуляцию). ' +
@@ -526,10 +549,21 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
     if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
       return
     }
+    const reasonPrompt =
+      currentUserRole.value === 'operator'
+        ? 'Укажите причину аварийного перехода в manual (обязательно):'
+        : 'Причина перехода в manual (необязательно):'
     const reasonInput = typeof window !== 'undefined'
-      ? window.prompt('Причина перехода в manual (необязательно):', '')
+      ? window.prompt(reasonPrompt, '')
       : null
-    reason = reasonInput ?? undefined
+    if (reasonInput === null) {
+      return
+    }
+    reason = reasonInput.trim()
+    if (currentUserRole.value === 'operator' && reason === '') {
+      showToast('Оператор обязан указать причину аварийного перехода в manual.', 'error')
+      return
+    }
   }
 
   if ((mode === 'auto' || mode === 'semi') && currentMode === 'manual') {

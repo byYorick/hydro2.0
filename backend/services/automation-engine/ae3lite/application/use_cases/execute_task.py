@@ -103,6 +103,8 @@ class ExecuteTaskUseCase:
         if running_task is None:
             raise TaskExecutionError("ae3_task_running_transition_failed", f"Не удалось перевести задачу {task.id} в состояние running")
 
+        await self._preflight_required_nodes_online(task=running_task)
+
         snapshot = None
         plan = None
         start_observability_emitted = False
@@ -218,6 +220,16 @@ class ExecuteTaskUseCase:
                 if timeout_cancelled
                 else "Во время выполнения задачи был потерян zone lease"
             )
+            guard_extra_details: dict[str, object] | None = None
+            offline_failure = await self._resolve_offline_failure_instead_of_guard(
+                task=running_task,
+                original_error_code=error_code,
+                original_error_message=error_message,
+            )
+            if offline_failure is not None:
+                error_code = offline_failure.code
+                error_message = offline_failure.message
+                guard_extra_details = offline_failure.details
             logger.error(
                 "AE3 execution задачи отменено runtime guard: zone_id=%s task_id=%s stage=%s error_code=%s",
                 running_task.zone_id,
@@ -237,6 +249,7 @@ class ExecuteTaskUseCase:
                 error_code=error_code,
                 error_message=error_message,
                 now=timeout_now,
+                extra_details=guard_extra_details,
             )
         except SnapshotBuildError as exc:
             snapshot_error_code = str(
@@ -344,6 +357,8 @@ class ExecuteTaskUseCase:
                 )
                 return terminal_task
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
+            error_message = str(exc)
+            execution_extra_details: dict[str, object] | None = None
             if str(error_code or "").strip().lower() == "command_send_failed":
                 retried_task = await self._retry_transient_command_send_failure(
                     task=running_task,
@@ -353,6 +368,15 @@ class ExecuteTaskUseCase:
                 )
                 if retried_task is not None:
                     return retried_task
+            offline_failure = await self._resolve_offline_failure_instead_of_guard(
+                task=running_task,
+                original_error_code=str(error_code or ""),
+                original_error_message=error_message,
+            )
+            if offline_failure is not None:
+                error_code = offline_failure.code
+                error_message = offline_failure.message
+                execution_extra_details = offline_failure.details
             logger.error(
                 "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
                 running_task.zone_id,
@@ -372,8 +396,9 @@ class ExecuteTaskUseCase:
                 task=running_task,
                 owner=owner,
                 error_code=error_code,
-                error_message=str(exc),
+                error_message=error_message,
                 now=now,
+                extra_details=execution_extra_details,
             )
         except Exception as exc:
             message = str(exc).strip() or exc.__class__.__name__
@@ -621,6 +646,58 @@ class ExecuteTaskUseCase:
             topology in TWO_TANK_TOPOLOGIES
             and str(error_code or "").strip() == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
         )
+
+    async def _preflight_required_nodes_online(self, *, task: Any) -> None:
+        from ae3lite.domain.services.zone_node_availability import (
+            assert_required_nodes_available,
+            fetch_zone_nodes_diagnostics,
+        )
+
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if zone_id <= 0:
+            return
+        topology = str(getattr(task, "topology", "") or "")
+        diagnostics = await fetch_zone_nodes_diagnostics(zone_id=zone_id)
+        assert_required_nodes_available(
+            zone_id=zone_id,
+            topology=topology,
+            diagnostics=diagnostics,
+            persistent_only=False,
+        )
+
+    async def _resolve_offline_failure_instead_of_guard(
+        self,
+        *,
+        task: Any,
+        original_error_code: str,
+        original_error_message: str = "",
+        node_uid: str | None = None,
+    ) -> Any | None:
+        """Если transport-ошибка вызвана offline-нодой — вернуть понятный код вместо lease/timeout/send."""
+        from ae3lite.domain.services.zone_node_availability import (
+            resolve_task_error_with_node_offline,
+        )
+
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if zone_id <= 0:
+            return None
+        try:
+            return await resolve_task_error_with_node_offline(
+                zone_id=zone_id,
+                topology=str(getattr(task, "topology", "") or ""),
+                error_code=original_error_code,
+                error_message=original_error_message,
+                node_uid=node_uid,
+                runtime_monitor=getattr(self._workflow_router, "_runtime_monitor", None),
+            )
+        except Exception:
+            logger.warning(
+                "AE3 не смог проверить доступность нод при remap zone_id=%s task_id=%s",
+                zone_id,
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+            return None
 
     def _verify_topology_required_node_types(self, *, task: Any, snapshot: Any) -> None:
         """Проверяет наличие actuator-нод обязательных типов для текущей топологии.

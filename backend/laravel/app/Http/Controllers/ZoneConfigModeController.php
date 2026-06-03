@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Models\Zone;
 use App\Models\ZoneConfigChange;
 use App\Services\ZoneConfigRevisionService;
@@ -14,6 +15,8 @@ use Illuminate\Validation\Rule;
 
 class ZoneConfigModeController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public const MIN_TTL_SECONDS = 5 * 60;
 
     public const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -26,11 +29,7 @@ class ZoneConfigModeController extends Controller
     {
         $user = $request->user();
         if ($user === null || ! $user->can('view', $zone)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN',
-                'message' => 'Нет доступа к зоне.',
-            ], 403);
+            return $this->localizedError('forbidden', 'Нет доступа к зоне.', 403);
         }
 
         return response()->json([
@@ -48,7 +47,7 @@ class ZoneConfigModeController extends Controller
     {
         $user = $request->user();
         if ($user === null) {
-            return response()->json(['status' => 'error', 'code' => 'UNAUTHENTICATED'], 401);
+            return $this->localizedError('unauthenticated', null, 401);
         }
 
         $validated = $request->validate([
@@ -61,20 +60,16 @@ class ZoneConfigModeController extends Controller
 
         if ($targetMode === 'live') {
             if (! $user->can('setLive', $zone)) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'FORBIDDEN_SET_LIVE',
-                    'message' => 'Роль не позволяет переключать зону в live.',
-                ], 403);
+                return $this->localizedError(
+                    'forbidden_set_live',
+                    'Роль не позволяет переключать зону в live.',
+                    403,
+                );
             }
 
         } else {
             if (! $user->can('update', $zone)) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'FORBIDDEN',
-                    'message' => 'Нет прав на изменение зоны.',
-                ], 403);
+                return $this->localizedError('forbidden', 'Нет прав на изменение зоны.', 403);
             }
         }
 
@@ -92,7 +87,7 @@ class ZoneConfigModeController extends Controller
             /** @var Zone|null $locked */
             $locked = Zone::lockForUpdate()->find($zone->id);
             if ($locked === null) {
-                return response()->json(['status' => 'error', 'code' => 'NOT_FOUND'], 404);
+                return $this->localizedError('not_found', null, 404);
             }
 
             $currentMode = $locked->config_mode ?? 'locked';
@@ -108,27 +103,29 @@ class ZoneConfigModeController extends Controller
             if ($targetMode === 'live') {
                 $controlMode = strtolower(trim((string) ($locked->control_mode ?? 'auto')));
                 if ($controlMode === 'auto') {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'CONFIG_MODE_CONFLICT_WITH_AUTO',
-                        'message' => 'Нельзя переключить зону в live, пока control_mode=auto.',
-                        'details' => ['control_mode' => $controlMode],
-                    ], 409);
+                    return $this->localizedError(
+                        'config_mode_conflict_with_auto',
+                        'Нельзя переключить зону в live, пока control_mode=auto.',
+                        409,
+                        ['details' => ['control_mode' => $controlMode]],
+                    );
                 }
 
                 $liveUntil = Carbon::parse($validated['live_until'])->utc();
                 $deltaSec = $liveUntil->timestamp - $now->timestamp;
                 if ($deltaSec < self::MIN_TTL_SECONDS || $deltaSec > self::MAX_TTL_SECONDS) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'TTL_OUT_OF_RANGE',
-                        'message' => 'TTL должен быть от 5 минут до 7 дней.',
-                        'details' => [
-                            'min_sec' => self::MIN_TTL_SECONDS,
-                            'max_sec' => self::MAX_TTL_SECONDS,
-                            'actual_sec' => $deltaSec,
+                    return $this->localizedError(
+                        'ttl_out_of_range',
+                        'TTL должен быть от 5 минут до 7 дней.',
+                        422,
+                        [
+                            'details' => [
+                                'min_sec' => self::MIN_TTL_SECONDS,
+                                'max_sec' => self::MAX_TTL_SECONDS,
+                                'actual_sec' => $deltaSec,
+                            ],
                         ],
-                    ], 422);
+                    );
                 }
 
                 $startedAt = $currentMode === 'live'
@@ -136,15 +133,17 @@ class ZoneConfigModeController extends Controller
                     : $now;
                 $totalSec = $liveUntil->timestamp - Carbon::parse($startedAt)->timestamp;
                 if ($totalSec > self::MAX_TTL_SECONDS) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'TTL_TOTAL_EXCEEDED',
-                        'message' => 'Суммарное время live не может превышать 7 дней от первого включения.',
-                        'details' => [
-                            'max_total_sec' => self::MAX_TTL_SECONDS,
-                            'actual_total_sec' => $totalSec,
+                    return $this->localizedError(
+                        'ttl_total_exceeded',
+                        'Суммарное время live не может превышать 7 дней от первого включения.',
+                        422,
+                        [
+                            'details' => [
+                                'max_total_sec' => self::MAX_TTL_SECONDS,
+                                'actual_total_sec' => $totalSec,
+                            ],
                         ],
-                    ], 422);
+                    );
                 }
 
                 $updates['live_until'] = $liveUntil;
@@ -202,11 +201,11 @@ class ZoneConfigModeController extends Controller
     {
         $user = $request->user();
         if ($user === null || ! $user->can('setLive', $zone)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'FORBIDDEN_SET_LIVE',
-                'message' => 'Роль не позволяет продлить live TTL.',
-            ], 403);
+            return $this->localizedError(
+                'forbidden_set_live',
+                'Роль не позволяет продлить live TTL.',
+                403,
+            );
         }
 
         $validated = $request->validate([
@@ -215,11 +214,7 @@ class ZoneConfigModeController extends Controller
 
         $newLiveUntil = Carbon::parse($validated['live_until'])->utc();
         if ($newLiveUntil->timestamp <= Carbon::now()->timestamp) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'TTL_IN_PAST',
-                'message' => 'live_until должен быть в будущем.',
-            ], 422);
+            return $this->localizedError('ttl_in_past', 'live_until должен быть в будущем.', 422);
         }
 
         // Phase 5 audit fix: lock row to avoid race with TTL revert cron.
@@ -230,24 +225,24 @@ class ZoneConfigModeController extends Controller
             /** @var Zone $locked */
             $locked = Zone::lockForUpdate()->find($zone->id);
             if ($locked === null) {
-                return response()->json(['status' => 'error', 'code' => 'NOT_FOUND'], 404);
+                return $this->localizedError('not_found', null, 404);
             }
             if (($locked->config_mode ?? 'locked') !== 'live') {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'NOT_IN_LIVE_MODE',
-                    'message' => 'Продление доступно только в live режиме.',
-                ], 409);
+                return $this->localizedError(
+                    'not_in_live_mode',
+                    'Продление доступно только в live режиме.',
+                    409,
+                );
             }
             $startedAt = $locked->live_started_at ?? Carbon::now();
             $totalSec = $newLiveUntil->timestamp - Carbon::parse($startedAt)->timestamp;
             if ($totalSec > self::MAX_TTL_SECONDS) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'TTL_TOTAL_EXCEEDED',
-                    'message' => 'Суммарное время live не может превышать 7 дней от первого включения.',
-                    'details' => ['max_total_sec' => self::MAX_TTL_SECONDS, 'actual_total_sec' => $totalSec],
-                ], 422);
+                return $this->localizedError(
+                    'ttl_total_exceeded',
+                    'Суммарное время live не может превышать 7 дней от первого включения.',
+                    422,
+                    ['details' => ['max_total_sec' => self::MAX_TTL_SECONDS, 'actual_total_sec' => $totalSec]],
+                );
             }
             $locked->forceFill(['live_until' => $newLiveUntil])->save();
 
@@ -272,7 +267,7 @@ class ZoneConfigModeController extends Controller
     {
         $user = $request->user();
         if ($user === null || ! $user->can('view', $zone)) {
-            return response()->json(['status' => 'error', 'code' => 'FORBIDDEN'], 403);
+            return $this->localizedError('forbidden', null, 403);
         }
 
         $namespace = (string) $request->query('namespace', '');

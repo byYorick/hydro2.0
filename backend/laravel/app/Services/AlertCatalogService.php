@@ -59,7 +59,7 @@ class AlertCatalogService
             'category' => $resolvedCategory,
             'severity' => $resolvedSeverity,
             'title' => $entry['title'] ?? $this->fallbackTitle($resolvedCode),
-            'description' => $entry['description'] ?? 'Событие требует проверки по журналам сервиса.',
+            'description' => $entry['description'] ?? $this->descriptionFallbackFromDetails($details),
             'recommendation' => $entry['recommendation'] ?? 'Проверьте детали алерта и состояние сервисов.',
             'node_related' => $this->resolveNodeRelated($details, $entry, $resolvedCode),
         ];
@@ -73,7 +73,13 @@ class AlertCatalogService
             return '';
         }
 
-        return preg_replace('/[^a-z0-9_\-]/', '_', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[^a-z0-9_\-]/', '_', $normalized) ?? $normalized;
+
+        if ($normalized === 'mqttbroker_down') {
+            return 'mqtt_broker_down';
+        }
+
+        return $normalized;
     }
 
     /**
@@ -311,6 +317,35 @@ class AlertCatalogService
         }
 
         return str_starts_with($code, 'node_error_') || $code === 'node_error';
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $details
+     */
+    private function descriptionFallbackFromDetails(?array $details): string
+    {
+        if (! is_array($details)) {
+            return 'Событие требует проверки по журналам сервиса.';
+        }
+
+        $annotations = $details['annotations'] ?? null;
+        if (is_array($annotations)) {
+            foreach (['description', 'summary', 'message'] as $key) {
+                $value = $annotations[$key] ?? null;
+                if (is_string($value) && trim($value) !== '') {
+                    return trim($value);
+                }
+            }
+        }
+
+        foreach (['message', 'description', 'reason', 'error_message'] as $key) {
+            $value = $details[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return 'Событие требует проверки по журналам сервиса.';
     }
 
     private function fallbackTitle(string $code): string

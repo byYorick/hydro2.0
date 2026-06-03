@@ -110,6 +110,7 @@ import {
   getAlertTitle,
   normalizeAlertStatus,
 } from '@/utils/alertMeta'
+import { isAutomationBlockingCode } from '@/utils/automationBlock'
 
 interface Props {
   alerts: Alert[]
@@ -117,6 +118,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  (e: 'policy-alert-resolved'): void
+}>()
 
 const { showToast } = useToast()
 
@@ -195,8 +200,12 @@ const resolveSelectedAlert = async (): Promise<void> => {
   resolveLoading.value = true
 
   try {
-    const updated = await api.alerts.acknowledge(selectedAlert.value.id)
-    applyResolved(selectedAlert.value.id, updated)
+    const resolvedAlert = selectedAlert.value
+    const updated = await api.alerts.acknowledge(resolvedAlert.id)
+    applyResolved(resolvedAlert.id, updated)
+    if (isAutomationBlockingCode(resolvedAlert.code)) {
+      emit('policy-alert-resolved')
+    }
     showToast('Алерт помечен как решённый', 'success', TOAST_TIMEOUT.NORMAL)
     selectedAlertId.value = null
   } catch (error) {

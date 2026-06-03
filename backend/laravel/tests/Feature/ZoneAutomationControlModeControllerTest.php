@@ -119,7 +119,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
             ->getJson("/api/zones/{$zone->id}/control-mode");
 
         $response->assertStatus(501)
-            ->assertJsonPath('code', 'UPSTREAM_NOT_SUPPORTED');
+            ->assertJsonPath('code', 'upstream_not_supported');
     }
 
     public function test_control_mode_update_propagates_upstream_business_conflict(): void

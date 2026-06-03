@@ -336,13 +336,16 @@ export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: stri
     }
   }
 
-  if (normalizedCode) {
-    return `Внутренняя ошибка системы (код: ${normalizedCode}).`
+  if (message) {
+    const asCode = normalizeErrorCode(message)
+    if (asCode && ERROR_MESSAGE_BY_CODE.has(asCode)) {
+      return ERROR_MESSAGE_BY_CODE.get(asCode) ?? null
+    }
+    return message
   }
 
-  if (message) {
-    // Нет перевода в каталоге — показываем исходный текст API/исключения (полезнее общей фразы).
-    return message
+  if (normalizedCode) {
+    return `Внутренняя ошибка системы (код: ${normalizedCode}).`
   }
 
   return fallback ?? null

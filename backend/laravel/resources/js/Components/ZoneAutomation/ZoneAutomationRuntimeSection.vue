@@ -115,11 +115,13 @@ interface Props {
   zoneId: number | null
   fallbackTanksCount?: number
   fallbackSystemType?: IrrigationSystem
+  automationStateRefreshSeq?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   fallbackTanksCount: 2,
   fallbackSystemType: 'drip',
+  automationStateRefreshSeq: 0,
 })
 
 const emit = defineEmits<{

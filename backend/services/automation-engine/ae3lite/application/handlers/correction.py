@@ -254,13 +254,9 @@ class CorrectionHandler(BaseStageHandler):
         )
         current_task = task
         if sensor_cmds:
-            result = await self._command_gateway.run_batch(
+            result = await self._run_command_batch_checked(
                 task=current_task, commands=sensor_cmds, now=now,
             )
-            if not result["success"]:
-                raise TaskExecutionError(
-                    str(result["error_code"]), str(result["error_message"]),
-                )
             current_task = result.get("task") or current_task
         next_corr = replace(corr, corr_step="corr_wait_stable")
         return StageOutcome(
@@ -1233,9 +1229,9 @@ class CorrectionHandler(BaseStageHandler):
                     channel=str(item["channel"]),
                     payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
                 ))
-            result = await self._command_gateway.run_batch(task=current_task, commands=tuple(batch_cmds), now=now)
-            if not result["success"]:
-                raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+            result = await self._run_command_batch_checked(
+                task=current_task, commands=tuple(batch_cmds), now=now,
+            )
             current_task = result.get("task") or current_task
             corr = replace(corr, ec_current_seq_index=len(seq))
         elif seq:
@@ -1258,9 +1254,9 @@ class CorrectionHandler(BaseStageHandler):
                     channel=str(item["channel"]),
                     payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
                 )
-                result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
-                if not result["success"]:
-                    raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+                result = await self._run_command_batch_checked(
+                    task=current_task, commands=(cmd,), now=now,
+                )
                 current_task = result.get("task") or current_task
 
                 next_idx = start_idx + 1
@@ -1285,9 +1281,9 @@ class CorrectionHandler(BaseStageHandler):
                 channel=corr.ec_channel,
                 payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
             )
-            result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
-            if not result["success"]:
-                raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+            result = await self._run_command_batch_checked(
+                task=current_task, commands=(cmd,), now=now,
+            )
             current_task = result.get("task") or current_task
 
         runtime = self._require_runtime_plan(plan=plan)
@@ -1425,9 +1421,9 @@ class CorrectionHandler(BaseStageHandler):
             channel=corr.ph_channel,
             payload={"cmd": "dose", "params": {"ml": corr.ph_amount_ml}},
         )
-        result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
-        if not result["success"]:
-            raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+        result = await self._run_command_batch_checked(
+            task=current_task, commands=(cmd,), now=now,
+        )
         current_task = result.get("task") or current_task
 
         runtime = self._require_runtime_plan(plan=plan)
@@ -1520,13 +1516,9 @@ class CorrectionHandler(BaseStageHandler):
                 plan=plan, cmd="deactivate_sensor_mode", params={},
             )
             if sensor_cmds:
-                result = await self._command_gateway.run_batch(
+                result = await self._run_command_batch_checked(
                     task=current_task, commands=sensor_cmds, now=now,
                 )
-                if not result["success"]:
-                    raise TaskExecutionError(
-                        str(result["error_code"]), str(result["error_message"]),
-                    )
                 current_task = result.get("task") or current_task
 
         next_corr = replace(corr, corr_step="corr_done")

@@ -4,7 +4,10 @@ import signal
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+from common.fastapi_http_errors import enrich_http_exception_content
 
 import state
 from command_routes import router as command_router
@@ -205,6 +208,17 @@ async def log_requests(request: Request, call_next):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="History Logger", lifespan=lifespan)
+
+    @app.exception_handler(HTTPException)
+    async def localized_http_exception_handler(
+        request: Request,
+        exc: HTTPException,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=enrich_http_exception_content(exc),
+        )
+
     app.middleware("http")(log_requests)
     app.include_router(system_router)
     app.include_router(command_router)

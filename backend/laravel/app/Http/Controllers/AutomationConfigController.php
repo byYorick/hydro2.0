@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Jobs\PublishNodeConfigJob;
 use App\Models\AutomationConfigVersion;
@@ -24,6 +25,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AutomationConfigController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigRegistry $registry,
@@ -56,10 +59,7 @@ class AutomationConfigController extends Controller
                 ),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -141,10 +141,7 @@ class AutomationConfigController extends Controller
                 ),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -173,10 +170,7 @@ class AutomationConfigController extends Controller
                 })->all(),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -193,11 +187,11 @@ class AutomationConfigController extends Controller
 
             $row = $this->findRevisionBySequence($scopeType, $scopeId, $namespace, $version);
             if ($row === null) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'REVISION_NOT_FOUND',
-                    'message' => "Revision {$version} not found",
-                ], Response::HTTP_NOT_FOUND);
+                return $this->localizedError(
+                    'revision_not_found',
+                    "Ревизия {$version} не найдена.",
+                    Response::HTTP_NOT_FOUND,
+                );
             }
 
             return response()->json([
@@ -205,10 +199,7 @@ class AutomationConfigController extends Controller
                 'data' => $this->serializeVersion($namespace, $row['version'], $row['sequence']),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -225,11 +216,11 @@ class AutomationConfigController extends Controller
 
             $row = $this->findRevisionBySequence($scopeType, $scopeId, $namespace, $version);
             if ($row === null) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'REVISION_NOT_FOUND',
-                    'message' => "Revision {$version} not found",
-                ], Response::HTTP_NOT_FOUND);
+                return $this->localizedError(
+                    'revision_not_found',
+                    "Ревизия {$version} не найдена.",
+                    Response::HTTP_NOT_FOUND,
+                );
             }
 
             $snapshotPayload = is_array($row['version']->payload) ? $row['version']->payload : [];
@@ -279,10 +270,7 @@ class AutomationConfigController extends Controller
                 ),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 
@@ -356,10 +344,7 @@ class AutomationConfigController extends Controller
                 ),
             ]);
         } catch (\InvalidArgumentException $exception) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $exception->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->localizedError('invalid_argument', $exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
 

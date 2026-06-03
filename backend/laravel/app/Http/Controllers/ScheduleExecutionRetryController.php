@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\AeTask;
 use App\Models\Zone;
@@ -25,6 +26,8 @@ use Illuminate\Http\Request;
  */
 class ScheduleExecutionRetryController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function __construct(
         private readonly ZoneAutomationIntentService $intents,
     ) {}
@@ -34,11 +37,7 @@ class ScheduleExecutionRetryController extends Controller
         $this->authorizeZoneAccess($request, $zone);
 
         if (preg_match('/^\d+$/', trim($executionId)) !== 1) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'VALIDATION_ERROR',
-                'message' => 'Некорректный execution_id',
-            ], 422);
+            return $this->localizedError('validation_error', 'Некорректный execution_id.', 422);
         }
 
         /** @var AeTask|null $task */
@@ -48,34 +47,30 @@ class ScheduleExecutionRetryController extends Controller
             ->first();
 
         if ($task === null) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'NOT_FOUND',
-                'message' => 'Execution not found',
-            ], 404);
+            return $this->localizedError('not_found', 'Выполнение не найдено.', 404);
         }
 
         $status = strtolower((string) $task->status);
         if (! in_array($status, ['failed', 'cancelled'], true)) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INVALID_STATE',
-                'message' => sprintf(
-                    'Retry разрешён только для failed/cancelled execution (текущий статус: %s)',
+            return $this->localizedError(
+                'invalid_state',
+                sprintf(
+                    'Retry разрешён только для failed/cancelled execution (текущий статус: %s).',
                     $status,
                 ),
-            ], 409);
+                409,
+            );
         }
 
         if ($task->task_type !== 'irrigation_start') {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'UNSUPPORTED_TASK_TYPE',
-                'message' => sprintf(
-                    'Retry поддерживается только для irrigation_start (получен: %s)',
+            return $this->localizedError(
+                'unsupported_task_type',
+                sprintf(
+                    'Retry поддерживается только для irrigation_start (получен: %s).',
                     $task->task_type,
                 ),
-            ], 422);
+                422,
+            );
         }
 
         $idempotencyKey = sprintf(
@@ -98,11 +93,11 @@ class ScheduleExecutionRetryController extends Controller
         );
 
         if ($intentId === null) {
-            return response()->json([
-                'status' => 'error',
-                'code' => 'INTENT_CONFLICT',
-                'message' => 'Не удалось создать intent для retry (возможно, уже существует активный intent для зоны)',
-            ], 409);
+            return $this->localizedError(
+                'intent_conflict',
+                'Не удалось создать intent для retry (возможно, уже существует активный intent для зоны).',
+                409,
+            );
         }
 
         return response()->json([

@@ -7,8 +7,15 @@ import {
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
 import type { AutomationState } from '@/types/Automation'
+import { hasExplicitControlMode } from '@/composables/zoneAutomationUtils'
 
 describe('automationStatusDisplay', () => {
+  it('hasExplicitControlMode отличает отсутствие поля от auto', () => {
+    expect(hasExplicitControlMode(undefined)).toBe(false)
+    expect(hasExplicitControlMode('')).toBe(false)
+    expect(hasExplicitControlMode('semi')).toBe(true)
+    expect(hasExplicitControlMode('auto')).toBe(true)
+  })
   it('не показывает 00:00 при нулевом elapsed', () => {
     expect(formatAutomationDuration(0)).toBe('')
     expect(buildProgressSummary({

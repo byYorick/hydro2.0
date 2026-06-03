@@ -189,6 +189,19 @@ generate-config-catalog:
 		python3 tools/generate_zone_correction_catalog.py; \
 	fi
 
+.PHONY: i18n-catalog-check i18n-catalog-fix
+i18n-catalog-check:
+	@echo "Checking i18n error/alert catalogs..."
+	@python3 backend/scripts/sync_i18n_catalogs.py --check
+	@python3 backend/scripts/audit_i18n_codes.py --check
+	@python3 backend/scripts/audit_phase2_api_i18n.py
+	@python3 backend/scripts/audit_phase4_i18n_coverage.py
+	@python3 backend/scripts/audit_phase5_firmware_i18n.py
+
+i18n-catalog-fix:
+	@python3 backend/scripts/build_node_error_catalog.py
+	@python3 backend/scripts/audit_i18n_codes.py --fix --sync
+
 .PHONY: check-config-catalog
 check-config-catalog:
 	@echo "CI guard: zone_correction_defaults.json vs zone_correction.v1.json..."
@@ -199,7 +212,7 @@ check-config-catalog:
 	fi
 
 .PHONY: protocol-check
-protocol-check: schemas-validate authority-check ae3-config-lint check-config-catalog
+protocol-check: schemas-validate authority-check ae3-config-lint check-config-catalog i18n-catalog-check
 	@echo "Running protocol contract tests..."
 	@./tools/check_runtime_schema_parity.sh
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short

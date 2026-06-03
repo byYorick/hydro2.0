@@ -7,17 +7,25 @@ import { useZoneAutomationScheduler } from '@/composables/useZoneAutomationSched
 
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 
-export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
+export interface ZoneAutomationTabDeps {
+  onControlModeChanged?: () => void
+}
+
+export function useZoneAutomationTab(props: ZoneAutomationTabProps, deps: ZoneAutomationTabDeps = {}) {
   const { showToast } = useToast()
   const { sendZoneCommand } = useCommands(showToast)
 
   const state = useZoneAutomationState(props, { sendZoneCommand, showToast })
   const api = useZoneAutomationApi(props, state, { showToast, sendZoneCommand })
-  const scheduler = useZoneAutomationScheduler(props, { showToast })
+  const scheduler = useZoneAutomationScheduler(props, {
+    showToast,
+    onControlModeChanged: deps.onControlModeChanged,
+  })
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
   onMounted(() => {
+    scheduler.hydrateControlModeFromProp()
     void api.hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
     void scheduler.fetchAutomationControlMode()
   })
@@ -61,6 +69,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     applyAutomationProfile: api.applyAutomationProfile,
     // Scheduler
     automationControlMode: scheduler.automationControlMode,
+    controlModeAvailable: scheduler.controlModeAvailable,
     allowedManualSteps: scheduler.allowedManualSteps,
     automationControlModeLoading: scheduler.automationControlModeLoading,
     automationControlModeSaving: scheduler.automationControlModeSaving,

@@ -31,7 +31,7 @@ sealed class AppError(
      * Ошибка авторизации (401, 403)
      */
     data class AuthError(
-        override val message: String = "Authentication failed"
+        override val message: String = "Ошибка авторизации",
     ) : AppError(message)
 
     /**
@@ -54,8 +54,8 @@ sealed class AppError(
      * Неизвестная ошибка
      */
     data class UnknownError(
-        override val message: String = "An unknown error occurred",
-        override val cause: Throwable? = null
+        override val message: String = "Произошла неизвестная ошибка",
+        override val cause: Throwable? = null,
     ) : AppError(message, cause)
 }
 
@@ -72,12 +72,12 @@ fun Throwable.toAppError(): AppError {
         is java.net.UnknownHostException,
         is java.net.SocketTimeoutException,
         is java.io.IOException -> AppError.NetworkError(
-            message = this.message ?: "Network error",
-            cause = this
+            message = this.message ?: "Ошибка сети",
+            cause = this,
         )
         else -> AppError.UnknownError(
-            message = this.message ?: "Unknown error",
-            cause = this
+            message = this.message ?: "Произошла неизвестная ошибка",
+            cause = this,
         )
     }
 }

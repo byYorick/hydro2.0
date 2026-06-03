@@ -72,17 +72,21 @@
       <ZoneAutomationTab
         v-else-if="activeTab === 'automation'"
         :zone-id="zoneId"
+        :zone-control-mode="zone?.control_mode ?? null"
         :targets="targets"
         :telemetry="telemetry"
         :active-grow-cycle="activeGrowCycle"
         :current-recipe-phase="activeGrowCycle?.currentPhase ?? null"
         :pump-calibration-save-seq="pumpCalibrationSaveSeq"
         :pump-calibration-run-seq="pumpCalibrationRunSeq"
+        :automation-state-refresh-seq="automationStateRefreshSeq"
         @open-pump-calibration="openPumpCalibrationModal"
+        @refresh-automation-state="onPolicyAlertResolved"
       />
       <ZoneSchedulerTab
         v-else-if="activeTab === 'scheduler'"
         :zone-id="zoneId"
+        :zone-control-mode="zone?.control_mode ?? null"
         :targets="targets"
         :telemetry="telemetry"
         :active-grow-cycle="activeGrowCycle"
@@ -99,6 +103,7 @@
         v-else-if="activeTab === 'alerts'"
         :alerts="alerts"
         :zone-id="zoneId"
+        @policy-alert-resolved="onPolicyAlertResolved"
       />
       <ZoneDevicesTab
         v-else-if="activeTab === 'devices'"
@@ -154,7 +159,8 @@
   </AppLayout>
 </template>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { router } from '@inertiajs/vue3';
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Tabs from "@/Components/Tabs.vue";
 import ZoneAutomationTab from "@/Pages/Zones/Tabs/ZoneAutomationTab.vue";
@@ -246,6 +252,13 @@ const {
  * `AlertPolicyService::POLICY_MANAGED_CODES`).
  */
 const automationBlock = computed(() => computeAutomationBlock(alerts.value));
+
+const automationStateRefreshSeq = ref(0);
+
+function onPolicyAlertResolved(): void {
+  automationStateRefreshSeq.value += 1;
+  router.reload({ only: ['alerts'], preserveUrl: true });
+}
 
 /**
  * true если phase_started_at + duration_hours/days < now.

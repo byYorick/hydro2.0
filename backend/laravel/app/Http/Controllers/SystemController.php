@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
 use App\Services\AutomationRuntimeConfigService;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\Schema;
 
 class SystemController extends Controller
 {
+    use PresentsLocalizedApiErrors;
+
     public function health()
     {
         // Проверяем аутентификацию через web guard (сессии) или через Sanctum (токены)
@@ -306,11 +309,7 @@ class SystemController extends Controller
 
             // Если нет пользователя и это не сервисный запрос, доступ запрещаем.
             if (! $user && ! $isServiceTokenRequest) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'UNAUTHENTICATED',
-                    'message' => 'Authentication required',
-                ], 401);
+                return $this->localizedError('unauthenticated', null, 401);
             }
 
             // Для сервисного запроса без user отдаем полную конфигурацию без user-based фильтра.
