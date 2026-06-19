@@ -152,6 +152,81 @@ class ActiveTaskStore
         }
     }
 
+    public function findLatestTerminalByScheduleKeyForScheduledRunAt(
+        string $scheduleKey,
+        string $runAtIso,
+    ): ?LaravelSchedulerActiveTask {
+        $scheduleKey = trim($scheduleKey);
+        $expectedRunAt = ScheduleSpecHelper::parseRunAt($runAtIso);
+        if ($scheduleKey === '' || $expectedRunAt === null) {
+            return null;
+        }
+
+        $expectedIso = SchedulerRuntimeHelper::toIso($expectedRunAt);
+
+        try {
+            $candidates = LaravelSchedulerActiveTask::query()
+                ->where('schedule_key', $scheduleKey)
+                ->whereIn('status', SchedulerConstants::TERMINAL_STATUSES)
+                ->whereNotNull('terminal_at')
+                ->orderByDesc('terminal_at')
+                ->orderByDesc('id')
+                ->limit(20)
+                ->get();
+
+            foreach ($candidates as $task) {
+                if (! $task instanceof LaravelSchedulerActiveTask) {
+                    continue;
+                }
+
+                $details = is_array($task->details) ? $task->details : [];
+                $scheduledFor = ScheduleSpecHelper::parseRunAt($details['scheduled_for'] ?? null);
+                if ($scheduledFor === null) {
+                    continue;
+                }
+
+                if (SchedulerRuntimeHelper::toIso($scheduledFor) === $expectedIso) {
+                    return $task;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to load terminal laravel scheduler task by schedule key and run_at', [
+                'schedule_key' => $scheduleKey,
+                'run_at' => $runAtIso,
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+        }
+
+        return null;
+    }
+
+    public function findLatestTerminalByScheduleKey(string $scheduleKey): ?LaravelSchedulerActiveTask
+    {
+        $scheduleKey = trim($scheduleKey);
+        if ($scheduleKey === '') {
+            return null;
+        }
+
+        try {
+            return LaravelSchedulerActiveTask::query()
+                ->where('schedule_key', $scheduleKey)
+                ->whereIn('status', SchedulerConstants::TERMINAL_STATUSES)
+                ->whereNotNull('terminal_at')
+                ->orderByDesc('terminal_at')
+                ->orderByDesc('id')
+                ->first();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to load terminal laravel scheduler task by schedule key', [
+                'schedule_key' => $scheduleKey,
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+
+            return null;
+        }
+    }
+
     public function findActiveByScheduleKey(string $scheduleKey, CarbonImmutable $now): ?LaravelSchedulerActiveTask
     {
         $scheduleKey = trim($scheduleKey);

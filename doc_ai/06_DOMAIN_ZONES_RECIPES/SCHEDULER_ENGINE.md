@@ -57,6 +57,21 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 - UI оператора: schedule workspace и timeline строятся из канонического состояния автоматизации, а не из удалённого Python task API.
 - Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **полив, освещение и diagnostics**; остальные запланированные типы перечисляются как non-executable, пока не реализован отдельный compat-path.
 
+### 3.1. Ручные расписания зоны (`zone_manual_schedules`)
+
+Операторские правила, дополняющие расписания из рецепта. CRUD: `GET/POST/PUT/DELETE /api/zones/{zone}/manual-schedules` (роли `agronomist`, `admin`). В workspace отдаются в `manual_schedules` и попадают в `plan.windows` с `origin=manual`.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `task_type` | string | `irrigation`, `lighting`, `diagnostics`, `ventilation`, `mist`, `solution_change` |
+| `schedule_kind` | string | `time` (HH:MM UTC), `interval` (≥60 с), `window` (start–end UTC), `once` (разово) |
+| `days_of_week` | jsonb | ISO 1=Пн … 7=Вс; `null`/`[]` = каждый день (для time/interval/window) |
+| `run_at` | timestamptz | Момент для `once` |
+| `last_dispatched_at` | timestamptz | Отметка успешного dispatch (`once` авто-выключается) |
+| `payload` | jsonb | Напр. `duration_sec` для полива |
+
+Время и дни недели — **UTC** (консистентно с Laravel scheduler-dispatch).
+
 ---
 
 ## 4. Правила для ИИ-агентов

@@ -3,6 +3,7 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Models\SchedulerLog;
+use App\Models\ZoneManualSchedule;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +29,7 @@ class SchedulerCycleOrchestrator
         private readonly ScheduleDispatcher $scheduleDispatcher,
         private readonly SchedulerCycleFinalizer $finalizer,
         private readonly ZoneScheduleItemBuilder $zoneScheduleItemBuilder,
+        private readonly ManualScheduleService $manualScheduleService,
         private readonly ActiveTaskPoller $activeTaskPoller,
         private readonly ActiveTaskStore $activeTaskStore,
         private readonly SchedulerMetricsStore $schedulerMetricsStore,
@@ -110,23 +112,29 @@ class SchedulerCycleOrchestrator
             }
 
             $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
+            $manualSchedulesByZone = $this->manualScheduleService->buildScheduleItemsForZones($zoneIds);
             $schedules = [];
             $zonesWithTargets = 0;
             $realNow = SchedulerRuntimeHelper::nowUtc();
 
             foreach ($zoneIds as $zoneId) {
+                $zoneHasSchedules = false;
                 $zonePayload = $effectiveTargetsByZone[$zoneId] ?? null;
-                if (! is_array($zonePayload)) {
-                    continue;
-                }
-                $targets = $zonePayload['targets'] ?? null;
-                if (! is_array($targets)) {
-                    continue;
+                $targets = is_array($zonePayload) ? ($zonePayload['targets'] ?? null) : null;
+                if (is_array($targets)) {
+                    foreach ($this->zoneScheduleItemBuilder->buildSchedulesForZone($zoneId, $targets, $realNow) as $schedule) {
+                        $schedules[] = $schedule;
+                        $zoneHasSchedules = true;
+                    }
                 }
 
-                $zonesWithTargets++;
-                foreach ($this->zoneScheduleItemBuilder->buildSchedulesForZone($zoneId, $targets, $realNow) as $schedule) {
+                foreach ($manualSchedulesByZone[$zoneId] ?? [] as $schedule) {
                     $schedules[] = $schedule;
+                    $zoneHasSchedules = true;
+                }
+
+                if ($zoneHasSchedules) {
+                    $zonesWithTargets++;
                 }
             }
             $lastRunByTaskName = $this->scheduleLoader->loadLastRunBatch(
@@ -148,6 +156,19 @@ class SchedulerCycleOrchestrator
             $zonesWithPendingTimeDispatch = [];
             /** @var array<int, bool> $zonesWithSuccessfulTimeDispatch */
             $zonesWithSuccessfulTimeDispatch = [];
+
+            $manualScheduleIds = [];
+            foreach ($schedules as $schedule) {
+                if ($schedule instanceof ScheduleItem && $schedule->manualScheduleId !== null) {
+                    $manualScheduleIds[] = $schedule->manualScheduleId;
+                }
+            }
+            $manualScheduleRowsById = $manualScheduleIds === []
+                ? collect()
+                : ZoneManualSchedule::query()
+                    ->whereIn('id', array_values(array_unique($manualScheduleIds)))
+                    ->get()
+                    ->keyBy('id');
 
             // Batch-prefetch busy status for schedule_keys not yet covered by
             // reconcilePendingActiveTasks() (limited to 500 rows). Without this,
@@ -268,10 +289,13 @@ class SchedulerCycleOrchestrator
                 $last = $zoneLast[$zoneId];
 
                 $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
-                $taskName = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
+                $taskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
 
                 if ($intervalSec > 0) {
-                    if ($this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)) {
+                    if (
+                        $this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)
+                        && ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)
+                    ) {
                         $executedKeys[$scheduleKey] = true;
                         $batchDispatchJobs[] = [
                             'zoneId' => $zoneId,
@@ -288,12 +312,115 @@ class SchedulerCycleOrchestrator
                     continue;
                 }
 
+                $runAtIso = $schedule->runAt;
+                if (is_string($runAtIso) && $runAtIso !== '') {
+                    $lastForOnce = $last;
+                    $manualOnceConsumed = false;
+
+                    if ($schedule->manualScheduleId !== null) {
+                        $manualRow = $manualScheduleRowsById->get($schedule->manualScheduleId);
+                        if ($manualRow instanceof ZoneManualSchedule && $manualRow->schedule_kind === 'once') {
+                            $runAt = ScheduleSpecHelper::parseRunAt($runAtIso);
+                            if (
+                                $manualRow->last_dispatched_at === null
+                                && $runAt instanceof CarbonImmutable
+                                && $runAt->lte($now)
+                                && $runAt->lte($last)
+                            ) {
+                                if ($this->activeTaskStore->findLatestTerminalByScheduleKeyForScheduledRunAt($scheduleKey, $runAtIso) !== null) {
+                                    $this->manualScheduleService->markDispatched($manualRow, $now);
+                                    $executedKeys[$scheduleKey] = true;
+                                    $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
+                                    $manualOnceConsumed = true;
+                                } elseif (
+                                    ! $this->activeTaskPoller->isScheduleBusy(
+                                        scheduleKey: $scheduleKey,
+                                        cfg: $cfg,
+                                        reconciledBusyness: $context->reconciledBusyness,
+                                        writeLog: function (string $taskName, string $status, array $details): void {
+                                            $this->writeSchedulerLog($taskName, $status, $details);
+                                        },
+                                    )
+                                ) {
+                                    $lastForOnce = $runAt->subSecond();
+                                }
+                            }
+                        }
+                    }
+
+                    if ($manualOnceConsumed) {
+                        continue;
+                    }
+
+                    if ($this->finalizer->onceReadyToDispatch($lastForOnce, $now, $runAtIso)) {
+                        $attemptedDispatches++;
+                        $dispatchResults = $this->scheduleDispatcher->dispatchBatch(
+                            jobs: [[
+                                'zoneId' => $zoneId,
+                                'schedule' => $schedule,
+                                'triggerTime' => ScheduleSpecHelper::parseRunAt($runAtIso) ?? $now,
+                                'scheduleKey' => $scheduleKey,
+                            ]],
+                            context: $context,
+                            writeLog: function (string $taskName, string $status, array $details): void {
+                                $this->writeSchedulerLog($taskName, $status, $details);
+                            },
+                        );
+                        $dispatchResult = $dispatchResults[0] ?? [
+                            'dispatched' => false,
+                            'retryable' => true,
+                            'reason' => 'dispatch_batch_result_missing',
+                        ];
+                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
+                        if ($dispatchResult['dispatched']) {
+                            $successfulDispatches++;
+                            $executedKeys[$scheduleKey] = true;
+                            $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
+                            if ($schedule->manualScheduleId !== null) {
+                                $manualRow = $manualScheduleRowsById->get($schedule->manualScheduleId);
+                                if ($manualRow instanceof ZoneManualSchedule) {
+                                    $this->manualScheduleService->markDispatched($manualRow, $now);
+                                }
+                            }
+                        } elseif ($dispatchResult['retryable']) {
+                            $zonesWithPendingTimeDispatch[$zoneId] = true;
+                        } else {
+                            $reason = (string) ($dispatchResult['reason'] ?? '');
+                            $isManualOnce = $schedule->manualScheduleId !== null;
+                            $nonConsumableReasons = ['ae3_task_type_not_supported', 'unsupported_task_type'];
+                            $shouldConsumeManualOnce = $isManualOnce
+                                && ! in_array($reason, $nonConsumableReasons, true);
+
+                            if ($shouldConsumeManualOnce) {
+                                $manualRow = $manualScheduleRowsById->get($schedule->manualScheduleId);
+                                if ($manualRow instanceof ZoneManualSchedule && $manualRow->schedule_kind === 'once') {
+                                    $this->manualScheduleService->markDispatched($manualRow, $now);
+                                }
+                                $executedKeys[$scheduleKey] = true;
+                                $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
+                            } elseif (! $isManualOnce) {
+                                $executedKeys[$scheduleKey] = true;
+                                $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
                 $flushBatchDispatchJobs();
 
                 $scheduleTime = $schedule->time;
                 if (is_string($scheduleTime) && $scheduleTime !== '') {
                     $crossings = $this->finalizer->scheduleCrossings($last, $now, $scheduleTime);
                     $plannedTriggers = $this->finalizer->applyCatchupPolicy($crossings, $now, $cfg['catchup_policy'], $cfg['catchup_max_windows']);
+                    $plannedTriggers = array_values(array_filter(
+                        $plannedTriggers,
+                        static fn (CarbonImmutable $triggerAt): bool => ScheduleSpecHelper::matchesDayOfWeek(
+                            $triggerAt,
+                            $schedule->daysOfWeek,
+                        ),
+                    ));
                     $hadDispatchSuccess = false;
                     $hadRetryableFailure = false;
                     $deferredByReplayBudget = false;
@@ -367,15 +494,17 @@ class SchedulerCycleOrchestrator
                     $desiredNow = $this->finalizer->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
                     $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
                     if ($desiredNow !== $desiredLast) {
-                        $batchDispatchJobs[] = [
-                            'zoneId' => $zoneId,
-                            'schedule' => $schedule,
-                            'triggerTime' => $now,
-                            'scheduleKey' => $scheduleKey,
-                            'taskType' => $taskType,
-                        ];
-                        if (count($batchDispatchJobs) >= $dispatchParallelism) {
-                            $flushBatchDispatchJobs();
+                        if (ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)) {
+                            $batchDispatchJobs[] = [
+                                'zoneId' => $zoneId,
+                                'schedule' => $schedule,
+                                'triggerTime' => $now,
+                                'scheduleKey' => $scheduleKey,
+                                'taskType' => $taskType,
+                            ];
+                            if (count($batchDispatchJobs) >= $dispatchParallelism) {
+                                $flushBatchDispatchJobs();
+                            }
                         }
                     }
                     $executedKeys[$scheduleKey] = true;

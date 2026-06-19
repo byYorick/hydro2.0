@@ -17,6 +17,7 @@ import type {
   ScheduleWorkspace,
   ScheduleWorkspaceResponse,
 } from '@/composables/zoneScheduleWorkspaceTypes'
+import { formatRelativeUtc } from '@/utils/manualSchedulePreview'
 
 export interface ZoneScheduleWorkspaceDeps {
   showToast: ToastHandler
@@ -95,6 +96,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
       .slice(0, 3)
   })
   const configOnlyLanes = computed<PlanLane[]>(() => lanes.value.filter((lane) => !lane.executable))
+  const manualSchedules = computed(() => workspace.value?.manual_schedules ?? [])
   const activeProcessLabels = computed<string[]>(() => {
     const current = automationState.value?.active_processes
     if (!current) return []
@@ -426,15 +428,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
   function formatRelativeTrigger(value: string | null | undefined): string {
     if (!value) return '—'
-    const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return '—'
-    const diffMinutes = Math.round((parsed.getTime() - Date.now()) / 60000)
-    if (diffMinutes <= 0) return 'сейчас'
-    if (diffMinutes < 60) return `через ${diffMinutes} мин`
-    const diffHours = Math.floor(diffMinutes / 60)
-    const remainMinutes = diffMinutes % 60
-    if (remainMinutes === 0) return `через ${diffHours} ч`
-    return `через ${diffHours} ч ${remainMinutes} мин`
+    return formatRelativeUtc(value)
   }
 
   function statusVariant(status: string | null | undefined): 'success' | 'warning' | 'danger' | 'info' | 'secondary' {
@@ -456,7 +450,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     const normalized = String(taskType ?? '').trim().toLowerCase()
     if (normalized === 'irrigation') return 'Полив'
     if (normalized === 'lighting') return 'Свет'
-    if (normalized === 'climate') return 'Климат'
+    if (normalized === 'climate' || normalized === 'ventilation') return 'Климат'
     if (normalized === 'solution_change') return 'Смена раствора'
     if (normalized === 'diagnostics') return 'Диагностика'
     if (normalized === 'mist') return 'Туман'
@@ -941,6 +935,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     executionCounters,
     nextExecutableWindows,
     configOnlyLanes,
+    manualSchedules,
     activeProcessLabels,
     attentionAlerts,
     attentionStatus,

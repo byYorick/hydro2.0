@@ -37,6 +37,57 @@ export interface PlanWindow {
   origin: string
   state: string
   mode: string
+  manual_schedule_id?: number | null
+}
+
+export interface ZoneManualSchedule {
+  id: number
+  zone_id: number
+  task_type: ManualScheduleTaskType
+  schedule_kind: ManualScheduleKind
+  time_at?: string | null
+  interval_sec?: number | null
+  window_start?: string | null
+  window_end?: string | null
+  days_of_week?: number[]
+  run_at?: string | null
+  last_dispatched_at?: string | null
+  payload?: Record<string, unknown>
+  label?: string | null
+  enabled: boolean
+  created_by?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  summary?: string
+}
+
+export type ManualScheduleTaskType =
+  | 'irrigation'
+  | 'lighting'
+  | 'diagnostics'
+  | 'ventilation'
+  | 'mist'
+  | 'solution_change'
+
+export type ManualScheduleKind = 'time' | 'interval' | 'window' | 'once'
+
+export interface ZoneManualSchedulePayload {
+  task_type: ManualScheduleTaskType
+  schedule_kind: ManualScheduleKind
+  time_at?: string
+  interval_sec?: number
+  window_start?: string
+  window_end?: string
+  days_of_week?: number[]
+  run_at?: string
+  payload?: { duration_sec?: number }
+  label?: string
+  enabled?: boolean
+}
+
+export interface ManualSchedulePreviewTrigger {
+  at: string
+  relativeLabel: string
 }
 
 export interface ExecutionLifecycleItem {
@@ -194,6 +245,7 @@ export interface ScheduleWorkspace {
   execution: ScheduleWorkspaceExecution
   /** Бакеты для swimlane-ленты. Бэк начнёт отдавать в Фазе 2; пока считается на фронте. */
   lanes_history?: LaneHistory[]
+  manual_schedules?: ZoneManualSchedule[]
 }
 
 export interface ScheduleWorkspaceResponse {

@@ -5,6 +5,8 @@ namespace Tests\Unit\AutomationScheduler;
 use App\Services\AutomationScheduler\ActiveTaskPoller;
 use App\Services\AutomationScheduler\ActiveTaskStore;
 use App\Services\AutomationScheduler\LightingScheduleParser;
+use App\Services\AutomationScheduler\ManualScheduleItemBuilder;
+use App\Services\AutomationScheduler\ManualScheduleService;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use App\Services\AutomationScheduler\ScheduleLoader;
 use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
@@ -48,6 +50,9 @@ class DispatchesAutomationSchedulesTest extends TestCase
             ),
             zoneScheduleItemBuilder: new ZoneScheduleItemBuilder(
                 lightingScheduleParser: new LightingScheduleParser,
+            ),
+            manualScheduleService: new ManualScheduleService(
+                itemBuilder: new ManualScheduleItemBuilder,
             ),
             activeTaskPoller: $activeTaskPoller,
             activeTaskStore: $activeTaskStore,

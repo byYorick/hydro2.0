@@ -20,6 +20,7 @@
       </div>
       <div class="flex justify-end gap-2">
         <Button
+          v-if="!hideDefaultCancel"
           variant="secondary"
           size="sm"
           @click="$emit('close')"
@@ -39,12 +40,14 @@ interface Props {
   open?: boolean
   title?: string
   size?: 'default' | 'large' | 'xlarge'
+  hideDefaultCancel?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
   open: false,
   title: '',
   size: 'default',
+  hideDefaultCancel: false,
 })
 
 defineEmits<{

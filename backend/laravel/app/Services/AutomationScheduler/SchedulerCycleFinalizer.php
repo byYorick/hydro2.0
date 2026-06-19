@@ -120,6 +120,16 @@ class SchedulerCycleFinalizer
         return $now >= $start || $now <= $end;
     }
 
+    public function onceReadyToDispatch(CarbonImmutable $last, CarbonImmutable $now, string $runAtIso): bool
+    {
+        $runAt = ScheduleSpecHelper::parseRunAt($runAtIso);
+        if ($runAt === null) {
+            return false;
+        }
+
+        return $runAt->gt($last) && $runAt->lte($now);
+    }
+
     public function persistZoneCursor(
         int $zoneId,
         CarbonImmutable $cursorAt,

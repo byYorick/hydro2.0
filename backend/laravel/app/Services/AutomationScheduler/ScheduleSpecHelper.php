@@ -2,8 +2,66 @@
 
 namespace App\Services\AutomationScheduler;
 
+use Carbon\CarbonImmutable;
+
 final class ScheduleSpecHelper
 {
+    /**
+     * @return array<int, int>
+     */
+    public static function normalizeDaysOfWeek(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        $raw = is_array($value) ? $value : [];
+        $normalized = [];
+        foreach ($raw as $day) {
+            if (! is_numeric($day)) {
+                continue;
+            }
+            $iso = (int) $day;
+            if ($iso >= 1 && $iso <= 7) {
+                $normalized[$iso] = $iso;
+            }
+        }
+
+        ksort($normalized);
+
+        return array_values($normalized);
+    }
+
+    /**
+     * @param  array<int, int>  $daysOfWeek  ISO 1=Mon … 7=Sun; пустой = каждый день
+     */
+    public static function matchesDayOfWeek(CarbonImmutable $moment, array $daysOfWeek): bool
+    {
+        if ($daysOfWeek === []) {
+            return true;
+        }
+
+        return in_array($moment->isoWeekday(), $daysOfWeek, true);
+    }
+
+    public static function parseRunAt(mixed $value): ?CarbonImmutable
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $candidate = trim((string) $value);
+        if ($candidate === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($candidate, 'UTC')->utc();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /**
      * @return array<int, string>
      */

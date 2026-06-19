@@ -25,4 +25,28 @@ final class SchedulerRuntimeHelper
     {
         return sprintf('%s_%s_zone_%d', SchedulerConstants::TASK_NAME_PREFIX, $taskType, $zoneId);
     }
+
+    public static function intervalTaskLogName(int $zoneId, string $taskType, ?int $manualScheduleId = null): string
+    {
+        if ($manualScheduleId !== null && $manualScheduleId > 0) {
+            return sprintf(
+                '%s_%s_manual_%d_zone_%d',
+                SchedulerConstants::TASK_NAME_PREFIX,
+                strtolower(trim($taskType)),
+                $manualScheduleId,
+                $zoneId,
+            );
+        }
+
+        return self::scheduleTaskLogName($zoneId, $taskType);
+    }
+
+    public static function intervalTaskLogNameForSchedule(ScheduleItem $schedule): string
+    {
+        return self::intervalTaskLogName(
+            zoneId: $schedule->zoneId,
+            taskType: $schedule->taskType,
+            manualScheduleId: $schedule->manualScheduleId,
+        );
+    }
 }

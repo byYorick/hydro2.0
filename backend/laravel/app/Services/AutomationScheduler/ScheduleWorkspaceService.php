@@ -14,6 +14,7 @@ class ScheduleWorkspaceService
     public function __construct(
         private readonly ScheduleLoader $scheduleLoader,
         private readonly ZoneScheduleItemBuilder $zoneScheduleItemBuilder,
+        private readonly ManualScheduleService $manualScheduleService,
         private readonly ExecutionRunReadModel $executionRunReadModel,
         private readonly AutomationRuntimeConfigService $runtimeConfig,
     ) {}
@@ -34,6 +35,9 @@ class ScheduleWorkspaceService
         $schedules = $targets !== []
             ? $this->zoneScheduleItemBuilder->buildSchedulesForZone($zone->id, $targets, $now)
             : [];
+        foreach ($this->manualScheduleService->buildScheduleItemsForZone($zone->id) as $manualSchedule) {
+            $schedules[] = $manualSchedule;
+        }
 
         $lastRunByTaskName = $this->scheduleLoader->loadLastRunBatch(
             $this->scheduleLoader->collectIntervalTaskNames($schedules)
@@ -63,6 +67,7 @@ class ScheduleWorkspaceService
                 'counters' => $this->executionRunReadModel->countersForZone($zone->id),
                 'latest_failure' => $this->executionRunReadModel->latestFailureForZone($zone->id),
             ],
+            'manual_schedules' => $this->manualScheduleService->listForZone($zone->id),
         ];
     }
 
@@ -108,9 +113,12 @@ class ScheduleWorkspaceService
                     'label' => $this->taskTypeLabel($schedule->taskType),
                     'schedule_key' => $schedule->scheduleKey,
                     'trigger_at' => SchedulerRuntimeHelper::toIso($triggerAt),
-                    'origin' => 'effective_targets',
+                    'origin' => is_string($schedule->payload['origin'] ?? null)
+                        ? (string) $schedule->payload['origin']
+                        : 'effective_targets',
                     'state' => 'planned',
                     'mode' => $this->scheduleMode($schedule),
+                    'manual_schedule_id' => $schedule->manualScheduleId,
                 ];
             }
         }
@@ -132,8 +140,12 @@ class ScheduleWorkspaceService
         CarbonImmutable $now,
         CarbonImmutable $horizonEnd,
     ): array {
+        if ($schedule->runAt !== null) {
+            return $this->futureOnceTriggers($schedule->runAt, $now, $horizonEnd);
+        }
+
         if ($schedule->time !== null) {
-            return $this->futureDailyTriggers($schedule->time, $now, $horizonEnd);
+            return $this->futureDailyTriggers($schedule->time, $schedule->daysOfWeek, $now, $horizonEnd);
         }
 
         if ($schedule->intervalSec > 0 && $schedule->startTime !== null && $schedule->endTime !== null) {
@@ -142,12 +154,17 @@ class ScheduleWorkspaceService
 
         if ($schedule->intervalSec > 0) {
             return $this->futureIntervalTriggers(
-                taskName: SchedulerRuntimeHelper::scheduleTaskLogName($schedule->zoneId, $schedule->taskType),
+                taskName: SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule),
                 intervalSec: $schedule->intervalSec,
                 lastRunByTaskName: $lastRunByTaskName,
                 now: $now,
                 horizonEnd: $horizonEnd,
+                daysOfWeek: $schedule->daysOfWeek,
             );
+        }
+
+        if ($schedule->startTime !== null && $schedule->endTime !== null) {
+            return $this->futureWindowBoundaryTriggers($schedule, $now, $horizonEnd);
         }
 
         return [];
@@ -156,8 +173,26 @@ class ScheduleWorkspaceService
     /**
      * @return array<int, CarbonImmutable>
      */
-    private function futureDailyTriggers(string $time, CarbonImmutable $now, CarbonImmutable $horizonEnd): array
+    private function futureOnceTriggers(string $runAtIso, CarbonImmutable $now, CarbonImmutable $horizonEnd): array
     {
+        $runAt = ScheduleSpecHelper::parseRunAt($runAtIso);
+        if ($runAt === null || $runAt->lt($now) || $runAt->gt($horizonEnd)) {
+            return [];
+        }
+
+        return [$runAt];
+    }
+
+    /**
+     * @param  array<int, int>  $daysOfWeek
+     * @return array<int, CarbonImmutable>
+     */
+    private function futureDailyTriggers(
+        string $time,
+        array $daysOfWeek,
+        CarbonImmutable $now,
+        CarbonImmutable $horizonEnd,
+    ): array {
         $triggers = [];
         for ($cursor = $now->startOfDay(); $cursor->lte($horizonEnd->startOfDay()); $cursor = $cursor->addDay()) {
             $candidate = CarbonImmutable::createFromFormat(
@@ -170,6 +205,10 @@ class ScheduleWorkspaceService
                 continue;
             }
 
+            if (! ScheduleSpecHelper::matchesDayOfWeek($candidate, $daysOfWeek)) {
+                continue;
+            }
+
             $triggers[] = $candidate;
         }
 
@@ -178,6 +217,7 @@ class ScheduleWorkspaceService
 
     /**
      * @param  array<string, CarbonImmutable>  $lastRunByTaskName
+     * @param  array<int, int>  $daysOfWeek
      * @return array<int, CarbonImmutable>
      */
     private function futureIntervalTriggers(
@@ -186,6 +226,7 @@ class ScheduleWorkspaceService
         array $lastRunByTaskName,
         CarbonImmutable $now,
         CarbonImmutable $horizonEnd,
+        array $daysOfWeek = [],
     ): array {
         if ($intervalSec <= 0) {
             return [];
@@ -207,10 +248,54 @@ class ScheduleWorkspaceService
 
         $triggers = [];
         for ($cursor = $nextAt; $cursor->lte($horizonEnd); $cursor = $cursor->addSeconds($intervalSec)) {
-            if ($cursor->gte($now)) {
+            if ($cursor->gte($now) && ScheduleSpecHelper::matchesDayOfWeek($cursor, $daysOfWeek)) {
                 $triggers[] = $cursor;
             }
         }
+
+        return $triggers;
+    }
+
+    /**
+     * @return array<int, CarbonImmutable>
+     */
+    private function futureWindowBoundaryTriggers(
+        ScheduleItem $schedule,
+        CarbonImmutable $now,
+        CarbonImmutable $horizonEnd,
+    ): array {
+        $triggers = [];
+        for ($day = $now->startOfDay(); $day->lte($horizonEnd->startOfDay()); $day = $day->addDay()) {
+            if (! ScheduleSpecHelper::matchesDayOfWeek($day, $schedule->daysOfWeek)) {
+                continue;
+            }
+
+            foreach ([$schedule->startTime, $schedule->endTime] as $index => $timeSpec) {
+                if (! is_string($timeSpec) || $timeSpec === '') {
+                    continue;
+                }
+                $candidate = CarbonImmutable::createFromFormat(
+                    'Y-m-d H:i:s',
+                    $day->toDateString().' '.$timeSpec,
+                    'UTC',
+                );
+                if ($index === 1 && is_string($schedule->startTime) && is_string($schedule->endTime)) {
+                    $startCandidate = CarbonImmutable::createFromFormat(
+                        'Y-m-d H:i:s',
+                        $day->toDateString().' '.$schedule->startTime,
+                        'UTC',
+                    );
+                    if ($candidate->lte($startCandidate)) {
+                        $candidate = $candidate->addDay();
+                    }
+                }
+                if ($candidate->gte($now) && $candidate->lte($horizonEnd)) {
+                    $triggers[] = $candidate;
+                }
+            }
+        }
+
+        usort($triggers, static fn (CarbonImmutable $a, CarbonImmutable $b): int => $a <=> $b);
 
         return $triggers;
     }
@@ -241,6 +326,10 @@ class ScheduleWorkspaceService
 
             for ($cursor = $windowStart; $cursor->lte($windowEnd); $cursor = $cursor->addSeconds($schedule->intervalSec)) {
                 if ($cursor->lt($now) || $cursor->gt($horizonEnd)) {
+                    continue;
+                }
+
+                if (! ScheduleSpecHelper::matchesDayOfWeek($cursor, $schedule->daysOfWeek)) {
                     continue;
                 }
 
@@ -381,6 +470,9 @@ class ScheduleWorkspaceService
 
     private function scheduleMode(ScheduleItem $schedule): string
     {
+        if ($schedule->runAt !== null) {
+            return 'once';
+        }
         if ($schedule->intervalSec > 0 && $schedule->startTime !== null && $schedule->endTime !== null) {
             return 'window_interval';
         }

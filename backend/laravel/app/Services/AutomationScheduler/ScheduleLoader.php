@@ -194,7 +194,7 @@ class ScheduleLoader
                 continue;
             }
 
-            $taskNames[] = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
+            $taskNames[] = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
         }
 
         return array_values(array_unique($taskNames));

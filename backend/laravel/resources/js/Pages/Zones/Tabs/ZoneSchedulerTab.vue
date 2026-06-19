@@ -79,6 +79,18 @@
       </template>
     </CockpitLayout>
 
+    <ManualSchedulesSection
+      class="mx-2 mb-3 md:mx-3"
+      :zone-id="zoneId"
+      :schedules="manualSchedules"
+      :loading="loading"
+      :can-manage="canManageManualSchedules"
+      :lane-label="laneLabel"
+      :executable-task-types="workspace?.capabilities?.executable_task_types ?? []"
+      :plan-windows="workspace?.plan?.windows ?? []"
+      @changed="refreshWorkspace"
+    />
+
     <SchedulerDiagnostics
       :can-diagnose="canDiagnose"
       :diagnostics-available="Boolean(workspace?.capabilities?.diagnostics_available)"
@@ -116,12 +128,13 @@ import KpiRow from '@/Components/Scheduler/Cockpit/KpiRow.vue'
 import SwimlaneTimeline from '@/Components/Scheduler/Cockpit/SwimlaneTimeline.vue'
 import RecentRunsTable from '@/Components/Scheduler/Cockpit/RecentRunsTable.vue'
 import CausalChainPanel from '@/Components/Scheduler/Cockpit/CausalChainPanel.vue'
+import ManualSchedulesSection from '@/Components/Scheduler/ManualSchedulesSection.vue'
 import { api } from '@/services/api'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
 const { showToast } = useToast()
-const { canDiagnose } = useRole()
+const { canDiagnose, role } = useRole()
 const {
   horizon,
   workspace,
@@ -136,6 +149,7 @@ const {
   executionCounters,
   nextExecutableWindows,
   configOnlyLanes,
+  manualSchedules,
   attentionAlerts,
   attentionStatus,
   fetchWorkspace,
@@ -158,6 +172,8 @@ const {
 } = useZoneScheduleWorkspace(props, { showToast })
 
 const zoneId = computed(() => props.zoneId)
+
+const canManageManualSchedules = computed(() => role.value === 'agronomist' || role.value === 'admin')
 
 const lanesHistory = computed<LaneHistory[]>(() => {
   if (workspace.value?.lanes_history?.length) {

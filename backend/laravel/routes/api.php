@@ -34,6 +34,7 @@ use App\Http\Controllers\ScheduleExecutionController;
 use App\Http\Controllers\ScheduleExecutionRetryController;
 use App\Http\Controllers\SchedulerMetricsController;
 use App\Http\Controllers\ScheduleWorkspaceController;
+use App\Http\Controllers\ZoneManualScheduleController;
 use App\Http\Controllers\SensorCalibrationController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SetupWizardController;
@@ -388,6 +389,13 @@ Route::middleware([
     Route::post('zones/{zone}/start-irrigation', [ZoneAutomationStartIrrigationController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/schedule-workspace', [ScheduleWorkspaceController::class, 'show']);
+    Route::get('zones/{zone}/manual-schedules', [ZoneManualScheduleController::class, 'index']);
+    Route::post('zones/{zone}/manual-schedules', [ZoneManualScheduleController::class, 'store'])
+        ->middleware('role:admin,agronomist');
+    Route::put('zones/{zone}/manual-schedules/{manualSchedule}', [ZoneManualScheduleController::class, 'update'])
+        ->middleware('role:admin,agronomist');
+    Route::delete('zones/{zone}/manual-schedules/{manualSchedule}', [ZoneManualScheduleController::class, 'destroy'])
+        ->middleware('role:admin,agronomist');
     Route::get('zones/{zone}/executions/{executionId}', [ScheduleExecutionController::class, 'show']);
     Route::post('zones/{zone}/executions/{executionId}/retry', [ScheduleExecutionRetryController::class, 'retry'])
         ->middleware('role:operator,admin,agronomist,engineer');

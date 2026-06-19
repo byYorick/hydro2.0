@@ -41,4 +41,30 @@ class ScheduleItemTest extends TestCase
 
         new ScheduleItem(zoneId: 0, taskType: 'lighting');
     }
+
+    public function test_schedule_key_appends_days_suffix_only_when_days_set(): void
+    {
+        $plain = new ScheduleItem(zoneId: 1, taskType: 'irrigation', time: '08:00:00');
+        $withDays = new ScheduleItem(zoneId: 1, taskType: 'irrigation', time: '08:00:00', daysOfWeek: [1, 3]);
+
+        $this->assertSame(
+            'zone:1|type:irrigation|time=08:00:00|start=None|end=None|interval=None',
+            $plain->scheduleKey,
+        );
+        $this->assertStringEndsWith('|days=1,3', $withDays->scheduleKey);
+    }
+
+    public function test_schedule_key_is_stable_for_manual_schedules(): void
+    {
+        $plain = new ScheduleItem(
+            zoneId: 2,
+            taskType: 'lighting',
+            manualScheduleId: 9,
+            time: '08:00:00',
+            intervalSec: 3600,
+            runAt: '2026-06-20T12:00:00Z',
+        );
+
+        $this->assertSame('zone:2|manual:9', $plain->scheduleKey);
+    }
 }

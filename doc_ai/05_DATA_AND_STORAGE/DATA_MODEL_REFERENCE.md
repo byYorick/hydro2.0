@@ -95,6 +95,32 @@ zones_uid_unique
 zones_automation_runtime_idx
 ```
 
+## 2.2.1. zone_manual_schedules
+
+Ручные расписания зоны (дополняют effective targets рецепта). Управление: REST `/api/zones/{zone}/manual-schedules`.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones ON DELETE CASCADE
+task_type VARCHAR(64)          -- irrigation|lighting|diagnostics|ventilation|mist|solution_change
+schedule_kind VARCHAR(16)      -- time|interval|window|once
+time_at TIME NULL
+interval_sec INTEGER NULL
+window_start TIME NULL
+window_end TIME NULL
+days_of_week JSONB NULL          -- ISO 1=Mon..7=Sun; null/[] = every day
+run_at TIMESTAMPTZ NULL          -- для once
+last_dispatched_at TIMESTAMPTZ NULL
+payload JSONB DEFAULT '{}'
+label VARCHAR(255) NULL
+enabled BOOLEAN DEFAULT true
+created_by BIGINT NULL FK -> users
+created_at
+updated_at
+```
+
+Индексы: `zone_manual_schedules_zone_enabled_idx`, `zone_manual_schedules_zone_task_idx`.
+
 ## 2.3. zone_config_changes (Phase 5)
 
 Audit trail всех правок конфигурации зоны.

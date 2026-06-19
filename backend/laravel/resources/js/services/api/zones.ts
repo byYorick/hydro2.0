@@ -12,7 +12,8 @@ import type {
   SensorCalibrationOverview,
   SensorCalibrationStartResult,
 } from '@/types/SensorCalibration'
-import { apiGet, apiPost, apiPostVoid, apiPut } from './_client'
+import type { ZoneManualSchedulePayload } from '@/composables/zoneScheduleWorkspaceTypes'
+import { apiGet, apiPost, apiPostVoid, apiPut, apiDelete } from './_client'
 
 export interface ZoneCreatePayload {
   name: string
@@ -182,6 +183,25 @@ export const zonesApi = {
 
   schedulerDiagnostics<T = unknown>(zoneId: number): Promise<T> {
     return apiGet<T>(`/zones/${zoneId}/scheduler-diagnostics`)
+  },
+
+  createManualSchedule<T = unknown>(
+    zoneId: number,
+    payload: ZoneManualSchedulePayload,
+  ): Promise<T> {
+    return apiPost<T>(`/zones/${zoneId}/manual-schedules`, payload, { skipErrorToast: true })
+  },
+
+  updateManualSchedule<T = unknown>(
+    zoneId: number,
+    scheduleId: number,
+    payload: Partial<ZoneManualSchedulePayload>,
+  ): Promise<T> {
+    return apiPut<T>(`/zones/${zoneId}/manual-schedules/${scheduleId}`, payload, { skipErrorToast: true })
+  },
+
+  deleteManualSchedule(zoneId: number, scheduleId: number): Promise<void> {
+    return apiDelete<void>(`/zones/${zoneId}/manual-schedules/${scheduleId}`, { skipErrorToast: true })
   },
 
   // ─── Control mode / manual steps ─────────────────────────────────────────
