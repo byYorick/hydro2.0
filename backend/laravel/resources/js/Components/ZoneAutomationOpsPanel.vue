@@ -47,52 +47,44 @@
       </div>
     </div>
 
-    <!-- Тело: быстрые команды + ручные шаги -->
+    <!-- Тело: ручное управление + workflow steps -->
     <div class="grid gap-4 xl:grid-cols-2">
-      <!-- Быстрые команды -->
+      <!-- Ручное управление -->
       <div class="space-y-2">
         <p class="text-xs text-[color:var(--text-muted)]">
-          Операционные команды
+          Ручное управление
         </p>
-        <div class="grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
+        <div class="grid gap-2 grid-cols-1 sm:grid-cols-3">
           <Button
             size="sm"
-            :disabled="!canOperateAutomation || quickActions.irrigation"
-            @click="$emit('manual-irrigation')"
+            :disabled="!canOperateAutomation || irrigationActionLoading"
+            @click="$emit('start-irrigation')"
           >
-            {{ quickActions.irrigation ? 'Отправка...' : 'Запустить полив' }}
+            {{ irrigationActionLoading ? 'Отправка...' : 'Запустить полив' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || irrigationActionLoading"
+            @click="$emit('force-irrigation')"
+          >
+            {{ irrigationActionLoading ? 'Отправка...' : 'Принудительный полив' }}
           </Button>
           <Button
             size="sm"
             variant="secondary"
-            :disabled="!canOperateAutomation || quickActions.lighting"
-            @click="$emit('manual-lighting')"
+            :disabled="!canOperateAutomation || diagnosticsActionLoading"
+            @click="$emit('run-diagnostics')"
           >
-            {{ quickActions.lighting ? 'Отправка...' : 'Применить свет' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || quickActions.ph"
-            @click="$emit('manual-ph')"
-          >
-            {{ quickActions.ph ? 'Отправка...' : 'Дать target pH' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || quickActions.ec"
-            @click="$emit('manual-ec')"
-          >
-            {{ quickActions.ec ? 'Отправка...' : 'Дать target EC' }}
+            {{ diagnosticsActionLoading ? 'Отправка...' : 'Диагностика' }}
           </Button>
         </div>
       </div>
 
-      <!-- Ручные шаги -->
+      <!-- Ручные шаги workflow -->
       <div class="space-y-2">
         <p class="text-xs text-[color:var(--text-muted)]">
-          Ручные шаги:
+          Ручные шаги workflow:
           <span
             v-if="automationControlMode === 'auto'"
             class="text-[color:var(--text-dim)]"
@@ -119,9 +111,14 @@
         </div>
         <p
           v-else
-          class="text-xs text-[color:var(--text-dim)]"
+          class="text-xs text-[color:var(--text-dim)] leading-relaxed"
         >
-          Для текущей фазы нет доступных ручных шагов.
+          <template v-if="manualStepsIdleHint">
+            {{ manualStepsIdleHint }}
+          </template>
+          <template v-else>
+            Для текущей стадии workflow нет доступных ручных шагов.
+          </template>
         </p>
       </div>
     </div>
@@ -141,17 +138,9 @@ import {
 
 type ModeValue = 'auto' | 'semi' | 'manual'
 
-interface QuickActionsState {
-  irrigation: boolean
-  lighting: boolean
-  ph: boolean
-  ec: boolean
-}
-
 interface Props {
   canOperateAutomation: boolean
   userRole: string
-  quickActions: QuickActionsState
   automationControlMode: AutomationControlMode
   controlModeAvailable: AutomationControlMode[]
   allowedManualSteps: AutomationManualStep[]
@@ -160,9 +149,18 @@ interface Props {
   manualStepLoading: Record<AutomationManualStep, boolean>
   pendingControlModeValue: ModeValue | null
   automationStateMetaLabel: string | null
+  irrigationActionLoading?: boolean
+  diagnosticsActionLoading?: boolean
+  currentStage?: string | null
+  workflowPhase?: string | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  irrigationActionLoading: false,
+  diagnosticsActionLoading: false,
+  currentStage: null,
+  workflowPhase: null,
+})
 
 const controlModeLabels = CONTROL_MODE_LABELS
 
@@ -187,10 +185,9 @@ function modeDisabledTitle(mode: AutomationControlMode): string | undefined {
 }
 
 defineEmits<{
-  (e: 'manual-irrigation'): void
-  (e: 'manual-lighting'): void
-  (e: 'manual-ph'): void
-  (e: 'manual-ec'): void
+  (e: 'start-irrigation'): void
+  (e: 'force-irrigation'): void
+  (e: 'run-diagnostics'): void
   (e: 'select-mode', mode: ModeValue): void
   (e: 'run-manual-step', step: AutomationManualStep): void
 }>()
@@ -199,12 +196,10 @@ const MANUAL_STEP_LABELS: Record<AutomationManualStep, string> = {
   clean_fill_start: 'Набрать чистую воду',
   clean_fill_stop: 'Стоп набор чистой',
   solution_fill_start: 'Набрать раствор',
-  force_solution_fill_start: 'Форс: начать раствор (пропустить проверку)',
+  force_solution_fill_start: 'Форс: начать раствор',
   solution_fill_stop: 'Стоп набор раствора',
-  prepare_recirculation_start: 'Старт рециркуляции setup',
   prepare_recirculation_stop: 'Стоп рециркуляции setup',
   irrigation_stop: 'Стоп полива',
-  irrigation_recovery_start: 'Старт рециркуляции полива',
   irrigation_recovery_stop: 'Стоп рециркуляции полива',
 }
 
@@ -214,10 +209,8 @@ const STEP_VARIANTS: Record<AutomationManualStep, 'secondary' | 'outline'> = {
   solution_fill_start: 'secondary',
   force_solution_fill_start: 'outline',
   solution_fill_stop: 'outline',
-  prepare_recirculation_start: 'secondary',
   prepare_recirculation_stop: 'outline',
   irrigation_stop: 'outline',
-  irrigation_recovery_start: 'secondary',
   irrigation_recovery_stop: 'outline',
 }
 
@@ -227,5 +220,20 @@ const visibleManualSteps = computed(() => {
     label: MANUAL_STEP_LABELS[code],
     variant: STEP_VARIANTS[code],
   }))
+})
+
+const manualStepsIdleHint = computed(() => {
+  if (props.automationControlMode === 'auto') {
+    return null
+  }
+  const phase = String(props.workflowPhase ?? '').trim().toLowerCase()
+  const stage = String(props.currentStage ?? '').trim()
+  if (phase === 'idle' && !stage) {
+    return 'Нет активной задачи AE3. В manual/semi шаги появляются после запуска workflow — нажмите «Диагностика».'
+  }
+  if (!stage) {
+    return 'Стадия workflow не определена. Дождитесь обновления состояния или запустите «Диагностика».'
+  }
+  return null
 })
 </script>

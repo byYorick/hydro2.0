@@ -5,12 +5,6 @@ import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
 const baseProps = {
   canOperateAutomation: true,
   userRole: 'agronomist',
-  quickActions: {
-    irrigation: false,
-    lighting: false,
-    ph: false,
-    ec: false,
-  },
   automationControlMode: 'semi' as const,
   controlModeAvailable: ['auto', 'semi', 'manual'] as const,
   allowedManualSteps: [] as const,
@@ -22,10 +16,8 @@ const baseProps = {
     solution_fill_start: false,
     force_solution_fill_start: false,
     solution_fill_stop: false,
-    prepare_recirculation_start: false,
     prepare_recirculation_stop: false,
     irrigation_stop: false,
-    irrigation_recovery_start: false,
     irrigation_recovery_stop: false,
   },
   pendingControlModeValue: null,
@@ -65,5 +57,95 @@ describe('ZoneAutomationOpsPanel', () => {
     const manualButton = wrapper.findAll('button').find((btn) => btn.text().includes('Ручной'))
     expect(manualButton).toBeDefined()
     expect(manualButton?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('эмитит start-irrigation и force-irrigation для операционных кнопок полива', async () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, { props: baseProps })
+
+    const startButton = wrapper.findAll('button').find((btn) => btn.text() === 'Запустить полив')
+    const forceButton = wrapper.findAll('button').find((btn) => btn.text() === 'Принудительный полив')
+    expect(startButton).toBeDefined()
+    expect(forceButton).toBeDefined()
+
+    await startButton!.trigger('click')
+    await forceButton!.trigger('click')
+
+    expect(wrapper.emitted('start-irrigation')).toHaveLength(1)
+    expect(wrapper.emitted('force-irrigation')).toHaveLength(1)
+  })
+
+  it('блокирует кнопки полива во время выполнения команды', () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: { ...baseProps, irrigationActionLoading: true },
+    })
+
+    const irrigationButtons = wrapper
+      .findAll('button')
+      .filter((btn) => btn.text() === 'Отправка...')
+    expect(irrigationButtons.length).toBeGreaterThanOrEqual(2)
+    irrigationButtons.forEach((btn) => {
+      expect(btn.attributes('disabled')).toBeDefined()
+    })
+  })
+
+  it('эмитит run-diagnostics для кнопки диагностики', async () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, { props: baseProps })
+
+    const diagnosticsButton = wrapper.findAll('button').find((btn) => btn.text() === 'Диагностика')
+    expect(diagnosticsButton).toBeDefined()
+
+    await diagnosticsButton!.trigger('click')
+    expect(wrapper.emitted('run-diagnostics')).toHaveLength(1)
+  })
+
+  it('не показывает управление циклом — оно во вкладке «Цикл»', () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, { props: baseProps })
+    expect(wrapper.text()).not.toContain('Управление циклом')
+    expect(wrapper.text()).not.toContain('Пауза')
+    expect(wrapper.text()).not.toContain('Прервать цикл')
+  })
+
+  it('показывает подсказку про Диагностика когда manual без активной задачи', () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: {
+        ...baseProps,
+        automationControlMode: 'manual',
+        workflowPhase: 'idle',
+        currentStage: null,
+      },
+    })
+
+    expect(wrapper.text()).toContain('Диагностика')
+    expect(wrapper.text()).not.toContain('Для текущей стадии workflow нет доступных ручных шагов.')
+  })
+
+  it('выводит manual-step из allowed_manual_steps', async () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: {
+        ...baseProps,
+        allowedManualSteps: ['clean_fill_start', 'irrigation_stop'],
+      },
+    })
+
+    expect(wrapper.text()).toContain('Набрать чистую воду')
+    expect(wrapper.text()).toContain('Стоп полива')
+
+    const startButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
+    await startButton!.trigger('click')
+    expect(wrapper.emitted('run-manual-step')?.[0]).toEqual(['clean_fill_start'])
+  })
+
+  it('блокирует manual-step в режиме auto', () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: {
+        ...baseProps,
+        automationControlMode: 'auto',
+        allowedManualSteps: ['clean_fill_start'],
+      },
+    })
+
+    const stepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
+    expect(stepButton).toBeDefined()
+    expect(stepButton?.attributes('disabled')).toBeDefined()
   })
 })

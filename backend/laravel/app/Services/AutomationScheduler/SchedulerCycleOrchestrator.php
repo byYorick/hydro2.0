@@ -14,6 +14,7 @@ class SchedulerCycleOrchestrator
     private const BACKPRESSURE_REASONS = [
         'schedule_busy',
         'zone_setup_pending',
+        'control_mode_manual',
         'start_cycle_zone_busy',
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
@@ -79,6 +80,7 @@ class SchedulerCycleOrchestrator
             );
             $zoneIds = $this->scheduleLoader->loadActiveZoneIds($zoneFilter);
             $zoneWorkflowPhases = [];
+            $zoneControlModes = [];
 
             if ($zoneIds === []) {
                 $stats = [
@@ -108,6 +110,18 @@ class SchedulerCycleOrchestrator
                         continue;
                     }
                     $zoneWorkflowPhases[$zoneKey] = strtolower(trim((string) ($workflowRow->workflow_phase ?? '')));
+                }
+
+                $controlModeRows = DB::table('zones')
+                    ->select(['id', 'control_mode'])
+                    ->whereIn('id', $zoneIds)
+                    ->get();
+                foreach ($controlModeRows as $controlModeRow) {
+                    $zoneKey = (int) ($controlModeRow->id ?? 0);
+                    if ($zoneKey <= 0) {
+                        continue;
+                    }
+                    $zoneControlModes[$zoneKey] = strtolower(trim((string) ($controlModeRow->control_mode ?? '')));
                 }
             }
 
@@ -198,6 +212,7 @@ class SchedulerCycleOrchestrator
                 lastRunByTaskName: $lastRunByTaskName,
                 reconciledBusyness: $reconciledBusyness,
                 zoneWorkflowPhases: $zoneWorkflowPhases,
+                zoneControlModes: $zoneControlModes,
             );
             /** @var array<int, CarbonImmutable> $zoneCursorCache */
             $zoneCursorCache = [];

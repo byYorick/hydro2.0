@@ -202,6 +202,28 @@ class ScheduleDispatcher
             ];
         }
 
+        if ($this->resolveZoneControlModeFromContext($context, $zoneId) === 'manual') {
+            $writeLog(
+                SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
+                'skipped',
+                [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'reason' => 'control_mode_manual',
+                    'automation_runtime' => $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch'),
+                ],
+            );
+
+            return [
+                'ready' => false,
+                'result' => [
+                    'dispatched' => false,
+                    'retryable' => false,
+                    'reason' => 'control_mode_manual',
+                ],
+            ];
+        }
+
         if ($this->activeTaskPoller->isScheduleBusy(
             scheduleKey: $scheduleKey,
             cfg: $cfg,
@@ -840,6 +862,17 @@ class ScheduleDispatcher
             return null;
         }
         $normalized = strtolower(trim($phase));
+
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function resolveZoneControlModeFromContext(ScheduleCycleContext $context, int $zoneId): ?string
+    {
+        $controlMode = $context->zoneControlModes[$zoneId] ?? null;
+        if (! is_string($controlMode)) {
+            return null;
+        }
+        $normalized = strtolower(trim($controlMode));
 
         return $normalized === '' ? null : $normalized;
     }

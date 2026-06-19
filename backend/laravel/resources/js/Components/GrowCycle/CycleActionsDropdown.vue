@@ -25,31 +25,6 @@
       </button>
     </template>
     <template #content>
-      <!-- Полив -->
-      <button
-        v-if="canOperate"
-        type="button"
-        :disabled="loading.irrigate"
-        class="dropdown-action"
-        @click="$emit('start-irrigation')"
-      >
-        Запустить полив
-      </button>
-      <button
-        v-if="canOperate"
-        type="button"
-        :disabled="loading.irrigate"
-        class="dropdown-action"
-        @click="$emit('force-irrigation')"
-      >
-        Принудительный полив
-      </button>
-
-      <div
-        v-if="canOperate && canManage && isActive"
-        class="my-1 border-t border-[color:var(--border-muted)]"
-      ></div>
-
       <!-- Управление циклом -->
       <button
         v-if="canManage && cycleStatus === 'RUNNING'"
@@ -125,7 +100,6 @@ import type { GrowCycleStatus } from '@/types/GrowCycle'
 import type { AutomationControlMode } from '@/types/Automation'
 
 interface CycleLoadingState {
-  irrigate: boolean
   cyclePause: boolean
   cycleResume: boolean
   cycleHarvest: boolean
@@ -136,19 +110,8 @@ interface CycleLoadingState {
 const props = defineProps<{
   cycleStatus: GrowCycleStatus | null
   canManage: boolean
-  canOperate: boolean
   loading: CycleLoadingState
-  /**
-   * Control mode зоны. В `auto` advance выполняется cron-ом, UI-кнопка
-   * блокируется. В `semi`/`manual` agronomist нажимает вручную; при
-   * достижении duration показывается badge "готова".
-   * См. CONTROL_MODES_SPEC.md §4.5.
-   */
   controlMode?: AutomationControlMode | null
-  /**
-   * true если phase_started_at + duration_hours/days уже прошло (фаза готова).
-   * Вычисляется родителем (Zone page) — фронт не дёргает backend на каждый tick.
-   */
   phaseDurationComplete?: boolean
 }>()
 
@@ -167,8 +130,6 @@ const phaseReadyBadge = computed<boolean>(
 )
 
 defineEmits<{
-  'start-irrigation': []
-  'force-irrigation': []
   'pause': []
   'resume': []
   'harvest': []

@@ -8,6 +8,7 @@ import {
   normalizeAutomationControlMode,
   normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
+  resolveAllowedManualSteps,
 } from '@/composables/zoneAutomationUtils'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
@@ -25,6 +26,7 @@ type ControlModePayload = {
   allowed_manual_steps?: unknown
   available_modes?: unknown
   control_mode_available?: unknown
+  current_stage?: string | null
   data?: ControlModePayload
 }
 
@@ -32,19 +34,29 @@ function parseControlModePayload(raw: unknown): {
   control_mode: AutomationControlMode
   allowed_manual_steps: AutomationManualStep[]
   control_mode_available: AutomationControlMode[]
+  current_stage: string | null
 } {
   const payload = (raw && typeof raw === 'object' ? raw : {}) as ControlModePayload
   const nested = payload.data && typeof payload.data === 'object'
     ? (payload.data as ControlModePayload)
     : null
   const source = nested ?? payload
+  const controlMode = normalizeAutomationControlMode(source.control_mode)
+  const currentStage = typeof source.current_stage === 'string' && source.current_stage.trim() !== ''
+    ? source.current_stage.trim()
+    : null
 
   return {
-    control_mode: normalizeAutomationControlMode(source.control_mode),
-    allowed_manual_steps: normalizeAutomationManualSteps(source.allowed_manual_steps),
+    control_mode: controlMode,
+    allowed_manual_steps: resolveAllowedManualSteps(
+      controlMode,
+      currentStage,
+      normalizeAutomationManualSteps(source.allowed_manual_steps),
+    ),
     control_mode_available: normalizeAutomationControlModes(
       source.control_mode_available ?? source.available_modes,
     ),
+    current_stage: currentStage,
   }
 }
 
@@ -58,6 +70,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   const automationControlMode = ref<AutomationControlMode>('auto')
   const controlModeAvailable = ref<AutomationControlMode[]>(['auto', 'semi', 'manual'])
   const allowedManualSteps = ref<AutomationManualStep[]>([])
+  const automationCurrentStage = ref<string | null>(null)
   const automationControlModeLoading = ref(false)
   const automationControlModeSaving = ref(false)
   const manualStepLoading = ref<Record<AutomationManualStep, boolean>>({
@@ -66,10 +79,8 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     solution_fill_start: false,
     force_solution_fill_start: false,
     solution_fill_stop: false,
-    prepare_recirculation_start: false,
     prepare_recirculation_stop: false,
     irrigation_stop: false,
-    irrigation_recovery_start: false,
     irrigation_recovery_stop: false,
   })
 
@@ -95,9 +106,14 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
 
     automationControlMode.value = snapshot.control_mode
-    if (snapshot.allowed_manual_steps !== undefined) {
-      allowedManualSteps.value = snapshot.allowed_manual_steps
+    if (snapshot.current_stage !== undefined) {
+      automationCurrentStage.value = snapshot.current_stage
     }
+    allowedManualSteps.value = resolveAllowedManualSteps(
+      snapshot.control_mode,
+      snapshot.current_stage,
+      snapshot.allowed_manual_steps,
+    )
     if (snapshot.control_mode_available !== undefined && snapshot.control_mode_available.length > 0) {
       controlModeAvailable.value = snapshot.control_mode_available
     }
@@ -106,6 +122,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   function applyControlModePayload(raw: unknown): void {
     const parsed = parseControlModePayload(raw)
     automationControlMode.value = parsed.control_mode
+    automationCurrentStage.value = parsed.current_stage
     allowedManualSteps.value = parsed.allowed_manual_steps
     if (parsed.control_mode_available.length > 0) {
       controlModeAvailable.value = parsed.control_mode_available
@@ -120,6 +137,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
         hydrateControlModeFromProp()
       }
       allowedManualSteps.value = []
+      automationCurrentStage.value = null
       automationControlModeLoading.value = false
       return
     }
@@ -135,7 +153,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       if (props.zoneId !== requestedZoneId) return
       logger.warn('[ZoneAutomationTab] Failed to fetch automation control mode', { error, zoneId: requestedZoneId })
       // Не сбрасываем в auto при transient 503 — иначе скачок semi↔auto.
-      allowedManualSteps.value = []
+      // allowed_manual_steps не сбрасываем — state snapshot мог уже заполнить список.
     } finally {
       if (props.zoneId === requestedZoneId) {
         automationControlModeLoading.value = false
@@ -186,6 +204,27 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       showToast(extractHumanErrorMessage(error, 'Не удалось выполнить manual-step.'), 'error')
     } finally {
       manualStepLoading.value[step] = false
+    }
+  }
+
+  const diagnosticsLoading = ref(false)
+
+  async function runDiagnostics(): Promise<boolean> {
+    if (!props.zoneId || diagnosticsLoading.value) return false
+
+    diagnosticsLoading.value = true
+    try {
+      await api.zones.startCycle(props.zoneId, { source: 'frontend' })
+      showToast('Диагностика запущена.', 'success')
+      await fetchAutomationControlMode()
+      onControlModeChanged?.()
+      return true
+    } catch (error: unknown) {
+      logger.warn('[ZoneAutomationTab] Failed to run diagnostics', { error, zoneId: props.zoneId })
+      showToast(extractHumanErrorMessage(error, 'Не удалось запустить диагностику.'), 'error')
+      return false
+    } finally {
+      diagnosticsLoading.value = false
     }
   }
 
@@ -251,9 +290,11 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
     controlModeAvailable.value = ['auto', 'semi', 'manual']
     allowedManualSteps.value = []
+    automationCurrentStage.value = null
     automationControlModeLoading.value = false
     automationControlModeSaving.value = false
     refreshInFlight = false
+    diagnosticsLoading.value = false
     for (const step of Object.keys(manualStepLoading.value) as AutomationManualStep[]) {
       manualStepLoading.value[step] = false
     }
@@ -286,6 +327,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     automationControlMode,
     controlModeAvailable,
     allowedManualSteps,
+    automationCurrentStage,
     automationControlModeLoading,
     automationControlModeSaving,
     manualStepLoading,
@@ -294,6 +336,8 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     syncControlModeFromAutomationState,
     hydrateControlModeFromProp,
     runManualStep,
+    runDiagnostics,
+    diagnosticsLoading,
     resetForZoneChange,
     formatDateTime: (value: string | null | undefined) => {
       if (!value) return '—'

@@ -109,6 +109,16 @@ export const zonesApi = {
   },
 
   /**
+   * Запуск диагностического цикла AE3 (cycle_start / DIAGNOSTICS_TICK).
+   */
+  startCycle(
+    zoneId: number,
+    payload?: { source?: string; idempotency_key?: string },
+  ): Promise<Record<string, unknown>> {
+    return apiPost<Record<string, unknown>>(`/zones/${zoneId}/start-cycle`, payload ?? {})
+  },
+
+  /**
    * Запуск / сохранение калибровки насоса. Возвращает `run_token` при запуске.
    */
   calibratePump(

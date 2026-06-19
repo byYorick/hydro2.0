@@ -106,6 +106,31 @@ async def test_control_state_returns_irrigation_stop_for_irrigation_stage() -> N
     assert result["pending_manual_step"] == "irrigation_stop"
 
 
+async def test_control_state_returns_clean_fill_stop_during_clean_fill_start_command() -> None:
+    task = SimpleNamespace(
+        workflow=WorkflowState(
+            current_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=1,
+            control_mode="manual",
+            pending_manual_step=None,
+        )
+    )
+
+    async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [{"control_mode": "manual"}]
+
+    result = await GetZoneControlStateUseCase(
+        task_repository=_TaskRepository(task),
+        fetch_fn=fetch_fn,
+    ).run(zone_id=7)
+
+    assert result["allowed_manual_steps"] == ["clean_fill_stop"]
+
+
 async def test_control_state_falls_back_to_zone_workflow_state_when_no_active_task() -> None:
     workflow_state = SimpleNamespace(
         workflow_phase="ready",

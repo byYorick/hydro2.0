@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Models\Zone;
 use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Http\Client\ConnectionException;
@@ -28,7 +28,7 @@ class ZoneAutomationManualStepController extends Controller
         $this->authorizeZoneAccess($request, $zone);
 
         $validated = $request->validate([
-            'manual_step' => ['required', 'string', 'in:clean_fill_start,clean_fill_stop,solution_fill_start,solution_fill_stop,prepare_recirculation_start,prepare_recirculation_stop,irrigation_stop,irrigation_recovery_stop'],
+            'manual_step' => ['required', 'string', 'in:clean_fill_start,clean_fill_stop,solution_fill_start,force_solution_fill_start,solution_fill_stop,prepare_recirculation_stop,irrigation_stop,irrigation_recovery_stop'],
             'source' => ['nullable', 'string', 'max:64'],
         ]);
 

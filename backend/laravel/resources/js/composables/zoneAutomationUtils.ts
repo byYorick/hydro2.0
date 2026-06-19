@@ -13,11 +13,10 @@ export const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
   'clean_fill_start',
   'clean_fill_stop',
   'solution_fill_start',
+  'force_solution_fill_start',
   'solution_fill_stop',
-  'prepare_recirculation_start',
   'prepare_recirculation_stop',
   'irrigation_stop',
-  'irrigation_recovery_start',
   'irrigation_recovery_stop',
 ])
 
@@ -51,6 +50,38 @@ export function normalizeAutomationManualSteps(value: unknown): AutomationManual
   return value
     .map((item) => String(item ?? '').trim().toLowerCase())
     .filter((item): item is AutomationManualStep => AUTOMATION_MANUAL_STEPS_SET.has(item as AutomationManualStep))
+}
+
+/** Зеркало ae3lite/application/use_cases/manual_control_contract.py */
+const ALLOWED_MANUAL_STEPS_BY_STAGE: Record<string, AutomationManualStep[]> = {
+  startup: ['clean_fill_start', 'solution_fill_start', 'force_solution_fill_start'],
+  clean_fill_start: ['clean_fill_stop'],
+  clean_fill_check: ['clean_fill_stop'],
+  solution_fill_start: ['solution_fill_stop'],
+  solution_fill_check: ['solution_fill_stop'],
+  prepare_recirculation_start: ['prepare_recirculation_stop'],
+  prepare_recirculation_check: ['prepare_recirculation_stop'],
+  irrigation_start: ['irrigation_stop'],
+  irrigation_check: ['irrigation_stop'],
+  irrigation_recovery_check: ['irrigation_recovery_stop'],
+}
+
+export function allowedManualStepsForStage(stage: unknown): AutomationManualStep[] {
+  const normalizedStage = String(stage ?? '').trim().toLowerCase()
+  if (!normalizedStage) return []
+  return [...(ALLOWED_MANUAL_STEPS_BY_STAGE[normalizedStage] ?? [])]
+}
+
+/** API — source of truth; при пустом списке выводим шаги из current_stage (manual/semi). */
+export function resolveAllowedManualSteps(
+  controlMode: AutomationControlMode,
+  currentStage: string | null | undefined,
+  fromApi: AutomationManualStep[] | undefined,
+): AutomationManualStep[] {
+  if (controlMode === 'auto') return []
+  const derived = allowedManualStepsForStage(currentStage)
+  if (fromApi && fromApi.length > 0) return fromApi
+  return derived
 }
 
 export function toFiniteNumber(value: unknown): number | null {

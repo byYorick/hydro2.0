@@ -18,9 +18,14 @@ _ALLOWED_MANUAL_STEPS_BY_STAGE: Final[dict[str, list[str]]] = {
         # Agronomist в manual подтверждает что вода в баке уже есть.
         "force_solution_fill_start",
     ],
+    # Стопы доступны на активной task (CONTROL_MODES_SPEC §5.1) — в т.ч. command-stage.
+    "clean_fill_start": ["clean_fill_stop"],
     "clean_fill_check": ["clean_fill_stop"],
+    "solution_fill_start": ["solution_fill_stop"],
     "solution_fill_check": ["solution_fill_stop"],
+    "prepare_recirculation_start": ["prepare_recirculation_stop"],
     "prepare_recirculation_check": ["prepare_recirculation_stop"],
+    "irrigation_start": ["irrigation_stop"],
     "irrigation_check": ["irrigation_stop"],
     "irrigation_recovery_check": ["irrigation_recovery_stop"],
 }

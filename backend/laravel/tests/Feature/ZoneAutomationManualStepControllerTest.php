@@ -91,6 +91,57 @@ class ZoneAutomationManualStepControllerTest extends TestCase
         $response->assertStatus(422);
     }
 
+    public function test_manual_step_accepts_force_solution_fill_start(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        Http::fake([
+            "http://automation-engine:9405/zones/{$zone->id}/manual-step" => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'zone_id' => $zone->id,
+                    'task_id' => '654',
+                    'manual_step' => 'force_solution_fill_start',
+                    'control_mode' => 'manual',
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
+                'manual_step' => 'force_solution_fill_start',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.manual_step', 'force_solution_fill_start');
+
+        Http::assertSent(function (HttpRequest $request) use ($zone): bool {
+            return $request->url() === "http://automation-engine:9405/zones/{$zone->id}/manual-step"
+                && ($request->data()['manual_step'] ?? null) === 'force_solution_fill_start';
+        });
+    }
+
+    public function test_manual_step_rejects_non_canonical_prepare_recirculation_start(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        Http::fake();
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
+                'manual_step' => 'prepare_recirculation_start',
+            ]);
+
+        $response->assertStatus(422);
+        Http::assertNothingSent();
+    }
+
     public function test_manual_step_propagates_upstream_business_conflict(): void
     {
         $user = User::factory()->create(['role' => 'operator']);

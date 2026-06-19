@@ -475,6 +475,148 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertSame(409, $logs[0]['context']['status_code']);
     }
 
+    public function test_dispatch_skips_dispatch_for_manual_control_mode(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+            'control_mode' => 'manual',
+        ]);
+
+        Http::fake();
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-06-19 08:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            intervalSec: 240,
+            payload: ['duration_sec' => 120],
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [
+                $zone->id => 'ready',
+            ],
+            zoneControlModes: [
+                $zone->id => 'manual',
+            ],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => false,
+            'reason' => 'control_mode_manual',
+        ], $result);
+        $this->assertDatabaseCount('zone_automation_intents', 0);
+        Http::assertNothingSent();
+        $this->assertCount(1, $logs);
+        $this->assertSame('skipped', $logs[0]['status']);
+        $this->assertSame('control_mode_manual', $logs[0]['context']['reason']);
+    }
+
+    public function test_dispatch_allows_semi_control_mode(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+            'control_mode' => 'semi',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-cycle' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '7001',
+                    'zone_id' => $zone->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-06-19 08:30:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'diagnostics',
+            intervalSec: 1800,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [
+                $zone->id => 'ready',
+            ],
+            zoneControlModes: [
+                $zone->id => 'semi',
+            ],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => true,
+            'retryable' => false,
+            'reason' => 'accepted',
+        ], $result);
+        Http::assertSentCount(1);
+    }
+
     public function test_dispatch_skips_irrigation_for_ae3_when_zone_setup_is_pending(): void
     {
         $zone = Zone::factory()->create([

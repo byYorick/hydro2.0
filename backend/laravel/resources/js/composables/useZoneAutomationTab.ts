@@ -71,12 +71,15 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps, deps: ZoneAu
     automationControlMode: scheduler.automationControlMode,
     controlModeAvailable: scheduler.controlModeAvailable,
     allowedManualSteps: scheduler.allowedManualSteps,
+    automationCurrentStage: scheduler.automationCurrentStage,
     automationControlModeLoading: scheduler.automationControlModeLoading,
     automationControlModeSaving: scheduler.automationControlModeSaving,
     manualStepLoading: scheduler.manualStepLoading,
     setAutomationControlMode: scheduler.setAutomationControlMode,
     syncControlModeFromAutomationState: scheduler.syncControlModeFromAutomationState,
     runManualStep: scheduler.runManualStep,
+    runDiagnostics: scheduler.runDiagnostics,
+    diagnosticsLoading: scheduler.diagnosticsLoading,
     formatDateTime: scheduler.formatDateTime,
   }
 }

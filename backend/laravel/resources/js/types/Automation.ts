@@ -14,10 +14,8 @@ export type AutomationManualStep =
   | 'solution_fill_start'
   | 'force_solution_fill_start'
   | 'solution_fill_stop'
-  | 'prepare_recirculation_start'
   | 'prepare_recirculation_stop'
   | 'irrigation_stop'
-  | 'irrigation_recovery_start'
   | 'irrigation_recovery_stop'
 
 export interface AutomationTimelineEvent {

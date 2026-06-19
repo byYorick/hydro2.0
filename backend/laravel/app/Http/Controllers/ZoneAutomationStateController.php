@@ -211,6 +211,10 @@ class ZoneAutomationStateController extends Controller
             $workflowPhase = strtolower($lastTaskState['workflow_phase']);
         }
 
+        if (in_array($controlMode, ['manual', 'semi'], true) && is_string($currentStage) && $currentStage !== '') {
+            $allowedManualSteps = $this->allowedManualStepsForStage($currentStage);
+        }
+
         $stateLabel = $this->automationStateLabel($state);
         if (($lastTaskState['failed'] ?? false) === true) {
             $failedHeadline = is_string($lastTaskState['human_error_message'] ?? null)
@@ -427,6 +431,24 @@ class ZoneAutomationStateController extends Controller
             'irrigating' => 85,
             'irrig_recirc' => 95,
             default => 0,
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allowedManualStepsForStage(string $stage): array
+    {
+        $normalized = strtolower(trim($stage));
+
+        return match ($normalized) {
+            'startup' => ['clean_fill_start', 'solution_fill_start', 'force_solution_fill_start'],
+            'clean_fill_start', 'clean_fill_check' => ['clean_fill_stop'],
+            'solution_fill_start', 'solution_fill_check' => ['solution_fill_stop'],
+            'prepare_recirculation_start', 'prepare_recirculation_check' => ['prepare_recirculation_stop'],
+            'irrigation_start', 'irrigation_check' => ['irrigation_stop'],
+            'irrigation_recovery_check' => ['irrigation_recovery_stop'],
+            default => [],
         };
     }
 

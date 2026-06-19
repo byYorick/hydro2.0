@@ -28,7 +28,6 @@
       <ZoneAutomationOpsPanel
         :can-operate-automation="canOperateAutomation"
         :user-role="currentUserRole"
-        :quick-actions="quickActions"
         :automation-control-mode="automationControlMode"
         :control-mode-available="controlModeAvailable"
         :allowed-manual-steps="allowedManualSteps"
@@ -37,12 +36,15 @@
         :manual-step-loading="manualStepLoading"
         :pending-control-mode-value="pendingControlModeValue"
         :automation-state-meta-label="automationStateMetaLabel"
+        :irrigation-action-loading="props.irrigationActionLoading ?? false"
+        :diagnostics-action-loading="diagnosticsLoading"
+        :current-stage="automationCurrentStage"
+        :workflow-phase="lastAutomationSnapshot?.workflow_phase ?? null"
         @select-mode="onControlModeSelect"
         @run-manual-step="runManualStep"
-        @manual-irrigation="runManualIrrigation"
-        @manual-lighting="runManualLighting"
-        @manual-ph="runManualPh"
-        @manual-ec="runManualEc"
+        @start-irrigation="emit('start-irrigation')"
+        @force-irrigation="emit('force-irrigation')"
+        @run-diagnostics="runDiagnostics"
       />
 
       <ZoneAutomationConfigSection>
@@ -334,6 +336,8 @@ const props = defineProps<ZoneAutomationTabProps>()
 const emit = defineEmits<{
   (e: 'refresh-automation-state'): void
   (e: 'open-pump-calibration'): void
+  (e: 'start-irrigation'): void
+  (e: 'force-irrigation'): void
 }>()
 const currentRecipePhaseTargets = computed(() => resolveRecipePhasePidTargets(props.currentRecipePhase ?? null))
 const { showToast } = useToast()
@@ -404,13 +408,12 @@ const {
   waterTopologyLabel,
   applyAutomationProfile,
   resetToRecommended,
-  runManualIrrigation,
-  runManualLighting,
-  runManualPh,
-  runManualEc,
+  runDiagnostics,
+  diagnosticsLoading,
   automationControlMode,
   controlModeAvailable,
   allowedManualSteps,
+  automationCurrentStage,
   automationControlModeLoading,
   automationControlModeSaving,
   manualStepLoading,

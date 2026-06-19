@@ -195,4 +195,6 @@ export interface ZoneAutomationTabProps {
   pumpCalibrationRunSeq?: number
   /** Инкремент после ack policy-managed алерта — форсирует refetch `/zones/{id}/state`. */
   automationStateRefreshSeq?: number
+  /** true пока выполняется START_IRRIGATION/FORCE_IRRIGATION (общий индикатор кнопок полива). */
+  irrigationActionLoading?: boolean
 }

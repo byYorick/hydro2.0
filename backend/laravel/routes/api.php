@@ -47,6 +47,7 @@ use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationPresetController;
 use App\Http\Controllers\ZoneAutomationStartIrrigationController;
+use App\Http\Controllers\ZoneAutomationStartCycleController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneConfigModeController;
@@ -387,6 +388,8 @@ Route::middleware([
     Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/start-irrigation', [ZoneAutomationStartIrrigationController::class, 'store'])
+        ->middleware('role:operator,admin,agronomist,engineer');
+    Route::post('zones/{zone}/start-cycle', [ZoneAutomationStartCycleController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/schedule-workspace', [ScheduleWorkspaceController::class, 'show']);
     Route::get('zones/{zone}/manual-schedules', [ZoneManualScheduleController::class, 'index']);

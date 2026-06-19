@@ -101,6 +101,83 @@ class Ae3IrrigationBridgeService
     }
 
     /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function startCycle(int $zoneId, array $payload): array
+    {
+        $cfg = $this->runtimeConfig->schedulerConfig();
+        $apiUrl = (string) ($cfg['api_url'] ?? config('services.automation_engine.api_url'));
+        $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
+
+        /** @var Response $response */
+        $response = Http::acceptJson()
+            ->timeout($timeout)
+            ->withHeaders($this->automationEngineHeaders())
+            ->post("{$apiUrl}/zones/{$zoneId}/start-cycle", $payload);
+
+        $response->throw();
+
+        $decoded = $response->json();
+        if (! is_array($decoded)) {
+            throw new \RuntimeException('automation_engine_invalid_payload');
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function dispatchStartCycle(
+        int $zoneId,
+        array $payload,
+    ): array {
+        $source = trim((string) ($payload['source'] ?? 'laravel_api'));
+        $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
+
+        $normalizedPayload = [
+            'source' => $source !== '' ? $source : 'laravel_api',
+            'idempotency_key' => $idempotencyKey,
+        ];
+
+        $this->intentService->upsertStartCycleIntent(
+            zoneId: $zoneId,
+            source: $normalizedPayload['source'],
+            idempotencyKey: $idempotencyKey,
+        );
+
+        try {
+            return $this->startCycle($zoneId, $normalizedPayload);
+        } catch (RequestException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_cycle_http_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        } catch (ConnectionException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_cycle_connection_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        }
+    }
+
+    /**
      * @return array<string,string>
      */
     private function automationEngineHeaders(): array

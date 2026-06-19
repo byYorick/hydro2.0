@@ -12,6 +12,7 @@ final class ScheduleCycleContext
      * @param  array<string, CarbonImmutable>  $lastRunByTaskName
      * @param  array<string, bool>  $reconciledBusyness
      * @param  array<int, string>  $zoneWorkflowPhases
+     * @param  array<int, string>  $zoneControlModes
      */
     public function __construct(
         public readonly array $cfg,
@@ -21,5 +22,6 @@ final class ScheduleCycleContext
         public readonly array $lastRunByTaskName,
         public readonly array $reconciledBusyness,
         public readonly array $zoneWorkflowPhases,
+        public readonly array $zoneControlModes = [],
     ) {}
 }

@@ -21,6 +21,7 @@ import {
   normalizeAutomationControlMode,
   normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
+  resolveAllowedManualSteps,
 } from '@/composables/zoneAutomationUtils'
 import {
   buildProgressSummary,
@@ -355,7 +356,11 @@ export function useAutomationPanel(
         ? {
             control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
             control_mode_available: normalizeAutomationControlModes(sourceAny.control_mode_available),
-            allowed_manual_steps: normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
+            allowed_manual_steps: resolveAllowedManualSteps(
+              normalizeAutomationControlMode(sourceAny.control_mode),
+              (sourceAny.current_stage as string | null | undefined) ?? null,
+              normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
+            ),
           }
         : {}),
       state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'

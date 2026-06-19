@@ -54,12 +54,9 @@
           <CycleActionsDropdown
             :cycle-status="activeGrowCycle?.status ?? null"
             :can-manage="canManageCycle"
-            :can-operate="canOperateZone"
             :loading="actionsLoading"
             :control-mode="controlMode ?? null"
             :phase-duration-complete="phaseDurationComplete"
-            @start-irrigation="$emit('start-irrigation')"
-            @force-irrigation="$emit('force-irrigation')"
             @pause="$emit('pause')"
             @resume="$emit('resume')"
             @harvest="$emit('harvest')"
@@ -174,7 +171,6 @@ import type { GrowCycle } from '@/types/GrowCycle'
 import type { AutomationControlMode } from '@/types/Automation'
 
 interface CycleLoadingState {
-  irrigate: boolean
   cyclePause: boolean
   cycleResume: boolean
   cycleHarvest: boolean
@@ -207,8 +203,6 @@ interface Props {
 const props = defineProps<Props>()
 
 defineEmits<{
-  'start-irrigation': []
-  'force-irrigation': []
   'run-cycle': []
   'refresh-cycle': []
   'change-recipe': []
@@ -242,7 +236,6 @@ const currentPhaseIndex = computed(() => {
 })
 
 const actionsLoading = computed(() => ({
-  irrigate: props.loading.irrigate,
   cyclePause: props.loading.cyclePause,
   cycleResume: props.loading.cycleResume,
   cycleHarvest: props.loading.cycleHarvest,
