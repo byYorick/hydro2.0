@@ -217,6 +217,7 @@ class WorkflowRouter:
                 task=task,
                 error_code=str(exc.code),
                 error_message=str(exc),
+                node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
             )
             raise TaskExecutionError(code, message) from exc
         return await self._apply_outcome(
@@ -257,10 +258,12 @@ class WorkflowRouter:
             return await self._complete_task(task=current_task, now=now)
 
         if outcome.kind == "fail":
+            irr_uid = self._extract_irrig_node_uid_from_plan(plan=plan)
             error_code, error_message = await self._remap_execution_error_for_task(
                 task=current_task,
                 error_code=outcome.error_code or "ae3_stage_failed",
                 error_message=outcome.error_message or "Этап завершился ошибкой",
+                node_uid=irr_uid,
             )
             return await self._fail_task(
                 task=current_task, now=now,
@@ -549,6 +552,28 @@ class WorkflowRouter:
         if offline is not None:
             return offline.code, offline.message
         return error_code, error_message
+
+    @staticmethod
+    def _extract_irrig_node_uid_from_plan(*, plan: Any) -> str | None:
+        if plan is None:
+            return None
+        named_plans = getattr(plan, "named_plans", None) or {}
+        if isinstance(named_plans, Mapping):
+            probe_cmds = named_plans.get("irr_state_probe", ())
+            for step in probe_cmds or ():
+                uid = str(getattr(step, "node_uid", "") or "").strip()
+                if uid:
+                    return uid
+            for commands in named_plans.values():
+                for step in commands or ():
+                    uid = str(getattr(step, "node_uid", "") or "").strip()
+                    if uid:
+                        return uid
+        for step in getattr(plan, "steps", ()) or ():
+            uid = str(getattr(step, "node_uid", "") or "").strip()
+            if uid:
+                return uid
+        return None
 
     # ── Helpers ─────────────────────────────────────────────────────
 

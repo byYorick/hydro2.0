@@ -372,6 +372,7 @@ class ExecuteTaskUseCase:
                 task=running_task,
                 original_error_code=str(error_code or ""),
                 original_error_message=error_message,
+                node_uid=self._extract_irrig_node_uid(snapshot),
             )
             if offline_failure is not None:
                 error_code = offline_failure.code
@@ -664,6 +665,13 @@ class ExecuteTaskUseCase:
             diagnostics=diagnostics,
             persistent_only=False,
         )
+
+    def _extract_irrig_node_uid(self, snapshot: Any) -> str | None:
+        from ae3lite.domain.services.zone_node_availability import extract_irrig_node_uid_from_actuators
+
+        if snapshot is None:
+            return None
+        return extract_irrig_node_uid_from_actuators(getattr(snapshot, "actuators", ()) or ())
 
     async def _resolve_offline_failure_instead_of_guard(
         self,
@@ -1194,6 +1202,33 @@ class ExecuteTaskUseCase:
             if str(error_code).strip().lower() == "zone_recipe_phase_targets_missing_critical":
                 alert_code = "biz_zone_recipe_phase_targets_missing"
                 alert_severity = "critical"
+            normalized_error_code = str(error_code).strip().lower()
+            if normalized_error_code in {
+                "ae3_required_node_offline",
+                "ae3_snapshot_required_node_persistently_offline",
+                "irr_state_unavailable",
+                "irr_state_stale",
+                "command_timeout",
+            }:
+                alert_code = "biz_node_offline"
+                alert_severity = "error"
+                if isinstance(extra_details, Mapping):
+                    offline_nodes = extra_details.get("offline_required_nodes")
+                    if isinstance(offline_nodes, list) and offline_nodes:
+                        first = offline_nodes[0]
+                        if isinstance(first, Mapping) and first.get("uid"):
+                            details.setdefault("node_uid", first.get("uid"))
+                    details.setdefault("node_uid", extra_details.get("node_uid"))
+                if not details.get("node_uid") and normalized_error_code == "irr_state_unavailable":
+                    details["message"] = (
+                        str(error_message)
+                        + " Проверьте связь с IRR-нодой (питание, Wi‑Fi, MQTT)."
+                    )
+                details.setdefault(
+                    "node_uid",
+                    details.get("node_uid")
+                    or (extra_details.get("node_uid") if isinstance(extra_details, Mapping) else None),
+                )
 
             await repository.raise_active(
                 zone_id=zone_id,

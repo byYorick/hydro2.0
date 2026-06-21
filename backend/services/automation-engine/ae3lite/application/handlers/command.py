@@ -68,7 +68,7 @@ class CommandHandler(BaseStageHandler):
 
         raise TaskExecutionError(
             "ae3_command_no_routing",
-            f"Command stage {stage_def.name} has no next_stage or terminal_error",
+            f"Command stage {stage_def.name} не содержит next_stage или terminal_error",
         )
 
     def _resolve_commands(self, *, plan: Any, stage_def: Any) -> tuple:
@@ -81,6 +81,6 @@ class CommandHandler(BaseStageHandler):
         if not result:
             raise TaskExecutionError(
                 "ae3_empty_command_plan",
-                f"No commands resolved for stage {stage_def.name}, plans={stage_def.command_plans}",
+                f"Для stage {stage_def.name} не найдены команды, plans={stage_def.command_plans}",
             )
         return tuple(result)

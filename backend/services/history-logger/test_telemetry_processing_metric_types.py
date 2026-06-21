@@ -15,3 +15,9 @@ def test_tds_metric_maps_to_other_sensor_type_separate_from_ec():
     assert infer_sensor_type("TDS") == "OTHER"
     assert build_sensor_label("TDS", "ec_tds_ppm", "OTHER") == "ec_tds_ppm"
     assert build_sensor_label("EC", "ec_sensor", "EC") == "ec_sensor"
+
+
+def test_water_level_switch_maps_to_level_sensor_with_channel_label():
+    """Дискретный геркон уровня хранится как WATER_LEVEL, но label остаётся firmware channel id."""
+    assert infer_sensor_type("WATER_LEVEL_SWITCH") == "WATER_LEVEL"
+    assert build_sensor_label("WATER_LEVEL_SWITCH", "level_clean_min", "WATER_LEVEL") == "level_clean_min"

@@ -1,16 +1,18 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-06-03T05:38:48Z",
+  "updated_at": "2026-06-03T06:57:56Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
-      "title": "Actuator Apply Failed",
-      "message": "Actuator Apply Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Ошибка исполнительного канала",
+      "message": "Не удалось применить команду к исполнительному каналу. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "actuator_busy",
-      "title": "Actuator Busy",
-      "message": "Actuator Busy. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Исполнительный канал занят",
+      "message": "Исполнительный канал занят. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "ae3_api_http_5xx",
@@ -21,11 +23,6 @@
       "code": "ae3_api_unhandled_exception",
       "title": "Ошибка API AE3",
       "message": "Необработанное исключение в API automation-engine."
-    },
-    {
-      "code": "api_error",
-      "title": "Ошибка API",
-      "message": "Не удалось выполнить запрос. Проверьте параметры и журналы сервиса."
     },
     {
       "code": "ae3_background_task_crashed",
@@ -103,6 +100,11 @@
       "message": "AE3 не смог перевести workflow в следующий pending task."
     },
     {
+      "code": "ae3_required_node_offline",
+      "title": "Узел зоны offline",
+      "message": "Обязательный узел зоны недоступен (offline). Проверьте питание, Wi‑Fi и MQTT, затем дождитесь online в мониторинге."
+    },
+    {
       "code": "ae3_running_transition_failed",
       "title": "Ошибка running",
       "message": "Не удалось перевести задачу в running."
@@ -161,11 +163,6 @@
       "code": "ae3_snapshot_required_node_persistently_offline",
       "title": "Узел зоны давно offline",
       "message": "Один или несколько узлов зоны давно не выходят на связь. AE3 завершил задачу без повторов — проверьте питание и сеть нод."
-    },
-    {
-      "code": "ae3_required_node_offline",
-      "title": "Узел зоны offline",
-      "message": "Обязательный узел зоны недоступен (offline). Проверьте питание, Wi‑Fi и MQTT, затем дождитесь online в мониторинге."
     },
     {
       "code": "ae3_snapshot_required_node_type_missing",
@@ -293,6 +290,11 @@
       "message": "Не удалось освободить блокировку зоны после задачи."
     },
     {
+      "code": "api_error",
+      "title": "Ошибка API",
+      "message": "Не удалось выполнить запрос. Проверьте параметры и журналы сервиса."
+    },
+    {
       "code": "biz_recipe_completed_review_required",
       "title": "Рецепт завершён",
       "message": "Цикл выращивания завершён, требуется проверка агронома."
@@ -308,19 +310,34 @@
       "message": "Указан неизвестный phase для process calibration."
     },
     {
+      "code": "clean_fill_completed",
+      "title": "Наполнение чистого бака завершено",
+      "message": "Чистый бак наполнен (level_clean_max).",
+      "source_layer": "firmware_mqtt"
+    },
+    {
       "code": "clean_fill_source_empty",
       "title": "Источник чистой воды пуст",
-      "message": "Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды."
+      "message": "Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "clean_fill_timeout",
+      "title": "Таймаут clean fill",
+      "message": "Этап наполнения чистого бака превысил лимит времени.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "clean_tank_not_filled_timeout",
       "title": "Бак чистой воды не заполнился",
-      "message": "За отведённое время бак чистой воды не достиг требуемого уровня."
+      "message": "За отведённое время бак чистой воды не достиг требуемого уровня.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "command_already_failed",
       "title": "Ошибка команды",
-      "message": "Команда завершилась с терминальным статусом."
+      "message": "Команда завершилась с терминальным статусом.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "command_failed",
@@ -348,6 +365,12 @@
       "message": "Нельзя переключить зону в live, пока control_mode=auto."
     },
     {
+      "code": "config_report_failed",
+      "title": "Ошибка config_report",
+      "message": "Узел не смог опубликовать config_report.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
       "code": "control_mode_forbidden_for_role",
       "title": "Режим управления запрещён",
       "message": "Ваша роль не позволяет переключать режим управления зоны."
@@ -360,7 +383,8 @@
     {
       "code": "cooldown_active",
       "title": "Активен cooldown",
-      "message": "Команда отклонена: канал ещё находится в интервале защитной паузы."
+      "message": "Команда отклонена: канал ещё находится в интервале защитной паузы.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "corr_process_calibration_missing",
@@ -375,12 +399,14 @@
     {
       "code": "current_not_detected",
       "title": "Ток не обнаружен",
-      "message": "После включения канала ток не был зафиксирован."
+      "message": "После включения канала ток не был зафиксирован.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "current_unavailable",
-      "title": "Current Unavailable",
-      "message": "Current Unavailable. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Ток недоступен",
+      "message": "Не удалось получить показание тока. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "cycle_already_active",
@@ -395,12 +421,19 @@
     {
       "code": "emergency_stop_activated",
       "title": "Активирован E-STOP",
-      "message": "Аварийная остановка активирована, безопасное состояние не подтверждено."
+      "message": "Аварийная остановка активирована, безопасное состояние не подтверждено.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "esp_err_no_mem",
       "title": "Нехватка памяти ESP",
       "message": "На узле не хватает памяти (ESP_ERR_NO_MEM)."
+    },
+    {
+      "code": "esp_esp_err_invalid_state",
+      "title": "Некорректное состояние ESP",
+      "message": "Узел в недопустимом состоянии для операции (ESP_ERR_INVALID_STATE). Проверьте NodeConfig, журнал узла и состояние канала.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "forbidden",
@@ -426,6 +459,12 @@
       "code": "greenhouse_climate_tick_failed",
       "title": "Ошибка climate tick",
       "message": "Выполнение greenhouse climate tick завершилось с ошибкой."
+    },
+    {
+      "code": "hmac_required",
+      "title": "Требуется HMAC",
+      "message": "Команда отклонена: для узла включена обязательная подпись HMAC.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "infra_ae3_command_send_retry_scheduled",
@@ -455,17 +494,37 @@
     {
       "code": "invalid_command_format",
       "title": "Некорректный формат команды",
-      "message": "Формат команды не соответствует протоколу."
+      "message": "Формат команды не соответствует протоколу.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_hmac_format",
+      "title": "Некорректный HMAC",
+      "message": "Поля ts/sig отсутствуют или заданы частично.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "invalid_json",
       "title": "Некорректный JSON",
-      "message": "Тело команды содержит некорректный JSON."
+      "message": "Тело команды содержит некорректный JSON.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "invalid_params",
       "title": "Неверные параметры",
       "message": "Переданы некорректные параметры команды."
+    },
+    {
+      "code": "invalid_params_format",
+      "title": "Некорректные параметры",
+      "message": "Параметры команды не прошли проверку формата.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "invalid_signature",
+      "title": "Неверная подпись",
+      "message": "HMAC-подпись команды не прошла проверку.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "invalid_state",
@@ -523,9 +582,16 @@
       "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
     },
     {
+      "code": "missing_node_secret",
+      "title": "Нет node_secret",
+      "message": "В NodeConfig отсутствует node_secret для проверки подписи.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
       "code": "motor_error",
       "title": "Ошибка мотора",
-      "message": "Ошибка привода/мотора на узле."
+      "message": "Ошибка привода/мотора на узле.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "no_active_phase",
@@ -540,7 +606,8 @@
     {
       "code": "node_not_activated",
       "title": "Узел не активирован",
-      "message": "Команда отклонена: узел ещё не активирован."
+      "message": "Команда отклонена: узел ещё не активирован.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "node_operation_rejected",
@@ -560,7 +627,8 @@
     {
       "code": "overcurrent",
       "title": "Сверхток",
-      "message": "Зафиксировано превышение допустимого тока канала."
+      "message": "Зафиксировано превышение допустимого тока канала.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "path_not_whitelisted",
@@ -578,39 +646,58 @@
       "message": "Этап подготовки рециркуляции исчерпал допустимое число повторов."
     },
     {
+      "code": "prepare_recirculation_timeout",
+      "title": "Таймаут prepare-recirculation",
+      "message": "Подготовка рециркуляции превысила timeout_ms.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
       "code": "pump_busy",
-      "title": "Pump Busy",
-      "message": "Pump Busy. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Насос занят",
+      "message": "Канал насоса занят предыдущей операцией. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_current_over_range",
       "title": "Переток насоса (INA209)",
-      "message": "Ток насоса выше верхнего порога: проверьте заклинивание, КЗ, согласованность шунта/усилителя и пороги currentMin/currentMax."
+      "message": "Ток насоса выше верхнего порога: проверьте заклинивание, КЗ, согласованность шунта/усилителя и пороги currentMin/currentMax.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_current_under_range",
       "title": "Недоток насоса (INA209)",
-      "message": "После включения насоса ток ниже допустимого порога: проверьте питание, цепь MOSFET/реле, насос и калибровку INA209; при необходимости скорректируйте currentMin/currentMax в конфиге ноды."
+      "message": "После включения насоса ток ниже допустимого порога: проверьте питание, цепь MOSFET/реле, насос и калибровку INA209; при необходимости скорректируйте currentMin/currentMax в конфиге ноды.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_driver_failed",
-      "title": "Pump Driver Failed",
-      "message": "Pump Driver Failed. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Ошибка драйвера насоса",
+      "message": "Драйвер насоса не выполнил команду. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_error",
-      "title": "Pump Error",
-      "message": "Pump Error. Проверьте конфигурацию, логи сервиса и состояние зоны."
+      "title": "Ошибка насоса",
+      "message": "Общая ошибка драйвера насоса. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "pump_in_cooldown",
+      "title": "Насос в cooldown",
+      "message": "Команда отклонена: канал насоса в интервале cooldown.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_ina_read_failed",
       "title": "Ошибка чтения INA209",
-      "message": "Не удалось прочитать ток с INA209 при проверке насоса: проверьте I2C, адрес датчика, питание и обрыв шунта."
+      "message": "Не удалось прочитать ток с INA209 при проверке насоса: проверьте I2C, адрес датчика, питание и обрыв шунта.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_interlock_blocked",
       "title": "Сработал interlock насоса",
-      "message": "Команда заблокирована защитой interlock для насоса."
+      "message": "Команда заблокирована защитой interlock для насоса.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "rate_limit_exceeded",
@@ -625,37 +712,50 @@
     {
       "code": "recirculation_solution_low",
       "title": "Низкий уровень раствора при рециркуляции",
-      "message": "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке."
+      "message": "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_channel_not_found",
       "title": "Канал реле не найден",
-      "message": "Запрошенный канал реле отсутствует в конфигурации узла."
+      "message": "Запрошенный канал реле отсутствует в конфигурации узла.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_error",
       "title": "Ошибка реле",
-      "message": "Команда реле завершилась с ошибкой."
+      "message": "Команда реле завершилась с ошибкой.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_gpio_error",
       "title": "Ошибка GPIO реле",
-      "message": "Во время переключения реле произошла ошибка GPIO."
+      "message": "Во время переключения реле произошла ошибка GPIO.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_invalid_channel",
       "title": "Неверный канал реле",
-      "message": "Указан неверный канал реле."
+      "message": "Указан неверный канал реле.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_mutex_timeout",
       "title": "Таймаут релейного драйвера",
-      "message": "Релейный драйвер не успел выполнить команду в допустимое время."
+      "message": "Релейный драйвер не успел выполнить команду в допустимое время.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "relay_not_initialized",
       "title": "Релейный драйвер не инициализирован",
-      "message": "Нода не смогла выполнить команду: драйвер реле не готов."
+      "message": "Нода не смогла выполнить команду: драйвер реле не готов.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "restart_schedule_failed",
+      "title": "Ошибка перезапуска",
+      "message": "Не удалось запланировать перезапуск узла.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "revision_not_found",
@@ -690,27 +790,44 @@
     {
       "code": "set_time_failed",
       "title": "Не удалось установить время",
-      "message": "Нода не смогла применить новое системное время."
+      "message": "Нода не смогла применить новое системное время.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_completed",
+      "title": "Наполнение раствора завершено",
+      "message": "Бак раствора наполнен (level_solution_max).",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "solution_fill_leak_detected",
       "title": "Падение уровня раствора при наполнении",
-      "message": "Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика."
+      "message": "Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "solution_fill_source_empty",
       "title": "Источник чистой воды пуст при наполнении раствором",
-      "message": "Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи."
+      "message": "Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "solution_fill_timeout",
+      "title": "Таймаут solution fill",
+      "message": "Этап наполнения раствора превысил лимит времени.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "solution_tank_not_filled_timeout",
       "title": "Таймаут бака раствора",
-      "message": "Бак раствора не наполнился за отведённое время."
+      "message": "Бак раствора не наполнился за отведённое время.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "stage_timeout",
       "title": "Таймаут стадии",
-      "message": "Стадия выполнения превысила допустимое время."
+      "message": "Стадия выполнения превысила допустимое время.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "start_cycle_blocked_by_alert",
@@ -818,9 +935,21 @@
       "message": "Задача удалена во время публикации команды."
     },
     {
+      "code": "time_not_synced",
+      "title": "Время не синхронизировано",
+      "message": "Узел ещё не получил время от брокера — команда с ts отклонена.",
+      "source_layer": "firmware_mqtt"
+    },
+    {
       "code": "timeout",
       "title": "Таймаут выполнения",
       "message": "Превышено время ожидания выполнения команды."
+    },
+    {
+      "code": "timestamp_expired",
+      "title": "Истёк timestamp",
+      "message": "Метка времени команды вне допустимого окна (±10 с).",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "token_expired",
@@ -905,7 +1034,8 @@
     {
       "code": "unsupported_channel_cmd",
       "title": "Команда канала не поддерживается",
-      "message": "Данный канал не поддерживает запрошенную команду."
+      "message": "Данный канал не поддерживает запрошенную команду.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "unsupported_command_plan_steps",
@@ -915,7 +1045,8 @@
     {
       "code": "unsupported_correction_command",
       "title": "Команда коррекции не поддерживается",
-      "message": "Этот correction-канал не поддерживает запрошенную команду."
+      "message": "Этот correction-канал не поддерживает запрошенную команду.",
+      "source_layer": "firmware_mqtt"
     },
     {
       "code": "unsupported_task_type",

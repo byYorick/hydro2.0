@@ -411,7 +411,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "fail_safe_guards": {
     "clean_fill_min_check_delay_ms": 5000,
     "solution_fill_clean_min_check_delay_ms": 5000,
-    "solution_fill_solution_min_check_delay_ms": 15000,
+    "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
     "estop_debounce_ms": 80

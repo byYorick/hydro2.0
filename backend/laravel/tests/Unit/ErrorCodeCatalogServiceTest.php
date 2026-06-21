@@ -63,6 +63,29 @@ class ErrorCodeCatalogServiceTest extends TestCase
         $this->assertSame('Custom upstream failure', $presentation['message']);
     }
 
+    public function test_present_translates_raw_pattern_with_slashes_without_regex_error(): void
+    {
+        $presentation = $this->catalog->present(
+            'automation_engine_unreachable',
+            'PH telemetry stale/unavailable during correction check',
+        );
+
+        $this->assertSame(
+            'Телеметрия PH устарела или недоступна во время проверки коррекции',
+            $presentation['message'],
+        );
+    }
+
+    public function test_present_does_not_throw_for_failed_intent_messages_with_slashes(): void
+    {
+        $presentation = $this->catalog->present(
+            'automation_engine_unreachable',
+            'HTTP request returned status code 503',
+        );
+
+        $this->assertSame('HTTP request returned status code 503', $presentation['message']);
+    }
+
     public function test_present_firmware_command_response_codes_in_russian(): void
     {
         foreach (['invalid_signature', 'timestamp_expired', 'pump_in_cooldown', 'solution_fill_timeout'] as $code) {

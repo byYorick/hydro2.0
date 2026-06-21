@@ -383,14 +383,13 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Для production `storage_irrigation_node` нода обязана:
 
-1. Для `clean_fill` после задержки `clean_fill_min_check_delay_ms` проверить `level_clean_min`:
-   если датчик остаётся `0`, локально закрыть `valve_clean_fill` и опубликовать `clean_fill_source_empty`.
-2. Для `clean_fill` при `level_clean_max=1` локально закрыть `valve_clean_fill`
+1. Для `clean_fill` при `level_clean_max=1` локально закрыть `valve_clean_fill`
    и опубликовать `clean_fill_completed`.
-3. Для `solution_fill` после задержки `solution_fill_clean_min_check_delay_ms` проверить `level_clean_min`:
+   Проверка `level_clean_min` по таймеру для `clean_fill` **не применяется** (см. AE3_IRR_FAILSAFE contract).
+2. Для `solution_fill` после задержки `solution_fill_clean_min_check_delay_ms` проверить `level_clean_min`:
    если датчик `0`, локально выключить `pump_main`, `valve_clean_supply`, `valve_solution_fill`
    и опубликовать `solution_fill_source_empty`.
-4. Для `solution_fill` после задержки `solution_fill_solution_min_check_delay_ms` проверить `level_solution_min`:
+3. Для `solution_fill` после задержки `solution_fill_solution_min_check_delay_ms` проверить `level_solution_min`:
    если датчик `0`, локально выключить тот же flow-path и опубликовать `solution_fill_leak_detected`.
 5. Для `solution_fill` при `level_solution_max=1` локально выключить `pump_main`,
    `valve_clean_supply`, `valve_solution_fill` и опубликовать `solution_fill_completed`.

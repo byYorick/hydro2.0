@@ -459,7 +459,7 @@ async def test_state_timeline_labels_new_fail_safe_transitions() -> None:
         id=55,
         status="failed",
         error_code="solution_fill_leak_detected",
-        error_message="Solution minimum level dropped during solution fill",
+        error_message="Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.",
         workflow=WorkflowState(
             current_stage="solution_fill_leak_stop",
             workflow_phase="tank_filling",

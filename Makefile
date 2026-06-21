@@ -2,6 +2,10 @@ SHELL := /bin/bash
 
 PROJECT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BACKEND_COMPOSE_FILE := backend/docker-compose.dev.yml
+PROD_COMPOSE_FILE := backend/docker-compose.prod.yml
+PROD_ENV_FILE := backend/.env.prod
+PROD_SEEDER_CLASS ?= StartUsersSeeder
+PROD_SETUP_ARGS ?=
 MIGRATE_SEEDER_CLASS ?= DevBootstrapSeeder
 REFRESH_SEEDER_CLASS ?= StartUsersSeeder
 RESET_DB_SEEDER_CLASS ?= $(REFRESH_SEEDER_CLASS)
@@ -43,6 +47,61 @@ help:
 	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
 	@echo "  dev-tools-check   - check host CLI tools (rg, psql, mosquitto_pub, gh, ...)"
 	@echo "  dev-tools-install - install missing host CLI tools (apt + uv)"
+	@echo "  lan-setup         - detect LAN IP, write backend/.env for access from local network"
+	@echo "  lan-url           - print dev web URL for LAN (requires backend/.env from lan-setup)"
+	@echo ""
+	@echo "Production (backend/docker-compose.prod.yml + backend/.env.prod):"
+	@echo "  prod-setup        - generate backend/.env.prod and MQTT passwords"
+	@echo "  prod-check        - validate prod env and docker compose config"
+	@echo "  prod-up           - start production stack (runs prod-check first)"
+	@echo "  prod-down         - stop production stack"
+	@echo "  prod-migrate      - run Laravel migrations in prod"
+	@echo "  prod-seed         - seed base users (PROD_SEEDER_CLASS=$(PROD_SEEDER_CLASS))"
+	@echo "  prod-ps           - show prod service status"
+	@echo "  prod-logs         - stream prod logs (SERVICE=<name>, TAIL=200)"
+
+.PHONY: lan-setup
+lan-setup:
+	@bash backend/scripts/setup-lan-access.sh
+
+.PHONY: lan-url
+lan-url:
+	@if [ -f backend/.env ]; then grep -E '^APP_URL=' backend/.env | cut -d= -f2-; else echo 'Сначала: make lan-setup'; fi
+
+# --- Production stack (Docker Compose) ---
+PROD_COMPOSE = $(DOCKER_COMPOSE) --env-file $(PROD_ENV_FILE) -f $(PROD_COMPOSE_FILE)
+
+.PHONY: prod-setup
+prod-setup:
+	@bash backend/scripts/setup-prod-env.sh $(PROD_SETUP_ARGS)
+
+.PHONY: prod-check
+prod-check:
+	@bash backend/scripts/check-prod-ready.sh
+
+.PHONY: prod-up
+prod-up: prod-check
+	@$(PROD_COMPOSE) up -d --build
+
+.PHONY: prod-down
+prod-down:
+	@$(PROD_COMPOSE) down
+
+.PHONY: prod-migrate
+prod-migrate:
+	@$(PROD_COMPOSE) exec -T laravel php artisan migrate --force
+
+.PHONY: prod-seed
+prod-seed:
+	@$(PROD_COMPOSE) exec -T laravel php artisan db:seed --class=$(PROD_SEEDER_CLASS) --force
+
+.PHONY: prod-ps
+prod-ps:
+	@$(PROD_COMPOSE) ps
+
+.PHONY: prod-logs
+prod-logs:
+	@$(PROD_COMPOSE) logs -f --tail=$(or $(TAIL),200) $(SERVICE)
 
 .PHONY: up
 up:

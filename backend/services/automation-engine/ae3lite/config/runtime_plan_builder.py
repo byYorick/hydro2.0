@@ -102,14 +102,14 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     resolved_cfg = getattr(snapshot, "correction_config", None)
     if not isinstance(resolved_cfg, Mapping) or not resolved_cfg:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} has no correction_config; fail-closed for critical dosing parameters",
+            f"У зоны {zone_id} отсутствует correction_config; критические параметры дозирования переведены в fail-closed режим",
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
     resolved_base_cfg = _to_mapping(resolved_cfg.get("base"))
     resolved_phases_cfg = _to_mapping(resolved_cfg.get("phases"))
     if not resolved_base_cfg and not resolved_phases_cfg:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} has empty correction_config(base/phases); fail-closed for critical dosing parameters",
+            f"У зоны {zone_id} пустой correction_config(base/phases); критические параметры дозирования переведены в fail-closed режим",
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
     _require_pid_configs(snapshot=snapshot, zone_id=zone_id)
@@ -346,7 +346,7 @@ def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
     pid_configs = getattr(snapshot, "pid_configs", None)
     if not isinstance(pid_configs, Mapping):
         raise PlannerConfigurationError(
-            f"Zone {zone_id} has no pid authority mapping; fail-closed for critical correction parameters",
+            f"У зоны {zone_id} отсутствует mapping PID authority; критические параметры коррекции переведены в fail-closed режим",
             code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
         )
 
@@ -359,8 +359,8 @@ def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
 
     if missing_types:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} missing required pid authority documents for pid_type={', '.join(sorted(missing_types))}; "
-            "fail-closed for critical correction parameters",
+            f"У зоны {zone_id} отсутствуют обязательные PID authority-документы для pid_type={', '.join(sorted(missing_types))}; "
+            "критические параметры коррекции переведены в fail-closed режим",
             code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
         )
 
@@ -467,8 +467,8 @@ def _require_zone_correction_contract(*, zone_id: int, config: Mapping[str, Any]
     missing_paths = _collect_missing_paths(config=config, template=_REQUIRED_ZONE_CORRECTION_TEMPLATE)
     if missing_paths:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} correction_config.{config_name} missing required fields: {', '.join(missing_paths)}; "
-            "fail-closed for critical correction parameters",
+            f"У зоны {zone_id} в correction_config.{config_name} отсутствуют обязательные поля: {', '.join(missing_paths)}; "
+            "критические параметры коррекции переведены в fail-closed режим",
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
 
@@ -502,9 +502,9 @@ def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
     minimum_needed = stabilization_sec + observe_window_sec
     if timeout_sec < minimum_needed:
         raise PlannerConfigurationError(
-            f"prepare_recirculation_timeout_sec={timeout_sec}s is less than "
-            f"stabilization_sec + observe_window_sec = {stabilization_sec} + {observe_window_sec} = {minimum_needed}s; "
-            "correction window is too short to complete one observation-driven correction cycle"
+            f"prepare_recirculation_timeout_sec={timeout_sec} с меньше, чем "
+            f"stabilization_sec + observe_window_sec = {stabilization_sec} + {observe_window_sec} = {minimum_needed} с; "
+            "окно коррекции слишком короткое для одного observation-driven цикла"
         )
 
 
@@ -514,7 +514,7 @@ def _tank_recirc_observe_window_sec(*, correction: Mapping[str, Any], process_cf
     if transport_delay_sec > 0 and settle_sec > 0:
         return transport_delay_sec + settle_sec
     raise PlannerConfigurationError(
-        "tank_recirc process calibration must provide transport_delay_sec and settle_sec"
+        "process calibration tank_recirc должна содержать transport_delay_sec и settle_sec"
     )
 
 
@@ -802,7 +802,7 @@ def _assert_required_command_contract(*, plan_name: str, normalized_plan: Sequen
     missing_channels = [channel for channel in required_channels if channel not in present_channels]
     if missing_channels:
         raise PlannerConfigurationError(
-            f"two_tank command plan {plan_name} is missing required channels: {', '.join(missing_channels)}"
+            f"two_tank command plan {plan_name} не содержит обязательные каналы: {', '.join(missing_channels)}"
         )
 
 
@@ -962,7 +962,7 @@ def _build_fail_safe_guards(execution: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "solution_fill_solution_min_check_delay_ms": _resolve_bounded_int(
             guards.get("solution_fill_solution_min_check_delay_ms"),
-            15000,
+            60000,
             0,
             3600000,
         ),

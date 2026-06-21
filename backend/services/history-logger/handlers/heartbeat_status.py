@@ -13,6 +13,10 @@ from metrics import HEARTBEAT_RECEIVED, STATUS_RECEIVED
 from utils import _extract_gh_uid, _extract_node_uid, _extract_zone_uid, _parse_json
 
 from ._shared import apply_trace_context
+from .node_connectivity_alerts import (
+    raise_node_offline_alert,
+    resolve_node_online_alert,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +154,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
             free_heap,
             rssi,
         )
+        await resolve_node_online_alert(node_uid=node_uid, reason="heartbeat")
     finally:
         clear_trace_id()
 
@@ -190,6 +195,7 @@ async def handle_status(topic: str, payload: bytes) -> None:
                     node_uid,
                 )
             logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
+            await resolve_node_online_alert(node_uid=node_uid, reason="status_online")
         elif status == "OFFLINE":
             await execute(
                 "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
@@ -232,12 +238,14 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
                 node_uid,
             )
             logger.info(f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)")
+            await resolve_node_online_alert(node_uid=node_uid, reason="lwt_online")
         else:
             await execute(
                 "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
                 node_uid,
             )
             logger.info(f"[LWT] Node {node_uid} marked as OFFLINE")
+            await raise_node_offline_alert(node_uid=node_uid, reason="mqtt_lwt")
 
         STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
     finally:
@@ -254,23 +262,23 @@ async def monitor_offline_nodes() -> None:
 
     while not state.shutdown_event.is_set():
         try:
-            result = await execute(
+            rows = await fetch(
                 """
                 UPDATE nodes
                 SET status='offline', updated_at=NOW()
                 WHERE status='online'
                   AND COALESCE(last_seen_at, last_heartbeat_at, updated_at, created_at)
                       < NOW() - ($1 * interval '1 second')
+                RETURNING uid
                 """,
                 timeout_sec,
             )
-            if isinstance(result, str) and result.startswith("UPDATE"):
-                try:
-                    updated = int(result.split()[-1])
-                except (ValueError, IndexError):
-                    updated = 0
-                if updated > 0:
-                    logger.warning(f"[OFFLINE_MONITOR] Marked offline: {updated}")
+            if rows:
+                logger.warning("[OFFLINE_MONITOR] Marked offline: %s", len(rows))
+                for row in rows:
+                    uid = str(row.get("uid") or "").strip()
+                    if uid:
+                        await raise_node_offline_alert(node_uid=uid, reason="heartbeat_timeout")
         except Exception as exc:
             logger.error(f"[OFFLINE_MONITOR] Failed to update offline nodes: {exc}")
 

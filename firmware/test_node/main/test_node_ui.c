@@ -12,6 +12,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -135,6 +136,7 @@ typedef enum {
     UI_EVENT_NODE_REGISTER,
     UI_EVENT_NODE_ZONE,
     UI_EVENT_NODE_HEARTBEAT,
+    UI_EVENT_NODE_TELEMETRY,
     UI_EVENT_NODE_LWT,
     UI_EVENT_NODE_STATUS,
 } ui_event_type_t;
@@ -214,6 +216,8 @@ static char s_diag_line_buf[48] = "";
 static char s_diag_big_line_buf[64] = "";
 
 static ui_node_view_t s_nodes[UI_MAX_NODES] = {{0}};
+static int64_t s_nodes_last_refresh_us = 0;
+static bool s_nodes_refresh_pending = false;
 
 static char s_log_lines[UI_LOG_LINES_MAX][UI_LOG_LINE_MAX] = {{0}};
 static size_t s_log_start = 0;
@@ -617,12 +621,12 @@ static bool ui_safe_label_set_text(lv_obj_t **label_slot, const char *text) {
         return false;
     }
 
-    lv_label_set_text(label, text ? text : "");
+    lv_label_set_text_static(label, text ? text : "");
     lv_obj_invalidate(label);
     return true;
 }
 
-static void ui_refresh_nodes_label(void) {
+static void ui_refresh_nodes_label_force(void) {
     size_t i;
     size_t row = 0;
 
@@ -698,6 +702,36 @@ static void ui_refresh_nodes_label(void) {
     ui_refresh_diag_label();
 }
 
+static void ui_refresh_nodes_label(void) {
+    int64_t now_us = esp_timer_get_time();
+
+    if (now_us - s_nodes_last_refresh_us < 400000LL) {
+        s_nodes_refresh_pending = true;
+        return;
+    }
+
+    s_nodes_last_refresh_us = now_us;
+    s_nodes_refresh_pending = false;
+    ui_refresh_nodes_label_force();
+}
+
+static void ui_flush_pending_nodes_refresh(void) {
+    int64_t now_us;
+
+    if (!s_nodes_refresh_pending) {
+        return;
+    }
+
+    now_us = esp_timer_get_time();
+    if (now_us - s_nodes_last_refresh_us < 400000LL) {
+        return;
+    }
+
+    s_nodes_last_refresh_us = now_us;
+    s_nodes_refresh_pending = false;
+    ui_refresh_nodes_label_force();
+}
+
 static const char *ui_get_log_line(size_t logical_index) {
     size_t ring_index = (s_log_start + logical_index) % UI_LOG_LINES_MAX;
     return s_log_lines[ring_index];
@@ -719,11 +753,11 @@ static void ui_refresh_log_label(void) {
             s_log_row_text_buf[i][0] = '\0';
         }
         snprintf(s_log_title_buf, sizeof(s_log_title_buf), "%s", "LOG cmd+zone (enc)");
-        lv_label_set_text(s_log_label_rows[0], s_log_row_text_buf[0]);
+        lv_label_set_text_static(s_log_label_rows[0], s_log_row_text_buf[0]);
         for (i = 1; i < s_log_rows_count; i++) {
-            lv_label_set_text(s_log_label_rows[i], s_log_row_text_buf[i]);
+            lv_label_set_text_static(s_log_label_rows[i], s_log_row_text_buf[i]);
         }
-        lv_label_set_text(s_log_title, s_log_title_buf);
+        lv_label_set_text_static(s_log_title, s_log_title_buf);
         for (i = 0; i < s_log_rows_count; i++) {
             lv_obj_invalidate(s_log_label_rows[i]);
         }
@@ -752,12 +786,12 @@ static void ui_refresh_log_label(void) {
         } else {
             s_log_row_text_buf[i][0] = '\0';
         }
-        lv_label_set_text(s_log_label_rows[i], s_log_row_text_buf[i]);
+        lv_label_set_text_static(s_log_label_rows[i], s_log_row_text_buf[i]);
         lv_obj_invalidate(s_log_label_rows[i]);
     }
 
     snprintf(s_log_title_buf, sizeof(s_log_title_buf), "LOG cmd+zone  off:%u", (unsigned)s_log_scroll_offset);
-    lv_label_set_text(s_log_title, s_log_title_buf);
+    lv_label_set_text_static(s_log_title, s_log_title_buf);
     lv_obj_invalidate(s_log_title);
     if (s_log_box) {
         lv_obj_invalidate(s_log_box);
@@ -1207,7 +1241,7 @@ static void ui_apply_event(const ui_event_msg_t *msg) {
                     msg->text
                 );
             }
-            ui_refresh_nodes_label();
+            ui_refresh_nodes_label_force();
             break;
 
         case UI_EVENT_NODE_ZONE:
@@ -1230,6 +1264,10 @@ static void ui_apply_event(const ui_event_msg_t *msg) {
                 s_nodes[idx].hb_blink_ticks = UI_HB_BLINK_TICKS;
             }
             ui_refresh_nodes_label();
+            break;
+
+        case UI_EVENT_NODE_TELEMETRY:
+            (void)ui_update_node_telemetry_from_log(msg->node_uid, msg->text);
             break;
 
         case UI_EVENT_NODE_LWT:
@@ -2088,6 +2126,7 @@ static void lvgl_task(void *arg) {
 
     while (1) {
         ui_process_queue();
+        ui_flush_pending_nodes_refresh();
         lv_timer_handler();
 
         blink_update_ms += LVGL_TASK_PERIOD_MS;
@@ -2311,6 +2350,16 @@ void test_node_ui_log_event(const char *node_uid, const char *message) {
     ui_enqueue_event(UI_EVENT_LOG, node_uid, message, NULL, false);
 }
 
+void test_node_ui_update_telemetry_line(const char *node_uid, const char *message) {
+    if (esp_get_free_heap_size() < 28000) {
+        return;
+    }
+    if (!message || message[0] == '\0' || strncmp(message, "tel ", 4) != 0) {
+        return;
+    }
+    ui_enqueue_event(UI_EVENT_NODE_TELEMETRY, node_uid, message, NULL, false);
+}
+
 void test_node_ui_set_wifi_status(bool connected, const char *status_text) {
     ui_enqueue_event(UI_EVENT_WIFI_STATUS, NULL, status_text, NULL, connected);
 }
@@ -2379,6 +2428,11 @@ void test_node_ui_show_step(const char *step) {
 }
 
 void test_node_ui_log_event(const char *node_uid, const char *message) {
+    (void)node_uid;
+    (void)message;
+}
+
+void test_node_ui_update_telemetry_line(const char *node_uid, const char *message) {
     (void)node_uid;
     (void)message;
 }

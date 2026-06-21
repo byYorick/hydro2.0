@@ -86,6 +86,8 @@ def _translate_raw_message(message: str) -> str | None:
         replacement = str(pattern.get("message") or "")
         if not regex or not replacement:
             continue
+        # JSON-паттерны используют $1/$2 (PHP preg_replace); в Python re.sub нужны \1/\2.
+        replacement = re.sub(r"\$(\d+)", r"\\\1", replacement)
         translated = re.sub(regex, replacement, message, count=1, flags=re.IGNORECASE)
         if translated != message:
             return translated

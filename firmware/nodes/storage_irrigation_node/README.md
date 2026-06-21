@@ -29,7 +29,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation`, отвечает `ACK`, а terminal `DONE/ERROR` публикует позже по тому же `cmd_id`.
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
 - Встроенные fail-safe guards работают локально:
-  - `clean_fill`: через `clean_fill_min_check_delay_ms` проверяется `level_clean_min`; при `0` нода выключает `valve_clean_fill` и публикует `clean_fill_source_empty`; при `level_clean_max=1` выключает `valve_clean_fill` и публикует `clean_fill_completed`.
+  - `clean_fill`: `valve_clean_fill` держится открытым до `level_clean_max=1` (событие `clean_fill_completed`); проверка `level_clean_min` по таймеру **не применяется** — при пустом баке min активируется только после подъёма уровня; пустой источник — через AE3 timeout/retry.
   - `solution_fill`: через `solution_fill_clean_min_check_delay_ms` проверяется `level_clean_min`; при `0` нода выключает `pump_main + valve_clean_supply + valve_solution_fill` и публикует `solution_fill_source_empty`; через `solution_fill_solution_min_check_delay_ms` проверяется `level_solution_min`; при `0` нода выключает тот же path и публикует `solution_fill_leak_detected`; при `level_solution_max=1` нода выключает тот же path и публикует `solution_fill_completed`.
   - `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_fill + valve_solution_supply` и публикует `recirculation_solution_low`.
   - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
@@ -64,7 +64,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Логика level-switch:
 - входы подтянуты к `VCC` (`pull-up`)
-- активное состояние датчика: `LOW` (`active_low=true`)
+- замкнутый геркон означает нижнее положение поплавка / воды нет и даёт `LOW`
+- при наполнении поплавок поднимается, геркон размыкается, вход становится `HIGH`
+- активное состояние датчика (`WATER_LEVEL_SWITCH=1`): `HIGH` (`active_low=false`)
 
 При получении внешнего `.../config` секция `channels` принудительно заменяется на firmware map.
 То же выполняется при старте ноды: сохраненный в NVS `channels` нормализуется к прошивочному набору.
@@ -76,7 +78,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   "fail_safe_guards": {
     "clean_fill_min_check_delay_ms": 5000,
     "solution_fill_clean_min_check_delay_ms": 5000,
-    "solution_fill_solution_min_check_delay_ms": 15000,
+    "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
     "estop_debounce_ms": 80

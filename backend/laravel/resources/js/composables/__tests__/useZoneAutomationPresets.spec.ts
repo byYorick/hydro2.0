@@ -94,7 +94,7 @@ function createPreset(overrides: Partial<ZoneAutomationPreset> = {}): ZoneAutoma
         fail_safe_guards: {
           clean_fill_min_check_delay_ms: 5000,
           solution_fill_clean_min_check_delay_ms: 5000,
-          solution_fill_solution_min_check_delay_ms: 15000,
+          solution_fill_solution_min_check_delay_ms: 60000,
           recirculation_stop_on_solution_min: true,
           irrigation_stop_on_solution_min: true,
           estop_debounce_ms: 80,
@@ -255,7 +255,7 @@ describe('buildPresetFromWaterForm', () => {
     expect(payload.config.startup.clean_fill_timeout_sec).toBe(1200)
     expect(payload.config.startup.solution_fill_timeout_sec).toBe(1800)
     expect(payload.config.startup.fail_safe_guards?.clean_fill_min_check_delay_ms).toBe(5000)
-    expect(payload.config.startup.fail_safe_guards?.solution_fill_solution_min_check_delay_ms).toBe(15000)
+    expect(payload.config.startup.fail_safe_guards?.solution_fill_solution_min_check_delay_ms).toBe(60000)
   })
 
   it('включает irrigation_decision config для smart_soil_v1', () => {

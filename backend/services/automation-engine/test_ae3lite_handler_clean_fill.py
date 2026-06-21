@@ -303,7 +303,7 @@ async def test_manual_clean_fill_still_obeys_completed_event() -> None:
 
 
 @pytest.mark.asyncio
-async def test_clean_fill_low_clean_min_after_guard_delay_uses_source_empty_path() -> None:
+async def test_clean_fill_keeps_polling_while_clean_min_inactive_after_delay() -> None:
     entered_at = NOW.replace(hour=15, minute=29, second=50)
     monitor = _Monitor(
         level_states=[
@@ -325,14 +325,14 @@ async def test_clean_fill_low_clean_min_after_guard_delay_uses_source_empty_path
     )
 
     outcome = await CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway()).run(
-        task=_task(stage_entered_at=entered_at, clean_fill_cycle=3),
+        task=_task(stage_entered_at=entered_at),
         plan=_Plan(),
         stage_def=None,
         now=NOW,
     )
 
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "clean_fill_source_empty_stop"
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
 
 
 @pytest.mark.asyncio

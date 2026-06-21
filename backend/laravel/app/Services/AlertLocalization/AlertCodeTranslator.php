@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AlertLocalization;
 
 use App\Services\AlertCatalogService;
+use App\Services\ErrorCodeCatalogService;
 
 /**
  * Переводит сообщение alert'а на русский по его business-коду.
@@ -65,12 +66,20 @@ class AlertCodeTranslator
         'EC dose sequence missing node_uid' => 'В последовательности дозирования EC отсутствует node_uid.',
         'EC dose sequence missing channel' => 'В последовательности дозирования EC отсутствует channel.',
         'EC dose sequence amount_ml must be > 0' => 'В последовательности дозирования EC поле amount_ml должно быть больше 0.',
+        'Source tank became empty during clean fill' => 'Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды.',
+        'Clean fill timeout exceeded' => 'За отведённое время бак чистой воды не достиг требуемого уровня.',
+        'Clean source became empty during solution fill' => 'Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи.',
+        'Solution minimum level dropped during solution fill' => 'Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.',
+        'Solution fill timeout exceeded' => 'Бак раствора не наполнился за отведённое время.',
+        'Solution minimum level dropped during prepare recirculation' => 'Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке.',
+        'Irrigation recovery correction failed to restore targets' => 'Recovery не восстановил целевые параметры после полива.',
     ];
 
     public function __construct(
         private AlertCatalogService $alertCatalogService,
         private AlertStructuredMessageParser $structuredParser,
         private DetailsAccessor $accessor,
+        private ErrorCodeCatalogService $errorCodeCatalog,
     ) {}
 
     /**
@@ -151,6 +160,13 @@ class AlertCodeTranslator
 
         if ($reason === null && $reasonCode !== '' && $reasonCode !== 'biz_ae3_task_failed') {
             $reason = $this->translateByCode($reasonCode, $reasonRaw, $details);
+        }
+
+        if ($reason === null && $reasonCode !== '' && $reasonCode !== 'biz_ae3_task_failed') {
+            $catalogMessage = $this->errorCodeCatalog->present($reasonCode, $reasonRaw)['message'] ?? null;
+            if (is_string($catalogMessage) && trim($catalogMessage) !== '') {
+                $reason = $catalogMessage;
+            }
         }
 
         if ($reason === null && $reasonRaw !== null) {

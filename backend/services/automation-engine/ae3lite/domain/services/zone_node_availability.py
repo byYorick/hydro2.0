@@ -39,6 +39,19 @@ NODE_TRANSPORT_ERROR_CODES = frozenset({
     "two_tank_solution_min_level_unavailable",
     "irrigation_recovery_probe_exhausted",
     "biz_irr_probe_streak_exhausted",
+    "command_timeout",
+})
+
+IRR_COMMAND_TRANSPORT_CODES = frozenset({
+    ErrorCodes.IRR_STATE_UNAVAILABLE,
+    "irr_state_unavailable",
+    ErrorCodes.IRR_STATE_STALE,
+    "irr_state_stale",
+    ErrorCodes.COMMAND_SEND_FAILED,
+    "command_send_failed",
+    "command_timeout",
+    ErrorCodes.AE3_COMMAND_POLL_DEADLINE_EXCEEDED,
+    "ae3_command_poll_deadline_exceeded",
 })
 
 ZONE_NODES_DIAG_SQL = """
@@ -358,6 +371,17 @@ def offline_failure_for_node_uid(
     return None
 
 
+def extract_irrig_node_uid_from_actuators(actuators: Any) -> str | None:
+    for actuator in actuators or ():
+        node_type = str(getattr(actuator, "node_type", "") or "").strip().lower()
+        if node_type != "irrig":
+            continue
+        uid = str(getattr(actuator, "node_uid", "") or "").strip()
+        if uid:
+            return uid
+    return None
+
+
 async def offline_failure_for_node_liveness(
     *,
     zone_id: int,
@@ -378,6 +402,66 @@ async def offline_failure_for_node_liveness(
     ):
         return None
     return offline_failure_from_liveness(zone_id=zone_id, node_uid=uid, liveness=liveness)
+
+
+def offline_failure_for_command_transport(
+    *,
+    zone_id: int,
+    node_uid: str,
+    error_code: str,
+    diagnostics: Mapping[str, Any],
+) -> OfflineFailure | None:
+    """Fail-closed, когда transport-команда к ноде не проходит (в т.ч. stale-online)."""
+    uid = str(node_uid or "").strip()
+    if not uid:
+        return None
+    normalized = str(error_code or "").strip().lower()
+    if normalized not in {str(code).strip().lower() for code in IRR_COMMAND_TRANSPORT_CODES}:
+        return None
+
+    node_type = "irrig"
+    node_status = "unknown"
+    last_seen_age_sec: int | None = None
+    zone_nodes = diagnostics.get("zone_nodes")
+    if isinstance(zone_nodes, list):
+        for node in zone_nodes:
+            if not isinstance(node, Mapping):
+                continue
+            if str(node.get("uid") or "").strip() != uid:
+                continue
+            node_type = str(node.get("type") or node_type).strip().lower() or node_type
+            node_status = str(node.get("status") or node_status).strip().lower() or node_status
+            try:
+                last_seen_age_sec = (
+                    int(node.get("last_seen_age_sec"))
+                    if node.get("last_seen_age_sec") is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                last_seen_age_sec = None
+            break
+
+    offline_node = {
+        "uid": uid,
+        "type": node_type,
+        "status": node_status,
+        "last_seen_age_sec": last_seen_age_sec,
+    }
+    return OfflineFailure(
+        code=ErrorCodes.AE3_REQUIRED_NODE_OFFLINE,
+        message=(
+            f"Узел {uid} ({node_type}) не отвечает на команды — возможна потеря связи. "
+            "Проверьте питание, Wi‑Fi и MQTT."
+        ),
+        details={
+            "zone_id": zone_id,
+            "node_uid": uid,
+            "node_status": node_status,
+            "transport_error_code": normalized,
+            "offline_required_nodes": [offline_node],
+            **dict(diagnostics),
+        },
+    )
 
 
 async def resolve_task_error_with_node_offline(
@@ -419,12 +503,25 @@ async def resolve_task_error_with_node_offline(
         if node_failure is not None:
             return node_failure
 
-    return resolve_required_nodes_offline_failure(
+        transport_failure = offline_failure_for_command_transport(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            error_code=error_code,
+            diagnostics=diag,
+        )
+        if transport_failure is not None:
+            return transport_failure
+
+    required_failure = resolve_required_nodes_offline_failure(
         zone_id=zone_id,
         topology=topology,
         diagnostics=diag,
         persistent_only=False,
     )
+    if required_failure is not None:
+        return required_failure
+
+    return None
 
 
 def offline_failure_from_liveness(

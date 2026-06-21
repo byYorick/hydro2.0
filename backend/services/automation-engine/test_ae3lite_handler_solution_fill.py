@@ -66,7 +66,7 @@ _RUNTIME = {
     },
     "fail_safe_guards": {
         "solution_fill_clean_min_check_delay_ms": 5000,
-        "solution_fill_solution_min_check_delay_ms": 15000,
+        "solution_fill_solution_min_check_delay_ms": 60000,
     },
 }
 
@@ -613,7 +613,7 @@ async def test_solution_fill_low_solution_min_after_guard_delay_stops_with_leak(
         ec=1.4,
     )
     outcome = await _handler(monitor).run(
-        task=_make_task(stage_entered_at=NOW - timedelta(seconds=20)),
+        task=_make_task(stage_entered_at=NOW - timedelta(seconds=70)),
         plan=_Plan(),
         stage_def=_StageDef(),
         now=NOW,
@@ -629,6 +629,34 @@ async def test_solution_fill_low_solution_min_after_guard_delay_stops_with_leak(
 async def test_still_filling_targets_reached_returns_poll() -> None:
     m = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4)
     outcome = await _handler(m).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_allows_clean_max_to_drop_while_clean_min_holds() -> None:
+    monitor = _Monitor(
+        max_triggered=False,
+        min_triggered=True,
+        ph=5.8,
+        ec=1.4,
+        irr_state={
+            "has_snapshot": True,
+            "is_stale": False,
+            "snapshot": {
+                "valve_clean_supply": True,
+                "valve_solution_fill": True,
+                "pump_main": True,
+                "clean_level_max": False,
+                "clean_level_min": True,
+                "solution_level_min": False,
+                "solution_level_max": False,
+            },
+        },
+    )
+
+    outcome = await _handler(monitor).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
     assert outcome.kind == "poll"
     assert outcome.due_delay_sec == 10
 

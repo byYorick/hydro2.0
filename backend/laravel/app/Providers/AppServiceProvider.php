@@ -16,10 +16,12 @@ use App\Observers\GreenhouseObserver;
 use App\Observers\UserObserver;
 use App\Observers\ZoneEventObserver;
 use App\Observers\ZoneObserver;
+use App\Support\RequestAwareVite;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Foundation\Vite as FoundationVite;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -30,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        if ($this->app->environment('local')) {
+            $this->app->singleton(FoundationVite::class, RequestAwareVite::class);
+        }
 
         // Регистрация DigitalTwinClient
         $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {
@@ -76,6 +81,26 @@ class AppServiceProvider extends ServiceProvider
     {
         if ($this->app->environment(['testing', 'e2e'])) {
             Vite::useHotFile(storage_path('framework/vite.hot'));
+        }
+
+        if ($this->app->environment('local')) {
+            $this->app->booted(function (): void {
+                if ($this->app->runningInConsole()) {
+                    return;
+                }
+
+                $request = request();
+                if ($request === null) {
+                    return;
+                }
+
+                $host = $request->getHost();
+                if ($host === '') {
+                    return;
+                }
+
+                config(['app.url' => $request->getSchemeAndHttpHost()]);
+            });
         }
 
         Vite::prefetch(concurrency: 3);

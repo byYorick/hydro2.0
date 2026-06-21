@@ -298,7 +298,7 @@ class SystemAutomationSettingsCatalog
                 'water_startup_solution_max_sensor_label' => 'level_solution_max',
                 'water_clean_fill_min_check_delay_ms' => 5000,
                 'water_solution_fill_clean_min_check_delay_ms' => 5000,
-                'water_solution_fill_solution_min_check_delay_ms' => 15000,
+                'water_solution_fill_solution_min_check_delay_ms' => 60000,
                 'water_recirculation_stop_on_solution_min' => true,
                 'water_estop_debounce_ms' => 80,
                 'water_irrigation_recovery_max_continue_attempts' => 5,

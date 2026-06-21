@@ -330,7 +330,7 @@ class CorrectionPlanner:
                     active_sum = sum(active.values())
                     if multi_fail_closed and active_sum <= 0:
                         raise PlannerConfigurationError(
-                            "EC multi_sequential excludes NPK but no active EC components are configured"
+                            "Режим EC multi_sequential исключает NPK, но активные EC-компоненты не настроены"
                         )
 
                     if active_sum > 0:
@@ -470,8 +470,8 @@ class CorrectionPlanner:
                             )
                     discarded_components = ", ".join(sorted({name for name in discarded_names if name})) or "none"
                     raise PlannerConfigurationError(
-                        f"EC {ec_dosing_mode} produced no safe non-NPK doses during irrigation "
-                        f"(discarded={discarded_components})"
+                        f"Режим EC {ec_dosing_mode} не дал безопасных non-NPK доз во время полива "
+                        f"(отброшено={discarded_components})"
                     )
                 if not ec_dose_sequence and not multi_fail_closed:
                     resolved_component, resolved_ec = _resolve_ec_actuator(
@@ -550,7 +550,7 @@ class CorrectionPlanner:
                 resolved_ph = ph_up_actuator if ph_needs_up else ph_down_actuator
                 if resolved_ph is None:
                     raise PlannerConfigurationError(
-                        f"PH correction needed but no actuator resolved for channel={default_channel}"
+                        f"Требуется коррекция pH, но не найден actuator для channel={default_channel}"
                     )
                 ph_node_uid = str(resolved_ph["node_uid"])
                 ph_channel = str(resolved_ph["channel"])
@@ -744,8 +744,8 @@ def _assert_distinct_parallel_actuators(ec_actuators: Mapping[str, Any]) -> None
             if identity == seen_identity:
                 continue
             raise PlannerConfigurationError(
-                f"multi_parallel ec dosing requires distinct (node_uid, channel) per "
-                f"component, but '{name}' and '{seen_name}' share ({node_uid}, {channel})"
+                f"Режим multi_parallel EC требует distinct (node_uid, channel) для каждого "
+                f"компонента, но '{name}' и '{seen_name}' используют ({node_uid}, {channel})"
             )
         seen[key] = (identity, str(name))
 
@@ -836,7 +836,7 @@ def _resolve_ec_actuator(
 
     if not isinstance(ec_actuators, Mapping) or not ec_actuators:
         raise PlannerConfigurationError(
-            f"EC correction needed but no actuator resolved for channel={default_channel}"
+            f"Требуется коррекция EC, но не найден actuator для channel={default_channel}"
         )
 
     phase_policy = ec_component_policy.get(phase_key) if isinstance(ec_component_policy, Mapping) else None
@@ -864,7 +864,7 @@ def _resolve_ec_actuator(
     chosen = ranked[0] if ranked else None
     if chosen is None:
         raise PlannerConfigurationError(
-            f"EC correction needed but no actuator resolved for channel={default_channel}"
+            f"Требуется коррекция EC, но не найден actuator для channel={default_channel}"
         )
     return chosen[2], chosen[3]
 
@@ -1178,7 +1178,7 @@ def _dose_ml_to_ms(
     pump_calibration = correction_config.get("pump_calibration")
     if not isinstance(pump_calibration, Mapping):
         raise PlannerConfigurationError(
-            "pump_calibration config is missing from correction_config"
+            "В correction_config отсутствует pump_calibration"
         )
     min_dose_ms = _positive_int(pump_calibration.get("min_dose_ms"), 0)
     ml_min = _positive_float(pump_calibration.get("ml_per_sec_min"), 0.0)
@@ -1193,31 +1193,31 @@ def _dose_ml_to_ms(
     max_dose_ms = _positive_int(pump_calibration.get("max_dose_ms"), 300_000)
     if min_dose_ms <= 0 or ml_min <= 0 or ml_max <= 0 or ml_max < ml_min:
         raise PlannerConfigurationError(
-            "pump_calibration config is invalid; expected min_dose_ms/ml_per_sec_min/ml_per_sec_max"
+            "Некорректный pump_calibration; ожидаются min_dose_ms/ml_per_sec_min/ml_per_sec_max"
         )
     if max_dose_ms <= 0 or max_dose_ms < min_dose_ms:
         raise PlannerConfigurationError(
-            f"pump_calibration.max_dose_ms={max_dose_ms} must be positive and >= min_dose_ms={min_dose_ms}"
+            f"pump_calibration.max_dose_ms={max_dose_ms} должно быть положительным и >= min_dose_ms={min_dose_ms}"
         )
     raw = calibration.get("ml_per_sec")
     if raw is None:
         raise PlannerConfigurationError(
-            "Pump calibration is missing ml_per_sec; cannot compute dose duration"
+            "В калибровке насоса отсутствует ml_per_sec; невозможно вычислить длительность дозы"
         )
     try:
         ml_per_sec = float(raw)
     except (TypeError, ValueError):
         raise PlannerConfigurationError(
-            f"Pump calibration ml_per_sec is not numeric: {raw!r}"
+            f"Калибровка насоса ml_per_sec не является числом: {raw!r}"
         )
     if ml_per_sec <= 0:
         raise PlannerConfigurationError(
-            f"Pump calibration ml_per_sec must be positive, got {ml_per_sec}"
+            f"Калибровка насоса ml_per_sec должна быть положительной, получено {ml_per_sec}"
         )
     if not (ml_min <= ml_per_sec <= ml_max):
         raise PlannerConfigurationError(
-            f"Pump calibration ml_per_sec={ml_per_sec} is outside the valid range "
-            f"[{ml_min}, {ml_max}]; check pump calibration data"
+            f"Калибровка насоса ml_per_sec={ml_per_sec} вне допустимого диапазона "
+            f"[{ml_min}, {ml_max}]; проверьте данные калибровки насоса"
         )
     duration_ms = int(dose_ml / ml_per_sec * 1000)
     if duration_ms <= 0:

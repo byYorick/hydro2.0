@@ -156,8 +156,8 @@ class SequentialCommandGateway:
             return self._cleanup_race_batch_result(
                 task=task,
                 message=(
-                    f"Task {task.id} missing during ae_commands insert "
-                    f"(likely concurrent cleanup)"
+                    f"Задача {task.id} исчезла при вставке ae_commands "
+                    f"(вероятно параллельная очистка)"
                 ),
             )
         try:
@@ -201,8 +201,8 @@ class SequentialCommandGateway:
                     return self._cleanup_race_batch_result(
                         task=task,
                         message=(
-                            f"Task {task.id} missing after HL publish while linking ae_commands "
-                            f"(likely concurrent cleanup); cmd_id={cmd_id}"
+                            f"Задача {task.id} исчезла после публикации в HL при связывании ae_commands "
+                            f"(вероятно параллельная очистка); cmd_id={cmd_id}"
                         ),
                     )
                 raise CommandPublishError(
@@ -240,8 +240,8 @@ class SequentialCommandGateway:
                     return self._cleanup_race_batch_result(
                         task=task,
                         message=(
-                            f"Task {task.id} missing before waiting_command transition "
-                            f"(likely concurrent cleanup); cmd_id={cmd_id}"
+                            f"Задача {task.id} исчезла до перехода в waiting_command "
+                            f"(вероятно параллельная очистка); cmd_id={cmd_id}"
                         ),
                     )
                 raise TaskExecutionError(
@@ -258,7 +258,7 @@ class SequentialCommandGateway:
             send_service_log(
                 service="automation-engine",
                 level="error",
-                message="AE3 command dispatch failed before waiting_command",
+                message="Не удалось отправить команду AE3 до перехода в waiting_command",
                 context={
                     "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
                     "task_id": int(getattr(task, "id", 0) or 0) or None,
@@ -293,8 +293,8 @@ class SequentialCommandGateway:
                 return self._cleanup_race_batch_result(
                     task=task,
                     message=(
-                        f"Task {task.id} missing during publish pipeline "
-                        f"(likely concurrent cleanup): {exc}"
+                        f"Задача {task.id} исчезла во время publish pipeline "
+                        f"(вероятно параллельная очистка): {exc}"
                     ),
                 )
             await self._maybe_raise_offline_instead_of_command_error(

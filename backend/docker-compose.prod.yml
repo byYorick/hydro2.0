@@ -99,15 +99,15 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_DEV_DEPS: "false"
-        VITE_REVERB_HOST: localhost
-        VITE_WS_HOST: localhost
-        VITE_REVERB_PORT: "6001"
-        VITE_WS_PORT: "6001"
-        VITE_REVERB_SCHEME: http
-        VITE_WS_TLS: "false"
+        VITE_REVERB_HOST: ${PUBLIC_HOST:?PUBLIC_HOST must be set}
+        VITE_WS_HOST: ${PUBLIC_HOST:?PUBLIC_HOST must be set}
+        VITE_REVERB_PORT: ${PUBLIC_WS_PORT:-6001}
+        VITE_WS_PORT: ${PUBLIC_WS_PORT:-6001}
+        VITE_REVERB_SCHEME: ${PUBLIC_SCHEME:-https}
+        VITE_WS_TLS: ${PUBLIC_WS_TLS:-true}
         VITE_ENABLE_WS: "true"
-        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-change-me}
-        VITE_PUSHER_APP_KEY: ${REVERB_APP_KEY:-change-me}
+        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
+        VITE_PUSHER_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
     working_dir: /app
     # Reverb запускается автоматически через supervisor (reverb-supervisor.conf)
     # Не запускаем через nohup, чтобы избежать двойного запуска и ошибки EADDRINUSE
@@ -124,6 +124,8 @@ services:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=production
       - APP_DEBUG=false
+      - APP_KEY=${APP_KEY:?APP_KEY must be set}
+      - APP_URL=${APP_URL:?APP_URL must be set}
       - SESSION_DRIVER=redis
       - CACHE_DRIVER=redis
       - LOG_CHANNEL=stderr
@@ -161,7 +163,7 @@ services:
       - AUTOMATION_ENGINE_API_PORT=9405
       - REVERB_HOST=0.0.0.0
       - REVERB_PORT=6001
-      - REVERB_SCHEME=http
+      - REVERB_SCHEME=${PUBLIC_SCHEME:-https}
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=${REVERB_AUTO_START:-true}
       # WebSocket security: явный список разрешенных origins
@@ -172,24 +174,25 @@ services:
       - SANCTUM_STATEFUL_DOMAINS=${SANCTUM_STATEFUL_DOMAINS:?SANCTUM_STATEFUL_DOMAINS must be set}
       - SESSION_DOMAIN=${SESSION_DOMAIN:-}
       - SESSION_SECURE_COOKIE=${SESSION_SECURE_COOKIE:-true}
-      # Vite environment variables for WebSocket (передаются при сборке)
-      # ВАЖНО: Для браузера используем localhost, а не 0.0.0.0
+      # Vite/WebSocket для собранного фронта (PUBLIC_* задаются в backend/.env.prod)
       - VITE_ENABLE_WS=true
       - VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
-      - VITE_REVERB_HOST=localhost
-      - VITE_REVERB_PORT=6001
-      - VITE_REVERB_SCHEME=http
+      - VITE_REVERB_HOST=${PUBLIC_HOST:?PUBLIC_HOST must be set}
+      - VITE_REVERB_PORT=${PUBLIC_WS_PORT:-6001}
+      - VITE_REVERB_SCHEME=${PUBLIC_SCHEME:-https}
       - VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-change-me}
-      - VITE_WS_HOST=localhost
-      - VITE_WS_PORT=6001
-      - VITE_WS_TLS=false
+      - VITE_WS_HOST=${PUBLIC_HOST:?PUBLIC_HOST must be set}
+      - VITE_WS_PORT=${PUBLIC_WS_PORT:-6001}
+      - VITE_WS_TLS=${PUBLIC_WS_TLS:-true}
       # ВАЖНО: Токены для безопасности сервисов
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
     volumes:
-      - ./laravel:/app
+      # Production: образ из Dockerfile, без bind-mount исходников с хоста
+      - laravel_storage:/app/storage
+      - laravel_bootstrap_cache:/app/bootstrap/cache
       # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
       - ../schemas:/schemas:ro
     ports:
@@ -438,6 +441,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  laravel_storage:
+  laravel_bootstrap_cache:
   postgres_data:
   redis_data:
   prometheus_data:

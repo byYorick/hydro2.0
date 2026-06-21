@@ -42,7 +42,6 @@ class CleanFillCheckHandler(BaseStageHandler):
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-        fail_safe_guards = runtime.fail_safe_guards
 
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
@@ -111,26 +110,8 @@ class CleanFillCheckHandler(BaseStageHandler):
             _logger.debug("clean_fill_check: бак чистой воды заполнен, выполняется переход zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
 
-        clean_fill_min_check_delay_ms = int(fail_safe_guards.clean_fill_min_check_delay_ms)
-        if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_fill_min_check_delay_ms):
-            clean_min = await self._read_level(
-                task=task,
-                zone_id=task.zone_id,
-                labels=runtime.clean_min_sensor_labels,
-                threshold=runtime.level_switch_on_threshold,
-                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
-                unavailable_error="two_tank_clean_min_level_unavailable",
-                stale_error="two_tank_clean_min_level_stale",
-                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
-            )
-            if not clean_min["is_triggered"]:
-                self._observe_fail_safe_transition(
-                    task=task,
-                    reason="clean_fill_source_empty",
-                    source="sensor",
-                    next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",  # config-literal: allow two retries before fail-closed stop
-                )
-                return self._source_empty_outcome(task=task)
+        # clean_fill не проверяет level_clean_min по таймеру: при пустом баке min активируется
+        # позже подъёма уровня; ранний fail-closed давал ложный source_empty и цикл ON/OFF клапана.
 
         # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at

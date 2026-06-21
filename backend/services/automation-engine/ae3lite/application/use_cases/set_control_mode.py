@@ -85,8 +85,8 @@ class SetControlModeUseCase:
                             task_id=active_task_id,
                             error_code="control_mode_switched_to_manual",
                             error_message=(
-                                f"Active task {active_task_id} cancelled due to control_mode change "
-                                f"from {previous_mode} to manual"
+                                f"Активная задача {active_task_id} отменена из-за смены control_mode "
+                                f"с {previous_mode} на manual"
                             ),
                             now=now,
                         )

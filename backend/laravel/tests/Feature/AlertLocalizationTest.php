@@ -206,6 +206,46 @@ class AlertLocalizationTest extends TestCase
             );
     }
 
+    public function test_alerts_api_returns_expanded_message_for_ae3_clean_fill_source_empty(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'Ошибка задачи автоматики',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'error',
+            'details' => [
+                'task_id' => 2,
+                'task_type' => 'cycle_start',
+                'stage' => 'clean_fill_source_empty_stop',
+                'workflow_phase' => 'tank_filling',
+                'topology' => 'two_tank_drip_substrate_trays',
+                'stage_retry_count' => 0,
+                'error_code' => 'clean_fill_source_empty',
+                'error_message' => 'Source tank became empty during clean fill',
+                'message' => 'Source tank became empty during clean fill',
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.data.0.code', 'biz_ae3_task_failed')
+            ->assertJsonPath(
+                'data.data.0.message',
+                'Задача AE3 #2 (cycle_start) завершилась с ошибкой (код: clean_fill_source_empty): этап clean_fill_source_empty_stop, workflow tank_filling, topology two_tank_drip_substrate_trays. Причина: Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды.'
+            );
+    }
+
     public function test_alerts_api_localizes_irrigation_wait_ready_timeout_alert(): void
     {
         $user = User::factory()->create(['role' => 'admin']);

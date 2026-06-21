@@ -4,14 +4,14 @@
   "codes": [
     {
       "code": "actuator_apply_failed",
-      "title": "Actuator Apply Failed",
-      "message": "Actuator Apply Failed. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Ошибка исполнительного канала",
+      "message": "Не удалось применить команду к исполнительному каналу. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {
       "code": "actuator_busy",
-      "title": "Actuator Busy",
-      "message": "Actuator Busy. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Исполнительный канал занят",
+      "message": "Исполнительный канал занят. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {
@@ -404,8 +404,8 @@
     },
     {
       "code": "current_unavailable",
-      "title": "Current Unavailable",
-      "message": "Current Unavailable. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Ток недоступен",
+      "message": "Не удалось получить показание тока. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {
@@ -431,8 +431,8 @@
     },
     {
       "code": "esp_esp_err_invalid_state",
-      "title": "Esp Esp Err Invalid State",
-      "message": "Esp Esp Err Invalid State. Проверьте NodeConfig, журнал узла и состояние канала.",
+      "title": "Некорректное состояние ESP",
+      "message": "Узел в недопустимом состоянии для операции (ESP_ERR_INVALID_STATE). Проверьте NodeConfig, журнал узла и состояние канала.",
       "source_layer": "firmware_mqtt"
     },
     {
@@ -653,8 +653,8 @@
     },
     {
       "code": "pump_busy",
-      "title": "Pump Busy",
-      "message": "Pump Busy. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Насос занят",
+      "message": "Канал насоса занят предыдущей операцией. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {
@@ -671,14 +671,14 @@
     },
     {
       "code": "pump_driver_failed",
-      "title": "Pump Driver Failed",
-      "message": "Pump Driver Failed. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Ошибка драйвера насоса",
+      "message": "Драйвер насоса не выполнил команду. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {
       "code": "pump_error",
-      "title": "Pump Error",
-      "message": "Pump Error. Проверьте конфигурацию, логи сервиса и состояние зоны.",
+      "title": "Ошибка насоса",
+      "message": "Общая ошибка драйвера насоса. Проверьте конфигурацию, логи сервиса и состояние зоны.",
       "source_layer": "firmware_mqtt"
     },
     {

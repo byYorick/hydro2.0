@@ -41,6 +41,7 @@ CMakeBuilds.json
 
 # Environment
 .env
+backend/.env.prod
 
 # Claude Code
 .claude/scheduled_tasks.lock

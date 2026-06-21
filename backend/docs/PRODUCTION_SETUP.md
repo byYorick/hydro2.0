@@ -1,135 +1,133 @@
 # Production Environment Setup
 
+Развёртывание через `backend/docker-compose.prod.yml` на Linux/macOS.
+
 ## Быстрый старт
 
-### 1. Установка переменных окружения
+### 1. Сгенерировать секреты и env-файл
 
-Выполните PowerShell скрипт для установки всех необходимых переменных окружения:
-
-```powershell
-cd backend
-.\setup-prod-env.ps1
+```bash
+# из корня репозитория
+make prod-setup PROD_SETUP_ARGS="--host your-server.example.com"
 ```
 
-Или установите переменные вручную:
+Скрипт создаёт:
 
-```powershell
-$env:POSTGRES_PASSWORD="hydro_prod_secure_password_2024"
-$env:REVERB_APP_KEY="production_reverb_app_key_2024"
-$env:REVERB_APP_SECRET="production_reverb_app_secret_2024_secure"
-$env:GRAFANA_ADMIN_PASSWORD="admin_prod_secure_2024"
-$env:MQTT_MQTT_BRIDGE_PASS="mqtt_bridge_prod_password_2024"
-$env:MQTT_AUTOMATION_ENGINE_PASS="automation_engine_prod_password_2024"
-$env:MQTT_HISTORY_LOGGER_PASS="history_logger_prod_password_2024"
-$env:MQTT_SCHEDULER_PASS="scheduler_prod_password_2024"
+- `backend/.env.prod` — пароли, токены, `APP_KEY`, домены
+- `backend/services/mqtt-bridge/passwords.txt` — MQTT-пользователи для Mosquitto
+
+Перезапись существующего файла:
+
+```bash
+make prod-setup PROD_SETUP_ARGS="--force --host 192.168.1.50"
 ```
 
-### 2. Генерация Laravel API токена (опционально)
+Шаблон для ручного редактирования: `backend/.env.prod.example`.
 
-Для работы Python сервисов с Laravel API необходимо сгенерировать токен:
+### 2. Проверить конфигурацию
 
-```powershell
-docker-compose -f docker-compose.prod.yml exec laravel php artisan token:generate
+```bash
+make prod-check
 ```
 
-Затем установите полученный токен:
+### 3. Запустить стек
 
-```powershell
-$env:LARAVEL_API_TOKEN="полученный_токен"
+```bash
+make prod-up
 ```
 
-### 3. Проверка конфигурации
+Первый запуск после поднятия БД:
 
-Убедитесь, что конфигурация валидна:
-
-```powershell
-docker-compose -f docker-compose.prod.yml config
+```bash
+make prod-migrate
+make prod-seed    # StartUsersSeeder — базовые пользователи
 ```
 
-### 4. Запуск production окружения
+### 4. Статус и логи
 
-```powershell
-docker-compose -f docker-compose.prod.yml up -d
+```bash
+make prod-ps
+make prod-logs SERVICE=laravel
 ```
 
-### 5. Проверка статуса сервисов
+Остановка:
 
-```powershell
-docker-compose -f docker-compose.prod.yml ps
+```bash
+make prod-down
 ```
 
-## Переменные окружения
+## Обязательные переменные (`backend/.env.prod`)
 
-### Обязательные переменные
+| Переменная | Описание |
+|------------|----------|
+| `PUBLIC_HOST` | Домен или IP сервера (без схемы) |
+| `APP_URL` | Полный URL веб-приложения |
+| `APP_KEY` | Laravel application key (`base64:...`) |
+| `POSTGRES_PASSWORD` | Пароль PostgreSQL |
+| `REVERB_APP_KEY` / `REVERB_APP_SECRET` | Laravel Reverb |
+| `REVERB_ALLOWED_ORIGINS` | Origins для WebSocket (через запятую) |
+| `SANCTUM_STATEFUL_DOMAINS` | Домены для cookie-auth |
+| `PY_API_TOKEN` / `PY_INGEST_TOKEN` | Токены Laravel ↔ Python |
+| `LARAVEL_API_TOKEN` | Токен Python → Laravel API |
+| `MQTT_*_PASS` | Пароли MQTT для сервисов и `MQTT_ESP32_NODE_PASS` для узлов |
+| `GRAFANA_ADMIN_PASSWORD` | Пароль Grafana |
 
-| Переменная | Описание | Значение по умолчанию |
-|------------|----------|----------------------|
-| `POSTGRES_PASSWORD` | Пароль для PostgreSQL | *(обязательно)* |
-| `REVERB_APP_KEY` | Ключ приложения для Laravel Reverb | *(обязательно)* |
-| `REVERB_APP_SECRET` | Секретный ключ для Laravel Reverb | *(обязательно)* |
-| `GRAFANA_ADMIN_PASSWORD` | Пароль администратора Grafana | *(обязательно)* |
-| `MQTT_MQTT_BRIDGE_PASS` | Пароль MQTT для mqtt-bridge | *(обязательно)* |
-| `MQTT_AUTOMATION_ENGINE_PASS` | Пароль MQTT для automation-engine | *(обязательно)* |
-| `MQTT_HISTORY_LOGGER_PASS` | Пароль MQTT для history-logger | *(обязательно)* |
-| `MQTT_SCHEDULER_PASS` | Пароль MQTT для scheduler | *(обязательно)* |
+Опционально: `PUBLIC_SCHEME` (`https`), `PUBLIC_WS_PORT`, `PUBLIC_WS_TLS`, `SESSION_DOMAIN`.
 
-### Опциональные переменные
+## ESP32 / MQTT
 
-| Переменная | Описание | Значение по умолчанию |
-|------------|----------|----------------------|
-| `POSTGRES_USER` | Пользователь PostgreSQL | `hydro` |
-| `POSTGRES_DB` | База данных PostgreSQL | `hydro` |
-| `REVERB_APP_ID` | ID приложения Reverb | `app` |
-| `REVERB_AUTO_START` | Автоматический запуск Reverb | `true` |
-| `REVERB_HOST` | Хост для Reverb | `0.0.0.0` |
-| `GRAFANA_ADMIN_USER` | Пользователь администратора Grafana | `admin` |
-| `LARAVEL_API_TOKEN` | API токен для Python сервисов | *(пусто)* |
+- Брокер: порт **1883** (в production включена аутентификация)
+- Пользователь узлов: `esp32_node`
+- Пароль: значение `MQTT_ESP32_NODE_PASS` из `backend/.env.prod`
+- На роутере/firewall откройте 1883 только для локальной сети теплицы
 
 ## Безопасность
 
-**ВАЖНО:** Значения в `setup-prod-env.ps1` предназначены для тестирования!
+1. **Не коммитьте** `backend/.env.prod` и `passwords.txt`
+2. Замените тестовые значения на уникальные перед боевым деплоем
+3. Для внешнего доступа используйте reverse proxy (nginx/Caddy) с TLS; `PUBLIC_SCHEME=https`
+4. Закройте порты Grafana/Prometheus/Alertmanager файрволом или VPN
+5. Регулярно ротируйте пароли и API-токены
 
-Для реального production окружения:
+После деплоя в контейнере Laravel:
 
-1. Замените все пароли на безопасные уникальные значения
-2. Используйте менеджер секретов (например, Docker Secrets, HashiCorp Vault)
-3. Храните секреты вне системы контроля версий
-4. Регулярно обновляйте пароли и токены
+```bash
+make prod-check   # env + compose
+docker compose --env-file backend/.env.prod -f backend/docker-compose.prod.yml exec laravel php artisan security:check-config
+```
 
 ## Устранение неполадок
 
-### Проблема: "required variable X is missing a value"
+### `required variable X is missing a value`
 
-**Решение:** Убедитесь, что все обязательные переменные окружения установлены:
+Запустите `make prod-setup` или заполните переменную в `backend/.env.prod`, затем `make prod-check`.
 
-```powershell
-.\setup-prod-env.ps1
+### Laravel API 401/403 из Python-сервисов
+
+Убедитесь, что `LARAVEL_API_TOKEN` в `.env.prod` совпадает с токеном Sanctum. При необходимости сгенерируйте новый:
+
+```bash
+docker compose --env-file backend/.env.prod -f backend/docker-compose.prod.yml exec laravel php artisan token:generate
 ```
 
-### Проблема: Сервисы не запускаются
+Обновите `LARAVEL_API_TOKEN` в `.env.prod` и перезапустите Python-сервисы:
 
-**Решение:** Проверьте логи:
-
-```powershell
-docker-compose -f docker-compose.prod.yml logs [service-name]
+```bash
+docker compose --env-file backend/.env.prod -f backend/docker-compose.prod.yml restart mqtt-bridge automation-engine history-logger
 ```
 
-### Проблема: Laravel API возвращает 401/403
+### Сервисы не стартуют
 
-**Решение:** Убедитесь, что `LARAVEL_API_TOKEN` установлен и валиден:
-
-```powershell
-docker-compose -f docker-compose.prod.yml exec laravel php artisan token:generate
-$env:LARAVEL_API_TOKEN="полученный_токен"
-docker-compose -f docker-compose.prod.yml restart automation-engine history-logger
+```bash
+make prod-logs SERVICE=laravel
+make prod-logs SERVICE=automation-engine
 ```
 
-## Дополнительная информация
+## Альтернатива: bare-metal
 
-- [Docker Compose документация](https://docs.docker.com/compose/)
-- [Laravel Reverb документация](https://laravel.com/docs/reverb)
-- [Grafana документация](https://grafana.com/docs/)
+Развёртывание без Docker: `infra/DEPLOYMENT.md`, скрипт `./deploy.sh production`.
 
+## Ссылки
 
-
-
+- [FULL_STACK_DEPLOY_DOCKER.md](../../doc_ai/04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md)
+- [SECURITY_ARCHITECTURE.md](../../doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md)

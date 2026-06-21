@@ -52,7 +52,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Для всех 4 `level_*` датчиков:
 - вход подтянут к `VCC` (`pull-up`);
-- активное состояние определяется по `LOW` (`active_low=true`).
+- геркон замкнут при нижнем положении поплавка (воды нет) и замыкает вход на `GND`;
+- при наполнении поплавок поднимается, геркон размыкается, вход уходит в `HIGH`;
+- активное состояние `WATER_LEVEL_SWITCH=1` означает «уровень достигнут / вода есть» и определяется по `HIGH` (`active_low=false`).
 
 ## 3.2. Поддерживаемые команды
 
@@ -89,8 +91,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - при попытке нарушения interlock возвращается `ERROR` + `error_code=pump_interlock_blocked`;
 - `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_completed`
   один раз на эпизод `clean_fill`;
-- через `clean_fill_min_check_delay_ms` нода проверяет `level_clean_min`; если датчик остаётся `0`,
-  локально завершает `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_source_empty`;
+- для `clean_fill` проверка `level_clean_min` по `clean_fill_min_check_delay_ms` **не применяется**:
+  клапан остаётся открытым, пока уровень не достигнет `level_clean_max`; пустой источник определяется
+  через AE3 timeout/retry;
 - через `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min`; если датчик `0`,
   локально завершает `solution_fill`
   (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_source_empty`;
@@ -184,7 +187,7 @@ Top-level секция `fail_safe_guards` допускается и исполь
   "fail_safe_guards": {
     "clean_fill_min_check_delay_ms": 5000,
     "solution_fill_clean_min_check_delay_ms": 5000,
-    "solution_fill_solution_min_check_delay_ms": 15000,
+    "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
     "estop_debounce_ms": 80

@@ -618,8 +618,12 @@ class BaseStageHandler:
         if await self._irr_probe_node_is_offline(task=task, plan=plan):
             failure = await self._offline_failure_for_irr_probe(task=task, plan=plan)
             raise TaskExecutionError(failure.code, failure.message)
-        raise TaskExecutionError(
-            "irr_state_unavailable", "Снимок состояния IRR-ноды недоступен",
+        await self._raise_execution_error(
+            task=task,
+            error_code="irr_state_unavailable",
+            error_message="Снимок состояния IRR-ноды недоступен",
+            node_uid=self._extract_irr_probe_node_uid(plan=plan),
+            plan=plan,
         )
 
     async def _ensure_irr_probe_node_online(self, *, task: Any, plan: Any) -> None:

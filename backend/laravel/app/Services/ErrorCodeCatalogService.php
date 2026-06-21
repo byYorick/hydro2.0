@@ -330,6 +330,18 @@ class ErrorCodeCatalogService
         return self::$cachedRawTranslations;
     }
 
+    private function applyRawPatternTranslation(string $regex, string $replacement, string $message): ?string
+    {
+        // Patterns in api_error_raw_translations.json are body-only (no delimiters) and may
+        // contain literal slashes, e.g. "stale/unavailable" or "base/phases".
+        $translated = preg_replace('#'.$regex.'#iu', $replacement, $message, 1);
+        if (! is_string($translated) || $translated === $message || preg_last_error() !== PREG_NO_ERROR) {
+            return null;
+        }
+
+        return $translated;
+    }
+
     private function translateRawMessage(string $message): ?string
     {
         $raw = $this->rawTranslations();
@@ -344,8 +356,8 @@ class ErrorCodeCatalogService
                 continue;
             }
 
-            $translated = preg_replace('/'.$regex.'/i', $replacement, $message, 1);
-            if (is_string($translated) && $translated !== $message) {
+            $translated = $this->applyRawPatternTranslation($regex, $replacement, $message);
+            if ($translated !== null) {
                 return $translated;
             }
         }

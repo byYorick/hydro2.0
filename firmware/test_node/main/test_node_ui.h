@@ -45,6 +45,14 @@ void test_node_ui_show_step(const char *step);
 void test_node_ui_log_event(const char *node_uid, const char *message);
 
 /**
+ * @brief Обновить компактную телеметрию ноды на экране (без записи в log ring).
+ *
+ * @param node_uid UID ноды
+ * @param message Строка формата "tel channel/metric=value"
+ */
+void test_node_ui_update_telemetry_line(const char *node_uid, const char *message);
+
+/**
  * @brief Обновить статус Wi-Fi.
  *
  * @param connected true если подключено

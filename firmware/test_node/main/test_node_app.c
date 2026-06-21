@@ -27,6 +27,7 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include <math.h>
 #include <time.h>
 
@@ -45,8 +46,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define STATE_COMMAND_QUEUE_LENGTH 12
 #define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
 #define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
-#define TASK_STACK_TELEMETRY 6144
-#define TASK_STACK_TELEMETRY_FALLBACK 5632
+#define TASK_STACK_TELEMETRY 10240
+#define TASK_STACK_TELEMETRY_FALLBACK 9216
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 #define TASK_STACK_STATE_COMMAND_WORKER 4096
@@ -113,7 +114,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define COMMAND_DEDUP_CACHE_SIZE 32
 #define VIRTUAL_IRR_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS 5000U
 #define VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS 5000U
-#define VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS 15000U
+#define VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS 60000U
 #define VIRTUAL_IRR_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN true
 #define VIRTUAL_IRR_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN true
 #define VIRTUAL_IRR_FAIL_SAFE_ESTOP_DEBOUNCE_MS 80U
@@ -373,13 +374,14 @@ typedef struct {
 } virtual_node_namespace_t;
 
 static virtual_node_namespace_t s_virtual_namespaces[VIRTUAL_NODE_COUNT] = {0};
-static int64_t s_start_time_seconds = 0;
+static int64_t s_boot_time_us = 0;
 static int64_t s_timestamp_offset_sec = 0;
 static bool s_timestamp_offset_valid = false;
 static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
 static QueueHandle_t s_state_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
+static SemaphoreHandle_t s_ui_log_mutex = NULL;
 static bool s_wildcard_subscriptions_ready = false;
 static bool s_wildcard_subscribe_warned = false;
 static bool s_factory_reset_pending = false;
@@ -574,22 +576,47 @@ static bool should_emit_uart_log(const char *line) {
 }
 
 static void ui_logf(const char *node_uid, const char *fmt, ...) {
-    char line[96];
+    char line[80];
     const char *origin = (node_uid && node_uid[0] != '\0') ? node_uid : "SYS";
     va_list args;
+    bool locked = false;
 
     if (!fmt || fmt[0] == '\0') {
         return;
     }
 
+    if (esp_get_free_heap_size() < 26000 && strncmp(fmt, "tel ", 4) == 0) {
+        return;
+    }
+
+    if (s_ui_log_mutex != NULL && xSemaphoreTake(s_ui_log_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        locked = true;
+    }
+
     va_start(args, fmt);
-    vsnprintf(line, sizeof(line), fmt, args);
+    (void)vsnprintf(line, sizeof(line), fmt, args);
     va_end(args);
+
+    if (locked) {
+        xSemaphoreGive(s_ui_log_mutex);
+    }
 
     if (should_emit_uart_log(line)) {
         ESP_LOGI(CMD_TAG, "[%s] %s", origin, line);
     }
+    if (strncmp(line, "tel ", 4) == 0) {
+        test_node_ui_update_telemetry_line(node_uid, line);
+        return;
+    }
+    if (strncmp(line, "hb ", 3) == 0) {
+        return;
+    }
     test_node_ui_log_event(node_uid, line);
+}
+
+static void telemetry_coop_yield(void) {
+    taskYIELD();
+    vTaskDelay(1);
 }
 
 static int64_t get_uptime_seconds(void) {
@@ -1552,16 +1579,7 @@ static void process_virtual_irrigation_fail_safe_guards(void) {
     if (!clean_fill_active) {
         memset(&s_virtual_clean_fill_guard, 0, sizeof(s_virtual_clean_fill_guard));
     } else if (!s_virtual_clean_fill_guard.terminal_event_emitted) {
-        if (!s_virtual_clean_fill_guard.min_check_completed &&
-            clean_fill_elapsed_ms() >= (int64_t)s_virtual_irr_fail_safe_config.clean_fill_min_check_delay_ms) {
-            s_virtual_clean_fill_guard.min_check_completed = true;
-            if (!clean_level_min) {
-                stop_clean_fill_path();
-                s_virtual_clean_fill_guard.terminal_event_emitted = true;
-                publish_irrig_node_event("clean_fill_source_empty");
-                clean_fill_active = false;
-            }
-        }
+        /* clean_fill: не останавливаем по level_clean_min=0 — см. storage_irrigation_node. */
         if (clean_fill_active && clean_level_max) {
             if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
                 s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
@@ -2084,10 +2102,13 @@ static esp_err_t publish_status_for_node(const char *node_uid, const char *statu
 
 static void publish_heartbeat_for_node(const char *node_uid) {
     char topic[192];
-    cJSON *json;
+    char payload[128];
     wifi_ap_record_t ap_info;
-    int64_t current_time = get_timestamp_seconds();
-    int64_t uptime_seconds = s_start_time_seconds > 0 ? (current_time - s_start_time_seconds) : 0;
+    int len;
+    int64_t uptime_seconds = (esp_timer_get_time() - s_boot_time_us) / 1000000LL;
+    if (uptime_seconds < 0) {
+        uptime_seconds = 0;
+    }
 
     if (!mqtt_manager_is_connected()) {
         return;
@@ -2098,21 +2119,31 @@ static void publish_heartbeat_for_node(const char *node_uid) {
         return;
     }
 
-    json = cJSON_CreateObject();
-    if (!json) {
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        len = snprintf(
+            payload,
+            sizeof(payload),
+            "{\"uptime\":%lld,\"free_heap\":%u,\"rssi\":%d}",
+            (long long)uptime_seconds,
+            (unsigned)esp_get_free_heap_size(),
+            (int)ap_info.rssi
+        );
+    } else {
+        len = snprintf(
+            payload,
+            sizeof(payload),
+            "{\"uptime\":%lld,\"free_heap\":%u}",
+            (long long)uptime_seconds,
+            (unsigned)esp_get_free_heap_size()
+        );
+    }
+    if (len <= 0 || (size_t)len >= sizeof(payload)) {
+        ESP_LOGE(TAG, "Heartbeat payload overflow for %s", node_uid);
         return;
     }
 
-    cJSON_AddNumberToObject(json, "uptime", (double)uptime_seconds);
-    cJSON_AddNumberToObject(json, "free_heap", (double)esp_get_free_heap_size());
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        cJSON_AddNumberToObject(json, "rssi", (double)ap_info.rssi);
-    }
-
-    publish_json_payload(topic, json, 1, 0);
+    (void)mqtt_manager_publish_raw(topic, payload, 1, 0);
     test_node_ui_mark_node_heartbeat(node_uid);
-    ui_logf(node_uid, "hb up=%lds heap=%u", (long)uptime_seconds, (unsigned)esp_get_free_heap_size());
-    cJSON_Delete(json);
 }
 
 static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value) {
@@ -2372,6 +2403,7 @@ static bool publish_all_config_reports(const char *reason) {
             all_published = false;
             break;
         }
+        telemetry_coop_yield();
         if ((index + 1) < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0]))) {
             vTaskDelay(pdMS_TO_TICKS(CONFIG_REPORT_NODE_SPACING_MS));
         }
@@ -4608,6 +4640,7 @@ static void publish_virtual_telemetry_batch(void) {
     publish_telemetry_for_node("nd-test-light-1", "light_level", "LIGHT_INTENSITY", s_virtual_state.light_level);
 
     s_telemetry_tick++;
+    telemetry_coop_yield();
 }
 
 static void refresh_wildcard_subscriptions(const char *reason) {
@@ -4654,7 +4687,6 @@ static void task_publish_telemetry(void *pv_parameters) {
     bool has_wifi_state = false;
     bool has_mqtt_state = false;
     char last_wifi_text[33] = {0};
-    uint8_t node_resync_ticks = 0;
     uint32_t config_elapsed_ms = 0;
     (void)pv_parameters;
 
@@ -4716,6 +4748,20 @@ static void task_publish_telemetry(void *pv_parameters) {
                     break;
                 }
                 publish_heartbeat_for_node(VIRTUAL_NODES[index].node_uid);
+                telemetry_coop_yield();
+            }
+
+            static uint8_t hb_uart_decimate = 0;
+            hb_uart_decimate++;
+            if (hb_uart_decimate >= 5) {
+                int64_t uptime_seconds = (esp_timer_get_time() - s_boot_time_us) / 1000000LL;
+                hb_uart_decimate = 0;
+                ui_logf(
+                    NULL,
+                    "hb up=%lds heap=%" PRIu32,
+                    (long)(uptime_seconds < 0 ? 0 : uptime_seconds),
+                    (unsigned)esp_get_free_heap_size()
+                );
             }
 
             config_elapsed_ms += TELEMETRY_INTERVAL_MS;
@@ -4726,12 +4772,6 @@ static void task_publish_telemetry(void *pv_parameters) {
                 }
                 config_elapsed_ms = 0;
             }
-        }
-
-        node_resync_ticks++;
-        if (node_resync_ticks >= 2) {
-            node_resync_ticks = 0;
-            ui_sync_all_virtual_nodes(false);
         }
 
         if (!mqtt_connected) {
@@ -5172,6 +5212,10 @@ static void cleanup_init_runtime_resources(void) {
         vSemaphoreDelete(s_topic_mutex);
         s_topic_mutex = NULL;
     }
+    if (s_ui_log_mutex) {
+        vSemaphoreDelete(s_ui_log_mutex);
+        s_ui_log_mutex = NULL;
+    }
 
     s_wildcard_subscriptions_ready = false;
     s_wildcard_subscribe_warned = false;
@@ -5195,7 +5239,7 @@ esp_err_t test_node_app_init(void) {
     mqtt_manager_config_t mqtt_config = {0};
     mqtt_node_info_t mqtt_node_info = {0};
 
-    s_start_time_seconds = get_timestamp_seconds();
+    s_boot_time_us = esp_timer_get_time();
     s_factory_reset_pending = false;
     s_state_command_fastpath_enabled = false;
     s_last_non_state_command_rx_ms = 0;
@@ -5299,6 +5343,15 @@ esp_err_t test_node_app_init(void) {
         return ESP_ERR_NO_MEM;
     }
     test_node_ui_show_step("App init: topic mutex OK");
+
+    s_ui_log_mutex = xSemaphoreCreateMutex();
+    if (!s_ui_log_mutex) {
+        ESP_LOGE(TAG, "Failed to create ui_log mutex");
+        test_node_ui_show_step("App init: ui_log mutex FAILED");
+        cleanup_init_runtime_resources();
+        return ESP_ERR_NO_MEM;
+    }
+    test_node_ui_show_step("App init: ui_log mutex OK");
 
     init_virtual_namespaces(mqtt_node_info.gh_uid, mqtt_node_info.zone_uid);
     reload_virtual_irr_fail_safe_config_from_storage();

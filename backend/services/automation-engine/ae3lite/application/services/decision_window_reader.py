@@ -101,7 +101,7 @@ class DecisionWindowReader:
         if not window["has_sensor"] or window["is_stale"]:
             raise TaskExecutionError(
                 "corr_telemetry_stale",
-                f"{sensor_type} telemetry stale/unavailable during correction check",
+                f"Телеметрия {sensor_type} устарела или недоступна во время проверки коррекции",
             )
         window_min_samples = int(config["window_min_samples"])
         telemetry_period_sec = int(config["telemetry_period_sec"])
@@ -143,8 +143,8 @@ class DecisionWindowReader:
             if metric.slope is not None:
                 parts.append(f"slope={float(metric.slope):.4f}")
             details.append(",".join(parts))
-        reason = "; ".join(details) if details else "decision window unavailable"
-        return f"Correction decision window not ready: {reason}"
+        reason = "; ".join(details) if details else "окно решений недоступно"
+        return f"Окно решений коррекции не готово: {reason}"
 
     @staticmethod
     def retry_delay_sec(

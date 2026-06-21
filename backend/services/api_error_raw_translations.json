@@ -97,7 +97,18 @@
     "run_token is required when saving calibration after a physical run": "После физического прогона калибровки обязателен run_token.",
     "zone_id is required to resolve greenhouse_uid": "Для определения greenhouse_uid нужен zone_id.",
     "zone_id must be a positive integer": "zone_id должен быть положительным целым числом.",
-    "zone_uid could not be resolved": "Не удалось определить zone_uid."
+    "zone_uid could not be resolved": "Не удалось определить zone_uid.",
+    "Source tank became empty during clean fill": "Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды.",
+    "Clean fill timeout exceeded": "За отведённое время бак чистой воды не достиг требуемого уровня.",
+    "Clean source became empty during solution fill": "Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи.",
+    "Solution minimum level dropped during solution fill": "Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.",
+    "Solution fill timeout exceeded": "Бак раствора не наполнился за отведённое время.",
+    "Solution minimum level dropped during prepare recirculation": "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке.",
+    "Irrigation recovery correction failed to restore targets": "Recovery не восстановил целевые параметры после полива.",
+    "Correction decision window not ready: decision window unavailable": "Окно решений коррекции не готово: окно решений недоступно",
+    "pump_calibration config is invalid; expected min_dose_ms/ml_per_sec_min/ml_per_sec_max": "Некорректный pump_calibration; ожидаются min_dose_ms/ml_per_sec_min/ml_per_sec_max",
+    "tank_recirc process calibration must provide transport_delay_sec and settle_sec": "process calibration tank_recirc должна содержать transport_delay_sec и settle_sec",
+    "EC multi_sequential excludes NPK but no active EC components are configured": "Режим EC multi_sequential исключает NPK, но активные EC-компоненты не настроены"
   },
   "patterns": [
     {
@@ -143,6 +154,66 @@
     {
       "regex": "^Failed to (update infrastructure|swap node|get allowed transitions|replay alert): (.+)$",
       "message": "Ошибка операции: $2."
+    },
+    {
+      "regex": "^CorrectionPlanner config invalid: (.+)$",
+      "message": "Некорректная конфигурация CorrectionPlanner: $1"
+    },
+    {
+      "regex": "^Task (\\d+) in correction stage but correction state is None$",
+      "message": "У задачи $1 активен correction stage, но correction state отсутствует"
+    },
+    {
+      "regex": "^(PH|EC|ph|ec) baseline is missing for observation window$",
+      "message": "Для окна наблюдения $1 отсутствует baseline"
+    },
+    {
+      "regex": "^(PH|EC|ph|ec) telemetry stale/unavailable during correction check$",
+      "message": "Телеметрия $1 устарела или недоступна во время проверки коррекции"
+    },
+    {
+      "regex": "^Active task (\\d+) cancelled due to control_mode change from (\\w+) to manual$",
+      "message": "Активная задача $1 отменена из-за смены control_mode с $2 на manual"
+    },
+    {
+      "regex": "^Zone (\\d+) has no correction_config; fail-closed for critical dosing parameters$",
+      "message": "У зоны $1 отсутствует correction_config; критические параметры дозирования переведены в fail-closed режим"
+    },
+    {
+      "regex": "^Zone (\\d+) has empty correction_config\\(base/phases\\); fail-closed for critical dosing parameters$",
+      "message": "У зоны $1 пустой correction_config(base/phases); критические параметры дозирования переведены в fail-closed режим"
+    },
+    {
+      "regex": "^Zone (\\d+) has no pid authority mapping; fail-closed for critical correction parameters$",
+      "message": "У зоны $1 отсутствует mapping PID authority; критические параметры коррекции переведены в fail-closed режим"
+    },
+    {
+      "regex": "^Command stage ([a-z0-9_\\-]+) has no next_stage or terminal_error$",
+      "message": "Command stage $1 не содержит next_stage или terminal_error"
+    },
+    {
+      "regex": "^No commands resolved for stage ([a-z0-9_\\-]+), plans=\\((.+)\\)$",
+      "message": "Для stage $1 не найдены команды, plans=($2)"
+    },
+    {
+      "regex": "^EC correction needed but no actuator resolved for channel=([a-z0-9_\\-]+)$",
+      "message": "Требуется коррекция EC, но не найден actuator для channel=$1"
+    },
+    {
+      "regex": "^PH correction needed but no actuator resolved for channel=([a-z0-9_\\-]+)$",
+      "message": "Требуется коррекция pH, но не найден actuator для channel=$1"
+    },
+    {
+      "regex": "^Pump calibration ml_per_sec must be positive, got (.+)$",
+      "message": "Калибровка насоса ml_per_sec должна быть положительной, получено $1"
+    },
+    {
+      "regex": "^Pump calibration ml_per_sec is not numeric: (.+)$",
+      "message": "Калибровка насоса ml_per_sec не является числом: $1"
+    },
+    {
+      "regex": "^Task (\\d+) missing during ae_commands insert \\(likely concurrent cleanup\\)$",
+      "message": "Задача $1 исчезла при вставке ae_commands (вероятно параллельная очистка)"
     }
   ]
 }

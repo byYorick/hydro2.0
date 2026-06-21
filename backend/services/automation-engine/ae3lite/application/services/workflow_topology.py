@@ -88,7 +88,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("clean_fill_stop",),
         terminal_error=(
             "clean_fill_source_empty",
-            "Source tank became empty during clean fill",
+            "Наполнение чистой водой остановлено: источник воды пуст или нижний уровень не подтверждает наличие воды.",
         ),
     ),
     "clean_fill_timeout_stop": StageDef(
@@ -97,7 +97,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("clean_fill_stop",),
         terminal_error=(
             "clean_tank_not_filled_timeout",
-            "Clean fill timeout exceeded",
+            "За отведённое время бак чистой воды не достиг требуемого уровня.",
         ),
     ),
 
@@ -134,7 +134,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
         terminal_error=(
             "solution_fill_source_empty",
-            "Clean source became empty during solution fill",
+            "Наполнение раствором остановлено: в баке чистой воды не осталось воды для подачи.",
         ),
     ),
     "solution_fill_leak_stop": StageDef(
@@ -143,7 +143,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
         terminal_error=(
             "solution_fill_leak_detected",
-            "Solution minimum level dropped during solution fill",
+            "Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.",
         ),
     ),
     "solution_fill_timeout_stop": StageDef(
@@ -152,7 +152,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
         terminal_error=(
             "solution_tank_not_filled_timeout",
-            "Solution fill timeout exceeded",
+            "Бак раствора не наполнился за отведённое время.",
         ),
     ),
 
@@ -187,7 +187,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
         terminal_error=(
             "recirculation_solution_low",
-            "Solution minimum level dropped during prepare recirculation",
+            "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке.",
         ),
     ),
     # === Irrigation path ===
@@ -250,7 +250,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
         terminal_error=(
             "irrigation_recovery_targets_not_restored",
-            "Irrigation recovery correction failed to restore targets",
+            "Recovery не восстановил целевые параметры после полива.",
         ),
     ),
     # === Terminal ===

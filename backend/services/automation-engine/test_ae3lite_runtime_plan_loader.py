@@ -155,7 +155,7 @@ def _valid_runtime_plan() -> dict:
         "fail_safe_guards": {
             "clean_fill_min_check_delay_ms": 5000,
             "solution_fill_clean_min_check_delay_ms": 5000,
-            "solution_fill_solution_min_check_delay_ms": 15000,
+            "solution_fill_solution_min_check_delay_ms": 60000,
             "recirculation_stop_on_solution_min": True,
             "irrigation_stop_on_solution_min": True,
             "estop_debounce_ms": 80,

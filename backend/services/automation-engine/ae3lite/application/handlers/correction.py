@@ -172,7 +172,7 @@ class CorrectionHandler(BaseStageHandler):
         if corr is None:
             raise TaskExecutionError(
                 "corr_state_missing",
-                f"Task {task.id} in correction stage but correction state is None",
+                f"У задачи {task.id} активен correction stage, но correction state отсутствует",
             )
 
         # Phase 5.5: live-mode hot-swap. If zone is in `live` and revision
@@ -626,7 +626,7 @@ class CorrectionHandler(BaseStageHandler):
             )
             raise TaskExecutionError(
                 "corr_planner_config_invalid",
-                f"CorrectionPlanner config invalid: {exc}",
+                f"Некорректная конфигурация CorrectionPlanner: {exc}",
             ) from exc
 
         return await self._finalize_dose_plan_routing(
@@ -1399,7 +1399,7 @@ class CorrectionHandler(BaseStageHandler):
             raise TaskExecutionError(
                 "corr_dose_ph_missing_plan",
                 (
-                    "PH dose plan missing "
+                    "Отсутствует план дозирования pH "
                     f"(node={corr.ph_node_uid}, ch={corr.ph_channel}, ms={corr.ph_duration_ms}, "
                     f"ml={corr.ph_amount_ml})"
                 ),
@@ -1954,7 +1954,7 @@ class CorrectionHandler(BaseStageHandler):
         if not isinstance(last_dose_at, datetime) or baseline_value is None:
             raise TaskExecutionError(
                 "corr_observation_baseline_missing",
-                f"{pid_type} baseline is missing for observation window",
+                f"Для окна наблюдения {pid_type} отсутствует baseline",
             )
 
         observation_started_at = last_dose_at + timedelta(
@@ -1980,7 +1980,7 @@ class CorrectionHandler(BaseStageHandler):
                     "pid_type": pid_type,
                     "sensor_type": sensor_type,
                     "sensor_scope": "observe_window",
-                    "reason": f"{sensor_type} telemetry stale/unavailable during observation window",
+                    "reason": f"Телеметрия {sensor_type} устарела или недоступна во время окна наблюдения",
                     "retry_after_sec": retry_delay_sec,
                     "telemetry_max_age_sec": int(runtime.telemetry_max_age_sec),
                 },
@@ -2398,12 +2398,12 @@ class CorrectionHandler(BaseStageHandler):
             value = float(raw_value)
         except (TypeError, ValueError) as exc:
             raise PlannerConfigurationError(
-                f"correction_cfg.{key} missing or invalid; schema must require it",
+                f"correction_cfg.{key} отсутствует или некорректно; поле обязательно по схеме",
                 code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             ) from exc
         if value <= 0:
             raise PlannerConfigurationError(
-                f"correction_cfg.{key}={value!r} must be > 0",
+                f"correction_cfg.{key}={value!r} должно быть > 0",
                 code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
             )
         return value

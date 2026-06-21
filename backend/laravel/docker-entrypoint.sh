@@ -401,8 +401,8 @@ fi
 
 # Vite supervisor only in development mode
 if [ "${APP_ENV:-production}" = "local" ]; then
-    if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
-        echo "Copying vite supervisor config to base image directory (dev mode)..."
+    if [ -f /app/vite-supervisor.conf ]; then
+        echo "Copying vite supervisor config (dev mode)..."
         cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
         chmod 644 /opt/docker/etc/supervisor.d/vite.conf 2>/dev/null || true
     fi

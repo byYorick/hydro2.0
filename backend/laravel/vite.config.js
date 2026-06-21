@@ -6,6 +6,8 @@ import { resolve } from 'path';
 export default defineConfig(({ mode }) => {
     const isProd = mode === 'production';
 
+    const devServerUrl = (process.env.VITE_DEV_SERVER_URL || 'http://localhost:8080').replace(/"/g, '');
+
     return {
         resolve: {
             alias: {
@@ -31,12 +33,11 @@ export default defineConfig(({ mode }) => {
                 allowedHeaders: ['*'],
             },
             hmr: {
-                host: 'localhost',
+                // host не задаём — браузер использует hostname текущей страницы (localhost или LAN IP)
                 port: 5173,
-                clientPort: 5173,
+                clientPort: 8080,
                 path: '/@vite/client',
-                // Включить детальное логирование HMR ошибок
-                overlay: true, // Показывать overlay с ошибками в браузере
+                overlay: true,
             },
             watch: {
                 usePolling: true, // Для Docker на Windows
@@ -119,7 +120,7 @@ export default defineConfig(({ mode }) => {
                 // Явно указываем devServerUrl для правильной генерации URL
                 // Используем localhost:8080 (через nginx прокси), а не 0.0.0.0
                 // Браузер не может использовать 0.0.0.0 для запросов
-                devServerUrl: process.env.VITE_DEV_SERVER_URL || 'http://localhost:8080',
+                devServerUrl,
                 // Использовать прокси через nginx вместо прямых ссылок на Vite
                 buildDirectory: 'build',
                 hotFile: 'public/hot',

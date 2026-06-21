@@ -100,6 +100,19 @@ typedef struct {
 } storage_irrigation_node_fail_safe_config_t;
 
 typedef struct {
+    bool ok;
+    int raw;
+    bool active;
+} storage_irrigation_node_level_reading_t;
+
+typedef struct {
+    storage_irrigation_node_level_reading_t clean_min;
+    storage_irrigation_node_level_reading_t clean_max;
+    storage_irrigation_node_level_reading_t solution_min;
+    storage_irrigation_node_level_reading_t solution_max;
+} storage_irrigation_node_level_debug_snapshot_t;
+
+typedef struct {
     bool active;
     bool paused_by_estop;
     bool min_check_completed;
@@ -216,6 +229,7 @@ static esp_err_t handle_storage_state(const char *channel, const cJSON *params, 
 static esp_err_t handle_test_sensor(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t handle_probe_sensor(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t storage_irrigation_node_publish_storage_event(const char *event_code, const char *cmd_id);
+static esp_err_t storage_irrigation_node_publish_storage_event_with_details(const char *event_code, const char *cmd_id, cJSON *details);
 static esp_err_t storage_irrigation_node_publish_terminal_response(
     const char *channel,
     const char *cmd_id,
@@ -252,6 +266,26 @@ static uint32_t storage_irrigation_node_clean_fill_elapsed_ms(void);
 static uint32_t storage_irrigation_node_solution_fill_elapsed_ms(void);
 static void storage_irrigation_node_update_binary_guard_state(storage_irrigation_node_binary_guard_state_t *state, bool flow_active, bool paused);
 static bool storage_irrigation_node_restore_estop_snapshot_locked(void);
+static storage_irrigation_node_level_debug_snapshot_t storage_irrigation_node_read_level_debug_snapshot(void);
+static cJSON *storage_irrigation_node_build_fail_safe_details(
+    const char *guard_name,
+    const char *trigger,
+    const storage_irrigation_node_level_debug_snapshot_t *levels,
+    uint32_t elapsed_ms,
+    uint32_t delay_ms,
+    bool clean_fill_active,
+    bool solution_fill_active,
+    bool recirculation_active,
+    bool irrigation_active
+);
+static void storage_irrigation_node_log_fail_safe_trip(
+    const char *event_code,
+    const char *trigger,
+    const storage_irrigation_node_level_debug_snapshot_t *levels,
+    uint32_t elapsed_ms,
+    uint32_t delay_ms
+);
+static void storage_irrigation_node_log_fail_safe_config(void);
 
 static bool s_level_switch_inputs_ready = false;
 
@@ -917,6 +951,166 @@ static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor
         }
     }
     return false;
+}
+
+static storage_irrigation_node_level_reading_t storage_irrigation_node_read_level_debug_by_name(const char *sensor_name) {
+    storage_irrigation_node_level_reading_t reading = {
+        .ok = false,
+        .raw = -1,
+        .active = false,
+    };
+    if (!sensor_name) {
+        return reading;
+    }
+
+    if (!s_level_switch_inputs_ready) {
+        if (storage_irrigation_node_init_level_switch_inputs() != ESP_OK) {
+            return reading;
+        }
+    }
+
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
+        const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+        if (strcmp(sensor->name, sensor_name) != 0) {
+            continue;
+        }
+        int raw = gpio_get_level((gpio_num_t)sensor->gpio);
+        reading.raw = raw;
+        reading.active = storage_irrigation_node_read_level_switch(sensor, NULL) >= 0.5f;
+        reading.ok = true;
+        return reading;
+    }
+
+    return reading;
+}
+
+static storage_irrigation_node_level_debug_snapshot_t storage_irrigation_node_read_level_debug_snapshot(void) {
+    storage_irrigation_node_level_debug_snapshot_t levels = {
+        .clean_min = storage_irrigation_node_read_level_debug_by_name("level_clean_min"),
+        .clean_max = storage_irrigation_node_read_level_debug_by_name("level_clean_max"),
+        .solution_min = storage_irrigation_node_read_level_debug_by_name("level_solution_min"),
+        .solution_max = storage_irrigation_node_read_level_debug_by_name("level_solution_max"),
+    };
+    return levels;
+}
+
+static void storage_irrigation_node_add_level_debug(cJSON *levels, const char *name, storage_irrigation_node_level_reading_t reading) {
+    if (!levels || !name) {
+        return;
+    }
+    cJSON *entry = cJSON_CreateObject();
+    if (!entry) {
+        return;
+    }
+    cJSON_AddBoolToObject(entry, "ok", reading.ok);
+    cJSON_AddNumberToObject(entry, "raw_gpio", reading.raw);
+    cJSON_AddBoolToObject(entry, "active", reading.active);
+    cJSON_AddItemToObject(levels, name, entry);
+}
+
+static cJSON *storage_irrigation_node_build_fail_safe_details(
+    const char *guard_name,
+    const char *trigger,
+    const storage_irrigation_node_level_debug_snapshot_t *levels,
+    uint32_t elapsed_ms,
+    uint32_t delay_ms,
+    bool clean_fill_active,
+    bool solution_fill_active,
+    bool recirculation_active,
+    bool irrigation_active
+) {
+    cJSON *details = cJSON_CreateObject();
+    if (!details) {
+        return NULL;
+    }
+
+    cJSON_AddStringToObject(details, "source", "firmware_fail_safe_guard");
+    cJSON_AddStringToObject(details, "guard", guard_name ? guard_name : "unknown");
+    cJSON_AddStringToObject(details, "trigger", trigger ? trigger : "unknown");
+    cJSON_AddNumberToObject(details, "elapsed_ms", (double)elapsed_ms);
+    cJSON_AddNumberToObject(details, "delay_ms", (double)delay_ms);
+    cJSON_AddBoolToObject(details, "level_switch_active_low", STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW ? true : false);
+    cJSON_AddBoolToObject(details, "level_switch_pullup", STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? true : false);
+
+    cJSON *flow = cJSON_CreateObject();
+    if (flow) {
+        cJSON_AddBoolToObject(flow, "clean_fill_active", clean_fill_active);
+        cJSON_AddBoolToObject(flow, "solution_fill_active", solution_fill_active);
+        cJSON_AddBoolToObject(flow, "recirculation_active", recirculation_active);
+        cJSON_AddBoolToObject(flow, "irrigation_active", irrigation_active);
+        cJSON_AddItemToObject(details, "flow", flow);
+    }
+
+    if (levels) {
+        cJSON *level_json = cJSON_CreateObject();
+        if (level_json) {
+            storage_irrigation_node_add_level_debug(level_json, "level_clean_min", levels->clean_min);
+            storage_irrigation_node_add_level_debug(level_json, "level_clean_max", levels->clean_max);
+            storage_irrigation_node_add_level_debug(level_json, "level_solution_min", levels->solution_min);
+            storage_irrigation_node_add_level_debug(level_json, "level_solution_max", levels->solution_max);
+            cJSON_AddItemToObject(details, "levels", level_json);
+        }
+    }
+
+    return details;
+}
+
+static void storage_irrigation_node_log_fail_safe_trip(
+    const char *event_code,
+    const char *trigger,
+    const storage_irrigation_node_level_debug_snapshot_t *levels,
+    uint32_t elapsed_ms,
+    uint32_t delay_ms
+) {
+    if (!levels) {
+        return;
+    }
+    ESP_LOGW(
+        TAG,
+        "fail-safe trip event=%s trigger=%s elapsed_ms=%lu delay_ms=%lu "
+        "active_low=%d pullup=%d "
+        "clean_min(raw=%d active=%d ok=%d) clean_max(raw=%d active=%d ok=%d) "
+        "solution_min(raw=%d active=%d ok=%d) solution_max(raw=%d active=%d ok=%d)",
+        event_code ? event_code : "unknown",
+        trigger ? trigger : "unknown",
+        (unsigned long)elapsed_ms,
+        (unsigned long)delay_ms,
+        STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW ? 1 : 0,
+        STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? 1 : 0,
+        levels->clean_min.raw,
+        levels->clean_min.active ? 1 : 0,
+        levels->clean_min.ok ? 1 : 0,
+        levels->clean_max.raw,
+        levels->clean_max.active ? 1 : 0,
+        levels->clean_max.ok ? 1 : 0,
+        levels->solution_min.raw,
+        levels->solution_min.active ? 1 : 0,
+        levels->solution_min.ok ? 1 : 0,
+        levels->solution_max.raw,
+        levels->solution_max.active ? 1 : 0,
+        levels->solution_max.ok ? 1 : 0
+    );
+}
+
+static void storage_irrigation_node_log_fail_safe_config(void) {
+    ESP_LOGI(
+        TAG,
+        "fail-safe config: clean_fill_min_check_delay_ms=%lu "
+        "solution_fill_clean_min_check_delay_ms=%lu "
+        "solution_fill_solution_min_check_delay_ms=%lu "
+        "recirculation_solution_min_guard_enabled=%d "
+        "irrigation_solution_min_guard_enabled=%d estop_debounce_ms=%lu "
+        "level_switch_active_low=%d level_switch_pullup=%d debounce_ms=%lu",
+        (unsigned long)s_fail_safe_config.clean_fill_min_check_delay_ms,
+        (unsigned long)s_fail_safe_config.solution_fill_clean_min_check_delay_ms,
+        (unsigned long)s_fail_safe_config.solution_fill_solution_min_check_delay_ms,
+        s_fail_safe_config.recirculation_solution_min_guard_enabled ? 1 : 0,
+        s_fail_safe_config.irrigation_solution_min_guard_enabled ? 1 : 0,
+        (unsigned long)s_fail_safe_config.estop_debounce_ms,
+        STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW ? 1 : 0,
+        STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? 1 : 0,
+        (unsigned long)STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_MS
+    );
 }
 
 static void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
@@ -1823,8 +2017,8 @@ static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
         gpio_config_t io_conf = {
             .pin_bit_mask = (1ULL << (uint32_t)sensor->gpio),
             .mode = GPIO_MODE_INPUT,
-            .pull_up_en = sensor->active_low ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-            .pull_down_en = sensor->active_low ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
+            .pull_up_en = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+            .pull_down_en = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
 
@@ -1834,6 +2028,15 @@ static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
                      sensor->name, esp_err_to_name(err));
             return err;
         }
+        ESP_LOGI(
+            TAG,
+            "level-switch config channel=%s gpio=%d active_low=%d pullup=%d debounce_ms=%lu",
+            sensor->name,
+            sensor->gpio,
+            sensor->active_low ? 1 : 0,
+            STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? 1 : 0,
+            (unsigned long)STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_MS
+        );
     }
 
     if (!s_level_switch_mutex) {
@@ -1909,7 +2112,7 @@ static float storage_irrigation_node_read_level_switch(
     }
 
     if (raw_out) {
-        *raw_out = filtered ? 1 : 0;
+        *raw_out = raw;
     }
     return filtered ? 1.0f : 0.0f;
 }
@@ -1988,13 +2191,26 @@ esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx) {
 }
 
 static esp_err_t storage_irrigation_node_publish_storage_event(const char *event_code, const char *cmd_id) {
+    return storage_irrigation_node_publish_storage_event_with_details(event_code, cmd_id, NULL);
+}
+
+static esp_err_t storage_irrigation_node_publish_storage_event_with_details(const char *event_code, const char *cmd_id, cJSON *details) {
     if (!event_code || event_code[0] == '\0') {
+        if (details) {
+            cJSON_Delete(details);
+        }
         return ESP_ERR_INVALID_ARG;
     }
     if (!mqtt_manager_is_connected()) {
+        if (details) {
+            cJSON_Delete(details);
+        }
         return ESP_ERR_INVALID_STATE;
     }
     if (!node_utils_is_time_synced()) {
+        if (details) {
+            cJSON_Delete(details);
+        }
         if (!s_storage_event_time_wait_logged) {
             ESP_LOGW(TAG, "Storage event publish suppressed until time synchronization completes");
             s_storage_event_time_wait_logged = true;
@@ -2007,6 +2223,9 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
     mqtt_node_info_t node_info = {0};
     esp_err_t info_err = mqtt_manager_get_node_info(&node_info);
     if (info_err != ESP_OK || !node_info.gh_uid || !node_info.zone_uid || !node_info.node_uid) {
+        if (details) {
+            cJSON_Delete(details);
+        }
         return info_err != ESP_OK ? info_err : ESP_ERR_INVALID_STATE;
     }
 
@@ -2022,17 +2241,27 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
         "event"
     );
     if (written <= 0 || (size_t)written >= sizeof(topic)) {
+        if (details) {
+            cJSON_Delete(details);
+        }
         return ESP_ERR_INVALID_SIZE;
     }
 
     cJSON *payload = cJSON_CreateObject();
     if (!payload) {
+        if (details) {
+            cJSON_Delete(details);
+        }
         return ESP_ERR_NO_MEM;
     }
     cJSON_AddStringToObject(payload, "event_code", event_code);
     cJSON_AddNumberToObject(payload, "ts", (double)node_utils_get_timestamp_seconds());
     if (cmd_id && cmd_id[0] != '\0') {
         cJSON_AddStringToObject(payload, "cmd_id", cmd_id);
+    }
+    if (details) {
+        cJSON_AddItemToObject(payload, "details", details);
+        details = NULL;
     }
     cJSON *snapshot = storage_irrigation_node_build_irr_state_snapshot();
     if (snapshot) {
@@ -2081,6 +2310,7 @@ static esp_err_t storage_irrigation_node_publish_terminal_response(
 
 static void storage_irrigation_node_process_fail_safe_guards(void) {
     const char *events[5] = {0};
+    cJSON *event_details[5] = {0};
     size_t event_count = 0;
     bool clean_level_min = false;
     bool clean_level_max = false;
@@ -2090,6 +2320,7 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
     bool clean_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
     bool solution_level_min_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_min", &solution_level_min);
     bool solution_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
+    storage_irrigation_node_level_debug_snapshot_t level_debug = storage_irrigation_node_read_level_debug_snapshot();
 
     if (!s_actuator_mutex || xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return;
@@ -2107,21 +2338,34 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
 
     const bool clean_fill_fs_suppressed = storage_irrigation_node_valve_clean_fill_transient_timer_armed();
 
+    /* clean_fill: не останавливаем по level_clean_min=0 — при пустом баке min активируется
+     * только после подъёма уровня; ранний guard давал ложный clean_fill_source_empty и цикл
+     * 5с ON / 5с OFF. Завершение только по level_clean_max; пустой источник — через AE3 timeout. */
     if (clean_fill_active && !s_clean_fill_guard.terminal_event_emitted && !clean_fill_fs_suppressed) {
-        if (!s_clean_fill_guard.min_check_completed &&
-            storage_irrigation_node_clean_fill_elapsed_ms() >= s_fail_safe_config.clean_fill_min_check_delay_ms) {
-            s_clean_fill_guard.min_check_completed = true;
-            if (clean_level_min_ok && !clean_level_min && storage_irrigation_node_stop_clean_fill_path_locked()) {
-                s_clean_fill_guard.terminal_event_emitted = true;
-                events[event_count++] = "clean_fill_source_empty";
-                clean_fill_active = false;
-            }
-        }
         if (clean_fill_active &&
             clean_level_max_ok &&
             clean_level_max &&
             storage_irrigation_node_stop_clean_fill_path_locked()) {
             s_clean_fill_guard.terminal_event_emitted = true;
+            uint32_t elapsed_ms = storage_irrigation_node_clean_fill_elapsed_ms();
+            storage_irrigation_node_log_fail_safe_trip(
+                "clean_fill_completed",
+                "level_clean_max",
+                &level_debug,
+                elapsed_ms,
+                0
+            );
+            event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                "clean_fill",
+                "level_clean_max",
+                &level_debug,
+                elapsed_ms,
+                0,
+                clean_fill_active,
+                solution_fill_active,
+                recirculation_active,
+                irrigation_active
+            );
             events[event_count++] = "clean_fill_completed";
         }
     }
@@ -2129,9 +2373,28 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
     if (solution_fill_active && !s_solution_fill_guard.terminal_event_emitted) {
         if (!s_solution_fill_guard.clean_min_check_completed &&
             storage_irrigation_node_solution_fill_elapsed_ms() >= s_fail_safe_config.solution_fill_clean_min_check_delay_ms) {
+            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
             s_solution_fill_guard.clean_min_check_completed = true;
             if (clean_level_min_ok && !clean_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
                 s_solution_fill_guard.terminal_event_emitted = true;
+                storage_irrigation_node_log_fail_safe_trip(
+                    "solution_fill_source_empty",
+                    "level_clean_min",
+                    &level_debug,
+                    elapsed_ms,
+                    s_fail_safe_config.solution_fill_clean_min_check_delay_ms
+                );
+                event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                    "solution_fill",
+                    "level_clean_min",
+                    &level_debug,
+                    elapsed_ms,
+                    s_fail_safe_config.solution_fill_clean_min_check_delay_ms,
+                    clean_fill_active,
+                    solution_fill_active,
+                    recirculation_active,
+                    irrigation_active
+                );
                 events[event_count++] = "solution_fill_source_empty";
                 solution_fill_active = false;
             }
@@ -2140,9 +2403,28 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
         if (solution_fill_active &&
             !s_solution_fill_guard.solution_min_check_completed &&
             storage_irrigation_node_solution_fill_elapsed_ms() >= s_fail_safe_config.solution_fill_solution_min_check_delay_ms) {
+            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
             s_solution_fill_guard.solution_min_check_completed = true;
             if (solution_level_min_ok && !solution_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
                 s_solution_fill_guard.terminal_event_emitted = true;
+                storage_irrigation_node_log_fail_safe_trip(
+                    "solution_fill_leak_detected",
+                    "level_solution_min",
+                    &level_debug,
+                    elapsed_ms,
+                    s_fail_safe_config.solution_fill_solution_min_check_delay_ms
+                );
+                event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                    "solution_fill",
+                    "level_solution_min",
+                    &level_debug,
+                    elapsed_ms,
+                    s_fail_safe_config.solution_fill_solution_min_check_delay_ms,
+                    clean_fill_active,
+                    solution_fill_active,
+                    recirculation_active,
+                    irrigation_active
+                );
                 events[event_count++] = "solution_fill_leak_detected";
                 solution_fill_active = false;
             }
@@ -2153,6 +2435,25 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
             solution_level_max &&
             storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
             s_solution_fill_guard.terminal_event_emitted = true;
+            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
+            storage_irrigation_node_log_fail_safe_trip(
+                "solution_fill_completed",
+                "level_solution_max",
+                &level_debug,
+                elapsed_ms,
+                0
+            );
+            event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                "solution_fill",
+                "level_solution_max",
+                &level_debug,
+                elapsed_ms,
+                0,
+                clean_fill_active,
+                solution_fill_active,
+                recirculation_active,
+                irrigation_active
+            );
             events[event_count++] = "solution_fill_completed";
         }
     }
@@ -2164,6 +2465,24 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
         !solution_level_min &&
         storage_irrigation_node_stop_stage_path_locked("prepare_recirculation")) {
         s_recirculation_guard.low_event_emitted = true;
+        storage_irrigation_node_log_fail_safe_trip(
+            "recirculation_solution_low",
+            "level_solution_min",
+            &level_debug,
+            0,
+            0
+        );
+        event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+            "prepare_recirculation",
+            "level_solution_min",
+            &level_debug,
+            0,
+            0,
+            clean_fill_active,
+            solution_fill_active,
+            recirculation_active,
+            irrigation_active
+        );
         events[event_count++] = "recirculation_solution_low";
     }
 
@@ -2174,13 +2493,32 @@ static void storage_irrigation_node_process_fail_safe_guards(void) {
         !solution_level_min &&
         storage_irrigation_node_stop_irrigation_path_locked()) {
         s_irrigation_guard.low_event_emitted = true;
+        storage_irrigation_node_log_fail_safe_trip(
+            "irrigation_solution_low",
+            "level_solution_min",
+            &level_debug,
+            0,
+            0
+        );
+        event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+            "irrigation",
+            "level_solution_min",
+            &level_debug,
+            0,
+            0,
+            clean_fill_active,
+            solution_fill_active,
+            recirculation_active,
+            irrigation_active
+        );
         events[event_count++] = "irrigation_solution_low";
     }
 
     xSemaphoreGive(s_actuator_mutex);
 
     for (size_t i = 0; i < event_count; i++) {
-        (void)storage_irrigation_node_publish_storage_event(events[i], NULL);
+        (void)storage_irrigation_node_publish_storage_event_with_details(events[i], NULL, event_details[i]);
+        event_details[i] = NULL;
     }
 }
 
@@ -2636,6 +2974,7 @@ esp_err_t storage_irrigation_node_framework_init_integration(void) {
         return err;
     }
     storage_irrigation_node_reload_fail_safe_config_from_storage();
+    storage_irrigation_node_log_fail_safe_config();
     err = storage_irrigation_node_init_estop_input();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize e-stop input: %s", esp_err_to_name(err));

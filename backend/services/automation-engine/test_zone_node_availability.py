@@ -8,6 +8,7 @@ from ae3lite.domain.errors import ErrorCodes
 from ae3lite.domain.services.zone_node_availability import (
     classify_zone_nodes,
     liveness_is_unreachable,
+    offline_failure_for_command_transport,
     offline_failure_from_liveness,
     offline_failure_for_node_uid,
     resolve_required_nodes_offline_failure,
@@ -179,3 +180,53 @@ def test_offline_failure_from_liveness_message() -> None:
 
     assert failure.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
     assert "nd-test-irrig" in failure.message
+
+
+def test_offline_failure_for_command_transport_when_node_still_online() -> None:
+    diagnostics = classify_zone_nodes(
+        zone_id=7,
+        diag_rows=[
+            {
+                "node_uid": "nd-irrig-1",
+                "node_type": "irrig",
+                "status": "online",
+                "last_seen_age_sec": 4,
+                "active_actuator_count": 4,
+            },
+        ],
+    )
+    failure = offline_failure_for_command_transport(
+        zone_id=7,
+        node_uid="nd-irrig-1",
+        error_code="irr_state_unavailable",
+        diagnostics=diagnostics,
+    )
+    assert failure is not None
+    assert failure.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
+    assert "не отвечает на команды" in failure.message
+
+
+@pytest.mark.asyncio
+async def test_resolve_task_error_with_node_offline_by_command_transport() -> None:
+    diagnostics = classify_zone_nodes(
+        zone_id=8,
+        diag_rows=[
+            {
+                "node_uid": "nd-irrig-1",
+                "node_type": "irrig",
+                "status": "online",
+                "last_seen_age_sec": 3,
+                "active_actuator_count": 4,
+            },
+        ],
+    )
+    failure = await resolve_task_error_with_node_offline(
+        zone_id=8,
+        topology="two_tank",
+        error_code="irr_state_unavailable",
+        error_message="snapshot missing",
+        node_uid="nd-irrig-1",
+        diagnostics=diagnostics,
+    )
+    assert failure is not None
+    assert failure.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
