@@ -828,7 +828,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 try {
                     $eventMessageFormatter = app(ZoneEventMessageFormatter::class);
                     $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-                    $eventSelect = ['id', 'type', 'details', 'created_at'];
+                    $eventSelect = ['id', 'type', 'entity_type', 'entity_id', 'details', 'created_at'];
                     if ($hasPayloadJson) {
                         $eventSelect[] = 'payload_json';
                     }
@@ -851,6 +851,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                                 $decoded = json_decode($payload, true);
                                 $details = is_array($decoded) ? $decoded : [];
                             }
+                        }
+
+                        if (($event->entity_type ?? null) === 'command'
+                            && ! empty($event->entity_id)
+                            && ! isset($details['cmd_id'])) {
+                            $details['cmd_id'] = (string) $event->entity_id;
                         }
 
                         $message = $eventMessageFormatter->format($event->type, $details);
@@ -969,15 +975,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'irrigationCorrectionSummary' => $irrigationCorrectionSummary,
             ]);
         })->name('zones.show');
-
-        Route::get('/system/settings', function () {
-            abort_unless((auth()->user()?->role ?? null) === 'admin', 403);
-
-            return Inertia::render('SystemSettings', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-            ]);
-        })->name('system.settings');
     });
+
+    Route::get('/system/settings', function () {
+        $user = auth()->user();
+        abort_unless($user?->canManageSystemAutomationConfig(), 403);
+
+        return Inertia::render('SystemSettings', [
+            'auth' => ['user' => ['role' => $user->role ?? 'viewer']],
+        ]);
+    })->name('system.settings');
 
     Route::prefix('devices')->group(function () {
         Route::get('/', function () {

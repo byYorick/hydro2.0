@@ -228,7 +228,32 @@ resources/js/Pages/
 - workflow/timeline в automation-панели строятся из canonical automation state и `zone_events`, без снимков `scheduler-task`;
 - оператор должен получать быстрый доступ к управлению зоной, не переключаясь в developer diagnostics.
 
-### 6.6.1. Shared UI автоматики зоны
+### 6.6.2. Панель диагностики FSM (`AutomationObservabilityPanel`)
+
+Путь: `resources/js/Components/ZoneAutomation/AutomationObservabilityPanel.vue`  
+Рендерится в `ZoneAutomationRuntimeSection` (sidebar automation runtime).
+
+**Источник данных:** `GET /api/zones/{id}/state` → `observability` (нормализация в `useAutomationPanel` / `automationObservability.ts`).
+
+**UX-инварианты:**
+- панель **всегда видна** на runtime-вкладке (не только при ошибках);
+- badge `overall_health`: `idle` → neutral, `active` → info, `warning` → warning, `critical` → danger;
+- заголовок процесса (`AutomationStatusHeader.stateVariant`) наследует `critical` → danger и `warning` → warning из `observability.overall_health`;
+- список `hang_hints[]` показывает `message`, `recommendation` и технический `code`;
+- блок «Планировщик» — из `observability.scheduler` (`pending_count`, `latest_intent`);
+- offline required nodes — из `observability.nodes.offline_required`;
+- подпись «Источник»:
+  - `state_meta.is_stale` → «кэш Laravel (AE3 недоступен)»;
+  - `runtime.source=laravel_db_fallback` → «БД Laravel (fallback)»;
+  - иначе → «AE3 live».
+- **Client fallback:** если `observability` отсутствует, `resolveObservability()` строит минимальный блок из `state_details`/`workflow_phase`;
+  при `state_meta.is_stale=true` добавляется hint `state_snapshot_stale` (если ещё нет в payload).
+
+**Не смешивать с:**
+- `GET /api/zones/{id}/scheduler-diagnostics` (engineer/admin only);
+- grouped `zone_events` timeline (causal chain, не hang detection).
+
+### 6.6.3. Shared UI автоматики зоны
 
 Shared-компоненты автоматики зоны обязаны использовать одинаковый UX и contract ownership
 в `/launch/{zoneId?}` и в zone edit screens. Legacy `/setup/wizard` должен

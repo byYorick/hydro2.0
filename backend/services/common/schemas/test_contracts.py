@@ -39,6 +39,8 @@ TELEMETRY_SCHEMA = SCHEMAS_DIR / "telemetry.schema.json"
 TELEMETRY_SAMPLE_SCHEMA = resolve_telemetry_sample_schema()
 ERROR_ALERT_SCHEMA = SCHEMAS_DIR / "error_alert.schema.json"
 ZONE_EVENTS_SCHEMA = SCHEMAS_DIR / "zone_events.schema.json"
+ZONE_AUTOMATION_OBSERVABILITY_SCHEMA = SCHEMAS_DIR / "zone_automation_observability.schema.json"
+ZONE_AUTOMATION_STATE_META_SCHEMA = SCHEMAS_DIR / "zone_automation_state_meta.schema.json"
 
 
 def load_json_file(file_path: Path) -> Dict[str, Any]:
@@ -437,6 +439,52 @@ class TestZoneEventsContracts:
             validate_against_schema(invalid, zone_events_schema)
 
 
+class TestZoneAutomationObservabilityContracts:
+    """Контрактные тесты для observability блока zone automation state."""
+
+    @pytest.fixture
+    def observability_schema(self):
+        return load_schema(ZONE_AUTOMATION_OBSERVABILITY_SCHEMA)
+
+    @pytest.fixture
+    def state_meta_schema(self):
+        return load_schema(ZONE_AUTOMATION_STATE_META_SCHEMA)
+
+    @pytest.mark.parametrize(
+        "fixture_file",
+        get_fixture_files("zone_automation_observability_*.json"),
+    )
+    def test_observability_fixture_validates(self, observability_schema, fixture_file):
+        fixture = load_json_file(fixture_file)
+        validate_against_schema(fixture, observability_schema)
+
+    def test_observability_rejects_unknown_hint_code(self, observability_schema):
+        invalid = load_json_file(FIXTURES_DIR / "zone_automation_observability_idle.json")
+        invalid["hang_hints"] = [
+            {
+                "code": "unknown_hang_hint",
+                "severity": "warning",
+                "message": "test",
+            }
+        ]
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, observability_schema)
+
+    def test_observability_rejects_invalid_overall_health(self, observability_schema):
+        invalid = load_json_file(FIXTURES_DIR / "zone_automation_observability_idle.json")
+        invalid["overall_health"] = "broken"
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, observability_schema)
+
+    def test_state_meta_fixture_validates(self, state_meta_schema):
+        payload = {
+            "source": "cache",
+            "is_stale": True,
+            "served_at": "2026-06-23T12:00:00+00:00",
+        }
+        validate_against_schema(payload, state_meta_schema)
+
+
 class TestContractCompatibility:
     """Тесты совместимости контрактов между компонентами."""
     
@@ -451,6 +499,7 @@ class TestContractCompatibility:
             ),
             ERROR_ALERT_SCHEMA: get_fixture_files("error_*.json") + get_fixture_files("alert_*.json"),
             ZONE_EVENTS_SCHEMA: get_fixture_files("zone_event_*.json"),
+            ZONE_AUTOMATION_OBSERVABILITY_SCHEMA: get_fixture_files("zone_automation_observability_*.json"),
         }
         
         for schema_path, fixture_files in schema_fixture_mapping.items():

@@ -1,11 +1,9 @@
 /**
  * @file storage_irrigation_node_app.c
  * @brief Main application logic for storage_irrigation_node
- * 
- * Pump node for controlling pumps and monitoring current via INA209
- * According to NODE_ARCH_FULL.md and MQTT_SPEC_FULL.md
- * 
- * Тонкий слой координации - вся логика делегируется в компоненты
+ *
+ * Production two-tank IRR runtime (`type=irrig`). Тонкий слой координации —
+ * доменная логика в модулях storage_irrigation_fw_*.
  */
 
 #include "storage_irrigation_node_app.h"

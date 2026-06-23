@@ -55,7 +55,7 @@ esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx)
     return ESP_OK;
 }
 
-esp_err_t storage_irrigation_node_framework_init_integration(void) {
+esp_err_t storage_irrigation_node_framework_init(void) {
     ESP_LOGD(TAG, "Initializing storage_irrigation_node framework integration...");
     
     // Конфигурация node_framework

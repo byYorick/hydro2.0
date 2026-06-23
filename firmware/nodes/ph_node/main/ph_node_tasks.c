@@ -11,6 +11,7 @@
 
 #include "ph_node_app.h"
 #include "ph_node_defaults.h"
+#include "correction_node_contract.h"
 #include "ph_node_framework_integration.h"
 #include "mqtt_manager.h"
 #include "oled_ui.h"
@@ -47,7 +48,7 @@ static QueueHandle_t s_ph_meas_queue;
 // Период опроса датчика (в миллисекундах)
 #define SENSOR_POLL_INTERVAL_MS PH_NODE_PH_SENSOR_POLL_INTERVAL_MS
 #define PUMP_CURRENT_POLL_INTERVAL_MS 5000  // 5 секунд - опрос тока насосов (по умолчанию)
-#define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
+#define STATUS_PUBLISH_INTERVAL_MS CORRECTION_NODE_STATUS_PUBLISH_INTERVAL_MS
 
 /**
  * @brief Задача опроса сенсоров
@@ -475,42 +476,5 @@ void ph_node_publish_pump_current_telemetry(void) {
  * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
  */
 void ph_node_publish_status(void) {
-    if (!mqtt_manager_is_connected()) {
-        return;
-    }
-    
-    // Получение IP адреса
-    esp_netif_ip_info_t ip_info;
-    char ip_str[16] = "0.0.0.0";
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif != NULL) {
-        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
-        }
-    }
-    
-    // Получение RSSI
-    wifi_ap_record_t ap_info;
-    int8_t rssi = -100;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        rssi = ap_info.rssi;
-    }
-    
-    const char *fw_version = node_utils_get_firmware_version();
-    
-    // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
-    cJSON *status = cJSON_CreateObject();
-    if (status) {
-        cJSON_AddBoolToObject(status, "online", true);
-        cJSON_AddStringToObject(status, "ip", ip_str);
-        cJSON_AddNumberToObject(status, "rssi", rssi);
-        cJSON_AddStringToObject(status, "fw", fw_version);
-        
-        char *json_str = cJSON_PrintUnformatted(status);
-        if (json_str) {
-            mqtt_manager_publish_status(json_str);
-            free(json_str);
-        }
-        cJSON_Delete(status);
-    }
+    (void)node_utils_publish_device_status_extended();
 }

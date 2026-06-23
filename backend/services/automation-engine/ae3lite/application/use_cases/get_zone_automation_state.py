@@ -12,11 +12,14 @@ from ae3lite.application.level_monitor import (
     load_zone_level_monitor_config,
     summarize_zone_telemetry_rows,
 )
+from ae3lite.application.services.automation_observability import build_automation_observability
+from common.observability_thresholds import load_system_observability_thresholds
 from ae3lite.application.use_cases.manual_control_contract import (
     AVAILABLE_CONTROL_MODES,
     allowed_manual_steps_for_stage,
     normalize_control_mode,
 )
+from ae3lite.domain.services.zone_node_availability import ZONE_NODES_DIAG_SQL
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +234,8 @@ class GetZoneAutomationStateUseCase:
                 )
 
         telemetry, telemetry_fetch_ok = await self._fetch_zone_telemetry(zone_id=zone_id)
+        node_rows = await self._fetch_zone_nodes_diag(zone_id=zone_id)
+        observability_thresholds = await load_system_observability_thresholds(self._fetch_fn)
         if task is None and self._should_prefer_workflow_state(workflow_state) and not self._workflow_state_is_stale(
             workflow_state=workflow_state,
             last_task=last_task,
@@ -241,6 +246,8 @@ class GetZoneAutomationStateUseCase:
                 telemetry=telemetry,
                 telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
+                node_rows=node_rows,
+                observability_thresholds=observability_thresholds,
             )
             return self._merge_last_failed_task_into_workflow_view(built, last_task, workflow_state)
         if task is None:
@@ -253,6 +260,9 @@ class GetZoneAutomationStateUseCase:
             telemetry=telemetry,
             telemetry_fetch_ok=telemetry_fetch_ok,
             solution_tank_guard=solution_tank_guard,
+            workflow_state=workflow_state,
+            node_rows=node_rows,
+            observability_thresholds=observability_thresholds,
         )
 
     async def _fetch_zone_telemetry(self, *, zone_id: int) -> tuple[dict[str, Any], bool]:
@@ -283,6 +293,20 @@ class GetZoneAutomationStateUseCase:
             return {}, False
 
         return summarize_zone_telemetry_rows(rows, config=level_cfg), True
+
+    async def _fetch_zone_nodes_diag(self, *, zone_id: int) -> list[dict[str, Any]]:
+        if self._fetch_fn is None:
+            return []
+        try:
+            rows = await self._fetch_fn(ZONE_NODES_DIAG_SQL, zone_id)
+        except Exception:
+            logger.warning(
+                "AE3 automation state: node diag fetch failed for zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
+            return []
+        return [dict(row) if isinstance(row, Mapping) else row for row in rows]
 
     async def _fetch_recent_node_runtime_events(self, *, zone_id: int, since_ts: datetime | None) -> list[dict[str, Any]]:
         if self._fetch_fn is None:
@@ -564,12 +588,19 @@ class GetZoneAutomationStateUseCase:
         telemetry: dict[str, Any],
         telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
+        workflow_state: Optional[Any] = None,
+        node_rows: list[dict[str, Any]] | None = None,
+        observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         if task is None:
             return await self._idle_state(
                 zone_id=zone_id,
+                telemetry=telemetry,
                 telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
+                workflow_state=workflow_state,
+                node_rows=node_rows,
+                observability_thresholds=observability_thresholds,
             )
 
         status = str(getattr(task, "status", "") or "").strip().lower()
@@ -600,7 +631,8 @@ class GetZoneAutomationStateUseCase:
             current_stage=str(current_stage) if current_stage is not None else None,
         )
 
-        return {
+        return self._attach_observability(
+            {
             "zone_id": zone_id,
             "state": state,
             "state_label": self._primary_automation_state_label(
@@ -653,7 +685,15 @@ class GetZoneAutomationStateUseCase:
             "decision": self._build_decision(task),
             "telemetry_fetch_ok": telemetry_fetch_ok,
             **control_ctx,
-        }
+            },
+            zone_id=zone_id,
+            task=task,
+            workflow_state=workflow_state,
+            telemetry=telemetry,
+            telemetry_fetch_ok=telemetry_fetch_ok,
+            node_rows=node_rows,
+            observability_thresholds=observability_thresholds,
+        )
 
     async def _build_workflow_state(
         self,
@@ -663,6 +703,8 @@ class GetZoneAutomationStateUseCase:
         telemetry: dict[str, Any],
         telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
+        node_rows: list[dict[str, Any]] | None = None,
+        observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
         payload = getattr(workflow_state, "payload", None)
@@ -693,7 +735,8 @@ class GetZoneAutomationStateUseCase:
             current_stage=current_stage,
         )
 
-        return {
+        return self._attach_observability(
+            {
             "zone_id": zone_id,
             "state": state,
             "state_label": state_label,
@@ -744,22 +787,36 @@ class GetZoneAutomationStateUseCase:
             "decision": None,
             "telemetry_fetch_ok": telemetry_fetch_ok,
             **control_ctx,
-        }
+            },
+            zone_id=zone_id,
+            task=None,
+            workflow_state=workflow_state,
+            telemetry=telemetry,
+            telemetry_fetch_ok=telemetry_fetch_ok,
+            node_rows=node_rows,
+            observability_thresholds=observability_thresholds,
+        )
 
     async def _idle_state(
         self,
         *,
         zone_id: int,
+        telemetry: dict[str, Any] | None = None,
         telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
+        workflow_state: Optional[Any] = None,
+        node_rows: list[dict[str, Any]] | None = None,
+        observability_thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
+        telemetry = telemetry or {}
         timeline = await self._build_timeline(
             zone_id=zone_id,
             transitions=[],
             since_ts=self._idle_timeline_since(),
         )
         control_ctx = await self._control_mode_context(zone_id=zone_id, current_stage=None)
-        return {
+        return self._attach_observability(
+            {
             "zone_id": zone_id,
             "state": "IDLE",
             "state_label": "Ожидание",
@@ -781,11 +838,21 @@ class GetZoneAutomationStateUseCase:
                 "nutrient_tank_capacity_l": None,
             },
             "current_levels": {
-                "clean_tank_level_percent": 0,
-                "nutrient_tank_level_percent": 0,
+                "clean_tank_level_percent": telemetry.get(
+                    "clean_tank_level_percent",
+                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
+                ),
+                "nutrient_tank_level_percent": telemetry.get(
+                    "nutrient_tank_level_percent",
+                    coarse_solution_tank_level_percent(
+                        solution_max_triggered=False,
+                        solution_min_triggered=False,
+                    )
+                    or 0,
+                ),
                 "buffer_tank_level_percent": None,
-                "ph": None,
-                "ec": None,
+                "ph": telemetry.get("ph"),
+                "ec": telemetry.get("ec"),
             },
             "active_processes": {
                 "pump_in": False,
@@ -801,7 +868,40 @@ class GetZoneAutomationStateUseCase:
             "decision": None,
             "telemetry_fetch_ok": telemetry_fetch_ok,
             **control_ctx,
-        }
+            },
+            zone_id=zone_id,
+            task=None,
+            workflow_state=workflow_state,
+            telemetry=telemetry,
+            telemetry_fetch_ok=telemetry_fetch_ok,
+            node_rows=node_rows,
+            observability_thresholds=observability_thresholds,
+        )
+
+    def _attach_observability(
+        self,
+        payload: dict[str, Any],
+        *,
+        zone_id: int,
+        task: Optional[Any],
+        workflow_state: Optional[Any],
+        telemetry: Mapping[str, Any],
+        telemetry_fetch_ok: bool,
+        node_rows: list[dict[str, Any]] | None,
+        observability_thresholds: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
+        observability = build_automation_observability(
+            zone_id=zone_id,
+            task=task,
+            workflow_state=workflow_state,
+            telemetry=telemetry,
+            telemetry_fetch_ok=telemetry_fetch_ok,
+            now=self._now(),
+            node_rows=node_rows or [],
+            thresholds=observability_thresholds,
+        )
+        payload["observability"] = observability
+        return payload
 
     def _build_active_processes(
         self,

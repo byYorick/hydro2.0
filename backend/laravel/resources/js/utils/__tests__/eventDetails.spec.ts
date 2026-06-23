@@ -164,4 +164,53 @@ describe('eventDetails', () => {
       { label: 'Стало', value: '{"kp":1.2,"ki":0.01}', variant: 'default' },
     ])
   })
+
+  it('разворачивает поля command_status', () => {
+    const rows = buildEventDetails({
+      id: 9,
+      kind: 'command_status',
+      message: 'Ошибка команды',
+      occurred_at: '2026-04-03T12:00:00Z',
+      payload: {
+        cmd_id: 'cmd-42',
+        status: 'ERROR',
+        error_code: 'pump_busy',
+        error_message: 'Pump is already running',
+      },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { label: 'Команда', value: 'cmd-42', variant: 'default' },
+      { label: 'Статус', value: 'ERROR', variant: 'default' },
+      { label: 'Ошибка', value: expect.stringContaining('насоса'), variant: 'error' },
+    ]))
+  })
+
+  it('разворачивает диагностику command_status TIMEOUT', () => {
+    const rows = buildEventDetails({
+      id: 10,
+      kind: 'command_status',
+      message: 'Таймаут команды',
+      occurred_at: '2026-04-03T12:00:00Z',
+      payload: {
+        cmd_id: 'cmd-timeout-1',
+        status: 'TIMEOUT',
+        error_code: 'command_timeout',
+        node_uid: 'nd-irrig-1',
+        channel: 'pump_main',
+        timeout_minutes: 5,
+        node_status: 'online',
+        node_stale_online_candidate: true,
+      },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { label: 'Команда', value: 'cmd-timeout-1', variant: 'default' },
+      { label: 'Статус', value: 'TIMEOUT', variant: 'default' },
+      { label: 'Нода', value: 'nd-irrig-1', variant: 'default' },
+      { label: 'Канал', value: 'pump_main', variant: 'default' },
+      { label: 'Таймаут', value: '5 мин', variant: 'default' },
+      { label: 'Узел', value: 'online, но heartbeat устарел', variant: 'error' },
+    ]))
+  })
 })

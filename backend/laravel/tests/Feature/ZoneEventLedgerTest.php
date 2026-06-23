@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Events\AlertCreated;
-use App\Events\CommandStatusUpdated;
 use App\Models\Command;
 use App\Models\Greenhouse;
 use App\Models\User;
@@ -45,39 +44,20 @@ class ZoneEventLedgerTest extends TestCase
 
     public function test_command_status_updated_records_to_zone_events(): void
     {
-        $greenhouse = Greenhouse::factory()->create();
-        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-
-        // Создаем команду напрямую через DB (вне транзакции теста)
+        $zone = Zone::factory()->create();
         $cmdId = 'test-cmd-'.uniqid();
 
-        // Завершаем транзакцию теста перед вставкой команды
-        DB::commit();
-
-        $commandId = DB::table('commands')->insertGetId([
+        $command = Command::withoutEvents(fn () => Command::create([
             'zone_id' => $zone->id,
             'cmd' => 'test',
             'cmd_id' => $cmdId,
             'status' => Command::STATUS_QUEUED,
-            'created_at' => now(),
-            'updated_at' => now(),
+        ]));
+
+        $command->update([
+            'status' => Command::STATUS_SENT,
         ]);
 
-        // Создаем событие
-        $event = new CommandStatusUpdated(
-            commandId: $cmdId,
-            status: Command::STATUS_SENT,
-            message: 'Command sent',
-            zoneId: $zone->id
-        );
-
-        // Вызываем метод broadcasted() напрямую (в реальности вызывается после broadcast)
-        $event->broadcasted();
-
-        // Начинаем новую транзакцию для проверок
-        DB::beginTransaction();
-
-        // Проверяем, что событие записано в zone_events
         $this->assertDatabaseHas('zone_events', [
             'zone_id' => $zone->id,
             'type' => 'command_status',
@@ -94,10 +74,9 @@ class ZoneEventLedgerTest extends TestCase
         $this->assertNotNull($zoneEvent->server_ts);
         $this->assertNotNull($zoneEvent->payload_json);
 
-        $payload = json_decode($zoneEvent->payload_json, true);
+        $payload = json_decode((string) $zoneEvent->payload_json, true);
         $this->assertEquals(Command::STATUS_SENT, $payload['status']);
-        $this->assertEquals('Command sent', $payload['message']);
-        $this->assertArrayHasKey('ws_event_id', $payload); // event_id из WS события
+        $this->assertArrayHasKey('ws_event_id', $payload);
     }
 
     public function test_alert_created_records_to_zone_events(): void

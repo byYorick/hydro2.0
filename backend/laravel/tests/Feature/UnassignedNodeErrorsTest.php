@@ -169,6 +169,7 @@ class UnassignedNodeErrorsTest extends TestCase
                         'hardware_id',
                         'error_message',
                         'error_code',
+                        'human_error_message',
                         'severity',
                         'count',
                         'node_id',
@@ -185,6 +186,40 @@ class UnassignedNodeErrorsTest extends TestCase
         $data = $resp->json('data');
         $this->assertCount(2, $data);
         $this->assertEquals('esp32-zone-test', $data[0]['hardware_id']);
+    }
+
+    public function test_get_zone_unassigned_errors_includes_human_error_message(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'hardware_id' => 'esp32-busy-pump',
+        ]);
+        $now = now();
+
+        DB::table('unassigned_node_errors')->insert([
+            'hardware_id' => 'esp32-busy-pump',
+            'error_message' => 'Pump is already running',
+            'error_code' => 'pump_busy',
+            'severity' => 'ERROR',
+            'topic' => 'hydro/gh-temp/zn-temp/esp32-busy-pump/error',
+            'node_id' => $node->id,
+            'count' => 1,
+            'first_seen_at' => $now,
+            'last_seen_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/unassigned-errors");
+
+        $resp->assertOk();
+        $this->assertSame(
+            'Канал насоса занят предыдущей операцией. Проверьте конфигурацию, логи сервиса и состояние зоны.',
+            $resp->json('data.0.human_error_message')
+        );
     }
 
     public function test_unassigned_errors_attached_to_node_on_registration(): void

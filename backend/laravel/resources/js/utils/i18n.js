@@ -100,6 +100,7 @@ export function classifyEventKind(kind) {
   ) return 'ACTION'
 
   if (kind === 'COMMAND_TIMEOUT' || kind === 'AE_TASK_FAILED' || kind === 'CORRECTION_EXHAUSTED') return 'WARNING'
+  if (kind === 'command_status' || kind === 'COMMAND_STATUS') return 'ACTION'
   if (kind === 'IRR_STATE_SNAPSHOT' || kind === 'PUMP_CALIBRATION_RUN_SKIPPED') return 'INFO'
 
   // Lifecycle / zone events (WATER_LEVEL_LOW уже обрабатывается выше как ALERT)
@@ -227,6 +228,8 @@ export function translateEventKind(kind) {
     'IRRIGATION_START': 'Полив запущен',
     'IRRIGATION_STOP': 'Полив остановлен',
     'COMMAND_TIMEOUT': 'Таймаут команды',
+    'command_status': 'Статус команды',
+    'COMMAND_STATUS': 'Статус команды',
     'PUMP_CALIBRATION_FINISHED': 'Калибровка насоса завершена',
     'PUMP_CALIBRATION_RUN_SKIPPED': 'Калибровка насоса пропущена',
     'CLEAN_FILL_COMPLETED': 'Чистая вода: заполнение завершено',

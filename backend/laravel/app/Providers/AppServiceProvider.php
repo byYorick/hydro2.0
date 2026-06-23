@@ -36,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
             $this->app->singleton(FoundationVite::class, RequestAwareVite::class);
         }
 
+        $this->app->singleton(\App\Services\CommandTimeoutContextStore::class);
+
         // Регистрация DigitalTwinClient
         $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {
             $baseUrl = config('services.digital_twin.url', 'http://digital-twin:8003');

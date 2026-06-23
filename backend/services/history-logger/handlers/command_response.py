@@ -6,7 +6,7 @@ import logging
 
 import chain_webhook
 from common.command_status_queue import deliver_status_to_laravel, normalize_status
-from common.utils.time import utcnow
+from common.utils.time import normalize_device_timestamp, utcnow
 from common.db import create_zone_event, execute, fetch
 from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id
@@ -42,13 +42,14 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         cmd_id = data.get("cmd_id")
         raw_status = data.get("status", "")
-        response_ts = data.get("ts")
+        raw_ts = data.get("ts")
+        response_ts_ms, response_ts_sec = normalize_device_timestamp(raw_ts)
 
         logger.info(
             "[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id=%s, status=%s, ts=%s, topic=%s",
             cmd_id,
             raw_status,
-            response_ts,
+            raw_ts,
             topic,
         )
         node_uid = _extract_node_uid(topic)
@@ -58,14 +59,13 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
         if (
             not cmd_id
             or not raw_status
-            or not isinstance(response_ts, int)
-            or response_ts < 0
+            or response_ts_ms is None
         ):
             logger.warning(
                 "[COMMAND_RESPONSE] Missing or invalid required fields in payload: cmd_id=%s status=%s ts=%s payload=%s",
                 cmd_id,
                 raw_status,
-                response_ts,
+                raw_ts,
                 data,
             )
             COMMAND_RESPONSE_ERROR.inc()
@@ -118,7 +118,9 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
         details.update(
             {
                 "raw_status": str(raw_status),
-                "response_ts": response_ts,
+                "response_ts": response_ts_ms,
+                "response_ts_ms": response_ts_ms,
+                "response_ts_sec": response_ts_sec,
                 "node_uid": node_uid,
                 "channel": channel,
                 "gh_uid": gh_uid,
@@ -143,7 +145,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             channel=channel,
             cmd_id=cmd_id,
             node_uid=node_uid,
-            response_ts=response_ts,
+            response_ts=response_ts_ms,
             details=details,
         )
 

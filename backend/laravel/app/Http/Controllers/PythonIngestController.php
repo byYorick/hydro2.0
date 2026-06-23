@@ -249,13 +249,12 @@ class PythonIngestController extends Controller
             default => strtoupper($data['status']),
         };
 
-        // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
+        // Обновляем статус команды в БД; broadcast идёт через CommandObserver.
         $details = $data['details'] ?? [];
         $skipMessage = null;
         $command = null;
-        $eventStatus = $normalizedStatus;
 
-        DB::transaction(function () use (&$command, &$eventStatus, &$skipMessage, $data, $normalizedStatus, $details): void {
+        DB::transaction(function () use (&$command, &$skipMessage, $data, $normalizedStatus, $details): void {
             $command = Command::where('cmd_id', $data['cmd_id'])
                 ->latest('id')
                 ->lockForUpdate()
@@ -390,7 +389,6 @@ class PythonIngestController extends Controller
                 details: $details,
             );
             $command = $command->fresh();
-            $eventStatus = (string) $command->status;
         }, 3);
 
         if (! $command) {
@@ -418,40 +416,6 @@ class PythonIngestController extends Controller
                 'status' => 'ok',
                 'message' => $skipMessage,
             ]);
-        }
-
-        $zoneId = $command->zone_id;
-        $errorCodeRaw = $details['error_code'] ?? null;
-        $errorCode = is_string($errorCodeRaw) && $errorCodeRaw !== '' ? $errorCodeRaw : null;
-        $errorMessageRaw = $details['error_message'] ?? null;
-        $errorMessage = is_string($errorMessageRaw) && $errorMessageRaw !== '' ? $errorMessageRaw : null;
-        $broadcastError = $errorMessage ?? $errorCode;
-        $message = $details['message'] ?? null;
-
-        if (in_array($eventStatus, [
-            \App\Models\Command::STATUS_ERROR,
-            \App\Models\Command::STATUS_INVALID,
-            \App\Models\Command::STATUS_BUSY,
-            \App\Models\Command::STATUS_TIMEOUT,
-            \App\Models\Command::STATUS_SEND_FAILED,
-        ], true)) {
-            event(new \App\Events\CommandFailed(
-                commandId: $command->cmd_id,
-                message: $message ?? 'Command failed',
-                error: $broadcastError,
-                status: $eventStatus,
-                zoneId: $zoneId,
-                errorCode: $errorCode
-            ));
-        } else {
-            event(new \App\Events\CommandStatusUpdated(
-                commandId: $command->cmd_id,
-                status: $eventStatus,
-                message: $message ?? 'Command status updated',
-                error: $broadcastError,
-                zoneId: $zoneId,
-                errorCode: $errorCode
-            ));
         }
 
         return Response::json(['status' => 'ok']);

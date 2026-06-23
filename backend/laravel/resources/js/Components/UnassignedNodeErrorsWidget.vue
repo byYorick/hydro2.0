@@ -58,7 +58,7 @@
               </Badge>
             </div>
             <p class="text-sm text-[color:var(--text-primary)] mb-1">
-              {{ err.error_message }}
+              {{ displayErrorMessage(err) }}
             </p>
             <div class="flex items-center gap-4 text-xs text-[color:var(--text-dim)] flex-wrap">
               <span v-if="err.error_code">Код: {{ err.error_code }}</span>
@@ -92,6 +92,7 @@ import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import { api } from '@/services/api'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -101,6 +102,7 @@ interface UnassignedError {
   hardware_id: string
   error_message: string
   error_code: string | null
+  human_error_message?: string | null
   severity?: string
   topic: string
   last_payload: any
@@ -132,6 +134,14 @@ const getSeverityVariant = (severity: string | undefined): 'danger' | 'warning' 
   if (upper === 'CRITICAL' || upper === 'ERROR') return 'danger'
   if (upper === 'WARNING') return 'warning'
   return 'info'
+}
+
+const displayErrorMessage = (err: UnassignedError): string => {
+  return resolveHumanErrorMessage({
+    code: err.error_code,
+    message: err.error_message,
+    humanMessage: err.human_error_message,
+  }, err.error_message) || err.error_message || 'Неизвестная ошибка'
 }
 
 const formatDate = (dateString: string) => {

@@ -1545,6 +1545,16 @@ cJSON *node_command_handler_create_response(
         return NULL;
     }
 
+    const char *resolved_error_code = error_code;
+    const char *resolved_error_message = error_message;
+    if (resolved_error_code == NULL) {
+        if (strcmp(normalized_status, "INVALID") == 0) {
+            resolved_error_code = "invalid_command_format";
+        } else if (strcmp(normalized_status, "BUSY") == 0) {
+            resolved_error_code = "actuator_busy";
+        }
+    }
+
     // ts в миллисекундах согласно эталону node-sim
     int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
     if (cJSON_AddNumberToObject(response, "ts", (double)ts_ms) == NULL) {
@@ -1553,16 +1563,22 @@ cJSON *node_command_handler_create_response(
         return NULL;
     }
 
-    if (error_code && strcmp(normalized_status, "ERROR") == 0) {
-        if (cJSON_AddStringToObject(response, "error_code", error_code) == NULL) {
+    const bool status_has_error_fields =
+        strcmp(normalized_status, "ERROR") == 0 ||
+        strcmp(normalized_status, "INVALID") == 0 ||
+        strcmp(normalized_status, "BUSY") == 0 ||
+        strcmp(normalized_status, "NO_EFFECT") == 0;
+
+    if (resolved_error_code && status_has_error_fields) {
+        if (cJSON_AddStringToObject(response, "error_code", resolved_error_code) == NULL) {
             ESP_LOGE(TAG, "Failed to add response error_code");
             cJSON_Delete(response);
             return NULL;
         }
     }
 
-    if (error_message && strcmp(normalized_status, "ERROR") == 0) {
-        if (cJSON_AddStringToObject(response, "error_message", error_message) == NULL) {
+    if (resolved_error_message && status_has_error_fields) {
+        if (cJSON_AddStringToObject(response, "error_message", resolved_error_message) == NULL) {
             ESP_LOGE(TAG, "Failed to add response error_message");
             cJSON_Delete(response);
             return NULL;

@@ -92,7 +92,7 @@ class AutomationBundleController extends Controller
         }
 
         if ($scopeType === AutomationConfigRegistry::SCOPE_SYSTEM) {
-            if (! $user->isAdmin()) {
+            if (! $user->canManageSystemAutomationConfig()) {
                 abort(403, 'Forbidden: Access denied to system automation bundle');
             }
 

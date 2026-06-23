@@ -1,0 +1,25 @@
+{
+  "overall_health": "idle",
+  "runtime": {
+    "zone_id": 3,
+    "task_id": null,
+    "task_status": null,
+    "task_is_active": false,
+    "current_stage": null,
+    "workflow_phase": "idle",
+    "stage_elapsed_sec": 0,
+    "waiting_command": false,
+    "waiting_elapsed_sec": 0
+  },
+  "scheduler": {
+    "pending_count": 0,
+    "active_count": 0,
+    "latest_intent": null
+  },
+  "nodes": {
+    "nodes": [],
+    "offline_required": [],
+    "persistent_offline": false
+  },
+  "hang_hints": []
+}

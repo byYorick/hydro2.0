@@ -6,6 +6,7 @@ class ZoneEventMessageFormatter
 {
     public function __construct(
         private AlertLocalizationService $alertLocalization,
+        private ErrorCodeCatalogService $errorCodeCatalog,
     ) {}
 
     /**
@@ -77,6 +78,8 @@ class ZoneEventMessageFormatter
             'IRRIGATION_DECISION_SNAPSHOT_LOCKED' => $this->formatIrrigationDecisionSnapshotLocked($payload),
             'IRRIGATION_DECISION_EVALUATED' => $this->formatIrrigationDecisionEvaluated($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
+            'COMMAND_STATUS' => $this->formatCommandStatus($payload),
+            'command_status' => $this->formatCommandStatus($payload),
             'AE_STARTUP_PROBE_TIMEOUT' => $this->formatAeStartupProbeTimeout($payload),
             'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
             'SOLUTION_FILL_COMPLETED' => 'Наполнение раствором завершено',
@@ -139,6 +142,10 @@ class ZoneEventMessageFormatter
                 return $this->localizeAlertPayloadMessage($details, $direct);
             }
 
+            if ($eventType === 'COMMAND_STATUS') {
+                return null;
+            }
+
             return $direct;
         }
 
@@ -149,6 +156,10 @@ class ZoneEventMessageFormatter
             if ($nested !== null) {
                 if (in_array($eventType, $alertLikeEvents, true)) {
                     return $this->localizeAlertPayloadMessage($details, $nested);
+                }
+
+                if ($eventType === 'COMMAND_STATUS') {
+                    return null;
                 }
 
                 return $nested;
@@ -1104,6 +1115,53 @@ class ZoneEventMessageFormatter
         }
 
         return 'Таймаут команды'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCommandStatus(array $details): string
+    {
+        $status = strtoupper($this->toStringOrNull($details['status'] ?? null) ?? '');
+        if ($status === 'TIMEOUT' && (
+            isset($details['timeout_minutes'])
+            || isset($details['node_uid'])
+            || isset($details['channel'])
+        )) {
+            return $this->formatCommandTimeout($details);
+        }
+
+        $cmdId = $this->toStringOrNull($details['cmd_id'] ?? null);
+        $errorCode = $this->toStringOrNull($details['error_code'] ?? null);
+        $errorMessage = $this->toStringOrNull($details['error'] ?? null)
+            ?? $this->toStringOrNull($details['error_message'] ?? null)
+            ?? $this->toStringOrNull($details['message'] ?? null);
+
+        $statusLabels = [
+            'ACK' => 'Команда принята',
+            'DONE' => 'Команда выполнена',
+            'ERROR' => 'Ошибка команды',
+            'INVALID' => 'Некорректная команда',
+            'BUSY' => 'Узел занят',
+            'TIMEOUT' => 'Таймаут команды',
+            'NO_EFFECT' => 'Команда без эффекта',
+            'SEND_FAILED' => 'Не удалось отправить команду',
+        ];
+        $label = $statusLabels[$status] ?? 'Статус команды';
+
+        $parts = [];
+        if ($cmdId !== null) {
+            $parts[] = "команда {$cmdId}";
+        }
+        if ($errorCode !== null) {
+            $human = $this->errorCodeCatalog->present($errorCode, $errorMessage)['message'];
+            if (is_string($human) && trim($human) !== '') {
+                $parts[] = trim($human);
+            }
+        } elseif ($errorMessage !== null) {
+            $parts[] = $errorMessage;
+        } elseif ($status !== '' && $status !== 'DONE' && $status !== 'ACK') {
+            $parts[] = strtolower($status);
+        }
+
+        return $label.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
     }
 
     private function formatAeStartupProbeTimeout(array $details): string

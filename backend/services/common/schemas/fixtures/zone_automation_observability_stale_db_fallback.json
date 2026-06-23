@@ -1,0 +1,62 @@
+{
+  "overall_health": "critical",
+  "runtime": {
+    "zone_id": 9,
+    "task_id": 88,
+    "task_status": "waiting_command",
+    "task_is_active": true,
+    "current_stage": "clean_fill_check",
+    "workflow_phase": "tank_filling",
+    "stage_entered_at": "2026-06-23T11:52:00+00:00",
+    "stage_elapsed_sec": 480,
+    "waiting_command": true,
+    "waiting_elapsed_sec": 180,
+    "task_updated_age_sec": 180,
+    "source": "laravel_db_fallback"
+  },
+  "scheduler": {
+    "pending_count": 0,
+    "active_count": 0,
+    "latest_intent": null
+  },
+  "nodes": {
+    "nodes": [
+      {
+        "uid": "pump-node-1",
+        "type": "ph",
+        "status": "offline",
+        "last_seen_age_sec": 900,
+        "required": true,
+        "healthy": false
+      }
+    ],
+    "offline_required": ["pump-node-1"],
+    "persistent_offline": true
+  },
+  "hang_hints": [
+    {
+      "code": "waiting_command_stuck",
+      "severity": "warning",
+      "message": "Задача ждёт ответа по команде дольше ожидаемого",
+      "recommendation": "Проверьте MQTT, history-logger и command_response для последней команды.",
+      "details": {
+        "waiting_elapsed_sec": 180
+      }
+    },
+    {
+      "code": "nodes_offline",
+      "severity": "critical",
+      "message": "Обязательные узлы зоны offline или stale",
+      "recommendation": "Проверьте питание, Wi‑Fi/MQTT и last_seen_at узлов irrig/ph/ec.",
+      "details": {
+        "nodes": []
+      }
+    },
+    {
+      "code": "state_snapshot_stale",
+      "severity": "warning",
+      "message": "Снимок автоматики из кэша — AE3 может быть недоступен",
+      "recommendation": "Проверьте automation-engine и обновите страницу."
+    }
+  ]
+}

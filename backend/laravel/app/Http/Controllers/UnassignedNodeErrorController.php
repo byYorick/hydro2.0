@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class UnassignedNodeErrorController extends Controller
 {
+    public function __construct(
+        private readonly ErrorCodeCatalogService $errorCodeCatalog,
+    ) {}
+
     /**
      * Получить список ошибок неназначенных узлов.
      */
@@ -19,9 +24,9 @@ class UnassignedNodeErrorController extends Controller
                 'hardware_id',
                 'error_message',
                 'error_code',
-                'error_level',
+                'severity',
                 'topic',
-                'error_data',
+                'last_payload',
                 'count',
                 'first_seen_at',
                 'last_seen_at',
@@ -31,27 +36,25 @@ class UnassignedNodeErrorController extends Controller
             ])
             ->orderBy('last_seen_at', 'desc');
 
-        // Фильтр по hardware_id
         if ($request->has('hardware_id')) {
             $query->where('hardware_id', $request->input('hardware_id'));
         }
 
-        // Фильтр по node_id (null = неназначенные, не null = назначенные)
         if ($request->has('unassigned_only')) {
             $query->whereNull('node_id');
         }
 
-        // Фильтр по error_level
-        if ($request->has('error_level')) {
-            $query->where('error_level', $request->input('error_level'));
+        $severity = $request->input('severity') ?? $request->input('error_level');
+        if ($severity) {
+            $query->where('severity', strtoupper((string) $severity));
         }
 
-        // Пагинация
         $perPage = min($request->input('per_page', 50), 100);
         $errors = $query->paginate($perPage);
+        $items = collect($errors->items())->map(fn ($error) => $this->presentErrorRow((array) $error))->all();
 
         return response()->json([
-            'data' => $errors->items(),
+            'data' => $items,
             'meta' => [
                 'current_page' => $errors->currentPage(),
                 'last_page' => $errors->lastPage(),
@@ -77,11 +80,11 @@ class UnassignedNodeErrorController extends Controller
             ')
             ->first();
 
-        $byLevel = DB::table('unassigned_node_errors')
-            ->select('error_level', DB::raw('COUNT(*) as count'))
-            ->groupBy('error_level')
+        $bySeverity = DB::table('unassigned_node_errors')
+            ->select('severity', DB::raw('COUNT(*) as count'))
+            ->groupBy('severity')
             ->get()
-            ->pluck('count', 'error_level');
+            ->pluck('count', 'severity');
 
         return response()->json([
             'data' => [
@@ -91,7 +94,8 @@ class UnassignedNodeErrorController extends Controller
                 'assigned_count' => (int) $stats->assigned_count,
                 'total_occurrences' => (int) $stats->total_occurrences,
                 'latest_error_at' => $stats->latest_error_at,
-                'by_level' => $byLevel,
+                'by_severity' => $bySeverity,
+                'by_level' => $bySeverity,
             ],
         ]);
     }
@@ -104,10 +108,25 @@ class UnassignedNodeErrorController extends Controller
         $errors = DB::table('unassigned_node_errors')
             ->where('hardware_id', $hardwareId)
             ->orderBy('last_seen_at', 'desc')
-            ->get();
+            ->get()
+            ->map(fn ($error) => $this->presentErrorRow((array) $error));
 
         return response()->json([
             'data' => $errors,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $error
+     * @return array<string, mixed>
+     */
+    private function presentErrorRow(array $error): array
+    {
+        $errorCode = isset($error['error_code']) ? (string) $error['error_code'] : null;
+        $errorMessage = isset($error['error_message']) ? (string) $error['error_message'] : null;
+        $presentation = $this->errorCodeCatalog->present($errorCode, $errorMessage);
+        $error['human_error_message'] = $presentation['message'];
+
+        return $error;
     }
 }

@@ -31,6 +31,8 @@ class AutomationConfigRegistry
 
     public const NAMESPACE_SYSTEM_ALERT_POLICIES = 'system.alert_policies';
 
+    public const NAMESPACE_SYSTEM_OBSERVABILITY_THRESHOLDS = 'system.observability_thresholds';
+
     public const NAMESPACE_GREENHOUSE_LOGIC_PROFILE = 'greenhouse.logic_profile';
 
     public const NAMESPACE_ZONE_LOGIC_PROFILE = 'zone.logic_profile';
@@ -86,6 +88,7 @@ class AutomationConfigRegistry
             self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS => $this->systemDefinition('process_calibration_defaults'),
             self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY => $this->systemDefinition('pump_calibration'),
             self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY => $this->systemDefinition('sensor_calibration'),
+            self::NAMESPACE_SYSTEM_OBSERVABILITY_THRESHOLDS => $this->systemDefinition('observability_thresholds'),
             self::NAMESPACE_SYSTEM_ALERT_POLICIES => [
                 'scope_type' => self::SCOPE_SYSTEM,
                 'schema_version' => 1,
@@ -306,6 +309,7 @@ class AutomationConfigRegistry
             self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS => 'process_calibration_defaults',
             self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY => 'pump_calibration',
             self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY => 'sensor_calibration',
+            self::NAMESPACE_SYSTEM_OBSERVABILITY_THRESHOLDS => 'observability_thresholds',
             default => null,
         };
     }
@@ -318,6 +322,7 @@ class AutomationConfigRegistry
             'process_calibration_defaults' => self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS,
             'pump_calibration' => self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
             'sensor_calibration' => self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY,
+            'observability_thresholds' => self::NAMESPACE_SYSTEM_OBSERVABILITY_THRESHOLDS,
             default => null,
         };
     }

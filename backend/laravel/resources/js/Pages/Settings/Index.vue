@@ -210,6 +210,28 @@
     </Card>
 
     <Card
+      v-if="canEditAutomationEngineSettings"
+      class="mt-4"
+      data-testid="settings-system-authority-card"
+    >
+      <h2 class="text-md font-semibold mb-2 text-[color:var(--text-primary)]">
+        Системные настройки автоматики
+      </h2>
+      <p class="text-xs text-[color:var(--text-dim)] mb-3">
+        Калибровки насосов/сенсоров, дефолты автоматики и пороги observability.
+      </p>
+      <Link href="/system/settings">
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="settings-open-system-authority"
+        >
+          Открыть системные настройки
+        </Button>
+      </Link>
+    </Card>
+
+    <Card
       v-if="automationEngineSettingsSections.length > 0"
       class="mt-4"
       data-testid="settings-automation-engine-card"
@@ -518,7 +540,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { usePage } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'

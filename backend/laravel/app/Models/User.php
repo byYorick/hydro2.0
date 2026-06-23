@@ -87,6 +87,14 @@ class User extends Authenticatable
         return $this->hasRole('agronomist');
     }
 
+    /**
+     * Роли, которым разрешено читать и изменять system-scoped automation authority.
+     */
+    public function canManageSystemAutomationConfig(): bool
+    {
+        return in_array((string) ($this->role ?? 'viewer'), ['admin', 'operator', 'engineer', 'agronomist'], true);
+    }
+
     public function zones(): BelongsToMany
     {
         return $this->belongsToMany(Zone::class, 'user_zones')

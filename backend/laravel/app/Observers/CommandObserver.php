@@ -5,11 +5,19 @@ namespace App\Observers;
 use App\Events\CommandFailed;
 use App\Events\CommandStatusUpdated;
 use App\Models\Command;
+use App\Services\CommandTimeoutContextStore;
+use App\Services\CommandTimeoutDiagnosticsBuilder;
 use App\Services\PipelineMetricsService;
+use App\Services\ZoneEventRecorder;
 use Illuminate\Support\Facades\Log;
 
 class CommandObserver
 {
+    public function __construct(
+        private readonly ZoneEventRecorder $zoneEventRecorder,
+        private readonly CommandTimeoutContextStore $timeoutContextStore,
+        private readonly CommandTimeoutDiagnosticsBuilder $timeoutDiagnosticsBuilder,
+    ) {}
     /**
      * Handle the Command "created" event.
      */
@@ -52,15 +60,19 @@ class CommandObserver
                     Command::STATUS_TIMEOUT,
                     Command::STATUS_SEND_FAILED,
                 ])) {
-                    // Отправляем событие об ошибке
-                    event(new CommandFailed(
+                    $errorCode = $command->error_code;
+                    $broadcastError = $command->error_message ?? $errorCode;
+
+                    $failedEvent = new CommandFailed(
                         commandId: $command->cmd_id,
                         message: 'Command failed',
-                        error: $command->error_message ?? ($command->failed_at ? 'Command execution failed' : null),
+                        error: $broadcastError,
                         status: $newStatus,
                         zoneId: $command->zone_id,
-                        errorCode: $command->error_code
-                    ));
+                        errorCode: $errorCode
+                    );
+                    event($failedEvent);
+                    $this->recordCommandStatusZoneEvent($command, $newStatus, $failedEvent);
                 } else {
                     // Отправляем событие об обновлении статуса
                     $message = match ($newStatus) {
@@ -72,12 +84,16 @@ class CommandObserver
                         default => 'Command status updated',
                     };
 
-                    event(new CommandStatusUpdated(
+                    $statusEvent = new CommandStatusUpdated(
                         commandId: $command->cmd_id,
                         status: $newStatus,
                         message: $message,
-                        zoneId: $command->zone_id
-                    ));
+                        error: $command->error_message,
+                        zoneId: $command->zone_id,
+                        errorCode: $command->error_code
+                    );
+                    event($statusEvent);
+                    $this->recordCommandStatusZoneEvent($command, $newStatus, $statusEvent);
                 }
             } catch (\Exception $e) {
                 Log::error('Failed to broadcast command event on update', [
@@ -97,6 +113,7 @@ class CommandObserver
                 Command::STATUS_INVALID,
                 Command::STATUS_BUSY,
                 Command::STATUS_TIMEOUT,
+                Command::STATUS_SEND_FAILED,
             ])) {
                 try {
                     $metricsService = app(PipelineMetricsService::class);
@@ -105,6 +122,45 @@ class CommandObserver
                     // Не логируем ошибки метрик
                 }
             }
+        }
+    }
+
+    private function recordCommandStatusZoneEvent(
+        Command $command,
+        string $status,
+        CommandFailed|CommandStatusUpdated $event,
+    ): void {
+        if (! $command->zone_id) {
+            return;
+        }
+
+        try {
+            $extraPayload = [];
+            if ($status === Command::STATUS_TIMEOUT) {
+                $extraPayload = $this->timeoutContextStore->pull((int) $command->id);
+                if ($extraPayload === []) {
+                    $extraPayload = $this->timeoutDiagnosticsBuilder->fromCommand($command);
+                }
+            }
+
+            $this->zoneEventRecorder->recordCommandStatus(
+                zoneId: $command->zone_id,
+                commandId: $command->cmd_id,
+                status: $status,
+                message: $event->message,
+                error: $event->error,
+                errorCode: $event->errorCode ?? $command->error_code,
+                eventId: $event->eventId,
+                serverTs: $event->serverTs,
+                extraPayload: $extraPayload,
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to record command_status zone event', [
+                'command_id' => $command->cmd_id,
+                'zone_id' => $command->zone_id,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

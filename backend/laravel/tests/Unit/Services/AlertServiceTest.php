@@ -7,6 +7,7 @@ use App\Services\AlertPolicyService;
 use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -112,6 +113,35 @@ class AlertServiceTest extends TestCase
         $this->assertFalse($result['resolved']);
         $this->assertNull($result['alert']);
         $this->assertNull($result['event_id']);
+    }
+
+    public function test_create_or_update_active_records_alert_zone_event(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+
+        $result = $this->service->createOrUpdateActive([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_test_alert_event',
+            'type' => 'Test Alert',
+            'details' => ['message' => 'test alert event'],
+        ]);
+
+        $this->assertTrue($result['created']);
+        $this->assertNotNull($result['event_id']);
+
+        $this->assertDatabaseHas('zone_events', [
+            'zone_id' => $zone->id,
+            'type' => 'ALERT_CREATED',
+            'entity_type' => 'alert',
+            'entity_id' => (string) $result['alert']?->id,
+        ]);
+
+        $zoneEvent = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'ALERT_CREATED')
+            ->first();
+        $this->assertNotNull($zoneEvent?->server_ts);
     }
 
     public function test_create_or_update_active_uses_dedupe_key_for_same_code(): void

@@ -110,6 +110,19 @@ class StorageStateContractTester:
             time.sleep(0.05)
         return None
 
+    def wait_terminal_response(self, cmd_id: str, timeout_sec: float) -> Optional[Dict[str, object]]:
+        terminal = {"DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            with self.lock:
+                for response in self.responses:
+                    if str(response.get("cmd_id", "")) != cmd_id:
+                        continue
+                    if str(response.get("status", "")).upper() in terminal:
+                        return response
+            time.sleep(0.05)
+        return None
+
 
 def validate_schema(response: Dict[str, object]) -> Optional[str]:
     with open(SCHEMA_PATH, "r", encoding="utf-8") as handle:
@@ -124,10 +137,10 @@ def validate_schema(response: Dict[str, object]) -> Optional[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="HIL тест контракта storage_state/state")
     parser.add_argument("--mqtt-host", default="localhost")
-    parser.add_argument("--mqtt-port", type=int, default=1884)
+    parser.add_argument("--mqtt-port", type=int, default=1883)
     parser.add_argument("--gh-uid", default="gh-test-1")
     parser.add_argument("--zone-uid", default="zn-test-1")
-    parser.add_argument("--node-uid", default="nd-irrig-1")
+    parser.add_argument("--node-uid", default="nd-test-irrig-1")
     parser.add_argument("--timeout-sec", type=float, default=4.0)
     args = parser.parse_args()
 
@@ -141,9 +154,9 @@ def main() -> int:
         payload = tester.build_signed_command(cmd_id=cmd_id, cmd="state", params={})
         tester.publish(command_topic, payload)
 
-        response = tester.wait_response(cmd_id, args.timeout_sec)
+        response = tester.wait_terminal_response(cmd_id, args.timeout_sec)
         if response is None:
-            print(f"{RED}❌ Ответ на state не получен{NC}")
+            print(f"{RED}❌ Терминальный ответ на state не получен{NC}")
             return 1
 
         schema_error = validate_schema(response)

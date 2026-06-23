@@ -471,6 +471,15 @@ class ZoneController extends Controller
         return response()->json(array_merge(['status' => 'ok'], $result));
     }
 
+    public function commands(Request $request, Zone $zone): JsonResponse
+    {
+        $this->authorizeZoneAccess($request->user(), $zone);
+
+        $result = $this->dataService->getCommands($zone, $request);
+
+        return response()->json(array_merge(['status' => 'ok'], $result));
+    }
+
     public function updateInfrastructure(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request->user(), $zone);

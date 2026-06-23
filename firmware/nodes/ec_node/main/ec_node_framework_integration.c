@@ -14,10 +14,12 @@
 #include "node_state_manager.h"
 #include "ec_node_defaults.h"
 #include "ec_node_channel_map.h"
+#include "correction_node_contract.h"
 #include "pump_driver.h"
 #include "trema_ec.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
+#include "node_utils.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -37,6 +39,76 @@ static bool s_sensor_mode_active = false;
 
 /** Последний ec_node_ec_poll_sensor_once: trema_ec_probe_present() до init/read (для OLED). */
 static bool s_ec_last_poll_probe_present;
+
+static esp_err_t ec_node_merge_ec_calibration_into_nvs(uint8_t stage, uint16_t known_tds)
+{
+    if (stage != 1 && stage != 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char buf[CONFIG_STORAGE_MAX_JSON_SIZE];
+    esp_err_t err = config_storage_get_json(buf, sizeof(buf));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "persist ec cal: config_storage_get_json failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    cJSON *root = cJSON_Parse(buf);
+    if (root == NULL) {
+        ESP_LOGW(TAG, "persist ec cal: JSON parse failed");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    cJSON *cal = cJSON_GetObjectItem(root, "calibration");
+    if (cal == NULL || !cJSON_IsObject(cal)) {
+        cJSON_DeleteItemFromObject(root, "calibration");
+        cal = cJSON_CreateObject();
+        if (cal == NULL) {
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(root, "calibration", cal);
+    }
+
+    cJSON *ec = cJSON_GetObjectItem(cal, "ec");
+    if (ec == NULL || !cJSON_IsObject(ec)) {
+        cJSON_DeleteItemFromObject(cal, "ec");
+        ec = cJSON_CreateObject();
+        if (ec == NULL) {
+            cJSON_Delete(root);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(cal, "ec", ec);
+    }
+
+    char point_key[12];
+    snprintf(point_key, sizeof(point_key), "point%u", (unsigned)stage);
+
+    cJSON *pt_obj = cJSON_CreateObject();
+    if (pt_obj == NULL) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddNumberToObject(pt_obj, "value", (double)known_tds);
+    cJSON_AddNumberToObject(pt_obj, "raw", (double)known_tds);
+    cJSON_DeleteItemFromObject(ec, point_key);
+    cJSON_AddItemToObject(ec, point_key, pt_obj);
+    cJSON_AddBoolToObject(ec, "temperature_compensation", true);
+
+    char *out = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (out == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_save(out, strlen(out));
+    free(out);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "persist ec cal: config_storage_save failed: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
 
 /** Последний удачный EC для телеметрии (mS/cm): при срыве чтения не шлём 1.2 на график. */
 static float s_ec_telemetry_last_good = NAN;
@@ -158,7 +230,7 @@ bool ec_node_ec_last_poll_probe_present(void)
 #define EC_NODE_MAX_TEST_CHANNELS 8
 #define EC_NODE_MAX_CHANNEL_NAME_LEN 64
 #define EC_NODE_MAX_CMD_ID_LEN 64
-#define EC_NODE_PUMP_QUEUE_MAX 8
+#define EC_NODE_PUMP_QUEUE_MAX CORRECTION_NODE_PUMP_QUEUE_MAX
 
 typedef struct {
     char channel_name[EC_NODE_MAX_CHANNEL_NAME_LEN];
@@ -392,7 +464,7 @@ static esp_err_t handle_run_pump(
     }
 
     int duration_ms = duration_item->valueint;
-    if (duration_ms <= 0 || duration_ms > 60000) {
+    if (duration_ms <= 0 || duration_ms > (int)CORRECTION_NODE_RUN_PUMP_DURATION_MAX_MS) {
         *response = node_command_handler_create_response(
             cmd_id,
             "ERROR",
@@ -601,10 +673,20 @@ static esp_err_t handle_calibrate(
     cJSON **response,
     void *user_ctx
 ) {
-    (void)channel;
     (void)user_ctx;
 
-    if (params == NULL || response == NULL) {
+    if (channel == NULL || params == NULL || response == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (strcmp(channel, "ec_sensor") != 0) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "invalid_channel",
+            "calibrate command only works for ec_sensor channel",
+            NULL
+        );
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -668,6 +750,33 @@ static esp_err_t handle_calibrate(
             NULL
         );
         return ESP_FAIL;
+    }
+
+    esp_err_t persist_err = ec_node_merge_ec_calibration_into_nvs(stage, known_tds);
+    if (persist_err != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "EC Trema calibrated but NodeConfig (NVS) update failed (stage %u): %s",
+            (unsigned)stage,
+            esp_err_to_name(persist_err)
+        );
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "calibration_nvs_sync_failed",
+            "Failed to persist calibration into NodeConfig (NVS)",
+            NULL
+        );
+        return persist_err;
+    }
+
+    esp_err_t pub_err = node_utils_publish_config_report_resilient();
+    if (pub_err != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "config_report not sent immediately (deferred retries active): %s",
+            esp_err_to_name(pub_err)
+        );
     }
 
     *response = node_command_handler_create_response(
@@ -956,7 +1065,7 @@ static cJSON *ec_node_channels_callback(void *user_ctx) {
 /**
  * @brief Инициализация интеграции ec_node с node_framework
  */
-esp_err_t ec_node_framework_init_integration(void) {
+esp_err_t ec_node_framework_init(void) {
     ESP_LOGI(TAG, "Initializing ec_node framework integration...");
 
     if (!s_test_done_queue) {

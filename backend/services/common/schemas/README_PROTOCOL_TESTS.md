@@ -21,6 +21,8 @@
 4. **status.schema.json** - Payload статус-сообщений
 5. **heartbeat.schema.json** - Payload heartbeat
 6. **error.schema.json** / **error_alert.schema.json** - Payload ошибки/алерта
+7. **zone_automation_observability.schema.json** - Блок `observability` в `GET /api/zones/{id}/state`
+8. **zone_automation_state_meta.schema.json** - Блок `state_meta` в том же ответе
 
 ## Запуск тестов
 

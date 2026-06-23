@@ -2,14 +2,15 @@
 
 namespace App\Console\Commands;
 
-use App\Events\CommandStatusUpdated;
+use App\Models\Command;
+use App\Services\CommandTimeoutContextStore;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
-use Illuminate\Console\Command;
+use Illuminate\Console\Command as ConsoleCommand;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class ProcessCommandTimeouts extends Command
+class ProcessCommandTimeouts extends ConsoleCommand
 {
     /**
      * The name and signature of the console command.
@@ -33,26 +34,20 @@ class ProcessCommandTimeouts extends Command
         $timeoutMinutes = config('commands.timeout_minutes', 5);
         $cutoff = now()->subMinutes($timeoutMinutes);
         $nodeOfflineTimeoutSec = max(1, (int) env('NODE_OFFLINE_TIMEOUT_SEC', 120));
+        $timeoutContextStore = app(CommandTimeoutContextStore::class);
         $this->info("Processing command timeouts (timeout: {$timeoutMinutes} minutes)");
 
-        // Ищем команды в статусах SENT/ACK, которые старше timeout
-        $timeoutCommands = DB::table('commands as c')
-            ->leftJoin('nodes as n', 'n.id', '=', 'c.node_id')
-            ->whereIn('c.status', ['SENT', 'ACK'])
-            ->whereNotNull('c.sent_at')
-            ->where('c.sent_at', '<', $cutoff)
-            ->select([
-                'c.*',
-                'n.uid as node_uid',
-                'n.status as node_status',
-                'n.last_seen_at as node_last_seen_at',
-            ])
+        $timeoutCommands = Command::query()
+            ->with('node')
+            ->whereIn('status', [Command::STATUS_SENT, Command::STATUS_ACK])
+            ->whereNotNull('sent_at')
+            ->where('sent_at', '<', $cutoff)
             ->get();
 
         if ($timeoutCommands->isEmpty()) {
             $this->info('No commands found to timeout');
 
-            return Command::SUCCESS;
+            return ConsoleCommand::SUCCESS;
         }
 
         $this->info("Found {$timeoutCommands->count()} command(s) to timeout");
@@ -60,77 +55,67 @@ class ProcessCommandTimeouts extends Command
         $processed = 0;
         foreach ($timeoutCommands as $command) {
             try {
-                $wasTimedOut = DB::transaction(function () use ($command, $timeoutMinutes, $cutoff, $nodeOfflineTimeoutSec) {
-                    // Обновляем статус на TIMEOUT
-                    $updated = DB::table('commands')
+                $wasTimedOut = DB::transaction(function () use (
+                    $command,
+                    $timeoutMinutes,
+                    $cutoff,
+                    $nodeOfflineTimeoutSec,
+                    $timeoutContextStore,
+                ) {
+                    $locked = Command::query()
                         ->where('id', $command->id)
-                        ->whereIn('status', ['SENT', 'ACK'])
+                        ->whereIn('status', [Command::STATUS_SENT, Command::STATUS_ACK])
                         ->whereNotNull('sent_at')
                         ->where('sent_at', '<', $cutoff)
-                        ->update([
-                            'status' => 'TIMEOUT',
-                            'failed_at' => now(),
-                            'error_code' => 'TIMEOUT',
-                            'result_code' => 1,
-                            'updated_at' => now(),
-                        ]);
+                        ->lockForUpdate()
+                        ->first();
 
-                    if ($updated === 0) {
+                    if (! $locked) {
                         Log::info('Skip timeout update due to concurrent status transition', [
                             'command_id' => $command->id,
-                            'cmd_id' => $command->cmd_id ?? null,
+                            'cmd_id' => $command->cmd_id,
                         ]);
 
                         return false;
                     }
 
-                    // Создаем событие в zone_events
-                    if ($command->zone_id) {
-                        $nodeLastSeenAt = $command->node_last_seen_at ? Carbon::parse($command->node_last_seen_at) : null;
-                        $nodeLastSeenAgeSec = $nodeLastSeenAt instanceof CarbonInterface
-                            ? (int) max(0, $nodeLastSeenAt->diffInSeconds(now()))
-                            : null;
-                        $nodeStatus = $command->node_status ? strtolower((string) $command->node_status) : null;
+                    $locked->loadMissing('node');
+                    $node = $locked->node;
+                    $nodeLastSeenAt = $node?->last_seen_at ? Carbon::parse($node->last_seen_at) : null;
+                    $nodeLastSeenAgeSec = $nodeLastSeenAt instanceof CarbonInterface
+                        ? (int) max(0, $nodeLastSeenAt->diffInSeconds(now()))
+                        : null;
+                    $nodeStatus = $node?->status ? strtolower((string) $node->status) : null;
 
-                        DB::table('zone_events')->insert([
-                            'zone_id' => $command->zone_id,
-                            'type' => 'COMMAND_TIMEOUT',
-                            'payload_json' => json_encode([
-                                'command_id' => $command->id,
-                                'cmd_id' => $command->cmd_id ?? null,
-                                'command' => $command->cmd ?? null,
-                                'source' => $command->source ?? null,
-                                'channel' => $command->channel ?? null,
-                                'node_uid' => $command->node_uid ?? null,
-                                'node_status' => $nodeStatus,
-                                'node_last_seen_at' => $nodeLastSeenAt?->toIso8601String(),
-                                'node_last_seen_age_sec' => $nodeLastSeenAgeSec,
-                                'node_stale_online_candidate' => $nodeStatus === 'online'
-                                    && $nodeLastSeenAgeSec !== null
-                                    && $nodeLastSeenAgeSec >= $nodeOfflineTimeoutSec,
-                                'timeout_minutes' => $timeoutMinutes,
-                                'sent_at' => $command->sent_at,
-                            ]),
-                            'created_at' => now(),
-                        ]);
-                    }
+                    $timeoutContextStore->put($locked->id, [
+                        'command_id' => $locked->id,
+                        'command' => $locked->cmd,
+                        'source' => $locked->source,
+                        'channel' => $locked->channel,
+                        'node_uid' => $node?->uid,
+                        'node_status' => $nodeStatus,
+                        'node_last_seen_at' => $nodeLastSeenAt?->toIso8601String(),
+                        'node_last_seen_age_sec' => $nodeLastSeenAgeSec,
+                        'node_stale_online_candidate' => $nodeStatus === 'online'
+                            && $nodeLastSeenAgeSec !== null
+                            && $nodeLastSeenAgeSec >= $nodeOfflineTimeoutSec,
+                        'timeout_minutes' => $timeoutMinutes,
+                        'sent_at' => $locked->sent_at,
+                    ]);
 
-                    // Отправляем WebSocket уведомление
-                    // commandId должен быть cmd_id (строка), а не id (integer)
-                    event(new CommandStatusUpdated(
-                        commandId: $command->cmd_id ?? (string) $command->id,
-                        status: 'TIMEOUT',
-                        message: "Command timed out after {$timeoutMinutes} minutes",
-                        error: null,
-                        zoneId: $command->zone_id
-                    ));
+                    $locked->update([
+                        'status' => Command::STATUS_TIMEOUT,
+                        'failed_at' => now(),
+                        'error_code' => 'command_timeout',
+                        'result_code' => 1,
+                    ]);
 
                     Log::info('Command timed out', [
-                        'command_id' => $command->id,
-                        'cmd_id' => $command->cmd_id ?? null,
-                        'zone_id' => $command->zone_id,
+                        'command_id' => $locked->id,
+                        'cmd_id' => $locked->cmd_id,
+                        'zone_id' => $locked->zone_id,
                         'timeout_minutes' => $timeoutMinutes,
-                        'sent_at' => $command->sent_at,
+                        'sent_at' => $locked->sent_at,
                     ]);
 
                     return true;
@@ -151,6 +136,6 @@ class ProcessCommandTimeouts extends Command
 
         $this->info("Processed {$processed} command(s)");
 
-        return Command::SUCCESS;
+        return ConsoleCommand::SUCCESS;
     }
 }

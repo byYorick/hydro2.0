@@ -30,6 +30,7 @@ import {
   resolveStageHeadline,
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
+import { normalizeObservability } from '@/utils/automationObservability'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -380,6 +381,7 @@ export function useAutomationPanel(
             degraded: (rawDecision.degraded as boolean | null | undefined) ?? null,
           }
         : null,
+      observability: normalizeObservability(sourceAny.observability),
     }
   }
 
@@ -535,6 +537,9 @@ export function useAutomationPanel(
 
   const stateVariant = computed<'neutral' | 'info' | 'warning' | 'success' | 'danger'>(() => {
     if (automationState.value?.state_details?.failed) return 'danger'
+    const observabilityHealth = automationState.value?.observability?.overall_health
+    if (observabilityHealth === 'critical') return 'danger'
+    if (observabilityHealth === 'warning') return 'warning'
     const map: Record<AutomationStateType, 'neutral' | 'info' | 'warning' | 'success'> = {
       IDLE: 'neutral',
       TANK_FILLING: 'info',

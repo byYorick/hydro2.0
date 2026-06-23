@@ -38,7 +38,9 @@ class EventCreated implements ShouldBroadcast
         string $message,
         ?int $zoneId = null,
         ?string $occurredAt = null,
-        ?array $payload = null
+        ?array $payload = null,
+        ?int $eventId = null,
+        ?int $serverTs = null,
     ) {
         $this->id = $id;
         $this->kind = $kind;
@@ -47,10 +49,14 @@ class EventCreated implements ShouldBroadcast
         $this->occurredAt = $occurredAt ?? now()->toIso8601String();
         $this->payload = $payload;
 
-        // Генерируем event_id и server_ts для reconciliation
-        $sequence = EventSequenceService::generateEventId();
-        $this->eventId = $sequence['event_id'];
-        $this->serverTs = $sequence['server_ts'];
+        if ($eventId !== null && $serverTs !== null) {
+            $this->eventId = $eventId;
+            $this->serverTs = $serverTs;
+        } else {
+            $sequence = EventSequenceService::generateEventId();
+            $this->eventId = $sequence['event_id'];
+            $this->serverTs = $sequence['server_ts'];
+        }
     }
 
     /**

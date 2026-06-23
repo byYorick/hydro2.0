@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -17,6 +19,15 @@ class ZoneAutomationStateControllerTest extends TestCase
     private function automationEngineUrl(): string
     {
         return rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/');
+    }
+
+    private function seedActivePolicyManagedAlert(Zone $zone): void
+    {
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_ae3_task_failed',
+            'status' => 'ACTIVE',
+        ]);
     }
 
     public function test_automation_state_requires_authentication(): void
@@ -38,6 +49,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             'status' => 'PAUSED',
             'water_state' => 'WATER_CHANGE_FILL',
         ]);
+        $this->seedActivePolicyManagedAlert($zone);
         $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
@@ -104,6 +116,7 @@ class ZoneAutomationStateControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
+        $this->seedActivePolicyManagedAlert($zone);
         $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
@@ -138,6 +151,7 @@ class ZoneAutomationStateControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
+        $this->seedActivePolicyManagedAlert($zone);
         $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
@@ -214,7 +228,7 @@ class ZoneAutomationStateControllerTest extends TestCase
 
         $response->assertStatus(503)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('code', 'UPSTREAM_UNAVAILABLE');
+            ->assertJsonPath('code', 'upstream_unavailable');
     }
 
     public function test_automation_state_returns_cached_snapshot_when_upstream_is_temporarily_unavailable(): void
@@ -290,7 +304,7 @@ class ZoneAutomationStateControllerTest extends TestCase
 
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
-        $zone = Zone::factory()->create();
+        $zone = Zone::factory()->create(['control_mode' => 'semi']);
         $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
@@ -463,5 +477,308 @@ class ZoneAutomationStateControllerTest extends TestCase
                 'state_details.human_error_message',
                 'Состояние IRR-ноды не совпало с ожиданиями автоматики.'
             );
+    }
+
+    public function test_automation_state_enriches_observability_from_db_when_serving_cached_snapshot(): void
+    {
+        Cache::flush();
+        Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+        $now = now();
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'TANK_FILLING',
+                'state_label' => 'Наполнение баков',
+                'workflow_phase' => 'tank_filling',
+                'current_stage' => 'clean_fill_check',
+                'state_details' => [
+                    'started_at' => $now->copy()->subMinutes(8)->toIso8601String(),
+                    'elapsed_sec' => 480,
+                    'progress_percent' => 25,
+                    'failed' => false,
+                ],
+                'system_config' => [
+                    'tanks_count' => 2,
+                    'system_type' => 'drip',
+                    'clean_tank_capacity_l' => null,
+                    'nutrient_tank_capacity_l' => null,
+                ],
+                'current_levels' => [
+                    'clean_tank_level_percent' => 0,
+                    'nutrient_tank_level_percent' => 0,
+                    'ph' => null,
+                    'ec' => null,
+                ],
+                'active_processes' => [
+                    'pump_in' => true,
+                    'circulation_pump' => false,
+                    'ph_correction' => false,
+                    'ec_correction' => false,
+                ],
+                'timeline' => [],
+                'next_state' => null,
+                'estimated_completion_sec' => null,
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_meta.source', 'live')
+            ->assertJsonPath('observability.runtime.waiting_command', false);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'waiting_command',
+            'idempotency_key' => "obs-cache-test-{$zone->id}",
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'clean_fill_check',
+            'workflow_phase' => 'tank_filling',
+            'control_mode_snapshot' => 'auto',
+            'scheduled_for' => $now,
+            'due_at' => $now,
+            'stage_entered_at' => $now->copy()->subMinutes(8),
+            'created_at' => $now->copy()->subMinutes(8),
+            'updated_at' => $now->copy()->subMinutes(3),
+        ]);
+
+        DB::table('zone_workflow_state')->updateOrInsert(
+            ['zone_id' => $zone->id],
+            [
+                'workflow_phase' => 'tank_filling',
+                'started_at' => $now->copy()->subMinutes(8),
+                'updated_at' => $now->copy()->subMinutes(4),
+                'payload' => json_encode([
+                    'ae3_cycle_start_stage' => 'clean_fill_check',
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ],
+        );
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'cycle_start',
+            'status' => 'pending',
+            'idempotency_key' => "obs-cache-intent-{$zone->id}",
+            'not_before' => $now->copy()->subMinutes(10),
+            'created_at' => $now->copy()->subMinutes(10),
+            'updated_at' => $now->copy()->subMinutes(10),
+            'retry_count' => 0,
+            'max_retries' => 3,
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => function () {
+                throw new \RuntimeException('automation_engine_down');
+            },
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('zone_id', $zone->id)
+            ->assertJsonPath('state', 'TANK_FILLING')
+            ->assertJsonPath('state_meta.source', 'cache')
+            ->assertJsonPath('state_meta.is_stale', true)
+            ->assertJsonPath('observability.runtime.task_status', 'waiting_command')
+            ->assertJsonPath('observability.runtime.waiting_command', true)
+            ->assertJsonPath('observability.runtime.current_stage', 'clean_fill_check')
+            ->assertJsonPath('observability.scheduler.pending_count', 1);
+
+        $hintCodes = collect($response->json('observability.hang_hints'))
+            ->pluck('code')
+            ->all();
+
+        $this->assertContains('scheduler_intent_pending', $hintCodes);
+        $this->assertContains('waiting_command_stuck', $hintCodes);
+        $this->assertContains('stage_elapsed_long', $hintCodes);
+        $this->assertContains($response->json('observability.overall_health'), ['warning', 'critical']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_automation_state_refreshes_stale_cached_ae_observability_from_database(): void
+    {
+        Cache::flush();
+        Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+        $now = now();
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'TANK_FILLING',
+                'state_label' => 'Набор бака с раствором',
+                'workflow_phase' => 'tank_filling',
+                'current_stage' => 'clean_fill_check',
+                'state_details' => [
+                    'started_at' => $now->copy()->subMinutes(2)->toIso8601String(),
+                    'elapsed_sec' => 120,
+                    'progress_percent' => 10,
+                    'failed' => false,
+                ],
+                'observability' => [
+                    'runtime' => [
+                        'task_is_active' => true,
+                        'task_status' => 'running',
+                        'waiting_command' => false,
+                        'current_stage' => 'clean_fill_check',
+                        'stage_elapsed_sec' => 120,
+                    ],
+                    'hang_hints' => [],
+                    'overall_health' => 'active',
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_meta.source', 'live')
+            ->assertJsonPath('observability.runtime.task_status', 'running');
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'waiting_command',
+            'idempotency_key' => "obs-stale-ae-cache-{$zone->id}",
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'clean_fill_check',
+            'workflow_phase' => 'tank_filling',
+            'control_mode_snapshot' => 'auto',
+            'scheduled_for' => $now,
+            'due_at' => $now,
+            'stage_entered_at' => $now->copy()->subMinutes(8),
+            'created_at' => $now->copy()->subMinutes(8),
+            'updated_at' => $now->copy()->subMinutes(3),
+        ]);
+
+        DB::table('zone_workflow_state')->updateOrInsert(
+            ['zone_id' => $zone->id],
+            [
+                'workflow_phase' => 'tank_filling',
+                'started_at' => $now->copy()->subMinutes(8),
+                'updated_at' => $now->copy()->subMinutes(4),
+                'payload' => json_encode([
+                    'ae3_cycle_start_stage' => 'clean_fill_check',
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ],
+        );
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => function () {
+                throw new \RuntimeException('automation_engine_down');
+            },
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('state_meta.source', 'cache')
+            ->assertJsonPath('state_meta.is_stale', true)
+            ->assertJsonPath('observability.runtime.task_status', 'waiting_command')
+            ->assertJsonPath('observability.runtime.waiting_command', true)
+            ->assertJsonPath('observability.runtime.source', 'laravel_db_fallback');
+
+        $hintCodes = collect($response->json('observability.hang_hints'))
+            ->pluck('code')
+            ->all();
+
+        $this->assertContains('waiting_command_stuck', $hintCodes);
+        $this->assertContains($response->json('observability.overall_health'), ['warning', 'critical']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_automation_state_merges_ae_observability_with_scheduler_hints(): void
+    {
+        Cache::flush();
+        Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'cycle_start',
+            'status' => 'pending',
+            'idempotency_key' => "obs-live-merge-{$zone->id}",
+            'not_before' => now()->subMinutes(10),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+            'retry_count' => 0,
+            'max_retries' => 3,
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'TANK_FILLING',
+                'state_label' => 'Набор бака с раствором',
+                'workflow_phase' => 'tank_filling',
+                'current_stage' => 'clean_fill_check',
+                'state_details' => [
+                    'started_at' => now()->subMinutes(8)->toIso8601String(),
+                    'elapsed_sec' => 480,
+                    'progress_percent' => 20,
+                    'failed' => false,
+                ],
+                'observability' => [
+                    'runtime' => [
+                        'task_is_active' => true,
+                        'task_status' => 'running',
+                        'current_stage' => 'clean_fill_check',
+                        'stage_elapsed_sec' => 480,
+                        'waiting_command' => false,
+                    ],
+                    'hang_hints' => [
+                        [
+                            'code' => 'stage_elapsed_long',
+                            'severity' => 'warning',
+                            'message' => 'Этап длится дольше ожидаемого',
+                            'recommendation' => 'Проверьте датчики и команды узлов.',
+                        ],
+                    ],
+                    'nodes' => ['nodes' => [], 'offline_required' => []],
+                    'overall_health' => 'warning',
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('state_meta.source', 'live')
+            ->assertJsonPath('observability.scheduler.pending_count', 1);
+
+        $hintCodes = collect($response->json('observability.hang_hints'))
+            ->pluck('code')
+            ->all();
+
+        $this->assertContains('stage_elapsed_long', $hintCodes);
+        $this->assertContains('scheduler_intent_pending', $hintCodes);
+        $this->assertContains($response->json('observability.overall_health'), ['warning', 'critical']);
+
+        Carbon::setTestNow();
     }
 }

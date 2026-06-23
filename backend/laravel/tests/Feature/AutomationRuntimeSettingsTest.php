@@ -144,6 +144,18 @@ class AutomationRuntimeSettingsTest extends TestCase
             });
     }
 
+    public function test_agronomist_can_open_system_settings_page(): void
+    {
+        $agronomist = User::factory()->create(['role' => 'agronomist']);
+
+        $this->actingAs($agronomist)
+            ->get('/system/settings')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('SystemSettings')
+                ->where('auth.user.role', 'agronomist'));
+    }
+
     public function test_admin_can_reset_runtime_overrides(): void
     {
         Config::set('services.automation_engine.scheduler_due_grace_sec', 15);

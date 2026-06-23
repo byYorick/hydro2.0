@@ -324,23 +324,7 @@ static void task_status(void *pvParameters) {
  * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
  */
 void storage_irrigation_node_publish_status(void) {
-    if (!mqtt_manager_is_connected()) {
-        return;
-    }
-
-    // Канонический node-level status payload: {"status":"ONLINE","ts":...}
-    cJSON *status = cJSON_CreateObject();
-    if (status) {
-        cJSON_AddStringToObject(status, "status", "ONLINE");
-        cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
-
-        char *json_str = cJSON_PrintUnformatted(status);
-        if (json_str) {
-            mqtt_manager_publish_status(json_str);
-            free(json_str);
-        }
-        cJSON_Delete(status);
-    }
+    (void)node_utils_publish_device_status_extended();
 }
 
 /**

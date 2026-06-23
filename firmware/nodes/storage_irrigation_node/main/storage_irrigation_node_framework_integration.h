@@ -26,7 +26,7 @@ extern "C" {
  * 
  * @return ESP_OK при успехе
  */
-esp_err_t storage_irrigation_node_framework_init_integration(void);
+esp_err_t storage_irrigation_node_framework_init(void);
 
 /**
  * @brief Регистрация MQTT обработчиков через node_framework

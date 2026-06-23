@@ -80,7 +80,7 @@ Batch limits: max 200 updates, max 256 KB (`REALTIME_BATCH_MAX_UPDATES`, `REALTI
 ### `CommandStatusUpdated`
 
 **Channel:** `hydro.commands.{zoneId}` or `hydro.commands.global`
-**Source:** `CommandObserver::created()` / `CommandObserver::updated()` / `PythonIngestController::commandAck()`
+**Source:** `CommandObserver::created()` / `CommandObserver::updated()` (`commandAck` только пишет в БД)
 
 ```json
 {
@@ -101,7 +101,7 @@ Batch limits: max 200 updates, max 256 KB (`REALTIME_BATCH_MAX_UPDATES`, `REALTI
 ### `CommandFailed`
 
 **Channel:** `hydro.commands.{zoneId}` or `hydro.commands.global`
-**Source:** `CommandObserver::updated()` / `PythonIngestController::commandAck()`
+**Source:** `CommandObserver::updated()` (terminal failure statuses)
 
 ```json
 {
@@ -426,6 +426,6 @@ Checklist:
 3. Define `broadcastOn()` using existing channels or add new channel to `routes/channels.php`
 4. Define `broadcastAs()` with a clear event name
 5. Include `event_id` and `server_ts` from `EventSequenceService::generateEventId()`
-6. If zone-specific: use `RecordsZoneEvent` trait in `broadcasted()` for audit trail
+6. If zone-specific audit trail is needed: write to `zone_events` from the domain observer/service (e.g. `CommandObserver` + `ZoneEventRecorder`), not from `broadcasted()` — Laravel 12 does not invoke `broadcasted()` on broadcast events
 7. Add frontend subscription in `useWebSocket.ts` for normalized domain events, or in `ws/managedChannelEvents.ts` consumer-side if the event remains raw
 8. Update this documentation

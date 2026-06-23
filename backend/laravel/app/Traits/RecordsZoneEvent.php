@@ -2,21 +2,18 @@
 
 namespace App\Traits;
 
-use Illuminate\Support\Facades\DB;
+use App\Models\ZoneEvent;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Trait для записи событий в zone_events (Zone Event Ledger).
  *
- * Используется в broadcast событиях для гарантированной записи
- * всех WebSocket событий в единый журнал событий зоны.
+ * Запись через Eloquent ZoneEvent → ZoneEventObserver эмитит EventCreated (afterCommit).
  */
 trait RecordsZoneEvent
 {
     /**
      * Записывает событие в zone_events.
-     *
-     * Вызывается автоматически при broadcast события через метод broadcasted().
      *
      * @param  int|null  $zoneId  ID зоны (если null, событие не записывается)
      * @param  string  $type  Тип события (telemetry_updated, command_status, alert_created, etc.)
@@ -83,26 +80,24 @@ trait RecordsZoneEvent
         // Вставляем событие в zone_events
         // id автоинкрементный, но мы также сохраняем event_id из WS события в payload для связи
         $payloadWithEventId = $payload ?? [];
-        $payloadWithEventId['ws_event_id'] = $eventId; // Сохраняем WS event_id в payload для связи
+        $payloadWithEventId['ws_event_id'] = $eventId;
 
-        $id = DB::table('zone_events')->insertGetId([
+        $zoneEvent = ZoneEvent::create([
             'zone_id' => $zoneId,
             'type' => $type,
             'entity_type' => $entityType,
-            'entity_id' => $entityId ? (string) $entityId : null, // Преобразуем в строку для поддержки строковых ID
-            'payload_json' => json_encode($payloadWithEventId),
+            'entity_id' => $entityId ? (string) $entityId : null,
+            'payload_json' => $payloadWithEventId,
             'server_ts' => $serverTs,
             'created_at' => now(),
         ]);
 
-        return $id;
+        return $zoneEvent->id;
     }
 
     /**
-     * Метод вызывается Laravel после успешного broadcast события.
-     *
-     * Используется для записи события в zone_events после успешного broadcast.
-     * Переопределите этот метод в событиях для автоматической записи.
+     * Метод по умолчанию для broadcast-событий с RecordsZoneEvent.
+     * Для command_status и большинства audit trail используйте ZoneEventRecorder/ZoneEvent::create.
      */
     public function broadcasted(): void
     {

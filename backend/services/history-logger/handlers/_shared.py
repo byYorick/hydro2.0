@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 from common.command_status_queue import CommandStatus
 from common.db import fetch
 from common.trace_context import set_trace_id_from_payload
-from common.utils.time import utcnow
+from common.utils.time import normalize_device_timestamp, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -319,8 +319,11 @@ def normalize_node_event_payload(
         payload["initial"] = normalized_initial
     if normalized_snapshot is not None:
         payload["snapshot"] = normalized_snapshot
-    if data.get("ts") is not None:
-        payload["ts"] = data.get("ts")
+    ts_ms, ts_sec = normalize_device_timestamp(data.get("ts"))
+    if ts_ms is not None:
+        payload["ts_ms"] = ts_ms
+        payload["ts_sec"] = ts_sec
+        payload["ts"] = ts_sec
     cmd_id = str(data.get("cmd_id") or "").strip()
     if cmd_id:
         payload["cmd_id"] = cmd_id

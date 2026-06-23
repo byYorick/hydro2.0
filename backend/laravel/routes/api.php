@@ -149,6 +149,7 @@ Route::middleware([
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
     Route::get('zones/{zone}/cycles', [ZoneController::class, 'cycles']);
     Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
+    Route::get('zones/{zone}/commands', [ZoneController::class, 'commands']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
     Route::get('launch-flow/manifest', [LaunchFlowManifestController::class, 'show']);

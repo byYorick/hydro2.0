@@ -103,11 +103,15 @@ class StorageEventTester:
         print(json.dumps(payload, ensure_ascii=False))
 
     def wait_command_response(self, cmd_id: str, timeout_sec: float) -> Optional[Dict[str, object]]:
+        terminal = {"DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
             with self.lock:
                 for response in self.command_responses:
-                    if str(response.get("cmd_id", "")) == cmd_id:
+                    if str(response.get("cmd_id", "")) != cmd_id:
+                        continue
+                    status = str(response.get("status", "")).upper()
+                    if status in terminal:
                         return response
             time.sleep(0.05)
         return None
@@ -191,10 +195,10 @@ def validate_solution_fill_latched(snapshot: Dict[str, object]) -> Optional[str]
 def main() -> int:
     parser = argparse.ArgumentParser(description="HIL тест storage_state/event")
     parser.add_argument("--mqtt-host", default="localhost")
-    parser.add_argument("--mqtt-port", type=int, default=1884)
+    parser.add_argument("--mqtt-port", type=int, default=1883)
     parser.add_argument("--gh-uid", default="gh-test-1")
     parser.add_argument("--zone-uid", default="zn-test-1")
-    parser.add_argument("--node-uid", default="nd-irrig-1")
+    parser.add_argument("--node-uid", default="nd-test-irrig-1")
     parser.add_argument("--event-code", choices=["clean_fill_completed", "solution_fill_completed"], default="clean_fill_completed")
     parser.add_argument("--timeout-sec", type=float, default=20.0)
     parser.add_argument("--command-timeout-sec", type=float, default=4.0)

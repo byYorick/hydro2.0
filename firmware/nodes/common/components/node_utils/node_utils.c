@@ -13,6 +13,8 @@
 #include "esp_event.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -519,5 +521,110 @@ esp_err_t node_utils_request_time(void) {
     }
     free(json_str);
     cJSON_Delete(request);
+    return err;
+}
+
+static TaskHandle_t s_cfg_rpt_retry_handle = NULL;
+
+static void node_utils_config_report_retry_task(void *arg)
+{
+    (void)arg;
+    for (int attempt = 0; attempt < 36; attempt++) {
+        vTaskDelay(pdMS_TO_TICKS(2500));
+        if (!mqtt_manager_is_connected()) {
+            continue;
+        }
+        if (node_utils_publish_config_report() == ESP_OK) {
+            ESP_LOGI(TAG, "config_report deferred publish succeeded (attempt %d)", attempt + 1);
+            break;
+        }
+    }
+    s_cfg_rpt_retry_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static void node_utils_spawn_config_report_retry_task(void)
+{
+    if (s_cfg_rpt_retry_handle != NULL) {
+        return;
+    }
+    BaseType_t created = xTaskCreate(
+        node_utils_config_report_retry_task,
+        "cfg_rpt_retry",
+        4096,
+        NULL,
+        3,
+        &s_cfg_rpt_retry_handle);
+    if (created != pdPASS) {
+        s_cfg_rpt_retry_handle = NULL;
+        ESP_LOGW(TAG, "cfg_rpt_retry: xTaskCreate failed");
+    } else {
+        ESP_LOGI(TAG, "config_report: background retry task started");
+    }
+}
+
+esp_err_t node_utils_publish_config_report_resilient(void)
+{
+    const int quick_attempts = 16;
+    const uint32_t delay_ms = 350;
+
+    for (int i = 0; i < quick_attempts; i++) {
+        if (!mqtt_manager_is_connected()) {
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            continue;
+        }
+        esp_err_t err = node_utils_publish_config_report();
+        if (err == ESP_OK) {
+            return ESP_OK;
+        }
+        ESP_LOGD(TAG, "config_report publish try %d/%d: %s", i + 1, quick_attempts, esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    }
+
+    ESP_LOGW(TAG, "config_report: quick publish failed; scheduling background retries");
+    node_utils_spawn_config_report_retry_task();
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t node_utils_publish_device_status_extended(void)
+{
+    if (!mqtt_manager_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    char ip_str[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif != NULL && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+        snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+    }
+
+    wifi_ap_record_t ap_info;
+    int8_t rssi = -100;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
+    }
+
+    const char *fw_version = node_utils_get_firmware_version();
+    cJSON *status = cJSON_CreateObject();
+    if (!status) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(status, "status", "ONLINE");
+    cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
+    cJSON_AddBoolToObject(status, "online", true);
+    cJSON_AddStringToObject(status, "ip", ip_str);
+    cJSON_AddNumberToObject(status, "rssi", rssi);
+    cJSON_AddStringToObject(status, "fw", fw_version ? fw_version : "unknown");
+
+    char *json_str = cJSON_PrintUnformatted(status);
+    cJSON_Delete(status);
+    if (!json_str) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = mqtt_manager_publish_status(json_str);
+    free(json_str);
     return err;
 }

@@ -76,6 +76,7 @@ class AutomationConfigCompiler
             'pump_calibration_policy' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
             'sensor_calibration_policy' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
             'alert_policies' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
+            'observability_thresholds' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_OBSERVABILITY_THRESHOLDS, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
         ];
 
         return $this->storeBundle(AutomationConfigRegistry::SCOPE_SYSTEM, 0, [

@@ -155,15 +155,15 @@ class AlertService
 
                 $eventId = null;
                 if ($zoneId) {
-                    $eventId = DB::table('zone_events')->insertGetId([
-                        'zone_id' => $zoneId,
-                        'type' => 'ALERT_UPDATED',
-                        'payload_json' => json_encode($this->buildEventPayload($fresh, 'updated', [
+                    $eventId = $this->recordAlertZoneEvent(
+                        $zoneId,
+                        'ALERT_UPDATED',
+                        $fresh,
+                        $this->buildEventPayload($fresh, 'updated', [
                             'updated_at' => $nowIso,
                             'error_count' => $currentCount,
-                        ])),
-                        'created_at' => $now,
-                    ]);
+                        ]),
+                    );
                 }
 
                 DB::afterCommit(function () use ($fresh) {
@@ -208,14 +208,14 @@ class AlertService
 
             $eventId = null;
             if ($zoneId) {
-                $eventId = DB::table('zone_events')->insertGetId([
-                    'zone_id' => $zoneId,
-                    'type' => 'ALERT_CREATED',
-                    'payload_json' => json_encode($this->buildEventPayload($alert, 'created', [
+                $eventId = $this->recordAlertZoneEvent(
+                    $zoneId,
+                    'ALERT_CREATED',
+                    $alert,
+                    $this->buildEventPayload($alert, 'created', [
                         'created_at' => $nowIso,
-                    ])),
-                    'created_at' => $now,
-                ]);
+                    ]),
+                );
             }
 
             DB::afterCommit(function () use ($alert) {
@@ -301,14 +301,14 @@ class AlertService
 
             $eventId = null;
             if ($fresh->zone_id) {
-                $eventId = DB::table('zone_events')->insertGetId([
-                    'zone_id' => $fresh->zone_id,
-                    'type' => 'ALERT_RESOLVED',
-                    'payload_json' => json_encode($this->buildEventPayload($fresh, 'resolved', [
+                $eventId = $this->recordAlertZoneEvent(
+                    (int) $fresh->zone_id,
+                    'ALERT_RESOLVED',
+                    $fresh,
+                    $this->buildEventPayload($fresh, 'resolved', [
                         'resolved_at' => $nowIso,
-                    ])),
-                    'created_at' => $now,
-                ]);
+                    ]),
+                );
             }
 
             DB::afterCommit(function () use ($fresh) {
@@ -362,14 +362,14 @@ class AlertService
             $fresh = $alert->fresh();
 
             if ($fresh->zone_id) {
-                DB::table('zone_events')->insert([
-                    'zone_id' => $fresh->zone_id,
-                    'type' => 'ALERT_RESOLVED',
-                    'payload_json' => json_encode($this->buildEventPayload($fresh, 'resolved', [
+                $this->recordAlertZoneEvent(
+                    (int) $fresh->zone_id,
+                    'ALERT_RESOLVED',
+                    $fresh,
+                    $this->buildEventPayload($fresh, 'resolved', [
                         'resolved_at' => $now->toIso8601String(),
-                    ])),
-                    'created_at' => $now,
-                ]);
+                    ]),
+                );
             }
 
             Log::info('Alert acknowledged', ['alert_id' => $fresh->id]);
@@ -739,6 +739,20 @@ class AlertService
             'recommendation' => $details['recommendation'] ?? null,
             'details' => $details,
         ], $extra);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function recordAlertZoneEvent(int $zoneId, string $type, Alert $alert, array $payload): ?int
+    {
+        return app(ZoneEventRecorder::class)->record(
+            zoneId: $zoneId,
+            type: $type,
+            entityType: 'alert',
+            entityId: $alert->id,
+            payload: $payload,
+        );
     }
 
     /**

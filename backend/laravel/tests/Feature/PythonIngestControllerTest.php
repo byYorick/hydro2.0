@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Jobs\PublishNodeConfigJob;
+use App\Events\CommandFailed;
+use App\Events\CommandStatusUpdated;
 use App\Models\Alert;
 use App\Models\Command;
 use App\Models\DeviceNode;
@@ -15,6 +17,7 @@ use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -512,6 +515,111 @@ class PythonIngestControllerTest extends TestCase
         $command->refresh();
         $this->assertTrue($command->sent_at->equalTo($ackAt));
         $this->assertTrue($command->ack_at->equalTo($ackAt));
+    }
+
+    public function test_command_ack_dispatches_command_failed_once_via_observer(): void
+    {
+        Event::fake([CommandFailed::class, CommandStatusUpdated::class]);
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $zone = Zone::factory()->create();
+        $command = Command::withoutEvents(fn () => Command::create([
+            'cmd_id' => 'cmd-error-dedup',
+            'zone_id' => $zone->id,
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'run_pump',
+        ]));
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-error-dedup',
+                'status' => 'ERROR',
+                'details' => [
+                    'error_code' => 'pump_busy',
+                    'error_message' => 'Pump is already running',
+                ],
+            ])
+            ->assertOk();
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_ERROR, $command->status);
+        $this->assertEquals('pump_busy', $command->error_code);
+
+        Event::assertDispatched(CommandFailed::class, 1);
+        Event::assertDispatched(CommandFailed::class, function (CommandFailed $event): bool {
+            return $event->commandId === 'cmd-error-dedup'
+                && $event->status === Command::STATUS_ERROR
+                && $event->errorCode === 'pump_busy'
+                && $event->error === 'Pump is already running';
+        });
+        Event::assertNotDispatched(CommandStatusUpdated::class);
+    }
+
+    public function test_command_ack_dispatches_command_status_updated_once_via_observer(): void
+    {
+        Event::fake([CommandFailed::class, CommandStatusUpdated::class]);
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $zone = Zone::factory()->create();
+        $command = Command::withoutEvents(fn () => Command::create([
+            'cmd_id' => 'cmd-done-dedup',
+            'zone_id' => $zone->id,
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'run_pump',
+        ]));
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-done-dedup',
+                'status' => 'DONE',
+            ])
+            ->assertOk();
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_DONE, $command->status);
+
+        Event::assertDispatched(CommandStatusUpdated::class, 1);
+        Event::assertNotDispatched(CommandFailed::class);
+    }
+
+    public function test_command_ack_error_records_single_command_status_zone_event_when_broadcasted(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $zone = Zone::factory()->create();
+        $cmdId = 'cmd-zone-event-dedup';
+
+        Command::withoutEvents(fn () => Command::create([
+            'cmd_id' => $cmdId,
+            'zone_id' => $zone->id,
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'run_pump',
+        ]));
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => $cmdId,
+                'status' => 'ERROR',
+                'details' => [
+                    'error_code' => 'pump_busy',
+                    'error_message' => 'Pump is already running',
+                ],
+            ])
+            ->assertOk();
+
+        $matchingEvents = \Illuminate\Support\Facades\DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'command_status')
+            ->where('entity_id', $cmdId)
+            ->get();
+
+        $this->assertCount(1, $matchingEvents);
+
+        $payload = json_decode((string) $matchingEvents->first()->payload_json, true);
+        $this->assertIsArray($payload);
+        $this->assertSame(Command::STATUS_ERROR, $payload['status'] ?? null);
+        $this->assertSame('pump_busy', $payload['error_code'] ?? null);
+        $this->assertSame($cmdId, $payload['cmd_id'] ?? null);
     }
 
     public function test_command_ack_endpoint_requires_auth(): void

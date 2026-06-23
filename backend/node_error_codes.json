@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-06-03T06:57:56Z",
+  "updated_at": "2026-06-23T08:44:23Z",
   "description": "Коды error_code из command_response ESP32 и MQTT (фаза 5). Source of truth для слоя узлов.",
   "codes": [
     {

@@ -50,6 +50,8 @@ async def test_handle_command_response_existing_command_sends_status():
         assert details["foo"] == "bar"
         assert details["raw_status"] == "DONE"
         assert details["response_ts"] == 1737979200000
+        assert details["response_ts_ms"] == 1737979200000
+        assert details["response_ts_sec"] == 1737979200
         assert details["node_uid"] == "nd-irrig-1"
         assert details["channel"] == "pump1"
         assert details["gh_uid"] == "gh-1"

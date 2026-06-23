@@ -10,6 +10,10 @@
 #include "ec_node_app.h"
 #include "ec_node_defaults.h"
 #include "ec_node_framework_integration.h"
+#include "node_utils.h"
+#include "correction_node_contract.h"
+#include "ec_node_defaults.h"
+#include "ec_node_framework_integration.h"
 #include "node_watchdog.h"
 #include "mqtt_manager.h"
 #include "heartbeat_task.h"
@@ -222,6 +226,44 @@ static void task_sensors(void *pvParameters) {
     }
 }
 
+#define STATUS_PUBLISH_INTERVAL_MS CORRECTION_NODE_STATUS_PUBLISH_INTERVAL_MS
+
+/**
+ * @brief Задача публикации STATUS (канонический payload через node_utils).
+ */
+static void task_status(void *pvParameters) {
+    ESP_LOGI(TAG, "Status task started");
+
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+
+    while (1) {
+        TickType_t current_time = xTaskGetTickCount();
+        if ((current_time - last_wdt_reset) >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
+        }
+
+        if ((current_time - last_wake_time) >= interval) {
+            node_watchdog_reset();
+            if (mqtt_manager_is_connected()) {
+                ec_node_publish_status();
+            }
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 /**
  * @brief Запуск FreeRTOS задач
  */
@@ -235,9 +277,15 @@ void ec_node_start_tasks(void) {
 
     // Задача опроса сенсоров
     xTaskCreate(task_sensors, "sensor_task", EC_NODE_SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
-    
+
+    xTaskCreate(task_status, "status_task", 3072, NULL, 3, NULL);
+
     // Общая задача heartbeat из компонента
     heartbeat_task_start_default();
     
     ESP_LOGI(TAG, "FreeRTOS tasks started");
+}
+
+void ec_node_publish_status(void) {
+    (void)node_utils_publish_device_status_extended();
 }

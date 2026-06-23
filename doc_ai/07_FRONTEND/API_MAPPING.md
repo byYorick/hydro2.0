@@ -27,6 +27,7 @@ Breaking-change: обратная совместимость со старыми
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/resume` | POST | `GrowCycleController::resume` | ✅ Используется |
 | `Zones/Show.vue:400` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/set-phase` | POST | `GrowCycleController::setPhase` | ✅ Используется |
+| `composables/useAutomationPanel.ts` | `/api/zones/{id}/state` | GET | `ZoneAutomationStateController::show` | ✅ Используется (`observability`, `state_meta`) |
 | `Devices/Add.vue:250` | `/api/zones` | GET | `ZoneController::index` | ✅ Используется |
 | `Admin/Zones.vue:63` | `/api/zones` | POST | `ZoneController::store` | ✅ Используется |
 

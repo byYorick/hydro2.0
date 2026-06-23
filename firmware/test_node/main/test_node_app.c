@@ -56,7 +56,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
 #define TASK_STACK_MQTT_REANNOUNCE 6144
 #define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 5632
-#define CLEAN_FILL_DELAY_SEC 30
+#define CLEAN_FILL_DELAY_SEC 12
 #define SOLUTION_FILL_DELAY_SEC 180
 #define STATE_QUERY_BARRIER_QUIET_MS 1500
 #define STATE_QUERY_BARRIER_POLL_MS 50
@@ -1805,11 +1805,9 @@ static bool is_correction_dosing_channel(const char *channel) {
 }
 
 static bool is_main_pump_interlock_satisfied(void) {
-    bool clean_fill_path = s_virtual_state.valve_clean_fill_on;
-    bool solution_fill_path = s_virtual_state.valve_clean_supply_on && s_virtual_state.valve_solution_fill_on;
-    bool recirculation_path = s_virtual_state.valve_solution_supply_on && s_virtual_state.valve_solution_fill_on;
-    bool irrigation_path = s_virtual_state.valve_solution_supply_on && s_virtual_state.valve_irrigation_on;
-    return clean_fill_path || solution_fill_path || recirculation_path || irrigation_path;
+    bool supply_open = s_virtual_state.valve_clean_supply_on || s_virtual_state.valve_solution_supply_on;
+    bool target_open = s_virtual_state.valve_solution_fill_on || s_virtual_state.valve_irrigation_on;
+    return supply_open && target_open;
 }
 
 static void append_main_pump_interlock_error(cJSON *details) {
@@ -1821,7 +1819,7 @@ static void append_main_pump_interlock_error(cJSON *details) {
     cJSON_AddStringToObject(
         details,
         "error_message",
-        "pump_main requires valid flow path: clean_fill OR (clean_supply+solution_fill) OR (solution_supply+solution_fill) OR (solution_supply+irrigation)"
+        "pump_main requires open supply valve and open solution_fill or irrigation valve"
     );
 }
 
@@ -1831,6 +1829,42 @@ static bool is_storage_system_channel(const char *channel) {
             strcmp(channel, "system") == 0 ||
             strcmp(channel, "storage_state") == 0
         );
+}
+
+static bool is_irrigation_storage_actuator_channel(const char *channel) {
+    return channel
+        && (
+            is_main_pump_channel(channel) ||
+            strcmp(channel, "valve_clean_fill") == 0 ||
+            strcmp(channel, "valve_clean_supply") == 0 ||
+            strcmp(channel, "valve_solution_fill") == 0 ||
+            strcmp(channel, "valve_solution_supply") == 0 ||
+            strcmp(channel, "valve_irrigation") == 0
+        );
+}
+
+static bool is_latched_irrigation_set_relay(const pending_command_t *job) {
+    return job
+        && strcmp(job->cmd, "set_relay") == 0
+        && job->relay_state_present
+        && !job->duration_ms_present
+        && is_irrigation_storage_actuator_channel(job->channel);
+}
+
+static bool is_irrig_virtual_node(const char *node_uid) {
+    size_t index;
+
+    if (!node_uid || node_uid[0] == '\0') {
+        return false;
+    }
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        if (strcmp(VIRTUAL_NODES[index].node_uid, node_uid) != 0) {
+            continue;
+        }
+        return VIRTUAL_NODES[index].node_type
+            && strcmp(VIRTUAL_NODES[index].node_type, "irrig") == 0;
+    }
+    return false;
 }
 
 static bool is_supported_actuator_command(const char *channel, const char *cmd) {
@@ -2957,14 +2991,28 @@ static cJSON *build_sensor_probe_details(const char *channel) {
 
 static cJSON *build_irr_state_snapshot(void) {
     cJSON *snapshot = cJSON_CreateObject();
+    bool clean_max;
+    bool clean_min;
+    bool solution_max;
+    bool solution_min;
+
     if (!snapshot) {
         return NULL;
     }
 
-    cJSON_AddBoolToObject(snapshot, "clean_level_max", resolve_clean_max_switch_value() >= 0.5f);
-    cJSON_AddBoolToObject(snapshot, "clean_level_min", resolve_clean_min_switch_value() >= 0.5f);
-    cJSON_AddBoolToObject(snapshot, "solution_level_max", resolve_solution_max_switch_value() >= 0.5f);
-    cJSON_AddBoolToObject(snapshot, "solution_level_min", resolve_solution_min_switch_value() >= 0.5f);
+    clean_max = resolve_clean_max_switch_value() >= 0.5f;
+    clean_min = resolve_clean_min_switch_value() >= 0.5f;
+    solution_max = resolve_solution_max_switch_value() >= 0.5f;
+    solution_min = resolve_solution_min_switch_value() >= 0.5f;
+
+    cJSON_AddBoolToObject(snapshot, "clean_level_max", clean_max);
+    cJSON_AddBoolToObject(snapshot, "level_clean_max", clean_max);
+    cJSON_AddBoolToObject(snapshot, "clean_level_min", clean_min);
+    cJSON_AddBoolToObject(snapshot, "level_clean_min", clean_min);
+    cJSON_AddBoolToObject(snapshot, "solution_level_max", solution_max);
+    cJSON_AddBoolToObject(snapshot, "level_solution_max", solution_max);
+    cJSON_AddBoolToObject(snapshot, "solution_level_min", solution_min);
+    cJSON_AddBoolToObject(snapshot, "level_solution_min", solution_min);
     cJSON_AddBoolToObject(snapshot, "valve_clean_fill", s_virtual_state.valve_clean_fill_on);
     cJSON_AddBoolToObject(snapshot, "valve_clean_supply", s_virtual_state.valve_clean_supply_on);
     cJSON_AddBoolToObject(snapshot, "valve_solution_fill", s_virtual_state.valve_solution_fill_on);
@@ -2976,14 +3024,24 @@ static cJSON *build_irr_state_snapshot(void) {
 
 static cJSON *build_irr_state_legacy_state(void) {
     cJSON *state = cJSON_CreateObject();
+    bool clean_max;
+    bool clean_min;
+    bool solution_max;
+    bool solution_min;
+
     if (!state) {
         return NULL;
     }
 
-    cJSON_AddNumberToObject(state, "level_clean_min", resolve_clean_min_switch_active() ? 1 : 0);
-    cJSON_AddNumberToObject(state, "level_clean_max", resolve_clean_max_switch_active() ? 1 : 0);
-    cJSON_AddNumberToObject(state, "level_solution_min", resolve_solution_min_switch_active() ? 1 : 0);
-    cJSON_AddNumberToObject(state, "level_solution_max", resolve_solution_max_switch_active() ? 1 : 0);
+    clean_max = resolve_clean_max_switch_active();
+    clean_min = resolve_clean_min_switch_active();
+    solution_max = resolve_solution_max_switch_active();
+    solution_min = resolve_solution_min_switch_active();
+
+    cJSON_AddBoolToObject(state, "level_clean_max", clean_max);
+    cJSON_AddBoolToObject(state, "level_clean_min", clean_min);
+    cJSON_AddBoolToObject(state, "level_solution_max", solution_max);
+    cJSON_AddBoolToObject(state, "level_solution_min", solution_min);
     return state;
 }
 
@@ -3960,6 +4018,10 @@ static void execute_pending_command(const pending_command_t *job) {
         if (snapshot) {
             cJSON_AddItemToObject(details, "snapshot", snapshot);
         }
+        cJSON *legacy_state = build_irr_state_legacy_state();
+        if (legacy_state) {
+            cJSON_AddItemToObject(details, "state", legacy_state);
+        }
         cJSON *fault_modes = cJSON_CreateObject();
         if (fault_modes) {
             cJSON_AddBoolToObject(fault_modes, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
@@ -4122,6 +4184,40 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
     }
 
     return COMMAND_KIND_GENERIC;
+}
+
+static bool publish_immediate_pump_interlock_error(
+    const char *node_uid,
+    const char *topic_channel,
+    const char *cmd_id,
+    const pending_command_t *job
+) {
+    bool needs_interlock = false;
+
+    if (!job || !is_main_pump_channel(job->channel)) {
+        return false;
+    }
+
+    if (strcmp(job->cmd, "set_relay") == 0) {
+        needs_interlock = job->relay_state_present && job->relay_state;
+    } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
+        needs_interlock = true;
+    } else {
+        return false;
+    }
+
+    if (!needs_interlock || is_main_pump_interlock_satisfied()) {
+        return false;
+    }
+
+    cJSON *details = cJSON_CreateObject();
+    if (details) {
+        append_main_pump_interlock_error(details);
+    }
+    publish_command_response(node_uid, topic_channel, cmd_id, "ERROR", details);
+    cJSON_Delete(details);
+    ui_logf(node_uid, "cmd interlock %s/%s", topic_channel, job->cmd);
+    return true;
 }
 
 static void command_callback(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx) {
@@ -4292,8 +4388,27 @@ static void command_callback(const char *topic, const char *channel, const char 
 
     extract_command_params(command_json, &job);
 
-    publish_command_response(node_uid, topic_channel, cmd_id, "ACK", NULL);
-    ui_logf(node_uid, "cmd ack %s/%s", topic_channel, cmd_name);
+    if (publish_immediate_pump_interlock_error(node_uid, topic_channel, cmd_id, &job)) {
+        cJSON_Delete(command_json);
+        return;
+    }
+
+    if (is_irrig_virtual_node(node_uid) && is_latched_irrigation_set_relay(&job)) {
+        job.execute_delay_ms = 0;
+        execute_pending_command(&job);
+        cJSON_Delete(command_json);
+        return;
+    }
+
+    const bool skip_ack = (
+        job.kind == COMMAND_KIND_STATE_QUERY &&
+        strcmp(topic_channel, "storage_state") == 0
+    );
+
+    if (!skip_ack) {
+        publish_command_response(node_uid, topic_channel, cmd_id, "ACK", NULL);
+        ui_logf(node_uid, "cmd ack %s/%s", topic_channel, cmd_name);
+    }
 
     if (job.kind == COMMAND_KIND_STATE_QUERY) {
         if (s_state_command_fastpath_enabled && s_state_command_queue != NULL) {
@@ -4318,6 +4433,8 @@ static void command_callback(const char *topic, const char *channel, const char 
             cJSON_Delete(details);
         }
         ui_logf(node_uid, "cmd busy queue_full");
+    } else if (skip_ack) {
+        ui_logf(node_uid, "cmd queued %s/%s (no ack)", topic_channel, cmd_name);
     } else {
         ui_logf(node_uid, "cmd queued %s/%s", topic_channel, cmd_name);
     }

@@ -26,6 +26,9 @@ void ec_node_app_init(void);
  */
 void ec_node_start_tasks(void);
 
+/** Публикация STATUS (DEVICE_NODE_PROTOCOL.md §4.2). */
+void ec_node_publish_status(void);
+
 // State getters - делегируют в компоненты
 bool ec_node_is_ec_sensor_initialized(void);
 bool ec_node_is_oled_initialized(void);

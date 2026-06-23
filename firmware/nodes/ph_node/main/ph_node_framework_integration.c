@@ -15,6 +15,7 @@
 #include "ph_node_app.h"
 #include "ph_node_channel_map.h"
 #include "ph_node_defaults.h"
+#include "correction_node_contract.h"
 #include "pump_driver.h"
 #include "trema_ph.h"
 #include "mqtt_manager.h"
@@ -139,69 +140,6 @@ static esp_err_t ph_node_merge_ph_calibration_into_nvs(uint8_t stage, float know
     return err;
 }
 
-static TaskHandle_t s_ph_cfg_rpt_retry_handle = NULL;
-
-static void ph_node_config_report_retry_task(void *arg)
-{
-    (void)arg;
-    for (int attempt = 0; attempt < 36; attempt++) {
-        vTaskDelay(pdMS_TO_TICKS(2500));
-        if (!mqtt_manager_is_connected()) {
-            continue;
-        }
-        if (node_utils_publish_config_report() == ESP_OK) {
-            ESP_LOGI(TAG, "config_report deferred publish succeeded (attempt %d)", attempt + 1);
-            break;
-        }
-    }
-    s_ph_cfg_rpt_retry_handle = NULL;
-    vTaskDelete(NULL);
-}
-
-static void ph_node_spawn_config_report_retry_task(void)
-{
-    if (s_ph_cfg_rpt_retry_handle != NULL) {
-        return;
-    }
-    BaseType_t r = xTaskCreate(
-        ph_node_config_report_retry_task,
-        "ph_cfg_rpt_retry",
-        4096,
-        NULL,
-        3,
-        &s_ph_cfg_rpt_retry_handle);
-    if (r != pdPASS) {
-        s_ph_cfg_rpt_retry_handle = NULL;
-        ESP_LOGW(TAG, "ph_cfg_rpt_retry: xTaskCreate failed");
-    } else {
-        ESP_LOGI(TAG, "config_report: background retry task started");
-    }
-}
-
-/** Несколько быстрых попыток (mutex телеметрии / MQTT) + фоновые повторы до ~90 с. */
-static esp_err_t ph_node_publish_config_report_resilient(void)
-{
-    const int quick_attempts = 16;
-    const uint32_t delay_ms = 350;
-
-    for (int i = 0; i < quick_attempts; i++) {
-        if (!mqtt_manager_is_connected()) {
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
-            continue;
-        }
-        esp_err_t e = node_utils_publish_config_report();
-        if (e == ESP_OK) {
-            return ESP_OK;
-        }
-        ESP_LOGD(TAG, "config_report publish try %d/%d: %s", i + 1, quick_attempts, esp_err_to_name(e));
-        vTaskDelay(pdMS_TO_TICKS(delay_ms));
-    }
-
-    ESP_LOGW(TAG, "config_report: quick publish failed; scheduling background retries");
-    ph_node_spawn_config_report_retry_task();
-    return ESP_ERR_TIMEOUT;
-}
-
 static bool s_ph_sensor_error_active = false;
 static bool s_sensor_mode_active = false;
 
@@ -209,7 +147,7 @@ static bool s_sensor_mode_active = false;
 #define PH_NODE_MAX_TEST_CHANNELS 8
 #define PH_NODE_MAX_CHANNEL_NAME_LEN 64
 #define PH_NODE_MAX_CMD_ID_LEN 64
-#define PH_NODE_PUMP_QUEUE_MAX 8
+#define PH_NODE_PUMP_QUEUE_MAX CORRECTION_NODE_PUMP_QUEUE_MAX
 
 typedef struct {
     char channel_name[PH_NODE_MAX_CHANNEL_NAME_LEN];
@@ -460,7 +398,7 @@ static esp_err_t handle_run_pump(
     }
 
     int duration_ms = duration_item->valueint;
-    if (duration_ms <= 0 || duration_ms > 60000) {
+    if (duration_ms <= 0 || duration_ms > (int)CORRECTION_NODE_RUN_PUMP_DURATION_MAX_MS) {
         *response = node_command_handler_create_response(
             cmd_id,
             "ERROR",
@@ -750,7 +688,7 @@ static esp_err_t handle_calibrate_ph(
             return ESP_FAIL;
         }
         if (stage == 2) {
-            esp_err_t pub_err = ph_node_publish_config_report_resilient();
+            esp_err_t pub_err = node_utils_publish_config_report_resilient();
             if (pub_err != ESP_OK) {
                 ESP_LOGW(TAG,
                          "config_report not sent immediately (deferred retries active): %s",

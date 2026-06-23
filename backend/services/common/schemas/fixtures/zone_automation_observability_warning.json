@@ -1,0 +1,73 @@
+{
+  "overall_health": "warning",
+  "runtime": {
+    "zone_id": 7,
+    "task_id": 42,
+    "task_status": "waiting_command",
+    "task_is_active": true,
+    "current_stage": "clean_fill_check",
+    "workflow_phase": "tank_filling",
+    "stage_entered_at": "2026-06-23T11:52:00+00:00",
+    "stage_elapsed_sec": 480,
+    "stage_deadline_at": null,
+    "stage_deadline_remaining_sec": null,
+    "waiting_command": true,
+    "waiting_elapsed_sec": 180,
+    "task_updated_age_sec": 180,
+    "correction_step": null,
+    "pending_manual_step": null,
+    "topology": "two_tank_drip_substrate_trays",
+    "workflow_snapshot_updated_at": "2026-06-23T11:56:00+00:00",
+    "workflow_snapshot_age_sec": 240
+  },
+  "scheduler": {
+    "pending_count": 1,
+    "active_count": 1,
+    "latest_intent": {
+      "id": 15,
+      "status": "pending",
+      "intent_type": "cycle_start",
+      "not_before": "2026-06-23T11:50:00+00:00",
+      "created_at": "2026-06-23T11:50:00+00:00",
+      "updated_at": "2026-06-23T11:50:00+00:00",
+      "age_sec": 600
+    }
+  },
+  "nodes": {
+    "nodes": [
+      {
+        "uid": "irr-node-1",
+        "type": "irrig",
+        "status": "online",
+        "last_seen_age_sec": 12,
+        "required": true,
+        "healthy": true
+      }
+    ],
+    "offline_required": [],
+    "persistent_offline": false
+  },
+  "hang_hints": [
+    {
+      "code": "waiting_command_stuck",
+      "severity": "warning",
+      "message": "Задача ждёт ответа по команде дольше ожидаемого",
+      "recommendation": "Проверьте MQTT, history-logger и command_response для последней команды.",
+      "details": {
+        "waiting_elapsed_sec": 180,
+        "task_status": "waiting_command"
+      }
+    },
+    {
+      "code": "scheduler_intent_pending",
+      "severity": "warning",
+      "message": "Intent планировщика ожидает исполнения дольше ожидаемого",
+      "recommendation": "Проверьте Laravel scheduler-dispatch, wake-up AE3 и логи automation-engine.",
+      "details": {
+        "intent_id": 15,
+        "intent_type": "cycle_start",
+        "age_sec": 600
+      }
+    }
+  ]
+}

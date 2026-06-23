@@ -16,6 +16,10 @@ use Illuminate\Support\Facades\DB;
 
 class ZoneDataService
 {
+    public function __construct(
+        private readonly ErrorCodeCatalogService $errorCodeCatalog,
+    ) {}
+
     /**
      * Получить snapshot зоны
      */
@@ -207,6 +211,8 @@ class ZoneDataService
                 'id as event_id',
                 'zone_id',
                 'type',
+                'entity_type',
+                'entity_id',
                 'server_ts',
                 DB::raw("{$detailsColumn} as details"),
                 'created_at',
@@ -220,6 +226,12 @@ class ZoneDataService
                 } elseif (is_object($event->details)) {
                     $details = json_decode(json_encode($event->details), true) ?? [];
                 }
+
+                $details = $this->enrichZoneEventDetails(
+                    $details,
+                    $event->entity_type ?? null,
+                    $event->entity_id ?? null,
+                );
 
                 $event->details = $details;
                 $event->payload = $details;
@@ -323,11 +335,14 @@ class ZoneDataService
             ->paginate($limit);
 
         $mapped = collect($errors->items())->map(function ($error) {
+            $presentation = $this->errorCodeCatalog->present($error->error_code, $error->error_message);
+
             return [
                 'id' => $error->id,
                 'hardware_id' => $error->hardware_id,
                 'error_message' => $error->error_message,
                 'error_code' => $error->error_code,
+                'human_error_message' => $presentation['message'],
                 'severity' => $error->severity ?? 'ERROR', // Устанавливаем дефолтное значение
                 'topic' => $error->topic,
                 'last_payload' => $error->last_payload,
@@ -429,5 +444,74 @@ class ZoneDataService
         }
 
         return $telemetry;
+    }
+
+    /**
+     * @return array{data: array<int, array<string, mixed>>, meta: array<string, int>}
+     */
+    public function getCommands(Zone $zone, Request $request): array
+    {
+        $perPage = min(max($request->integer('per_page', 20), 1), 100);
+
+        $query = Command::query()
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('created_at');
+
+        if ($request->filled('status')) {
+            $query->where('status', strtoupper((string) $request->string('status')));
+        }
+
+        if ($request->boolean('active_only', false)) {
+            $query->whereNotIn('status', Command::FINAL_STATUSES);
+        }
+
+        $commands = $query->paginate($perPage);
+
+        $mapped = collect($commands->items())->map(function (Command $command) {
+            $presentation = $this->errorCodeCatalog->present($command->error_code, $command->error_message);
+
+            return [
+                'cmd_id' => $command->cmd_id,
+                'zone_id' => $command->zone_id,
+                'node_id' => $command->node_id,
+                'channel' => $command->channel,
+                'cmd' => $command->cmd,
+                'status' => $command->status,
+                'params' => $command->params,
+                'sent_at' => $command->sent_at?->toIso8601String(),
+                'ack_at' => $command->ack_at?->toIso8601String(),
+                'failed_at' => $command->failed_at?->toIso8601String(),
+                'error_code' => $command->error_code,
+                'error_message' => $command->error_message,
+                'human_error_message' => $presentation['message'],
+                'result_code' => $command->result_code,
+                'duration_ms' => $command->duration_ms,
+                'created_at' => $command->created_at?->toIso8601String(),
+                'updated_at' => $command->updated_at?->toIso8601String(),
+            ];
+        })->values()->all();
+
+        return [
+            'data' => $mapped,
+            'meta' => [
+                'current_page' => $commands->currentPage(),
+                'last_page' => $commands->lastPage(),
+                'per_page' => $commands->perPage(),
+                'total' => $commands->total(),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     * @return array<string, mixed>
+     */
+    private function enrichZoneEventDetails(array $details, mixed $entityType, mixed $entityId): array
+    {
+        if ($entityType === 'command' && is_string($entityId) && $entityId !== '' && ! isset($details['cmd_id'])) {
+            $details['cmd_id'] = $entityId;
+        }
+
+        return $details;
     }
 }

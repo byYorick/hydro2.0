@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hydro.local/schemas/zone_automation_state_meta.schema.json",
+  "title": "ZoneAutomationStateMeta",
+  "description": "Метаданные выдачи GET /api/zones/{id}/state",
+  "type": "object",
+  "required": ["source", "is_stale", "served_at"],
+  "properties": {
+    "source": {
+      "type": "string",
+      "enum": ["live", "cache"]
+    },
+    "is_stale": {
+      "type": "boolean"
+    },
+    "served_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

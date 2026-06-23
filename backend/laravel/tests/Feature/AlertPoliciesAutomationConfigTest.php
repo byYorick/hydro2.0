@@ -51,4 +51,19 @@ class AlertPoliciesAutomationConfigTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('status', 'error');
     }
+
+    public function test_agronomist_can_update_alert_policy_document(): void
+    {
+        $agronomist = User::factory()->create(['role' => 'agronomist']);
+
+        $this->actingAs($agronomist)
+            ->putJson('/api/automation-configs/system/0/system.alert_policies', [
+                'payload' => [
+                    'ae3_operational_resolution_mode' => AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY,
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.payload.ae3_operational_resolution_mode', AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY);
+    }
 }

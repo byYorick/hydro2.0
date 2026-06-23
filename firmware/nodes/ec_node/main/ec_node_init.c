@@ -226,7 +226,7 @@ esp_err_t ec_node_init_components(void) {
     }
     
     // Инициализация node_framework (перед регистрацией MQTT callbacks)
-    esp_err_t fw_err = ec_node_framework_init_integration();
+    esp_err_t fw_err = ec_node_framework_init();
     if (fw_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(fw_err));
         node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", fw_err, "Node framework initialization failed");

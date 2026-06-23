@@ -65,6 +65,19 @@ export const zonesApi = {
   },
 
   /**
+   * История команд зоны (пагинация, фильтр по status).
+   */
+  commands(
+    zoneId: number,
+    params?: Record<string, unknown>,
+  ): Promise<{ data: unknown[]; meta?: Record<string, unknown> }> {
+    return apiGet<{ data: unknown[]; meta?: Record<string, unknown> }>(
+      `/zones/${zoneId}/commands`,
+      { params },
+    )
+  },
+
+  /**
    * Effective targets для зоны (читаются из active recipe phase).
    */
   effectiveTargets(zoneId: number): Promise<Record<string, unknown>> {

@@ -6,27 +6,38 @@
           Системные настройки автоматики
         </h1>
         <p class="text-sm text-[color:var(--text-dim)] mt-1">
-          Системный source of truth для calibration и automation defaults.
+          Системный source of truth для calibration, automation defaults и порогов observability.
         </p>
       </div>
 
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <Button
           v-for="namespace in namespaces"
           :key="namespace"
           size="sm"
           :variant="activeNamespace === namespace ? 'primary' : 'secondary'"
+          :data-testid="`system-settings-tab-${namespace}`"
           @click="activeNamespace = namespace"
         >
-          {{ namespace }}
+          {{ namespaceLabel(namespace) }}
         </Button>
       </div>
 
       <Card
         v-if="activePayload"
         class="space-y-4"
+        data-testid="system-settings-active-card"
       >
-        <div class="grid gap-4 md:grid-cols-2">
+        <AuthorityFieldCatalogForm
+          v-if="usesSectionedForm"
+          v-model="draft"
+          :sections="activeSections"
+        />
+
+        <div
+          v-else
+          class="grid gap-4 md:grid-cols-2"
+        >
           <div
             v-for="field in activeFields"
             :key="field.path"
@@ -50,7 +61,7 @@
               v-model="draft[field.path]"
               rows="8"
               class="input-field w-full font-mono text-xs"
-            ></textarea>
+            />
             <input
               v-else
               v-model="draft[field.path]"
@@ -70,6 +81,7 @@
           <Button
             size="sm"
             :disabled="loading"
+            data-testid="system-settings-save"
             @click="save"
           >
             {{ loading ? 'Сохранение...' : 'Сохранить' }}
@@ -78,6 +90,7 @@
             size="sm"
             variant="secondary"
             :disabled="loading"
+            data-testid="system-settings-reset"
             @click="reset"
           >
             Сбросить к дефолтам
@@ -93,9 +106,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
+import AuthorityFieldCatalogForm from '@/Components/Settings/AuthorityFieldCatalogForm.vue'
 import { useAutomationConfig, type AutomationDocument } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
-import type { SettingsNamespacePayload, SystemSettingsField } from '@/types/SystemSettings'
+import type { SettingsNamespacePayload, SystemSettingsField, SystemSettingsSection } from '@/types/SystemSettings'
+
+const SECTIONED_NAMESPACES = new Set(['observability_thresholds'])
 
 const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
   automation_defaults: 'system.automation_defaults',
@@ -103,16 +119,16 @@ const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
   process_calibration_defaults: 'system.process_calibration_defaults',
   pump_calibration: 'system.pump_calibration_policy',
   sensor_calibration: 'system.sensor_calibration_policy',
+  observability_thresholds: 'system.observability_thresholds',
+}
+
+const NAMESPACE_LABELS: Record<string, string> = {
+  observability_thresholds: 'Пороги observability',
 }
 
 type SystemAuthorityDocument = AutomationDocument<Record<string, unknown>, {
   defaults?: Record<string, unknown>
-  field_catalog?: Array<{
-    key: string
-    label: string
-    description: string
-    fields: SystemSettingsField[]
-  }>
+  field_catalog?: SystemSettingsSection[]
 }>
 type SystemAuthorityMeta = SystemAuthorityDocument['meta']
 
@@ -120,13 +136,19 @@ const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
 
 const payloads = ref<Record<string, SettingsNamespacePayload>>({})
-const activeNamespace = ref<string>('pump_calibration')
+const activeNamespace = ref<string>('observability_thresholds')
 const loading = ref(false)
 const draft = ref<Record<string, string | number | boolean | undefined>>({})
 
 const namespaces = computed<string[]>(() => Object.keys(payloads.value))
 const activePayload = computed(() => payloads.value[activeNamespace.value] || null)
-const activeFields = computed<SystemSettingsField[]>(() => activePayload.value?.meta.field_catalog.flatMap((section) => section.fields) || [])
+const activeSections = computed<SystemSettingsSection[]>(() => activePayload.value?.meta.field_catalog ?? [])
+const activeFields = computed<SystemSettingsField[]>(() => activeSections.value.flatMap((section) => section.fields))
+const usesSectionedForm = computed(() => SECTIONED_NAMESPACES.has(activeNamespace.value))
+
+function namespaceLabel(namespace: string): string {
+  return NAMESPACE_LABELS[namespace] ?? namespace
+}
 
 function documentToPayload(namespace: string, document: SystemAuthorityDocument): SettingsNamespacePayload {
   return {
@@ -140,7 +162,9 @@ function documentToPayload(namespace: string, document: SystemAuthorityDocument)
 }
 
 function syncDraft(): void {
-  if (!activePayload.value) return
+  if (!activePayload.value) {
+    return
+  }
   const current = activePayload.value.config as Record<string, unknown>
   const nextDraft: Record<string, string | number | boolean | undefined> = {}
   activeFields.value.forEach((field) => {

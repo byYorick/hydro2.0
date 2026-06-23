@@ -91,6 +91,7 @@
             :is-ec-correction-active="isEcCorrectionActive"
             :is-irrigation-active="isIrrigationActive"
           />
+          <AutomationObservabilityPanel :automation-state="automationState" />
           <AutomationTimeline :events="timelineEvents" />
         </aside>
       </div>
@@ -105,6 +106,7 @@ import AutomationProcessDiagram from '@/Components/AutomationProcessDiagram.vue'
 import AutomationTimeline from '@/Components/AutomationTimeline.vue'
 import AutomationRuntimeAlerts from '@/Components/ZoneAutomation/AutomationRuntimeAlerts.vue'
 import AutomationRuntimeMetrics from '@/Components/ZoneAutomation/AutomationRuntimeMetrics.vue'
+import AutomationObservabilityPanel from '@/Components/ZoneAutomation/AutomationObservabilityPanel.vue'
 import Badge from '@/Components/Badge.vue'
 import { useAutomationPanel } from '@/composables/useAutomationPanel'
 import { useAutomationRuntimeMeta } from '@/composables/useAutomationRuntimeMeta'

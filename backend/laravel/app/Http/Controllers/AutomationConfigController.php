@@ -619,18 +619,13 @@ class AutomationConfigController extends Controller
         }
 
         if ($scopeType === AutomationConfigRegistry::SCOPE_SYSTEM) {
-            $role = (string) ($user->role ?? 'viewer');
+            $requiresElevatedAccess = $writeAccess
+                || $namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME;
 
-            if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
-                if (! in_array($role, ['admin', 'operator', 'engineer', 'agronomist'], true)) {
-                    abort(403, 'Forbidden: Access denied to runtime automation config');
-                }
-
-                return;
-            }
-
-            if ($writeAccess && ! $user->isAdmin()) {
-                abort(403, 'Forbidden: Access denied to system automation config');
+            if ($requiresElevatedAccess && ! $user->canManageSystemAutomationConfig()) {
+                abort(403, $namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME
+                    ? 'Forbidden: Access denied to runtime automation config'
+                    : 'Forbidden: Access denied to system automation config');
             }
 
             return;

@@ -212,6 +212,20 @@ esp_err_t node_utils_publish_config_report(void);
  */
 esp_err_t node_utils_request_time(void);
 
+/**
+ * @brief Публикация config_report с быстрыми повторами и фоновым retry (~90 с).
+ *
+ * Используется correction-нодами после калибровки сенсора.
+ */
+esp_err_t node_utils_publish_config_report_resilient(void);
+
+/**
+ * @brief Публикация расширенного STATUS (DEVICE_NODE_PROTOCOL.md §4.2).
+ *
+ * Канонический payload: status + ts + online + ip + rssi + fw.
+ */
+esp_err_t node_utils_publish_device_status_extended(void);
+
 #ifdef __cplusplus
 }
 #endif

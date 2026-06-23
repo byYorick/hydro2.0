@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Automation\ObservabilityThresholdsCatalog;
 use InvalidArgumentException;
 
 class SystemAutomationSettingsCatalog
@@ -206,6 +207,7 @@ class SystemAutomationSettingsCatalog
                 ],
             ],
         ],
+        'observability_thresholds' => [],
     ];
 
     public static function allDefaults(): array
@@ -404,11 +406,18 @@ class SystemAutomationSettingsCatalog
 
     public static function namespaces(): array
     {
-        return array_keys(self::FIELD_CATALOG);
+        return array_values(array_unique([
+            ...array_keys(self::FIELD_CATALOG),
+            ObservabilityThresholdsCatalog::NAMESPACE_KEY,
+        ]));
     }
 
     public static function defaults(string $namespace): array
     {
+        if ($namespace === ObservabilityThresholdsCatalog::NAMESPACE_KEY) {
+            return ObservabilityThresholdsCatalog::defaults();
+        }
+
         $defaults = self::allDefaults();
         if (! array_key_exists($namespace, $defaults)) {
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
@@ -419,6 +428,10 @@ class SystemAutomationSettingsCatalog
 
     public static function fieldCatalog(string $namespace): array
     {
+        if ($namespace === ObservabilityThresholdsCatalog::NAMESPACE_KEY) {
+            return ObservabilityThresholdsCatalog::fieldCatalog();
+        }
+
         if (! array_key_exists($namespace, self::FIELD_CATALOG)) {
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
         }
@@ -591,6 +604,12 @@ class SystemAutomationSettingsCatalog
             if ($targetPhTolerance > $degradedPhTolerance) {
                 throw new InvalidArgumentException('Field automation_defaults.water_irrigation_recovery_target_tolerance_ph_pct must be <= automation_defaults.water_irrigation_recovery_degraded_tolerance_ph_pct.');
             }
+
+            return;
+        }
+
+        if ($namespace === ObservabilityThresholdsCatalog::NAMESPACE_KEY) {
+            ObservabilityThresholdsCatalog::validateConsistency($effectiveConfig);
 
             return;
         }

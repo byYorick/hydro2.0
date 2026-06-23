@@ -14,6 +14,7 @@ extern "C" {
 #endif
 
 #include "driver/gpio.h"
+#include "correction_node_contract.h"
 
 // Node identification defaults
 #define EC_NODE_DEFAULT_NODE_ID      "nd-ec-1"
@@ -53,7 +54,7 @@ extern "C" {
 #define EC_NODE_PUMP_C_GPIO 25
 #define EC_NODE_PUMP_D_GPIO 33
 #define EC_NODE_PUMP_FAIL_SAFE_NC false
-#define EC_NODE_PUMP_MAX_DURATION_MS 30000
+#define EC_NODE_PUMP_MAX_DURATION_MS CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS
 #define EC_NODE_PUMP_MIN_OFF_MS 5000
 #define EC_NODE_PUMP_ML_PER_SECOND 3.0f
 

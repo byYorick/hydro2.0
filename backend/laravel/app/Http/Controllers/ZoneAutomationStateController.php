@@ -9,6 +9,7 @@ use App\Models\Zone;
 use App\Services\AlertPolicyService;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\ErrorCodeCatalogService;
+use App\Services\ZoneAutomationObservabilityService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -31,6 +32,7 @@ class ZoneAutomationStateController extends Controller
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly ErrorCodeCatalogService $errorCodeCatalog,
         private readonly AlertPolicyService $alertPolicy,
+        private readonly ZoneAutomationObservabilityService $observabilityService,
     ) {}
 
     public function show(Request $request, Zone $zone): JsonResponse
@@ -519,6 +521,7 @@ class ZoneAutomationStateController extends Controller
         }
 
         $payload = $this->enrichPayloadWithZoneControlMode($payload, $zone);
+        $payload = $this->observabilityService->enrichPayload((int) $zone->id, $payload, $isStale);
 
         $payload['state_meta'] = [
             'source' => $source,

@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hydro.local/schemas/zone_automation_observability.schema.json",
+  "title": "ZoneAutomationObservability",
+  "description": "Диагностика зависаний two-tank FSM и планировщика в GET /api/zones/{id}/state (observability)",
+  "type": "object",
+  "required": ["overall_health", "hang_hints"],
+  "properties": {
+    "overall_health": {
+      "type": "string",
+      "enum": ["idle", "active", "warning", "critical"]
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "zone_id": { "type": "integer", "minimum": 1 },
+        "task_id": { "type": ["integer", "null"], "minimum": 1 },
+        "task_status": { "type": ["string", "null"], "maxLength": 64 },
+        "task_is_active": { "type": "boolean" },
+        "current_stage": { "type": ["string", "null"], "maxLength": 128 },
+        "workflow_phase": { "type": ["string", "null"], "maxLength": 64 },
+        "stage_entered_at": { "type": ["string", "null"] },
+        "stage_elapsed_sec": { "type": "integer", "minimum": 0 },
+        "stage_deadline_at": { "type": ["string", "null"] },
+        "stage_deadline_remaining_sec": { "type": ["integer", "null"] },
+        "waiting_command": { "type": "boolean" },
+        "waiting_elapsed_sec": { "type": "integer", "minimum": 0 },
+        "task_updated_age_sec": { "type": ["integer", "null"], "minimum": 0 },
+        "correction_step": { "type": ["string", "null"], "maxLength": 128 },
+        "pending_manual_step": { "type": ["string", "null"], "maxLength": 128 },
+        "topology": { "type": ["string", "null"], "maxLength": 128 },
+        "workflow_snapshot_updated_at": { "type": ["string", "null"] },
+        "workflow_snapshot_age_sec": { "type": ["integer", "null"], "minimum": 0 },
+        "source": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "enum": ["laravel_db_fallback"] }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "pending_count": { "type": "integer", "minimum": 0 },
+        "active_count": { "type": "integer", "minimum": 0 },
+        "latest_intent": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer", "minimum": 1 },
+                "status": { "type": "string", "maxLength": 32 },
+                "intent_type": { "type": "string", "maxLength": 64 },
+                "not_before": { "type": ["string", "null"] },
+                "created_at": { "type": ["string", "null"] },
+                "updated_at": { "type": ["string", "null"] },
+                "age_sec": { "type": ["integer", "null"], "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/node_entry" }
+        },
+        "offline_required": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "persistent_offline": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "hang_hints": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/hang_hint" }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "hang_hint_code": {
+      "type": "string",
+      "enum": [
+        "waiting_command_stuck",
+        "stage_elapsed_long",
+        "stage_deadline_exceeded",
+        "task_dispatch_stuck",
+        "workflow_snapshot_stale",
+        "correction_substep_stalled",
+        "level_clean_max_unlatched",
+        "level_solution_max_unlatched",
+        "level_solution_min_unlatched",
+        "telemetry_unavailable",
+        "nodes_offline",
+        "no_active_task_during_workflow",
+        "scheduler_intent_pending",
+        "scheduler_intent_claimed_stuck",
+        "scheduler_intent_running_stuck",
+        "state_snapshot_stale"
+      ]
+    },
+    "hang_hint": {
+      "type": "object",
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "$ref": "#/definitions/hang_hint_code" },
+        "severity": {
+          "type": "string",
+          "enum": ["warning", "critical", "info"]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "recommendation": { "type": ["string", "null"], "maxLength": 512 },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_entry": {
+      "type": "object",
+      "properties": {
+        "uid": { "type": ["string", "null"], "maxLength": 128 },
+        "type": { "type": ["string", "null"], "maxLength": 32 },
+        "status": { "type": ["string", "null"], "maxLength": 32 },
+        "last_seen_age_sec": { "type": ["integer", "null"], "minimum": 0 },
+        "required": { "type": "boolean" },
+        "healthy": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

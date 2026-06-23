@@ -26,6 +26,24 @@ function row(label: string, value: string, variant: DetailRow['variant'] = 'defa
   return { label, value, variant }
 }
 
+function appendCommandTimeoutDiagnostics(rows: DetailRow[], payload: Payload): void {
+  const nodeUid = readString(payload, 'node_uid')
+  const channel = readString(payload, 'channel')
+  const timeout = readNumber(payload, 'timeout_minutes')
+  const commandId = readNumber(payload, 'command_id')
+  const nodeStatus = readString(payload, 'node_status')
+  const nodeLastSeenAgeSec = readNumber(payload, 'node_last_seen_age_sec')
+  const staleCandidate = payload.node_stale_online_candidate === true
+
+  if (nodeUid) rows.push(row('Нода', nodeUid))
+  if (channel) rows.push(row('Канал', channel))
+  if (timeout !== null) rows.push(row('Таймаут', `${timeout} мин`))
+  if (commandId !== null) rows.push(row('ID команды', String(commandId)))
+  if (nodeStatus) rows.push(row('Статус узла', nodeStatus))
+  if (nodeLastSeenAgeSec !== null) rows.push(row('Last seen', `${nodeLastSeenAgeSec} с назад`))
+  if (staleCandidate) rows.push(row('Узел', 'online, но heartbeat устарел', 'error'))
+}
+
 function formatJsonForEventDetail(value: unknown): string | null {
   if (value === undefined || value === null) {
     return null
@@ -176,11 +194,25 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
   }
   else if (event.kind === 'COMMAND_TIMEOUT') {
     const cmdId = readString(payload, 'cmd_id')
-    const timeout = readNumber(payload, 'timeout_minutes')
-    const commandId = readNumber(payload, 'command_id')
     if (cmdId) rows.push(row('Команда', cmdId))
-    if (timeout !== null) rows.push(row('Таймаут', `${timeout} мин`))
-    if (commandId !== null) rows.push(row('ID команды', String(commandId)))
+    appendCommandTimeoutDiagnostics(rows, payload)
+  }
+  else if (event.kind === 'command_status' || event.kind === 'COMMAND_STATUS') {
+    const cmdId = readString(payload, 'cmd_id')
+    const status = readString(payload, 'status')
+    const errorCode = readString(payload, 'error_code')
+    const errorMessage = firstString(payload, ['error', 'error_message', 'message'])
+    if (cmdId) rows.push(row('Команда', cmdId))
+    if (status) rows.push(row('Статус', status))
+    if (status === 'TIMEOUT') {
+      appendCommandTimeoutDiagnostics(rows, payload)
+    }
+    if (errorCode) {
+      const localized = humanizeEventError(errorCode, errorMessage)
+      rows.push(row('Ошибка', localized, 'error'))
+    } else if (errorMessage) {
+      rows.push(row('Сообщение', errorMessage))
+    }
   }
   else if (event.kind === 'PUMP_CALIBRATION_FINISHED' || event.kind === 'PUMP_CALIBRATION_SAVED') {
     const component = firstString(payload, ['component', 'role'])

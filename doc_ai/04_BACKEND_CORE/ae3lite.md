@@ -766,6 +766,31 @@ Canonical status endpoint для зон на `ae3`.
 
 ### 9.4 Минимальная observability
 
+#### 9.4.1 UI state payload (`observability`)
+
+**Эндпоинты:** `GET /zones/{zone_id}/state` (AE3) → proxy `GET /api/zones/{id}/state` (Laravel).
+
+**Реализация AE3:**
+- модуль `ae3lite/application/services/automation_observability.py` (`build_automation_observability`);
+- интеграция в `GetZoneAutomationStateUseCase` (`_attach_observability`) для active/idle/failed path;
+- входы: active `ae_task`, `zone_workflow_state`, telemetry read-model, `ZONE_NODES_DIAG_SQL`.
+
+**Реализация Laravel:**
+- `ZoneAutomationObservabilityService::enrichPayload($zoneId, $payload, $isStale)`;
+- вызывается из `ZoneAutomationStateController::decorateStatePayload`;
+- кэш AE payload: TTL 300 с; при `is_stale` runtime/nodes/hints пересобираются из PostgreSQL.
+
+**Ключевые инварианты:**
+1. AE — source of truth для runtime-hints на **live** path; Laravel не дублирует `stage_elapsed_long` поверх AE.
+2. На **stale cache** Laravel заменяет `observability.runtime` данными из `ae_tasks` + `zone_workflow_state`.
+3. Scheduler-hints (`scheduler_intent_*`) генерируются только Laravel из `zone_automation_intents`.
+4. `waiting_elapsed_sec` для `waiting_command` считается от `task.updated_at`, не только от `stage_entered_at`.
+5. Level-hints (`level_*_unlatched`) эмитятся только на релевантных check-стадиях при доступной telemetry.
+
+Полная схема полей, таблица hint-кодов и пороги — `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7.
+
+#### 9.4.2 Prometheus / events
+
 Prometheus runtime минимум для lifecycle intents:
 1. `ae3_intent_claimed_total{source_status}`
 2. `ae3_intent_terminal_total{status}`

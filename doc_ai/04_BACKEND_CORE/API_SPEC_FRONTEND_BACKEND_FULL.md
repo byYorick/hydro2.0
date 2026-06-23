@@ -1,4 +1,4 @@
-# API_SPEC_FRONTEND_BACKEND_FULL.md
+д# API_SPEC_FRONTEND_BACKEND_FULL.md
 # Полная детальная спецификация API между Frontend и Backend (2.0)
 # **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
 
@@ -622,12 +622,25 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Аутентификация:** Требуется `auth:sanctum`
 - **Описание:** Возвращает текущее состояние workflow автоматизации для UI-панели.
 - **Поведение:** Laravel выступает proxy к `automation-engine /zones/{zone_id}/state`.
+  При успешном live-ответе кэшируется **сырой** AE payload (TTL **300 с**, ключ `zone_automation_state:{zone_id}`).
   При временной недоступности upstream Laravel возвращает последний успешный snapshot из cache
-  (если он есть), чтобы UI не терял runtime-контекст.
+  (если он есть) с `state_meta.is_stale=true`, чтобы UI не терял runtime-контекст.
+- **Обогащение Laravel (`ZoneAutomationObservabilityService`):**
+  - всегда добавляет `observability.scheduler` и при необходимости `observability.nodes`;
+  - **live + AE `observability`:** сохраняет AE `runtime` и `hang_hints`, добавляет только scheduler/nodes hints,
+    **не дублируя** Laravel runtime-пороги AE3;
+  - **`state_meta.is_stale=true`:** пересобирает `observability.runtime` и `observability.nodes` из PostgreSQL
+    (`ae_tasks`, `zone_workflow_state`, `nodes`, `zone_automation_intents`), сбрасывает AE-hints и пересчитывает
+    Laravel runtime-hints; `stage_elapsed_sec` берётся из БД, а не из устаревшего `state_details.elapsed_sec`;
+  - `observability.runtime.source=laravel_db_fallback` выставляется только на DB-path.
+- **Terminal failure UX:** если `state_details.failed=true`, но в зоне **нет** ACTIVE policy-managed alert
+  (`AlertPolicyService::policyManagedCodes()`, напр. `biz_ae3_task_failed`), Laravel очищает
+  `failed/error_code/human_error_message` — оператор уже ack-нул алерт. Для отображения terminal error в UI
+  должен существовать соответствующий ACTIVE alert.
 - **Ключевые поля ответа:**
   - `state`: `IDLE | TANK_FILLING | TANK_RECIRC | READY | IRRIGATING | IRRIG_RECIRC`
   - `state_label`: локализованная подпись текущего состояния
-  - `state_details.started_at|elapsed_sec|progress_percent`
+  - `state_details.started_at|elapsed_sec|progress_percent|failed|error_code|error_message|human_error_message`
   - `system_config.tanks_count|system_type|clean_tank_capacity_l|nutrient_tank_capacity_l`
   - `current_levels.clean_tank_level_percent|nutrient_tank_level_percent|buffer_tank_level_percent|ph|ec`
     Для AE3 `nutrient_tank_level_percent` является coarse-level индикатором
@@ -638,9 +651,53 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `irr_node_state.updated_at`
   - `timeline[]` (недавние события task-execution)
   - `next_state`, `estimated_completion_sec`
+  - `control_mode`, `control_mode_available[]`, `workflow_phase`, `current_stage`, `allowed_manual_steps[]`
   - `state_meta.source`: `live | cache`
   - `state_meta.is_stale`: `true` для cache fallback
   - `state_meta.served_at`: timestamp выдачи ответа Laravel
+  - `observability.overall_health`: `idle | active | warning | critical`
+  - `observability.runtime` (AE3 и/или Laravel DB):
+    - `zone_id`, `task_id`, `task_status`, `task_is_active`
+    - `current_stage`, `workflow_phase`, `topology`
+    - `stage_entered_at`, `stage_elapsed_sec`, `stage_deadline_at`, `stage_deadline_remaining_sec`
+    - `waiting_command`, `waiting_elapsed_sec` (для `waiting_command` — от `task.updated_at`, иначе от stage)
+    - `task_updated_age_sec`, `correction_step`, `pending_manual_step`
+    - `workflow_snapshot_updated_at`, `workflow_snapshot_age_sec`
+    - `source`: `laravel_db_fallback` | отсутствует на live AE path
+  - `observability.scheduler`:
+    - `pending_count`, `active_count`
+    - `latest_intent{id,status,intent_type,not_before,created_at,updated_at,age_sec}`
+  - `observability.nodes`:
+    - `nodes[]{uid,type,status,last_seen_age_sec,required,healthy}`
+    - `offline_required[]`, `persistent_offline`
+  - `observability.hang_hints[]`: `{code, severity, message, recommendation?, details?}`
+- **Каталог `hang_hints` (источник генерации):**
+
+| code | severity | Кто генерирует | Условие (кратко) |
+|------|----------|----------------|------------------|
+| `waiting_command_stuck` | warning/critical | AE3; Laravel (stale/DB) | `waiting_command` ≥ 120 с / ≥ 300 с |
+| `stage_elapsed_long` | warning/critical | AE3 (per-stage); Laravel (stale/DB, flat) | AE3: пороги по stage; Laravel: check-stage ≥ 300 с / ≥ 1800 с |
+| `stage_deadline_exceeded` | critical | AE3; Laravel (stale/DB) | `stage_deadline_remaining_sec < 0` |
+| `task_dispatch_stuck` | warning/critical | AE3 only | `pending/claimed` ≥ 180 с / ≥ 600 с |
+| `workflow_snapshot_stale` | warning/critical | AE3 only | active phase + `workflow_snapshot_age_sec` ≥ 120 с / ≥ 600 с |
+| `correction_substep_stalled` | warning/critical | AE3 only | `corr_wait_*` + stage ≥ 180 с / ≥ 600 с |
+| `level_clean_max_unlatched` | warning | AE3 only | `clean_fill_check` без clean_max ≥ 120 с |
+| `level_solution_max_unlatched` | warning | AE3 only | `solution_fill_check` без solution_max ≥ 180 с |
+| `level_solution_min_unlatched` | warning | AE3 only | `irrigation_recovery_check` без solution_min ≥ 120 с |
+| `telemetry_unavailable` | warning | AE3 only | сбой чтения telemetry read-model |
+| `nodes_offline` | warning/critical | AE3; Laravel | required `irrig/ph/ec` offline или stale-online ≥ 120 с |
+| `no_active_task_during_workflow` | warning | AE3; Laravel DB fallback | active workflow phase без active `ae_task` |
+| `scheduler_intent_pending` | warning/critical | Laravel only | pending intent age ≥ 300 с / ≥ 900 с |
+| `scheduler_intent_claimed_stuck` | warning/critical | Laravel only | claimed age ≥ 180 с / ≥ 600 с |
+| `scheduler_intent_running_stuck` | warning | Laravel only | running intent age ≥ 600 с |
+| `state_snapshot_stale` | warning | Frontend client | `state_meta.is_stale=true` (добавляется UI, если hint ещё нет) |
+
+- **AE3 per-stage пороги `stage_elapsed_long` (warn / critical, сек):**
+  `startup` 120/600; `clean_fill_check` 300/1800; `solution_fill_check` 600/3600;
+  `prepare_recirculation_check` 600/3600; `irrigation_check` 300/1800;
+  `irrigation_recovery_check` 600/3600; `await_ready` 300/1800; `decision_gate` 60/300.
+- **Protocol-check:** JSON Schema `backend/services/common/schemas/zone_automation_observability.schema.json`,
+  fixtures `fixtures/zone_automation_observability_*.json`, тесты `test_contracts.py::TestZoneAutomationObservabilityContracts`.
 
 ### 3.5.8. POST /api/zones/{id}/automation/manual-resume (REMOVED)
 
@@ -1269,6 +1326,46 @@ authority-документ `zone.logic_profile` через API `/api/automation-
  }
 }
 ```
+
+### 6.1.1. GET /api/zones/{id}/commands
+
+- **Аутентификация:** `auth:sanctum`, доступ к зоне через `ZonePolicy::view`
+- **Назначение:** пагинированная история команд зоны с локализованными ошибками
+- **Query:**
+  - `per_page` (1–100, default 20)
+  - `status` — фильтр по статусу (`DONE`, `ERROR`, `TIMEOUT`, …)
+  - `active_only=1` — только не-terminal команды
+
+Ответ:
+
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "cmd_id": "cmd-history-1",
+      "zone_id": 1,
+      "node_id": 12,
+      "channel": "pump_main",
+      "cmd": "run_pump",
+      "status": "ERROR",
+      "error_code": "pump_busy",
+      "error_message": "Pump is already running",
+      "human_error_message": "Насос занят",
+      "sent_at": "2026-06-23T10:00:00+00:00",
+      "failed_at": "2026-06-23T10:00:05+00:00"
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "last_page": 1,
+    "per_page": 20,
+    "total": 1
+  }
+}
+```
+
+**Примечание:** live-статусы команд — WS `hydro.commands.{zoneId}`; журнал `command_status` в ленте событий — WS `EventCreated` на `hydro.zones.{zoneId}`.
 
 ### 6.2. POST /api/nodes/{id}/commands
 

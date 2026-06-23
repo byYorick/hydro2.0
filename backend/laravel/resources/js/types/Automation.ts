@@ -95,6 +95,76 @@ export interface AutomationState {
     bundle_revision?: string | null
     degraded?: boolean | null
   } | null
+  observability?: AutomationObservability | null
+}
+
+export type AutomationObservabilityHealth = 'idle' | 'active' | 'warning' | 'critical'
+
+export type AutomationHangHintSeverity = 'warning' | 'critical' | 'info'
+
+export interface AutomationHangHint {
+  code: string
+  severity: AutomationHangHintSeverity
+  message: string
+  recommendation?: string | null
+  details?: Record<string, unknown>
+}
+
+export interface AutomationObservabilityRuntime {
+  zone_id: number
+  task_id?: number | null
+  task_status?: string | null
+  task_is_active?: boolean
+  current_stage?: string | null
+  workflow_phase?: string | null
+  stage_entered_at?: string | null
+  stage_elapsed_sec?: number
+  stage_deadline_at?: string | null
+  stage_deadline_remaining_sec?: number | null
+  waiting_command?: boolean
+  waiting_elapsed_sec?: number
+  task_updated_age_sec?: number | null
+  correction_step?: string | null
+  pending_manual_step?: string | null
+  topology?: string | null
+  workflow_snapshot_updated_at?: string | null
+  workflow_snapshot_age_sec?: number | null
+  source?: string | null
+}
+
+export interface AutomationObservabilityNode {
+  uid?: string | null
+  type?: string | null
+  status?: string | null
+  last_seen_age_sec?: number | null
+  required?: boolean
+  healthy?: boolean
+}
+
+export interface AutomationObservabilityScheduler {
+  pending_count?: number
+  active_count?: number
+  latest_intent?: {
+    id?: number
+    status?: string
+    intent_type?: string
+    not_before?: string | null
+    created_at?: string | null
+    updated_at?: string | null
+    age_sec?: number | null
+  } | null
+}
+
+export interface AutomationObservability {
+  runtime?: AutomationObservabilityRuntime
+  nodes?: {
+    nodes?: AutomationObservabilityNode[]
+    offline_required?: string[]
+    persistent_offline?: boolean
+  }
+  scheduler?: AutomationObservabilityScheduler
+  hang_hints?: AutomationHangHint[]
+  overall_health?: AutomationObservabilityHealth
 }
 
 export interface HoveredElement {

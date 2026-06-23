@@ -6,6 +6,7 @@ export interface SystemSettingsField {
   min?: number
   max?: number
   step?: number
+  unit?: string
 }
 
 export interface SystemSettingsSection {

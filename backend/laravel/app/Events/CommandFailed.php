@@ -4,7 +4,6 @@ namespace App\Events;
 
 use App\Services\EventSequenceService;
 use App\Traits\RecordsWsBroadcastMetric;
-use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 
 class CommandFailed implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, RecordsWsBroadcastMetric, RecordsZoneEvent, SerializesModels;
+    use Dispatchable, InteractsWithSockets, RecordsWsBroadcastMetric, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -100,22 +99,5 @@ class CommandFailed implements ShouldBroadcast
     public function broadcasted(): void
     {
         $this->recordWsBroadcastMetric('CommandFailed');
-
-        if ($this->zoneId) {
-            $this->recordZoneEvent(
-                zoneId: $this->zoneId,
-                type: 'command_status',
-                entityType: 'command',
-                entityId: $this->commandId,
-                payload: [
-                    'status' => $this->status,
-                    'message' => $this->message,
-                    'error' => $this->error,
-                    'error_code' => $this->errorCode,
-                ],
-                eventId: $this->eventId,
-                serverTs: $this->serverTs
-            );
-        }
     }
 }

@@ -311,15 +311,30 @@ void storage_irrigation_node_process_cmd_queue(void) {
 
     esp_err_t err = pump_driver_run(cmd.channel_name, cmd.duration_ms);
     if (err != ESP_OK) {
-        const char *error_code = "pump_driver_failed";
-        const char *error_message = esp_err_to_name(err);
-        if (err == ESP_ERR_INVALID_RESPONSE) {
-            error_code = "current_not_detected";
-            error_message = "Pump started but no current detected";
-        } else if (err == ESP_ERR_INVALID_SIZE) {
-            error_code = "overcurrent";
-            error_message = "Pump current exceeds safe limit";
+        char detail_buf[256];
+        const char *ina_code = NULL;
+        const char *error_code = "pump_error";
+        const char *error_message = "Failed to run pump";
+
+        if (pump_driver_describe_last_start_fault(
+                cmd.channel_name, err, detail_buf, sizeof(detail_buf), &ina_code) == ESP_OK) {
+            error_code = ina_code;
+            error_message = detail_buf;
+        } else if (err == ESP_ERR_INVALID_STATE) {
+            uint32_t cooldown_remaining_ms = 0;
+            if (pump_driver_get_cooldown_remaining(cmd.channel_name, &cooldown_remaining_ms) == ESP_OK
+                && cooldown_remaining_ms > 0) {
+                error_code = "cooldown_active";
+                error_message = "Pump is in cooldown";
+            } else if (pump_driver_is_running(cmd.channel_name)) {
+                error_code = "pump_busy";
+                error_message = "Pump is already running";
+            } else {
+                error_code = "current_unavailable";
+                error_message = "Pump current is unavailable";
+            }
         }
+
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "pump_driver", err, error_message);
         cJSON *response = node_command_handler_create_response(
             cmd.cmd_id[0] ? cmd.cmd_id : NULL,

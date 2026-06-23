@@ -111,10 +111,10 @@ def validate_schema(response: Dict[str, object]) -> Optional[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="HIL тест блокировки pump_main interlock")
     parser.add_argument("--mqtt-host", default="localhost")
-    parser.add_argument("--mqtt-port", type=int, default=1884)
+    parser.add_argument("--mqtt-port", type=int, default=1883)
     parser.add_argument("--gh-uid", default="gh-test-1")
     parser.add_argument("--zone-uid", default="zn-test-1")
-    parser.add_argument("--node-uid", default="nd-irrig-1")
+    parser.add_argument("--node-uid", default="nd-test-irrig-1")
     parser.add_argument("--timeout-sec", type=float, default=4.0)
     args = parser.parse_args()
 

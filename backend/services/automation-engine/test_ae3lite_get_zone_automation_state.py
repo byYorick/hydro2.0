@@ -858,3 +858,51 @@ async def test_workflow_ready_snapshot_ignores_older_failed_terminal_task() -> N
     assert result["state_details"]["failed"] is False
     assert result["state_details"]["error_code"] is None
     assert "сбой" not in result["state_label"]
+
+
+async def test_state_includes_observability_block_for_active_task() -> None:
+    entered = NOW.replace(tzinfo=None) - timedelta(seconds=90)
+    task = SimpleNamespace(
+        id=55,
+        status="running",
+        topology="two_tank",
+        created_at=entered,
+        updated_at=entered,
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="solution_fill_check",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=entered,
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        if "control_mode FROM zones" in query:
+            return [{"control_mode": "auto"}]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+    use_case._now = lambda: NOW.replace(tzinfo=None)
+
+    result = await use_case.run(zone_id=3)
+
+    obs = result.get("observability")
+    assert isinstance(obs, dict)
+    assert obs["runtime"]["task_status"] == "running"
+    assert obs["runtime"]["current_stage"] == "solution_fill_check"
+    assert obs["runtime"]["task_is_active"] is True
+    assert obs["overall_health"] in {"active", "warning", "idle", "critical"}
+    assert isinstance(obs["hang_hints"], list)
+    assert isinstance(obs["nodes"], dict)
+    assert isinstance(obs["nodes"].get("nodes"), list)

@@ -41,3 +41,25 @@ def utcnow_naive() -> datetime:
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
+
+# Unix-секунды после 2286-11-20; значения выше трактуем как миллисекунды (ноды ESP32).
+_DEVICE_TS_MS_THRESHOLD = 10_000_000_000
+
+
+def normalize_device_timestamp(value: int | float | None) -> tuple[int | None, int | None]:
+    """Нормализует device `ts` в пару (ts_ms, ts_sec).
+
+    Узлы публикуют `ts` в миллисекундах; legacy/симуляторы — в секундах.
+    """
+    if value is None or not isinstance(value, (int, float)):
+        return None, None
+
+    ts = int(value)
+    if ts < 0:
+        return None, None
+
+    if ts >= _DEVICE_TS_MS_THRESHOLD:
+        return ts, ts // 1000
+
+    return ts * 1000, ts
+

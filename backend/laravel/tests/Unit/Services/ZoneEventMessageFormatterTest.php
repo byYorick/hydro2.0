@@ -474,4 +474,61 @@ class ZoneEventMessageFormatterTest extends TestCase
         $this->assertStringContainsString('pH+=0.080', $message);
         $this->assertStringContainsString('pH-=0.070', $message);
     }
+
+    public function test_format_command_status_localizes_error_code(): void
+    {
+        $message = $this->formatter->format('command_status', [
+            'cmd_id' => 'cmd-42',
+            'status' => 'ERROR',
+            'error_code' => 'pump_busy',
+            'error_message' => 'Pump is already running',
+        ]);
+
+        $this->assertStringContainsString('Ошибка команды', $message);
+        $this->assertStringContainsString('cmd-42', $message);
+        $this->assertStringContainsString('занят', mb_strtolower($message));
+    }
+
+    public function test_format_command_status_done_without_error_details(): void
+    {
+        $message = $this->formatter->format('COMMAND_STATUS', [
+            'cmd_id' => 'cmd-7',
+            'status' => 'DONE',
+        ]);
+
+        $this->assertSame('Команда выполнена (команда cmd-7)', $message);
+    }
+
+    public function test_format_command_status_ignores_generic_observer_message(): void
+    {
+        $message = $this->formatter->format('command_status', [
+            'cmd_id' => 'cmd-99',
+            'status' => 'ERROR',
+            'error_code' => 'pump_busy',
+            'message' => 'Command failed',
+        ]);
+
+        $this->assertStringNotContainsString('Command failed', $message);
+        $this->assertStringContainsString('Ошибка команды', $message);
+        $this->assertStringContainsString('cmd-99', $message);
+    }
+
+    public function test_format_command_status_timeout_uses_scheduler_diagnostics(): void
+    {
+        $message = $this->formatter->format('command_status', [
+            'cmd_id' => 'cmd-timeout-1',
+            'status' => 'TIMEOUT',
+            'error_code' => 'TIMEOUT',
+            'node_uid' => 'nd-irrig-1',
+            'channel' => 'pump_main',
+            'timeout_minutes' => 5,
+            'node_status' => 'online',
+            'node_stale_online_candidate' => true,
+        ]);
+
+        $this->assertStringContainsString('Таймаут команды', $message);
+        $this->assertStringContainsString('cmd-timeout-1', $message);
+        $this->assertStringContainsString('nd-irrig-1', $message);
+        $this->assertStringContainsString('pump_main', $message);
+    }
 }

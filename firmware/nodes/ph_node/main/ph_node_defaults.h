@@ -14,6 +14,7 @@ extern "C" {
 #endif
 
 #include "driver/gpio.h"
+#include "correction_node_contract.h"
 
 // Node identification defaults
 #define PH_NODE_DEFAULT_NODE_ID      "nd-ph-1"
@@ -69,7 +70,7 @@ extern "C" {
 #define PH_NODE_PH_DOSER_UP_GPIO            GPIO_NUM_12
 #define PH_NODE_PH_DOSER_DOWN_GPIO          GPIO_NUM_13
 #define PH_NODE_PH_DOSER_FAIL_SAFE_NC       0
-#define PH_NODE_PH_DOSER_MAX_DURATION_MS    15000U
+#define PH_NODE_PH_DOSER_MAX_DURATION_MS    CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS
 #define PH_NODE_PH_DOSER_MIN_OFF_MS         5000U
 #define PH_NODE_PH_DOSER_ML_PER_SECOND      1.5f
 
