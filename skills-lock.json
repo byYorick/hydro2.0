@@ -13,6 +13,18 @@
       "skillPath": "skills/documentation-guidelines/SKILL.md",
       "computedHash": "af9ad9dc6e7e18ab6896fad8bf23e19037671d2d06461452d7a6052119237334"
     },
+    "embedded-systems": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/embedded-systems/SKILL.md",
+      "computedHash": "1631345781a5ed3ba2a780a710b8c23cb1b0abaaf576164c40d15b20683d2f6e"
+    },
+    "esp32-firmware-engineer": {
+      "source": "adamlipecz/esp32-firmware-engineer-skill",
+      "sourceType": "github",
+      "skillPath": "esp32-firmware-engineer/SKILL.md",
+      "computedHash": "3df8fc9d1ba783e4f09c59cf728cfb73cecfca89eece4a3b5b7d7e3e62068b6e"
+    },
     "fix-ci": {
       "source": "cursor/plugins",
       "sourceType": "github",

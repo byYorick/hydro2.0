@@ -50,6 +50,9 @@ help:
 	@echo "  skills-install    - install Cursor agent skills (npx skills → .agents/skills/)"
 	@echo "  skills-check      - verify project + external Cursor skills manifest"
 	@echo "  skills-list       - list expected and installed Cursor skills"
+	@echo "  mcp-setup         - write/update .cursor/mcp.json (Espressif, MQTT, PG, Redis, Laravel)"
+	@echo "  mcp-check         - verify MCP config and dev prerequisites"
+	@echo "  mcp-list          - list project MCP servers"
 	@echo "  lan-setup         - detect LAN IP, write backend/.env for access from local network"
 	@echo "  lan-url           - print dev web URL for LAN (requires backend/.env from lan-setup)"
 	@echo ""
@@ -331,7 +334,7 @@ erd:
 # Cursor Agent Skills (см. tools/cursor_skills.sh, skills-lock.json)
 # ---------------------------------------------------------------------------
 
-.PHONY: skills-install skills-check skills-list
+.PHONY: skills-install skills-check skills-list mcp-setup mcp-check mcp-list
 skills-install:
 	@bash tools/cursor_skills.sh install
 
@@ -340,6 +343,15 @@ skills-check:
 
 skills-list:
 	@bash tools/cursor_skills.sh list
+
+mcp-setup:
+	@bash tools/cursor_skills.sh mcp-setup
+
+mcp-check:
+	@bash tools/cursor_skills.sh mcp-check
+
+mcp-list:
+	@bash tools/cursor_skills.sh mcp-list
 
 # ---------------------------------------------------------------------------
 # Host CLI tools (полезны для работы agent-а и ручной отладки).
