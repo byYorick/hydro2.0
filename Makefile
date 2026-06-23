@@ -47,6 +47,9 @@ help:
 	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
 	@echo "  dev-tools-check   - check host CLI tools (rg, psql, mosquitto_pub, gh, ...)"
 	@echo "  dev-tools-install - install missing host CLI tools (apt + uv)"
+	@echo "  skills-install    - install Cursor agent skills (npx skills → .agents/skills/)"
+	@echo "  skills-check      - verify project + external Cursor skills manifest"
+	@echo "  skills-list       - list expected and installed Cursor skills"
 	@echo "  lan-setup         - detect LAN IP, write backend/.env for access from local network"
 	@echo "  lan-url           - print dev web URL for LAN (requires backend/.env from lan-setup)"
 	@echo ""
@@ -323,6 +326,20 @@ logs-mqtt:
 .PHONY: erd
 erd:
 	@bash backend/laravel/generate-erd.sh
+
+# ---------------------------------------------------------------------------
+# Cursor Agent Skills (см. tools/cursor_skills.sh, skills-lock.json)
+# ---------------------------------------------------------------------------
+
+.PHONY: skills-install skills-check skills-list
+skills-install:
+	@bash tools/cursor_skills.sh install
+
+skills-check:
+	@bash tools/cursor_skills.sh check
+
+skills-list:
+	@bash tools/cursor_skills.sh list
 
 # ---------------------------------------------------------------------------
 # Host CLI tools (полезны для работы agent-а и ручной отладки).
