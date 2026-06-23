@@ -1,9 +1,9 @@
 /**
  * @file storage_irrigation_node_framework_integration.h
  * @brief Интеграция storage_irrigation_node с node_framework
- * 
- * Этот файл связывает storage_irrigation_node с унифицированным фреймворком node_framework,
- * заменяя дублирующуюся логику обработки конфигов, команд и телеметрии.
+ *
+ * Публичный API. Реализация разбита на модули storage_irrigation_fw_*.c
+ * (см. storage_irrigation_node/README.md).
  */
 
 #ifndef STORAGE_IRRIGATION_NODE_FRAMEWORK_INTEGRATION_H

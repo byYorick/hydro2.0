@@ -108,13 +108,21 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## Файлы
 
-- `main/storage_irrigation_node_app.c`
-- `main/storage_irrigation_node_init.c`
-- `main/storage_irrigation_node_init_steps.c`
-- `main/storage_irrigation_node_framework_integration.c`
-- `main/storage_irrigation_node_tasks.c`
-- `main/storage_irrigation_node_config.h`
-- `main/storage_irrigation_node_config.c`
+- `main/storage_irrigation_node_app.c` — bootstrap приложения
+- `main/storage_irrigation_node_init.c` / `*_init_steps.c`
+- `main/storage_irrigation_node_tasks.c` — sensor scan, current poll
+- `main/storage_irrigation_node_config.c` / `*_config_utils.c` — GPIO map, NodeConfig
+- `main/storage_irrigation_fw_internal.h` — shared types/state API
+- `main/storage_irrigation_fw_state.c` — runtime state
+- `main/storage_irrigation_fw_actuators.c` — актуаторы, OLED snapshot
+- `main/storage_irrigation_fw_stage_guards.c` — stage timeout guards
+- `main/storage_irrigation_fw_fail_safe.c` — fail-safe, E-Stop
+- `main/storage_irrigation_fw_level_switch.c` — level-switch, sensor cycle
+- `main/storage_irrigation_fw_events.c` — MQTT storage/level events
+- `main/storage_irrigation_fw_commands.c` — `set_relay`, `state`, sensor commands
+- `main/storage_irrigation_fw_pump_cmd.c` — pump command queue
+- `main/storage_irrigation_fw_integration.c` — `node_framework` init, MQTT handlers
+- `main/storage_irrigation_node_framework_integration.h` — публичный API интеграции
 
 ## Связанные документы
 

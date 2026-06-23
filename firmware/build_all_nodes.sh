@@ -33,7 +33,7 @@ else
 fi
 
 # Список нод для компиляции
-NODES=("ph_node" "ec_node" "climate_node" "storage_irrigation_node" "relay_node" "light_node")
+NODES=("ph_node" "ec_node" "climate_node" "storage_irrigation_node" "relay_node" "light_node" "pump_node")
 
 SUCCESS_COUNT=0
 FAIL_COUNT=0

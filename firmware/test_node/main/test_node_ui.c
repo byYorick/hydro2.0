@@ -74,21 +74,21 @@ static const char *TAG = "test_node_ui";
 #define LCD_DMA_MIN_TRANSFER_LINES 80
 #define LVGL_TICK_PERIOD_MS 2
 #define LVGL_TASK_PERIOD_MS 10
-#define LVGL_TASK_STACK_SIZE 16384
+#define LVGL_TASK_STACK_SIZE 12288
 #define LVGL_TASK_PRIORITY 5
 #define UI_EVENT_QUEUE_LEN 32
 #define UI_LOG_EVENT_QUEUE_LEN 96
 #define UI_MAX_HP_EVENTS_PER_CYCLE 32
 #define UI_MAX_LOG_EVENTS_PER_CYCLE 16
-#define UI_TEXT_MAX 80
+#define UI_TEXT_MAX TEST_NODE_UI_TEXT_MAX
 #define UI_NODE_UID_MAX 48
 #define UI_ZONE_UID_MAX 24
-#define UI_SHORT_NAME_MAX 8
+#define UI_SHORT_NAME_MAX TEST_NODE_UI_SHORT_NAME_MAX
 #define UI_NODE_TELEMETRY_MAX 20
 #define UI_MAX_NODES 8
 #define UI_EXPECTED_VISIBLE_NODES 6
-#define UI_LOG_LINES_MAX 320
-#define UI_LOG_LINE_MAX 88
+#define UI_LOG_LINES_MAX 128
+#define UI_LOG_LINE_MAX TEST_NODE_UI_LOG_LINE_MAX
 #define UI_LOG_VISIBLE_LINES 14
 #define UI_EXPECTED_VISIBLE_LOG_ROWS 10
 #define UI_BLINK_INTERVAL_MS 200
@@ -479,11 +479,17 @@ static int ui_ensure_node_index(const char *node_uid) {
 }
 
 static const char *ui_node_short_or_uid(const char *node_uid) {
+    static char s_log_prefix_fallback[UI_SHORT_NAME_MAX];
     int idx = ui_find_node_index(node_uid);
+
     if (idx >= 0) {
         return s_nodes[idx].short_name;
     }
-    return node_uid ? node_uid : "SYS";
+    if (!node_uid || node_uid[0] == '\0') {
+        return "SYS";
+    }
+    ui_make_short_name(node_uid, s_log_prefix_fallback, sizeof(s_log_prefix_fallback));
+    return s_log_prefix_fallback;
 }
 
 static bool ui_status_is_online(const char *status) {
@@ -827,6 +833,9 @@ static bool ui_log_should_display(const char *message) {
     if (strncmp(message, "settings: zones reset to ", 25) == 0) {
         return true;
     }
+    if (strncmp(message, "settings:", 9) == 0) {
+        return true;
+    }
 
     return false;
 }
@@ -1078,6 +1087,35 @@ static void ui_compact_log_message(const char *message, char *out, size_t out_si
 
     if (strncmp(message, "settings: zones reset to ", 25) == 0) {
         snprintf(out, out_size, "Z reset %.14s", message + 25);
+        return;
+    }
+
+    if (strncmp(message, "settings: zones runtime reset", 29) == 0) {
+        snprintf(out, out_size, "Z rt reset");
+        return;
+    }
+    if (strncmp(message, "settings: factory reset failed", 28) == 0) {
+        snprintf(out, out_size, "F rst fail");
+        return;
+    }
+    if (strncmp(message, "settings: factory reset OK", 24) == 0) {
+        snprintf(out, out_size, "F rst OK");
+        return;
+    }
+    if (strcmp(message, "settings: back") == 0) {
+        snprintf(out, out_size, "Set back");
+        return;
+    }
+    if (strcmp(message, "settings: reset zones") == 0) {
+        snprintf(out, out_size, "Z reset");
+        return;
+    }
+    if (strcmp(message, "settings: factory reset") == 0) {
+        snprintf(out, out_size, "F reset");
+        return;
+    }
+    if (strncmp(message, "settings:", 9) == 0) {
+        snprintf(out, out_size, "Set %.20s", message + 9);
         return;
     }
 

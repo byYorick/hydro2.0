@@ -13,6 +13,13 @@
 extern "C" {
 #endif
 
+/** Макс. длина текста события / compact-сообщения (совпадает с ui_logf line buffer). */
+#define TEST_NODE_UI_TEXT_MAX 80
+/** Короткий префикс ноды в OLED-логе (IRR, PH, …). */
+#define TEST_NODE_UI_SHORT_NAME_MAX 8
+/** OLED log ring: "[prefix] compact" — prefix ≤ SHORT_NAME_MAX-1, compact ≤ TEXT_MAX. */
+#define TEST_NODE_UI_LOG_LINE_MAX (TEST_NODE_UI_SHORT_NAME_MAX + TEST_NODE_UI_TEXT_MAX + 4)
+
 typedef enum {
     TEST_NODE_UI_SETTINGS_ACTION_RESET_ZONES = 0,
     TEST_NODE_UI_SETTINGS_ACTION_FACTORY_RESET = 1,

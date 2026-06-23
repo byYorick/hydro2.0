@@ -14,6 +14,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -46,10 +47,11 @@ static const char *CMD_TAG = "test_node_cmd";
 #define STATE_COMMAND_QUEUE_LENGTH 12
 #define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
 #define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
-#define TASK_STACK_TELEMETRY 10240
-#define TASK_STACK_TELEMETRY_FALLBACK 9216
-#define TASK_STACK_COMMAND_WORKER 6144
-#define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
+#define TASK_STACK_TELEMETRY 8192
+#define TASK_STACK_TELEMETRY_FALLBACK 7168
+#define TASK_STACK_TELEMETRY_MIN 6144
+#define TASK_STACK_COMMAND_WORKER 5632
+#define TASK_STACK_COMMAND_WORKER_FALLBACK 5120
 #define TASK_STACK_STATE_COMMAND_WORKER 4096
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
 #define TASK_STACK_MQTT_REANNOUNCE 6144
@@ -554,6 +556,7 @@ static bool should_emit_uart_log(const char *line) {
         "node_hello",
         "config",
         "setup",
+        "settings",
         "task",
         "event",
         "ui_sync",
@@ -576,10 +579,11 @@ static bool should_emit_uart_log(const char *line) {
 }
 
 static void ui_logf(const char *node_uid, const char *fmt, ...) {
-    char line[80];
+    char line[TEST_NODE_UI_TEXT_MAX];
     const char *origin = (node_uid && node_uid[0] != '\0') ? node_uid : "SYS";
     va_list args;
     bool locked = false;
+    int written;
 
     if (!fmt || fmt[0] == '\0') {
         return;
@@ -594,11 +598,18 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
     }
 
     va_start(args, fmt);
-    (void)vsnprintf(line, sizeof(line), fmt, args);
+    written = vsnprintf(line, sizeof(line), fmt, args);
     va_end(args);
 
     if (locked) {
         xSemaphoreGive(s_ui_log_mutex);
+    }
+
+    if (written < 0) {
+        return;
+    }
+    if ((size_t)written >= sizeof(line)) {
+        ESP_LOGW(CMD_TAG, "ui_logf truncated (%d bytes, max %u)", written, (unsigned)sizeof(line));
     }
 
     if (should_emit_uart_log(line)) {
@@ -5069,6 +5080,7 @@ static esp_err_t start_worker_task(
     const char *task_name,
     uint32_t stack_size,
     uint32_t fallback_stack_size,
+    uint32_t min_stack_size,
     UBaseType_t priority,
     bool required,
     TaskHandle_t *out_handle
@@ -5076,52 +5088,80 @@ static esp_err_t start_worker_task(
     BaseType_t created = pdFAIL;
     char step_line[96];
     uint32_t free_heap_before = esp_get_free_heap_size();
+    uint32_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     uint32_t used_stack = stack_size;
     TaskHandle_t created_handle = NULL;
+    const uint32_t stack_candidates[] = {
+        stack_size,
+        fallback_stack_size,
+        min_stack_size,
+    };
+    size_t candidate_index;
 
     if (out_handle) {
         *out_handle = NULL;
     }
 
-    created = xTaskCreate(task_fn, task_name, stack_size, NULL, priority, &created_handle);
-    if (created != pdPASS && fallback_stack_size > 0 && fallback_stack_size < stack_size) {
+    for (candidate_index = 0; candidate_index < (sizeof(stack_candidates) / sizeof(stack_candidates[0])); candidate_index++) {
+        uint32_t candidate = stack_candidates[candidate_index];
+
+        if (candidate == 0) {
+            continue;
+        }
+        if (candidate_index > 0 && candidate >= used_stack) {
+            continue;
+        }
+
+        created_handle = NULL;
+        created = xTaskCreate(task_fn, task_name, candidate, NULL, priority, &created_handle);
+        if (created == pdPASS) {
+            used_stack = candidate;
+            break;
+        }
+
         ESP_LOGW(
             TAG,
-            "Task '%s' start failed with stack=%u, retry with fallback=%u (heap=%u)",
+            "Task '%s' start failed with stack=%u (heap=%u largest=%u)",
             task_name ? task_name : "unknown",
-            (unsigned)stack_size,
-            (unsigned)fallback_stack_size,
-            (unsigned)free_heap_before
+            (unsigned)candidate,
+            (unsigned)esp_get_free_heap_size(),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
         );
-        created_handle = NULL;
-        created = xTaskCreate(task_fn, task_name, fallback_stack_size, NULL, priority, &created_handle);
-        used_stack = fallback_stack_size;
+        used_stack = candidate;
     }
 
     if (created != pdPASS) {
         snprintf(step_line, sizeof(step_line), "Task %s FAILED (OOM)", task_name ? task_name : "unknown");
         test_node_ui_show_step(step_line);
-        ui_logf(NULL, "task %s FAIL heap=%u", task_name ? task_name : "unknown", (unsigned)free_heap_before);
+        ui_logf(
+            NULL,
+            "task %s FAIL heap=%u blk=%u",
+            task_name ? task_name : "unknown",
+            (unsigned)free_heap_before,
+            (unsigned)largest_block
+        );
 
         if (required) {
             ESP_LOGE(
                 TAG,
-                "Failed to start required task '%s' (stack=%u prio=%u heap=%u)",
+                "Failed to start required task '%s' (stack=%u prio=%u heap=%u largest=%u)",
                 task_name ? task_name : "unknown",
                 (unsigned)used_stack,
                 (unsigned)priority,
-                (unsigned)free_heap_before
+                (unsigned)free_heap_before,
+                (unsigned)largest_block
             );
             return ESP_ERR_NO_MEM;
         }
 
         ESP_LOGW(
             TAG,
-            "Failed to start optional task '%s' (stack=%u prio=%u heap=%u)",
+            "Failed to start optional task '%s' (stack=%u prio=%u heap=%u largest=%u)",
             task_name ? task_name : "unknown",
             (unsigned)used_stack,
             (unsigned)priority,
-            (unsigned)free_heap_before
+            (unsigned)free_heap_before,
+            (unsigned)largest_block
         );
         return ESP_FAIL;
     }
@@ -5405,6 +5445,7 @@ esp_err_t test_node_app_init(void) {
         "command_worker",
         TASK_STACK_COMMAND_WORKER,
         TASK_STACK_COMMAND_WORKER_FALLBACK,
+        0,
         6,
         true,
         NULL
@@ -5414,12 +5455,13 @@ esp_err_t test_node_app_init(void) {
         return err;
     }
 
-    if (s_state_command_queue) {
+    if (s_state_command_queue && esp_get_free_heap_size() >= 20000) {
         err = start_worker_task(
             state_command_worker_task,
             "state_cmd_worker",
             TASK_STACK_STATE_COMMAND_WORKER,
             TASK_STACK_STATE_COMMAND_WORKER_FALLBACK,
+            0,
             7,
             false,
             NULL
@@ -5433,13 +5475,26 @@ esp_err_t test_node_app_init(void) {
             s_state_command_queue = NULL;
             test_node_ui_show_step("App init: state fastpath OFF");
         }
+    } else if (s_state_command_queue) {
+        s_state_command_fastpath_enabled = false;
+        vQueueDelete(s_state_command_queue);
+        s_state_command_queue = NULL;
+        test_node_ui_show_step("App init: state fastpath skipped (heap)");
     }
+
+    ESP_LOGI(
+        TAG,
+        "Starting worker tasks: heap=%u largest=%u",
+        (unsigned)esp_get_free_heap_size(),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+    );
 
     err = start_worker_task(
         task_mqtt_reannounce,
         "mqtt_reannounce",
         TASK_STACK_MQTT_REANNOUNCE,
         TASK_STACK_MQTT_REANNOUNCE_FALLBACK,
+        0,
         5,
         false,
         &s_mqtt_reannounce_task_handle
@@ -5456,6 +5511,7 @@ esp_err_t test_node_app_init(void) {
         "telemetry_task",
         TASK_STACK_TELEMETRY,
         TASK_STACK_TELEMETRY_FALLBACK,
+        TASK_STACK_TELEMETRY_MIN,
         5,
         true,
         NULL

@@ -74,8 +74,8 @@ firmware/nodes/common/components/  # Общие компоненты для вс
 │  └─ ina209/        # Pump current sensor
 ├─ pump_driver/      # Driver: pump on/off + current monitoring
 ├─ relay_driver/     # Driver: relay control с interlock
-├─ pwm_driver/       # Driver: PWM channel (light/heater dim)
-└─ ws2811_driver/    # Driver: addressable LED strip
+├─ climate_node/main/pwm_driver.c  # PWM для climate_node (локально, не common)
+└─ ws2811_driver/    # Planned: только WS2811_GUIDE.md, без .c драйвера
 ```
 
 Документация конкретного компонента — в его `README.md` (например, `firmware/nodes/common/components/i2c_bus/README.md`).

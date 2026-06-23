@@ -11,15 +11,44 @@
 #include "freertos/task.h"
 
 static const char *TAG = "test_node_main";
-static const uint32_t TEST_NODE_BOOTSTRAP_STACK_SIZE = 16384;
+static const uint32_t TEST_NODE_BOOTSTRAP_STACK_SIZE = 10240;
+static const uint32_t TEST_NODE_APP_INIT_STACK_SIZE = 10240;
+
+static void test_node_app_init_task(void *pv_params) {
+    esp_err_t err;
+
+    (void)pv_params;
+
+    test_node_ui_show_step("6) Test node app init started");
+    err = test_node_app_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "test_node_app_init failed: %s", esp_err_to_name(err));
+        test_node_ui_show_step("App init FAILED (see UART)");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    test_node_ui_show_step("7) Test node app init done");
+    ESP_LOGI(
+        TAG,
+        "App init task stack watermark before exit: %u bytes",
+        (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t))
+    );
+    ESP_LOGI(TAG, "Test node started successfully");
+    test_node_ui_show_step("8) Startup complete");
+
+    vTaskDelete(NULL);
+}
 
 static void test_node_bootstrap_task(void *pv_params) {
+    esp_err_t ui_err;
+
     (void)pv_params;
 
     ESP_LOGI(TAG, "Test node starting...");
 
     // 1) Экран поднимаем первым
-    esp_err_t ui_err = test_node_ui_init();
+    ui_err = test_node_ui_init();
     if (ui_err != ESP_OK) {
         ESP_LOGW(TAG, "test_node_ui_init failed: %s", esp_err_to_name(ui_err));
     } else {
@@ -31,23 +60,36 @@ static void test_node_bootstrap_task(void *pv_params) {
     ESP_ERROR_CHECK(node_utils_bootstrap_network_stack());
     test_node_ui_show_step("5) Network bootstrap done");
 
-    // 3) Инициализация тестовой ноды
-    test_node_ui_show_step("6) Test node app init started");
-    ESP_ERROR_CHECK(test_node_app_init());
-    test_node_ui_show_step("7) Test node app init done");
-
     if (ui_err != ESP_OK) {
         test_node_ui_show_step("UI init failed, running headless");
     }
 
+    // 3) Освобождаем stack bootstrap до тяжёлого app init (MQTT/worker tasks).
+    if (xTaskCreate(
+        test_node_app_init_task,
+        "app_init",
+        TEST_NODE_APP_INIT_STACK_SIZE,
+        NULL,
+        5,
+        NULL
+    ) != pdPASS) {
+        ESP_LOGE(
+            TAG,
+            "Failed to start app_init task (stack=%u heap=%u)",
+            (unsigned)TEST_NODE_APP_INIT_STACK_SIZE,
+            (unsigned)esp_get_free_heap_size()
+        );
+        test_node_ui_show_step("App init task FAILED (OOM)");
+        vTaskDelete(NULL);
+        return;
+    }
+
     ESP_LOGI(
         TAG,
-        "Bootstrap task stack watermark before exit: %u bytes",
-        (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t))
+        "Bootstrap task stack watermark before handoff: %u bytes, heap=%u",
+        (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)),
+        (unsigned)esp_get_free_heap_size()
     );
-    ESP_LOGI(TAG, "Test node started successfully");
-    test_node_ui_show_step("8) Startup complete");
-
     vTaskDelete(NULL);
 }
 
