@@ -1,436 +1,553 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">
-      Настройки
-    </h1>
-
-    <div
-      v-if="isAdmin"
-      class="mb-6"
-    >
-      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
-        Управление пользователями
-      </h2>
-      <Card class="mb-4">
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <input
-            v-model="searchQuery"
-            placeholder="Поиск по имени/email..."
-            class="input-field w-64"
-            autocomplete="off"
-          />
-          <select
-            v-model="roleFilter"
-            class="input-select"
-          >
-            <option value="">
-              Все роли
-            </option>
-            <option value="admin">
-              Администратор
-            </option>
-            <option value="operator">
-              Оператор
-            </option>
-            <option value="viewer">
-              Наблюдатель
-            </option>
-          </select>
-          <Button
-            size="sm"
-            @click="loadUsers"
-          >
-            Обновить
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="openCreateModal()"
-          >
-            Создать пользователя
-          </Button>
-        </div>
-
-        <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[600px] overflow-y-auto">
-          <table class="min-w-full text-sm">
-            <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
-              <tr>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  ID
-                </th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  Имя
-                </th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  Email
-                </th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  Роль
-                </th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  Создан
-                </th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
-                  Действия
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="u in paginatedUsers"
-                :key="u.id"
-                class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
-              >
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-                  {{ u.id }}
-                </td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-                  {{ u.name }}
-                </td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-                  {{ u.email }}
-                </td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-                  <Badge
-                    :variant="u.role === 'admin' ? 'danger' : u.role === 'operator' ? 'warning' : 'info'"
-                  >
-                    {{ translateRole(u.role) }}
-                  </Badge>
-                </td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)]">
-                  {{ new Date(u.created_at).toLocaleDateString() }}
-                </td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-                  <div class="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      @click="editUser(u)"
-                    >
-                      Изменить
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      :disabled="u.id === currentUserId"
-                      @click="confirmDelete(u)"
-                    >
-                      Удалить
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <Pagination
-            v-model:current-page="currentPage"
-            v-model:per-page="perPage"
-            :total="filteredUsers.length"
-          />
-          <div
-            v-if="!paginatedUsers.length"
-            class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
-          >
-            Нет пользователей
-          </div>
-        </div>
-      </Card>
-    </div>
-
-    <Card>
-      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
-        Профиль
-      </h2>
-      <div class="space-y-3">
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <div class="text-sm text-[color:var(--text-primary)]">
-            {{ currentUser?.name }}
-          </div>
-        </div>
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <div class="text-sm text-[color:var(--text-primary)]">
-            {{ currentUser?.email }}
-          </div>
-        </div>
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
+    <div class="space-y-4">
+      <header class="ui-hero p-5 space-y-4">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <Badge
-              :variant="currentUser?.role === 'admin' ? 'danger' : currentUser?.role === 'operator' ? 'warning' : 'info'"
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+              аккаунт и платформа
+            </p>
+            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+              Настройки
+            </h1>
+            <p class="text-sm text-[color:var(--text-muted)] max-w-2xl mt-1">
+              Профиль, уведомления, параметры automation-engine и управление пользователями.
+            </p>
+          </div>
+          <div class="flex items-center gap-3 rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]/80 px-4 py-3">
+            <div
+              class="flex h-11 w-11 items-center justify-center rounded-full bg-[color:var(--accent-green)]/15 text-sm font-semibold text-[color:var(--accent-green)]"
+              aria-hidden="true"
             >
+              {{ profileInitial }}
+            </div>
+            <div class="min-w-0">
+              <div class="truncate text-sm font-medium text-[color:var(--text-primary)]">
+                {{ currentUser?.name }}
+              </div>
+              <div class="truncate text-xs text-[color:var(--text-dim)]">
+                {{ currentUser?.email }}
+              </div>
+            </div>
+            <Badge :variant="roleBadgeVariant">
               {{ translateRole(currentUser?.role) }}
             </Badge>
           </div>
         </div>
-      </div>
-    </Card>
 
-    <Card class="mt-4">
-      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
-        Уведомления
-      </h2>
-      <div class="space-y-3 max-w-md">
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">
-            Окно подавления повторов алертов (сек)
-          </label>
-          <input
-            v-model.number="notificationSettings.alertToastSuppressionSec"
-            type="number"
-            min="0"
-            max="600"
-            step="5"
-            class="input-field mt-1"
-            data-testid="settings-alert-suppression-input"
-          />
-          <div class="text-xs text-[color:var(--text-dim)] mt-1">
-            Используется в тостах на странице алертов, по умолчанию 30 сек.
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Роль
+            </div>
+            <div class="ui-kpi-value text-base md:text-lg leading-tight">
+              {{ translateRole(currentUser?.role) }}
+            </div>
+            <div class="ui-kpi-hint">
+              Права в интерфейсе
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Подавление алертов
+            </div>
+            <div class="ui-kpi-value">
+              {{ notificationSettings.alertToastSuppressionSec }} с
+            </div>
+            <div class="ui-kpi-hint">
+              Личная настройка тостов
+            </div>
+          </div>
+          <div
+            v-if="canEditAutomationEngineSettings"
+            class="ui-kpi-card"
+          >
+            <div class="ui-kpi-label">
+              Runtime AE
+            </div>
+            <div class="ui-kpi-value text-base md:text-lg leading-tight">
+              {{ automationEngineSettingsGeneratedAtLabel }}
+            </div>
+            <div class="ui-kpi-hint">
+              Снимок scheduler / engine
+            </div>
+          </div>
+          <div
+            v-if="canEditAutomationEngineSettings"
+            class="ui-kpi-card"
+          >
+            <div class="ui-kpi-label">
+              AE3 alerts
+            </div>
+            <div class="ui-kpi-value text-base md:text-lg leading-tight">
+              {{ alertPolicyModeLabel }}
+            </div>
+            <div class="ui-kpi-hint">
+              Политика auto-resolve
+            </div>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <Button
-            size="sm"
-            :disabled="preferencesLoading || preferencesSaving"
-            @click="savePreferences"
+      </header>
+
+      <div class="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
+        <nav
+          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-2 h-fit lg:sticky lg:top-4"
+          aria-label="Разделы настроек"
+          data-testid="settings-section-nav"
+        >
+          <button
+            v-for="section in visibleSections"
+            :key="section.id"
+            type="button"
+            class="settings-nav-item"
+            :class="{ 'settings-nav-item--active': activeSection === section.id }"
+            :data-testid="`settings-nav-${section.id}`"
+            @click="activeSection = section.id"
           >
-            {{ preferencesSaving ? 'Сохраняем...' : 'Сохранить' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="preferencesLoading || preferencesSaving"
-            @click="loadPreferences"
+            <span
+              class="settings-nav-item__icon"
+              aria-hidden="true"
+            >{{ section.icon }}</span>
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-[color:var(--text-primary)]">
+                {{ section.label }}
+              </span>
+              <span class="block text-xs text-[color:var(--text-dim)] mt-0.5">
+                {{ section.hint }}
+              </span>
+            </span>
+          </button>
+        </nav>
+
+        <div class="space-y-4 min-w-0">
+          <SettingsSectionShell
+            v-show="activeSection === 'profile'"
+            title="Профиль"
+            description="Основные данные вашей учётной записи. Редактирование имени и email — через администратора."
+            icon="👤"
+            test-id="settings-section-profile"
           >
-            {{ preferencesLoading ? 'Загружаем...' : 'Обновить' }}
-          </Button>
-        </div>
-      </div>
-    </Card>
+            <dl class="grid gap-3 sm:grid-cols-2">
+              <div class="settings-field-card">
+                <dt class="settings-field-card__label">
+                  Имя
+                </dt>
+                <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)]">
+                  {{ currentUser?.name }}
+                </dd>
+              </div>
+              <div class="settings-field-card">
+                <dt class="settings-field-card__label">
+                  Email
+                </dt>
+                <dd class="mt-2 text-sm font-medium text-[color:var(--text-primary)] break-all">
+                  {{ currentUser?.email }}
+                </dd>
+              </div>
+              <div class="settings-field-card sm:col-span-2">
+                <dt class="settings-field-card__label">
+                  Роль в системе
+                </dt>
+                <dd class="mt-2">
+                  <Badge :variant="roleBadgeVariant">
+                    {{ translateRole(currentUser?.role) }}
+                  </Badge>
+                </dd>
+              </div>
+            </dl>
+          </SettingsSectionShell>
 
-    <Card
-      v-if="canEditAutomationEngineSettings"
-      class="mt-4"
-      data-testid="settings-system-authority-card"
-    >
-      <h2 class="text-md font-semibold mb-2 text-[color:var(--text-primary)]">
-        Системные настройки автоматики
-      </h2>
-      <p class="text-xs text-[color:var(--text-dim)] mb-3">
-        Калибровки насосов/сенсоров, дефолты автоматики и пороги observability.
-      </p>
-      <Link href="/system/settings">
-        <Button
-          size="sm"
-          variant="secondary"
-          data-testid="settings-open-system-authority"
-        >
-          Открыть системные настройки
-        </Button>
-      </Link>
-    </Card>
-
-    <Card
-      v-if="automationEngineSettingsSections.length > 0"
-      class="mt-4"
-      data-testid="settings-automation-engine-card"
-    >
-      <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <h2 class="text-md font-semibold text-[color:var(--text-primary)]">
-          Automation Engine
-        </h2>
-        <div class="text-xs text-[color:var(--text-muted)]">
-          Снимок: {{ automationEngineSettingsGeneratedAtLabel }}
-        </div>
-      </div>
-      <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-        Фактические runtime-параметры Laravel scheduler и интеграции с automation-engine (timeouts, retries, limits).
-      </p>
-      <div
-        v-if="canEditAutomationEngineSettings"
-        class="mt-3 flex flex-wrap items-center gap-2"
-      >
-        <Button
-          size="sm"
-          data-testid="settings-automation-engine-save"
-          :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
-          @click="saveAutomationEngineSettings"
-        >
-          {{ automationSettingsSaving ? 'Сохраняем...' : 'Сохранить параметры' }}
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          data-testid="settings-automation-engine-refresh"
-          :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
-          @click="loadAutomationEngineSettings"
-        >
-          {{ automationSettingsLoading ? 'Обновляем...' : 'Обновить из runtime' }}
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          data-testid="settings-automation-engine-reset"
-          :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
-          @click="resetAutomationEngineSettings"
-        >
-          {{ automationSettingsResetting ? 'Сбрасываем...' : 'Сбросить override' }}
-        </Button>
-      </div>
-
-      <div class="mt-4 space-y-3">
-        <section
-          v-for="section in automationEngineSettingsSections"
-          :key="section.key"
-          class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3"
-        >
-          <h3 class="text-sm font-medium text-[color:var(--text-primary)]">
-            {{ section.title }}
-          </h3>
-          <dl class="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 md:grid-cols-2">
-            <template
-              v-for="item in section.items"
-              :key="`${section.key}-${item.key}`"
-            >
-              <dt class="text-xs text-[color:var(--text-muted)]">
-                {{ item.label }}
-              </dt>
-              <dd class="text-sm font-mono text-[color:var(--text-primary)] break-all">
-                <template v-if="canEditAutomationEngineSettings && item.editable">
-                  <select
-                    v-if="item.input_type === 'boolean'"
-                    v-model="automationSettingsDraft[item.key]"
-                    :data-testid="`settings-automation-engine-input-${item.key}`"
-                    class="input-select w-full"
-                  >
-                    <option :value="true">
-                      true
-                    </option>
-                    <option :value="false">
-                      false
-                    </option>
-                  </select>
-                  <select
-                    v-else-if="item.input_type === 'select'"
-                    v-model="automationSettingsDraft[item.key]"
-                    :data-testid="`settings-automation-engine-input-${item.key}`"
-                    class="input-select w-full"
-                  >
-                    <option
-                      v-for="option in item.options || []"
-                      :key="`${item.key}-option-${option}`"
-                      :value="option"
-                    >
-                      {{ option }}
-                    </option>
-                  </select>
+          <SettingsSectionShell
+            v-show="activeSection === 'notifications'"
+            title="Уведомления"
+            description="Персональные параметры отображения алертов в интерфейсе оператора."
+            icon="🔔"
+            test-id="settings-section-notifications"
+          >
+            <div class="max-w-xl space-y-4">
+              <SettingsFieldCard
+                label="Окно подавления повторов алертов"
+                description="Одинаковые тосты на странице алертов не будут показываться чаще указанного интервала."
+                :show-description="true"
+                test-id="settings-notifications-suppression-card"
+              >
+                <div class="flex items-center gap-2">
                   <input
-                    v-else-if="item.input_type === 'number'"
-                    v-model="automationSettingsDraft[item.key]"
-                    :data-testid="`settings-automation-engine-input-${item.key}`"
-                    class="input-field w-full"
+                    v-model.number="notificationSettings.alertToastSuppressionSec"
                     type="number"
-                    :step="item.step || 1"
-                    :min="item.min"
-                    :max="item.max"
+                    min="0"
+                    max="600"
+                    step="5"
+                    class="input-field w-28"
+                    data-testid="settings-alert-suppression-input"
                   />
-                  <input
-                    v-else
-                    v-model="automationSettingsDraft[item.key]"
-                    :data-testid="`settings-automation-engine-input-${item.key}`"
-                    class="input-field w-full"
-                    type="text"
-                  />
-                </template>
-                <template v-else>
-                  {{ formatAutomationSettingValue(item.value, item.unit) }}
-                </template>
-                <div
-                  v-if="item.description"
-                  class="mt-1 text-xs text-[color:var(--text-dim)] font-normal"
+                  <span class="text-sm text-[color:var(--text-muted)]">секунд</span>
+                </div>
+              </SettingsFieldCard>
+              <div class="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  :disabled="preferencesLoading || preferencesSaving"
+                  @click="savePreferences"
                 >
-                  {{ item.description }}
+                  {{ preferencesSaving ? 'Сохраняем...' : 'Сохранить' }}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  :disabled="preferencesLoading || preferencesSaving"
+                  @click="loadPreferences"
+                >
+                  {{ preferencesLoading ? 'Загружаем...' : 'Обновить' }}
+                </Button>
+              </div>
+            </div>
+          </SettingsSectionShell>
+
+          <template v-if="canEditAutomationEngineSettings">
+            <SettingsSectionShell
+              v-show="activeSection === 'automation'"
+              title="Automation Engine"
+              description="Глобальные runtime-параметры Laravel scheduler и интеграции с automation-engine."
+              icon="⚙️"
+              test-id="settings-automation-engine-card"
+            >
+              <template #actions>
+                <Button
+                  size="sm"
+                  data-testid="settings-automation-engine-save"
+                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  @click="saveAutomationEngineSettings"
+                >
+                  {{ automationSettingsSaving ? 'Сохраняем...' : 'Сохранить' }}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="settings-automation-engine-refresh"
+                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  @click="loadAutomationEngineSettings"
+                >
+                  {{ automationSettingsLoading ? 'Обновляем...' : 'Обновить' }}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  data-testid="settings-automation-engine-reset"
+                  :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
+                  @click="resetAutomationEngineSettings"
+                >
+                  {{ automationSettingsResetting ? 'Сбрасываем...' : 'Сбросить' }}
+                </Button>
+              </template>
+
+              <div
+                v-if="automationEngineSettingsSections.length === 0"
+                class="text-sm text-[color:var(--text-dim)]"
+              >
+                Параметры runtime пока не загружены.
+              </div>
+
+              <div
+                v-else
+                class="space-y-3"
+              >
+                <section
+                  v-for="section in automationEngineSettingsSections"
+                  :key="section.key"
+                  class="settings-group-card"
+                >
+                  <div class="settings-group-card__toggle cursor-default">
+                    <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                      {{ section.title }}
+                    </h3>
+                  </div>
+                  <div class="settings-group-card__body">
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <SettingsFieldCard
+                        v-for="item in section.items"
+                        :key="`${section.key}-${item.key}`"
+                        :label="item.label"
+                        :description="item.description"
+                        :show-description="Boolean(item.description)"
+                        :test-id="`settings-automation-field-${item.key}`"
+                      >
+                        <template v-if="item.editable">
+                          <select
+                            v-if="item.input_type === 'boolean'"
+                            v-model="automationSettingsDraft[item.key]"
+                            :data-testid="`settings-automation-engine-input-${item.key}`"
+                            class="input-select w-full"
+                          >
+                            <option :value="true">
+                              true
+                            </option>
+                            <option :value="false">
+                              false
+                            </option>
+                          </select>
+                          <select
+                            v-else-if="item.input_type === 'select'"
+                            v-model="automationSettingsDraft[item.key]"
+                            :data-testid="`settings-automation-engine-input-${item.key}`"
+                            class="input-select w-full"
+                          >
+                            <option
+                              v-for="option in item.options || []"
+                              :key="`${item.key}-option-${option}`"
+                              :value="option"
+                            >
+                              {{ option }}
+                            </option>
+                          </select>
+                          <input
+                            v-else-if="item.input_type === 'number'"
+                            v-model="automationSettingsDraft[item.key]"
+                            :data-testid="`settings-automation-engine-input-${item.key}`"
+                            class="input-field w-full font-mono text-sm"
+                            type="number"
+                            :step="item.step || 1"
+                            :min="item.min"
+                            :max="item.max"
+                          />
+                          <input
+                            v-else
+                            v-model="automationSettingsDraft[item.key]"
+                            :data-testid="`settings-automation-engine-input-${item.key}`"
+                            class="input-field w-full font-mono text-sm"
+                            type="text"
+                          />
+                        </template>
+                        <template v-else>
+                          <div class="font-mono text-sm text-[color:var(--text-primary)] break-all">
+                            {{ formatAutomationSettingValue(item.value, item.unit) }}
+                          </div>
+                        </template>
+                        <template #meta>
+                          source: {{ item.source || 'default' }}
+                        </template>
+                      </SettingsFieldCard>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </SettingsSectionShell>
+
+            <SettingsSectionShell
+              v-show="activeSection === 'automation'"
+              title="AE3 Alert Policies"
+              description="Управляет auto-resolve для operational alerts с формализованным recovery contract."
+              icon="🛡️"
+              test-id="settings-alert-policies-card"
+            >
+              <template #actions>
+                <span class="text-xs text-[color:var(--text-muted)] px-2 py-1 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">
+                  {{ alertPolicyModeLabel }}
+                </span>
+              </template>
+
+              <div class="max-w-2xl space-y-4">
+                <SettingsFieldCard
+                  label="Политика закрытия AE3 operational alerts"
+                  description="Даже в режиме автозакрытия manual-only alerts остаются активными, пока для них нет формализованного recovery contract."
+                  test-id="settings-alert-policy-card"
+                >
+                  <select
+                    v-model="alertPolicyDraft.ae3_operational_resolution_mode"
+                    data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
+                    class="input-select w-full"
+                  >
+                    <option value="manual_ack">
+                      Только ручное подтверждение
+                    </option>
+                    <option value="auto_resolve_on_recovery">
+                      Автозакрытие после recovery
+                    </option>
+                  </select>
+                </SettingsFieldCard>
+                <div class="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    data-testid="settings-alert-policy-save"
+                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                    @click="saveAlertPolicies"
+                  >
+                    {{ alertPoliciesSaving ? 'Сохраняем...' : 'Сохранить policy' }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    data-testid="settings-alert-policy-refresh"
+                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                    @click="loadAlertPolicies"
+                  >
+                    {{ alertPoliciesLoading ? 'Обновляем...' : 'Обновить' }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    data-testid="settings-alert-policy-reset"
+                    :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+                    @click="resetAlertPolicies"
+                  >
+                    {{ alertPoliciesResetting ? 'Сбрасываем...' : 'Сбросить' }}
+                  </Button>
                 </div>
-                <div class="mt-1 text-[10px] text-[color:var(--text-muted)] uppercase tracking-wide font-normal">
-                  source: {{ item.source || 'default' }}
-                </div>
-              </dd>
+              </div>
+            </SettingsSectionShell>
+
+            <SettingsSectionShell
+              v-show="activeSection === 'automation'"
+              title="Системные настройки автоматики"
+              description="Калибровки, дефолты автоматики, шаблоны команд и пороги observability — отдельная страница authority."
+              icon="📊"
+              test-id="settings-system-authority-card"
+            >
+              <Link href="/system/settings">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  data-testid="settings-open-system-authority"
+                >
+                  Открыть системные настройки →
+                </Button>
+              </Link>
+            </SettingsSectionShell>
+          </template>
+
+          <SettingsSectionShell
+            v-if="isAdmin"
+            v-show="activeSection === 'users'"
+            title="Управление пользователями"
+            description="Создание учётных записей и назначение ролей операторов платформы."
+            icon="👥"
+            test-id="settings-section-users"
+          >
+            <template #actions>
+              <Button
+                size="sm"
+                variant="secondary"
+                @click="loadUsers"
+              >
+                Обновить
+              </Button>
+              <Button
+                size="sm"
+                @click="openCreateModal()"
+              >
+                Создать пользователя
+              </Button>
             </template>
-          </dl>
-        </section>
-      </div>
-    </Card>
 
-    <Card
-      v-if="canEditAutomationEngineSettings"
-      class="mt-4"
-      data-testid="settings-alert-policies-card"
-    >
-      <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <h2 class="text-md font-semibold text-[color:var(--text-primary)]">
-          AE3 Alert Policies
-        </h2>
-        <div class="text-xs text-[color:var(--text-muted)]">
-          Режим: {{ alertPolicyModeLabel }}
-        </div>
-      </div>
-      <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-        Управляет auto-resolve только для AE3 business alert code с формализованным recovery contract.
-      </p>
-      <div class="mt-4 max-w-xl space-y-3">
-        <div>
-          <label class="text-sm text-[color:var(--text-muted)]">
-            Политика закрытия AE3 operational alerts
-          </label>
-          <select
-            v-model="alertPolicyDraft.ae3_operational_resolution_mode"
-            data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
-            class="input-select mt-1 w-full"
-          >
-            <option value="manual_ack">
-              Только ручное подтверждение
-            </option>
-            <option value="auto_resolve_on_recovery">
-              Автозакрытие после recovery
-            </option>
-          </select>
-        </div>
-        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          Даже в режиме автозакрытия manual-only alerts остаются активными, пока для них нет формализованного recovery contract.
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            data-testid="settings-alert-policy-save"
-            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-            @click="saveAlertPolicies"
-          >
-            {{ alertPoliciesSaving ? 'Сохраняем...' : 'Сохранить policy' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="settings-alert-policy-refresh"
-            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-            @click="loadAlertPolicies"
-          >
-            {{ alertPoliciesLoading ? 'Обновляем...' : 'Обновить' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            data-testid="settings-alert-policy-reset"
-            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
-            @click="resetAlertPolicies"
-          >
-            {{ alertPoliciesResetting ? 'Сбрасываем...' : 'Сбросить override' }}
-          </Button>
-        </div>
-      </div>
-    </Card>
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+              <input
+                v-model="searchQuery"
+                placeholder="Поиск по имени или email..."
+                class="input-field w-full sm:w-72"
+                autocomplete="off"
+              />
+              <select
+                v-model="roleFilter"
+                class="input-select"
+              >
+                <option value="">
+                  Все роли
+                </option>
+                <option value="admin">
+                  Администратор
+                </option>
+                <option value="operator">
+                  Оператор
+                </option>
+                <option value="viewer">
+                  Наблюдатель
+                </option>
+              </select>
+            </div>
 
-    <!-- Create/Edit User Modal -->
+            <div class="settings-group-card overflow-hidden">
+              <div class="max-h-[560px] overflow-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="sticky top-0 z-10 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
+                    <tr>
+                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                        Пользователь
+                      </th>
+                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                        Роль
+                      </th>
+                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)] hidden md:table-cell">
+                        Создан
+                      </th>
+                      <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                        Действия
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="u in paginatedUsers"
+                      :key="u.id"
+                      class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
+                    >
+                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
+                        <div class="font-medium text-[color:var(--text-primary)]">
+                          {{ u.name }}
+                        </div>
+                        <div class="text-xs text-[color:var(--text-dim)]">
+                          {{ u.email }}
+                        </div>
+                      </td>
+                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
+                        <Badge :variant="userRoleBadgeVariant(u.role)">
+                          {{ translateRole(u.role) }}
+                        </Badge>
+                      </td>
+                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)] hidden md:table-cell">
+                        {{ new Date(u.created_at).toLocaleDateString() }}
+                      </td>
+                      <td class="px-3 py-3 border-b border-[color:var(--border-muted)]">
+                        <div class="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            @click="editUser(u)"
+                          >
+                            Изменить
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            :disabled="u.id === currentUserId"
+                            @click="confirmDelete(u)"
+                          >
+                            Удалить
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div
+                  v-if="!paginatedUsers.length"
+                  class="text-sm text-[color:var(--text-dim)] px-3 py-10 text-center"
+                >
+                  Нет пользователей по выбранным фильтрам
+                </div>
+              </div>
+              <div class="border-t border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2">
+                <Pagination
+                  v-model:current-page="currentPage"
+                  v-model:per-page="perPage"
+                  :total="filteredUsers.length"
+                />
+              </div>
+            </div>
+          </SettingsSectionShell>
+        </div>
+      </div>
+    </div>
+
     <Modal
       :open="showCreateModal || editingUser !== null"
       title="Пользователь"
@@ -509,7 +626,6 @@
       </template>
     </Modal>
 
-    <!-- Delete Confirmation Modal -->
     <Modal
       :open="deletingUser !== null"
       title="Удалить пользователя?"
@@ -542,7 +658,8 @@
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
+import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
+import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
@@ -564,6 +681,46 @@ const canEditAutomationEngineSettings = computed(() => {
   const role = String(currentUser.value?.role || 'viewer')
   return ['admin', 'engineer', 'operator', 'agronomist'].includes(role)
 })
+
+const profileInitial = computed(() => {
+  const name = String(currentUser.value?.name || '?').trim()
+  return name.charAt(0).toUpperCase()
+})
+
+const roleBadgeVariant = computed(() => {
+  const role = currentUser.value?.role
+  if (role === 'admin') return 'danger'
+  if (role === 'operator') return 'warning'
+  return 'info'
+})
+
+function userRoleBadgeVariant(role) {
+  if (role === 'admin') return 'danger'
+  if (role === 'operator') return 'warning'
+  return 'info'
+}
+
+const sectionCatalog = [
+  { id: 'profile', label: 'Профиль', hint: 'Имя, email, роль', icon: '👤' },
+  { id: 'notifications', label: 'Уведомления', hint: 'Тосты и алерты', icon: '🔔' },
+  { id: 'automation', label: 'Автоматика', hint: 'AE3 и runtime', icon: '⚙️', requiresAutomation: true },
+  { id: 'users', label: 'Пользователи', hint: 'Администрирование', icon: '👥', requiresAdmin: true },
+]
+
+const visibleSections = computed(() => sectionCatalog.filter((section) => {
+  if (section.requiresAdmin && !isAdmin.value) return false
+  if (section.requiresAutomation && !canEditAutomationEngineSettings.value) return false
+  return true
+}))
+
+const activeSection = ref('profile')
+
+watch(visibleSections, (sections) => {
+  if (!sections.some((section) => section.id === activeSection.value)) {
+    activeSection.value = sections[0]?.id || 'profile'
+  }
+}, { immediate: true })
+
 const automationEngineSettingsState = ref(null)
 const automationEngineSettingsSections = computed(() => {
   const sections = automationEngineSettingsState.value?.snapshot?.sections
@@ -962,7 +1119,6 @@ const doDelete = async () => {
     await api.users.delete(idToDelete)
     showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
 
-    // Обновляем локальный список пользователей без reload
     users.value = users.value.filter((u) => u.id !== idToDelete)
     deletingUser.value = null
   } catch (err) {
@@ -982,7 +1138,6 @@ const saveUser = async () => {
       }
       const updatedUser = await api.users.update(editingUser.value.id, payload)
 
-      // Обновляем пользователя в локальном списке без reload
       if (updatedUser?.id) {
         const index = users.value.findIndex((u) => u.id === updatedUser.id)
         if (index !== -1) {
@@ -997,7 +1152,6 @@ const saveUser = async () => {
     } else {
       const newUser = await api.users.create(payload)
 
-      // Добавляем нового пользователя в локальный список без reload
       if (newUser?.id) {
         users.value.push({ ...newUser, created_at: newUser.created_at })
       }
@@ -1031,12 +1185,12 @@ onMounted(() => {
   applyPreferences(currentUser.value?.preferences || null)
   loadPreferences()
   if (canEditAutomationEngineSettings.value) {
+    activeSection.value = 'automation'
     void loadAutomationEngineSettings({ silent: true })
     void loadAlertPolicies({ silent: true })
   }
 })
 
-// Сбрасываем на первую страницу при изменении фильтров
 watch([searchQuery, roleFilter], () => {
   currentPage.value = 1
 })

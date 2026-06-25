@@ -95,6 +95,11 @@ vi.mock('@/composables/useModal', () => ({
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
+  Link: {
+    name: 'Link',
+    props: ['href'],
+    template: '<a :href="href"><slot /></a>',
+  },
   usePage: () => ({
     props: {
       auth: {

@@ -111,6 +111,7 @@ describe('SystemSettings.vue', () => {
     expect(namespaces).toEqual([
       'system.automation_defaults',
       'system.command_templates',
+      'system.observability_thresholds',
       'system.process_calibration_defaults',
       'system.pump_calibration_policy',
       'system.sensor_calibration_policy',
@@ -120,6 +121,10 @@ describe('SystemSettings.vue', () => {
   it('сохраняет и сбрасывает активный namespace через authority document API', async () => {
     const wrapper = mount(SystemSettings)
 
+    await flushPromises()
+
+    const pumpTab = wrapper.find('[data-testid="system-settings-tab-pump_calibration"]')
+    await pumpTab.trigger('click')
     await flushPromises()
 
     const inputs = wrapper.findAll('input')

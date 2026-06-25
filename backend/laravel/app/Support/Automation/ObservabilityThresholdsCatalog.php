@@ -73,7 +73,7 @@ class ObservabilityThresholdsCatalog
             );
         }
 
-        return [
+        return FieldCatalogHelpBuilder::attachHelp([
             [
                 'key' => 'observability_commands',
                 'label' => 'Команды и dispatch AE3',
@@ -133,7 +133,7 @@ class ObservabilityThresholdsCatalog
                     $sec('scheduler_intent_running_warn_sec', 'Intent running — warning', 'Intent в `running` дольше порога → `scheduler_intent_running_stuck` (только warning).', 60, 86400),
                 ],
             ],
-        ];
+        ], ObservabilityThresholdsCatalog::NAMESPACE_KEY);
     }
 
     /**

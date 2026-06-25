@@ -2,6 +2,7 @@ export interface SystemSettingsField {
   path: string
   label: string
   description: string
+  help?: string
   type: 'number' | 'integer' | 'string' | 'boolean' | 'json'
   min?: number
   max?: number
@@ -13,6 +14,7 @@ export interface SystemSettingsSection {
   key: string
   label: string
   description: string
+  help?: string
   fields: SystemSettingsField[]
 }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Automation\FieldCatalogHelpBuilder;
 use App\Support\Automation\ObservabilityThresholdsCatalog;
 use InvalidArgumentException;
 
@@ -436,7 +437,7 @@ class SystemAutomationSettingsCatalog
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
         }
 
-        return self::FIELD_CATALOG[$namespace];
+        return FieldCatalogHelpBuilder::attachHelp(self::FIELD_CATALOG[$namespace], $namespace);
     }
 
     public static function flattenFields(string $namespace): array

@@ -6,11 +6,11 @@
     <section
       v-for="section in sections"
       :key="section.key"
-      class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] overflow-hidden"
+      class="settings-group-card"
     >
       <button
         type="button"
-        class="w-full flex flex-col gap-1 px-4 py-3 text-left hover:bg-[color:var(--bg-surface-strong)] transition-colors"
+        class="settings-group-card__toggle"
         :data-testid="`authority-section-toggle-${section.key}`"
         @click="toggleSection(section.key)"
       >
@@ -24,6 +24,13 @@
           <span class="text-sm font-semibold text-[color:var(--text-primary)]">
             {{ section.label }}
           </span>
+          <SettingsFieldHelp
+            v-if="section.description || section.help"
+            :title="section.label"
+            :summary="section.description"
+            :help="section.help"
+            :test-id="`authority-section-help-${section.key}`"
+          />
         </div>
         <p
           v-if="section.description"
@@ -35,30 +42,24 @@
 
       <div
         v-if="openSections.has(section.key)"
-        class="border-t border-[color:var(--border-muted)] px-4 py-4"
+        class="settings-group-card__body"
       >
-        <div class="grid gap-4 md:grid-cols-2">
-          <div
+        <div class="grid gap-3 md:grid-cols-2">
+          <SettingsFieldCard
             v-for="field in section.fields"
             :key="field.path"
-            class="space-y-1.5"
+            :label="field.label"
+            :description="field.description"
+            :help="field.help"
+            :unit="field.unit"
+            :field-id="fieldInputId(field.path)"
+            :test-id="`authority-field-card-${field.path}`"
+            :help-test-id="`authority-field-help-${field.path}`"
+            :show-description="field.type !== 'boolean'"
           >
             <label
-              class="block text-xs font-medium text-[color:var(--text-muted)]"
-              :for="fieldInputId(field.path)"
-            >
-              {{ field.label }}
-              <span
-                v-if="field.unit"
-                class="text-[10px] text-[color:var(--text-dim)] ml-1"
-              >
-                ({{ field.unit }})
-              </span>
-            </label>
-
-            <label
               v-if="field.type === 'boolean'"
-              class="flex items-center gap-2 rounded-xl border border-[color:var(--border-muted)] px-3 py-2 text-sm"
+              class="flex items-center gap-2 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] px-3 py-2.5 text-sm"
             >
               <input
                 :id="fieldInputId(field.path)"
@@ -66,7 +67,7 @@
                 type="checkbox"
                 :data-testid="`authority-field-${field.path}`"
               />
-              <span>{{ field.description }}</span>
+              <span class="text-[color:var(--text-primary)]">{{ field.description }}</span>
             </label>
 
             <textarea
@@ -89,14 +90,7 @@
               class="input-field w-full"
               :data-testid="`authority-field-${field.path}`"
             />
-
-            <p
-              v-if="field.type !== 'boolean' && field.description"
-              class="text-[11px] leading-relaxed text-[color:var(--text-dim)]"
-            >
-              {{ field.description }}
-            </p>
-          </div>
+          </SettingsFieldCard>
         </div>
       </div>
     </section>
@@ -105,6 +99,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
+import SettingsFieldHelp from '@/Components/Settings/SettingsFieldHelp.vue'
 import type { SystemSettingsSection } from '@/types/SystemSettings'
 
 const props = defineProps<{

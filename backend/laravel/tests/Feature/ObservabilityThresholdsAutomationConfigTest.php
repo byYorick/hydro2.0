@@ -20,7 +20,21 @@ class ObservabilityThresholdsAutomationConfigTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.namespace', 'system.observability_thresholds')
             ->assertJsonPath('data.meta.field_catalog.0.key', 'observability_commands')
-            ->assertJsonPath('data.payload.waiting_command_warn_sec', 120);
+            ->assertJsonPath('data.payload.waiting_command_warn_sec', 120)
+            ->assertJsonStructure([
+                'data' => [
+                    'meta' => [
+                        'field_catalog' => [
+                            [
+                                'help',
+                                'fields' => [
+                                    ['help'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]);
     }
 
     public function test_system_observability_thresholds_rejects_warn_greater_than_critical(): void

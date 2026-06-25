@@ -700,8 +700,190 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .ui-hero,
-  .ui-kpi-card {
+  .ui-kpi-card,
+  .settings-card,
+  .settings-field-card,
+  .settings-nav-item {
     animation: none;
     transition: none;
   }
+}
+
+/* ── Settings cards ( /settings, /system/settings ) ── */
+
+.settings-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 1.15rem;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--bg-surface-strong) 94%, var(--accent-cyan) 6%),
+    var(--bg-surface)
+  );
+  box-shadow: var(--shadow-card);
+}
+
+.settings-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--accent-green), color-mix(in srgb, var(--accent-cyan) 70%, transparent));
+  pointer-events: none;
+}
+
+.settings-card__header {
+  border-bottom: 1px solid var(--border-muted);
+  padding: 1rem 1.15rem 1rem 1.35rem;
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+}
+
+.settings-card__body {
+  padding: 1rem 1.15rem 1.15rem 1.35rem;
+}
+
+.settings-card__title {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.settings-card__description {
+  margin-top: 0.35rem;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.settings-field-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 0.95rem;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--bg-elevated) 88%, var(--accent-green) 12%),
+    var(--bg-surface)
+  );
+  padding: 0.9rem 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.settings-field-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 14px 30px rgba(3, 8, 14, 0.2);
+  transform: translateY(-1px);
+}
+
+.settings-field-card::after {
+  content: '';
+  position: absolute;
+  top: -45%;
+  right: -18%;
+  width: 58%;
+  height: 95%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent-green) 14%, transparent) 0%, transparent 72%);
+  pointer-events: none;
+}
+
+.settings-field-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.settings-field-card__label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-field-card__hint {
+  margin-top: 0.55rem;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.settings-group-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 1rem;
+  background: var(--bg-elevated);
+}
+
+.settings-group-card__toggle {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem 0.9rem 1.1rem;
+  text-align: left;
+  transition: background-color 0.2s ease;
+}
+
+.settings-group-card__toggle:hover {
+  background: color-mix(in srgb, var(--bg-surface-strong) 80%, transparent);
+}
+
+.settings-group-card__body {
+  border-top: 1px solid var(--border-muted);
+  padding: 1rem 1rem 1.1rem 1.1rem;
+  background: color-mix(in srgb, var(--bg-surface) 65%, transparent);
+}
+
+.settings-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border-radius: 0.85rem;
+  border: 1px solid transparent;
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-elevated);
+}
+
+.settings-nav-item--active {
+  background: var(--bg-surface-strong);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.settings-nav-item__icon {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.65rem;
+  border: 1px solid var(--border-muted);
+  background: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+  font-size: 0.95rem;
+}
+
+.settings-nav-item--active .settings-nav-item__icon {
+  border-color: color-mix(in srgb, var(--accent-green) 45%, var(--border-muted));
+  background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-elevated));
+}
+
+.settings-sticky-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border-muted);
+  margin-top: 1rem;
+  padding-top: 1rem;
+  background: color-mix(in srgb, var(--bg-elevated) 40%, transparent);
 }

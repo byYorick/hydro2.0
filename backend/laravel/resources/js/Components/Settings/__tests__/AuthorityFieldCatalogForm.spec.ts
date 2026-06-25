@@ -13,6 +13,7 @@ const sections: SystemSettingsSection[] = [
         path: 'waiting_command_warn_sec',
         label: 'Waiting command — warning',
         description: 'Ожидание command_response.',
+        help: 'Подробный текст подсказки для оператора.',
         type: 'integer',
         min: 30,
         max: 3600,
@@ -37,5 +38,7 @@ describe('AuthorityFieldCatalogForm', () => {
     expect(wrapper.text()).toContain('Пороги команд AE3.')
     expect(wrapper.text()).toContain('Ожидание command_response.')
     expect(wrapper.get('[data-testid="authority-field-waiting_command_warn_sec"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="authority-field-help-waiting_command_warn_sec"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="authority-section-help-observability_commands"]').exists()).toBe(true)
   })
 })
