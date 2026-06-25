@@ -96,7 +96,7 @@
     </ul>
 
     <p
-      v-else-if="observability.runtime?.task_is_active"
+      v-else-if="observability?.runtime?.task_is_active"
       class="text-xs text-emerald-300/90"
     >
       Явных признаков зависания не обнаружено. Этап выполняется в пределах ожидаемых порогов.

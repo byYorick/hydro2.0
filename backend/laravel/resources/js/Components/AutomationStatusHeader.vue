@@ -34,6 +34,12 @@
               {{ displayElapsedLabel }}
             </span>
             <span
+              v-if="displayRemainingLabel"
+              class="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/10 px-2.5 py-1 font-mono text-xs tabular-nums text-amber-200"
+            >
+              {{ displayRemainingLabel }}
+            </span>
+            <span
               v-if="showProgressPercent && progressPercent > 0"
               class="text-xs text-[color:var(--text-muted)]"
             >
@@ -54,7 +60,7 @@
         class="mt-4 space-y-1.5"
       >
         <div class="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-[color:var(--text-dim)]">
-          <span>Ход workflow</span>
+          <span>{{ progressBarLabel }}</span>
           <span v-if="progressPercent > 0">{{ progressPercent }}%</span>
         </div>
         <div class="h-1.5 overflow-hidden rounded-full bg-[color:var(--surface-muted)]/70">
@@ -132,7 +138,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import StatusIndicator from '@/Components/StatusIndicator.vue'
-import { formatAutomationDuration } from '@/utils/automationStatusDisplay'
+import { formatAutomationDuration, formatAutomationElapsedLabel, formatAutomationRemainingLabel } from '@/utils/automationStatusDisplay'
 import type { AutomationStateType, WorkflowStageStatus, WorkflowStageView } from '@/types/Automation'
 
 type PipelineStageVisualStatus = WorkflowStageStatus | 'manual' | 'canceled' | 'skipped'
@@ -146,7 +152,9 @@ interface Props {
   isProcessActive: boolean
   progressSummary: string
   displayElapsedSec: number
+  displayRemainingSec?: number | null
   progressPercent: number
+  progressBasis?: string | null
   showProgressPercent: boolean
   errorMessage: string | null
   warningMessage: string | null
@@ -156,7 +164,11 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const displayElapsedLabel = computed(() => formatAutomationDuration(props.displayElapsedSec))
+const displayElapsedLabel = computed(() => formatAutomationElapsedLabel(props.displayElapsedSec))
+const displayRemainingLabel = computed(() => formatAutomationRemainingLabel(props.displayRemainingSec))
+const progressBarLabel = computed(() =>
+  props.progressBasis === 'irrigation_deadline' ? 'Ход полива' : 'Ход workflow',
+)
 
 function workflowStageStatusLabel(status: PipelineStageVisualStatus): string {
   if (status === 'running') return 'Сейчас'

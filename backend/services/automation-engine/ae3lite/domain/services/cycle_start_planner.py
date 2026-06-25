@@ -196,6 +196,13 @@ class CycleStartPlanner:
             ),
         )
 
+        self._apply_irrigation_start_actuation(
+            task=task,
+            runtime=runtime,
+            named_plans=named_plans,
+            actuators=snapshot.actuators,
+        )
+
         # Разрешить dosing actuator'ы для модуля коррекции.
         # Это опционально: если канала нет в `snapshot.actuators`, correction executor
         # выбросит `PlannerConfigurationError` уже во время выполнения, а не на этапе планирования.
@@ -444,6 +451,48 @@ class CycleStartPlanner:
         if locked_bundle_revision != "":
             runtime_copy["bundle_revision"] = locked_bundle_revision
         return runtime_copy
+
+    def _resolve_irrigation_duration_sec(self, *, task: AutomationTask, runtime: Mapping[str, Any]) -> int:
+        raw = getattr(task, "irrigation_requested_duration_sec", None)
+        if raw is None:
+            irrigation = runtime.get("irrigation_execution")
+            raw = irrigation.get("duration_sec") if isinstance(irrigation, Mapping) else None
+        try:
+            return max(1, min(3600, int(raw)))
+        except (TypeError, ValueError):
+            irrigation = runtime.get("irrigation_execution")
+            fallback = irrigation.get("duration_sec") if isinstance(irrigation, Mapping) else None
+            try:
+                return max(1, min(3600, int(fallback)))
+            except (TypeError, ValueError):
+                return 120
+
+    def _apply_irrigation_start_actuation(
+        self,
+        *,
+        task: AutomationTask,
+        runtime: Mapping[str, Any],
+        named_plans: dict[str, tuple[PlannedCommand, ...]],
+        actuators: Sequence[ZoneActuatorRef],
+    ) -> None:
+        if str(getattr(task, "task_type", "") or "").strip().lower() != "irrigation_start":
+            return
+
+        duration_sec = self._resolve_irrigation_duration_sec(task=task, runtime=runtime)
+        duration_ms = max(1000, min(3_600_000, int(duration_sec) * 1000))
+        steps: list[tuple[str, str, dict[str, Any]]] = [
+            ("valve_solution_supply", "set_relay", {"state": True}),
+            ("valve_irrigation", "set_relay", {"state": True}),
+            ("pump_main", "run_pump", {"duration_ms": duration_ms}),
+        ]
+        named_plans["irrigation_start"] = tuple(
+            self._build_named_step(
+                raw_step={"channel": channel, "cmd": cmd, "params": params},
+                step_no=index,
+                actuators=actuators,
+            )
+            for index, (channel, cmd, params) in enumerate(steps, start=1)
+        )
 
     def _build_named_step(
         self,

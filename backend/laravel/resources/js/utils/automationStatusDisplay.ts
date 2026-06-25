@@ -26,6 +26,16 @@ export function formatAutomationDuration(rawSeconds: number | null | undefined):
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
+export function formatAutomationElapsedLabel(rawSeconds: number | null | undefined): string {
+  const duration = formatAutomationDuration(rawSeconds)
+  return duration ? `Прошло ${duration}` : ''
+}
+
+export function formatAutomationRemainingLabel(rawSeconds: number | null | undefined): string {
+  const duration = formatAutomationDuration(rawSeconds)
+  return duration ? `осталось ${duration}` : ''
+}
+
 export function resolveStageHeadline(
   state: AutomationState | null,
   fallbackLabel: string,
@@ -95,9 +105,9 @@ export function buildProgressSummary(params: {
   }
   const eta = Number(estimatedCompletionSec ?? 0)
   if (eta > 0) {
-    const etaLabel = formatAutomationDuration(eta)
+    const etaLabel = formatAutomationRemainingLabel(eta)
     if (etaLabel) {
-      parts.push(`~${etaLabel}`)
+      parts.push(etaLabel)
     }
   }
 

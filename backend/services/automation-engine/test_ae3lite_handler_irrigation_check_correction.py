@@ -226,6 +226,148 @@ async def test_irrigation_check_deadline_reached_does_not_probe_before_stop(monk
 
 
 @pytest.mark.asyncio
+async def test_irrigation_check_stops_continuous_pump_after_requested_duration(monkeypatch) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    monitor = _RuntimeMonitorStub(
+        irr_state={
+            "has_snapshot": True,
+            "is_stale": False,
+            "sample_age_sec": 0.0,
+            "created_at": now,
+            "cmd_id": "probe-1",
+            "snapshot": {
+                "valve_solution_supply": True,
+                "valve_irrigation": True,
+                "pump_main": True,
+            },
+        },
+    )
+    handler = IrrigationCheckHandler(
+        runtime_monitor=monitor,
+        command_gateway=_ProbeGatewayStub(),
+        task_repository=_TaskRepoStub(),
+    )
+
+    async def _probe(**_kwargs):
+        return None
+
+    monkeypatch.setattr(handler, "_probe_irr_state", _probe)
+
+    from ae3lite.domain.entities.planned_command import PlannedCommand
+
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        irrigation_requested_duration_sec=120,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=900),
+            stage_retry_count=0,
+            stage_entered_at=now - timedelta(seconds=130),
+        ),
+    )
+    plan = _plan(
+        named_plans={
+            "irrigation_start": (
+                PlannedCommand(
+                    step_no=1,
+                    node_uid="nd-irrig-1",
+                    channel="pump_main",
+                    payload={"cmd": "set_relay", "params": {"state": True}},
+                ),
+            ),
+        },
+        level_poll_interval_sec=5,
+        irrigation_execution={"duration_sec": 120, "correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": False},
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+
+    out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+
+    assert out.kind == "transition"
+    assert out.next_stage == "irrigation_pump_stop"
+
+
+@pytest.mark.asyncio
+async def test_irrigation_check_expects_pump_off_after_timed_run_pump_start(monkeypatch) -> None:
+    handler = IrrigationCheckHandler(
+        runtime_monitor=_RuntimeMonitorStub(
+            irr_state={
+                "has_snapshot": True,
+                "is_stale": False,
+                "sample_age_sec": 0.0,
+                "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                "cmd_id": "probe-1",
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_irrigation": True,
+                    "pump_main": False,
+                },
+            },
+        ),
+        command_gateway=_ProbeGatewayStub(),
+        task_repository=_TaskRepoStub(),
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _probe_backoff(**kwargs):
+        captured["expected"] = dict(kwargs.get("expected") or {})
+        return None
+
+    monkeypatch.setattr(handler, "_probe_irr_state_with_backoff", _probe_backoff)
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from ae3lite.domain.entities.planned_command import PlannedCommand
+
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        irrigation_requested_duration_sec=120,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=900),
+            stage_retry_count=0,
+            stage_entered_at=now,
+        ),
+    )
+    plan = _plan(
+        named_plans={
+            "irrigation_start": (
+                PlannedCommand(
+                    step_no=1,
+                    node_uid="nd-irrig-1",
+                    channel="pump_main",
+                    payload={"cmd": "run_pump", "params": {"duration_ms": 120_000}},
+                ),
+            ),
+        },
+        level_poll_interval_sec=5,
+        irrigation_execution={"duration_sec": 120, "correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": False},
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+
+    out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+
+    assert out.kind == "poll"
+    assert captured["expected"] == {
+        "valve_solution_supply": True,
+        "valve_irrigation": True,
+        "pump_main": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_irrigation_check_uses_probe_snapshot_for_solution_min() -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     monitor = _RuntimeMonitorStub(
@@ -403,6 +545,11 @@ async def test_irrigation_check_stale_level_still_fails_when_recheck_is_stale(mo
         task_repository=_TaskRepoStub(),
     )
     monkeypatch.setattr("ae3lite.application.handlers.base.asyncio.sleep", AsyncMock())
+
+    async def _passthrough_remap(**kwargs):
+        return kwargs["error_code"], kwargs["error_message"]
+
+    monkeypatch.setattr(handler, "_remap_execution_error", _passthrough_remap)
     task = SimpleNamespace(
         id=1,
         zone_id=7,

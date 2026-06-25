@@ -48,6 +48,8 @@ export interface AutomationState {
     stage_entered_at?: string | null
     elapsed_sec: number
     progress_percent: number
+    progress_basis?: string | null
+    stage_deadline_remaining_sec?: number | null
     failed?: boolean
     error_code?: string | null
     error_message?: string | null

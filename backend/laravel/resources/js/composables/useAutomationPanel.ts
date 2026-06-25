@@ -322,6 +322,11 @@ export function useAutomationPanel(
         stage_entered_at: (source.state_details as Record<string, unknown> | undefined)?.stage_entered_at as string | null ?? null,
         elapsed_sec: Number(source.state_details?.elapsed_sec ?? 0),
         progress_percent: clampPercent(source.state_details?.progress_percent ?? 0),
+        progress_basis: (source.state_details as Record<string, unknown> | undefined)?.progress_basis as string | null ?? null,
+        stage_deadline_remaining_sec: (() => {
+          const raw = (source.state_details as Record<string, unknown> | undefined)?.stage_deadline_remaining_sec
+          return raw == null ? null : Number(raw)
+        })(),
         failed: Boolean(source.state_details?.failed ?? false),
         error_code: (source.state_details as Record<string, unknown> | undefined)?.error_code as string | null ?? null,
         error_message: (source.state_details as Record<string, unknown> | undefined)?.error_message as string | null ?? null,
@@ -661,6 +666,24 @@ export function useAutomationPanel(
     }),
   )
 
+  const displayRemainingSec = computed(() => {
+    const fromDetails = automationState.value?.state_details.stage_deadline_remaining_sec
+    if (fromDetails != null && Number.isFinite(fromDetails) && fromDetails >= 0) {
+      return fromDetails
+    }
+    const fromObservability = automationState.value?.observability?.runtime?.stage_deadline_remaining_sec
+    if (fromObservability != null && Number.isFinite(fromObservability) && fromObservability >= 0) {
+      return fromObservability
+    }
+    const eta = automationState.value?.estimated_completion_sec
+    if (eta != null && eta > 0) {
+      return eta
+    }
+    return null
+  })
+
+  const progressBasis = computed(() => automationState.value?.state_details.progress_basis ?? null)
+
   const showProgressPercent = computed(() =>
     shouldShowProgressPercent(progressPercent.value, isProcessActive.value),
   )
@@ -819,6 +842,8 @@ export function useAutomationPanel(
     stateVariant,
     isProcessActive,
     displayElapsedSec,
+    displayRemainingSec,
+    progressBasis,
     progressPercent,
     showProgressPercent,
     cleanTankLevel,

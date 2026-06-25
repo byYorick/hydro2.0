@@ -12,6 +12,7 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 _MAX_CORRECTION_ATTEMPTS: int = 500
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
+    "irrigation_pump_stop": ("pump_main",),
     "irrigation_stop": ("pump_main", "valve_irrigation", "valve_solution_supply"),
     "clean_fill_start": ("valve_clean_fill",),
     "clean_fill_stop": ("valve_clean_fill",),
@@ -30,6 +31,9 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
             {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+        ],
+        "irrigation_pump_stop": [
+            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
         ],
         "irrigation_stop": [
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
@@ -315,6 +319,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
 
     for plan_name in (
         "irrigation_start",
+        "irrigation_pump_stop",
         "irrigation_stop",
         "clean_fill_start",
         "clean_fill_stop",

@@ -40,6 +40,8 @@
         :is-process-active="isProcessActive"
         :progress-summary="progressSummary"
         :display-elapsed-sec="displayElapsedSec"
+        :display-remaining-sec="displayRemainingSec"
+        :progress-basis="progressBasis"
         :progress-percent="progressPercent"
         :show-progress-percent="showProgressPercent"
         :error-message="null"
@@ -143,6 +145,8 @@ const {
   stateVariant,
   isProcessActive,
   displayElapsedSec,
+  displayRemainingSec,
+  progressBasis,
   progressPercent,
   showProgressPercent,
   cleanTankLevel,

@@ -175,16 +175,18 @@ async def test_idle_state_includes_non_blocking_solution_tank_guard_reason() -> 
 
 async def test_state_details_include_elapsed_and_progress_from_stage_entered_at() -> None:
     entered = NOW.replace(tzinfo=None) - timedelta(seconds=125)
+    deadline = entered + timedelta(seconds=1020)
     task = SimpleNamespace(
         id=31,
         status="running",
         created_at=entered,
         error_code=None,
         error_message=None,
+        irrigation_requested_duration_sec=120,
         workflow=WorkflowState(
             current_stage="irrigation_check",
             workflow_phase="irrigating",
-            stage_deadline_at=None,
+            stage_deadline_at=deadline,
             stage_retry_count=0,
             stage_entered_at=entered,
             clean_fill_cycle=0,
@@ -207,7 +209,10 @@ async def test_state_details_include_elapsed_and_progress_from_stage_entered_at(
     result = await use_case.run(zone_id=3)
 
     assert result["state_details"]["elapsed_sec"] == 125
-    assert result["state_details"]["progress_percent"] > 0
+    assert result["state_details"]["progress_basis"] == "irrigation_deadline"
+    assert result["state_details"]["progress_percent"] == 12  # 125/1020
+    assert result["state_details"]["stage_deadline_remaining_sec"] == 895
+    assert result["estimated_completion_sec"] == 895
     assert result["current_stage_label"] == "Полив"
 
 

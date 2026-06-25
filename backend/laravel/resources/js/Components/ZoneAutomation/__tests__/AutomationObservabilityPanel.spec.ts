@@ -100,6 +100,17 @@ describe('AutomationObservabilityPanel', () => {
     expect(badge.text()).toContain('Критично')
   })
 
+  it('renders without error when automation state is null', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: null,
+      },
+    })
+
+    expect(wrapper.find('[data-testid="automation-observability-panel"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Явных признаков зависания не обнаружено')
+  })
+
   it('shows healthy message when task is active without hints', () => {
     const wrapper = mount(AutomationObservabilityPanel, {
       props: {

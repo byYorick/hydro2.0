@@ -3,6 +3,8 @@ import {
   buildProgressSummary,
   computeDisplayElapsedSec,
   formatAutomationDuration,
+  formatAutomationElapsedLabel,
+  formatAutomationRemainingLabel,
   resolveStageHeadline,
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
@@ -30,9 +32,14 @@ describe('automationStatusDisplay', () => {
     expect(buildProgressSummary({
       progressPercent: 42,
       elapsedSec: 125,
-      estimatedCompletionSec: null,
+      estimatedCompletionSec: 895,
       isProcessActive: true,
-    })).toBe('42% · 02:05')
+    })).toBe('42% · 02:05 · осталось 14:55')
+  })
+
+  it('форматирует подписи прошло/осталось', () => {
+    expect(formatAutomationElapsedLabel(125)).toBe('Прошло 02:05')
+    expect(formatAutomationRemainingLabel(895)).toBe('осталось 14:55')
   })
 
   it('предпочитает current_stage_label для заголовка', () => {

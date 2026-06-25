@@ -167,6 +167,9 @@ _WORKFLOW_PHASE_PROGRESS: dict[str, int] = {
     "irrig_recirc": 95,
 }
 
+# Подэтапы полива: progress_percent считаем по stage_deadline, а не по индексу в cycle_start.
+_IRRIGATION_STAGE_PREFIX = "irrigation_"
+
 
 class GetZoneAutomationStateUseCase:
     """Возвращает полный payload зоны в формате AutomationState.
@@ -431,6 +434,44 @@ class GetZoneAutomationStateUseCase:
         phase_key = str(workflow_phase or "").strip().lower()
         return int(_WORKFLOW_PHASE_PROGRESS.get(phase_key, 0))
 
+    def _timed_irrigation_metrics(
+        self,
+        *,
+        stage_entered_at: datetime | None,
+        stage_deadline_at: datetime | None,
+        irrigation_requested_duration_sec: Any,
+        current_stage: str,
+    ) -> tuple[int | None, int | None]:
+        """Прогресс полива по elapsed/deadline вместо индекса workflow (82% на irrigation_check)."""
+        cs_key = str(current_stage or "").strip().lower()
+        if not cs_key.startswith(_IRRIGATION_STAGE_PREFIX):
+            return None, None
+        if not isinstance(stage_entered_at, datetime):
+            return None, None
+
+        entered_naive = self._normalize_utc_naive(stage_entered_at)
+        now = self._normalize_utc_naive(self._now())
+        elapsed = max(0, int((now - entered_naive).total_seconds()))
+
+        total_sec: int | None = None
+        if isinstance(stage_deadline_at, datetime):
+            deadline_naive = self._normalize_utc_naive(stage_deadline_at)
+            total_sec = max(1, int((deadline_naive - entered_naive).total_seconds()))
+        else:
+            try:
+                requested = int(irrigation_requested_duration_sec)
+            except (TypeError, ValueError):
+                requested = 0
+            if requested > 0:
+                total_sec = max(1, requested)
+
+        if total_sec is None:
+            return None, None
+
+        remaining = max(0, total_sec - elapsed)
+        progress = min(99, max(0, int((elapsed / total_sec) * 100)))
+        return progress, remaining
+
     def _elapsed_sec_since(self, entered_at: datetime | None) -> int:
         if not isinstance(entered_at, datetime):
             return 0
@@ -456,20 +497,40 @@ class GetZoneAutomationStateUseCase:
         current_stage: str = "",
         workflow_phase: str = "idle",
         workflow_started_at: datetime | None = None,
+        stage_deadline_at: datetime | None = None,
+        irrigation_requested_duration_sec: Any = None,
     ) -> dict[str, Any]:
         anchor = stage_entered_at or task_created_at or workflow_started_at
-        return {
+        timed_progress, remaining_sec = self._timed_irrigation_metrics(
+            stage_entered_at=stage_entered_at,
+            stage_deadline_at=stage_deadline_at,
+            irrigation_requested_duration_sec=irrigation_requested_duration_sec,
+            current_stage=current_stage,
+        )
+        if is_failed:
+            progress_percent = 0
+        elif timed_progress is not None:
+            progress_percent = timed_progress
+        else:
+            progress_percent = self._estimate_progress_percent(
+                current_stage=current_stage,
+                workflow_phase=workflow_phase,
+            )
+
+        details: dict[str, Any] = {
             "started_at": self._iso_or_none(anchor),
             "stage_entered_at": self._iso_or_none(stage_entered_at),
             "elapsed_sec": self._elapsed_sec_since(anchor),
-            "progress_percent": 0 if is_failed else self._estimate_progress_percent(
-                current_stage=current_stage,
-                workflow_phase=workflow_phase,
-            ),
+            "progress_percent": progress_percent,
             "failed": is_failed,
             "error_code": error_code if is_failed else None,
             "error_message": error_message if is_failed else None,
         }
+        if timed_progress is not None:
+            details["progress_basis"] = "irrigation_deadline"
+            details["stage_deadline_at"] = self._iso_or_none(stage_deadline_at)
+            details["stage_deadline_remaining_sec"] = remaining_sec
+        return details
 
     def _should_overlay_failed_task_on_workflow(
         self,
@@ -631,6 +692,18 @@ class GetZoneAutomationStateUseCase:
             current_stage=str(current_stage) if current_stage is not None else None,
         )
 
+        state_details = self._build_state_details(
+            is_failed=is_failed,
+            error_code=error_code,
+            error_message=error_message,
+            stage_entered_at=getattr(wf, "stage_entered_at", None) if wf is not None else None,
+            task_created_at=getattr(task, "created_at", None),
+            current_stage=str(current_stage or ""),
+            workflow_phase=workflow_phase,
+            stage_deadline_at=getattr(wf, "stage_deadline_at", None) if wf is not None else None,
+            irrigation_requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
+        )
+
         return self._attach_observability(
             {
             "zone_id": zone_id,
@@ -641,15 +714,7 @@ class GetZoneAutomationStateUseCase:
                 current_stage=str(current_stage) if current_stage is not None else "",
                 is_terminal_failed=is_failed,
             ),
-            "state_details": self._build_state_details(
-                is_failed=is_failed,
-                error_code=error_code,
-                error_message=error_message,
-                stage_entered_at=getattr(wf, "stage_entered_at", None) if wf is not None else None,
-                task_created_at=getattr(task, "created_at", None),
-                current_stage=str(current_stage or ""),
-                workflow_phase=workflow_phase,
-            ),
+            "state_details": state_details,
             "workflow_phase": workflow_phase,
             "current_stage": current_stage,
             "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),
@@ -679,7 +744,7 @@ class GetZoneAutomationStateUseCase:
             "active_processes": active_processes,
             "timeline": timeline,
             "next_state": None,
-            "estimated_completion_sec": None,
+            "estimated_completion_sec": state_details.get("stage_deadline_remaining_sec"),
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
             "decision": self._build_decision(task),
