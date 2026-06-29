@@ -139,6 +139,100 @@ async def test_workflow_state_stale_check_normalizes_aware_timestamps_to_utc() -
     assert use_case._workflow_state_is_stale(workflow_state=workflow_state, last_task=last_task) is True
 
 
+async def test_workflow_state_not_stale_after_failure_rollback_marker() -> None:
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=lambda *_args, **_kwargs: [],
+    )
+    same_ts = datetime(2026, 3, 14, 12, 0, 0, tzinfo=timezone.utc)
+    workflow_state = ZoneWorkflow(
+        zone_id=6,
+        workflow_phase="ready",
+        version=55,
+        scheduler_task_id=None,
+        started_at=same_ts.replace(tzinfo=None),
+        updated_at=same_ts.replace(tzinfo=None),
+        payload={
+            "ae3_cycle_start_stage": "irrigation_start",
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": 5,
+        },
+    )
+    last_task = SimpleNamespace(
+        id=5,
+        is_active=False,
+        status="failed",
+        updated_at=same_ts,
+    )
+
+    assert use_case._workflow_state_is_stale(workflow_state=workflow_state, last_task=last_task) is False
+
+
+async def test_state_prefers_ready_workflow_after_irrigation_failure_rollback() -> None:
+    same_ts = datetime(2026, 6, 29, 9, 12, 14, tzinfo=timezone.utc)
+    workflow = ZoneWorkflow(
+        zone_id=6,
+        workflow_phase="ready",
+        version=55,
+        scheduler_task_id=None,
+        started_at=same_ts.replace(tzinfo=None),
+        updated_at=same_ts.replace(tzinfo=None),
+        payload={
+            "ae3_cycle_start_stage": "irrigation_start",
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": 5,
+        },
+    )
+    last_task = SimpleNamespace(
+        id=5,
+        status="failed",
+        is_active=False,
+        error_code="ae3_required_node_offline",
+        error_message="Узел зоны недоступен",
+        updated_at=same_ts.replace(tzinfo=None),
+        created_at=same_ts.replace(tzinfo=None),
+        completed_at=same_ts.replace(tzinfo=None),
+        workflow=SimpleNamespace(
+            workflow_phase="irrigating",
+            current_stage="irrigation_start",
+            stage_entered_at=same_ts.replace(tzinfo=None),
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            clean_fill_cycle=None,
+            pending_manual_step=None,
+        ),
+        topology="two_tank_drip_substrate_trays",
+        correction=None,
+        irrigation_requested_duration_sec=None,
+        irrigation_decision_outcome=None,
+        irrigation_decision_reason_code=None,
+        irrigation_decision_strategy=None,
+        irrigation_decision_config=None,
+        irrigation_bundle_revision=None,
+        irrigation_decision_degraded=None,
+    )
+
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "control_mode" in query:
+            return [{"control_mode": "auto"}]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(last_task=last_task),
+        workflow_repository=_WorkflowRepo(workflow),
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=6)
+
+    assert result["workflow_phase"] == "ready"
+    assert result["state_details"]["failed"] is True
+    assert result["state_details"]["error_code"] == "ae3_required_node_offline"
+
+
 async def test_idle_state_includes_non_blocking_solution_tank_guard_reason() -> None:
     guard = _Guard(
         result={

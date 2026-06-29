@@ -106,6 +106,13 @@ class AlertMessageComposer
             }
         }
 
+        if ($code === 'biz_node_offline') {
+            $translatedNodeOffline = $this->codeTranslator->translateByCode($code, $rawMessage, $details);
+            if ($translatedNodeOffline !== null) {
+                return $translatedNodeOffline;
+            }
+        }
+
         if ($rawMessage !== null && $this->accessor->looksLocalized($rawMessage)) {
             return $rawMessage;
         }

@@ -1032,10 +1032,19 @@ class GetZoneAutomationStateUseCase:
         current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
         return workflow_phase in {"tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"} or current_stage == "startup"
 
+    def _workflow_failure_rollback_applied(self, workflow_state: Optional[Any]) -> bool:
+        if workflow_state is None:
+            return False
+        payload = getattr(workflow_state, "payload", None)
+        normalized_payload = payload if isinstance(payload, Mapping) else {}
+        return bool(normalized_payload.get("ae3_failure_rollback"))
+
     def _workflow_state_is_stale(self, *, workflow_state: Optional[Any], last_task: Optional[Any]) -> bool:
         if workflow_state is None or last_task is None:
             return False
         if bool(getattr(last_task, "is_active", False)):
+            return False
+        if self._workflow_failure_rollback_applied(workflow_state):
             return False
 
         scheduler_task_id = str(getattr(workflow_state, "scheduler_task_id", "") or "").strip()

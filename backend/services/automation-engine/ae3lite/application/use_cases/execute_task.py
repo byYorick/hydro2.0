@@ -1136,6 +1136,14 @@ class ExecuteTaskUseCase:
         if status != "failed":
             return
         await self._sync_workflow_failure_state(task=task, now=now)
+        error_code = str(getattr(task, "error_code", "") or "ae3_task_execution_failed").strip() or "ae3_task_execution_failed"
+        error_message = str(getattr(task, "error_message", "") or "Задача завершилась с ошибкой")
+        await self._emit_task_failed_alert(
+            task=task,
+            error_code=error_code,
+            error_message=error_message,
+            now=now,
+        )
 
     async def _sync_workflow_failure_state(self, *, task: Any, now: datetime) -> None:
         if self._workflow_repository is None:
@@ -1252,8 +1260,6 @@ class ExecuteTaskUseCase:
                 "irr_state_stale",
                 "command_timeout",
             }:
-                alert_code = "biz_node_offline"
-                alert_severity = "error"
                 if isinstance(extra_details, Mapping):
                     offline_nodes = extra_details.get("offline_required_nodes")
                     if isinstance(offline_nodes, list) and offline_nodes:

@@ -89,6 +89,8 @@ class AlertCodeTranslator
     {
         return match ($code) {
             'biz_ae3_task_failed' => $this->translateAe3TaskFailed($rawMessage, $details),
+            'biz_node_offline' => $this->translateBizNodeOffline($rawMessage, $details),
+            'infra_mqtt_down' => $this->translateInfraMqttDown($rawMessage, $details),
             'biz_correction_exhausted' => 'Цикл коррекции исчерпал все настроенные попытки.',
             'biz_clean_fill_timeout' => 'Превышено время ожидания заполнения бака чистой водой после всех циклов повтора.',
             'biz_solution_fill_timeout' => 'Превышено время ожидания заполнения бака раствором до завершения этапа.',
@@ -149,6 +151,7 @@ class AlertCodeTranslator
         $topology = $this->accessor->stringValue($details, ['topology']);
         $corrStep = $this->accessor->stringValue($details, ['corr_step']);
         $retryCount = $this->accessor->integerValue($details, ['stage_retry_count']);
+        $zonePrefix = $this->formatZoneContextPrefix($details);
 
         $reasonCode = $this->alertCatalogService->normalizeCode($details['error_code'] ?? null);
         $reasonRaw = $this->accessor->stringValue($details, ['error_message', 'message', 'reason', 'msg']) ?? $message;
@@ -208,7 +211,74 @@ class AlertCodeTranslator
         }
         $summary .= $context !== [] ? ': '.implode(', ', $context).'.' : '.';
 
-        return $summary.' Причина: '.$reason;
+        return $zonePrefix.$summary.' Причина: '.$reason;
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    public function translateBizNodeOffline(?string $message, array $details): string
+    {
+        $zonePrefix = $this->formatZoneContextPrefix($details);
+        $nodeUid = $this->accessor->stringValue($details, ['node_uid', 'uid']);
+        $stage = $this->accessor->stringValue($details, ['stage', 'workflow_phase']);
+        $reason = $this->accessor->stringValue($details, ['message', 'error_message', 'reason']) ?? $message;
+
+        $parts = [$zonePrefix.'Узел недоступен (offline)'];
+        if ($nodeUid !== null) {
+            $parts[0] .= ': '.$nodeUid;
+        }
+        if ($stage !== null && $stage !== '') {
+            $parts[] = 'этап '.$stage;
+        }
+        $headline = implode(', ', $parts).'.';
+        if ($reason !== null && $this->accessor->looksLocalized($reason)) {
+            return $headline.' '.$reason;
+        }
+        if ($reason !== null && trim($reason) !== '') {
+            $translated = $this->translateRawMessage($reason) ?? $reason;
+
+            return $headline.' '.$translated;
+        }
+
+        return $headline.' Проверьте питание, Wi‑Fi и MQTT.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    public function translateInfraMqttDown(?string $message, array $details): string
+    {
+        $service = $this->accessor->stringValue($details, ['service', 'component']) ?? 'MQTT';
+        $zoneId = $this->accessor->integerValue($details, ['zone_id']);
+        if ($zoneId !== null && $zoneId > 0) {
+            return sprintf('Инфраструктура: потеряно соединение с %s (зона %d).', $service, $zoneId);
+        }
+
+        return sprintf('Инфраструктура: потеряно соединение с %s.', $service);
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    private function formatZoneContextPrefix(array $details): string
+    {
+        $zoneId = $this->accessor->integerValue($details, ['zone_id']);
+        $zoneName = $this->accessor->stringValue($details, ['zone_name']);
+        $zoneUid = $this->accessor->stringValue($details, ['zone_uid']);
+
+        if ($zoneId === null || $zoneId <= 0) {
+            return '';
+        }
+
+        $label = 'Зона '.$zoneId;
+        if ($zoneName !== null && $zoneName !== '') {
+            $label .= ' («'.$zoneName.'»)';
+        } elseif ($zoneUid !== null && $zoneUid !== '') {
+            $label .= ' ('.$zoneUid.')';
+        }
+
+        return $label.': ';
     }
 
     /**

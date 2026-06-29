@@ -79,10 +79,19 @@ class Alert extends Model
         /** @var AlertLocalizationService $localizer */
         $localizer = app(AlertLocalizationService::class);
 
+        $details = is_array($this->details) ? $this->details : [];
+        if ($this->zone_id !== null) {
+            $details['zone_id'] ??= (int) $this->zone_id;
+            if ($this->relationLoaded('zone') && $this->zone !== null) {
+                $details['zone_name'] ??= (string) ($this->zone->name ?? '');
+                $details['zone_uid'] ??= (string) ($this->zone->uid ?? '');
+            }
+        }
+
         return $localizer->present(
             code: is_string($this->code) ? $this->code : null,
             type: is_string($this->type) ? $this->type : null,
-            details: is_array($this->details) ? $this->details : [],
+            details: $details,
             source: is_string($this->source) ? $this->source : null,
         );
     }
