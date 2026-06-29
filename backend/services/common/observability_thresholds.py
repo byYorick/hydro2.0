@@ -17,6 +17,10 @@ STAGE_KEYS: tuple[str, ...] = (
     "decision_gate",
 )
 
+DEADLINE_DRIVEN_STAGE_KEYS: frozenset[str] = frozenset(
+    {"irrigation_check", "irrigation_recovery_check"},
+)
+
 _DEFAULTS_PATH = Path(__file__).with_name("observability_thresholds_defaults.json")
 
 
@@ -51,6 +55,38 @@ def stage_threshold_pair(cfg: Mapping[str, int], stage: str) -> tuple[int, int] 
     return warn, critical
 
 
+def should_skip_stage_elapsed_long_hint(
+    *,
+    stage: str,
+    stage_deadline_remaining_sec: int | None,
+) -> bool:
+    """Poll-based полив/recovery может длиться до stage_deadline — не сравниваем с типовым warn."""
+    normalized = str(stage or "").strip().lower()
+    if normalized not in DEADLINE_DRIVEN_STAGE_KEYS:
+        return False
+    if stage_deadline_remaining_sec is None:
+        return False
+    return int(stage_deadline_remaining_sec) > 0
+
+
+def should_skip_correction_substep_stalled_hint(
+    *,
+    correction_step: str,
+    correction_wait_remaining_sec: int | None,
+    substep_elapsed_sec: int,
+    stabilization_sec: int | None = None,
+) -> bool:
+    """corr_wait_* — ожидаемое окно наблюдения; не сравниваем с elapsed всего parent-stage."""
+    step = str(correction_step or "").strip().lower()
+    if not step.startswith("corr_wait"):
+        return False
+    if correction_wait_remaining_sec is not None and int(correction_wait_remaining_sec) > 0:
+        return True
+    if step == "corr_wait_stable" and stabilization_sec is not None and int(stabilization_sec) > 0:
+        return substep_elapsed_sec < int(stabilization_sec)
+    return False
+
+
 async def load_system_observability_thresholds(fetch_fn: Any | None) -> dict[str, int]:
     if fetch_fn is None:
         return resolved_thresholds(None)
@@ -82,9 +118,12 @@ async def load_system_observability_thresholds(fetch_fn: Any | None) -> dict[str
 
 
 __all__ = [
+    "DEADLINE_DRIVEN_STAGE_KEYS",
     "STAGE_KEYS",
     "load_builtin_defaults",
     "load_system_observability_thresholds",
     "resolved_thresholds",
+    "should_skip_correction_substep_stalled_hint",
+    "should_skip_stage_elapsed_long_hint",
     "stage_threshold_pair",
 ]

@@ -86,8 +86,8 @@ function formatMetric(value: number | null, suffix = ''): string {
 <style scoped>
 .metric-tile {
   border-radius: 0.65rem;
-  border: 1px solid rgb(100 116 139 / 0.25);
-  background: rgb(15 23 42 / 0.2);
+  border: 1px solid color-mix(in srgb, var(--border-muted) 85%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
   padding: 0.5rem 0.65rem;
 }
 
@@ -95,7 +95,7 @@ function formatMetric(value: number | null, suffix = ''): string {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-dim);
+  color: var(--text-muted);
 }
 
 .metric-tile dd {

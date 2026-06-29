@@ -248,13 +248,7 @@ class StartupRecoveryUseCase:
         # Terminal error stage
         if stage_def.terminal_error is not None:
             error_code, error_message = stage_def.terminal_error
-            await self._safe_upsert_workflow_phase(
-                zone_id=task.zone_id,
-                workflow_phase="idle",
-                payload={"ae3_cycle_start_stage": "failed"},
-                scheduler_task_id=str(task.id),
-                now=now,
-            )
+            await self._sync_workflow_failure_state(task=task, now=now)
             failed = await self._task_repository.fail_for_recovery(
                 task_id=task.id,
                 error_code=error_code,
@@ -394,11 +388,26 @@ class StartupRecoveryUseCase:
         return failed_task
 
     async def _sync_workflow_failure_state(self, *, task: AutomationTask, now: datetime) -> None:
+        from ae3lite.domain.services.workflow_failure_rollback import (
+            resolve_workflow_phase_after_task_failure,
+        )
+
+        rollback_phase = resolve_workflow_phase_after_task_failure(task)
+        scheduler_task_id = (
+            None
+            if rollback_phase in {"ready", "irrig_recirc"}
+            else str(task.id)
+        )
+        payload = {
+            "ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or ""),
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": int(getattr(task, "id", 0) or 0) or None,
+        }
         await self._safe_upsert_workflow_phase(
             zone_id=task.zone_id,
-            workflow_phase="idle",
-            payload={"ae3_cycle_start_stage": "failed"},
-            scheduler_task_id=str(task.id),
+            workflow_phase=rollback_phase,
+            payload=payload,
+            scheduler_task_id=scheduler_task_id,
             now=now,
         )
 

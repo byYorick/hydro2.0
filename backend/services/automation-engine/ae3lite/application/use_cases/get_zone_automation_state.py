@@ -824,10 +824,13 @@ class GetZoneAutomationStateUseCase:
                 **{k: v for k, v in solution_tank_guard.items() if v is not None},
             }
         state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
+        label_stage = str(current_stage or "")
+        if bool(normalized_payload.get("ae3_failure_rollback")) and workflow_phase == "ready":
+            label_stage = "complete_ready"
         state_label = self._primary_automation_state_label(
             workflow_phase=workflow_phase,
             mapped_macro_state=state,
-            current_stage=str(current_stage or ""),
+            current_stage=label_stage,
             is_terminal_failed=False,
         )
         timeline = await self._build_timeline(
@@ -1037,7 +1040,11 @@ class GetZoneAutomationStateUseCase:
             return False
         payload = getattr(workflow_state, "payload", None)
         normalized_payload = payload if isinstance(payload, Mapping) else {}
-        return bool(normalized_payload.get("ae3_failure_rollback"))
+        if bool(normalized_payload.get("ae3_failure_rollback")):
+            return True
+        workflow_phase = str(getattr(workflow_state, "workflow_phase", "") or "").strip().lower()
+        rollback_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
+        return workflow_phase == "idle" and rollback_stage == "failed"
 
     def _workflow_state_is_stale(self, *, workflow_state: Optional[Any], last_task: Optional[Any]) -> bool:
         if workflow_state is None or last_task is None:

@@ -65,23 +65,23 @@
 
     <div
       v-if="taskIdLabel"
-      class="rounded-lg border border-[color:var(--border-muted)]/40 bg-[color:var(--surface-muted)]/20 px-3 py-2 text-xs text-[color:var(--text-muted)]"
+      class="diag-info-block"
     >
-      <span class="text-[color:var(--text-primary)] font-medium">Task:</span>
+      <span class="font-medium text-[color:var(--text-primary)]">Task:</span>
       {{ taskIdLabel }}
     </div>
 
     <div
       v-if="schedulerSummary"
-      class="rounded-lg border border-[color:var(--border-muted)]/40 bg-[color:var(--surface-muted)]/20 px-3 py-2 text-xs text-[color:var(--text-muted)]"
+      class="diag-info-block"
     >
-      <span class="text-[color:var(--text-primary)] font-medium">Планировщик:</span>
+      <span class="font-medium text-[color:var(--text-primary)]">Планировщик:</span>
       {{ schedulerSummary }}
     </div>
 
     <div
       v-if="offlineNodes.length > 0"
-      class="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100"
+      class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-3 py-2 text-xs text-[color:var(--badge-warning-text)]"
     >
       <p class="font-medium">
         Узлы offline / stale
@@ -138,7 +138,7 @@
 
     <p
       v-else-if="observability?.runtime?.task_is_active"
-      class="text-xs text-emerald-300/90"
+      class="text-xs text-[color:var(--badge-success-text)]"
     >
       Явных признаков зависания не обнаружено. Этап выполняется в пределах ожидаемых порогов.
     </p>
@@ -200,9 +200,13 @@ const taskStatusLabel = computed(() => {
 const stageElapsedLabel = computed(() => formatObservabilityDuration(observability.value?.runtime?.stage_elapsed_sec))
 
 const deadlineLabel = computed(() => {
-  const remaining = observability.value?.runtime?.stage_deadline_remaining_sec
+  const runtime = observability.value?.runtime
+  if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
+    return '—'
+  }
+  const remaining = runtime?.stage_deadline_remaining_sec
   if (remaining === null || remaining === undefined) {
-    return observability.value?.runtime?.stage_deadline_at ? 'задан' : '—'
+    return runtime?.stage_deadline_at ? 'задан' : '—'
   }
   if (remaining < 0) {
     return `просрочен на ${formatObservabilityDuration(Math.abs(remaining))}`
@@ -275,9 +279,9 @@ const schedulerSummary = computed(() => {
 
 function hintClass(severity: string): string {
   if (severity === 'critical') {
-    return 'border-red-400/35 bg-red-500/10 text-red-100'
+    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
   }
-  return 'border-amber-400/35 bg-amber-500/10 text-amber-100'
+  return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'
 }
 
 function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] {
@@ -325,8 +329,8 @@ function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] 
 <style scoped>
 .diag-tile {
   border-radius: 0.65rem;
-  border: 1px solid rgb(100 116 139 / 0.25);
-  background: rgb(15 23 42 / 0.2);
+  border: 1px solid color-mix(in srgb, var(--border-muted) 85%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
   padding: 0.5rem 0.65rem;
 }
 
@@ -334,7 +338,7 @@ function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] 
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-dim);
+  color: var(--text-muted);
 }
 
 .diag-tile dd {
@@ -343,5 +347,15 @@ function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] 
   font-weight: 600;
   color: var(--text-primary);
   word-break: break-word;
+}
+
+.diag-info-block {
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--border-muted) 85%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 65%, transparent);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-primary);
 }
 </style>

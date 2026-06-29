@@ -17,6 +17,9 @@ def _task(
     stage_entered_at: datetime | None = None,
     stage_deadline_at: datetime | None = None,
     correction_step: str | None = None,
+    correction_wait_until: datetime | None = None,
+    correction_stabilization_sec: int | None = None,
+    task_updated_at: datetime | None = None,
 ):
     wf = SimpleNamespace(
         current_stage=current_stage,
@@ -27,14 +30,21 @@ def _task(
     )
     correction = None
     if correction_step is not None:
-        correction = SimpleNamespace(corr_step=correction_step)
-    return SimpleNamespace(
+        correction = SimpleNamespace(
+            corr_step=correction_step,
+            wait_until=correction_wait_until,
+            stabilization_sec=correction_stabilization_sec or 0,
+        )
+    task = SimpleNamespace(
         id=42,
         status=status,
         topology="two_tank",
         workflow=wf,
         correction=correction,
     )
+    if task_updated_at is not None:
+        task.updated_at = task_updated_at
+    return task
 
 
 def test_waiting_command_emits_warning_hint():
@@ -112,3 +122,84 @@ def test_task_dispatch_stuck_for_claimed_task():
         now=NOW,
     )
     assert any(hint["code"] == "task_dispatch_stuck" for hint in payload["hang_hints"])
+
+
+def test_irrigation_check_within_stage_deadline_skips_stage_elapsed_long():
+    task = _task(
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_entered_at=NOW - timedelta(seconds=362),
+        stage_deadline_at=NOW + timedelta(seconds=628),
+    )
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    codes = {hint["code"] for hint in payload["hang_hints"]}
+    assert "stage_elapsed_long" not in codes
+
+
+def test_irrigation_check_past_stage_deadline_still_reports_deadline_exceeded():
+    task = _task(
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_entered_at=NOW - timedelta(seconds=1200),
+        stage_deadline_at=NOW - timedelta(seconds=30),
+    )
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    codes = {hint["code"] for hint in payload["hang_hints"]}
+    assert "stage_deadline_exceeded" in codes
+
+
+def test_corr_wait_ec_within_wait_until_skips_correction_substep_stalled():
+    task = _task(
+        status="pending",
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_entered_at=NOW - timedelta(minutes=12),
+        correction_step="corr_wait_ec",
+        correction_wait_until=NOW + timedelta(minutes=4),
+    )
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    codes = {hint["code"] for hint in payload["hang_hints"]}
+    assert "correction_substep_stalled" not in codes
+
+
+def test_corr_wait_ec_after_wait_until_uses_substep_elapsed_not_stage_elapsed():
+    task = _task(
+        status="pending",
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_entered_at=NOW - timedelta(minutes=12),
+        correction_step="corr_wait_ec",
+        correction_wait_until=NOW - timedelta(seconds=30),
+        task_updated_at=NOW - timedelta(minutes=4),
+    )
+    payload = build_automation_observability(
+        zone_id=6,
+        task=task,
+        workflow_state=None,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    codes = {hint["code"] for hint in payload["hang_hints"]}
+    assert "correction_substep_stalled" in codes

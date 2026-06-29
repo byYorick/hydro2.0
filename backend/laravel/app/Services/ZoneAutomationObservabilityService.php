@@ -539,7 +539,9 @@ class ZoneAutomationObservabilityService
 
         $currentStage = strtolower((string) ($runtime['current_stage'] ?? ''));
         $stageThresholds = $this->thresholds->stageElapsed($currentStage);
-        if ($stageThresholds !== null && $stageElapsed >= $stageThresholds['warn']) {
+        $deadlineRemaining = $runtime['stage_deadline_remaining_sec'] ?? null;
+        $skipElapsedLong = $this->shouldSkipStageElapsedLongForActiveDeadline($currentStage, $deadlineRemaining);
+        if ($stageThresholds !== null && $stageElapsed >= $stageThresholds['warn'] && ! $skipElapsedLong) {
             $hints[] = [
                 'code' => 'stage_elapsed_long',
                 'severity' => $stageElapsed >= $stageThresholds['critical'] ? 'critical' : 'warning',
@@ -553,6 +555,19 @@ class ZoneAutomationObservabilityService
         }
 
         return $hints;
+    }
+
+    private function shouldSkipStageElapsedLongForActiveDeadline(string $stage, mixed $deadlineRemainingSec): bool
+    {
+        $normalized = strtolower(trim($stage));
+        if (! in_array($normalized, ['irrigation_check', 'irrigation_recovery_check'], true)) {
+            return false;
+        }
+        if (! is_numeric($deadlineRemainingSec)) {
+            return false;
+        }
+
+        return (int) $deadlineRemainingSec > 0;
     }
 
     /**

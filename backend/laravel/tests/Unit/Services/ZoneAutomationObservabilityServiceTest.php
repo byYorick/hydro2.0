@@ -83,6 +83,26 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
         $this->assertContains('stage_elapsed_long', $codes);
     }
 
+    public function test_runtime_hang_hints_skip_stage_elapsed_long_for_irrigation_within_deadline(): void
+    {
+        $service = app(ZoneAutomationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'runtimeHangHints');
+        $method->setAccessible(true);
+
+        /** @var list<array<string,mixed>> $hints */
+        $hints = $method->invoke($service, [
+            'task_is_active' => true,
+            'task_status' => 'running',
+            'waiting_command' => false,
+            'current_stage' => 'irrigation_check',
+            'stage_elapsed_sec' => 362,
+            'stage_deadline_remaining_sec' => 628,
+        ]);
+
+        $codes = array_column($hints, 'code');
+        $this->assertNotContains('stage_elapsed_long', $codes);
+    }
+
     public function test_enrich_payload_adds_scheduler_claimed_stuck_hint(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));

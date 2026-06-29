@@ -264,6 +264,15 @@ class ZoneAutomationIntentService
         $normalizedCode = strtolower(trim($errorCode));
 
         if (in_array($normalizedCode, $transientCodes, true)) {
+            $taskAlreadyFailed = DB::table('ae_tasks')
+                ->where('zone_id', $zoneId)
+                ->where('idempotency_key', $idempotencyKey)
+                ->where('status', 'failed')
+                ->exists();
+
+            if ($taskAlreadyFailed) {
+                // Terminal ae_task: повторный dispatch по тому же ключу не произойдёт — не оставляем orphan pending.
+            } else {
             $requeued = DB::update(
                 "
                 UPDATE zone_automation_intents
@@ -291,6 +300,7 @@ class ZoneAutomationIntentService
 
             if ($requeued > 0) {
                 return;
+            }
             }
         }
 

@@ -139,4 +139,55 @@ class ZoneAutomationIntentServiceTest extends TestCase
             'retry_count' => 1,
         ]);
     }
+
+    public function test_sync_intent_failed_does_not_requeue_when_ae_task_already_failed(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'reap-sync-terminal-failed-task';
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'task_type' => 'irrigation_start',
+            'intent_source' => 'laravel_api',
+            'idempotency_key' => $key,
+            'status' => 'running',
+            'not_before' => now(),
+            'retry_count' => 1,
+            'max_retries' => 3,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'failed',
+            'idempotency_key' => $key,
+            'topology' => 'two_tank_drip_substrate_trays',
+            'workflow_phase' => 'irrigating',
+            'current_stage' => 'irrigation_start',
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        /** @var ZoneAutomationIntentService $service */
+        $service = $this->app->make(ZoneAutomationIntentService::class);
+        $service->syncIntentFailedFromAeTask(
+            zoneId: $zone->id,
+            idempotencyKey: $key,
+            errorCode: 'ae3_required_node_offline',
+            errorMessage: 'ph node offline',
+        );
+
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $key,
+            'status' => 'failed',
+            'error_code' => 'ae3_required_node_offline',
+            'retry_count' => 1,
+        ]);
+    }
 }

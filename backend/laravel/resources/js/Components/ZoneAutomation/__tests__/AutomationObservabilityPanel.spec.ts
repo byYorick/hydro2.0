@@ -154,4 +154,36 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('Явных признаков зависания не обнаружено')
     expect(wrapper.find('[data-testid="health-badge"]').attributes('data-variant')).toBe('info')
   })
+
+  it('hides stage deadline countdown when task is failed', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          state_details: {
+            started_at: '2026-06-29T10:29:47Z',
+            elapsed_sec: 777,
+            progress_percent: 0,
+            failed: true,
+            error_code: 'startup_recovery_unconfirmed_command',
+          },
+          observability: {
+            overall_health: 'warning',
+            runtime: {
+              task_id: 6,
+              task_status: 'failed',
+              task_is_active: false,
+              current_stage: 'irrigation_check',
+              stage_elapsed_sec: 777,
+              stage_deadline_remaining_sec: 212,
+            },
+            hang_hints: [],
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Дедлайн этапа')
+    expect(wrapper.text()).not.toContain('осталось')
+    expect(wrapper.text()).toContain('—')
+  })
 })

@@ -355,7 +355,11 @@ async def test_recovery_unknown_stage_syncs_workflow_idle_before_fail() -> None:
     assert workflow_repo.upserts == [{
         "zone_id": task.zone_id,
         "workflow_phase": "idle",
-        "payload": {"ae3_cycle_start_stage": "failed"},
+        "payload": {
+            "ae3_cycle_start_stage": "broken_stage",
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": task.id,
+        },
         "scheduler_task_id": str(task.id),
         "now": NOW,
     }]

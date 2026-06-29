@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="hasContent"
-    class="rounded-lg border border-[color:var(--border-muted)]/40 bg-[color:var(--surface-muted)]/15 px-3 py-2 text-xs text-[color:var(--text-muted)]"
+    class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 px-3 py-2 text-xs"
     data-testid="scheduler-dispatch-metrics-strip"
   >
     <p class="font-medium text-[color:var(--text-primary)]">
@@ -9,19 +9,19 @@
     </p>
     <p
       v-if="loading && !metrics"
-      class="mt-1 opacity-80"
+      class="mt-1 text-[color:var(--text-muted)]"
     >
       Загрузка…
     </p>
     <p
       v-else-if="error"
-      class="mt-1 text-amber-200/90"
+      class="mt-1 text-[color:var(--badge-warning-text)]"
     >
       {{ error }}
     </p>
     <ul
       v-else-if="metrics"
-      class="mt-1.5 space-y-0.5 font-mono text-[10px]"
+      class="mt-1.5 space-y-0.5 font-mono text-[10px] text-[color:var(--text-primary)]"
     >
       <li v-if="metrics.pendingIntents != null">
         pending_intents={{ metrics.pendingIntents }}

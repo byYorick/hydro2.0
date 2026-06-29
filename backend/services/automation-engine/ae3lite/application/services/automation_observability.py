@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
-from common.observability_thresholds import resolved_thresholds, stage_threshold_pair
+from common.observability_thresholds import (
+    resolved_thresholds,
+    should_skip_correction_substep_stalled_hint,
+    should_skip_stage_elapsed_long_hint,
+    stage_threshold_pair,
+)
 
 _ACTIVE_TASK_STATUSES = frozenset({"pending", "claimed", "running", "waiting_command"})
 _DISPATCH_STUCK_STATUSES = frozenset({"pending", "claimed"})
@@ -139,7 +144,7 @@ def build_automation_observability(
 
         stage_deadline_at = _normalize_utc_naive(getattr(wf, "stage_deadline_at", None) if wf is not None else None)
         runtime["stage_deadline_at"] = _iso_or_none(stage_deadline_at)
-        if stage_deadline_at is not None:
+        if stage_deadline_at is not None and status != "failed":
             runtime["stage_deadline_remaining_sec"] = int((stage_deadline_at - now).total_seconds())
 
         runtime["waiting_command"] = status == "waiting_command"
@@ -151,6 +156,16 @@ def build_automation_observability(
         correction = getattr(task, "correction", None)
         if correction is not None:
             runtime["correction_step"] = str(getattr(correction, "corr_step", "") or "").strip() or None
+            wait_until = _normalize_utc_naive(getattr(correction, "wait_until", None))
+            runtime["correction_wait_until"] = _iso_or_none(wait_until)
+            if wait_until is not None:
+                runtime["correction_wait_remaining_sec"] = int((wait_until - now).total_seconds())
+            stabilization_sec = getattr(correction, "stabilization_sec", None)
+            if stabilization_sec is not None:
+                try:
+                    runtime["correction_stabilization_sec"] = int(stabilization_sec)
+                except (TypeError, ValueError):
+                    pass
 
     if workflow_state is not None:
         wf_updated = _normalize_utc_naive(getattr(workflow_state, "updated_at", None))
@@ -233,7 +248,12 @@ def build_automation_observability(
         )
 
     stage_pair = stage_threshold_pair(cfg, current_stage)
-    if stage_pair is not None and runtime["task_is_active"]:
+    deadline_remaining = runtime.get("stage_deadline_remaining_sec")
+    skip_elapsed_long = should_skip_stage_elapsed_long_hint(
+        stage=current_stage,
+        stage_deadline_remaining_sec=deadline_remaining if isinstance(deadline_remaining, int) else None,
+    )
+    if stage_pair is not None and runtime["task_is_active"] and not skip_elapsed_long:
         severity = _severity_for_elapsed(stage_elapsed, stage_pair[0], stage_pair[1])
         if severity is not None:
             _append_hint(
@@ -245,14 +265,31 @@ def build_automation_observability(
             )
 
     corr_step = str(runtime.get("correction_step") or "").strip().lower()
-    if corr_step.startswith("corr_wait") and stage_elapsed >= cfg["correction_substep_warn_sec"] and runtime["task_is_active"]:
-        _append_hint(
-            hints,
-            code="correction_substep_stalled",
-            severity="warning" if stage_elapsed < cfg["correction_substep_critical_sec"] else "critical",
-            message=f"{_HANG_HINT_LABELS['correction_substep_stalled']} ({corr_step})",
-            details={"correction_step": corr_step, "stage_elapsed_sec": stage_elapsed},
+    if corr_step.startswith("corr_wait") and runtime["task_is_active"]:
+        wait_remaining = runtime.get("correction_wait_remaining_sec")
+        wait_remaining_int = wait_remaining if isinstance(wait_remaining, int) else None
+        substep_elapsed = task_updated_age if isinstance(task_updated_age, int) else stage_elapsed
+        skip_correction_stall = should_skip_correction_substep_stalled_hint(
+            correction_step=corr_step,
+            correction_wait_remaining_sec=wait_remaining_int,
+            substep_elapsed_sec=substep_elapsed,
+            stabilization_sec=runtime.get("correction_stabilization_sec")
+            if isinstance(runtime.get("correction_stabilization_sec"), int)
+            else None,
         )
+        if not skip_correction_stall and substep_elapsed >= cfg["correction_substep_warn_sec"]:
+            _append_hint(
+                hints,
+                code="correction_substep_stalled",
+                severity="warning" if substep_elapsed < cfg["correction_substep_critical_sec"] else "critical",
+                message=f"{_HANG_HINT_LABELS['correction_substep_stalled']} ({corr_step})",
+                details={
+                    "correction_step": corr_step,
+                    "substep_elapsed_sec": substep_elapsed,
+                    "stage_elapsed_sec": stage_elapsed,
+                    "correction_wait_remaining_sec": wait_remaining_int,
+                },
+            )
 
     wf_age = runtime.get("workflow_snapshot_age_sec")
     active_phases = {"tank_filling", "tank_recirc", "irrigating", "irrig_recirc"}

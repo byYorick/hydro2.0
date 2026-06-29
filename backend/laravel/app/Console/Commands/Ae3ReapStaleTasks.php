@@ -152,20 +152,28 @@ class Ae3ReapStaleTasks extends Command
             }
         }
 
-        // 4) Orphan pending scheduler intents без active ae_task
+        // 4) Orphan pending intents: нет active ae_task или связанная ae_task уже terminal failed
         $orphanIntents = DB::select(
             "
             SELECT zi.zone_id, zi.idempotency_key
             FROM zone_automation_intents zi
             WHERE zi.status = 'pending'
-              AND zi.intent_source = 'laravel_scheduler'
               AND zi.created_at < ?
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM ae_tasks t
-                  WHERE t.zone_id = zi.zone_id
-                    AND t.idempotency_key = zi.idempotency_key
-                    AND t.status IN ('pending', 'claimed', 'running', 'waiting_command')
+              AND (
+                  EXISTS (
+                      SELECT 1
+                      FROM ae_tasks t
+                      WHERE t.zone_id = zi.zone_id
+                        AND t.idempotency_key = zi.idempotency_key
+                        AND t.status = 'failed'
+                  )
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM ae_tasks t
+                      WHERE t.zone_id = zi.zone_id
+                        AND t.idempotency_key = zi.idempotency_key
+                        AND t.status IN ('pending', 'claimed', 'running', 'waiting_command')
+                  )
               )
             ",
             [$orphanIntentThreshold],

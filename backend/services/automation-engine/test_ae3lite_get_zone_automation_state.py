@@ -169,6 +169,20 @@ async def test_workflow_state_not_stale_after_failure_rollback_marker() -> None:
     assert use_case._workflow_state_is_stale(workflow_state=workflow_state, last_task=last_task) is False
 
 
+def test_workflow_failure_rollback_applied_for_legacy_startup_recovery_payload() -> None:
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=lambda *_args, **_kwargs: [],
+    )
+    workflow_state = SimpleNamespace(
+        workflow_phase="idle",
+        payload={"ae3_cycle_start_stage": "failed"},
+    )
+
+    assert use_case._workflow_failure_rollback_applied(workflow_state) is True
+
+
 async def test_state_prefers_ready_workflow_after_irrigation_failure_rollback() -> None:
     same_ts = datetime(2026, 6, 29, 9, 12, 14, tzinfo=timezone.utc)
     workflow = ZoneWorkflow(
