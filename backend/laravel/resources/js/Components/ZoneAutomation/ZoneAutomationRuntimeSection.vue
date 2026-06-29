@@ -42,6 +42,7 @@
         :display-elapsed-sec="displayElapsedSec"
         :display-remaining-sec="displayRemainingSec"
         :progress-basis="progressBasis"
+        :show-elapsed-metrics="showElapsedMetrics"
         :progress-percent="progressPercent"
         :show-progress-percent="showProgressPercent"
         :error-message="null"
@@ -147,6 +148,7 @@ const {
   displayElapsedSec,
   displayRemainingSec,
   progressBasis,
+  showElapsedMetrics,
   progressPercent,
   showProgressPercent,
   cleanTankLevel,

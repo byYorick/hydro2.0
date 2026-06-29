@@ -656,17 +656,32 @@ export function useAutomationPanel(
     return pending?.label ?? 'Ожидание данных процесса'
   })
 
-  const displayElapsedSec = computed(() =>
-    computeDisplayElapsedSec({
-      elapsedSec: automationState.value?.state_details.elapsed_sec ?? 0,
+  const isTaskActive = computed(() => {
+    const fromObservability = automationState.value?.observability?.runtime?.task_is_active
+    if (typeof fromObservability === 'boolean') {
+      return fromObservability
+    }
+    return isProcessActive.value
+  })
+
+  const displayElapsedSec = computed(() => {
+    const serverElapsed = Number(automationState.value?.state_details.elapsed_sec ?? 0)
+    if (!isTaskActive.value) {
+      return Math.max(0, serverElapsed)
+    }
+    return computeDisplayElapsedSec({
+      elapsedSec: serverElapsed,
       stageEnteredAt: automationState.value?.state_details.stage_entered_at
         ?? automationState.value?.state_details.started_at,
       servedAt: automationState.value?.state_meta?.served_at ?? null,
       nowMs: elapsedTickMs.value,
-    }),
-  )
+    })
+  })
 
   const displayRemainingSec = computed(() => {
+    if (!isTaskActive.value) {
+      return null
+    }
     const fromDetails = automationState.value?.state_details.stage_deadline_remaining_sec
     if (fromDetails != null && Number.isFinite(fromDetails) && fromDetails >= 0) {
       return fromDetails
@@ -685,7 +700,11 @@ export function useAutomationPanel(
   const progressBasis = computed(() => automationState.value?.state_details.progress_basis ?? null)
 
   const showProgressPercent = computed(() =>
-    shouldShowProgressPercent(progressPercent.value, isProcessActive.value),
+    isTaskActive.value && shouldShowProgressPercent(progressPercent.value, isProcessActive.value),
+  )
+
+  const showElapsedMetrics = computed(() =>
+    isTaskActive.value || progressBasis.value === 'terminal_completed',
   )
 
   const progressSummary = computed(() =>
@@ -844,6 +863,7 @@ export function useAutomationPanel(
     displayElapsedSec,
     displayRemainingSec,
     progressBasis,
+    showElapsedMetrics,
     progressPercent,
     showProgressPercent,
     cleanTankLevel,

@@ -170,6 +170,12 @@ _WORKFLOW_PHASE_PROGRESS: dict[str, int] = {
 # Подэтапы полива: progress_percent считаем по stage_deadline, а не по индексу в cycle_start.
 _IRRIGATION_STAGE_PREFIX = "irrigation_"
 
+_TERMINAL_COMPLETED_STAGES = frozenset({
+    "completed_run",
+    "completed_skip",
+    "complete_ready",
+})
+
 
 class GetZoneAutomationStateUseCase:
     """Возвращает полный payload зоны в формате AutomationState.
@@ -499,7 +505,39 @@ class GetZoneAutomationStateUseCase:
         workflow_started_at: datetime | None = None,
         stage_deadline_at: datetime | None = None,
         irrigation_requested_duration_sec: Any = None,
+        task_status: str = "",
+        completed_at: datetime | None = None,
     ) -> dict[str, Any]:
+        status_key = str(task_status or "").strip().lower()
+        cs_key = str(current_stage or "").strip().lower()
+
+        if not is_failed and status_key == "completed" and cs_key in _TERMINAL_COMPLETED_STAGES:
+            started = task_created_at or stage_entered_at or workflow_started_at
+            finished = completed_at if isinstance(completed_at, datetime) else None
+            elapsed = 0
+            if isinstance(started, datetime) and isinstance(finished, datetime):
+                elapsed = max(
+                    0,
+                    int(
+                        (
+                            self._normalize_utc_naive(finished)
+                            - self._normalize_utc_naive(started)
+                        ).total_seconds()
+                    ),
+                )
+            elif isinstance(started, datetime):
+                elapsed = self._elapsed_sec_since(started)
+            return {
+                "started_at": self._iso_or_none(started),
+                "stage_entered_at": self._iso_or_none(stage_entered_at),
+                "elapsed_sec": elapsed,
+                "progress_percent": 0,
+                "progress_basis": "terminal_completed",
+                "failed": False,
+                "error_code": None,
+                "error_message": None,
+            }
+
         anchor = stage_entered_at or task_created_at or workflow_started_at
         timed_progress, remaining_sec = self._timed_irrigation_metrics(
             stage_entered_at=stage_entered_at,
@@ -702,6 +740,8 @@ class GetZoneAutomationStateUseCase:
             workflow_phase=workflow_phase,
             stage_deadline_at=getattr(wf, "stage_deadline_at", None) if wf is not None else None,
             irrigation_requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
+            task_status=status,
+            completed_at=getattr(task, "completed_at", None),
         )
 
         return self._attach_observability(

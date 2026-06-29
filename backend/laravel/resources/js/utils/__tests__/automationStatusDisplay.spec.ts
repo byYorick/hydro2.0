@@ -3,6 +3,7 @@ import {
   buildProgressSummary,
   computeDisplayElapsedSec,
   formatAutomationDuration,
+  formatAutomationDurationLabel,
   formatAutomationElapsedLabel,
   formatAutomationRemainingLabel,
   resolveStageHeadline,
@@ -37,9 +38,10 @@ describe('automationStatusDisplay', () => {
     })).toBe('42% · 02:05 · осталось 14:55')
   })
 
-  it('форматирует подписи прошло/осталось', () => {
+  it('форматирует подписи прошло/осталось/длительность', () => {
     expect(formatAutomationElapsedLabel(125)).toBe('Прошло 02:05')
     expect(formatAutomationRemainingLabel(895)).toBe('осталось 14:55')
+    expect(formatAutomationDurationLabel(1035, 'terminal_completed')).toBe('Длительность 17:15')
   })
 
   it('предпочитает current_stage_label для заголовка', () => {

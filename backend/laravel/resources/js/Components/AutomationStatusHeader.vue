@@ -28,7 +28,7 @@
           />
           <div class="flex flex-wrap items-center gap-2 text-sm">
             <span
-              v-if="displayElapsedLabel"
+              v-if="showElapsedMetrics && displayElapsedLabel"
               class="inline-flex items-center rounded-full border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/70 px-2.5 py-1 font-mono text-xs tabular-nums text-[color:var(--text-primary)]"
             >
               {{ displayElapsedLabel }}
@@ -138,7 +138,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import StatusIndicator from '@/Components/StatusIndicator.vue'
-import { formatAutomationDuration, formatAutomationElapsedLabel, formatAutomationRemainingLabel } from '@/utils/automationStatusDisplay'
+import { formatAutomationDurationLabel, formatAutomationRemainingLabel } from '@/utils/automationStatusDisplay'
 import type { AutomationStateType, WorkflowStageStatus, WorkflowStageView } from '@/types/Automation'
 
 type PipelineStageVisualStatus = WorkflowStageStatus | 'manual' | 'canceled' | 'skipped'
@@ -155,6 +155,7 @@ interface Props {
   displayRemainingSec?: number | null
   progressPercent: number
   progressBasis?: string | null
+  showElapsedMetrics?: boolean
   showProgressPercent: boolean
   errorMessage: string | null
   warningMessage: string | null
@@ -164,7 +165,9 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const displayElapsedLabel = computed(() => formatAutomationElapsedLabel(props.displayElapsedSec))
+const displayElapsedLabel = computed(() =>
+  formatAutomationDurationLabel(props.displayElapsedSec, props.progressBasis),
+)
 const displayRemainingLabel = computed(() => formatAutomationRemainingLabel(props.displayRemainingSec))
 const progressBarLabel = computed(() =>
   props.progressBasis === 'irrigation_deadline' ? 'Ход полива' : 'Ход workflow',

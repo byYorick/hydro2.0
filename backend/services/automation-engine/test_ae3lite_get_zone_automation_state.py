@@ -216,6 +216,49 @@ async def test_state_details_include_elapsed_and_progress_from_stage_entered_at(
     assert result["current_stage_label"] == "Полив"
 
 
+async def test_completed_irrigation_task_freezes_duration_and_hides_progress() -> None:
+    created = NOW.replace(tzinfo=None) - timedelta(seconds=1035)
+    completed = NOW.replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=32,
+        status="completed",
+        created_at=created,
+        completed_at=completed,
+        error_code=None,
+        error_message=None,
+        irrigation_requested_duration_sec=120,
+        workflow=WorkflowState(
+            current_stage="completed_run",
+            workflow_phase="ready",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=completed - timedelta(seconds=15),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(last_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+    use_case._now = lambda: NOW.replace(tzinfo=None)
+
+    result = await use_case.run(zone_id=3)
+
+    assert result["state"] == "READY"
+    assert result["state_details"]["progress_basis"] == "terminal_completed"
+    assert result["state_details"]["progress_percent"] == 0
+    assert result["state_details"]["elapsed_sec"] == 1035
+    assert result["observability"]["runtime"]["task_is_active"] is False
+
+
 async def test_state_includes_control_mode_from_zones_table() -> None:
     task = SimpleNamespace(
         id=40,

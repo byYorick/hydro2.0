@@ -26,14 +26,28 @@ export function formatAutomationDuration(rawSeconds: number | null | undefined):
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
-export function formatAutomationElapsedLabel(rawSeconds: number | null | undefined): string {
-  const duration = formatAutomationDuration(rawSeconds)
-  return duration ? `Прошло ${duration}` : ''
-}
-
 export function formatAutomationRemainingLabel(rawSeconds: number | null | undefined): string {
   const duration = formatAutomationDuration(rawSeconds)
   return duration ? `осталось ${duration}` : ''
+}
+
+export function formatAutomationDurationLabel(
+  rawSeconds: number | null | undefined,
+  basis: string | null | undefined,
+): string {
+  const duration = formatAutomationDuration(rawSeconds)
+  if (!duration) {
+    return ''
+  }
+  if (basis === 'terminal_completed') {
+    return `Длительность ${duration}`
+  }
+  return `Прошло ${duration}`
+}
+
+/** @deprecated use formatAutomationDurationLabel */
+export function formatAutomationElapsedLabel(rawSeconds: number | null | undefined): string {
+  return formatAutomationDurationLabel(rawSeconds, null)
 }
 
 export function resolveStageHeadline(
