@@ -186,4 +186,30 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).not.toContain('осталось')
     expect(wrapper.text()).toContain('—')
   })
+
+  it('shows failed stage context without stale correction step', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          observability: {
+            overall_health: 'idle',
+            runtime: {
+              task_id: 7,
+              task_status: 'failed',
+              task_is_active: false,
+              failed_stage: 'prepare_recirculation_check',
+              current_stage: null,
+              stage_elapsed_sec: 57,
+              correction_step: null,
+            },
+            hang_hints: [],
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Подготовка рециркуляции (сбой)')
+    expect(wrapper.text()).not.toContain('corr_dose_ph')
+    expect(wrapper.text()).toContain('00:57')
+  })
 })

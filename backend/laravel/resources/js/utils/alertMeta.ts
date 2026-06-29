@@ -49,7 +49,7 @@ export function getAlertMeta(alert?: Alert | null) {
     }
   }
 
-  return resolveAlertCodeMeta(alert?.code)
+  return resolveAlertCodeMeta(alert?.code, alert?.type)
 }
 
 export function getAlertTitle(alert: Alert): string {

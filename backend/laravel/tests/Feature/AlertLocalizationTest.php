@@ -312,4 +312,59 @@ class AlertLocalizationTest extends TestCase
                 'Полив превысил время ожидания на этапе await_ready: зона так и не перешла в состояние READY.'
             );
     }
+
+    public function test_alerts_api_localizes_legacy_seed_type_when_code_is_empty(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create(['name' => 'Zone A - Lettuce']);
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => '',
+            'type' => 'pH_LOW',
+            'status' => 'ACTIVE',
+            'category' => 'agronomy',
+            'severity' => 'warning',
+            'details' => [],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.data.0.code', 'biz_low_ph')
+            ->assertJsonPath('data.data.0.title', 'Низкий pH')
+            ->assertJsonPath('data.data.0.message', 'Показания pH ниже целевого диапазона.');
+    }
+
+    public function test_alerts_api_localizes_legacy_pump_failure_type_when_code_is_empty(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create(['name' => 'Zone D - Cucumbers']);
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => null,
+            'type' => 'PUMP_FAILURE',
+            'status' => 'ACTIVE',
+            'category' => 'infrastructure',
+            'severity' => 'critical',
+            'details' => [],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.data.0.code', 'infra_pump_failure')
+            ->assertJsonPath('data.data.0.title', 'Сбой насосного контура');
+    }
 }

@@ -255,6 +255,7 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
     {
         $zone = Zone::factory()->create();
         $key = 'drift-hint-test';
+        $dueAt = now()->subMinutes(3);
 
         DB::table('zone_automation_intents')->insert([
             'zone_id' => $zone->id,
@@ -270,15 +271,18 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
             'updated_at' => now()->subMinutes(2),
         ]);
 
+        $intentId = (int) DB::table('zone_automation_intents')->where('zone_id', $zone->id)->value('id');
+
         DB::table('ae_tasks')->insert([
             'zone_id' => $zone->id,
             'task_type' => 'cycle_start',
             'status' => 'pending',
             'idempotency_key' => $key,
-            'scheduled_for' => now(),
-            'due_at' => now(),
+            'intent_id' => $intentId,
+            'scheduled_for' => $dueAt,
+            'due_at' => $dueAt,
             'created_at' => now()->subMinutes(5),
-            'updated_at' => now()->subMinutes(2),
+            'updated_at' => $dueAt,
         ]);
 
         $service = app(ZoneAutomationObservabilityService::class);
@@ -290,5 +294,50 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
 
         $codes = collect($payload['observability']['hang_hints'])->pluck('code')->all();
         $this->assertContains('scheduler_intent_task_drift', $codes);
+    }
+
+    public function test_enrich_payload_skips_scheduler_intent_task_drift_during_two_tank_requeue_window(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'drift-hint-requeue-window';
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'DIAGNOSTICS_TICK',
+            'task_type' => 'cycle_start',
+            'intent_source' => 'laravel_scheduler',
+            'idempotency_key' => $key,
+            'status' => 'running',
+            'not_before' => now(),
+            'retry_count' => 0,
+            'max_retries' => 3,
+            'created_at' => now()->subMinute(),
+            'updated_at' => now(),
+        ]);
+
+        $intentId = (int) DB::table('zone_automation_intents')->where('zone_id', $zone->id)->value('id');
+        $dueAt = now()->addSeconds(30);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'pending',
+            'idempotency_key' => $key,
+            'intent_id' => $intentId,
+            'scheduled_for' => $dueAt,
+            'due_at' => $dueAt,
+            'created_at' => now()->subMinute(),
+            'updated_at' => now(),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'zone_id' => $zone->id,
+            'state' => 'TANK_FILLING',
+            'state_details' => ['failed' => false],
+        ], isStale: false);
+
+        $codes = collect($payload['observability']['hang_hints'])->pluck('code')->all();
+        $this->assertNotContains('scheduler_intent_task_drift', $codes);
     }
 }

@@ -72,6 +72,20 @@ class AlertTypeTranslator
         'ae3correctionexhausted' => 'AE3 исчерпал все попытки коррекции',
         'ae3stagedeadlineexceeded' => 'Этап AE3 превысил дедлайн',
         'ae3tickerrors' => 'Ошибки тиков worker AE3',
+        'phlow' => 'Низкий pH',
+        'phhigh' => 'Высокий pH',
+        'eclow' => 'Низкий EC',
+        'echigh' => 'Высокий EC',
+        'temperaturelow' => 'Низкая температура',
+        'temperaturehigh' => 'Высокая температура',
+        'nodeoffline' => 'Узел офлайн',
+        'node_offline' => 'Узел офлайн',
+        'pumpfailure' => 'Сбой насосного контура',
+        'pump_failure' => 'Сбой насосного контура',
+        'mqttdown' => 'MQTT недоступен',
+        'mqtt down' => 'MQTT недоступен',
+        'telemetryanomaly' => 'Аномалия телеметрии',
+        'telemetry anomaly' => 'Аномалия телеметрии',
     ];
 
     public function translate(?string $type): ?string
@@ -81,6 +95,12 @@ class AlertTypeTranslator
             return null;
         }
 
-        return self::TRANSLATIONS[$normalized] ?? null;
+        if (isset(self::TRANSLATIONS[$normalized])) {
+            return self::TRANSLATIONS[$normalized];
+        }
+
+        $compact = str_replace(['_', '-', ' '], '', $normalized);
+
+        return self::TRANSLATIONS[$compact] ?? null;
     }
 }

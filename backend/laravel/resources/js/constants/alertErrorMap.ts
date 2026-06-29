@@ -237,16 +237,87 @@ const ALERT_CODE_MAP: Record<string, AlertCodeMeta> = {
     recommendation: 'Проверьте дозирующие каналы, калибровки и текущие pH/EC target.',
     severity: 'error',
   },
+  biz_low_ph: {
+    title: 'Низкий pH',
+    description: 'Показания pH ниже целевого диапазона.',
+    recommendation: 'Проверьте дозирование pH-up и калибровку сенсора.',
+    severity: 'warning',
+  },
+  biz_high_ph: {
+    title: 'Высокий pH',
+    description: 'Показания pH выше целевого диапазона.',
+    recommendation: 'Проверьте дозирование pH-down и калибровку сенсора.',
+    severity: 'warning',
+  },
+  biz_low_ec: {
+    title: 'Низкий EC',
+    description: 'Электропроводность раствора ниже целевого диапазона.',
+    recommendation: 'Проверьте дозирование удобрений и калибровку сенсора.',
+    severity: 'warning',
+  },
+  biz_high_ec: {
+    title: 'Высокий EC',
+    description: 'Электропроводность раствора выше целевого диапазона.',
+    recommendation: 'Проверьте дозирование удобрений и при необходимости разбавьте раствор.',
+    severity: 'warning',
+  },
+  biz_low_temp: {
+    title: 'Низкая температура',
+    description: 'Температура воздуха ниже целевого диапазона.',
+    recommendation: 'Проверьте обогрев и уставки климат-контроллера.',
+    severity: 'warning',
+  },
+  biz_high_temp: {
+    title: 'Высокая температура',
+    description: 'Температура воздуха выше целевого диапазона.',
+    recommendation: 'Проверьте вентиляцию, охлаждение и настройки климата.',
+    severity: 'warning',
+  },
+  biz_node_offline: {
+    title: 'Узел офлайн',
+    description: 'Узел зоны не отвечает длительное время.',
+    recommendation: 'Проверьте питание, Wi-Fi и связь с брокером MQTT.',
+    severity: 'error',
+  },
+  infra_pump_failure: {
+    title: 'Сбой насосного контура',
+    description: 'Инфраструктурный мониторинг зафиксировал отказ насосного канала.',
+    recommendation: 'Проверьте насос, реле, питание и защитные interlock-механизмы.',
+    severity: 'critical',
+  },
 }
 
 function normalizeCode(code?: string): string {
   return String(code || '').trim().toLowerCase()
 }
 
-export function resolveAlertCodeMeta(code?: string): AlertCodeMeta {
+function inferAlertCodeFromType(type?: string): string {
+  const compact = String(type || '').trim().toLowerCase().replace(/[_\-\s]/g, '')
+  const map: Record<string, string> = {
+    phlow: 'biz_low_ph',
+    phhigh: 'biz_high_ph',
+    eclow: 'biz_low_ec',
+    echigh: 'biz_high_ec',
+    temperaturelow: 'biz_low_temp',
+    temperaturehigh: 'biz_high_temp',
+    nodeoffline: 'biz_node_offline',
+    pumpfailure: 'infra_pump_failure',
+    mqttdown: 'infra_mqtt_down',
+    telemetryanomaly: 'infra_telemetry_zone_not_found',
+  }
+
+  return map[compact] || ''
+}
+
+export function resolveAlertCodeMeta(code?: string, type?: string): AlertCodeMeta {
   const normalized = normalizeCode(code)
-  if (normalized && ALERT_CODE_MAP[normalized]) {
+  if (normalized && normalized !== 'unknown_alert' && ALERT_CODE_MAP[normalized]) {
     return ALERT_CODE_MAP[normalized]
+  }
+
+  const inferredCode = inferAlertCodeFromType(type)
+  if (inferredCode && ALERT_CODE_MAP[inferredCode]) {
+    return ALERT_CODE_MAP[inferredCode]
   }
 
   if (normalized.startsWith('node_error_')) {

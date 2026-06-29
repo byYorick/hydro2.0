@@ -121,6 +121,24 @@ class ZoneAutomationObservabilityService
                     ? strtolower((string) $workflow->workflow_phase)
                     : 'idle'));
 
+        if (
+            $workflow !== null
+            && is_array($workflow->payload ?? null)
+            && ($workflow->payload['ae3_failure_rollback'] ?? false)
+            && in_array($workflowPhase, ['ready', 'irrig_recirc'], true)
+        ) {
+            $currentStage = 'complete_ready';
+        }
+
+        if (
+            $workflow !== null
+            && is_array($workflow->payload ?? null)
+            && ($workflow->payload['ae3_failure_rollback'] ?? false)
+            && $workflowPhase === 'idle'
+        ) {
+            $currentStage = null;
+        }
+
         $stageEnteredAt = $task->stage_entered_at ?? ($workflow !== null ? $workflow->updated_at : null);
         $stageElapsedSec = 0;
         if ($stageEnteredAt !== null) {
@@ -411,12 +429,15 @@ class ZoneAutomationObservabilityService
     }
 
     /**
-     * Intent в running/claimed при ae_task в pending — типичный drift после requeue.
+     * Intent в running при ae_task в pending после due_at — drift, если requeue завис.
+     * Кратковременное расхождение после two-tank update_stage (due_at в будущем) — норма.
      *
      * @return list<array<string,mixed>>
      */
     private function intentDriftHangHints(int $zoneId): array
     {
+        $driftAfterDueSec = $this->thresholds->int('scheduler_intent_task_drift_warn_sec', 45);
+
         $row = DB::selectOne(
             "SELECT zi.id AS intent_id,
                     zi.status AS intent_status,
@@ -428,12 +449,15 @@ class ZoneAutomationObservabilityService
              INNER JOIN ae_tasks t
                ON t.zone_id = zi.zone_id
               AND t.idempotency_key = zi.idempotency_key
+              AND t.intent_id = zi.id
              WHERE zi.zone_id = ?
-               AND zi.status IN ('claimed', 'running')
+               AND zi.status = 'running'
                AND t.status = 'pending'
+               AND (t.due_at IS NULL OR t.due_at <= NOW())
+               AND EXTRACT(EPOCH FROM (NOW() - COALESCE(t.due_at, t.updated_at))) >= ?
              ORDER BY zi.updated_at DESC
              LIMIT 1",
-            [$zoneId],
+            [$zoneId, $driftAfterDueSec],
         );
 
         if ($row === null) {

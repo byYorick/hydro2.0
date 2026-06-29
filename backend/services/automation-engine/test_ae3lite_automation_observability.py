@@ -203,3 +203,26 @@ def test_corr_wait_ec_after_wait_until_uses_substep_elapsed_not_stage_elapsed():
     )
     codes = {hint["code"] for hint in payload["hang_hints"]}
     assert "correction_substep_stalled" in codes
+
+
+def test_ready_workflow_after_failure_rollback_reports_complete_ready_stage():
+    workflow = SimpleNamespace(
+        workflow_phase="ready",
+        updated_at=NOW - timedelta(minutes=3),
+        payload={
+            "ae3_cycle_start_stage": "irrigation_check",
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": 6,
+        },
+    )
+    payload = build_automation_observability(
+        zone_id=6,
+        task=None,
+        workflow_state=workflow,
+        telemetry={},
+        telemetry_fetch_ok=True,
+        now=NOW,
+    )
+    assert payload["runtime"]["workflow_phase"] == "ready"
+    assert payload["runtime"]["current_stage"] == "complete_ready"
+    assert payload["runtime"]["task_is_active"] is False

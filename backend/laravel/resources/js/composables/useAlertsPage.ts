@@ -237,7 +237,7 @@ export function useAlertsPage() {
     if (code && catalogMetaByCode.value[code]) {
       return catalogMetaByCode.value[code]
     }
-    return resolveAlertCodeMeta(alert?.code)
+    return resolveAlertCodeMeta(alert?.code, alert?.type)
   }
 
   const getAlertMessage = (alert?: AlertRecord | null): string => {

@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Services\AlertCatalogService;
 use App\Services\AlertLocalizationService;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,6 +51,25 @@ class Alert extends Model
     public function zone(): BelongsTo
     {
         return $this->belongsTo(Zone::class);
+    }
+
+    protected function code(): Attribute
+    {
+        return Attribute::get(function (?string $value, array $attributes): ?string {
+            $stored = trim((string) ($value ?? ''));
+            if ($stored !== '') {
+                return $stored;
+            }
+
+            $type = $attributes['type'] ?? null;
+            if (! is_string($type) || trim($type) === '') {
+                return null;
+            }
+
+            $inferred = app(AlertCatalogService::class)->inferCodeFromType($type);
+
+            return $inferred !== '' ? $inferred : null;
+        });
     }
 
     public function getTitleAttribute(): string

@@ -179,6 +179,13 @@ const healthBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'danger' | 
 
 const stageLabel = computed(() => {
   const runtime = observability.value?.runtime
+  if (runtime?.task_status === 'failed' && !runtime?.task_is_active) {
+    const failedStage = (runtime as { failed_stage?: string | null }).failed_stage
+    if (failedStage) {
+      return `${stageDiagnosticLabel(failedStage)} (сбой)`
+    }
+    return '—'
+  }
   return stageDiagnosticLabel(
     runtime?.current_stage
     ?? props.automationState?.current_stage_label
@@ -197,7 +204,14 @@ const taskStatusLabel = computed(() => {
   return runtime.task_status
 })
 
-const stageElapsedLabel = computed(() => formatObservabilityDuration(observability.value?.runtime?.stage_elapsed_sec))
+const stageElapsedLabel = computed(() => {
+  const runtime = observability.value?.runtime
+  if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
+    const elapsed = runtime?.stage_elapsed_sec
+    return elapsed != null && elapsed > 0 ? formatObservabilityDuration(elapsed) : '—'
+  }
+  return formatObservabilityDuration(runtime?.stage_elapsed_sec)
+})
 
 const deadlineLabel = computed(() => {
   const runtime = observability.value?.runtime
@@ -214,7 +228,12 @@ const deadlineLabel = computed(() => {
   return `осталось ${formatObservabilityDuration(remaining)}`
 })
 
-const correctionStep = computed(() => observability.value?.runtime?.correction_step ?? null)
+const correctionStep = computed(() => {
+  if (observability.value?.runtime?.task_status === 'failed') {
+    return null
+  }
+  return observability.value?.runtime?.correction_step ?? null
+})
 
 const topologyLabel = computed(() => {
   const topology = observability.value?.runtime?.topology

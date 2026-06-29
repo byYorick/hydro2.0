@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
+from ae3lite.domain.services.workflow_failure_rollback import resolve_diagnostic_stage_after_rollback
 from common.observability_thresholds import (
     resolved_thresholds,
     should_skip_correction_substep_stalled_hint,
@@ -140,7 +141,12 @@ def build_automation_observability(
         stage_entered_at = _normalize_utc_naive(getattr(wf, "stage_entered_at", None) if wf is not None else None)
         runtime["stage_entered_at"] = _iso_or_none(stage_entered_at)
         if stage_entered_at is not None:
-            runtime["stage_elapsed_sec"] = max(0, int((now - stage_entered_at).total_seconds()))
+            if status == "failed":
+                completed_at = _normalize_utc_naive(getattr(task, "completed_at", None))
+                end_at = completed_at if completed_at is not None else now
+                runtime["stage_elapsed_sec"] = max(0, int((end_at - stage_entered_at).total_seconds()))
+            else:
+                runtime["stage_elapsed_sec"] = max(0, int((now - stage_entered_at).total_seconds()))
 
         stage_deadline_at = _normalize_utc_naive(getattr(wf, "stage_deadline_at", None) if wf is not None else None)
         runtime["stage_deadline_at"] = _iso_or_none(stage_deadline_at)
@@ -154,7 +160,7 @@ def build_automation_observability(
             runtime["task_updated_age_sec"] = max(0, int((now - task_updated_at).total_seconds()))
 
         correction = getattr(task, "correction", None)
-        if correction is not None:
+        if correction is not None and status in _ACTIVE_TASK_STATUSES:
             runtime["correction_step"] = str(getattr(correction, "corr_step", "") or "").strip() or None
             wait_until = _normalize_utc_naive(getattr(correction, "wait_until", None))
             runtime["correction_wait_until"] = _iso_or_none(wait_until)
@@ -180,8 +186,14 @@ def build_automation_observability(
             payload = getattr(workflow_state, "payload", None)
             if isinstance(payload, Mapping):
                 stage_from_payload = str(payload.get("ae3_cycle_start_stage") or "").strip()
-                if stage_from_payload:
-                    runtime["current_stage"] = stage_from_payload
+                wf_phase = str(getattr(workflow_state, "workflow_phase", "") or "").strip().lower()
+                display_stage = resolve_diagnostic_stage_after_rollback(
+                    workflow_phase=wf_phase,
+                    payload=payload,
+                    raw_stage=stage_from_payload or None,
+                )
+                if display_stage:
+                    runtime["current_stage"] = display_stage
 
     if not telemetry_fetch_ok:
         _append_hint(
@@ -293,7 +305,16 @@ def build_automation_observability(
 
     wf_age = runtime.get("workflow_snapshot_age_sec")
     active_phases = {"tank_filling", "tank_recirc", "irrigating", "irrig_recirc"}
-    if isinstance(wf_age, int) and wf_age >= cfg["workflow_snapshot_stale_warn_sec"] and workflow_phase in active_phases:
+    db_workflow_phase = ""
+    if workflow_state is not None:
+        db_workflow_phase = str(getattr(workflow_state, "workflow_phase", "") or "").strip().lower()
+    stale_phase = db_workflow_phase if db_workflow_phase else workflow_phase
+    if (
+        isinstance(wf_age, int)
+        and wf_age >= cfg["workflow_snapshot_stale_warn_sec"]
+        and stale_phase in active_phases
+        and runtime.get("task_is_active")
+    ):
         _append_hint(
             hints,
             code="workflow_snapshot_stale",
@@ -302,7 +323,12 @@ def build_automation_observability(
             details={"workflow_snapshot_age_sec": wf_age, "workflow_phase": workflow_phase},
         )
 
-    if task is None and workflow_state is not None and workflow_phase in active_phases:
+    if (
+        task is None
+        and workflow_state is not None
+        and stale_phase in active_phases
+        and runtime.get("task_status") != "failed"
+    ):
         _append_hint(
             hints,
             code="no_active_task_during_workflow",

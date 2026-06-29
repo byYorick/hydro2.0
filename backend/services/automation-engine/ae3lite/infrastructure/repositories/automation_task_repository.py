@@ -11,7 +11,7 @@ import asyncpg
 
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
-from common.db import get_pool
+from common.db import execute, get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -635,7 +635,34 @@ class PgAutomationTaskRepository:
             normalized_due_at,
             normalized_now,
         )
-        return self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            await self._sync_intent_after_task_requeue(task=task, now=normalized_now)
+        return task
+
+    async def _sync_intent_after_task_requeue(self, *, task: AutomationTask, now: datetime) -> None:
+        """Обновляет intent.updated_at при штатном requeue ae_task → pending (multi-stage workflow)."""
+        intent_id = int(getattr(task, "intent_id", 0) or 0)
+        if intent_id <= 0:
+            return
+        try:
+            await execute(
+                """
+                UPDATE zone_automation_intents
+                SET updated_at = $2
+                WHERE id = $1
+                  AND status = 'running'
+                """,
+                intent_id,
+                now,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 не смог синхронизировать intent после requeue: intent_id=%s task_id=%s",
+                intent_id,
+                getattr(task, "id", None),
+                exc_info=True,
+            )
 
     async def set_pending_manual_step(
         self,

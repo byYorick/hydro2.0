@@ -32,6 +32,7 @@ class ObservabilityThresholdsCatalog
             'scheduler_intent_claimed_warn_sec' => 180,
             'scheduler_intent_claimed_critical_sec' => 600,
             'scheduler_intent_running_warn_sec' => 600,
+            'scheduler_intent_task_drift_warn_sec' => 45,
         ];
 
         foreach (self::stageKeys() as $stage => $label) {
@@ -131,6 +132,7 @@ class ObservabilityThresholdsCatalog
                     $sec('scheduler_intent_claimed_warn_sec', 'Intent claimed — warning', 'Intent в `claimed` не перешёл в `running` → `scheduler_intent_claimed_stuck` warning.'),
                     $sec('scheduler_intent_claimed_critical_sec', 'Intent claimed — critical', 'Критичный порог для `scheduler_intent_claimed_stuck`.'),
                     $sec('scheduler_intent_running_warn_sec', 'Intent running — warning', 'Intent в `running` дольше порога → `scheduler_intent_running_stuck` (только warning).', 60, 86400),
+                    $sec('scheduler_intent_task_drift_warn_sec', 'Intent/task drift — warning', 'Intent `running`, ae_task `pending` после `due_at` дольше порога → `scheduler_intent_task_drift` (исключает штатный two-tank requeue).', 15, 600),
                 ],
             ],
         ], ObservabilityThresholdsCatalog::NAMESPACE_KEY);

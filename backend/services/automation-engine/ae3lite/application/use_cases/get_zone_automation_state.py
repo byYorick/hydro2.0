@@ -13,6 +13,7 @@ from ae3lite.application.level_monitor import (
     summarize_zone_telemetry_rows,
 )
 from ae3lite.application.services.automation_observability import build_automation_observability
+from ae3lite.domain.services.workflow_failure_rollback import resolve_diagnostic_stage_after_rollback
 from common.observability_thresholds import load_system_observability_thresholds
 from ae3lite.application.use_cases.manual_control_contract import (
     AVAILABLE_CONTROL_MODES,
@@ -598,6 +599,56 @@ class GetZoneAutomationStateUseCase:
 
         return True
 
+    def _observability_after_failure_rollback(
+        self,
+        observability: Any,
+        *,
+        last_task: Any,
+        failed_stage: str,
+    ) -> dict[str, Any]:
+        if not isinstance(observability, dict):
+            return {}
+        obs = dict(observability)
+        runtime = dict(obs.get("runtime") or {})
+        wf = getattr(last_task, "workflow", None)
+        stage_entered_at = getattr(wf, "stage_entered_at", None) if wf is not None else None
+        completed_at = getattr(last_task, "completed_at", None)
+        elapsed: int | None = None
+        if isinstance(stage_entered_at, datetime) and isinstance(completed_at, datetime):
+            elapsed = max(
+                0,
+                int(
+                    (
+                        self._normalize_utc_naive(completed_at)
+                        - self._normalize_utc_naive(stage_entered_at)
+                    ).total_seconds()
+                ),
+            )
+
+        runtime["task_id"] = getattr(last_task, "id", None)
+        runtime["task_status"] = "failed"
+        runtime["task_is_active"] = False
+        runtime["current_stage"] = None
+        runtime["failed_stage"] = failed_stage or None
+        runtime["correction_step"] = None
+        runtime["correction_wait_until"] = None
+        runtime["correction_wait_remaining_sec"] = None
+        runtime["correction_stabilization_sec"] = None
+        runtime["stage_deadline_at"] = None
+        runtime["stage_deadline_remaining_sec"] = None
+        if elapsed is not None:
+            runtime["stage_elapsed_sec"] = elapsed
+            runtime["waiting_elapsed_sec"] = elapsed
+
+        obs["runtime"] = runtime
+        obs["hang_hints"] = [
+            hint
+            for hint in (obs.get("hang_hints") or [])
+            if isinstance(hint, dict)
+            and hint.get("code") not in {"workflow_snapshot_stale", "no_active_task_during_workflow"}
+        ]
+        return obs
+
     def _merge_last_failed_task_into_workflow_view(
         self,
         payload: dict[str, Any],
@@ -620,10 +671,26 @@ class GetZoneAutomationStateUseCase:
         details["failed"] = True
         details["error_code"] = getattr(last_task, "error_code", None)
         details["error_message"] = getattr(last_task, "error_message", None)
+        details["failed_task_id"] = getattr(last_task, "id", None)
         payload["state_details"] = details
 
         wf = getattr(last_task, "workflow", None)
         failed_stage = str(getattr(wf, "current_stage", "") or "").strip() if wf is not None else ""
+
+        if self._workflow_failure_rollback_applied(workflow_state):
+            payload["state_label"] = self._primary_automation_state_label(
+                workflow_phase=str(payload.get("workflow_phase") or "idle"),
+                mapped_macro_state=str(payload.get("state") or "IDLE"),
+                current_stage=failed_stage,
+                is_terminal_failed=True,
+            )
+            payload["observability"] = self._observability_after_failure_rollback(
+                payload.get("observability"),
+                last_task=last_task,
+                failed_stage=failed_stage,
+            )
+            return payload
+
         wf_phase = (
             str(getattr(wf, "workflow_phase", "") or "").strip().lower()
             if wf is not None
@@ -814,7 +881,12 @@ class GetZoneAutomationStateUseCase:
         workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
         payload = getattr(workflow_state, "payload", None)
         normalized_payload = payload if isinstance(payload, Mapping) else {}
-        current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip() or None
+        raw_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip() or None
+        current_stage = resolve_diagnostic_stage_after_rollback(
+            workflow_phase=workflow_phase,
+            payload=normalized_payload,
+            raw_stage=raw_stage,
+        )
         workflow_guard = self._solution_tank_guard_from_payload(normalized_payload)
         if solution_tank_guard is None:
             solution_tank_guard = workflow_guard
@@ -824,13 +896,10 @@ class GetZoneAutomationStateUseCase:
                 **{k: v for k, v in solution_tank_guard.items() if v is not None},
             }
         state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
-        label_stage = str(current_stage or "")
-        if bool(normalized_payload.get("ae3_failure_rollback")) and workflow_phase == "ready":
-            label_stage = "complete_ready"
         state_label = self._primary_automation_state_label(
             workflow_phase=workflow_phase,
             mapped_macro_state=state,
-            current_stage=label_stage,
+            current_stage=str(current_stage or ""),
             is_terminal_failed=False,
         )
         timeline = await self._build_timeline(
@@ -1033,6 +1102,8 @@ class GetZoneAutomationStateUseCase:
         payload = getattr(workflow_state, "payload", None)
         normalized_payload = payload if isinstance(payload, Mapping) else {}
         current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
+        if self._workflow_failure_rollback_applied(workflow_state):
+            return True
         return workflow_phase in {"tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"} or current_stage == "startup"
 
     def _workflow_failure_rollback_applied(self, workflow_state: Optional[Any]) -> bool:

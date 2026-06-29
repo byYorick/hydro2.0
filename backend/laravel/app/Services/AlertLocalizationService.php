@@ -28,6 +28,9 @@ class AlertLocalizationService
     {
         $payload = is_array($details) ? $details : [];
         $resolvedCode = $this->alertCatalogService->normalizeCode($code ?? $payload['code'] ?? null);
+        if ($resolvedCode === '' && is_string($type) && trim($type) !== '') {
+            $resolvedCode = $this->alertCatalogService->inferCodeFromType($type);
+        }
         $catalog = $this->alertCatalogService->resolve($resolvedCode, $source ?? ($payload['source'] ?? null), $payload);
 
         $title = $this->composer->resolveTitle($resolvedCode, $catalog, $type, $payload);

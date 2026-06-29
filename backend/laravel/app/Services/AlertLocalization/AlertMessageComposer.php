@@ -129,6 +129,10 @@ class AlertMessageComposer
             }
         }
 
+        if ($code !== '' && $code !== 'unknown_alert' && trim($description) !== '') {
+            return $description;
+        }
+
         $translatedType = $this->typeTranslator->translate($type);
         if ($translatedType !== null && $translatedType !== 'Системное предупреждение') {
             return $translatedType;

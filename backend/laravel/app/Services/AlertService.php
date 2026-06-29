@@ -519,6 +519,14 @@ class AlertService
 
         $rawCode = is_string($data['code'] ?? null) ? $data['code'] : ($details['code'] ?? null);
         $normalizedCode = $this->alertCatalog->normalizeCode($rawCode);
+
+        $type = $this->normalizeString($data['type'] ?? null)
+            ?? $this->normalizeString($details['type'] ?? null);
+
+        if ($normalizedCode === '' && $type !== null) {
+            $normalizedCode = $this->alertCatalog->inferCodeFromType($type);
+        }
+
         if ($normalizedCode === '') {
             $normalizedCode = 'unknown_alert';
         }

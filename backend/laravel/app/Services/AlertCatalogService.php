@@ -83,6 +83,45 @@ class AlertCatalogService
     }
 
     /**
+     * Восстанавливает business-код по legacy type (seed/Prometheus), когда поле code пустое.
+     */
+    public function inferCodeFromType(?string $type): string
+    {
+        $normalized = strtolower(trim((string) ($type)));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $compact = str_replace(['_', '-', ' '], '', $normalized);
+
+        $byCompact = [
+            'phlow' => 'biz_low_ph',
+            'phhigh' => 'biz_high_ph',
+            'eclow' => 'biz_low_ec',
+            'echigh' => 'biz_high_ec',
+            'temperaturelow' => 'biz_low_temp',
+            'temperaturehigh' => 'biz_high_temp',
+            'nodeoffline' => 'biz_node_offline',
+            'pumpfailure' => 'infra_pump_failure',
+            'mqttdown' => 'infra_mqtt_down',
+            'telemetryanomaly' => 'infra_telemetry_zone_not_found',
+            'historyloggercommandstatusrepairnocorrelation' => 'history_logger_command_status_repair_no_correlation',
+            'laravelscheduleroldestpendingintentstale' => 'laravel_scheduler_oldest_pending_intent_stale',
+        ];
+
+        if (isset($byCompact[$compact])) {
+            return $byCompact[$compact];
+        }
+
+        $snake = preg_replace('/[^a-z0-9_\-]/', '_', $normalized) ?? $normalized;
+        if ($snake !== '' && isset($this->codesByCode()[$snake])) {
+            return $snake;
+        }
+
+        return '';
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function loadCatalog(): array
@@ -351,7 +390,7 @@ class AlertCatalogService
     private function fallbackTitle(string $code): string
     {
         if ($code === '' || $code === 'unknown_alert') {
-            return 'Неизвестный алерт';
+            return 'Системное предупреждение';
         }
 
         if (str_starts_with($code, 'node_error_') || $code === 'node_error') {

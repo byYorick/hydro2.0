@@ -23,6 +23,7 @@ const STAGE_LABELS: Record<string, string> = {
   irrigation_start: 'Запуск полива',
   irrigation_check: 'Полив',
   irrigation_recovery_check: 'Recovery после полива',
+  complete_ready: 'Готов к поливу',
   await_ready: 'Ожидание готовности',
   decision_gate: 'Решение о поливе',
 }

@@ -243,8 +243,75 @@ async def test_state_prefers_ready_workflow_after_irrigation_failure_rollback() 
     result = await use_case.run(zone_id=6)
 
     assert result["workflow_phase"] == "ready"
+    assert result["current_stage"] in {None, "complete_ready"}
+    assert result["observability"]["runtime"]["current_stage"] is None
+    assert result["observability"]["runtime"]["failed_stage"] == "irrigation_start"
+    assert result["observability"]["runtime"]["task_status"] == "failed"
     assert result["state_details"]["failed"] is True
     assert result["state_details"]["error_code"] == "ae3_required_node_offline"
+
+
+async def test_idle_workflow_after_tank_recirc_failure_rollback_clears_active_fsm_stage() -> None:
+    entered = NOW.replace(tzinfo=None) - timedelta(minutes=2)
+    completed = NOW.replace(tzinfo=None) - timedelta(minutes=1)
+    workflow = ZoneWorkflow(
+        zone_id=6,
+        workflow_phase="idle",
+        version=12,
+        scheduler_task_id=None,
+        started_at=(NOW - timedelta(hours=2)).replace(tzinfo=None),
+        updated_at=completed,
+        payload={
+            "ae3_cycle_start_stage": "prepare_recirculation_check",
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": 7,
+        },
+    )
+    last_task = SimpleNamespace(
+        id=7,
+        status="failed",
+        is_active=False,
+        error_code="startup_recovery_unconfirmed_command",
+        error_message="missing command",
+        updated_at=completed,
+        created_at=entered,
+        completed_at=completed,
+        workflow=SimpleNamespace(
+            workflow_phase="tank_recirc",
+            current_stage="prepare_recirculation_check",
+            stage_entered_at=entered,
+            stage_deadline_at=entered + timedelta(minutes=15),
+            stage_retry_count=0,
+            pending_manual_step=None,
+        ),
+        topology="two_tank_drip_substrate_trays",
+        correction=SimpleNamespace(corr_step="corr_dose_ph", wait_until=None, stabilization_sec=8),
+    )
+
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "control_mode" in query:
+            return [{"control_mode": "auto"}]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(last_task=last_task),
+        workflow_repository=_WorkflowRepo(workflow),
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=6)
+
+    assert result["workflow_phase"] == "idle"
+    assert result["current_stage"] is None
+    runtime = result["observability"]["runtime"]
+    assert runtime["task_status"] == "failed"
+    assert runtime["current_stage"] is None
+    assert runtime["failed_stage"] == "prepare_recirculation_check"
+    assert runtime["correction_step"] is None
+    assert runtime["stage_elapsed_sec"] == 60
+    assert "workflow_snapshot_stale" not in {h["code"] for h in result["observability"]["hang_hints"]}
 
 
 async def test_idle_state_includes_non_blocking_solution_tank_guard_reason() -> None:
