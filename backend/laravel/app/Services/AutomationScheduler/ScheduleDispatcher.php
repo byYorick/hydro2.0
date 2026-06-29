@@ -28,6 +28,7 @@ class ScheduleDispatcher
     public function __construct(
         private readonly ActiveTaskStore $activeTaskStore,
         private readonly ActiveTaskPoller $activeTaskPoller,
+        private readonly ZoneAutomationIntentService $intentService,
     ) {}
 
     /**
@@ -381,6 +382,12 @@ class ScheduleDispatcher
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
+            $this->recordRetryableDispatchFailure(
+                zoneId: $zoneId,
+                correlationId: $correlationId,
+                errorCode: 'scheduler_dispatch_connection_error',
+                errorMessage: $connectionErrorMessage,
+            );
 
             return [
                 'dispatched' => false,
@@ -390,6 +397,13 @@ class ScheduleDispatcher
         }
 
         if (! $response instanceof Response) {
+            $this->recordRetryableDispatchFailure(
+                zoneId: $zoneId,
+                correlationId: $correlationId,
+                errorCode: 'scheduler_dispatch_connection_error',
+                errorMessage: 'missing_http_response',
+            );
+
             return [
                 'dispatched' => false,
                 'retryable' => true,
@@ -458,6 +472,12 @@ class ScheduleDispatcher
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
+            $this->recordRetryableDispatchFailure(
+                zoneId: $zoneId,
+                correlationId: $correlationId,
+                errorCode: 'scheduler_dispatch_http_error',
+                errorMessage: 'HTTP '.$response->status(),
+            );
 
             return [
                 'dispatched' => false,
@@ -495,6 +515,12 @@ class ScheduleDispatcher
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
             ]);
+            $this->recordRetryableDispatchFailure(
+                zoneId: $zoneId,
+                correlationId: $correlationId,
+                errorCode: $taskIdError,
+                errorMessage: 'AE3 response missing valid task_id',
+            );
 
             return [
                 'dispatched' => false,
@@ -887,5 +913,41 @@ class ScheduleDispatcher
         }
 
         return $workflowPhase !== 'ready';
+    }
+
+    private function recordRetryableDispatchFailure(
+        int $zoneId,
+        string $correlationId,
+        string $errorCode,
+        ?string $errorMessage = null,
+    ): void {
+        if (trim($correlationId) === '') {
+            return;
+        }
+
+        try {
+            $outcome = $this->intentService->recordSchedulerDispatchFailure(
+                zoneId: $zoneId,
+                idempotencyKey: $correlationId,
+                errorCode: $errorCode,
+                errorMessage: $errorMessage,
+            );
+
+            if (($outcome['failed'] ?? false) === true) {
+                Log::warning('Scheduler intent marked failed after dispatch retries exhausted', [
+                    'zone_id' => $zoneId,
+                    'correlation_id' => $correlationId,
+                    'error_code' => $errorCode,
+                    'retry_count' => $outcome['retry_count'] ?? null,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to record scheduler dispatch failure for intent', [
+                'zone_id' => $zoneId,
+                'correlation_id' => $correlationId,
+                'error_code' => $errorCode,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

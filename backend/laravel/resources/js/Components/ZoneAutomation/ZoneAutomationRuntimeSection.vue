@@ -53,6 +53,8 @@
 
       <AutomationRuntimeAlerts
         :failed="runtimeMeta.hasFailed.value"
+        :active-failure="runtimeMeta.hasActiveFailure.value"
+        :historical-failure="runtimeMeta.hasHistoricalFailure.value"
         :human-error-message="runtimeMeta.humanErrorMessage.value"
         :error-code="runtimeMeta.errorCode.value"
         :error-message="errorMessage"

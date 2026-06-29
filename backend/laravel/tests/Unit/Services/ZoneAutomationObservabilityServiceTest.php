@@ -230,4 +230,45 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
         $this->assertNotContains('stage_elapsed_long', $codes);
         $this->assertSame('active', $payload['observability']['overall_health']);
     }
+
+    public function test_enrich_payload_adds_scheduler_intent_task_drift_hint(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'drift-hint-test';
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'DIAGNOSTICS_TICK',
+            'task_type' => 'cycle_start',
+            'intent_source' => 'laravel_scheduler',
+            'idempotency_key' => $key,
+            'status' => 'running',
+            'not_before' => now(),
+            'retry_count' => 0,
+            'max_retries' => 3,
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'pending',
+            'idempotency_key' => $key,
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'zone_id' => $zone->id,
+            'state' => 'TANK_FILLING',
+            'state_details' => ['failed' => false],
+        ], isStale: false);
+
+        $codes = collect($payload['observability']['hang_hints'])->pluck('code')->all();
+        $this->assertContains('scheduler_intent_task_drift', $codes);
+    }
 }

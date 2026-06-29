@@ -10,6 +10,8 @@ from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 
 TWO_TANK_TOPOLOGIES = frozenset({"two_tank", "two_tank_drip_substrate_trays"})
 TWO_TANK_REQUIRED_NODE_TYPES = frozenset({"irrig", "ph", "ec"})
+IRRIGATION_TASK_TYPES = frozenset({"irrigation_start"})
+CORRECTION_STAGE_PREFIXES = ("ph_", "ec_", "correction_", "prepare_recirc", "await_ready")
 
 # Коды, при которых перед fail-closed проверяем, не offline ли целевая/обязательная нода.
 NODE_TRANSPORT_ERROR_CODES = frozenset({
@@ -218,19 +220,49 @@ def _offline_nodes_for_required_types(
     return offline
 
 
+def required_node_types_for_task(
+    *,
+    topology: str,
+    task_type: str | None = None,
+    current_stage: str | None = None,
+) -> frozenset[str]:
+    """Stage-scoped preflight: полив требует только irrig, коррекция — ph/ec."""
+    normalized_topology = str(topology or "").strip().lower()
+    normalized_task_type = str(task_type or "").strip().lower()
+    normalized_stage = str(current_stage or "").strip().lower()
+
+    if normalized_task_type in IRRIGATION_TASK_TYPES:
+        return frozenset({"irrig"})
+
+    if normalized_stage.startswith(CORRECTION_STAGE_PREFIXES):
+        if normalized_topology in TWO_TANK_TOPOLOGIES:
+            return frozenset({"ph", "ec"})
+        return frozenset()
+
+    if normalized_topology in TWO_TANK_TOPOLOGIES:
+        return TWO_TANK_REQUIRED_NODE_TYPES
+
+    return frozenset({"irrig"})
+
+
 def resolve_required_nodes_offline_failure(
     *,
     zone_id: int,
     topology: str,
     diagnostics: Mapping[str, Any],
     persistent_only: bool = False,
+    task_type: str | None = None,
+    current_stage: str | None = None,
+    required_types: frozenset[str] | None = None,
 ) -> OfflineFailure | None:
     """Возвращает fail-closed ошибку, если обязательные для топологии ноды offline."""
     normalized_topology = str(topology or "").strip().lower()
-    if normalized_topology in TWO_TANK_TOPOLOGIES:
-        required_types = TWO_TANK_REQUIRED_NODE_TYPES
-    else:
-        required_types = frozenset({"irrig"})
+    if required_types is None:
+        required_types = required_node_types_for_task(
+            topology=normalized_topology,
+            task_type=task_type,
+            current_stage=current_stage,
+        )
 
     zone_nodes = diagnostics.get("zone_nodes")
     if isinstance(zone_nodes, list):
@@ -289,12 +321,16 @@ def assert_required_nodes_available(
     topology: str,
     diagnostics: Mapping[str, Any],
     persistent_only: bool = False,
+    task_type: str | None = None,
+    current_stage: str | None = None,
 ) -> None:
     failure = resolve_required_nodes_offline_failure(
         zone_id=zone_id,
         topology=topology,
         diagnostics=diagnostics,
         persistent_only=persistent_only,
+        task_type=task_type,
+        current_stage=current_stage,
     )
     if failure is None:
         return
@@ -473,6 +509,8 @@ async def resolve_task_error_with_node_offline(
     node_uid: str | None = None,
     runtime_monitor: Any | None = None,
     diagnostics: Mapping[str, Any] | None = None,
+    task_type: str | None = None,
+    current_stage: str | None = None,
 ) -> OfflineFailure | None:
     """Если transport-ошибка вызвана offline-нодой — вернуть понятный OfflineFailure."""
     if not should_remap_error_for_node_check(error_code):
@@ -517,6 +555,8 @@ async def resolve_task_error_with_node_offline(
         topology=topology,
         diagnostics=diag,
         persistent_only=False,
+        task_type=task_type,
+        current_stage=current_stage,
     )
     if required_failure is not None:
         return required_failure

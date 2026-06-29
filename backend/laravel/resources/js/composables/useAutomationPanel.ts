@@ -31,6 +31,7 @@ import {
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
 import { normalizeObservability } from '@/utils/automationObservability'
+import { automationHasTerminalFailure } from '@/utils/automationFailureState'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -158,14 +159,6 @@ function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
     pump_main: toOptionalBoolean(state.pump_main),
     updated_at: typeof state.updated_at === 'string' ? state.updated_at : null,
   }
-}
-
-function formatDuration(rawSeconds: number | null | undefined): string {
-  if (!rawSeconds || rawSeconds <= 0) return '00:00'
-  const total = Math.floor(rawSeconds)
-  const mm = Math.floor(total / 60)
-  const ss = total % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
 function normalizeReasonCode(reasonCode: string): string {
@@ -620,17 +613,7 @@ export function useAutomationPanel(
     || isIrrigationActive.value,
   )
 
-  const hasFailedState = computed(() => {
-    if (automationState.value?.state_details.failed) return true
-    // Fallback: только terminal-события провала всего процесса.
-    // Намеренно НЕ проверяем COMMAND_FAILED и *_TIMEOUT — они могут идти с retry и не означают
-    // гибель процесса целиком.
-    const timeline = automationState.value?.timeline ?? []
-    const latest = timeline[timeline.length - 1]
-    if (!latest) return false
-    const eventCode = String(latest.event ?? '').toUpperCase()
-    return eventCode === 'SCHEDULE_TASK_FAILED' || eventCode === 'TASK_FAILED'
-  })
+  const hasFailedState = computed(() => automationHasTerminalFailure(automationState.value))
 
   const workflowStages = computed<WorkflowStageView[]>(() => {
     return deriveWorkflowStages(stateCode.value, hasFailedState.value)

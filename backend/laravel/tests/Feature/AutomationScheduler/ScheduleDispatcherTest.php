@@ -473,6 +473,153 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertSame('failed', $logs[0]['status']);
         $this->assertSame('start_cycle_zone_busy', $logs[0]['context']['error']);
         $this->assertSame(409, $logs[0]['context']['status_code']);
+
+        $intent = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($intent);
+        $this->assertSame('pending', $intent->status);
+        $this->assertSame(0, (int) $intent->retry_count);
+    }
+
+    public function test_dispatch_http_error_marks_scheduler_intent_failed_after_max_retries(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-cycle' => Http::response([
+                'detail' => 'upstream unavailable',
+            ], 500),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-06-29 10:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'diagnostics',
+            intervalSec: 1800,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [],
+        );
+        $logs = [];
+        $writeLog = function (string $taskName, string $status, array $context) use (&$logs): void {
+            $logs[] = compact('taskName', 'status', 'context');
+        };
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $result = $dispatcher->dispatch(
+                zoneId: $zone->id,
+                schedule: $schedule,
+                triggerTime: $triggerTime,
+                scheduleKey: $schedule->scheduleKey,
+                context: $context,
+                writeLog: $writeLog,
+            );
+            $this->assertSame([
+                'dispatched' => false,
+                'retryable' => true,
+                'reason' => 'http_error',
+            ], $result);
+        }
+
+        $intent = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($intent);
+        $this->assertSame('failed', $intent->status);
+        $this->assertSame('scheduler_dispatch_http_error', $intent->error_code);
+        $this->assertSame(3, (int) $intent->retry_count);
+        $this->assertCount(3, $logs);
+    }
+
+    public function test_dispatch_connection_error_increments_scheduler_intent_retry_count(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-cycle' => function () {
+                throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
+            },
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-06-29 11:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'diagnostics',
+            intervalSec: 1800,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+            zoneWorkflowPhases: [],
+        );
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: static function (): void {},
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'connection_error',
+        ], $result);
+
+        $intent = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($intent);
+        $this->assertSame('pending', $intent->status);
+        $this->assertSame(1, (int) $intent->retry_count);
     }
 
     public function test_dispatch_skips_dispatch_for_manual_control_mode(): void

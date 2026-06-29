@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
 from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest, StartLightingTickRequest
-from ae3lite.domain.errors import TaskCreateError
+from ae3lite.domain.errors import ErrorCodes, TaskCreateError
 from ae3lite.domain.intent_metadata import IntentMetadata
 from ae3lite.infrastructure.metrics import INTENT_CLAIMED, INTENT_STALE_RECLAIMED, INTENT_TERMINAL
 from common.db import execute, fetch
@@ -24,6 +24,17 @@ def _affected_rows(command_tag: Any) -> int:
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _ACTIVE_STATUSES = frozenset({"claimed", "running"})
+_TRANSIENT_RETRYABLE_ERROR_CODES = frozenset({
+    ErrorCodes.AE3_REQUIRED_NODE_OFFLINE,
+    "ae3_required_node_offline",
+    ErrorCodes.COMMAND_SEND_FAILED,
+    "command_send_failed",
+    ErrorCodes.IRR_STATE_UNAVAILABLE,
+    "irr_state_unavailable",
+    ErrorCodes.IRR_STATE_STALE,
+    "irr_state_stale",
+    "command_timeout",
+})
 
 
 class PgZoneIntentRepository:
@@ -306,6 +317,54 @@ class PgZoneIntentRepository:
         error_code: Optional[str],
         error_message: Optional[str],
     ) -> None:
+        if not success:
+            normalized_code = str(error_code or "").strip().lower()
+            if normalized_code in {str(code).strip().lower() for code in _TRANSIENT_RETRYABLE_ERROR_CODES}:
+                rows = await fetch(
+                    """
+                    SELECT retry_count, max_retries
+                    FROM zone_automation_intents
+                    WHERE id = $1
+                      AND status IN ('pending', 'claimed', 'running')
+                    LIMIT 1
+                    """,
+                    intent_id,
+                )
+                if rows:
+                    row = dict(rows[0])
+                    retry_count = int(row.get("retry_count") or 0)
+                    max_retries = max(1, int(row.get("max_retries") or 3))
+                    if retry_count + 1 < max_retries:
+                        backoff_sec = min(300, 30 * (retry_count + 1))
+                        retry_at = now + timedelta(seconds=backoff_sec)
+                        result = await execute(
+                            """
+                            UPDATE zone_automation_intents
+                            SET status = 'pending',
+                                retry_count = retry_count + 1,
+                                completed_at = NULL,
+                                updated_at = $2,
+                                not_before = $3,
+                                error_code = $4,
+                                error_message = $5
+                            WHERE id = $1
+                              AND status IN ('pending', 'claimed', 'running')
+                            """,
+                            intent_id,
+                            now,
+                            retry_at,
+                            error_code,
+                            error_message,
+                        )
+                        if _affected_rows(result) > 0:
+                            logger.info(
+                                "AE3 intent requeued after transient failure: intent_id=%s code=%s retry_count=%s",
+                                intent_id,
+                                normalized_code,
+                                retry_count + 1,
+                            )
+                            return
+
         status = "completed" if success else "failed"
         result = await execute(
             """

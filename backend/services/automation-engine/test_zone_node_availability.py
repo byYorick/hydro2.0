@@ -11,6 +11,7 @@ from ae3lite.domain.services.zone_node_availability import (
     offline_failure_for_command_transport,
     offline_failure_from_liveness,
     offline_failure_for_node_uid,
+    required_node_types_for_task,
     resolve_required_nodes_offline_failure,
     resolve_task_error_with_node_offline,
     should_remap_error_for_node_check,
@@ -94,6 +95,54 @@ def test_resolve_required_nodes_offline_returns_persistent_code(monkeypatch: pyt
 
     assert failure is not None
     assert failure.code == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_PERSISTENTLY_OFFLINE
+
+
+def test_required_node_types_for_irrigation_start_only_needs_irrig() -> None:
+    required = required_node_types_for_task(
+        topology="two_tank",
+        task_type="irrigation_start",
+        current_stage="irrigation_run",
+    )
+    assert required == frozenset({"irrig"})
+
+
+def test_resolve_required_nodes_offline_ignores_ph_for_irrigation_start() -> None:
+    diagnostics = classify_zone_nodes(
+        zone_id=3,
+        diag_rows=[
+            {
+                "node_uid": "nd-irrig-1",
+                "node_type": "irrig",
+                "status": "online",
+                "last_seen_age_sec": 5,
+                "active_actuator_count": 4,
+            },
+            {
+                "node_uid": "nd-ph-1",
+                "node_type": "ph",
+                "status": "offline",
+                "last_seen_age_sec": 90,
+                "active_actuator_count": 2,
+            },
+            {
+                "node_uid": "nd-ec-1",
+                "node_type": "ec",
+                "status": "online",
+                "last_seen_age_sec": 5,
+                "active_actuator_count": 2,
+            },
+        ],
+    )
+
+    failure = resolve_required_nodes_offline_failure(
+        zone_id=3,
+        topology="two_tank",
+        diagnostics=diagnostics,
+        task_type="irrigation_start",
+        current_stage="irrigation_run",
+    )
+
+    assert failure is None
 
 
 def test_liveness_is_unreachable_for_offline_status() -> None:

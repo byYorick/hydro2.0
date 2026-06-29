@@ -191,4 +191,121 @@ class ZoneAutomationIntentService
                 'error_message' => $errorMessage,
             ]);
     }
+
+    /**
+     * Учитывает retryable dispatch failure планировщика: инкремент retry_count и terminal fail
+     * после исчерпания max_retries.
+     *
+     * @return array{failed: bool, retry_count: int}
+     */
+    public function recordSchedulerDispatchFailure(
+        int $zoneId,
+        string $idempotencyKey,
+        string $errorCode,
+        ?string $errorMessage = null,
+    ): array {
+        $now = CarbonImmutable::now('UTC')->setMicroseconds(0);
+
+        $row = DB::selectOne(
+            "
+            UPDATE zone_automation_intents
+            SET retry_count = retry_count + 1,
+                updated_at = ?
+            WHERE zone_id = ?
+              AND idempotency_key = ?
+              AND intent_source = 'laravel_scheduler'
+              AND status IN ('pending', 'claimed', 'running')
+            RETURNING retry_count, max_retries
+            ",
+            [$now, $zoneId, $idempotencyKey],
+        );
+
+        if ($row === null) {
+            return ['failed' => false, 'retry_count' => 0];
+        }
+
+        $retryCount = (int) ($row->retry_count ?? 0);
+        $maxRetries = max(1, (int) ($row->max_retries ?? 3));
+
+        if ($retryCount >= $maxRetries) {
+            $this->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: $errorCode,
+                errorMessage: $errorMessage,
+            );
+
+            return ['failed' => true, 'retry_count' => $retryCount];
+        }
+
+        return ['failed' => false, 'retry_count' => $retryCount];
+    }
+
+    /**
+     * Синхронизирует terminal failure intent-а с уже failed ae_task (по idempotency_key).
+     */
+    public function syncIntentFailedFromAeTask(
+        int $zoneId,
+        string $idempotencyKey,
+        string $errorCode,
+        ?string $errorMessage = null,
+    ): void {
+        if (trim($idempotencyKey) === '') {
+            return;
+        }
+
+        $transientCodes = [
+            'ae3_required_node_offline',
+            'command_send_failed',
+            'irr_state_unavailable',
+            'irr_state_stale',
+            'command_timeout',
+        ];
+        $normalizedCode = strtolower(trim($errorCode));
+
+        if (in_array($normalizedCode, $transientCodes, true)) {
+            $requeued = DB::update(
+                "
+                UPDATE zone_automation_intents
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    completed_at = NULL,
+                    updated_at = ?,
+                    not_before = ?,
+                    error_code = ?,
+                    error_message = ?
+                WHERE zone_id = ?
+                  AND idempotency_key = ?
+                  AND status IN ('pending', 'claimed', 'running')
+                  AND retry_count + 1 < max_retries
+                ",
+                [
+                    CarbonImmutable::now('UTC')->setMicroseconds(0),
+                    CarbonImmutable::now('UTC')->setMicroseconds(0)->addSeconds(60),
+                    $errorCode,
+                    $errorMessage,
+                    $zoneId,
+                    $idempotencyKey,
+                ],
+            );
+
+            if ($requeued > 0) {
+                return;
+            }
+        }
+
+        $now = CarbonImmutable::now('UTC')->setMicroseconds(0);
+
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->where('idempotency_key', $idempotencyKey)
+            ->whereIn('status', ['pending', 'claimed', 'running'])
+            ->update([
+                'status' => 'failed',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+            ]);
+    }
 }

@@ -50,6 +50,10 @@ class ZoneAutomationObservabilityService
             $hangHints[] = $hint;
         }
 
+        foreach ($this->intentDriftHangHints($zoneId) as $hint) {
+            $hangHints[] = $hint;
+        }
+
         foreach ($this->databaseHangHints($zoneId, $observability) as $hint) {
             $hangHints[] = $hint;
         }
@@ -404,6 +408,51 @@ class ZoneAutomationObservabilityService
         }
 
         return [];
+    }
+
+    /**
+     * Intent в running/claimed при ae_task в pending — типичный drift после requeue.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function intentDriftHangHints(int $zoneId): array
+    {
+        $row = DB::selectOne(
+            "SELECT zi.id AS intent_id,
+                    zi.status AS intent_status,
+                    zi.intent_type,
+                    t.id AS task_id,
+                    t.status AS task_status,
+                    zi.idempotency_key
+             FROM zone_automation_intents zi
+             INNER JOIN ae_tasks t
+               ON t.zone_id = zi.zone_id
+              AND t.idempotency_key = zi.idempotency_key
+             WHERE zi.zone_id = ?
+               AND zi.status IN ('claimed', 'running')
+               AND t.status = 'pending'
+             ORDER BY zi.updated_at DESC
+             LIMIT 1",
+            [$zoneId],
+        );
+
+        if ($row === null) {
+            return [];
+        }
+
+        return [[
+            'code' => 'scheduler_intent_task_drift',
+            'severity' => 'warning',
+            'message' => 'Статус intent планировщика не совпадает со статусом ae_task',
+            'recommendation' => 'Проверьте requeue two-tank, lifecycle intent в Laravel и worker AE3.',
+            'details' => [
+                'intent_id' => isset($row->intent_id) ? (int) $row->intent_id : null,
+                'intent_status' => is_string($row->intent_status ?? null) ? $row->intent_status : null,
+                'task_id' => isset($row->task_id) ? (int) $row->task_id : null,
+                'task_status' => is_string($row->task_status ?? null) ? $row->task_status : null,
+                'idempotency_key' => is_string($row->idempotency_key ?? null) ? $row->idempotency_key : null,
+            ],
+        ]];
     }
 
     /**

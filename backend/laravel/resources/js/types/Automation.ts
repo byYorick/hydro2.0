@@ -55,6 +55,13 @@ export interface AutomationState {
     error_message?: string | null
     human_error_message?: string | null
   }
+  last_terminal_failure?: {
+    task_id?: number | null
+    failed_at?: string | null
+    error_code?: string | null
+    error_message?: string | null
+    human_error_message?: string | null
+  } | null
   workflow_phase?: string | null
   current_stage?: string | null
   current_stage_label?: string | null

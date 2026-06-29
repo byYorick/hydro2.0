@@ -5,22 +5,37 @@
   >
     <div
       v-if="failed"
-      class="rounded-xl border border-red-400/35 bg-red-500/10 px-3 py-2.5 text-sm"
+      class="rounded-xl border px-3 py-2.5 text-sm"
+      :class="activeFailure
+        ? 'border-red-400/35 bg-red-500/10'
+        : 'border-amber-400/35 bg-amber-500/10'"
     >
-      <p class="font-semibold text-red-300">
-        Сбой автоматики
+      <p
+        class="font-semibold"
+        :class="activeFailure ? 'text-red-300' : 'text-amber-200'"
+      >
+        {{ activeFailure ? 'Сбой автоматики' : 'Последний сбой автоматики' }}
       </p>
       <p
         v-if="humanErrorMessage"
-        class="mt-1 text-xs text-red-200/85 break-words"
+        class="mt-1 text-xs break-words"
+        :class="activeFailure ? 'text-red-200/85' : 'text-amber-100/90'"
       >
         {{ humanErrorMessage }}
       </p>
       <p
         v-if="errorCode"
-        class="mt-1 font-mono text-[11px] text-red-300/70"
+        class="mt-1 font-mono text-[11px]"
+        :class="activeFailure ? 'text-red-300/70' : 'text-amber-200/70'"
       >
         {{ errorCode }}
+      </p>
+      <p
+        v-if="historicalFailure"
+        class="mt-1 text-[10px] opacity-75"
+        :class="activeFailure ? 'text-red-200/70' : 'text-amber-100/80'"
+      >
+        Активный алерт подтверждён; показан последний terminal failure из БД.
       </p>
     </div>
 
@@ -66,6 +81,8 @@ import { computed } from 'vue'
 
 interface Props {
   failed?: boolean
+  activeFailure?: boolean
+  historicalFailure?: boolean
   humanErrorMessage?: string | null
   errorCode?: string | null
   errorMessage?: string | null
@@ -77,6 +94,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   failed: false,
+  activeFailure: false,
+  historicalFailure: false,
   humanErrorMessage: null,
   errorCode: null,
   errorMessage: null,

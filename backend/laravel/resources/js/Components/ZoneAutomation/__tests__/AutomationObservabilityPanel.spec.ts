@@ -11,6 +11,15 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
+vi.mock('@/composables/useSchedulerDispatchMetrics', () => ({
+  useSchedulerDispatchMetrics: () => ({
+    metrics: { value: null },
+    loading: { value: false },
+    error: { value: null },
+    refreshedAt: { value: null },
+  }),
+}))
+
 function buildState(overrides: Partial<AutomationState> = {}): AutomationState {
   return {
     zone_id: 7,
@@ -52,6 +61,9 @@ function buildState(overrides: Partial<AutomationState> = {}): AutomationState {
         waiting_command: true,
         current_stage: 'clean_fill_check',
         stage_elapsed_sec: 360,
+        task_id: 9001,
+        topology: 'two_tank_drip_substrate_trays',
+        pending_manual_step: 'prepare_recirculation_stop',
       },
       hang_hints: [
         {
@@ -59,6 +71,11 @@ function buildState(overrides: Partial<AutomationState> = {}): AutomationState {
           severity: 'critical',
           message: 'Задача ждёт ответ по команде слишком долго',
           recommendation: 'Проверьте history-logger и MQTT.',
+          details: {
+            intent_id: 101,
+            age_sec: 540,
+            current_stage: 'clean_fill_check',
+          },
         },
         {
           code: 'scheduler_intent_pending',
@@ -94,6 +111,12 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('waiting_command_stuck')
     expect(wrapper.text()).toContain('scheduler_intent_pending')
     expect(wrapper.text()).toContain('pump-node-1')
+    expect(wrapper.text()).toContain('Task:')
+    expect(wrapper.text()).toContain('#9001')
+    expect(wrapper.text()).toContain('intent_id=101')
+    expect(wrapper.text()).toContain('age_sec=540')
+    expect(wrapper.text()).toContain('two_tank_drip_substrate_trays')
+    expect(wrapper.text()).toContain('prepare_recirculation_stop')
 
     const badge = wrapper.find('[data-testid="health-badge"]')
     expect(badge.attributes('data-variant')).toBe('danger')

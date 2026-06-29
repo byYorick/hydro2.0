@@ -781,4 +781,105 @@ class ZoneAutomationStateControllerTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_automation_state_includes_last_terminal_failure_from_database(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'failed',
+            'idempotency_key' => 'last-failure-test',
+            'error_code' => 'command_timeout',
+            'error_message' => 'TIMEOUT',
+            'scheduled_for' => now()->subMinutes(5),
+            'due_at' => now()->subMinutes(5),
+            'completed_at' => now()->subMinute(),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinute(),
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'READY',
+                'state_label' => 'Готово',
+                'state_details' => [
+                    'failed' => false,
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_details.failed', false)
+            ->assertJsonPath('last_terminal_failure.error_code', 'command_timeout')
+            ->assertJsonPath(
+                'last_terminal_failure.human_error_message',
+                'Не дождались подтверждения или итогового ответа по команде в допустимое время.'
+            );
+    }
+
+    public function test_automation_state_keeps_last_terminal_failure_after_acknowledged_alert_clears_active_failure(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_ae3_task_failed',
+            'status' => 'RESOLVED',
+        ]);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'failed',
+            'idempotency_key' => 'post-ack-failure-test',
+            'error_code' => 'irr_state_mismatch',
+            'error_message' => 'IRR state mismatch',
+            'scheduled_for' => now()->subMinutes(5),
+            'due_at' => now()->subMinutes(5),
+            'completed_at' => now()->subMinute(),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinute(),
+        ]);
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'READY',
+                'state_label' => 'Полив — сбой',
+                'state_details' => [
+                    'failed' => true,
+                    'error_code' => 'irr_state_mismatch',
+                    'error_message' => 'IRR state mismatch',
+                ],
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state_details.failed', false)
+            ->assertJsonPath('state_details.error_code', null)
+            ->assertJsonPath('last_terminal_failure.error_code', 'irr_state_mismatch')
+            ->assertJsonPath(
+                'last_terminal_failure.human_error_message',
+                'Состояние IRR-ноды не совпало с ожиданиями автоматики.'
+            );
+    }
 }

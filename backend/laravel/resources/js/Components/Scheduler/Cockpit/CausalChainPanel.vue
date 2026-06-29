@@ -41,18 +41,21 @@
     </header>
 
     <div
-      v-if="run.error_code"
+      v-if="run.error_code || errorText"
       class="mt-3 rounded-xl border border-[color:var(--accent-red)]/40 bg-[color:var(--accent-red)]/10 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
       data-testid="scheduler-chain-error"
     >
-      <div class="text-[11px] font-semibold text-[color:var(--accent-red)]">
-        {{ run.error_code }}
-      </div>
       <div
         v-if="errorText"
-        class="mt-0.5 text-[10px] text-[color:var(--text-dim)]"
+        class="text-[11px] font-semibold text-[color:var(--text-primary)]"
       >
         {{ errorText }}
+      </div>
+      <div
+        v-if="run.error_code"
+        class="mt-0.5 font-mono text-[10px] text-[color:var(--accent-red)]"
+      >
+        {{ run.error_code }}
       </div>
     </div>
 

@@ -347,6 +347,58 @@ class ZoneAutomationStateController extends Controller
     }
 
     /**
+     * Последний terminal failure по зоне (read-only для UI после ack алерта).
+     *
+     * @return array{
+     *     task_id: ?int,
+     *     failed_at: ?string,
+     *     error_code: ?string,
+     *     error_message: ?string,
+     *     human_error_message: ?string
+     * }|null
+     */
+    private function fetchLastTerminalFailure(int $zoneId): ?array
+    {
+        try {
+            $row = DB::selectOne(
+                'SELECT id, error_code, error_message, completed_at, updated_at
+                 FROM ae_tasks
+                 WHERE zone_id = ?
+                   AND status = ?
+                 ORDER BY COALESCE(completed_at, updated_at) DESC, id DESC
+                 LIMIT 1',
+                [$zoneId, 'failed'],
+            );
+
+            if ($row === null) {
+                return null;
+            }
+
+            $presentation = $this->errorCodeCatalog->present(
+                is_string($row->error_code ?? null) ? $row->error_code : null,
+                is_string($row->error_message ?? null) ? $row->error_message : null,
+            );
+
+            $failedAt = $row->completed_at ?? $row->updated_at;
+
+            return [
+                'task_id' => isset($row->id) ? (int) $row->id : null,
+                'failed_at' => $failedAt !== null ? (string) $failedAt : null,
+                'error_code' => is_string($row->error_code ?? null) ? $row->error_code : null,
+                'error_message' => is_string($row->error_message ?? null) ? $row->error_message : null,
+                'human_error_message' => $presentation['message'],
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('ZoneAutomationStateController: could not fetch last terminal failure', [
+                'zone_id' => $zoneId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
      * @param  array<string,mixed>  $lastTaskState
      * @return array<string,mixed>
      */
@@ -522,6 +574,7 @@ class ZoneAutomationStateController extends Controller
 
         $payload = $this->enrichPayloadWithZoneControlMode($payload, $zone);
         $payload = $this->observabilityService->enrichPayload((int) $zone->id, $payload, $isStale);
+        $payload['last_terminal_failure'] = $this->fetchLastTerminalFailure((int) $zone->id);
 
         $payload['state_meta'] = [
             'source' => $source,

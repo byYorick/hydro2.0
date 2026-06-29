@@ -157,6 +157,7 @@ Breaking-change: обратная совместимость со старыми
 - `state_meta.source` (`live|cache`) и `state_meta.is_stale` обязательны; при cache fallback UI должен считать snapshot устаревшим.
 - блок `observability` обогащается Laravel (`ZoneAutomationObservabilityService`): полная схема, hint-коды и merge-правила live/stale — `API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7.
 - при `state_details.failed=true` terminal error скрывается, если нет ACTIVE policy-managed alert в зоне (post-ack UX); humanization через `ErrorCodeCatalogService` выполняется до этой фильтрации.
+- `last_terminal_failure` — read-only снимок последнего `ae_tasks.status=failed` из БД Laravel; **не** очищается post-ack (в отличие от `state_details.failed`); поля: `task_id`, `failed_at`, `error_code`, `error_message`, `human_error_message`.
 
 Контракт `POST /api/zones/{id}/start-irrigation`:
 - body: `{ "mode": "normal" | "force", "requested_duration_sec"?: number }`;

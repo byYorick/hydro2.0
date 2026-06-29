@@ -147,6 +147,7 @@ class ExecuteTaskUseCase:
                     now=now,
                 )
                 if final_task is not None and not bool(getattr(final_task, "is_active", False)):
+                    await self._apply_terminal_task_side_effects(task=final_task, now=now)
                     if str(getattr(final_task, "status", "")).strip().lower() == "completed":
                         try:
                             await create_zone_event(final_task.zone_id, "AE_TASK_COMPLETED", {
@@ -199,6 +200,7 @@ class ExecuteTaskUseCase:
                 fallback_task=exc.task,
             )
             if terminal_task is not None:
+                await self._apply_terminal_task_side_effects(task=terminal_task, now=now)
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s",
                     getattr(terminal_task, "zone_id", None),
@@ -664,6 +666,8 @@ class ExecuteTaskUseCase:
             topology=topology,
             diagnostics=diagnostics,
             persistent_only=False,
+            task_type=str(getattr(task, "task_type", "") or "") or None,
+            current_stage=str(getattr(task, "current_stage", "") or "") or None,
         )
 
     def _extract_irrig_node_uid(self, snapshot: Any) -> str | None:
@@ -697,6 +701,8 @@ class ExecuteTaskUseCase:
                 error_message=original_error_message,
                 node_uid=node_uid,
                 runtime_monitor=getattr(self._workflow_router, "_runtime_monitor", None),
+                task_type=str(getattr(task, "task_type", "") or "") or None,
+                current_stage=str(getattr(task, "current_stage", "") or "") or None,
             )
         except Exception:
             logger.warning(
@@ -1124,24 +1130,60 @@ class ExecuteTaskUseCase:
             now=now,
             )
 
+    async def _apply_terminal_task_side_effects(self, *, task: Any, now: datetime) -> None:
+        """Side-effects для terminal task, помеченного вне fail_closed (gateway/router)."""
+        status = str(getattr(task, "status", "") or "").strip().lower()
+        if status != "failed":
+            return
+        await self._sync_workflow_failure_state(task=task, now=now)
+
     async def _sync_workflow_failure_state(self, *, task: Any, now: datetime) -> None:
         if self._workflow_repository is None:
             return
-        try:
-            await self._workflow_repository.upsert_phase(
-                zone_id=int(getattr(task, "zone_id", 0) or 0),
-                workflow_phase="idle",
-                payload={"ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or "")},
-                scheduler_task_id=str(getattr(task, "id", "") or ""),
-                now=now,
-            )
-        except Exception:
-            logger.warning(
-                "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                exc_info=True,
-            )
+        from ae3lite.domain.errors import Ae3LiteError
+        from ae3lite.domain.services.workflow_failure_rollback import (
+            resolve_workflow_phase_after_task_failure,
+        )
+
+        rollback_phase = resolve_workflow_phase_after_task_failure(task)
+        scheduler_task_id = (
+            None
+            if rollback_phase in {"ready", "irrig_recirc"}
+            else str(getattr(task, "id", "") or "") or None
+        )
+        payload = {
+            "ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or ""),
+            "ae3_failure_rollback": True,
+            "ae3_failed_task_id": int(getattr(task, "id", 0) or 0) or None,
+        }
+        for attempt in range(3):
+            try:
+                await self._workflow_repository.upsert_phase(
+                    zone_id=int(getattr(task, "zone_id", 0) or 0),
+                    workflow_phase=rollback_phase,
+                    payload=payload,
+                    scheduler_task_id=scheduler_task_id,
+                    now=now,
+                )
+                return
+            except Ae3LiteError as exc:
+                if "CAS conflict" in str(exc) and attempt < 2:
+                    continue
+                logger.warning(
+                    "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
+                    int(getattr(task, "zone_id", 0) or 0),
+                    int(getattr(task, "id", 0) or 0),
+                    exc_info=True,
+                )
+                return
+            except Exception:
+                logger.warning(
+                    "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
+                    int(getattr(task, "zone_id", 0) or 0),
+                    int(getattr(task, "id", 0) or 0),
+                    exc_info=True,
+                )
+                return
 
     async def _task_still_exists(self, *, task: Any) -> bool:
         get_by_id = getattr(self._task_repository, "get_by_id", None)

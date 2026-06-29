@@ -135,6 +135,8 @@ class CreateTaskFromIntentUseCase:
                     zone_id=zone_id,
                     topology=meta.topology,
                     conn=conn,
+                    task_type=meta.task_type,
+                    current_stage=meta.current_stage,
                 )
                 irrigation_snapshot = await self._resolve_irrigation_decision_snapshot(
                     zone_id=zone_id,
@@ -182,6 +184,8 @@ class CreateTaskFromIntentUseCase:
         zone_id: int,
         topology: str,
         conn: Any,
+        task_type: str | None = None,
+        current_stage: str | None = None,
     ) -> None:
         from ae3lite.domain.services.zone_node_availability import (
             assert_required_nodes_available,
@@ -195,6 +199,8 @@ class CreateTaskFromIntentUseCase:
                 topology=topology,
                 diagnostics=diagnostics,
                 persistent_only=False,
+                task_type=task_type,
+                current_stage=current_stage,
             )
         except SnapshotBuildError as exc:
             code = str(getattr(exc, "code", "") or ErrorCodes.AE3_REQUIRED_NODE_OFFLINE)

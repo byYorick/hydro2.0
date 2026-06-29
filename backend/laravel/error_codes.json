@@ -1089,6 +1089,36 @@
       "message": "Отсутствует обязательная калибровка дозирующих насосов."
     },
     {
+      "code": "scheduler_dispatch_connection_error",
+      "title": "Ошибка связи планировщика",
+      "message": "Планировщик не смог связаться с automation-engine при отправке intent."
+    },
+    {
+      "code": "scheduler_dispatch_http_error",
+      "title": "HTTP-ошибка планировщика",
+      "message": "Automation-engine вернул ошибку при приёме intent от планировщика."
+    },
+    {
+      "code": "scheduler_intent_orphan_pending",
+      "title": "Зависший intent планировщика",
+      "message": "Intent планировщика остался в pending без активной задачи AE3 дольше допустимого порога."
+    },
+    {
+      "code": "task_progress_stale",
+      "title": "Задача без прогресса",
+      "message": "Задача AE3 в running/waiting_command не обновлялась дольше допустимого порога."
+    },
+    {
+      "code": "claim_stale",
+      "title": "Зависший claim задачи",
+      "message": "Задача AE3 осталась в claimed без прогресса дольше допустимого порога."
+    },
+    {
+      "code": "stage_deadline_exceeded",
+      "title": "Превышен deadline этапа",
+      "message": "Задача AE3 не уложилась в deadline текущего этапа."
+    },
+    {
       "code": "zone_not_found",
       "title": "Зона не найдена",
       "message": "Zone не найдена."

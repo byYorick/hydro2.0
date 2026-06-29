@@ -557,6 +557,99 @@ async def test_execute_task_returns_cancelled_task_without_fail_closed_or_alert(
 
 
 @pytest.mark.asyncio
+async def test_execute_task_terminal_state_reached_failed_syncs_workflow_to_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_zone_nodes_diagnostics(**kwargs):
+        from ae3lite.domain.services.zone_node_availability import classify_zone_nodes
+
+        return classify_zone_nodes(
+            zone_id=int(kwargs.get("zone_id", 99) or 99),
+            diag_rows=[
+                {"node_uid": "nd-irrig-1", "node_type": "irrig", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 4},
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.domain.services.zone_node_availability.fetch_zone_nodes_diagnostics",
+        _fetch_zone_nodes_diagnostics,
+    )
+
+    base = _make_task(stage="irrigation_start", topology="two_tank", task_type="irrigation_start")
+    failed_task = replace(
+        base,
+        status="failed",
+        error_code="ae3_required_node_offline",
+        workflow=replace(base.workflow, workflow_phase="irrigating"),
+    )
+    workflow_repo = _WorkflowRepoRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=base),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=object(),
+        workflow_router=_WorkflowRouterTerminalTask(task=failed_task),
+        workflow_repository=workflow_repo,
+        finalize_task_use_case=_FinalizeTaskUseCase(),
+    )
+
+    result = await use_case.run(task=base, now=NOW)
+
+    assert result.status == "failed"
+    assert workflow_repo.calls == [
+        {
+            "zone_id": 99,
+            "workflow_phase": "ready",
+            "payload": {
+                "ae3_cycle_start_stage": "irrigation_start",
+                "ae3_failure_rollback": True,
+                "ae3_failed_task_id": 99,
+            },
+            "scheduler_task_id": None,
+            "now": NOW,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_workflow_router_failed_return_syncs_workflow_to_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_zone_nodes_diagnostics(**kwargs):
+        from ae3lite.domain.services.zone_node_availability import classify_zone_nodes
+
+        return classify_zone_nodes(
+            zone_id=int(kwargs.get("zone_id", 99) or 99),
+            diag_rows=[
+                {"node_uid": "nd-irrig-1", "node_type": "irrig", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 4},
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.domain.services.zone_node_availability.fetch_zone_nodes_diagnostics",
+        _fetch_zone_nodes_diagnostics,
+    )
+
+    base = _make_task(stage="irrigation_start", topology="two_tank", task_type="irrigation_start")
+    workflow_repo = _WorkflowRepoRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=base),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=object(),
+        workflow_router=_WorkflowRouterFails(),
+        workflow_repository=workflow_repo,
+        finalize_task_use_case=_FinalizeTaskUseCase(),
+    )
+
+    result = await use_case.run(task=base, now=NOW)
+
+    assert result.status == "failed"
+    assert workflow_repo.calls[0]["workflow_phase"] == "ready"
+    assert workflow_repo.calls[0]["scheduler_task_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_execute_task_expected_domain_errors_do_not_log_traceback(caplog: pytest.LogCaptureFixture) -> None:
     finalize = _FinalizeTaskUseCase()
     task = _make_task(stage="startup")
@@ -1572,7 +1665,26 @@ async def test_execute_task_lease_lost_cancellation_fails_closed_and_runs_fail_s
 
 
 @pytest.mark.asyncio
-async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle() -> None:
+async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_zone_nodes_diagnostics(**kwargs):
+        from ae3lite.domain.services.zone_node_availability import classify_zone_nodes
+
+        return classify_zone_nodes(
+            zone_id=int(kwargs.get("zone_id", 99) or 99),
+            diag_rows=[
+                {"node_uid": "nd-irrig-1", "node_type": "irrig", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 4},
+                {"node_uid": "nd-ph-1", "node_type": "ph", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 2},
+                {"node_uid": "nd-ec-1", "node_type": "ec", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 2},
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.domain.services.zone_node_availability.fetch_zone_nodes_diagnostics",
+        _fetch_zone_nodes_diagnostics,
+    )
+
     task = _make_task(stage="solution_fill_start", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
     workflow_repo = _WorkflowRepoRecorder()
@@ -1594,11 +1706,59 @@ async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle() -> N
         {
             "zone_id": 99,
             "workflow_phase": "idle",
-            "payload": {"ae3_cycle_start_stage": "solution_fill_start"},
+            "payload": {
+                "ae3_cycle_start_stage": "solution_fill_start",
+                "ae3_failure_rollback": True,
+                "ae3_failed_task_id": 99,
+            },
             "scheduler_task_id": "99",
             "now": NOW,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_fail_closed_syncs_irrigation_workflow_to_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fetch_zone_nodes_diagnostics(**kwargs):
+        from ae3lite.domain.services.zone_node_availability import classify_zone_nodes
+
+        return classify_zone_nodes(
+            zone_id=int(kwargs.get("zone_id", 99) or 99),
+            diag_rows=[
+                {"node_uid": "nd-irrig-1", "node_type": "irrig", "status": "online", "last_seen_age_sec": 5, "active_actuator_count": 4},
+            ],
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.domain.services.zone_node_availability.fetch_zone_nodes_diagnostics",
+        _fetch_zone_nodes_diagnostics,
+    )
+
+    task = replace(
+        _make_task(stage="irrigation_run", topology="two_tank", task_type="irrigation_start"),
+        workflow=replace(
+            _make_task(stage="irrigation_run", topology="two_tank", task_type="irrigation_start").workflow,
+            workflow_phase="irrigating",
+        ),
+    )
+    finalize = _FinalizeTaskUseCase()
+    workflow_repo = _WorkflowRepoRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelFails(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        workflow_repository=workflow_repo,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert workflow_repo.calls[0]["workflow_phase"] == "ready"
+    assert workflow_repo.calls[0]["scheduler_task_id"] is None
 
 
 @pytest.mark.asyncio

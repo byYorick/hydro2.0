@@ -671,6 +671,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
     - `nodes[]{uid,type,status,last_seen_age_sec,required,healthy}`
     - `offline_required[]`, `persistent_offline`
   - `observability.hang_hints[]`: `{code, severity, message, recommendation?, details?}`
+  - `last_terminal_failure` (read-only, Laravel DB): последний terminal `ae_tasks.status=failed` для зоны; **не** очищается при ack policy-managed алерта (`clearAcknowledgedTerminalFailure`), в отличие от `state_details.failed`
 - **Каталог `hang_hints` (источник генерации):**
 
 | code | severity | Кто генерирует | Условие (кратко) |
@@ -690,6 +691,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 | `scheduler_intent_pending` | warning/critical | Laravel only | pending intent age ≥ 300 с / ≥ 900 с |
 | `scheduler_intent_claimed_stuck` | warning/critical | Laravel only | claimed age ≥ 180 с / ≥ 600 с |
 | `scheduler_intent_running_stuck` | warning | Laravel only | running intent age ≥ 600 с |
+| `scheduler_intent_task_drift` | warning | Laravel only | intent `claimed|running` + ae_task `pending` с тем же `idempotency_key` |
 | `state_snapshot_stale` | warning | Frontend client | `state_meta.is_stale=true` (добавляется UI, если hint ещё нет) |
 
 - **AE3 per-stage пороги `stage_elapsed_long` (warn / critical, сек):**

@@ -16,6 +16,7 @@ from common.command_status_queue import (
     repair_worker as command_status_repair_worker,
     retry_worker as command_retry_worker,
 )
+from commands.drain import drain_stale_queued_commands_once, drain_worker as queued_command_drain_worker
 from common.env import get_settings
 from common.http_client_pool import close_http_client as close_unified_http_client
 from common.mqtt import get_mqtt_client
@@ -84,6 +85,26 @@ async def lifespan(app: FastAPI):
         )
     )
     state.background_tasks.append(command_repair_task)
+
+    try:
+        drain_summary = await drain_stale_queued_commands_once(
+            stale_after_seconds=s.command_status_repair_stale_after_sec,
+            limit=s.command_status_repair_batch_size,
+        )
+        if drain_summary.get("drained", 0) > 0:
+            logger.info("Startup queued command drain: %s", drain_summary)
+    except Exception:
+        logger.warning("Startup queued command drain failed", exc_info=True)
+
+    queued_drain_task = asyncio.create_task(
+        queued_command_drain_worker(
+            interval=s.command_status_repair_interval_sec,
+            stale_after_seconds=s.command_status_repair_stale_after_sec,
+            batch_size=s.command_status_repair_batch_size,
+            shutdown_event=state.shutdown_event,
+        )
+    )
+    state.background_tasks.append(queued_drain_task)
 
     alert_retry_task = asyncio.create_task(
         alert_retry_worker(interval=30.0, shutdown_event=state.shutdown_event)

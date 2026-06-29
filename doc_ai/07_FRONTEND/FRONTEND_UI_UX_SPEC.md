@@ -239,9 +239,12 @@ resources/js/Pages/
 - панель **всегда видна** на runtime-вкладке (не только при ошибках);
 - badge `overall_health`: `idle` → neutral, `active` → info, `warning` → warning, `critical` → danger;
 - заголовок процесса (`AutomationStatusHeader.stateVariant`) наследует `critical` → danger и `warning` → warning из `observability.overall_health`;
-- список `hang_hints[]` показывает `message`, `recommendation` и технический `code`;
+- список `hang_hints[]` показывает `message`, `recommendation`, `details` (intent_id, age_sec, stage, nodes…) и технический `code`;
+- `runtime`: `task_id`, `topology`, `pending_manual_step`, `correction_step`;
+- **`SchedulerDispatchMetricsStrip`**: polling `GET /api/system/scheduler/metrics` (15 с) — глобальные pending/oldest age/cycle overrun;
 - блок «Планировщик» — из `observability.scheduler` (`pending_count`, `latest_intent`);
 - offline required nodes — из `observability.nodes.offline_required`;
+- **`AutomationRuntimeAlerts`**: active failure (`state_details.failed`) vs historical (`last_terminal_failure` после ack); unified failed state — `utils/automationFailureState.ts` (workflow bar + alerts);
 - подпись «Источник»:
   - `state_meta.is_stale` → «кэш Laravel (AE3 недоступен)»;
   - `runtime.source=laravel_db_fallback` → «БД Laravel (fallback)»;

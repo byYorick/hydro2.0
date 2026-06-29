@@ -39,9 +39,37 @@
         class="diag-tile col-span-2"
       >
         <dt>Коррекция</dt>
-        <dd class="font-mono text-[11px]">{{ correctionStep }}</dd>
+        <dd class="font-mono text-[11px]">
+          {{ correctionStep }}
+        </dd>
+      </div>
+      <div
+        v-if="topologyLabel"
+        class="diag-tile"
+      >
+        <dt>Топология</dt>
+        <dd class="font-mono text-[11px]">
+          {{ topologyLabel }}
+        </dd>
+      </div>
+      <div
+        v-if="pendingManualStepLabel"
+        class="diag-tile col-span-2"
+      >
+        <dt>Ручной шаг</dt>
+        <dd class="font-mono text-[11px]">
+          {{ pendingManualStepLabel }}
+        </dd>
       </div>
     </dl>
+
+    <div
+      v-if="taskIdLabel"
+      class="rounded-lg border border-[color:var(--border-muted)]/40 bg-[color:var(--surface-muted)]/20 px-3 py-2 text-xs text-[color:var(--text-muted)]"
+    >
+      <span class="text-[color:var(--text-primary)] font-medium">Task:</span>
+      {{ taskIdLabel }}
+    </div>
 
     <div
       v-if="schedulerSummary"
@@ -70,6 +98,8 @@
       Источник: {{ dataSourceLabel }}
     </p>
 
+    <SchedulerDispatchMetricsStrip />
+
     <ul
       v-if="hangHints.length > 0"
       class="space-y-2"
@@ -89,6 +119,17 @@
         >
           {{ hint.recommendation }}
         </p>
+        <ul
+          v-if="hintDetailLines(hint).length > 0"
+          class="mt-1.5 space-y-0.5 font-mono text-[10px] opacity-80"
+        >
+          <li
+            v-for="line in hintDetailLines(hint)"
+            :key="line"
+          >
+            {{ line }}
+          </li>
+        </ul>
         <p class="mt-1 font-mono text-[10px] opacity-70">
           {{ hint.code }}
         </p>
@@ -107,6 +148,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
+import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
 import type { AutomationObservability, AutomationState } from '@/types/Automation'
 import {
   formatObservabilityDuration,
@@ -170,6 +212,30 @@ const deadlineLabel = computed(() => {
 
 const correctionStep = computed(() => observability.value?.runtime?.correction_step ?? null)
 
+const topologyLabel = computed(() => {
+  const topology = observability.value?.runtime?.topology
+  if (typeof topology !== 'string' || topology.trim() === '') {
+    return null
+  }
+  return topology.trim()
+})
+
+const pendingManualStepLabel = computed(() => {
+  const step = observability.value?.runtime?.pending_manual_step
+  if (typeof step !== 'string' || step.trim() === '') {
+    return null
+  }
+  return step.trim()
+})
+
+const taskIdLabel = computed(() => {
+  const taskId = observability.value?.runtime?.task_id
+  if (taskId === null || taskId === undefined) {
+    return null
+  }
+  return `#${taskId}`
+})
+
 const offlineNodes = computed(() => observability.value?.nodes?.offline_required ?? [])
 
 const dataSourceLabel = computed(() => {
@@ -212,6 +278,47 @@ function hintClass(severity: string): string {
     return 'border-red-400/35 bg-red-500/10 text-red-100'
   }
   return 'border-amber-400/35 bg-amber-500/10 text-amber-100'
+}
+
+function hintDetailLines(hint: { details?: Record<string, unknown> }): string[] {
+  const details = hint.details
+  if (!details || typeof details !== 'object') {
+    return []
+  }
+
+  const lines: string[] = []
+  if (details.intent_id != null) {
+    lines.push(`intent_id=${String(details.intent_id)}`)
+  }
+  if (typeof details.intent_type === 'string' && details.intent_type !== '') {
+    lines.push(`intent_type=${details.intent_type}`)
+  }
+  if (details.age_sec != null) {
+    lines.push(`age_sec=${String(details.age_sec)}`)
+  }
+  if (details.waiting_elapsed_sec != null) {
+    lines.push(`waiting_elapsed_sec=${String(details.waiting_elapsed_sec)}`)
+  }
+  if (typeof details.current_stage === 'string' && details.current_stage !== '') {
+    lines.push(`stage=${details.current_stage}`)
+  }
+  if (details.overdue_sec != null) {
+    lines.push(`overdue_sec=${String(details.overdue_sec)}`)
+  }
+  if (typeof details.task_status === 'string' && details.task_status !== '') {
+    lines.push(`task_status=${details.task_status}`)
+  }
+  if (typeof details.intent_status === 'string' && details.intent_status !== '') {
+    lines.push(`intent_status=${details.intent_status}`)
+  }
+  if (typeof details.idempotency_key === 'string' && details.idempotency_key !== '') {
+    lines.push(`idempotency_key=${details.idempotency_key}`)
+  }
+  if (Array.isArray(details.nodes) && details.nodes.length > 0) {
+    lines.push(`nodes=${details.nodes.map((n) => String(n)).join(',')}`)
+  }
+
+  return lines
 }
 </script>
 
