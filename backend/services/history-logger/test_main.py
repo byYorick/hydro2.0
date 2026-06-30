@@ -846,6 +846,89 @@ async def test_process_telemetry_batch_refreshes_stale_node_cache_before_unassig
 
 
 @pytest.mark.asyncio
+async def test_refresh_node_cache_for_uid_updates_stale_assignment():
+    import telemetry_processing as tp
+    from telemetry_processing import refresh_node_cache_for_uid
+
+    tp._node_cache.clear()
+    tp._node_cache[("nd-irrig-1", "gh-1")] = (1, None, None)
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = [
+            {"id": 1, "zone_id": 1, "pending_zone_id": None, "gh_uid": "gh-1"},
+        ]
+        assert await refresh_node_cache_for_uid("nd-irrig-1") is True
+
+    assert tp._node_cache[("nd-irrig-1", "gh-1")][1] == 1
+    assert tp._node_cache[("nd-irrig-1", None)][1] == 1
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_prewarms_stale_assignment_for_all_level_channels():
+    """Все level-каналы одного узла должны пройти после prewarm, даже при stale node cache."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._zone_greenhouse_cache.clear()
+    tp._sensor_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._cache_last_update = time.time()
+
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+    tp._zone_greenhouse_cache[1] = 1
+    tp._node_cache[("nd-irrig-1", "gh-1")] = (1, None, None)
+
+    channels = [
+        "level_clean_min",
+        "level_clean_max",
+        "level_solution_min",
+        "level_solution_max",
+    ]
+    for index, channel in enumerate(channels, start=1):
+        tp._sensor_cache[(1, 1, "WATER_LEVEL", channel)] = 400 + index
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-irrig-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="WATER_LEVEL_SWITCH",
+            value=0.0,
+            channel=channel,
+            ts=utcnow(),
+        )
+        for channel in channels
+    ]
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "where n.uid = $1" in normalized:
+            return [{"id": 1, "zone_id": 1, "pending_zone_id": None, "gh_uid": "gh-1"}]
+        if "from nodes where uid = $1" in normalized:
+            return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+        if "from sensors" in normalized and "any($1" in normalized:
+            return [{"id": sensor_id} for sensor_id in range(401, 405)]
+        return []
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
+    assert "infra_telemetry_node_unassigned" not in emitted_codes
+    assert tp._node_cache[("nd-irrig-1", "gh-1")][1] == 1
+    assert mock_execute.await_count > 0
+
+
+@pytest.mark.asyncio
 async def test_process_telemetry_batch_throttles_node_unassigned_alert_across_channels():
     """Node-unassigned anomaly should be throttled per node/zone, not per channel."""
     import telemetry_processing as tp

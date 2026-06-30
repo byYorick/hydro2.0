@@ -17,6 +17,7 @@ from .node_connectivity_alerts import (
     raise_node_offline_alert,
     resolve_node_online_alert,
 )
+from telemetry_processing import refresh_node_cache_for_uid
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,15 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
             free_heap,
             rssi,
         )
+        try:
+            await refresh_node_cache_for_uid(node_uid)
+        except Exception as cache_err:
+            logger.warning(
+                "Failed to refresh telemetry node cache after heartbeat: node_uid=%s error=%s",
+                node_uid,
+                cache_err,
+                exc_info=True,
+            )
         await resolve_node_online_alert(node_uid=node_uid, reason="heartbeat")
     finally:
         clear_trace_id()
@@ -195,6 +205,15 @@ async def handle_status(topic: str, payload: bytes) -> None:
                     node_uid,
                 )
             logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
+            try:
+                await refresh_node_cache_for_uid(node_uid)
+            except Exception as cache_err:
+                logger.warning(
+                    "Failed to refresh telemetry node cache after status ONLINE: node_uid=%s error=%s",
+                    node_uid,
+                    cache_err,
+                    exc_info=True,
+                )
             await resolve_node_online_alert(node_uid=node_uid, reason="status_online")
         elif status == "OFFLINE":
             await execute(

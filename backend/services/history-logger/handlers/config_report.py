@@ -23,6 +23,7 @@ from ._shared import (
     to_optional_bool,
 )
 from .node_channels_sync import sync_node_channels_from_payload
+from telemetry_processing import refresh_node_cache_for_uid
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,16 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             topic_gh_uid=gh_uid,
             topic_zone_uid=zone_uid,
         )
+
+        try:
+            await refresh_node_cache_for_uid(node_uid)
+        except Exception as cache_err:
+            logger.warning(
+                "Failed to refresh telemetry node cache after config_report: node_uid=%s error=%s",
+                node_uid,
+                cache_err,
+                exc_info=True,
+            )
 
         CONFIG_REPORT_PROCESSED.inc()
         logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
