@@ -180,7 +180,9 @@ const healthBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'danger' | 
 const stageLabel = computed(() => {
   const runtime = observability.value?.runtime
   if (runtime?.task_status === 'failed' && !runtime?.task_is_active) {
-    const failedStage = (runtime as { failed_stage?: string | null }).failed_stage
+    const failedStage = runtime.failed_stage
+      ?? props.automationState?.current_stage
+      ?? null
     if (failedStage) {
       return `${stageDiagnosticLabel(failedStage)} (сбой)`
     }

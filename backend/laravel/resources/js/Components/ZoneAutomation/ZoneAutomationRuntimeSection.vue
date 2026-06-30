@@ -17,7 +17,16 @@
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge :variant="stateBadgeVariant">
+          <Badge
+            v-if="isAutomationStateLoading"
+            variant="info"
+          >
+            Загрузка…
+          </Badge>
+          <Badge
+            v-else
+            :variant="stateBadgeVariant"
+          >
             {{ stateCode }}
           </Badge>
           <Badge
@@ -138,6 +147,7 @@ const emit = defineEmits<{
 
 const {
   automationState,
+  isAutomationStateLoading,
   errorMessage,
   connectivityWarning,
   flowOffset,

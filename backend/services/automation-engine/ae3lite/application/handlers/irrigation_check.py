@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler, _utc_naive_dt
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.domain.services.irrigation_actuation import (
+    irrigation_start_uses_set_relay_pump,
+    irrigation_start_uses_timed_run_pump,
+)
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import (
@@ -431,18 +435,33 @@ class IrrigationCheckHandler(BaseStageHandler):
             except (TypeError, ValueError):
                 return 120
 
-    def _irrigation_start_uses_set_relay_pump(self, *, plan: Any) -> bool:
-        named = getattr(plan, "named_plans", None) or {}
-        if not isinstance(named, Mapping):
-            return True
-        commands = named.get("irrigation_start", ())
-        for command in commands:
-            channel = str(getattr(command, "channel", "") or "").strip().lower()
-            payload = getattr(command, "payload", None)
-            if channel != "pump_main" or not isinstance(payload, Mapping):
-                continue
-            return str(payload.get("cmd") or "").strip().lower() == "set_relay"
-        return True
+    def _resolve_irrigation_pump_stop_at(
+        self,
+        *,
+        task: Any,
+        runtime: Any,
+        plan: Any,
+        requested_sec: int,
+    ) -> datetime | None:
+        if irrigation_start_uses_timed_run_pump(plan):
+            return None
+
+        deadline = getattr(task.workflow, "stage_deadline_at", None)
+        if not isinstance(deadline, datetime):
+            return None
+
+        if irrigation_start_uses_set_relay_pump(plan):
+            deadline_naive = _utc_naive_dt(deadline)
+            entered = getattr(task.workflow, "stage_entered_at", None)
+            if isinstance(entered, datetime):
+                entered_stop = _utc_naive_dt(entered) + timedelta(seconds=requested_sec)
+                return min(deadline_naive, entered_stop)
+            return deadline_naive
+
+        entered = getattr(task.workflow, "stage_entered_at", None)
+        if not isinstance(entered, datetime):
+            return None
+        return _utc_naive_dt(entered) + timedelta(seconds=requested_sec)
 
     def _resolve_expected_irrigation_state(
         self,
@@ -456,10 +475,23 @@ class IrrigationCheckHandler(BaseStageHandler):
             "valve_solution_supply": True,
             "valve_irrigation": True,
         }
-        if not self._irrigation_start_uses_set_relay_pump(plan=plan):
+        if irrigation_start_uses_timed_run_pump(plan):
             return {**base, "pump_main": False}
 
         requested_sec = self._resolve_irrigation_duration_sec(task=task, runtime=runtime)
+        if irrigation_start_uses_set_relay_pump(plan):
+            pump_stop_at = self._resolve_irrigation_pump_stop_at(
+                task=task,
+                runtime=runtime,
+                plan=plan,
+                requested_sec=requested_sec,
+            )
+            if pump_stop_at is None:
+                return {**base, "pump_main": True}
+
+            now_naive = _utc_naive_dt(now)
+            return {**base, "pump_main": now_naive < pump_stop_at}
+
         entered = getattr(task.workflow, "stage_entered_at", None)
         if not isinstance(entered, datetime):
             return {**base, "pump_main": True}
@@ -476,16 +508,20 @@ class IrrigationCheckHandler(BaseStageHandler):
         now: datetime,
         observe_duration: Any,
     ) -> StageOutcome | None:
-        if not self._irrigation_start_uses_set_relay_pump(plan=plan):
+        if not irrigation_start_uses_set_relay_pump(plan):
             return None
 
         requested_sec = self._resolve_irrigation_duration_sec(task=task, runtime=runtime)
-        entered = getattr(task.workflow, "stage_entered_at", None)
-        if not isinstance(entered, datetime):
+        pump_stop_at = self._resolve_irrigation_pump_stop_at(
+            task=task,
+            runtime=runtime,
+            plan=plan,
+            requested_sec=requested_sec,
+        )
+        if pump_stop_at is None:
             return None
 
-        elapsed = (_utc_naive_dt(now) - _utc_naive_dt(entered)).total_seconds()
-        if elapsed < requested_sec:
+        if _utc_naive_dt(now) < pump_stop_at:
             return None
 
         state = await self._runtime_monitor.read_latest_irr_state(
@@ -497,11 +533,12 @@ class IrrigationCheckHandler(BaseStageHandler):
         if not isinstance(snapshot, Mapping) or not bool(snapshot.get("pump_main")):
             return None
 
+        elapsed_sec = max(0.0, (_utc_naive_dt(now) - pump_stop_at).total_seconds())
         _logger.info(
             "irrigation_check: requested duration elapsed, stopping continuous pump zone_id=%s task_id=%s elapsed_sec=%.1f requested_sec=%s",
             task.zone_id,
             getattr(task, "id", None),
-            elapsed,
+            elapsed_sec,
             requested_sec,
         )
         observe_duration("duration_cap")

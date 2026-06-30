@@ -959,6 +959,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : null
             );
 
+            $automationStateService = app(\App\Services\ZoneAutomationStateService::class);
+
             return Inertia::render('Zones/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zoneId' => $zoneIdInt,
@@ -973,6 +975,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'events' => $events,
                 'cycles' => $cycles,
                 'irrigationCorrectionSummary' => $irrigationCorrectionSummary,
+                'automationStateBootstrap' => $automationStateService->resolveCachedBootstrap($zone),
+                'automationState' => Inertia::defer(fn () => $automationStateService->resolve($zone)),
             ]);
         })->name('zones.show');
     });

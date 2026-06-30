@@ -139,6 +139,8 @@ export interface AutomationObservabilityRuntime {
   workflow_snapshot_updated_at?: string | null
   workflow_snapshot_age_sec?: number | null
   source?: string | null
+  /** Этап на момент terminal failure (после workflow rollback в idle). */
+  failed_stage?: string | null
 }
 
 export interface AutomationObservabilityNode {

@@ -356,10 +356,22 @@ class WorkflowRouter:
                 "runtime_plan_missing",
                 "Отсутствует typed RuntimePlan в command plan",
             )
+        irrigation_start_entered_at = (
+            task.workflow.stage_entered_at
+            if not same_stage and str(task.current_stage or "").strip().lower() == "irrigation_start"
+            else None
+        )
         deadline = (
             task.workflow.stage_deadline_at
             if same_stage
-            else self._compute_deadline(task=task, stage_def=next_def, runtime=runtime, now=now)
+            else self._compute_deadline(
+                task=task,
+                stage_def=next_def,
+                runtime=runtime,
+                now=now,
+                plan=plan,
+                irrigation_start_entered_at=irrigation_start_entered_at,
+            )
         )
         clean_fill_cycle = (
             outcome.clean_fill_cycle
@@ -578,36 +590,48 @@ class WorkflowRouter:
     # ── Helpers ─────────────────────────────────────────────────────
 
     def _compute_deadline(
-        self, *, task: Any, stage_def: Any, runtime: RuntimePlan, now: datetime,
+        self,
+        *,
+        task: Any,
+        stage_def: Any,
+        runtime: RuntimePlan,
+        now: datetime,
+        plan: Any = None,
+        irrigation_start_entered_at: datetime | None = None,
     ) -> Optional[datetime]:
         """Вычисляет `stage_deadline_at` по timeout-ключам из runtime-конфига."""
         if stage_def.name == "irrigation_check":
             irrigation_runtime = runtime.irrigation_execution
+            requested_duration_sec = getattr(task, "irrigation_requested_duration_sec", None)
+            if requested_duration_sec is None:
+                requested_duration_sec = getattr(runtime, "irrigation_requested_duration_sec", None)
+            if requested_duration_sec is None:
+                requested_duration_sec = irrigation_runtime.duration_sec
+            if requested_duration_sec is not None:
+                try:
+                    total_sec = min(
+                        max(1, int(requested_duration_sec)),
+                        _MAX_STAGE_TOTAL_SEC,
+                    )
+                except (TypeError, ValueError):
+                    total_sec = None
+                else:
+                    if isinstance(irrigation_start_entered_at, datetime):
+                        anchor = self._normalize_utc_naive(irrigation_start_entered_at)
+                        deadline = anchor + timedelta(seconds=total_sec)
+                    else:
+                        deadline = now + timedelta(seconds=total_sec)
+                    if now.tzinfo is not None:
+                        return deadline.replace(tzinfo=timezone.utc)
+                    return deadline
+
             explicit_timeout = irrigation_runtime.stage_timeout_sec
             if explicit_timeout is not None:
                 try:
                     return now + timedelta(seconds=max(1, int(explicit_timeout)))
                 except (TypeError, ValueError):
                     pass
-            requested_duration_sec = getattr(task, "irrigation_requested_duration_sec", None)
-            if requested_duration_sec is None:
-                requested_duration_sec = getattr(runtime, "irrigation_requested_duration_sec", None)
-            if requested_duration_sec is None:
-                requested_duration_sec = irrigation_runtime.duration_sec
-            if requested_duration_sec is None:
-                return None
-            slack_raw = irrigation_runtime.correction_slack_sec
-            correction_enabled = bool(irrigation_runtime.correction_during_irrigation)
-            if slack_raw is None:
-                slack = _DEFAULT_CORRECTION_SLACK_SEC if correction_enabled else 0
-            else:
-                try:
-                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
-                except (TypeError, ValueError):
-                    slack = _DEFAULT_CORRECTION_SLACK_SEC if correction_enabled else 0
-            total_sec = int(requested_duration_sec) + slack
-            total_sec = min(max(1, total_sec), _MAX_STAGE_TOTAL_SEC)
-            return now + timedelta(seconds=total_sec)
+            return None
         if stage_def.name == "solution_fill_check":
             base_raw = runtime.solution_fill_timeout_sec
             if base_raw is None:

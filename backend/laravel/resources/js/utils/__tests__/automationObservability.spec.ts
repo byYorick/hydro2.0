@@ -34,6 +34,23 @@ describe('automationObservability', () => {
     expect(result?.hang_hints?.[0]?.code).toBe('waiting_command_stuck')
   })
 
+  it('preserves failed_stage in runtime normalization', () => {
+    const result = normalizeObservability({
+      overall_health: 'idle',
+      runtime: {
+        zone_id: 1,
+        task_id: 3,
+        task_status: 'failed',
+        task_is_active: false,
+        failed_stage: 'prepare_recirculation_start',
+        stage_elapsed_sec: 27,
+      },
+      hang_hints: [],
+    })
+
+    expect(result?.runtime?.failed_stage).toBe('prepare_recirculation_start')
+  })
+
   it('formats duration and stage labels', () => {
     expect(formatObservabilityDuration(125)).toBe('02:05')
     expect(stageDiagnosticLabel('solution_fill_check')).toBe('Наполнение раствором')

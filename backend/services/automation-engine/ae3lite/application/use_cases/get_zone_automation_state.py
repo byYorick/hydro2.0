@@ -448,15 +448,25 @@ class GetZoneAutomationStateUseCase:
         stage_deadline_at: datetime | None,
         irrigation_requested_duration_sec: Any,
         current_stage: str,
+        task_created_at: datetime | None = None,
+        task_type: str = "",
     ) -> tuple[int | None, int | None]:
         """Прогресс полива по elapsed/deadline вместо индекса workflow (82% на irrigation_check)."""
         cs_key = str(current_stage or "").strip().lower()
         if not cs_key.startswith(_IRRIGATION_STAGE_PREFIX):
             return None, None
-        if not isinstance(stage_entered_at, datetime):
+
+        anchor = stage_entered_at
+        if (
+            cs_key == "irrigation_check"
+            and str(task_type or "").strip().lower() == "irrigation_start"
+            and isinstance(task_created_at, datetime)
+        ):
+            anchor = task_created_at
+        if not isinstance(anchor, datetime):
             return None, None
 
-        entered_naive = self._normalize_utc_naive(stage_entered_at)
+        entered_naive = self._normalize_utc_naive(anchor)
         now = self._normalize_utc_naive(self._now())
         elapsed = max(0, int((now - entered_naive).total_seconds()))
 
@@ -507,6 +517,7 @@ class GetZoneAutomationStateUseCase:
         stage_deadline_at: datetime | None = None,
         irrigation_requested_duration_sec: Any = None,
         task_status: str = "",
+        task_type: str = "",
         completed_at: datetime | None = None,
     ) -> dict[str, Any]:
         status_key = str(task_status or "").strip().lower()
@@ -540,11 +551,19 @@ class GetZoneAutomationStateUseCase:
             }
 
         anchor = stage_entered_at or task_created_at or workflow_started_at
+        if (
+            cs_key == "irrigation_check"
+            and str(task_type or "").strip().lower() == "irrigation_start"
+            and isinstance(task_created_at, datetime)
+        ):
+            anchor = task_created_at
         timed_progress, remaining_sec = self._timed_irrigation_metrics(
             stage_entered_at=stage_entered_at,
             stage_deadline_at=stage_deadline_at,
             irrigation_requested_duration_sec=irrigation_requested_duration_sec,
             current_stage=current_stage,
+            task_created_at=task_created_at,
+            task_type=task_type,
         )
         if is_failed:
             progress_percent = 0
@@ -808,6 +827,7 @@ class GetZoneAutomationStateUseCase:
             stage_deadline_at=getattr(wf, "stage_deadline_at", None) if wf is not None else None,
             irrigation_requested_duration_sec=getattr(task, "irrigation_requested_duration_sec", None),
             task_status=status,
+            task_type=str(getattr(task, "task_type", "") or ""),
             completed_at=getattr(task, "completed_at", None),
         )
 

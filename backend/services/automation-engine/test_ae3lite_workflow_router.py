@@ -16,6 +16,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
 from ae3lite.domain.entities.automation_task import AutomationTask
+from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.errors import TaskExecutionError
 
@@ -728,6 +729,45 @@ async def test_router_transition_to_irrigation_check_uses_requested_duration_for
     assert wf.stage_deadline_at == NOW + timedelta(seconds=180)
 
 
+async def test_router_transition_to_irrigation_check_timed_run_pump_uses_requested_duration_anchor():
+    """run_pump + correction: дедлайн = старт полива + requested, не +slack."""
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+        irrigation_requested_duration_sec=120,
+        stage_entered_at=NOW - timedelta(seconds=120),
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+    plan = _MockPlan(
+        runtime={
+            "irrigation_execution": {
+                "duration_sec": 300,
+                "correction_slack_sec": 900,
+                "correction_during_irrigation": True,
+            },
+        },
+    )
+    plan.named_plans = {
+        "irrigation_start": (
+            PlannedCommand(
+                step_no=3,
+                node_uid="nd-irrig-1",
+                channel="pump_main",
+                payload={"cmd": "run_pump", "params": {"duration_ms": 120_000}},
+            ),
+        ),
+    }
+
+    await router.run(task=task, plan=plan, now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_check"
+    assert wf.stage_deadline_at == NOW
+
+
 async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallback():
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
@@ -756,8 +796,8 @@ async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallb
     assert wf.stage_deadline_at == NOW + timedelta(seconds=120)
 
 
-async def test_router_irrigation_check_deadline_includes_default_correction_slack():
-    """Stage budget must exceed pump duration so inline corrections can finish."""
+async def test_router_irrigation_check_deadline_ignores_correction_slack_when_requested_duration_set():
+    """Бюджет полива = requested_duration от оператора, коррекция укладывается внутрь."""
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
         stage="irrigation_start",
@@ -776,10 +816,10 @@ async def test_router_irrigation_check_deadline_includes_default_correction_slac
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "irrigation_check"
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=8 + 900)
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=8)
 
 
-async def test_router_irrigation_check_deadline_respects_explicit_stage_timeout():
+async def test_router_irrigation_check_deadline_prefers_requested_duration_over_stage_timeout():
     outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
     task = _make_task(
         stage="irrigation_start",
@@ -804,7 +844,7 @@ async def test_router_irrigation_check_deadline_respects_explicit_stage_timeout(
     )
 
     wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=2400)
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=8)
 
 
 async def test_router_prepare_recirculation_check_deadline_includes_correction_slack():

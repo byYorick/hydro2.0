@@ -97,6 +97,7 @@ function normalizeRuntime(raw: unknown): AutomationObservability['runtime'] {
       ? Number(source.workflow_snapshot_age_sec)
       : null,
     source: typeof source.source === 'string' ? source.source : null,
+    failed_stage: typeof source.failed_stage === 'string' ? source.failed_stage : null,
   }
 }
 

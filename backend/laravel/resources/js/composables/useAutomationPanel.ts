@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import type {
   AutomationState,
   AutomationStateType,
@@ -109,6 +110,15 @@ const WORKFLOW_STAGE_ORDER: WorkflowStageCode[] = [
 const WS_MIN_REFRESH_INTERVAL_MS = 1200
 const FALLBACK_POLL_INTERVAL_MS = 30000
 const FLOW_TICK_INTERVAL_MS = 80
+
+type ZoneShowAutomationPageProps = {
+  automationStateBootstrap?: unknown
+  automationState?: unknown
+}
+
+function isAutomationStatePayload(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
 
 // ─── Props interface ──────────────────────────────────────────────────────────
 
@@ -261,11 +271,13 @@ export function useAutomationPanel(
   }
 ) {
   const zonesStore = useZonesStore()
+  const page = usePage<ZoneShowAutomationPageProps>()
   const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
 
   // ─── State ────────────────────────────────────────────────────────────────
 
   const automationState = ref<AutomationState | null>(null)
+  const isAutomationStateLoading = ref(false)
   const errorMessage = ref<string | null>(null)
   const connectivityWarning = ref<string | null>(null)
   const flowOffset = ref(0)
@@ -383,6 +395,52 @@ export function useAutomationPanel(
     }
   }
 
+  function applyAutomationStateFromPage(raw: unknown): boolean {
+    if (!isAutomationStatePayload(raw)) {
+      return false
+    }
+
+    automationState.value = normalizeState(raw)
+    errorMessage.value = null
+    connectivityWarning.value = null
+    isAutomationStateLoading.value = false
+    return true
+  }
+
+  function hydrateAutomationStateFromPageProps(): void {
+    if (applyAutomationStateFromPage(page.props.automationStateBootstrap)) {
+      return
+    }
+
+    if (applyAutomationStateFromPage(page.props.automationState)) {
+      return
+    }
+
+    if (props.zoneId) {
+      isAutomationStateLoading.value = true
+    }
+  }
+
+  hydrateAutomationStateFromPageProps()
+
+  watch(
+    () => page.props.automationState,
+    (value) => {
+      if (value !== undefined && value !== null) {
+        applyAutomationStateFromPage(value)
+      }
+    },
+  )
+
+  watch(
+    () => page.props.automationStateBootstrap,
+    (value) => {
+      if (value !== undefined && value !== null && automationState.value === null) {
+        applyAutomationStateFromPage(value)
+      }
+    },
+  )
+
   // ─── Fetch ────────────────────────────────────────────────────────────────
 
   async function fetchAutomationState(): Promise<void> {
@@ -395,6 +453,9 @@ export function useAutomationPanel(
 
     const requestedZoneId = props.zoneId
     fetchInFlight = true
+    if (automationState.value === null) {
+      isAutomationStateLoading.value = true
+    }
     try {
       const response = await api.zones.getState<unknown>(requestedZoneId)
       if (props.zoneId !== requestedZoneId) return
@@ -414,6 +475,7 @@ export function useAutomationPanel(
       }
     } finally {
       fetchInFlight = false
+      isAutomationStateLoading.value = false
       if (fetchQueued) {
         fetchQueued = false
         void fetchAutomationState()
@@ -758,10 +820,14 @@ export function useAutomationPanel(
       automationState.value = null
       errorMessage.value = null
       connectivityWarning.value = null
+      isAutomationStateLoading.value = false
       return
     }
 
-    void fetchAutomationState()
+    hydrateAutomationStateFromPageProps()
+    if (automationState.value === null) {
+      void fetchAutomationState()
+    }
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
@@ -778,7 +844,9 @@ export function useAutomationPanel(
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   onMounted(() => {
-    void fetchAutomationState()
+    if (automationState.value === null) {
+      void fetchAutomationState()
+    }
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
@@ -834,6 +902,7 @@ export function useAutomationPanel(
 
   return {
     automationState,
+    isAutomationStateLoading,
     errorMessage,
     connectivityWarning,
     flowOffset,
