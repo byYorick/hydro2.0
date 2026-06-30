@@ -33,6 +33,8 @@ class Ae3RuntimeConfig:
     worker_owner: str
     max_task_execution_sec: int
     max_parallel_tasks: int
+    waiting_command_reconcile_batch_limit: int
+    shutdown_grace_sec: float
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -84,6 +86,11 @@ class Ae3RuntimeConfig:
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
             max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
             max_parallel_tasks=max(1, int(os.getenv("AE_MAX_PARALLEL_TASKS", "4"))),
+            waiting_command_reconcile_batch_limit=max(
+                1,
+                min(200, int(os.getenv("AE_WAITING_COMMAND_RECONCILE_BATCH_LIMIT", "32"))),
+            ),
+            shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
         )
 
     def validate(self) -> None:

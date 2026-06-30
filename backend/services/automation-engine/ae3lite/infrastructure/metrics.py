@@ -346,6 +346,18 @@ STARTUP_RECOVERY_TASK = Counter(
     ["outcome"],  # completed | failed | waiting_command | recovered_waiting_command
 )
 
+STARTUP_RECOVERY_SKIPPED = Counter(
+    "ae3_startup_recovery_skipped_total",
+    "Startup recovery passes skipped without scanning tasks",
+    ["reason"],
+)
+
+WAITING_COMMAND_RECONCILE = Counter(
+    "ae3_waiting_command_reconcile_total",
+    "Background waiting_command reconcile outcomes",
+    ["outcome"],
+)
+
 # ─── Greenhouse climate ─────────────────────────────────────────────
 
 GREENHOUSE_CLIMATE_TICK_TOTAL = Counter(

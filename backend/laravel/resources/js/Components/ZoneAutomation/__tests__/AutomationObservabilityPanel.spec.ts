@@ -212,4 +212,40 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).not.toContain('corr_dose_ph')
     expect(wrapper.text()).toContain('00:57')
   })
+
+  it('renders detailed failure block for historical terminal failure', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          workflow_phase: 'idle',
+          last_terminal_failure: {
+            task_id: 3,
+            failed_at: '2026-06-30T07:49:53+00:00',
+            error_code: 'startup_recovery_unconfirmed_command',
+            error_message: 'У задачи 3 отсутствует подтверждённая внешняя команда во время startup recovery',
+          },
+          observability: {
+            overall_health: 'idle',
+            runtime: {
+              zone_id: 1,
+              task_id: 3,
+              task_status: 'failed',
+              task_is_active: false,
+              failed_stage: 'prepare_recirculation_start',
+              workflow_phase: 'idle',
+              stage_elapsed_sec: 27,
+            },
+            hang_hints: [],
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.find('[data-testid="automation-fsm-failure-details"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('startup_recovery_unconfirmed_command')
+    expect(wrapper.text()).toContain('Запуск рециркуляции')
+    expect(wrapper.text()).toContain('prepare_recirculation_start')
+    expect(wrapper.text()).toContain('#3')
+    expect(wrapper.find('[data-testid="health-badge"]').attributes('data-variant')).toBe('warning')
+  })
 })

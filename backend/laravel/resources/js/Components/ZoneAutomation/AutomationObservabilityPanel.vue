@@ -64,7 +64,86 @@
     </dl>
 
     <div
-      v-if="taskIdLabel"
+      v-if="failureDiagnostics"
+      class="rounded-lg border px-3 py-2.5 text-xs space-y-2"
+      :class="failureDiagnostics.isActiveFailure
+        ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
+        : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'"
+      data-testid="automation-fsm-failure-details"
+    >
+      <p class="font-semibold text-sm">
+        {{ failureDiagnostics.title }}
+      </p>
+      <p
+        v-if="failureDiagnostics.summary"
+        class="leading-relaxed"
+      >
+        {{ failureDiagnostics.summary }}
+      </p>
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div v-if="failureDiagnostics.errorCode">
+          <dt class="text-[10px] uppercase tracking-wide opacity-75">
+            Код ошибки
+          </dt>
+          <dd class="mt-0.5 font-mono text-[11px] break-all">
+            {{ failureDiagnostics.errorCode }}
+          </dd>
+        </div>
+        <div v-if="failureDiagnostics.failedStageLabel">
+          <dt class="text-[10px] uppercase tracking-wide opacity-75">
+            Этап сбоя
+          </dt>
+          <dd class="mt-0.5 font-medium">
+            {{ failureDiagnostics.failedStageLabel }}
+            <span
+              v-if="failureDiagnostics.failedStage"
+              class="block font-mono text-[10px] opacity-80"
+            >
+              {{ failureDiagnostics.failedStage }}
+            </span>
+          </dd>
+        </div>
+        <div v-if="failureDiagnostics.taskId">
+          <dt class="text-[10px] uppercase tracking-wide opacity-75">
+            Задача
+          </dt>
+          <dd class="mt-0.5 font-mono text-[11px]">
+            #{{ failureDiagnostics.taskId }}
+          </dd>
+        </div>
+        <div v-if="failureDiagnostics.failedAt">
+          <dt class="text-[10px] uppercase tracking-wide opacity-75">
+            Время сбоя
+          </dt>
+          <dd class="mt-0.5">
+            {{ formatFailureTimestamp(failureDiagnostics.failedAt) }}
+          </dd>
+        </div>
+        <div v-if="failureDiagnostics.workflowPhase">
+          <dt class="text-[10px] uppercase tracking-wide opacity-75">
+            Фаза workflow
+          </dt>
+          <dd class="mt-0.5 font-mono text-[11px]">
+            {{ failureDiagnostics.workflowPhase }}
+          </dd>
+        </div>
+      </dl>
+      <p
+        v-if="failureDiagnostics.technicalMessage"
+        class="font-mono text-[10px] leading-relaxed opacity-85 break-words"
+      >
+        {{ failureDiagnostics.technicalMessage }}
+      </p>
+      <p
+        v-if="failureDiagnostics.isHistoricalFailure"
+        class="text-[10px] opacity-80"
+      >
+        Активный policy-алерт подтверждён; ниже — данные последнего terminal failure из AE3/БД.
+      </p>
+    </div>
+
+    <div
+      v-if="taskIdLabel && !failureDiagnostics"
       class="diag-info-block"
     >
       <span class="font-medium text-[color:var(--text-primary)]">Task:</span>
@@ -156,6 +235,8 @@ import {
   resolveObservability,
   stageDiagnosticLabel,
 } from '@/utils/automationObservability'
+import { resolveAutomationFailureDiagnostics } from '@/utils/automationFailureDiagnostics'
+import { formatDateTime } from '@/utils/simulationFormatters'
 
 interface Props {
   automationState: AutomationState | null
@@ -165,11 +246,24 @@ const props = defineProps<Props>()
 
 const observability = computed<AutomationObservability | null>(() => resolveObservability(props.automationState))
 
+const failureDiagnostics = computed(() => resolveAutomationFailureDiagnostics(
+  props.automationState,
+  observability.value,
+))
+
 const hangHints = computed(() => observability.value?.hang_hints ?? [])
 
-const healthLabel = computed(() => observabilityHealthLabel(observability.value?.overall_health))
+const healthLabel = computed(() => {
+  if (failureDiagnostics.value) {
+    return failureDiagnostics.value.isActiveFailure ? 'Сбой' : 'Последний сбой'
+  }
+  return observabilityHealthLabel(observability.value?.overall_health)
+})
 
 const healthBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'danger' | 'success'>(() => {
+  if (failureDiagnostics.value) {
+    return failureDiagnostics.value.isActiveFailure ? 'danger' : 'warning'
+  }
   const health = observability.value?.overall_health
   if (health === 'critical') return 'danger'
   if (health === 'warning') return 'warning'
@@ -297,6 +391,10 @@ const schedulerSummary = computed(() => {
   }
   return parts.join(' · ')
 })
+
+function formatFailureTimestamp(value: string): string {
+  return formatDateTime(value)
+}
 
 function hintClass(severity: string): string {
   if (severity === 'critical') {

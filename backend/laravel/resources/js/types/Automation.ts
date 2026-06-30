@@ -54,6 +54,7 @@ export interface AutomationState {
     error_code?: string | null
     error_message?: string | null
     human_error_message?: string | null
+    failed_task_id?: number | null
   }
   last_terminal_failure?: {
     task_id?: number | null

@@ -11,6 +11,7 @@ from .publish_planned_command import PublishPlannedCommandUseCase
 from .request_manual_step import RequestManualStepUseCase
 from .set_control_mode import SetControlModeUseCase
 from .startup_recovery import StartupRecoveryUseCase
+from .waiting_command_reconcile import WaitingCommandReconcileUseCase
 from .workflow_router import WorkflowRouter
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "RequestManualStepUseCase",
     "SetControlModeUseCase",
     "StartupRecoveryUseCase",
+    "WaitingCommandReconcileUseCase",
     "WorkflowRouter",
 ]

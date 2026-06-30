@@ -433,6 +433,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 intent_listener.stop()
             if zone_event_listener_task is not None and not zone_event_listener_task.done():
                 zone_event_listener.stop()
+            await bundle.worker.shutdown(grace_sec=runtime_config.shutdown_grace_sec)
             await _drain_background_tasks(background_tasks)
             await bundle.http_client.aclose()
 

@@ -139,3 +139,30 @@ class PgZoneLeaseRepository:
                 normalized_now,
             )
         return len(rows)
+
+    async def release_if_owner_or_expired(
+        self,
+        *,
+        zone_id: int,
+        owner: str,
+        now: datetime,
+    ) -> bool:
+        """Снимает lease после recovery-fail, если owner совпадает или TTL истёк."""
+        normalized_owner = str(owner or "").strip()
+        if not normalized_owner:
+            return False
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                DELETE FROM ae_zone_leases
+                WHERE zone_id = $1
+                  AND (owner = $2 OR leased_until <= $3)
+                RETURNING zone_id
+                """,
+                zone_id,
+                normalized_owner,
+                normalized_now,
+            )
+        return row is not None

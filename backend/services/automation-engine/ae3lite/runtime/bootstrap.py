@@ -18,6 +18,7 @@ from ae3lite.application.use_cases import (
     RequestManualStepUseCase,
     SetControlModeUseCase,
     StartupRecoveryUseCase,
+    WaitingCommandReconcileUseCase,
 )
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
@@ -94,10 +95,24 @@ def build_ae3_runtime_bundle(
     )
     workflow_repository = PgZoneWorkflowRepository()
     alert_repository = BizAlertPublisher()
+    topology_registry = TopologyRegistry()
+    startup_recovery_use_case = StartupRecoveryUseCase(
+        task_repository=task_repository,
+        lease_repository=zone_lease_repository,
+        command_gateway=command_gateway,
+        workflow_repository=workflow_repository,
+        topology_registry=topology_registry,
+        alert_repository=alert_repository,
+    )
+    waiting_command_reconcile_use_case = WaitingCommandReconcileUseCase(
+        task_repository=task_repository,
+        lease_repository=zone_lease_repository,
+        startup_recovery_use_case=startup_recovery_use_case,
+        batch_limit=config.waiting_command_reconcile_batch_limit,
+    )
     pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
     runtime_monitor = PgZoneRuntimeMonitor()
-    topology_registry = TopologyRegistry()
     irrigation_decision_controller = IrrigationDecisionController()
 
     workflow_router = WorkflowRouter(
@@ -130,13 +145,10 @@ def build_ae3_runtime_bundle(
             alert_repository=alert_repository,
             command_repository=command_repository,
         ),
-        startup_recovery_use_case=StartupRecoveryUseCase(
-            task_repository=task_repository,
-            lease_repository=zone_lease_repository,
-            command_gateway=command_gateway,
-            workflow_repository=workflow_repository,
-            topology_registry=topology_registry,
-        ),
+        startup_recovery_use_case=startup_recovery_use_case,
+        waiting_command_reconcile_use_case=waiting_command_reconcile_use_case,
+        task_repository=task_repository,
+        command_repository=command_repository,
         zone_lease_repository=zone_lease_repository,
         zone_intent_repository=zone_intent_repository,
         spawn_background_task_fn=spawn_background_task_fn,
@@ -145,6 +157,8 @@ def build_ae3_runtime_bundle(
         lease_ttl_sec=config.lease_ttl_sec,
         max_task_execution_sec=config.max_task_execution_sec,
         max_parallel_tasks=config.max_parallel_tasks,
+        reconcile_poll_interval_sec=config.reconcile_poll_interval_sec,
+        shutdown_grace_sec=config.shutdown_grace_sec,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
         task_repository=task_repository,

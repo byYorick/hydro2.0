@@ -33,6 +33,7 @@ help:
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
 	@echo "  protocol-check - run protocol contract tests (incl. schemas-validate)"
+	@echo "  test-ae-crash-windows - AE3 startup recovery crash-window contract (§9.2)"
 	@echo "  ae3-config-lint - check inline numeric literals in AE3 handlers"
 	@echo "  schemas-validate - validate JSON Schemas under schemas/ against meta-schema"
 	@echo "  logs           - stream logs for selected service (SERVICE=<name>, TAIL=200)"
@@ -173,8 +174,14 @@ test-db-reset: up
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -c "DROP DATABASE IF EXISTS $(LARAVEL_TEST_DB);" >/dev/null
 	@$(MAKE) test-db-init
 
+.PHONY: test-ae-crash-windows
+test-ae-crash-windows: test-db-init
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
+		automation-engine pytest -q test_ae3lite_startup_recovery_crash_windows.py
+
 .PHONY: test-ae
-test-ae: test-db-init
+test-ae: test-db-init test-ae-crash-windows
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
 		automation-engine pytest $(PYTEST_ARGS)
@@ -277,7 +284,7 @@ check-config-catalog:
 	fi
 
 .PHONY: protocol-check
-protocol-check: schemas-validate authority-check ae3-config-lint check-config-catalog i18n-catalog-check
+protocol-check: schemas-validate authority-check ae3-config-lint check-config-catalog i18n-catalog-check test-ae-crash-windows
 	@echo "Running protocol contract tests..."
 	@./tools/check_runtime_schema_parity.sh
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short

@@ -27,3 +27,4 @@ class StartupRecoveryResult:
     waiting_command_tasks: int
     recovered_waiting_command_tasks: int
     terminal_outcomes: tuple[StartupRecoveryTerminalOutcome, ...] = field(default_factory=tuple)
+    skipped_due_to_lock: bool = False

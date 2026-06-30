@@ -350,3 +350,25 @@ export function resolveHumanErrorMessage(input: HumanErrorInput, fallback?: stri
 
   return fallback ?? null
 }
+
+export interface ErrorCatalogPresentation {
+  title: string | null
+  message: string | null
+}
+
+export function resolveErrorCatalogEntry(code?: string | null): ErrorCatalogPresentation {
+  const normalizedCode = normalizeErrorCode(code)
+  if (!normalizedCode) {
+    return { title: null, message: null }
+  }
+
+  const entry = catalog.find((item) => normalizeErrorCode(item?.code) === normalizedCode)
+  if (!entry) {
+    return { title: null, message: null }
+  }
+
+  return {
+    title: typeof entry.title === 'string' && entry.title.trim() !== '' ? entry.title.trim() : null,
+    message: typeof entry.message === 'string' && entry.message.trim() !== '' ? entry.message.trim() : null,
+  }
+}

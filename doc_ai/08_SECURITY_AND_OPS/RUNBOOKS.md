@@ -77,6 +77,44 @@ ORDER BY accepted_at ASC;
 3. Прогнать reconcile: `php artisan automation:dispatch-schedules --zone-id=<id>`.
 4. Если задача уже просрочена, убедиться что в `laravel_scheduler_active_tasks` выставлен terminal status (`timeout|failed`) и выполнен повторный dispatch.
 
+## 3.2. Рестарт automation-engine и startup recovery
+
+Канонический план улучшений: `doc_ai/04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`.
+
+### 3.2.1. Нормальный рестарт (deploy / `docker compose restart automation-engine`)
+
+1. Проверить readiness: `curl -fsS http://localhost:9405/health/ready` (или `automation-engine:9405` внутри compose-сети).
+2. В логах AE найти проход startup recovery (`Startup recovery` / `AE3 startup recovery outcome`).
+3. Для затронутых зон проверить `zone_events` с типом `AE_STARTUP_RECOVERY_OUTCOME` (поля `task_id`, `outcome`, `error_code`, `stage`).
+4. Если `outcome=failed` — в UI появится алерт `biz_ae3_task_failed`; проверить вкладку Automation / Alerts.
+5. Убедиться, что `ae_zone_leases` для зоны пуст после recovery-fail (зона не должна оставаться busy).
+6. При необходимости перезапустить цикл: `POST /zones/{id}/start-cycle` (через UI или scheduler dispatch).
+
+**Несколько реплик AE (prod):** startup recovery координируется через PostgreSQL advisory lock — только один экземпляр выполняет проход; остальные пишут в лог `пропуск прохода`. На зону по-прежнему действует invariant «один active writer» (`ae_zone_leases` + partial unique index). См. `ae3lite.md` §9.1 п.10.
+
+### 3.2.2. `waiting_command_stuck` после рестарта
+
+**Симптом:** зона в `waiting_command`, hint `waiting_command_stuck`, команда ещё не terminal в `commands`.
+
+**Причина:** recovery оставил задачу ждать ответа узла; runtime reconcile (фаза 3 плана) может ещё не быть развёрнут — опрос legacy-команды не идёт, пока задача не `pending`.
+
+**Действия оператора:**
+
+1. Проверить `ae_tasks` (`status`, `current_stage`, `claimed_by`, `updated_at`).
+2. Проверить последнюю строку `ae_commands` + `commands` по `cmd_id` / `external_id` (terminal status).
+3. Если команда **уже DONE** в `commands`, а task всё ещё `waiting_command` / `running` — это инцидент recovery (см. фазу 2 плана); зафиксировать `task_id` и логи AE.
+4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание); подождать до 15 мин (watchdog `ae3:reap-stale-tasks`) или вручную fail/restart цикл после устранения причины.
+5. Проверить `ae_zone_leases` — при stuck после fail не должно блокировать новый цикл.
+6. Прогнать `php artisan ae3:reap-stale-tasks` при подозрении на зомби-task (только если понимаете последствия fail-closed).
+
+### 3.2.3. `startup_recovery_unconfirmed_command`
+
+**Симптом:** task `failed`, `error_code=startup_recovery_unconfirmed_command`, workflow rollback в `idle`.
+
+**Типичная причина:** AE упал в `claimed`/`running` между командами (handler не успел перейти на следующий stage).
+
+**Действия:** подтвердить в `commands`, что последняя команда stage была DONE; перезапустить цикл зоны; следить за внедрением фазы 2 плана (resume при DONE в БД).
+
 ## 4. Playwright E2E падает (webServer)
 - Освободить порт 8000, проверить `php artisan serve` локально.
 - Запустить `php artisan migrate:fresh --seed` перед прогоном.

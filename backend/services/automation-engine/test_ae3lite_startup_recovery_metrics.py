@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +16,11 @@ class _LeaseRepoStub:
 
 class _TaskRepoStub:
     async def list_for_startup_recovery(self) -> list[object]:
-        return [object(), object(), object()]
+        return [
+            SimpleNamespace(id=1, zone_id=1, topology="two_tank", current_stage="startup"),
+            SimpleNamespace(id=2, zone_id=1, topology="two_tank", current_stage="startup"),
+            SimpleNamespace(id=3, zone_id=1, topology="two_tank", current_stage="startup"),
+        ]
 
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[dict]:
         return []
@@ -32,6 +37,7 @@ async def test_startup_recovery_records_pass_and_task_outcome_metrics(monkeypatc
         task_repository=_TaskRepoStub(),
         lease_repository=_LeaseRepoStub(),
         command_gateway=object(),
+        use_startup_recovery_lock=False,
     )
 
     outcomes = iter(
@@ -42,10 +48,15 @@ async def test_startup_recovery_records_pass_and_task_outcome_metrics(monkeypatc
         ]
     )
 
-    async def _recover_task(*, task: object, now: datetime) -> tuple[str, None]:
-        return next(outcomes)
+    async def _recover_task(*, task: object, now: datetime) -> tuple[str, None, None]:
+        outcome, terminal = next(outcomes)
+        return outcome, terminal, None
+
+    async def _noop_record(self, **kwargs: object) -> None:
+        return None
 
     monkeypatch.setattr(use_case, "_recover_task", _recover_task)
+    monkeypatch.setattr(StartupRecoveryUseCase, "_record_startup_recovery_outcome", _noop_record)
 
     result = await use_case.run(now=datetime(2026, 4, 4, 12, 0, 0))
 

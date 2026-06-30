@@ -131,35 +131,66 @@ class SequentialCommandGateway:
         now: datetime,
         track_task_state: bool,
     ) -> Mapping[str, Any]:
-        step_no = await self._command_repository.get_next_step_no(task_id=task.id)
-        planned = replace(command, step_no=step_no)
-        cmd_name, params = self._extract_publish_payload(planned)
-        complete_on_ack = self._complete_on_ack(planned)
-        cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
-        command_payload = dict(planned.payload)
-        command_payload["cmd_id"] = cmd_id
-        ae_command_id = await self._command_repository.create_pending(
-            task_id=task.id,
-            step_no=step_no,
-            node_uid=planned.node_uid,
-            channel=planned.channel,
-            payload=command_payload,
-            now=now,
-        )
-        if ae_command_id is None:
-            logger.info(
-                "AE3 command publish: task row missing at create_pending "
-                "(likely concurrent cleanup) task_id=%s zone_id=%s",
-                task.id,
-                task.zone_id,
+        command_payload = dict(command.payload)
+        complete_on_ack = self._complete_on_ack(command)
+        allocate_and_create = getattr(self._command_repository, "allocate_and_create_pending", None)
+        if callable(allocate_and_create):
+            allocated = await allocate_and_create(
+                task_id=task.id,
+                zone_id=int(task.zone_id),
+                node_uid=command.node_uid,
+                channel=command.channel,
+                payload=command_payload,
+                now=now,
+                stage_name=str(getattr(task, "current_stage", "") or "") or None,
             )
-            return self._cleanup_race_batch_result(
-                task=task,
-                message=(
-                    f"Задача {task.id} исчезла при вставке ae_commands "
-                    f"(вероятно параллельная очистка)"
-                ),
+            if allocated is None:
+                logger.info(
+                    "AE3 command publish: task row missing at allocate_and_create_pending "
+                    "(likely concurrent cleanup) task_id=%s zone_id=%s",
+                    task.id,
+                    task.zone_id,
+                )
+                return self._cleanup_race_batch_result(
+                    task=task,
+                    message=(
+                        f"Задача {task.id} исчезла при вставке ae_commands "
+                        f"(вероятно параллельная очистка)"
+                    ),
+                )
+            ae_command_id, step_no = allocated
+            cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
+            command_payload["cmd_id"] = cmd_id
+            planned = replace(command, step_no=step_no, payload=command_payload)
+            cmd_name, params = self._extract_publish_payload(planned)
+        else:
+            step_no = await self._command_repository.get_next_step_no(task_id=task.id)
+            planned = replace(command, step_no=step_no)
+            cmd_name, params = self._extract_publish_payload(planned)
+            cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
+            command_payload["cmd_id"] = cmd_id
+            ae_command_id = await self._command_repository.create_pending(
+                task_id=task.id,
+                step_no=step_no,
+                node_uid=planned.node_uid,
+                channel=planned.channel,
+                payload=command_payload,
+                now=now,
             )
+            if ae_command_id is None:
+                logger.info(
+                    "AE3 command publish: task row missing at create_pending "
+                    "(likely concurrent cleanup) task_id=%s zone_id=%s",
+                    task.id,
+                    task.zone_id,
+                )
+                return self._cleanup_race_batch_result(
+                    task=task,
+                    message=(
+                        f"Задача {task.id} исчезла при вставке ae_commands "
+                        f"(вероятно параллельная очистка)"
+                    ),
+                )
         try:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
             if not greenhouse_uid:

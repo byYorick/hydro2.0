@@ -336,7 +336,27 @@ export function useAutomationPanel(
         error_code: (source.state_details as Record<string, unknown> | undefined)?.error_code as string | null ?? null,
         error_message: (source.state_details as Record<string, unknown> | undefined)?.error_message as string | null ?? null,
         human_error_message: (source.state_details as Record<string, unknown> | undefined)?.human_error_message as string | null ?? null,
+        failed_task_id: (() => {
+          const raw = (source.state_details as Record<string, unknown> | undefined)?.failed_task_id
+          if (raw == null) return null
+          const parsed = Number(raw)
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+        })(),
       },
+      last_terminal_failure: (() => {
+        const raw = sourceAny.last_terminal_failure
+        if (!raw || typeof raw !== 'object') return null
+        const record = raw as Record<string, unknown>
+        const taskIdRaw = record.task_id
+        const taskId = taskIdRaw == null ? null : Number(taskIdRaw)
+        return {
+          task_id: Number.isFinite(taskId) && taskId > 0 ? taskId : null,
+          failed_at: typeof record.failed_at === 'string' ? record.failed_at : null,
+          error_code: typeof record.error_code === 'string' ? record.error_code : null,
+          error_message: typeof record.error_message === 'string' ? record.error_message : null,
+          human_error_message: typeof record.human_error_message === 'string' ? record.human_error_message : null,
+        }
+      })(),
       workflow_phase: (sourceAny.workflow_phase as string | null | undefined) ?? null,
       current_stage: (sourceAny.current_stage as string | null | undefined) ?? null,
       current_stage_label: (sourceAny.current_stage_label as string | null | undefined) ?? null,

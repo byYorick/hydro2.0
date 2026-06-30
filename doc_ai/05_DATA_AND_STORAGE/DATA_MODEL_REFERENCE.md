@@ -1506,6 +1506,12 @@ zone_events_zone_id_id_idx
   `CORRECTION_NO_EFFECT`, `CORRECTION_EXHAUSTED`)
   обязаны использовать `payload_json` как canonical source и по возможности включать
   `stage`, `workflow_phase`, `corr_step`, `attempt`, `ec_attempt`, `ph_attempt`.
+- Для observability startup recovery AE3 пишет `AE_STARTUP_RECOVERY_OUTCOME`
+  (source: `StartupRecoveryUseCase` в automation-engine). Минимальный `payload_json`:
+  `task_id`, `outcome` (`failed` | `completed` | `waiting_command` | `recovered_waiting_command`),
+  `topology`, `stage` (актуальный stage задачи после transition, если применимо),
+  `recovery_source` (`startup_recovery` | `waiting_command_reconcile`); при terminal outcome дополнительно
+  `intent_id`, `success`, `error_code`, `error_message`.
 
 ---
 

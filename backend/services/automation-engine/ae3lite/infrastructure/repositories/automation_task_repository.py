@@ -201,6 +201,21 @@ class PgAutomationTaskRepository:
         )
         return [AutomationTask.from_row(row) for row in rows]
 
+    async def list_waiting_command_for_reconcile(self, *, limit: int = 32) -> list[AutomationTask]:
+        """Возвращает `waiting_command` задачи для фонового reconcile (oldest first)."""
+        bounded_limit = max(1, min(int(limit), 200))
+        rows = await self._fetch(
+            """
+            SELECT *
+            FROM ae_tasks
+            WHERE status = 'waiting_command'
+            ORDER BY updated_at ASC, id ASC
+            LIMIT $1
+            """,
+            bounded_limit,
+        )
+        return [AutomationTask.from_row(row) for row in rows]
+
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[Any]:
         """Pending-задачи при workflow_phase=idle (часто после терминального stop в payload)."""
         return await self._fetch(
@@ -432,6 +447,69 @@ class PgAutomationTaskRepository:
             normalized_now,
         )
         return row is not None
+
+    async def requeue_unpublished_execution(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+    ) -> AutomationTask | None:
+        """Откатывает `claimed|running` без `ae_commands` в `pending` для graceful shutdown."""
+        normalized_now = self._normalize_timestamp(now)
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks AS tasks
+            SET status = 'pending',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                updated_at = $3
+            WHERE tasks.id = $1
+              AND tasks.status IN ('claimed', 'running')
+              AND tasks.claimed_by = $2
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ae_commands AS commands
+                  WHERE commands.task_id = tasks.id
+              )
+            RETURNING tasks.*
+            """,
+            task_id,
+            owner,
+            normalized_now,
+        )
+        return None if row is None else self._task_from_row(row)
+
+    async def list_claimed_by_owner(self, *, owner: str) -> list[AutomationTask]:
+        rows = await self._fetch(
+            """
+            SELECT *
+            FROM ae_tasks
+            WHERE status = 'claimed'
+              AND claimed_by = $1
+            ORDER BY claimed_at ASC NULLS LAST, id ASC
+            """,
+            owner,
+        )
+        return [self._task_from_row(row) for row in rows]
+
+    async def list_unpublished_execution_by_owner(self, *, owner: str) -> list[AutomationTask]:
+        rows = await self._fetch(
+            """
+            SELECT tasks.*
+            FROM ae_tasks AS tasks
+            WHERE tasks.claimed_by = $1
+              AND tasks.status IN ('claimed', 'running')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM ae_commands AS commands
+                  WHERE commands.task_id = tasks.id
+              )
+            ORDER BY tasks.claimed_at ASC NULLS LAST, tasks.id ASC
+            """,
+            owner,
+        )
+        return [self._task_from_row(row) for row in rows]
 
     # ── Status transitions ──────────────────────────────────────────
 

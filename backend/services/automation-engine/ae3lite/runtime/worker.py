@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime, timezone as _tz
 from typing import Any, Callable, Optional
 
@@ -25,6 +26,9 @@ class Ae3RuntimeWorker:
         idle_poll_interval_sec: float,
         execute_task_use_case: Any,
         startup_recovery_use_case: Any,
+        waiting_command_reconcile_use_case: Any | None = None,
+        task_repository: Any | None = None,
+        command_repository: Any | None = None,
         zone_lease_repository: Any,
         zone_intent_repository: Any,
         spawn_background_task_fn: Callable[..., Any],
@@ -33,12 +37,17 @@ class Ae3RuntimeWorker:
         lease_ttl_sec: int = 300,
         max_task_execution_sec: int = 900,
         max_parallel_tasks: int = 1,
+        reconcile_poll_interval_sec: float | None = None,
+        shutdown_grace_sec: float = 30.0,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
         self._idle_poll_interval_sec = max(0.1, float(idle_poll_interval_sec))
         self._execute_task_use_case = execute_task_use_case
         self._startup_recovery_use_case = startup_recovery_use_case
+        self._waiting_command_reconcile_use_case = waiting_command_reconcile_use_case
+        self._task_repository = task_repository
+        self._command_repository = command_repository
         self._zone_lease_repository = zone_lease_repository
         self._zone_intent_repository = zone_intent_repository
         self._spawn_background_task_fn = spawn_background_task_fn
@@ -47,6 +56,10 @@ class Ae3RuntimeWorker:
         self._lease_ttl_sec = max(30, int(lease_ttl_sec))
         self._max_task_execution_sec = max_task_execution_sec
         self._max_parallel_tasks = max(1, int(max_parallel_tasks))
+        self._reconcile_poll_interval_sec = max(
+            0.1,
+            float(reconcile_poll_interval_sec if reconcile_poll_interval_sec is not None else idle_poll_interval_sec),
+        )
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
@@ -54,10 +67,21 @@ class Ae3RuntimeWorker:
         self._wake_handle: Optional[asyncio.Handle] = None
         self._last_drain_exit_ok = True
         self._last_drain_exit_reason = "idle"
+        self._reconcile_loop_task: Optional[Any] = None
+        self._reconcile_wake = asyncio.Event()
+        self._shutting_down = False
+        self._shutdown_grace_sec = max(0.0, float(shutdown_grace_sec))
+        self._active_shutdown_grace_sec: float | None = None
+        self._inflight_automation_tasks: dict[asyncio.Task, Any] = {}
 
     def kick(self) -> Any:
+        if self._shutting_down:
+            self._log_debug("AE3 runtime kick ignored: worker shutting down")
+            return self._drain_task
         self._pending_kicks += 1
         self._cancel_wake_task()
+        self._ensure_waiting_command_reconcile_loop()
+        self._reconcile_wake.set()
         self._log_debug(
             "AE3 runtime kick received: pending_kicks=%s has_drain_task=%s",
             self._pending_kicks,
@@ -90,7 +114,104 @@ class Ae3RuntimeWorker:
                 error_code=getattr(outcome, "error_code", None),
                 error_message=getattr(outcome, "error_message", None),
             )
+        self._ensure_waiting_command_reconcile_loop()
         return result
+
+    async def shutdown(self, *, grace_sec: float | None = None) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        effective_grace = max(0.0, float(grace_sec if grace_sec is not None else self._shutdown_grace_sec))
+        self._active_shutdown_grace_sec = effective_grace
+        self._pending_kicks = 0
+        self._log_debug("AE3 runtime shutdown started: grace_sec=%.3f", effective_grace)
+        self._cancel_wake_task()
+        self._reconcile_wake.set()
+        reconcile_loop = self._reconcile_loop_task
+        if reconcile_loop is not None and not reconcile_loop.done():
+            reconcile_loop.cancel()
+            with suppress(asyncio.CancelledError):
+                await reconcile_loop
+            self._reconcile_loop_task = None
+
+        drain = self._drain_task
+        if drain is not None and not drain.done():
+            drain_timeout = effective_grace + 5.0
+            try:
+                await asyncio.wait_for(drain, timeout=drain_timeout)
+            except asyncio.TimeoutError:
+                self._logger.warning(
+                    "AE3 runtime shutdown: drain did not finish within %.1fs, cancelling",
+                    drain_timeout,
+                )
+                drain.cancel()
+                with suppress(asyncio.CancelledError):
+                    await drain
+
+        released = await self._release_unpublished_claims_for_owner()
+        if released > 0:
+            self._log_debug("AE3 runtime shutdown: released %s unpublished claims", released)
+
+    def _ensure_waiting_command_reconcile_loop(self) -> None:
+        if self._shutting_down:
+            return
+        if self._waiting_command_reconcile_use_case is None:
+            return
+        if self._reconcile_loop_task is not None and not self._reconcile_loop_task.done():
+            return
+        self._reconcile_loop_task = self._spawn_background_task_fn(
+            self._waiting_command_reconcile_loop(),
+            task_name="ae3lite_waiting_command_reconcile",
+        )
+
+    async def _waiting_command_reconcile_loop(self) -> None:
+        while not self._shutting_down:
+            try:
+                await self._run_waiting_command_reconcile_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._logger.warning(
+                    "AE3 waiting_command reconcile loop failed",
+                    exc_info=True,
+                )
+            if self._shutting_down:
+                break
+            try:
+                await asyncio.wait_for(
+                    self._reconcile_wake.wait(),
+                    timeout=self._reconcile_poll_interval_sec,
+                )
+            except asyncio.TimeoutError:
+                pass
+            self._reconcile_wake.clear()
+
+    async def _run_waiting_command_reconcile_once(self) -> None:
+        if self._waiting_command_reconcile_use_case is None:
+            return
+        result = await self._waiting_command_reconcile_use_case.run(
+            now=self._now_fn(),
+            worker_owner=self._owner,
+        )
+        terminal_outcomes = getattr(result, "terminal_outcomes", ()) or ()
+        for outcome in terminal_outcomes:
+            intent_id = int(getattr(outcome, "intent_id", 0) or 0)
+            if intent_id <= 0:
+                continue
+            await self._safe_mark_intent_terminal_result(
+                intent_id=intent_id,
+                now=self._now_fn(),
+                success=bool(getattr(outcome, "success", False)),
+                error_code=getattr(outcome, "error_code", None),
+                error_message=getattr(outcome, "error_message", None),
+            )
+        if bool(getattr(result, "kick_needed", False)) and not self._shutting_down:
+            self._pending_kicks += 1
+            drain = self._drain_task
+            if drain is None or drain.done():
+                self._spawn_drain_task()
+            else:
+                self._arm_respawn_on_done(drain)
 
     async def _drain_pending_tasks(self) -> None:
         self._log_debug("AE3 runtime drain started")
@@ -98,8 +219,8 @@ class Ae3RuntimeWorker:
         drain_reason = "worker_unexpected_exit"
         inflight: set[asyncio.Task] = set()
         try:
-            while True:
-                while len(inflight) < self._max_parallel_tasks:
+            while not self._shutting_down:
+                while not self._shutting_down and len(inflight) < self._max_parallel_tasks:
                     claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
                     if claimed is None:
                         break
@@ -112,6 +233,7 @@ class Ae3RuntimeWorker:
                         name=f"ae3lite_claimed_task:{task.id}",
                     )
                     inflight.add(worker_task)
+                    self._inflight_automation_tasks[worker_task] = task
 
                 if inflight:
                     done, _pending = await asyncio.wait(
@@ -124,8 +246,12 @@ class Ae3RuntimeWorker:
                         continue
                     for done_task in done:
                         inflight.discard(done_task)
+                        self._inflight_automation_tasks.pop(done_task, None)
                         await done_task
                     continue
+
+                if self._shutting_down:
+                    break
 
                 claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
                 if claimed is None:
@@ -145,19 +271,25 @@ class Ae3RuntimeWorker:
                 self._pending_kicks = 0
                 task, _lease = claimed
                 self._log_debug("AE3 runtime claimed task: task_id=%s zone_id=%s", task.id, task.zone_id)
-                await self._execute_claimed_task(task=task)
-        except asyncio.CancelledError:
-            for pending_task in list(inflight):
-                pending_task.cancel()
+                worker_task = asyncio.create_task(
+                    self._execute_claimed_task(task=task),
+                    name=f"ae3lite_claimed_task:{task.id}",
+                )
+                inflight.add(worker_task)
+                self._inflight_automation_tasks[worker_task] = task
+
             if inflight:
-                await asyncio.gather(*inflight, return_exceptions=True)
+                await self._finalize_inflight_on_shutdown(inflight)
+            drain_ok = True
+            drain_reason = "shutdown"
+        except asyncio.CancelledError:
+            if inflight:
+                await self._finalize_inflight_on_shutdown(inflight, cancel_pending=True)
             drain_reason = "worker_cancelled"
             raise
         except Exception as exc:
-            for pending_task in list(inflight):
-                pending_task.cancel()
             if inflight:
-                await asyncio.gather(*inflight, return_exceptions=True)
+                await self._finalize_inflight_on_shutdown(inflight, cancel_pending=True)
             drain_reason = f"worker_crashed:{type(exc).__name__}"
             raise
         finally:
@@ -469,6 +601,9 @@ class Ae3RuntimeWorker:
             return None
 
     def _spawn_drain_task(self) -> Any:
+        if self._shutting_down:
+            self._log_debug("AE3 runtime drain spawn skipped: worker shutting down")
+            return self._drain_task
         self._log_debug("AE3 runtime spawning drain task")
         task = self._spawn_background_task_fn(
             self._drain_pending_tasks(),
@@ -478,7 +613,101 @@ class Ae3RuntimeWorker:
         self._respawn_guard_task = None
         return task
 
+    async def _finalize_inflight_on_shutdown(
+        self,
+        inflight: set[asyncio.Task],
+        *,
+        cancel_pending: bool = False,
+    ) -> None:
+        if not inflight:
+            return
+        grace = (
+            self._active_shutdown_grace_sec
+            if self._active_shutdown_grace_sec is not None
+            else self._shutdown_grace_sec
+        )
+        if grace > 0.0 and not cancel_pending:
+            _done, still_pending = await asyncio.wait(inflight, timeout=grace)
+            if still_pending:
+                for pending_task in still_pending:
+                    pending_task.cancel()
+                await asyncio.gather(*still_pending, return_exceptions=True)
+        else:
+            for pending_task in list(inflight):
+                pending_task.cancel()
+            await asyncio.gather(*inflight, return_exceptions=True)
+
+        for worker_task in list(inflight):
+            automation_task = self._inflight_automation_tasks.pop(worker_task, None)
+            if automation_task is not None:
+                await self._maybe_release_unpublished_claim(automation_task)
+        inflight.clear()
+
+    async def _maybe_release_unpublished_claim(self, task: Any) -> bool:
+        if self._task_repository is None:
+            return False
+        task_id = int(getattr(task, "id", 0) or 0)
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if task_id <= 0:
+            return False
+
+        requeue_fn = getattr(self._task_repository, "requeue_unpublished_execution", None)
+        if callable(requeue_fn):
+            requeued = await requeue_fn(task_id=task_id, owner=self._owner, now=self._now_fn())
+            if requeued is None:
+                return False
+            if zone_id > 0:
+                await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+            self._log_debug(
+                "AE3 runtime shutdown requeued unpublished execution: task_id=%s zone_id=%s",
+                task_id,
+                zone_id,
+            )
+            return True
+
+        if self._command_repository is None:
+            return False
+        current = await self._task_repository.get_by_id(task_id=task_id)
+        if current is None or str(getattr(current, "status", "")) != "claimed":
+            return False
+        ae_cmd = await self._command_repository.get_latest_for_task(task_id=task_id)
+        if ae_cmd is not None:
+            return False
+        released = await self._task_repository.release_claim(
+            task_id=task_id,
+            owner=self._owner,
+            now=self._now_fn(),
+        )
+        if released and zone_id > 0:
+            await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+        if released:
+            self._log_debug(
+                "AE3 runtime shutdown released unpublished claim: task_id=%s zone_id=%s",
+                task_id,
+                getattr(current, "zone_id", None),
+            )
+        return bool(released)
+
+    async def _release_unpublished_claims_for_owner(self) -> int:
+        if self._task_repository is None:
+            return 0
+        list_unpublished = getattr(self._task_repository, "list_unpublished_execution_by_owner", None)
+        if callable(list_unpublished):
+            claimed_tasks = await list_unpublished(owner=self._owner)
+        else:
+            list_claimed = getattr(self._task_repository, "list_claimed_by_owner", None)
+            if not callable(list_claimed):
+                return 0
+            claimed_tasks = await list_claimed(owner=self._owner)
+        released = 0
+        for task in claimed_tasks:
+            if await self._maybe_release_unpublished_claim(task):
+                released += 1
+        return released
+
     async def _schedule_wake_for_next_pending(self) -> bool:
+        if self._shutting_down:
+            return False
         getter = getattr(self._claim_next_task_use_case, "next_pending_due_at", None)
         if not callable(getter):
             return False
@@ -528,6 +757,9 @@ class Ae3RuntimeWorker:
             if self._wake_handle is not wake_handle_ref:
                 return
             self._wake_handle = None
+            if self._shutting_down:
+                self._log_debug("AE3 runtime wake skipped: worker shutting down")
+                return
             if self._drain_task is not None and not self._drain_task.done():
                 self._log_debug(
                     "AE3 runtime wake skipped: owner=%s active_drain_task=%s",
@@ -574,7 +806,7 @@ class Ae3RuntimeWorker:
             current_task = self._drain_task
             if current_task is not done_task and current_task is not None and not current_task.done():
                 return
-            if self._pending_kicks <= 0:
+            if self._pending_kicks <= 0 or self._shutting_down:
                 return
             self._log_debug("AE3 runtime respawning drain task after deferred kick")
             self._spawn_drain_task()

@@ -740,16 +740,25 @@ Canonical status endpoint для зон на `ae3`.
 
 ### 9.1 Startup recovery
 
+> **Roadmap:** детальный план улучшений (фазы 1–6, матрица состояний, критерии приёмки) —  
+> `doc_ai/04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`.
+
 При старте runtime обязан:
 1. проверить `waiting_command` задачи по строкам в `commands`
 2. если terminal уже есть, корректно финализировать task
 3. `claimed|running` без подтверждённой активной внешней команды перевести в `failed` с контролируемым `error_code`
-4. освободить lease с истёкшим `leased_until`
-5. не создавать retry storm
+4. **исключение (фаза 2):** если у `claimed|running` последняя `ae_commands` + legacy `commands` уже terminal `DONE`, recovery выполняет тот же topology transition, что и для `waiting_command` + DONE (без republish в MQTT)
+5. если у `claimed|running` команда ещё не terminal — перевести задачу в `waiting_command` и оставить на reconcile (без fail)
+6. освободить lease с истёкшим `leased_until` и при recovery-fail владельца задачи
+7. фоновый reconcile `waiting_command` задач (`WaitingCommandReconcileUseCase` в worker loop) без republish
+8. не создавать retry storm
+9. **graceful shutdown (фаза 4):** при `SIGTERM`/остановке lifespan worker перестаёт claim'ить новые задачи, ждёт in-flight до `AE_SHUTDOWN_GRACE_SEC` (default 30 с); `claimed|running` без `ae_commands` откатывается в `pending` с release zone lease
+10. **multi-instance (фаза 6):** `StartupRecoveryUseCase.run()` берёт PostgreSQL session advisory lock (`ae3_startup_recovery`); второй экземпляр AE пропускает проход recovery без сканирования задач. Алерты recovery-fail дедуплицируются ключом `biz_ae3_task_failed:{zone_id}:{task_id}:{recovery_source}`. В production рекомендуется **один активный writer** на зону (lease + partial unique index); при нескольких репликах AE координированный recovery обязателен.
 
 ### 9.2 Crash windows
 
-Для `v1` обязательно покрыть тестами минимум такие окна:
+Для `v1` обязательно покрыть тестами минимум такие окна (контрактный suite: `test_ae3lite_startup_recovery_crash_windows.py`, `make test-ae-crash-windows`):
+
 1. crash до записи `ae_commands`
 2. crash после записи `ae_commands`, но до publish
 3. crash после publish, но до локального обновления статуса

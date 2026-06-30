@@ -62,7 +62,68 @@ class PgAeCommandRepository:
             # Родительская строка `ae_tasks` была удалена между шагом планирования и INSERT
             # (например, raw DELETE в e2e или админском сценарии).
             return None
+        except asyncpg.exceptions.UniqueViolationError:
+            return None
         return int(row["id"])
+
+    async def allocate_and_create_pending(
+        self,
+        *,
+        task_id: int,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        payload: Mapping[str, Any],
+        now: datetime,
+        stage_name: Optional[str] = None,
+    ) -> Optional[tuple[int, int]]:
+        """Атомарно выделяет step_no и создаёт строку `ae_commands` под advisory lock task_id."""
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        try:
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock($1::bigint)", int(task_id))
+                    next_row = await conn.fetchrow(
+                        """
+                        SELECT COALESCE(MAX(step_no), 0) + 1 AS next_step_no
+                        FROM ae_commands
+                        WHERE task_id = $1
+                        """,
+                        task_id,
+                    )
+                    step_no = int(next_row["next_step_no"]) if next_row is not None else 1
+                    stored_payload = dict(payload)
+                    stored_payload["cmd_id"] = f"ae3-t{task_id}-z{zone_id}-s{step_no}"
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO ae_commands (
+                            task_id,
+                            step_no,
+                            node_uid,
+                            channel,
+                            payload,
+                            stage_name,
+                            publish_status,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'pending', $7, $7)
+                        RETURNING id
+                        """,
+                        task_id,
+                        step_no,
+                        node_uid,
+                        channel,
+                        stored_payload,
+                        stage_name or None,
+                        normalized_now,
+                    )
+        except asyncpg.exceptions.ForeignKeyViolationError:
+            return None
+        if row is None:
+            return None
+        return int(row["id"]), step_no
 
     async def mark_publish_accepted(
         self,

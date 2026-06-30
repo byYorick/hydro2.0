@@ -36,6 +36,8 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         worker_owner="test-worker",
         max_task_execution_sec=900,
         max_parallel_tasks=4,
+        waiting_command_reconcile_batch_limit=32,
+        shutdown_grace_sec=30.0,
     )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)
