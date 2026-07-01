@@ -186,3 +186,27 @@ async def test_missing_plan_name_contributes_zero_commands() -> None:
         now=NOW,
     )
     assert len(gw.received_commands) == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_success_already_advanced_returns_poll() -> None:
+    """Если reconcile уже перевёл task в next_stage — не дублируем transition."""
+    gw = _Gateway()
+
+    class _AdvancedTask:
+        current_stage = "clean_fill_check"
+
+    async def _run_batch(**_kw: Any) -> dict:
+        return {"success": True, "commands_total": 1, "task": _AdvancedTask()}
+
+    gw.run_batch = _run_batch  # type: ignore[method-assign]
+    outcome = await _handler(gw).run(
+        task=_make_task(),
+        plan=_Plan(),
+        stage_def=_StageDef(next_stage="clean_fill_check"),
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 0
+    assert outcome.task_override is not None
+    assert outcome.task_override.current_stage == "clean_fill_check"

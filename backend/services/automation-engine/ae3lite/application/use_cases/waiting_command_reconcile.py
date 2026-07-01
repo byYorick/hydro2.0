@@ -34,6 +34,7 @@ class WaitingCommandReconcileUseCase:
         *,
         now: datetime,
         worker_owner: str,
+        inflight_task_ids: frozenset[int] | None = None,
     ) -> WaitingCommandReconcileResult:
         list_waiting = getattr(self._task_repository, "list_waiting_command_for_reconcile", None)
         if not callable(list_waiting):
@@ -52,8 +53,13 @@ class WaitingCommandReconcileUseCase:
         unchanged_tasks = 0
         skipped_lease_tasks = 0
         terminal_outcomes = []
+        inflight_ids = inflight_task_ids or frozenset()
 
         for task in tasks:
+            if int(task.id) in inflight_ids:
+                WAITING_COMMAND_RECONCILE.labels(outcome="skipped_inflight").inc()
+                continue
+
             if await self._foreign_lease_blocks_reconcile(
                 zone_id=int(task.zone_id),
                 worker_owner=worker_owner,

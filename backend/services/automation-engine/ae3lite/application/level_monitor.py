@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping, Sequence
 
+from ae3lite.domain.level_switch_semantics import level_switch_is_triggered
 from ae3lite.infrastructure.read_models.active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
 
 
@@ -59,15 +60,6 @@ def level_snapshot_aliases(label: str) -> tuple[str, ...]:
         aliases.add("_".join(("level", parts[0], *parts[2:])))
     return tuple(alias for alias in aliases if alias)
 
-
-def level_switch_is_triggered(value: Any, *, threshold: float) -> bool | None:
-    try:
-        normalized = float(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-    if normalized is None:
-        return None
-    return normalized >= float(threshold)
 
 
 def solution_tank_has_solution(level_state: Mapping[str, Any]) -> bool:

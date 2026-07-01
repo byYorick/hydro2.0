@@ -41,7 +41,7 @@ fi
 : "${TEST_WORKFLOW_NODE_UID:=auto}"
 : "${TEST_PH_NODE_UID:=auto}"
 : "${TEST_EC_NODE_UID:=auto}"
-: "${TEST_SOIL_NODE_UID:=nd-test-soil-1}"
+: "${TEST_SOIL_NODE_UID:=auto}"
 : "${TEST_NODE_HW_ID:=auto}"
 : "${REAL_HW_USE_NODE_SIM_SESSION:=0}"
 : "${REAL_HW_REBOOT_CMD:=restart}"
@@ -79,7 +79,7 @@ uid_matches_discovery_filter() {
   if [ -z "$regex" ]; then
     return 0
   fi
-  printf '%s\n' "$uid" | rg -qx "$regex"
+  printf '%s\n' "$uid" | rg -q "$regex"
 }
 
 uid_in_list() {
@@ -1214,9 +1214,6 @@ build_bind_uids_from_runtime() {
       printf '%s\n' "$explicit_uid" >> "$explicit_file"
     fi
   done
-  if uid_matches_discovery_filter "nd-test-soil-1"; then
-    printf '%s\n' "nd-test-soil-1" >> "$explicit_file"
-  fi
 
   {
     cat "$filtered_file" 2>/dev/null || true
@@ -1607,6 +1604,18 @@ prepare_real_hardware_node() {
   fi
   if [ "${#bind_uids[@]}" -eq 0 ]; then
     mapfile -t bind_uids < <(cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u)
+  fi
+  local expected_bind_count
+  expected_bind_count="$(cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
+  if [ "${expected_bind_count:-0}" -gt 0 ] && [ "${#bind_uids[@]}" -lt "$expected_bind_count" ]; then
+    echo "⚠️ bind discovery вернул ${#bind_uids[@]} из ${expected_bind_count} нод; дополняю из live heartbeat scan"
+    mapfile -t bind_uids < <(
+      cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u | while IFS= read -r uid; do
+        if uid_matches_discovery_filter "$uid"; then
+          printf '%s\n' "$uid"
+        fi
+      done
+    )
   fi
   if [ "${#bind_uids[@]}" -eq 0 ]; then
     echo "❌ Нет нод для bind после перерегистрации"

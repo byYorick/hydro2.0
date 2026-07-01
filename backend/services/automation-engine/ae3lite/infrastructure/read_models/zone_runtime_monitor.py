@@ -8,6 +8,8 @@ from typing import Any, Mapping, Optional, Sequence
 
 from common.db import get_pool
 
+from ae3lite.domain.level_switch_semantics import level_switch_is_triggered
+
 logger = logging.getLogger(__name__)
 
 
@@ -296,7 +298,7 @@ class PgZoneRuntimeMonitor:
             "sample_age_sec": age_sec,
             "has_level": level is not None,
             "is_stale": is_stale,
-            "is_triggered": bool(level is not None and level >= float(threshold)),
+            "is_triggered": level_switch_is_triggered(level, threshold=float(threshold)) or False,
             "expected_labels": labels,
             "source": "telemetry_last",
         }

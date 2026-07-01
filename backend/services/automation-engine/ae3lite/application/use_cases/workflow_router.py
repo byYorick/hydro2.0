@@ -296,6 +296,7 @@ class WorkflowRouter:
             updated_task=updated_task,
             error_code="ae3_poll_apply_failed",
             error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
+            expected_stage=str(task.current_stage or ""),
         )
         # await_ready reads zone_workflow_state to decide whether the fill cycle
         # completed and irrigation is safe (via plan.runtime.zone_workflow_phase).
@@ -410,6 +411,7 @@ class WorkflowRouter:
             updated_task=updated_task,
             error_code="ae3_transition_apply_failed",
             error_message=f"Не удалось перевести задачу {task.id} в stage {next_stage}",
+            expected_stage=next_stage,
         )
         await self._safe_record_transition(
             task_id=task.id,
@@ -823,12 +825,24 @@ class WorkflowRouter:
         updated_task: Any,
         error_code: str,
         error_message: str,
+        expected_stage: str | None = None,
     ) -> Any:
         if updated_task is not None:
             return updated_task
         get_task_by_id = getattr(self._task_repo, "get_by_id", None)
         if callable(get_task_by_id):
             current_task = await get_task_by_id(task_id=task_id)
-            if current_task is not None and not bool(getattr(current_task, "is_active", False)):
-                return current_task
+            if current_task is not None:
+                if not bool(getattr(current_task, "is_active", False)):
+                    return current_task
+                if expected_stage is not None:
+                    current_stage = str(getattr(current_task, "current_stage", "") or "").strip()
+                    status = str(getattr(current_task, "status", "") or "").strip().lower()
+                    if current_stage == expected_stage and status == "pending":
+                        logger.info(
+                            "AE3 stage apply idempotent: task_id=%s already pending at stage=%s",
+                            task_id,
+                            expected_stage,
+                        )
+                        return current_task
         raise TaskExecutionError(error_code, error_message)

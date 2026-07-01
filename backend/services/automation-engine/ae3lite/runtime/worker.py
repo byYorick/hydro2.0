@@ -192,6 +192,11 @@ class Ae3RuntimeWorker:
         result = await self._waiting_command_reconcile_use_case.run(
             now=self._now_fn(),
             worker_owner=self._owner,
+            inflight_task_ids=frozenset(
+                int(getattr(task, "id", 0) or 0)
+                for task in self._inflight_automation_tasks.values()
+                if int(getattr(task, "id", 0) or 0) > 0
+            ),
         )
         terminal_outcomes = getattr(result, "terminal_outcomes", ()) or ()
         for outcome in terminal_outcomes:

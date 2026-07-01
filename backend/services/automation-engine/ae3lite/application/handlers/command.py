@@ -60,10 +60,20 @@ class CommandHandler(BaseStageHandler):
             )
 
         if stage_def.next_stage is not None:
+            resumed_task = result.get("task")
+            if (
+                resumed_task is not None
+                and str(getattr(resumed_task, "current_stage", "") or "").strip() == stage_def.next_stage
+            ):
+                return StageOutcome(
+                    kind="poll",
+                    due_delay_sec=0,
+                    task_override=resumed_task,
+                )
             return StageOutcome(
                 kind="transition",
                 next_stage=stage_def.next_stage,
-                task_override=result.get("task"),
+                task_override=resumed_task,
             )
 
         raise TaskExecutionError(

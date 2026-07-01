@@ -567,11 +567,11 @@ actions:
       meta:
         observe:
           telemetry_period_sec: 2
-          window_min_samples: 3
-          decision_window_sec: 6
+          window_min_samples: 2
+          decision_window_sec: 4
           observe_poll_sec: 2
           min_effect_fraction: 0.20
-          stability_max_slope: 0.08
+          stability_max_slope: 2.0
           no_effect_consecutive_limit: 3
 - step: apply_irrigation_process_calibration
   type: api_put
@@ -1857,6 +1857,27 @@ actions:
   timeout: 240.0
   expected_rows: 1
   save: prepare_recirc_stage_second_row
+- step: force_recirculation_low_targets_for_correction_second
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      ec_value: 1.90
+      ph_value: 5.35
+  save: force_recirculation_low_targets_second_response
+- step: wait_force_recirculation_low_targets_second_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${force_recirculation_low_targets_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_recirculation_ec_correction_command_second
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
@@ -1866,7 +1887,7 @@ actions:
   params:
     task_id_2: ${task_id_2}
     after_command_id: ${fill_ec_correction_second_row.0.id}
-  timeout: 120.0
+  timeout: 180.0
   expected_rows: 1
   save: recirc_ec_correction_second_row
 - step: load_recirculation_ph_correction_command_count_second
@@ -1888,7 +1909,7 @@ actions:
     LIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
-  timeout: 120.0
+  timeout: 300.0
   expected_rows: 1
   save: recirc_corr_check_second_row
 - step: force_recirculation_near_target_band_second

@@ -915,7 +915,7 @@ assertions:
 
   - name: runtime_task_error_mentions_missing_required_channel
     type: custom_assert
-    condition: "'clean_fill_start' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and 'missing required channels' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and 'valve_clean_fill' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower()"
+    condition: "'clean_fill_start' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and 'valve_clean_fill' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and ('обязательные каналы' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() or 'missing required channels' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower())"
 
   - name: startup_state_probe_not_written_before_fail_closed
     type: custom_assert
