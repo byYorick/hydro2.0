@@ -1156,3 +1156,57 @@ async def test_waiting_command_reconcile_skips_foreign_active_lease() -> None:
         assert updated_task.current_stage == "clean_fill_start"
     finally:
         await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_waiting_command_reconcile_skips_inflight_task() -> None:
+    """In-flight task на worker не должен reconcile'иться фоновым циклом."""
+    prefix = f"ae3-wc-reconcile-inflight-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    reconcile_use_case, _recovery, task_repo, _command_repo, _workflow_repo = (
+        _build_waiting_command_reconcile_use_case()
+    )
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=now,
+            topology="two_tank",
+            current_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+        )
+        legacy_id = await _insert_legacy_command(
+            zone_id=zone_id,
+            cmd_id="ae3-wc-reconcile-inflight-1",
+            status="DONE",
+            ack_at=now + timedelta(seconds=2),
+            now=now + timedelta(seconds=2),
+        )
+        await _insert_ae_command(
+            task_id=task_id,
+            now=now,
+            cmd_id="ae3-wc-reconcile-inflight-1",
+            external_id=str(legacy_id),
+        )
+
+        result = await reconcile_use_case.run(
+            now=now + timedelta(seconds=3),
+            worker_owner="worker-a",
+            inflight_task_ids=frozenset({task_id}),
+        )
+
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+        assert result.scanned_tasks == 1
+        assert result.progressed_tasks == 0
+        assert result.failed_tasks == 0
+        assert result.unchanged_tasks == 0
+        assert result.skipped_lease_tasks == 0
+        assert updated_task is not None
+        assert updated_task.status == "waiting_command"
+        assert updated_task.current_stage == "clean_fill_start"
+    finally:
+        await _cleanup(prefix)

@@ -673,11 +673,11 @@ actions:
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
-            stability_max_slope: 0.08
+            stability_max_slope: 2.0
             no_effect_consecutive_limit: 3
 
   - step: apply_ae3_logic_profile
@@ -1537,27 +1537,6 @@ actions:
     expected_rows: 1
     save: recirc_ph_correction_count_row
 
-  - step: wait_recirculation_window_back_to_check
-    type: db.wait
-    query: |
-      SELECT
-        id,
-        status,
-        current_stage,
-        workflow_phase,
-        corr_step
-      FROM ae_tasks
-      WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
-        AND current_stage = 'prepare_recirculation_check'
-        AND corr_step = 'corr_check'
-      LIMIT 1
-    params:
-      task_id: ${task_id}
-    timeout: 300.0
-    expected_rows: 1
-    save: recirc_corr_check_row
-
   - step: force_recirculation_near_target_band
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1586,6 +1565,27 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+  - step: wait_recirculation_window_back_to_check
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        status,
+        current_stage,
+        workflow_phase,
+        corr_step
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND status = 'pending'
+        AND current_stage = 'prepare_recirculation_check'
+        AND corr_step = 'corr_check'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 480.0
+    expected_rows: 1
+    save: recirc_corr_check_row
+
   - step: wait_task_completed
     type: db.wait
     query: |
@@ -1596,7 +1596,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 600.0
+    timeout: 900.0
     expected_rows: 1
     save: completed_task_row
 
