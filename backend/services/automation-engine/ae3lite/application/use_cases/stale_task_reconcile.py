@@ -1,0 +1,306 @@
+"""Периодический healing застрявших claimed/running задач (TaskJanitor)."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, timezone as _tz
+from typing import Any
+
+from ae3lite.application.dto import StaleTaskReconcileResult
+from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
+from ae3lite.domain.entities import AutomationTask
+from ae3lite.infrastructure.metrics import STALE_TASKS_RECLAIMED, inc_observability_write_failed
+from common.db import create_zone_event
+
+logger = logging.getLogger(__name__)
+
+_STALE_TASK_RECLAIMED_EVENT = "AE_TASK_RECLAIMED"
+
+
+class StaleTaskReconcileUseCase:
+    """Освобождает просроченные lease и переводит stale claimed/running задачи."""
+
+    def __init__(
+        self,
+        *,
+        task_repository: Any,
+        lease_repository: Any,
+        alert_repository: Any | None = None,
+        stale_claimed_ttl_sec: int = 120,
+        stale_running_ttl_sec: int = 960,
+        batch_limit: int = 16,
+    ) -> None:
+        self._task_repository = task_repository
+        self._lease_repository = lease_repository
+        self._alert_repository = alert_repository
+        self._stale_claimed_ttl_sec = max(1, int(stale_claimed_ttl_sec))
+        self._stale_running_ttl_sec = max(1, int(stale_running_ttl_sec))
+        self._batch_limit = max(1, min(int(batch_limit), 16))
+
+    async def run(
+        self,
+        *,
+        now: datetime,
+        owner: str,
+    ) -> StaleTaskReconcileResult:
+        released_expired_leases = await self._lease_repository.release_expired(now=now)
+
+        refresh_metrics = getattr(self._task_repository, "refresh_pending_queue_metrics", None)
+        if callable(refresh_metrics):
+            try:
+                await refresh_metrics(now=now)
+            except Exception:
+                logger.warning(
+                    "Stale task reconcile: failed to refresh pending queue metrics",
+                    exc_info=True,
+                )
+
+        list_stale = getattr(self._task_repository, "list_stale_claimed_running_for_reconcile", None)
+        if not callable(list_stale):
+            return StaleTaskReconcileResult(
+                released_expired_leases=released_expired_leases,
+                scanned_tasks=0,
+                requeued_tasks=0,
+                failed_tasks=0,
+                skipped_lease_tasks=0,
+            )
+
+        tasks = await list_stale(
+            now=now,
+            stale_claimed_before=self._stale_before(now, self._stale_claimed_ttl_sec),
+            stale_running_before=self._stale_before(now, self._stale_running_ttl_sec),
+            limit=self._batch_limit,
+        )
+
+        requeued_tasks = 0
+        failed_tasks = 0
+        skipped_lease_tasks = 0
+        worker_owner = str(owner or "").strip()
+
+        for task in tasks:
+            if await self._foreign_lease_blocks_reconcile(
+                zone_id=int(task.zone_id),
+                worker_owner=worker_owner,
+                now=now,
+            ):
+                skipped_lease_tasks += 1
+                continue
+
+            from_status = str(task.status or "").strip().lower()
+            age_sec = self._task_age_sec(task=task, now=now)
+
+            has_commands = await self._task_has_ae_commands(task_id=int(task.id))
+            if not has_commands:
+                requeued = await self._requeue_stale_task(task=task, now=now)
+                if requeued is None:
+                    logger.warning(
+                        "Stale task reconcile: requeue noop task_id=%s zone_id=%s from_status=%s",
+                        task.id,
+                        task.zone_id,
+                        from_status,
+                    )
+                    continue
+                action = "requeue"
+                requeued_tasks += 1
+                await self._release_lease_after_action(task=task, now=now)
+            else:
+                failed = await self._task_repository.fail_for_recovery(
+                    task_id=int(task.id),
+                    error_code="ae3_stale_task_reclaimed",
+                    error_message=(
+                        f"Задача {task.id} застряла в {from_status} и переведена в failed janitor'ом"
+                    ),
+                    now=now,
+                )
+                if failed is None:
+                    logger.warning(
+                        "Stale task reconcile: fail noop task_id=%s zone_id=%s from_status=%s",
+                        task.id,
+                        task.zone_id,
+                        from_status,
+                    )
+                    continue
+                action = "fail"
+                failed_tasks += 1
+                await emit_task_failed_alert(
+                    alert_repository=self._alert_repository,
+                    task=failed,
+                    error_code="ae3_stale_task_reclaimed",
+                    error_message=str(failed.error_message or ""),
+                    now=now,
+                    extra_details={"recovery_source": "stale_task_reconcile"},
+                )
+                await self._release_lease_after_action(task=failed, now=now)
+
+            STALE_TASKS_RECLAIMED.labels(from_status=from_status, action=action).inc()
+            await self._record_task_reclaimed_event(
+                zone_id=int(task.zone_id),
+                task_id=int(task.id),
+                from_status=from_status,
+                action=action,
+                age_sec=age_sec,
+            )
+            logger.info(
+                "Stale task reconcile: reclaimed task_id=%s zone_id=%s from_status=%s action=%s age_sec=%s owner=%s",
+                task.id,
+                task.zone_id,
+                from_status,
+                action,
+                age_sec,
+                worker_owner,
+            )
+
+        return StaleTaskReconcileResult(
+            released_expired_leases=released_expired_leases,
+            scanned_tasks=len(tasks),
+            requeued_tasks=requeued_tasks,
+            failed_tasks=failed_tasks,
+            skipped_lease_tasks=skipped_lease_tasks,
+        )
+
+    async def _requeue_stale_task(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> AutomationTask | None:
+        requeue_fn = getattr(self._task_repository, "requeue_unpublished_execution", None)
+        if not callable(requeue_fn):
+            return None
+        task_owner = str(task.claimed_by or "").strip()
+        if not task_owner:
+            return None
+        return await requeue_fn(
+            task_id=int(task.id),
+            owner=task_owner,
+            now=now,
+        )
+
+    async def _task_has_ae_commands(self, *, task_id: int) -> bool:
+        has_commands = getattr(self._task_repository, "task_has_ae_commands", None)
+        if not callable(has_commands):
+            return True
+        return bool(await has_commands(task_id=task_id))
+
+    async def _foreign_lease_blocks_reconcile(
+        self,
+        *,
+        zone_id: int,
+        worker_owner: str,
+        now: datetime,
+    ) -> bool:
+        get_lease = getattr(self._lease_repository, "get", None)
+        if not callable(get_lease):
+            return False
+
+        lease = await get_lease(zone_id=zone_id)
+        if lease is None:
+            return False
+
+        lease_owner = str(getattr(lease, "owner", "") or "").strip()
+        if lease_owner == "" or lease_owner == worker_owner:
+            return False
+
+        leased_until = getattr(lease, "leased_until", None)
+        if leased_until is None:
+            return True
+
+        normalized_now = (
+            now.astimezone(_tz.utc).replace(tzinfo=None)
+            if now.tzinfo is not None
+            else now.replace(microsecond=0)
+        )
+        lease_until = (
+            leased_until.astimezone(_tz.utc).replace(tzinfo=None)
+            if getattr(leased_until, "tzinfo", None) is not None
+            else leased_until
+        )
+        return lease_until > normalized_now
+
+    async def _release_lease_after_action(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> None:
+        task_owner = str(task.claimed_by or "").strip()
+        if not task_owner:
+            return
+        release_if_owner_or_expired = getattr(
+            self._lease_repository,
+            "release_if_owner_or_expired",
+            None,
+        )
+        if not callable(release_if_owner_or_expired):
+            return
+        try:
+            await release_if_owner_or_expired(
+                zone_id=int(task.zone_id),
+                owner=task_owner,
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "Stale task reconcile: failed to release lease zone_id=%s owner=%s task_id=%s",
+                task.zone_id,
+                task_owner,
+                task.id,
+                exc_info=True,
+            )
+
+    async def _record_task_reclaimed_event(
+        self,
+        *,
+        zone_id: int,
+        task_id: int,
+        from_status: str,
+        action: str,
+        age_sec: float,
+    ) -> None:
+        payload = {
+            "task_id": task_id,
+            "from_status": from_status,
+            "action": action,
+            "age_sec": round(float(age_sec), 3),
+            "recovery_source": "stale_task_reconcile",
+        }
+        try:
+            await create_zone_event(zone_id, _STALE_TASK_RECLAIMED_EVENT, payload)
+        except Exception:
+            inc_observability_write_failed(kind="zone_event")
+            logger.warning(
+                "Stale task reconcile: failed to write zone_event zone_id=%s task_id=%s action=%s",
+                zone_id,
+                task_id,
+                action,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _stale_before(now: datetime, ttl_sec: int) -> datetime:
+        normalized = (
+            now.astimezone(_tz.utc).replace(tzinfo=None)
+            if now.tzinfo is not None
+            else now.replace(microsecond=0)
+        )
+        return normalized - timedelta(seconds=max(1, int(ttl_sec)))
+
+    @staticmethod
+    def _task_age_sec(*, task: AutomationTask, now: datetime) -> float:
+        normalized_now = (
+            now.astimezone(_tz.utc).replace(tzinfo=None)
+            if now.tzinfo is not None
+            else now.replace(microsecond=0)
+        )
+        if str(task.status or "").strip().lower() == "claimed" and task.claimed_at is not None:
+            anchor = task.claimed_at
+        else:
+            anchor = task.updated_at
+        if anchor is None:
+            return 0.0
+        anchor_naive = (
+            anchor.astimezone(_tz.utc).replace(tzinfo=None)
+            if getattr(anchor, "tzinfo", None) is not None
+            else anchor
+        )
+        return max(0.0, (normalized_now - anchor_naive).total_seconds())

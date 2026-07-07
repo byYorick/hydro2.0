@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "generated_at": "2026-05-26T05:37:26+00:00",
+    "generated_at": "2026-07-02T12:02:21+00:00",
     "tracked_tables_count": 29,
     "tables": {
         "ae_commands": {
@@ -44,6 +44,11 @@
                     "data_type": "jsonb",
                     "udt_name": "jsonb",
                     "is_nullable": "NO"
+                },
+                "planner_step": {
+                    "data_type": "character varying",
+                    "udt_name": "varchar",
+                    "is_nullable": "YES"
                 },
                 "publish_status": {
                     "data_type": "character varying",

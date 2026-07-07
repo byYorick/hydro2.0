@@ -1359,11 +1359,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 id BIGSERIAL PK
 task_id BIGINT NOT NULL FK -> ae_tasks ON DELETE CASCADE
 step_no INT NOT NULL
+planner_step VARCHAR(160) NULL         -- детерминированный ключ шага планировщика (PR5)
 node_uid VARCHAR(128) NOT NULL
 channel VARCHAR(64) NOT NULL
 payload JSONB NOT NULL DEFAULT '{}'
-external_id VARCHAR(191) NULL          -- связь с commands.cmd_id
-publish_status VARCHAR(16) NOT NULL    -- pending|accepted|failed
+stage_name VARCHAR(64) NULL
+external_id VARCHAR(191) NULL          -- связь с commands.id (legacy)
+publish_status VARCHAR(32) NOT NULL    -- pending|published_unconfirmed|accepted|failed
 ack_received_at TIMESTAMPTZ NULL
 terminal_status VARCHAR(32) NULL       -- DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED
 terminal_at TIMESTAMPTZ NULL
@@ -1376,12 +1378,29 @@ UNIQUE (task_id, step_no)
 Ключевые индексы/ограничения:
 ```
 ae_commands_external_id_idx (external_id) WHERE external_id IS NOT NULL
+ae_commands_task_planner_step_unpublished_idx UNIQUE (task_id, planner_step)
+    WHERE planner_step IS NOT NULL
+      AND publish_status IN ('pending', 'published_unconfirmed')
 ```
+
+`planner_step` (PR5 — идемпотентность команд):
+- детерминированный ключ шага планировщика в рамках `task_id`;
+- формат: `{current_stage}:{seq_index}` для обычных stage-команд;
+- для correction: `{current_stage}:{corr_step}:{component}` (`component` — канал насоса или имя компонента EC);
+- `NULL` для строк, созданных до PR5 — runtime сохраняет прежнее поведение аллокации `step_no` (двухфазная совместимость in-flight задач).
+
+`publish_status` (PR5):
+- `pending` — строка `ae_commands` создана, публикация в HL ещё не подтверждена;
+- `published_unconfirmed` — HL принял publish (`POST /commands` ok), но `external_id` ещё не привязан к `commands.id` (crash/re-drive между publish и accept); reconcile/janitor довязывает по `payload.cmd_id`;
+- `accepted` — `external_id` записан, команда в legacy `commands` подтверждена;
+- `failed` — ошибка публикации в HL или terminal fail по deadline.
+
+`cmd_id` в `payload` стабилен для retry: `ae3-t{task_id}-z{zone_id}-s{step_no}`; при повторной попытке того же `planner_step` переиспользуется существующая строка и тот же `step_no`/`cmd_id`.
 
 Примечание по статусам:
 - `publish_status` хранится в lowercase;
 - `terminal_status` синхронизирован по значениям с `commands.status`;
-- трекинг делается через mapping `external_id -> commands.cmd_id`.
+- трекинг делается через mapping `external_id -> commands.id`, fallback reconcile по `payload.cmd_id`.
 
 ### 6.11.3. ae_zone_leases
 

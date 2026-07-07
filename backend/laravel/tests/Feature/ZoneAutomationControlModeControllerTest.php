@@ -23,6 +23,8 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
     public function test_control_mode_get_proxies_payload_from_automation_engine(): void
     {
+        config()->set('services.automation_engine.scheduler_api_token', 'test-scheduler-token');
+
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
@@ -47,6 +49,13 @@ class ZoneAutomationControlModeControllerTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.zone_id', $zone->id)
             ->assertJsonPath('data.control_mode', 'manual');
+
+        Http::assertSent(function (HttpRequest $request) use ($zone): bool {
+            return $request->url() === "http://automation-engine:9405/zones/{$zone->id}/control-mode"
+                && $request->method() === 'GET'
+                && $request->hasHeader('Authorization', 'Bearer test-scheduler-token')
+                && $request->hasHeader('X-Trace-Id');
+        });
     }
 
     public function test_control_mode_update_requires_operator_role(): void

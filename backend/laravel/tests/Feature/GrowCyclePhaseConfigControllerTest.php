@@ -60,7 +60,7 @@ class GrowCyclePhaseConfigControllerTest extends TestCase
                 'ec_target' => 2.0,
             ]);
 
-        $resp->assertStatus(409)->assertJsonPath('code', 'ZONE_NOT_IN_LIVE_MODE');
+        $resp->assertStatus(409)->assertJsonPath('code', 'zone_not_in_live_mode');
     }
 
     public function test_put_phase_config_operator_forbidden(): void
@@ -92,7 +92,7 @@ class GrowCyclePhaseConfigControllerTest extends TestCase
                 'reason' => 'no-op',
             ]);
 
-        $resp->assertStatus(422)->assertJsonPath('code', 'NO_FIELDS_PROVIDED');
+        $resp->assertStatus(422)->assertJsonPath('code', 'no_fields_provided');
     }
 
     public function test_put_phase_config_writes_fields_and_bumps_revision(): void
@@ -143,7 +143,7 @@ class GrowCyclePhaseConfigControllerTest extends TestCase
                 'irrigation_mode' => 'drip',  // not in whitelist
             ]);
 
-        $resp->assertStatus(422)->assertJsonPath('code', 'NO_FIELDS_PROVIDED');
+        $resp->assertStatus(422)->assertJsonPath('code', 'no_fields_provided');
 
         // Пагрубо: confirm что irrigation_mode НЕ изменился.
         $phase->refresh();

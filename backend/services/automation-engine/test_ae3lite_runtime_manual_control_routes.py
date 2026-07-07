@@ -32,6 +32,16 @@ class _UseCase:
 
 def _app(monkeypatch: pytest.MonkeyPatch):
     worker = _Worker()
+    async def _run_control(**kwargs):
+        return {
+            "control_mode": "manual",
+            "available_modes": ["auto", "semi", "manual"],
+            "current_stage": "startup",
+            "workflow_phase": "idle",
+            "pending_manual_step": None,
+            "allowed_manual_steps": ["clean_fill_start", "solution_fill_start"],
+        }
+
     get_control = _UseCase(
         result={
             "control_mode": "manual",
@@ -42,6 +52,7 @@ def _app(monkeypatch: pytest.MonkeyPatch):
             "allowed_manual_steps": ["clean_fill_start", "solution_fill_start"],
         }
     )
+    get_control.run = _run_control
     request_manual = _UseCase(
         result={
             "zone_id": 7,
@@ -72,7 +83,7 @@ def _app(monkeypatch: pytest.MonkeyPatch):
 
     async def fetch_fn(query: str, *args: object):
         if "FROM zones" in query:
-            return [{"id": args[0]}]
+            return [{"id": args[0], "automation_runtime": "ae3"}]
         return []
 
     monkeypatch.setattr("ae3lite.runtime.app.fetch", fetch_fn)
@@ -80,6 +91,7 @@ def _app(monkeypatch: pytest.MonkeyPatch):
         SimpleNamespace(
             start_cycle_rate_limit_max_requests=30,
             start_cycle_rate_limit_window_sec=10,
+            start_cycle_rate_limit_enabled=False,
             start_cycle_claim_stale_sec=60,
             start_cycle_running_stale_sec=300,
             db_dsn="",
@@ -95,7 +107,10 @@ def _app(monkeypatch: pytest.MonkeyPatch):
 async def test_runtime_control_mode_get_returns_status_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     app, _bundle = _app(monkeypatch)
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/control-mode" and "GET" in route.methods)
-    response = await endpoint(zone_id=7)
+    response = await endpoint(
+        zone_id=7,
+        request=SimpleNamespace(headers={"authorization": "Bearer test-token", "x-trace-id": "trace-get"}),
+    )
     assert response["status"] == "ok"
     assert response["data"]["available_modes"] == ["auto", "semi", "manual"]
 

@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ScheduleWorkspaceService
 {
@@ -400,6 +401,7 @@ class ScheduleWorkspaceService
             /** @var Response $response */
             $response = Http::acceptJson()
                 ->timeout($timeout)
+                ->withHeaders($this->automationEngineHeaders())
                 ->get("{$apiUrl}/zones/{$zone->id}/control-mode");
 
             if ($response->successful()) {
@@ -481,5 +483,25 @@ class ScheduleWorkspaceService
         }
 
         return 'schedule';
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function automationEngineHeaders(): array
+    {
+        $cfg = $this->runtimeConfig->schedulerConfig();
+
+        $headers = [
+            'X-Trace-Id' => Str::lower((string) Str::uuid()),
+            'X-Scheduler-Id' => (string) ($cfg['scheduler_id'] ?? 'laravel-api'),
+        ];
+
+        $token = trim((string) ($cfg['token'] ?? ''));
+        if ($token !== '') {
+            $headers['Authorization'] = 'Bearer '.$token;
+        }
+
+        return $headers;
     }
 }

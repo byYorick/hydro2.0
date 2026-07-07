@@ -15,9 +15,6 @@ _logger = logging.getLogger(__name__)
 
 # ── Значения по умолчанию для расчёта доз (5.1: именованные константы вместо magic numbers) ──
 
-#: Объём бака раствора по умолчанию, если он не задан в correction_config.
-_DEFAULT_SOLUTION_VOLUME_L: float = 100.0
-
 #: Жёсткий верхний предел для одной EC-дозы, если correction_config.max_ec_dose_ml отсутствует.
 _DEFAULT_MAX_EC_DOSE_ML: float = 50.0
 
@@ -44,6 +41,7 @@ class EcDoseStep:
     channel: str
     amount_ml: float
     duration_ms: int
+    requested_ml: float | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +53,7 @@ class DosePlan:
     ec_node_uid: str = ""
     ec_channel: str = ""
     ec_amount_ml: float = 0.0
+    ec_requested_ml: float = 0.0
     ec_duration_ms: int = 0
     ec_retry_after_sec: Optional[int] = None
     ec_dose_sequence: tuple[EcDoseStep, ...] = ()
@@ -65,6 +64,7 @@ class DosePlan:
     ph_node_uid: str = ""
     ph_channel: str = ""
     ph_amount_ml: float = 0.0
+    ph_requested_ml: float = 0.0
     ph_duration_ms: int = 0
     ph_retry_after_sec: Optional[int] = None
 
@@ -220,7 +220,7 @@ class CorrectionPlanner:
 
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
-        solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), _DEFAULT_SOLUTION_VOLUME_L)
+        solution_volume_l = _require_solution_volume_l(correction_config)
 
         ec_gap = max(0.0, target_ec - current_ec)
         ph_up_gap = max(0.0, target_ph - predicted_ph)
@@ -253,6 +253,7 @@ class CorrectionPlanner:
         ec_node_uid = ""
         ec_channel = ""
         ec_amount_ml = 0.0
+        ec_requested_ml = 0.0
         ec_duration_ms = 0
         ec_discarded_reason = ""
         ec_discarded_details: Mapping[str, Any] = {}
@@ -261,6 +262,7 @@ class CorrectionPlanner:
         ph_node_uid = ""
         ph_channel = ""
         ph_amount_ml = 0.0
+        ph_requested_ml = 0.0
         ph_duration_ms = 0
         ph_discarded_reason = ""
         ph_discarded_details: Mapping[str, Any] = {}
@@ -409,8 +411,14 @@ class CorrectionPlanner:
                                     continue
                             dose_ml = round(max(0.0, dose_ml), 4)
 
-                            duration_ms, reason, details = _dose_ml_to_ms(dose_ml, calibration, correction_config)
-                            if duration_ms <= 0 and dose_ml > 0:
+                            requested_ml = dose_ml
+                            effective_ml, requested_ml, duration_ms, reason, details = _resolve_dose_duration(
+                                requested_ml=requested_ml,
+                                calibration=calibration,
+                                correction_config=correction_config,
+                            )
+                            dose_ml = effective_ml
+                            if duration_ms <= 0 and requested_ml > 0:
                                 discarded.append(
                                     {
                                         "component": component,
@@ -432,6 +440,7 @@ class CorrectionPlanner:
                                     channel=channel,
                                     amount_ml=dose_ml,
                                     duration_ms=int(duration_ms),
+                                    requested_ml=requested_ml if requested_ml != dose_ml else None,
                                 )
                             )
                             total_ml += dose_ml
@@ -443,11 +452,18 @@ class CorrectionPlanner:
                             ec_node_uid = seq[0].node_uid
                             ec_channel = seq[0].channel
                             ec_amount_ml = round(total_ml, 4)
+                            ec_requested_ml = round(
+                                sum(
+                                    (step.requested_ml if step.requested_ml is not None else step.amount_ml)
+                                    for step in seq
+                                ),
+                                4,
+                            )
                             ec_duration_ms = int(total_ms)
                             if ec_pid_update:
                                 if ec_pid_zone:
                                     ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
-                                pid_updates["ec"] = {**ec_pid_update, "last_dose_at": now}
+                                pid_updates["ec"] = ec_pid_update
                             ec_discarded_reason = "multi_component_partial" if discarded else ""
                             ec_discarded_details = {"discarded": discarded} if discarded else {}
                             ec_needs = ec_duration_ms > 0
@@ -512,8 +528,13 @@ class CorrectionPlanner:
                         if ec_pid_zone:
                             ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
                         pid_updates["ec"] = ec_pid_update
-                    ec_duration_ms, ec_duration_reason, ec_duration_details = _dose_ml_to_ms(
-                        ec_amount_ml, calibration, correction_config,
+                    ec_requested_ml = ec_amount_ml
+                    ec_amount_ml, ec_requested_ml, ec_duration_ms, ec_duration_reason, ec_duration_details = (
+                        _resolve_dose_duration(
+                            requested_ml=ec_amount_ml,
+                            calibration=calibration,
+                            correction_config=correction_config,
+                        )
                     )
                     # Planner-level discard (min_effective exceeds gap cap) takes precedence
                     # over duration-level discard so the reason reflects the root cause.
@@ -524,14 +545,6 @@ class CorrectionPlanner:
                         ec_discarded_reason = ec_duration_reason
                         ec_discarded_details = ec_duration_details
                     ec_needs = ec_duration_ms > 0
-                    # Phantom-dose guard: _compute_amount_ml stamps last_dose_at=now
-                    # as soon as dose_ml > 0, but _dose_ml_to_ms may still reject the
-                    # pulse (e.g. computed duration below pump min_dose_ms). Leaving
-                    # the phantom last_dose_at would trigger min_interval_sec cooldown
-                    # on a dose that was never actually commanded and silently starve
-                    # correction until the cooldown elapses.
-                    if not ec_needs:
-                        _strip_last_dose_at(pid_updates, "ec")
             else:
                 ec_needs = False
 
@@ -583,8 +596,13 @@ class CorrectionPlanner:
                     if ph_pid_zone:
                         ph_pid_update = {**ph_pid_update, "current_zone": ph_pid_zone}
                     pid_updates["ph"] = ph_pid_update
-                ph_duration_ms, ph_duration_reason, ph_duration_details = _dose_ml_to_ms(
-                    ph_amount_ml, calibration, correction_config,
+                ph_requested_ml = ph_amount_ml
+                ph_amount_ml, ph_requested_ml, ph_duration_ms, ph_duration_reason, ph_duration_details = (
+                    _resolve_dose_duration(
+                        requested_ml=ph_amount_ml,
+                        calibration=calibration,
+                        correction_config=correction_config,
+                    )
                 )
                 if ph_planner_discard_reason:
                     ph_discarded_reason = ph_planner_discard_reason
@@ -594,11 +612,6 @@ class CorrectionPlanner:
                     ph_discarded_details = ph_duration_details
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
                 ph_needs_down = ph_needs_down and ph_duration_ms > 0
-                # Phantom-dose guard: same rationale as for EC — if the dose was
-                # rejected by _dose_ml_to_ms (below min_dose_ms) drop last_dose_at
-                # so min_interval_sec cooldown is not triggered on a phantom pulse.
-                if not (ph_needs_up or ph_needs_down):
-                    _strip_last_dose_at(pid_updates, "ph")
             else:
                 ph_needs_up = False
                 ph_needs_down = False
@@ -621,6 +634,7 @@ class CorrectionPlanner:
             ec_node_uid=ec_node_uid,
             ec_channel=ec_channel,
             ec_amount_ml=ec_amount_ml,
+            ec_requested_ml=ec_requested_ml,
             ec_duration_ms=ec_duration_ms,
             ec_retry_after_sec=ec_retry_after,
             ec_dose_sequence=ec_dose_sequence,
@@ -630,6 +644,7 @@ class CorrectionPlanner:
             ph_node_uid=ph_node_uid,
             ph_channel=ph_channel,
             ph_amount_ml=ph_amount_ml,
+            ph_requested_ml=ph_requested_ml,
             ph_duration_ms=ph_duration_ms,
             ph_retry_after_sec=ph_retry_after,
             retry_after_sec=retry_after,
@@ -691,6 +706,10 @@ def _resolve_pid_controller_cfg(
 
     close_zone = _non_negative_float(pid_cfg.get("close_zone"), 0.0)
     far_zone = _non_negative_float(pid_cfg.get("far_zone"), 0.0)
+    if far_zone <= close_zone:
+        raise PlannerConfigurationError(
+            f"pid_configs.{pid_type}.far_zone ({far_zone}) должно быть > close_zone ({close_zone})"
+        )
     zone_name = "close" if gap <= close_zone or far_zone <= close_zone else "far"
     coeffs = zone_coeffs.get(zone_name)
     if not isinstance(coeffs, Mapping):
@@ -988,8 +1007,6 @@ def _compute_amount_ml(
     max_ml = min(controller_max, contract_max) if controller_max > 0 else contract_max
     dose_ml = min(dose_ml, max_ml)
     dose_ml = round(max(0.0, dose_ml), 4)
-    if dose_ml > 0:
-        pid_update = {**pid_update, "last_dose_at": now}
     return dose_ml, pid_update, discard_reason, discard_details
 
 
@@ -1170,10 +1187,53 @@ def _reset_pid_state_if_ph_direction_switched(
     }
 
 
+def _require_solution_volume_l(correction_config: Mapping[str, Any]) -> float:
+    raw = correction_config.get("solution_volume_l")
+    if raw is None:
+        raise PlannerConfigurationError(
+            "В correction_config отсутствует solution_volume_l"
+        )
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise PlannerConfigurationError(
+            f"correction_config.solution_volume_l некорректен: {raw!r}"
+        )
+    if value <= 0:
+        raise PlannerConfigurationError(
+            f"correction_config.solution_volume_l должно быть > 0, получено {value}"
+        )
+    return value
+
+
+def _resolve_dose_duration(
+    *,
+    requested_ml: float,
+    calibration: Mapping[str, Any],
+    correction_config: Mapping[str, Any],
+    log_context: Mapping[str, Any] | None = None,
+) -> tuple[float, float, int, str, Mapping[str, Any]]:
+    """Convert requested dose volume to effective ml + pump duration."""
+    duration_ms, reason, details = _dose_ml_to_ms(
+        requested_ml,
+        calibration,
+        correction_config,
+        log_context=log_context,
+    )
+    effective_ml = float(requested_ml)
+    if reason == "clamped_to_max_dose_ms":
+        clamped_effective = details.get("effective_ml")
+        if clamped_effective is not None:
+            effective_ml = float(clamped_effective)
+    return effective_ml, float(requested_ml), duration_ms, reason, details
+
+
 def _dose_ml_to_ms(
     dose_ml: float,
     calibration: Mapping[str, Any],
     correction_config: Mapping[str, Any],
+    *,
+    log_context: Mapping[str, Any] | None = None,
 ) -> tuple[int, str, Mapping[str, Any]]:
     pump_calibration = correction_config.get("pump_calibration")
     if not isinstance(pump_calibration, Mapping):
@@ -1223,14 +1283,25 @@ def _dose_ml_to_ms(
     if duration_ms <= 0:
         return (0, "", {})
     if duration_ms < min_dose_ms:
+        log_suffix = ""
+        if log_context:
+            log_suffix = (
+                " task_id=%s correction_window_id=%s zone_id=%s"
+                % (
+                    log_context.get("task_id"),
+                    log_context.get("correction_window_id"),
+                    log_context.get("zone_id"),
+                )
+            )
         _logger.warning(
             "Dose discarded: computed duration %dms is below minimum %dms "
             "(dose_ml=%.4f, ml_per_sec=%.4f). "
-            "Check pump calibration or min_effective_ml setting.",
+            "Check pump calibration or min_effective_ml setting.%s",
             duration_ms,
             min_dose_ms,
             dose_ml,
             ml_per_sec,
+            log_suffix,
         )
         return (
             0,
@@ -1243,27 +1314,38 @@ def _dose_ml_to_ms(
             },
         )
     if duration_ms > max_dose_ms:
-        # Runaway-guard: clamp на max_dose_ms, но сохраняем информацию об
-        # исходной требуемой длительности для observability. Дальнейший dose
-        # tuning (снизить dose_ml) сделает следующая итерация коррекции по
-        # измерениям — мы не пропускаем ход, просто предотвращаем одноразовый
-        # рейд насоса на часы.
+        clamped_ms = max_dose_ms
+        effective_ml = ml_per_sec * clamped_ms / 1000.0
+        log_suffix = ""
+        if log_context:
+            log_suffix = (
+                " task_id=%s correction_window_id=%s zone_id=%s"
+                % (
+                    log_context.get("task_id"),
+                    log_context.get("correction_window_id"),
+                    log_context.get("zone_id"),
+                )
+            )
         _logger.warning(
             "Dose duration clamped to max_dose_ms: computed %dms > max %dms "
-            "(dose_ml=%.4f, ml_per_sec=%.4f). Possible calibration drift or "
-            "oversized dose command.",
+            "(requested_ml=%.4f, effective_ml=%.4f, ml_per_sec=%.4f). "
+            "Possible calibration drift or oversized dose command.%s",
             duration_ms,
             max_dose_ms,
             dose_ml,
+            effective_ml,
             ml_per_sec,
+            log_suffix,
         )
         return (
-            max_dose_ms,
+            clamped_ms,
             "clamped_to_max_dose_ms",
             {
                 "computed_duration_ms": duration_ms,
                 "max_dose_ms": max_dose_ms,
-                "dose_ml": round(dose_ml, 4),
+                "requested_ml": round(dose_ml, 4),
+                "effective_ml": round(effective_ml, 4),
+                "dose_ml": round(effective_ml, 4),
                 "ml_per_sec": ml_per_sec,
             },
         )
@@ -1273,9 +1355,9 @@ def _dose_ml_to_ms(
 def _strip_last_dose_at(pid_updates: dict[str, Any], key: str) -> None:
     """Drop last_dose_at from a pending pid_state update for the given PID kind.
 
-    Used to undo the speculative stamp applied inside ``_compute_amount_ml`` when
-    the dose is later rejected (e.g. by ``_dose_ml_to_ms`` below min_dose_ms).
-    Writing a phantom last_dose_at would misfire ``min_interval_sec`` cooldown.
+    Kept for backwards compatibility with tests and legacy call sites. Planning
+    no longer stamps ``last_dose_at``; the correction handler writes it only
+    after a terminal ``DONE`` dose command.
     """
     entry = pid_updates.get(key)
     if not isinstance(entry, Mapping) or "last_dose_at" not in entry:

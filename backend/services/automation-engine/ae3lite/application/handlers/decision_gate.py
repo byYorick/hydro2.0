@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.infrastructure.metrics import IRRIGATION_DECISION
+from ae3lite.infrastructure.metrics import IRRIGATION_DECISION, inc_observability_write_failed
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 
@@ -151,6 +151,7 @@ class DecisionGateHandler(BaseStageHandler):
                     scope_parts=("stage:decision_gate",),
                 )
         except Exception:
+            inc_observability_write_failed(kind="biz_alert")
             _logger.warning(
                 "AE3 не смог отправить alert по решению полива zone_id=%s task_id=%s outcome=%s",
                 int(getattr(task, "zone_id", 0) or 0),
@@ -199,6 +200,7 @@ class DecisionGateHandler(BaseStageHandler):
                 payload,
             )
         except Exception:
+            inc_observability_write_failed(kind="zone_event")
             _logger.warning(
                 "AE3 не смог записать IRRIGATION_DECISION_EVALUATED zone_id=%s task_id=%s outcome=%s",
                 int(getattr(task, "zone_id", 0) or 0),

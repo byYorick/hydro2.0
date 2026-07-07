@@ -98,7 +98,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('state', 'TANK_FILLING')
             ->assertJsonPath('system_config.tanks_count', 2)
             ->assertJsonPath('active_processes.pump_in', true)
-            ->assertJsonPath('state_details.human_error_message', 'Не дождались подтверждения или итогового ответа по команде в допустимое время.')
+            ->assertJsonPath('state_details.human_error_message', 'Превышено время ожидания выполнения команды.')
             ->assertJsonPath('state_meta.source', 'live')
             ->assertJsonPath('state_meta.is_stale', false);
 
@@ -824,7 +824,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('last_terminal_failure.error_code', 'command_timeout')
             ->assertJsonPath(
                 'last_terminal_failure.human_error_message',
-                'Не дождались подтверждения или итогового ответа по команде в допустимое время.'
+                'Превышено время ожидания выполнения команды.'
             );
     }
 

@@ -4,6 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from ae3lite.domain.errors import PlannerConfigurationError
 from ae3lite.config.runtime_plan_builder import (
     default_two_tank_command_plan,
@@ -809,7 +816,7 @@ def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> N
 
 
 def test_resolve_two_tank_runtime_requires_process_hold_window_for_prepare_recirculation() -> None:
-    with pytest.raises(PlannerConfigurationError, match="transport_delay_sec and settle_sec"):
+    with pytest.raises(PlannerConfigurationError, match="transport_delay_sec и settle_sec"):
         resolve_two_tank_runtime(
             _snapshot(
                 correction={"stabilization_sec": 5},

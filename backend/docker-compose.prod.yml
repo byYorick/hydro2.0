@@ -264,6 +264,8 @@ services:
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - AE_DB_DSN=postgresql://hydro:${POSTGRES_PASSWORD:-change-me}@db:5432/hydro
+      - AE_WORKER_OWNER=ae3-${HOSTNAME:-prod}
+      - PG_POOL_MAX_SIZE=${PG_POOL_MAX_SIZE:-10}
       - LARAVEL_API_URL=http://laravel
       # ВАЖНО: Токены для безопасности сервисов
       - SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}

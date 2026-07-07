@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from ae3lite.application.handlers.flow_path_guard import (
+    decode_manual_hold_return_stage,
+    encode_manual_hold_operator_step,
+)
 from ae3lite.application.use_cases.manual_control_contract import (
-    allowed_manual_steps_for_stage,
+    allowed_manual_steps_for_workflow,
     normalize_control_mode,
 )
 from ae3lite.domain.errors import ManualControlError
@@ -51,7 +55,11 @@ class RequestManualStepUseCase:
 
         current_stage = str(getattr(task.workflow, "current_stage", "") or "")
         workflow_phase = str(getattr(task.workflow, "workflow_phase", "") or "")
-        allowed_steps = allowed_manual_steps_for_stage(current_stage)
+        pending_manual_step = getattr(task.workflow, "pending_manual_step", None)
+        allowed_steps = allowed_manual_steps_for_workflow(
+            current_stage=current_stage,
+            pending_manual_step=pending_manual_step,
+        )
         if manual_step not in allowed_steps:
             raise ManualControlError(
                 "manual_step_not_allowed_for_stage",
@@ -65,9 +73,24 @@ class RequestManualStepUseCase:
                 },
             )
 
+        stored_manual_step = manual_step
+        if current_stage == "manual_hold":
+            return_stage = decode_manual_hold_return_stage(pending_manual_step)
+            if not return_stage:
+                raise ManualControlError(
+                    "manual_hold_return_stage_missing",
+                    "manual_hold is missing stored return stage",
+                    status_code=409,
+                    details={"zone_id": zone_id, "current_stage": current_stage},
+                )
+            stored_manual_step = encode_manual_hold_operator_step(
+                return_stage=return_stage,
+                manual_step=manual_step,
+            )
+
         updated = await self._task_repository.set_pending_manual_step(
             task_id=int(task.id),
-            manual_step=manual_step,
+            manual_step=stored_manual_step,
             now=now,
         )
         if updated is None:

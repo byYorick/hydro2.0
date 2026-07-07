@@ -7,6 +7,14 @@ from uuid import uuid4
 
 import pytest
 
+from ae3_preflight_helpers import drain_until_idle, patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
+
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases import ClaimNextTaskUseCase, ExecuteTaskUseCase, StartupRecoveryUseCase, WorkflowRouter
 from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
@@ -53,28 +61,34 @@ class _TwoTankHistoryLoggerStub:
     ) -> str:
         if cmd == "set_relay":
             self._state[str(channel)] = bool(params.get("state"))
-        await execute(
-            """
-            INSERT INTO commands (
+        stored_cmd_id = f"hl-{cmd_id}"
+        existing = await fetch(
+            "SELECT id FROM commands WHERE cmd_id = $1 LIMIT 1",
+            stored_cmd_id,
+        )
+        if not existing:
+            await execute(
+                """
+                INSERT INTO commands (
+                    zone_id,
+                    channel,
+                    cmd,
+                    params,
+                    status,
+                    cmd_id,
+                    source,
+                    ack_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES ($1, $2, $3, $4::jsonb, 'DONE', $5, 'automation-engine', NOW(), NOW(), NOW())
+                """,
                 zone_id,
                 channel,
                 cmd,
                 params,
-                status,
-                cmd_id,
-                source,
-                ack_at,
-                created_at,
-                updated_at
+                stored_cmd_id,
             )
-            VALUES ($1, $2, $3, $4::jsonb, 'DONE', $5, 'automation-engine', NOW(), NOW(), NOW())
-            """,
-            zone_id,
-            channel,
-            cmd,
-            params,
-            f"hl-{cmd_id}",
-        )
         if cmd == "state":
             snapshot_payload = {"snapshot": dict(self._state), "cmd_id": f"hl-{cmd_id}"}
             await execute(
@@ -459,7 +473,8 @@ async def test_two_tank_cycle_start_completes_when_clean_and_solution_tanks_read
         task_id = await _insert_pending_task(zone_id, prefix=prefix)
         worker = _build_worker(zone_id=zone_id, clean_full=True, solution_full=True)
 
-        await worker._drain_pending_tasks()
+        row = await drain_until_idle(worker, task_id=task_id)
+        assert str(row["status"]).lower() == "completed"
 
         task_rows = await fetch("SELECT status FROM ae_tasks WHERE id = $1", task_id)
         workflow_rows = await fetch("SELECT workflow_phase FROM zone_workflow_state WHERE zone_id = $1", zone_id)
@@ -486,7 +501,13 @@ async def test_two_tank_cycle_start_requeues_clean_fill_check_when_clean_tank_no
         task_id = await _insert_pending_task(zone_id, prefix=prefix)
         worker = _build_worker(zone_id=zone_id, clean_full=False, solution_full=False)
 
-        await worker._drain_pending_tasks()
+        row = await drain_until_idle(
+            worker,
+            task_id=task_id,
+            expect_status="pending",
+            expect_stage="clean_fill_check",
+        )
+        assert row["current_stage"] == "clean_fill_check"
 
         rows = await fetch("SELECT status, current_stage FROM ae_tasks WHERE id = $1", task_id)
         workflow_rows = await fetch("SELECT workflow_phase FROM zone_workflow_state WHERE zone_id = $1", zone_id)

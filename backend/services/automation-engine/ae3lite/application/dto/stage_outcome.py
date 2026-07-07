@@ -49,3 +49,6 @@ class StageOutcome:
 
     # Актуальная строка задачи после reconcile/publish command path.
     task_override: Any | None = None
+
+    # PR7: stage, в который вернуться из manual_hold после control_mode=auto.
+    flow_hold_return_stage: Optional[str] = None

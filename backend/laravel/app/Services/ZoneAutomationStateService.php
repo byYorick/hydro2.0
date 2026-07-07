@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ZoneAutomationStateService
 {
@@ -138,6 +139,7 @@ class ZoneAutomationStateService
             ->retry(2, 150, function ($exception) {
                 return $exception instanceof ConnectionException;
             }, false)
+            ->withHeaders($this->automationEngineHeaders())
             ->get("{$apiUrl}/zones/{$zoneId}/state");
 
         if ($response->status() === 404) {
@@ -181,6 +183,7 @@ class ZoneAutomationStateService
                     ->retry(2, 150, function ($exception) {
                         return $exception instanceof ConnectionException;
                     }, false)
+                    ->withHeaders($this->automationEngineHeaders())
                     ->get("{$apiUrl}/zones/{$zoneId}/control-mode");
 
                 if ($response->successful()) {
@@ -717,5 +720,25 @@ class ZoneAutomationStateService
     private function controlModeFallbackBackoffKey(int $zoneId): string
     {
         return "zone_automation_state:control_mode_backoff:{$zoneId}";
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function automationEngineHeaders(): array
+    {
+        $cfg = $this->runtimeConfig->schedulerConfig();
+
+        $headers = [
+            'X-Trace-Id' => Str::lower((string) Str::uuid()),
+            'X-Scheduler-Id' => (string) ($cfg['scheduler_id'] ?? 'laravel-api'),
+        ];
+
+        $token = trim((string) ($cfg['token'] ?? ''));
+        if ($token !== '') {
+            $headers['Authorization'] = 'Bearer '.$token;
+        }
+
+        return $headers;
     }
 }

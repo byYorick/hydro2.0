@@ -54,6 +54,33 @@ async def test_control_state_returns_generic_manual_steps_for_solution_fill() ->
     assert result["pending_manual_step"] == "solution_fill_stop"
 
 
+async def test_control_state_returns_return_stage_manual_steps_in_manual_hold() -> None:
+    task = SimpleNamespace(
+        workflow=WorkflowState(
+            current_stage="manual_hold",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=1,
+            control_mode="manual",
+            pending_manual_step="__mh_return:solution_fill_check",
+        )
+    )
+
+    async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [{"control_mode": "manual"}]
+
+    result = await GetZoneControlStateUseCase(
+        task_repository=_TaskRepository(task),
+        fetch_fn=fetch_fn,
+    ).run(zone_id=7)
+
+    assert result["current_stage"] == "manual_hold"
+    assert result["allowed_manual_steps"] == ["solution_fill_stop"]
+    assert result["pending_manual_step"] == "__mh_return:solution_fill_check"
+
+
 async def test_control_state_hides_manual_steps_in_auto_mode() -> None:
     task = SimpleNamespace(
         workflow=WorkflowState(

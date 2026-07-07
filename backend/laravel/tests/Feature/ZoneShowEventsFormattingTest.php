@@ -141,13 +141,16 @@ class ZoneShowEventsFormattingTest extends TestCase
         $this->actingAs($user)
             ->get("/zones/{$zone->id}")
             ->assertStatus(200)
-            ->assertInertia(function (AssertableInertia $page): void {
+            ->assertInertia(function (AssertableInertia $page) use ($zone): void {
                 $page->component('Zones/Show')
                     ->has('alerts', 1)
                     ->where('alerts.0.title', 'Ошибка задачи автоматики')
                     ->where(
                         'alerts.0.message',
-                        'Задача AE3 #314 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 2. Причина: Выполнение задачи превысило допустимый runtime timeout.'
+                        sprintf(
+                            'Зона %d: Задача AE3 #314 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 2. Причина: Выполнение задачи превысило допустимый runtime timeout.',
+                            $zone->id,
+                        )
                     );
             });
     }

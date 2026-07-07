@@ -11,6 +11,13 @@ from typing import Any
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.services.workflow_topology import TopologyRegistry
@@ -1012,3 +1019,38 @@ async def test_router_poll_await_ready_does_not_overwrite_zone_workflow_state():
         "await_ready poll must not write into zone_workflow_state; "
         f"got unexpected upsert calls: {wr.upsert_calls}"
     )
+
+
+async def test_router_manual_hold_entry_sets_return_marker() -> None:
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="manual_hold",
+        flow_hold_return_stage="solution_fill_check",
+        due_delay_sec=10,
+    )
+    task = _make_task(stage="solution_fill_check", control_mode="manual")
+    router, tr, _wr = _make_router(return_task=task)
+    router._handlers["solution_fill"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "manual_hold"
+    assert wf.pending_manual_step == "__mh_return:solution_fill_check"
+
+
+async def test_router_manual_hold_exit_with_operator_step_sets_plain_pending() -> None:
+    outcome = StageOutcome(kind="transition", next_stage="solution_fill_check", due_delay_sec=0)
+    task = _make_task(
+        stage="manual_hold",
+        control_mode="manual",
+        pending_manual_step="__mh_step:solution_fill_check:solution_fill_stop",
+    )
+    router, tr, _wr = _make_router(return_task=task)
+    router._handlers["manual_hold"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "solution_fill_check"
+    assert wf.pending_manual_step == "solution_fill_stop"

@@ -39,10 +39,8 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         ]);
 
         $response->assertStatus(403)
-            ->assertJson([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ]);
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'forbidden');
     }
 
     public function test_node_command_endpoint_allows_accessible_operator(): void

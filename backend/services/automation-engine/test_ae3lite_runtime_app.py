@@ -7,6 +7,7 @@ import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -215,7 +216,8 @@ def test_create_app_validates_explicit_runtime_config() -> None:
             super().__init__(
                 start_cycle_rate_limit_max_requests=30,
                 start_cycle_rate_limit_window_sec=10,
-                start_cycle_claim_stale_sec=60,
+                start_cycle_rate_limit_enabled=False,
+            start_cycle_claim_stale_sec=60,
                 start_cycle_running_stale_sec=300,
                 db_dsn="",
                 scheduler_security_baseline_enforce=False,
@@ -241,7 +243,11 @@ def test_create_app_validates_explicit_runtime_config() -> None:
             claim_start_irrigation=lambda **kwargs: None,
             mark_terminal=lambda **kwargs: None,
         ),
-        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        worker=SimpleNamespace(
+            kick=lambda: None,
+            recover_on_startup=lambda: None,
+            drain_health=AsyncMock(return_value=(True, "ok")),
+        ),
         http_client=SimpleNamespace(aclose=lambda: None),
         history_logger_client=SimpleNamespace(),
     )
@@ -266,7 +272,11 @@ async def test_runtime_get_routes_validate_zone_exists(monkeypatch: pytest.Monke
         get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
         task_status_read_model=None,
         zone_intent_repository=None,
-        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        worker=SimpleNamespace(
+            kick=lambda: None,
+            recover_on_startup=lambda: None,
+            drain_health=AsyncMock(return_value=(True, "ok")),
+        ),
         http_client=SimpleNamespace(aclose=lambda: None),
         history_logger_client=SimpleNamespace(),
     )
@@ -280,6 +290,7 @@ async def test_runtime_get_routes_validate_zone_exists(monkeypatch: pytest.Monke
         SimpleNamespace(
             start_cycle_rate_limit_max_requests=30,
             start_cycle_rate_limit_window_sec=10,
+            start_cycle_rate_limit_enabled=False,
             start_cycle_claim_stale_sec=60,
             start_cycle_running_stale_sec=300,
             db_dsn="",
@@ -297,12 +308,20 @@ async def test_runtime_get_routes_validate_zone_exists(monkeypatch: pytest.Monke
     )
 
     with pytest.raises(HTTPException) as state_exc:
-        await state_endpoint(zone_id=404)
+        await state_endpoint(
+            zone_id=404,
+            request=SimpleNamespace(headers={"authorization": "Bearer test-token"}),
+        )
     with pytest.raises(HTTPException) as control_exc:
-        await control_endpoint(zone_id=404)
+        await control_endpoint(
+            zone_id=404,
+            request=SimpleNamespace(headers={"authorization": "Bearer test-token"}),
+        )
 
     assert state_exc.value.status_code == 404
     assert control_exc.value.status_code == 404
+    assert state_exc.value.detail["code"] == "zone_not_found"
+    assert control_exc.value.detail["code"] == "zone_not_found"
 
 
 @pytest.mark.asyncio
@@ -318,7 +337,11 @@ async def test_health_ready_returns_503_when_critical_background_task_crashed(
         get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
         task_status_read_model=None,
         zone_intent_repository=None,
-        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        worker=SimpleNamespace(
+            kick=lambda: None,
+            recover_on_startup=lambda: None,
+            drain_health=AsyncMock(return_value=(True, "ok")),
+        ),
         http_client=SimpleNamespace(aclose=lambda: None),
         history_logger_client=SimpleNamespace(),
     )
@@ -328,16 +351,22 @@ async def test_health_ready_returns_503_when_critical_background_task_crashed(
         return [{"ready": 1}]
 
     monkeypatch.setattr(runtime_app_module, "fetch", fetch_fn)
+    async def hl_probe_ok(**_kwargs: object) -> tuple[bool, str]:
+        return True, "ok"
+
+    monkeypatch.setattr(runtime_app_module, "_probe_history_logger_ready", hl_probe_ok)
     app = runtime_app_module.create_app(
         SimpleNamespace(
             start_cycle_rate_limit_max_requests=30,
             start_cycle_rate_limit_window_sec=10,
+            start_cycle_rate_limit_enabled=False,
             start_cycle_claim_stale_sec=60,
             start_cycle_running_stale_sec=300,
             db_dsn="",
             scheduler_security_baseline_enforce=False,
             scheduler_api_token="test-token",
             scheduler_require_trace_id=False,
+            history_logger_url="http://history-logger:9300",
         )
     )
 
@@ -358,3 +387,60 @@ async def test_health_ready_returns_503_when_critical_background_task_crashed(
     assert payload["ready"] is False
     assert payload["checks"]["critical_background_tasks"]["ok"] is False
     assert "crashed" in payload["checks"]["critical_background_tasks"]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_health_ready_returns_503_when_history_logger_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_app_module._HL_READY_CHECK_CACHE["monotonic_at"] = 0.0
+    bundle = SimpleNamespace(
+        create_task_from_intent_use_case=None,
+        solution_tank_startup_guard_use_case=None,
+        get_zone_control_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        request_manual_step_use_case=None,
+        set_control_mode_use_case=None,
+        get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        task_status_read_model=None,
+        zone_intent_repository=None,
+        worker=SimpleNamespace(
+            kick=lambda: None,
+            recover_on_startup=lambda: None,
+            drain_health=AsyncMock(return_value=(True, "ok")),
+        ),
+        http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
+    )
+    monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
+
+    async def fetch_fn(query: str, *args: object):
+        return [{"ready": 1}]
+
+    monkeypatch.setattr(runtime_app_module, "fetch", fetch_fn)
+    async def hl_probe_fail(**_kwargs: object) -> tuple[bool, str]:
+        return False, "history_logger_unreachable"
+
+    monkeypatch.setattr(runtime_app_module, "_probe_history_logger_ready", hl_probe_fail)
+    app = runtime_app_module.create_app(
+        SimpleNamespace(
+            start_cycle_rate_limit_max_requests=30,
+            start_cycle_rate_limit_window_sec=10,
+            start_cycle_rate_limit_enabled=False,
+            start_cycle_claim_stale_sec=60,
+            start_cycle_running_stale_sec=300,
+            db_dsn="",
+            scheduler_security_baseline_enforce=False,
+            scheduler_api_token="test-token",
+            scheduler_require_trace_id=False,
+            history_logger_url="http://history-logger:9300",
+        )
+    )
+
+    health_ready = next(route.endpoint for route in app.routes if route.path == "/health/ready")
+    resp = await health_ready()
+    assert isinstance(resp, JSONResponse)
+    assert resp.status_code == 503
+    payload = json.loads(resp.body.decode())
+    assert payload["ready"] is False
+    assert payload["checks"]["history_logger"]["ok"] is False
+    assert payload["checks"]["history_logger"]["reason"] == "history_logger_unreachable"

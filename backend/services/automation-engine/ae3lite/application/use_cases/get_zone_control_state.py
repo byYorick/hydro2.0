@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional
 
 from ae3lite.application.use_cases.manual_control_contract import (
     AVAILABLE_CONTROL_MODES,
-    allowed_manual_steps_for_stage,
+    allowed_manual_steps_for_workflow,
     normalize_control_mode,
 )
 
@@ -84,7 +84,10 @@ class GetZoneControlStateUseCase:
         # Вычисляем allowed steps только для manual/semi режимов
         allowed_manual_steps: list[str] = []
         if control_mode in ("manual", "semi") and current_stage is not None:
-            allowed_manual_steps = allowed_manual_steps_for_stage(current_stage)
+            allowed_manual_steps = allowed_manual_steps_for_workflow(
+                current_stage=current_stage,
+                pending_manual_step=pending_manual_step,
+            )
 
         return {
             "control_mode": control_mode,

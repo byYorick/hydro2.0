@@ -180,6 +180,7 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `unsupported_command_plan_steps` | `ae3_execution` | Planner выдал некорректный набор шагов | `AE3 получил command plan без обязательных шагов и остановил выполнение.` |
 | `command_timeout` | `command` | Не пришёл terminal status команды | `Не дождались подтверждения или итогового ответа по команде в допустимое время.` |
 | `command_send_failed` | `command` | Не удалось передать команду в transport path | `Команду не удалось отправить до исполнительного узла.` |
+| `ae3_task_execution_crashed` | `ae3_execution` | Worker поймал необработанное исключение в `_execute_claimed_task` и изолировал сбой per-task | `Выполнение задачи AE3 аварийно прервано runtime worker; задача переведена в failed.` |
 | `ae3_task_execution_timeout` | `ae3_execution` | Вся задача превысила runtime timeout | `Выполнение задачи AE3 превысило допустимый runtime timeout.` |
 | `ae3_task_execution_unhandled_exception` | `ae3_execution` | Во время выполнения произошло необработанное исключение | `Во время выполнения задачи AE3 произошло необработанное исключение.` |
 | `start_irrigation_setup_pending` | `ae3_ingress` | `POST /zones/{id}/start-irrigation` вызван до перехода зоны в `workflow_phase='ready'` (или `zone_workflow_state` ещё не создан) | `Полив отклонён: зона ещё не готова. Сначала завершите setup/cycle_start.` |
@@ -196,6 +197,16 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `start_cycle_zone_busy` | `ae3_ingress` | `POST /zones/{id}/start-cycle` / `start-irrigation` / `start-lighting-tick` при наличии active task или active lease | `Зона занята другим запуском, повторите попытку после завершения текущей задачи.` |
 | `start_cycle_idempotency_key_conflict` | `ae3_ingress` | Тот же `(zone_id, idempotency_key)` уже использован другим intent | `Идентичный запуск уже зарегистрирован, дублирующий запрос отклонён.` |
 | `start_cycle_missing_idempotency_key` | `ae3_ingress` | Запрос на ingress без `idempotency_key` | `В запросе отсутствует ключ идемпотентности — повторите с уникальным идентификатором.` |
+| `start_cycle_unsupported_runtime` | `ae3_ingress` | Зона не на AE3 runtime, но получен start-cycle/start-irrigation | `Start-cycle доступен только для зон на AE3 runtime.` |
+| `start_cycle_solution_tank_guard_failed` | `ae3_ingress` | Startup guard бака раствора завершился ошибкой до claim intent | `Не пройдена startup-проверка бака раствора перед start-cycle.` |
+| `start_irrigation_intent_not_found` | `ae3_ingress` | Intent для start-irrigation не найден | `Intent для start-irrigation не найден.` |
+| `start_lighting_tick_intent_not_found` | `ae3_ingress` | Intent для start-lighting-tick не найден | `Intent для start-lighting-tick не найден.` |
+| `start_lighting_tick_zone_busy` | `ae3_ingress` | Зона занята при start-lighting-tick | `Запуск lighting tick отклонён: зона уже занята активной задачей.` |
+| `unauthorized` | `ae3_security` | Неверный или отсутствующий Bearer token на ingress AE3 | `Запрос отклонён: неверный или отсутствующий Bearer token.` |
+| `missing_trace_id` | `ae3_security` | Отсутствует обязательный X-Trace-Id при enforce | `В запросе отсутствует обязательный заголовок X-Trace-Id.` |
+| `scheduler_security_token_not_configured` | `ae3_security` | Scheduler API token не настроен на AE3 | `Automation-engine отклонил запрос: scheduler API token не сконфигурирован.` |
+| `task_not_found` | `ae3_ingress` | Internal task status для несуществующей задачи | `Задача automation-engine не найдена.` |
+| `ae3_internal_error` | `ae3_api` | Необработанное исключение в HTTP route AE3 | `Внутренняя ошибка automation-engine. Повторите позже или обратитесь к инженеру.` |
 | `ae3_task_create_failed` | `ae3_ingress` | Не удалось вставить task в `ae_tasks` (DB-ошибка или нарушение constraints) | `AE3 не смог зарегистрировать задачу автоматики — попробуйте позже.` |
 | `start_lighting_tick_unsupported_runtime` | `ae3_ingress` | Зона не на AE3 runtime, но получен `start-lighting-tick` | `Освещение по AE3 расписанию доступно только для зон на AE3 runtime.` |
 
@@ -226,6 +237,10 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `startup_recovery_pending_resume_failed` | Не удалось вернуть task из `waiting_command` обратно в `running`. |
 | `startup_recovery_lease_release_failed` | Не удалось освободить просроченную lease. |
 | `startup_recovery_orphan_lease_released` | Освобождена осиротевшая lease (information level). |
+| `ae3_stale_task_reclaimed` | Task застряла в `claimed`/`running` дольше TTL — janitor перевёл в `failed` (или `requeue` без команд). |
+| `ae3_flow_stop_unconfirmed` | Stop-команда flow-path завершилась без подтверждённого OFF (probe mismatch / timeout). |
+| `ae3_manual_hold_deadline_exceeded` | `manual_hold` превысил сохранённый stage deadline. |
+| `ae3_manual_hold_return_stage_missing` | `manual_hold` без `__mh_return:*` в `pending_manual_step`. |
 
 ## Таблица кодов irrigation / two-tank stage terminal
 

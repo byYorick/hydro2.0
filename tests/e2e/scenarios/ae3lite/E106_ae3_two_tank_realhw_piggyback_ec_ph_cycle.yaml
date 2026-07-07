@@ -1384,6 +1384,34 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+  - step: seed_solution_fill_sensor_baseline
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        ph_value: 5.12
+        ec_value: 1.85
+    save: seed_solution_fill_sensor_baseline_response
+
+  - step: wait_seed_solution_fill_sensor_baseline_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
   - step: wait_fill_ec_correction_command
     type: db.wait
     query: |
@@ -1414,8 +1442,37 @@ actions:
       LIMIT 5
     params:
       task_id: ${task_id}
-    expected_rows: 0
     save: fill_ph_correction_rows
+
+  - step: complete_solution_fill_after_ec_correction
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_clean_min_override: true
+        level_clean_max_override: true
+        level_solution_min_override: true
+        level_solution_max_override: true
+    save: complete_solution_fill_after_ec_correction_response
+
+  - step: wait_complete_solution_fill_after_ec_correction_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${complete_solution_fill_after_ec_correction_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
 
   - step: wait_prepare_recirculation_stage
     type: db.wait

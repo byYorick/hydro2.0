@@ -2,6 +2,13 @@
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from ae3lite.application.services.workflow_topology import (
     StageDef,
     TopologyRegistry,
@@ -73,8 +80,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 33, (
-            f"Expected 33 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 35, (
+            f"Expected 35 stages, got {len(TWO_TANK)}"
         )
 
 
@@ -120,7 +127,7 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 33
+        assert len(stages) == 35
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages

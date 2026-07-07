@@ -21,6 +21,7 @@ from ae3lite.infrastructure.metrics import (
     STARTUP_RECOVERY_SKIPPED,
     STARTUP_RECOVERY_TASK,
 )
+from ae3lite.application.handlers.flow_path_guard import emit_correction_interrupted_hardware_risk
 from common.db import create_zone_event
 from common.service_logs import send_service_log
 
@@ -56,16 +57,23 @@ class StartupRecoveryUseCase:
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
         STARTUP_RECOVERY_RUN.inc()
+        # release_expired выполняется каждой репликой без advisory lock (R7):
+        # просроченные lease не должны блокироваться, пока leader держит recovery lock.
+        released_expired_leases = await self._lease_repository.release_expired(now=now)
         if not self._use_startup_recovery_lock:
-            return await self._run_under_lock(now=now)
+            return await self._run_scan_and_heal(
+                now=now,
+                released_expired_leases=released_expired_leases,
+            )
         async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
             if not acquired:
                 STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
                 logger.info(
-                    "Startup recovery: пропуск прохода — advisory lock удерживается другим экземпляром AE",
+                    "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
+                    "(release_expired уже выполнен)",
                 )
                 return StartupRecoveryResult(
-                    released_expired_leases=0,
+                    released_expired_leases=released_expired_leases,
                     scanned_tasks=0,
                     completed_tasks=0,
                     failed_tasks=0,
@@ -73,10 +81,17 @@ class StartupRecoveryUseCase:
                     recovered_waiting_command_tasks=0,
                     skipped_due_to_lock=True,
                 )
-            return await self._run_under_lock(now=now)
+            return await self._run_scan_and_heal(
+                now=now,
+                released_expired_leases=released_expired_leases,
+            )
 
-    async def _run_under_lock(self, *, now: datetime) -> StartupRecoveryResult:
-        released_expired_leases = await self._lease_repository.release_expired(now=now)
+    async def _run_scan_and_heal(
+        self,
+        *,
+        now: datetime,
+        released_expired_leases: int,
+    ) -> StartupRecoveryResult:
         tasks = await self._task_repository.list_for_startup_recovery()
 
         completed_tasks = 0
@@ -275,6 +290,11 @@ class StartupRecoveryUseCase:
                 error_message=(
                     f"Коррекция задачи {task.id} была прервана на шаге {task.correction.corr_step}"
                 ),
+                now=now,
+                recovery_source=recovery_source,
+            )
+            await emit_correction_interrupted_hardware_risk(
+                task=failed_task,
                 now=now,
                 recovery_source=recovery_source,
             )
@@ -509,6 +529,37 @@ class StartupRecoveryUseCase:
                     f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE",
                 )
             return requeued
+
+        # Single-command terminal success (e.g. generic_cycle_start startup):
+        # command DONE без next_stage/terminal_error завершает задачу.
+        if (
+            stage_def.handler == "command"
+            and stage_def.next_stage is None
+            and stage_def.terminal_error is None
+        ):
+            await self._safe_upsert_workflow_phase(
+                zone_id=task.zone_id,
+                workflow_phase=stage_def.workflow_phase,
+                payload={"ae3_cycle_start_stage": current_stage},
+                scheduler_task_id=str(task.id),
+                now=now,
+            )
+            completed = await self._task_repository.mark_completed(
+                task_id=task.id,
+                owner=str(task.claimed_by or ""),
+                now=now,
+            )
+            if completed is None:
+                logger.error(
+                    "Startup recovery: mark_completed returned None task_id=%s zone_id=%s stage=%s",
+                    task.id,
+                    task.zone_id,
+                    current_stage,
+                )
+                raise StartupRecoveryError(
+                    f"Не удалось завершить task_id={task.id} после recovery DONE",
+                )
+            return completed
 
         # Poll/handler stages (handler != "command" and != "ready") have no static
         # next_stage — transitions are decided by the handler at runtime. A stale

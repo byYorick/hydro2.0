@@ -116,11 +116,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
             if await self._should_finish_to_ready(task=task, plan=plan, now=now, runtime=runtime):
                 return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
             return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
-        if control_mode == "manual":
-            return StageOutcome(
-                kind="poll",
-                due_delay_sec=int(runtime.level_poll_interval_sec),
-            )
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
 
         clean_min_check_delay_ms = int(fail_safe_guards.solution_fill_clean_min_check_delay_ms)
         if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_min_check_delay_ms):

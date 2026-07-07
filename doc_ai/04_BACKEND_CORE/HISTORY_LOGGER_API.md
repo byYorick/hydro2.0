@@ -156,6 +156,16 @@ Content-Type: application/json
 }
 ```
 
+#### Идемпотентность по `cmd_id` (контракт PR5)
+
+History-logger **идемпотентен по `cmd_id`** при повторной публикации (`history-logger/commands/lifecycle.py`):
+- если запись `commands` с тем же `cmd_id` уже существует и payload совпадает — повторный `POST /commands` **безопасен** (не создаёт вторую MQTT-публикацию для terminal/in-progress статусов);
+- при статусе `SEND_FAILED` / `PENDING` / `QUEUED` допускается re-drive publish (AE3 retry после crash между publish и accept);
+- при коллизии `cmd_id` с другим `(zone_id, node_uid, channel, cmd, params)` — `409 Conflict`;
+- AE3-Lite стабилизирует `cmd_id` через `ae_commands.planner_step` + переиспользование `step_no`, чтобы retry handler'а не приводил к повторной дозе.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
 ---
 
 ### 2.1.1. POST /zones/{zone_id}/commands

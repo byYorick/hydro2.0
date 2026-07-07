@@ -15,10 +15,17 @@ from typing import Any
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from ae3lite.application.handlers.command import CommandHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 
 NOW = datetime(2026, 3, 12, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -144,7 +151,7 @@ async def test_batch_failure_raises_with_gateway_error_code() -> None:
             stage_def=_StageDef(),
             now=NOW,
         )
-    assert exc_info.value.code == "command_send_failed"
+    assert exc_info.value.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
 
 
 # ── 5. No commands resolved → TaskExecutionError ─────────────────────────────

@@ -87,7 +87,7 @@ def _bind_test_route(
         kick_worker_fn=kick_worker,
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
         mark_intent_terminal_fn=mark_intent_terminal,
-        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None, error=lambda *args, **kwargs: None),
     )
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-cycle")
     return endpoint, captured
@@ -188,7 +188,7 @@ async def test_compat_start_cycle_translates_ae3_busy_error_to_409() -> None:
         kick_worker_fn=lambda: None,
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
         mark_intent_terminal_fn=mark_intent_terminal,
-        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None, error=lambda *args, **kwargs: None),
     )
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-cycle")
 

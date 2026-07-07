@@ -153,15 +153,45 @@ class ErrorCodeCatalogService
     {
         $payload['status'] = 'error';
         $payload['code'] = $presentation['code'] ?? $this->normalizeCode((string) ($payload['code'] ?? 'api_error'));
-        $payload['message'] = $presentation['message'];
-        $payload['human_error_message'] = $presentation['message'];
+
+        $originalMessage = $payload['message'] ?? $payload['error_message'] ?? null;
+        $localizedMessage = $presentation['message'];
+
+        $payload['human_error_message'] = $localizedMessage;
         $payload['title'] = $payload['title'] ?? $presentation['title'];
+
+        if ($this->shouldPreserveOriginalMessage($originalMessage, $localizedMessage)) {
+            $payload['message'] = trim((string) $originalMessage);
+        } else {
+            $payload['message'] = $localizedMessage;
+        }
 
         if (! isset($payload['error']) || ! is_string($payload['error']) || trim($payload['error']) === '') {
             $payload['error'] = $payload['code'];
         }
 
         return $payload;
+    }
+
+    private function shouldPreserveOriginalMessage(mixed $originalMessage, mixed $localizedMessage): bool
+    {
+        if (! is_string($originalMessage) || trim($originalMessage) === '') {
+            return false;
+        }
+
+        if ($this->looksLocalized($originalMessage)) {
+            return false;
+        }
+
+        if (! is_string($localizedMessage) || trim($originalMessage) === trim($localizedMessage)) {
+            return false;
+        }
+
+        if (preg_match('/^[a-z][a-z0-9_]*$/', trim($originalMessage)) === 1) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -268,16 +298,22 @@ class ErrorCodeCatalogService
             return $rawMessage;
         }
 
-        if (is_array($entry) && is_string($entry['message'] ?? null) && trim((string) $entry['message']) !== '') {
-            return trim((string) $entry['message']);
-        }
-
-        if ($rawMessage !== '') {
+        if ($rawMessage !== '' && $rawMessage !== $code) {
             $translated = $this->translateRawMessage($rawMessage);
             if ($translated !== null) {
                 return $translated;
             }
 
+            if ($code === 'invalid_argument' || $code === 'validation_error') {
+                return $rawMessage;
+            }
+        }
+
+        if (is_array($entry) && is_string($entry['message'] ?? null) && trim((string) $entry['message']) !== '') {
+            return trim((string) $entry['message']);
+        }
+
+        if ($rawMessage !== '') {
             return $rawMessage;
         }
 

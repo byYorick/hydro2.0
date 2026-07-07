@@ -6,6 +6,25 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
+        AsyncMock(return_value=None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -86,6 +105,13 @@ class _Monitor:
     async def read_metric(self, **_kwargs: Any) -> dict[str, object]:
         return {"has_value": True, "is_stale": False, "value": 5.8}
 
+    async def read_latest_irr_state(self, **_kwargs: Any) -> dict[str, object]:
+        return {
+            "has_snapshot": True,
+            "is_stale": False,
+            "snapshot": {"valve_clean_fill": False, "pump_main": False},
+        }
+
 
 class _Gateway:
     async def run_batch(self, **_kwargs: Any) -> dict[str, object]:
@@ -97,7 +123,12 @@ class _Plan:
         clean_max_sensor_labels=["clean_max"],
         clean_min_sensor_labels=["clean_min"],
         clean_fill_retry_cycles=0,
+        level_poll_interval_sec=10,
     )
+    named_plans = {
+        "clean_fill_stop": ("stop_cmd",),
+        "irr_state_probe": ("probe_cmd",),
+    }
 
 
 def _handler() -> CleanFillCheckHandler:
@@ -105,10 +136,11 @@ def _handler() -> CleanFillCheckHandler:
 
 
 @pytest.mark.asyncio
-async def test_manual_clean_fill_without_pending_step_polls() -> None:
+async def test_manual_clean_fill_without_pending_step_enters_manual_hold() -> None:
     outcome = await _handler().run(task=_task(control_mode="manual"), plan=_Plan(), stage_def=None, now=NOW)
-    assert outcome.kind == "poll"
-    assert outcome.due_delay_sec == 10
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "manual_hold"
+    assert outcome.flow_hold_return_stage == "clean_fill_check"
 
 
 @pytest.mark.asyncio
@@ -367,7 +399,7 @@ async def test_clean_fill_recent_estop_reconcile_success_continues() -> None:
     handler = CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway())
     handler._probe_irr_state = AsyncMock(return_value=None)
 
-    outcome = await handler.run(task=_task(control_mode="manual"), plan=_Plan(), stage_def=None, now=NOW)
+    outcome = await handler.run(task=_task(control_mode="auto"), plan=_Plan(), stage_def=None, now=NOW)
 
     assert outcome.kind == "poll"
     handler._probe_irr_state.assert_awaited_once()

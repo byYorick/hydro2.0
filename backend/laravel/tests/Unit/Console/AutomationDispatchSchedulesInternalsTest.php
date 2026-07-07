@@ -7,6 +7,7 @@ use App\Services\AutomationScheduler\ActiveTaskStore;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
 use App\Services\AutomationScheduler\ZoneCursorStore;
+use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Tests\TestCase;
 
@@ -26,6 +27,7 @@ class AutomationDispatchSchedulesInternalsTest extends TestCase
         $this->dispatcher = new ScheduleDispatcher(
             activeTaskStore: $activeTaskStore,
             activeTaskPoller: new ActiveTaskPoller($activeTaskStore),
+            intentService: $this->app->make(ZoneAutomationIntentService::class),
         );
         $this->finalizer = new SchedulerCycleFinalizer(
             zoneCursorStore: $zoneCursorStore,

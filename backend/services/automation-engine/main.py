@@ -2,6 +2,9 @@
 
 import asyncio
 
+# Инициализирует JSON-логи и log-context filter до импорта runtime.
+import ae3lite.main  # noqa: F401
+
 from ae3lite.main import main
 
 

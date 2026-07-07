@@ -7,7 +7,6 @@ import pytest
 
 from ae3lite.application.use_cases import PublishPlannedCommandUseCase
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
-from ae3lite.domain.errors import CommandPublishError
 from ae3lite.infrastructure.repositories import PgAeCommandRepository, PgAutomationTaskRepository
 from common.db import execute, fetch
 
@@ -179,7 +178,7 @@ async def test_publish_planned_command_persists_external_id_from_legacy_commands
 
 
 @pytest.mark.asyncio
-async def test_publish_planned_command_marks_ae_command_failed_when_legacy_link_missing() -> None:
+async def test_publish_planned_command_marks_published_unconfirmed_when_legacy_link_missing() -> None:
     prefix = f"ae3-publish-fail-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task_repository = PgAutomationTaskRepository()
@@ -196,28 +195,27 @@ async def test_publish_planned_command_marks_ae_command_failed_when_legacy_link_
         zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
         task = await _insert_task(zone_id, prefix=prefix, now=now)
 
-        with pytest.raises(CommandPublishError, match="Не найдена запись Legacy commands"):
-            await use_case.run(
-                task=task,
-                command=PlannedCommand(
-                    step_no=1,
-                    node_uid="nd-irrig-1",
-                    channel="pump_main",
-                    payload={"cmd": "set_relay", "params": {"state": True}},
-                ),
-                now=now,
-            )
+        published = await use_case.run(
+            task=task,
+            command=PlannedCommand(
+                step_no=1,
+                node_uid="nd-irrig-1",
+                channel="pump_main",
+                payload={"cmd": "set_relay", "params": {"state": True}},
+                planner_step="startup:0",
+            ),
+            now=now,
+        )
 
         row = await repository.get_by_task_step(task_id=task.id, step_no=1)
 
         assert row is not None
-        assert row["publish_status"] == "failed"
+        assert row["publish_status"] == "published_unconfirmed"
         assert row["external_id"] is None
-        assert "Legacy commands.id" in str(row["last_error"])
+        assert published.external_id is None
 
         updated_task = await task_repository.get_by_id(task_id=task.id)
         assert updated_task is not None
-        assert updated_task.status == "failed"
-        assert updated_task.error_code == "command_send_failed"
+        assert updated_task.status == "waiting_command"
     finally:
         await _cleanup(prefix)

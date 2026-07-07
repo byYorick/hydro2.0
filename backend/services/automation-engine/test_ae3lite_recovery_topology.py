@@ -505,6 +505,24 @@ async def test_recovery_terminal_ready_stage_done_marks_completed():
     assert len(repo.requeued) == 0
 
 
+async def test_recovery_generic_cycle_start_startup_done_marks_completed():
+    """generic_cycle_start startup (command, no next_stage) → mark_completed after DONE."""
+    task = _make_task(
+        status="waiting_command",
+        stage="startup",
+        topology="generic_cycle_start",
+        workflow_phase="idle",
+    )
+    uc, repo, _leases = _make_use_case(tasks=[task], gateway_state="done")
+
+    result = await uc.run(now=NOW)
+
+    assert result.failed_tasks == 0
+    assert result.completed_tasks == 1
+    assert repo.completed == [task.id]
+    assert len(repo.requeued) == 0
+
+
 async def test_recovery_running_with_pending_legacy_stays_waiting_command():
     """running + legacy in-flight → waiting_command, не fail."""
     task = _make_task(status="running", stage="clean_fill_start")

@@ -167,6 +167,15 @@ groups:
           summary: "AE3 task failures detected"
           description: "AE3 reported one or more failed tasks during the last 15 minutes."
 
+      - alert: AE3FlowStopFailed
+        expr: (sum(increase(ae3_flow_stop_failed_total[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 flow-path stop not confirmed OFF"
+          description: "Flow-path stop/probe failed for stage={{ $labels.stage }}; hardware may remain active."
+
       - alert: AE3WorkerTickErrors
         expr: rate(ae3_tick_errors_total[5m]) > 0.1
         for: 5m
@@ -221,14 +230,41 @@ groups:
           summary: "AE3 zone lease release failed (zone {{ $labels.zone_id }})"
           description: "Zone {{ $labels.zone_id }} lease could not be released after task completion. Zone may remain locked."
 
-      - alert: AE3StuckTask
-        expr: ae3_active_tasks > 0
-        for: 15m
+      - alert: AE3PendingTaskStuck
+        expr: ae3_oldest_pending_task_age_seconds > 600
+        for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "AE3 task stuck for >15 minutes (topology {{ $labels.topology }})"
-          description: "{{ $value }} active task(s) with topology={{ $labels.topology }} have been running for over 15 minutes."
+          summary: "AE3 pending task stuck (age >10m)"
+          description: "Самая старая pending-задача AE3 не забирается worker'ом более 10 минут (age={{ $value }}s)."
+
+      - alert: AE3WorkerSilent
+        expr: ae3_pending_tasks > 0 and rate(ae3_tick_duration_seconds_count[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 worker silent with pending tasks"
+          description: "В очереди есть pending-задачи ({{ $value }}), но worker не выполняет ticks 5+ минут."
+
+      - alert: AE3ListenerDown
+        expr: ae3_listener_connected == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 PostgreSQL listener down ({{ $labels.listener }})"
+          description: "NOTIFY listener {{ $labels.listener }} отключён более 5 минут."
+
+      - alert: AE3DrainCrashLoop
+        expr: increase(ae3_drain_crashes_total[15m]) > 3
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 drain supervisor crash loop"
+          description: "Более 3 crash'ей drain loop за 15 минут — проверьте логи worker."
 
       - alert: AE3CorrectionExhausted
         expr: rate(ae3_correction_exhausted_total[10m]) > 0

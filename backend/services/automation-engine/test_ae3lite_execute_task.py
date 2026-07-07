@@ -4,8 +4,16 @@ import asyncio
 import logging
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
+
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
 
 from ae3lite.application.dto import ZoneActuatorRef
 from ae3lite.application.use_cases.execute_task import (
@@ -1230,6 +1238,14 @@ async def test_execute_task_command_timeout_enriches_alert_and_emits_startup_pro
 ) -> None:
     recorded_events: list[tuple[int, str, dict]] = []
 
+    async def _skip_offline_remap(**kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "ae3lite.domain.services.zone_node_availability.resolve_task_error_with_node_offline",
+        _skip_offline_remap,
+    )
+
     async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
         recorded_events.append((zone_id, event_type, payload))
 
@@ -1995,3 +2011,29 @@ async def test_execute_task_non_two_tank_topology_skips_required_node_check() ->
     await use_case.run(task=task, now=NOW)
     assert len(finalize.calls) == 1
     assert finalize.calls[0]["error_code"] != ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING
+
+
+@pytest.mark.asyncio
+async def test_execute_task_mark_running_cas_miss_returns_claimed_task_without_fail() -> None:
+    from ae3lite.infrastructure.metrics import TASK_RUNNING_TRANSITION_MISSED
+
+    claimed_task = replace(_make_task(stage="startup", topology="two_tank"), status="claimed")
+    task_repo = _TaskRepoRunning(running_task=claimed_task)
+    task_repo.mark_running = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    finalize = _FinalizeTaskUseCase()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=object(),
+        workflow_router=object(),
+        finalize_task_use_case=finalize,
+    )
+
+    before = TASK_RUNNING_TRANSITION_MISSED._value.get()
+    result = await use_case.run(task=claimed_task, now=NOW)
+
+    assert result.status == "claimed"
+    assert finalize.calls == []
+    assert TASK_RUNNING_TRANSITION_MISSED._value.get() == before + 1

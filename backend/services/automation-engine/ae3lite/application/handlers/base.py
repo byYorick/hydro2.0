@@ -14,6 +14,10 @@ from ae3lite.application.runtime_event_contract import with_runtime_event_contra
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
+from ae3lite.domain.services.metric_window_validator import (
+    decision_window_bounds_reason,
+    sensor_value_in_bounds,
+)
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts as _telemetry_decision_window_since_ts,
     summarize_window as _telemetry_summarize_window,
@@ -346,6 +350,48 @@ class BaseStageHandler:
         if deadline is None:
             return False
         return _utc_naive_dt(now) >= _utc_naive_dt(deadline)
+
+    async def _handle_control_mode_flow_path_interrupt(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        control_mode: str,
+        reason: str = "control_mode_manual",
+    ) -> StageOutcome | None:
+        from ae3lite.application.handlers.flow_path_guard import (
+            handle_control_mode_flow_path_interrupt,
+        )
+
+        return await handle_control_mode_flow_path_interrupt(
+            self,
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+            reason=reason,
+        )
+
+    async def _ensure_flow_path_stopped(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        stage: str,
+        reason: str,
+    ) -> Any:
+        from ae3lite.application.handlers.flow_path_guard import ensure_flow_stopped
+
+        return await ensure_flow_stopped(
+            self,
+            task=task,
+            plan=plan,
+            now=now,
+            stage=stage,
+            reason=reason,
+        )
 
     def _stage_entered_at(self, *, task: Any) -> datetime | None:
         entered = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
@@ -1587,17 +1633,18 @@ class BaseStageHandler:
         )
         if not summary["ready"]:
             return {"ready": False, "reason": summary.get("reason")}
-        # Sanity bounds на абсолютные значения: если датчик вернул error code
-        # (например, pH=-1 при disconnect или EC=999 при short-circuit), не
-        # передаём это в PID — иначе integrator накопит спайк и выдаст runaway
-        # dose. Возвращаем ready=False с reason, handler сделает retry на
-        # следующем tick (те же механики, что у stale/window_not_ready).
-        if not self._sensor_value_in_bounds(sensor_type=sensor_type, value=summary["value"]):
+        bounds_reason = decision_window_bounds_reason(
+            sensor_type=sensor_type,
+            value=summary["value"],
+        )
+        if bounds_reason is not None:
             _logger.warning(
                 "Sensor value out of sanity bounds: sensor_type=%s value=%s zone_id=%s",
-                sensor_type, summary["value"], zone_id,
+                sensor_type,
+                summary["value"],
+                zone_id,
             )
-            return {"ready": False, "reason": "sensor_out_of_bounds"}
+            return {"ready": False, "reason": bounds_reason}
         return {
             "ready": True,
             "value": summary["value"],
@@ -1607,25 +1654,8 @@ class BaseStageHandler:
 
     @staticmethod
     def _sensor_value_in_bounds(*, sensor_type: str, value: Any) -> bool:
-        """Возвращает True если значение физически валидно для данного типа.
-
-        Bounds — абсолютные sanity-пределы, не пересекаются с recipe-таргетами.
-        Отсеивают явные error codes от датчиков (pH=-1 при disconnect,
-        EC=999 при short-circuit и т.п.), которые иначе прошли бы stability-
-        фильтр и сломали PID integrator.
-        """
-        try:
-            numeric = float(value)
-        except (TypeError, ValueError):
-            return False
-        if not math.isfinite(numeric):
-            return False
-        key = (sensor_type or "").strip().upper()
-        if key == "PH":
-            return 0.0 <= numeric <= 14.0
-        if key == "EC":
-            return 0.0 <= numeric <= 20.0
-        return True
+        """Thin wrapper over ``metric_window_validator.sensor_value_in_bounds``."""
+        return sensor_value_in_bounds(sensor_type=sensor_type, value=value)
 
     def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
         return _telemetry_decision_window_since_ts(now=now, config=config)

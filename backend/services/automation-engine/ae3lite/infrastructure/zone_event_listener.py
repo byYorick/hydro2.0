@@ -9,9 +9,12 @@ from typing import Any, Callable, Coroutine
 
 import asyncpg
 
+from ae3lite.infrastructure.metrics import LISTENER_CONNECTED, LISTENER_RECONNECT_TOTAL
+
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "ae_zone_event"
+_LISTENER_NAME = "zone_event"
 _KEEPALIVE_INTERVAL_SEC = 30
 
 
@@ -40,6 +43,8 @@ class ZoneEventListener:
                 logger.info("ZoneEventListener: получена отмена, listener завершает работу")
                 return
             except Exception as exc:
+                LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(0)
+                LISTENER_RECONNECT_TOTAL.labels(listener=_LISTENER_NAME).inc()
                 logger.warning(
                     "ZoneEventListener: ошибка соединения, переподключение через %.1f с: %s",
                     backoff,
@@ -54,6 +59,7 @@ class ZoneEventListener:
 
     async def _run_once(self) -> None:
         conn: asyncpg.Connection = await asyncpg.connect(self._dsn)
+        LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(1)
         logger.info("ZoneEventListener: соединение установлено, прослушивается channel=%s", _CHANNEL)
         try:
             await conn.add_listener(_CHANNEL, self._notify_handler)
@@ -75,6 +81,7 @@ class ZoneEventListener:
                     exc_info=True,
                 )
             await conn.close()
+            LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(0)
             logger.info("ZoneEventListener: соединение закрыто")
 
     def _notify_handler(

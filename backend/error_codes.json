@@ -200,6 +200,11 @@
       "message": "Не удалось перевести задачу в completed."
     },
     {
+      "code": "ae3_internal_error",
+      "title": "Внутренняя ошибка AE3",
+      "message": "Внутренняя ошибка automation-engine. Повторите позже или обратитесь к инженеру."
+    },
+    {
       "code": "ae3_task_create_conflict",
       "title": "Конфликт создания задачи AE3",
       "message": "Параллельный worker уже создал задачу для этого запуска."
@@ -208,6 +213,26 @@
       "code": "ae3_task_create_failed",
       "title": "Не удалось создать задачу AE3",
       "message": "AE3 не смог создать canonical task для запуска цикла."
+    },
+    {
+      "code": "ae3_flow_stop_unconfirmed",
+      "title": "Остановка flow-path не подтверждена",
+      "message": "AE3 не смог подтвердить OFF-состояние насосов/клапанов после stop-команды."
+    },
+    {
+      "code": "ae3_manual_hold_deadline_exceeded",
+      "title": "Превышен deadline manual_hold",
+      "message": "Зона оставалась в manual_hold дольше допустимого stage deadline."
+    },
+    {
+      "code": "ae3_manual_hold_return_stage_missing",
+      "title": "manual_hold без return stage",
+      "message": "Задача в manual_hold без сохранённого return stage."
+    },
+    {
+      "code": "ae3_task_execution_crashed",
+      "title": "Сбой выполнения задачи AE3 в worker",
+      "message": "Worker изолировал необработанное исключение при выполнении задачи и перевёл её в terminal fail."
     },
     {
       "code": "ae3_task_execution_failed",
@@ -582,6 +607,11 @@
       "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
     },
     {
+      "code": "missing_trace_id",
+      "title": "Нет trace id",
+      "message": "В запросе отсутствует обязательный заголовок X-Trace-Id."
+    },
+    {
       "code": "missing_node_secret",
       "title": "Нет node_secret",
       "message": "В NodeConfig отсутствует node_secret для проверки подписи.",
@@ -835,6 +865,21 @@
       "message": "Активный алерт блокирует запуск цикла."
     },
     {
+      "code": "scheduler_security_token_not_configured",
+      "title": "Scheduler token не настроен",
+      "message": "Automation-engine отклонил запрос: scheduler API token не сконфигурирован."
+    },
+    {
+      "code": "start_cycle_solution_tank_guard_failed",
+      "title": "Startup guard бака раствора",
+      "message": "Не пройдена startup-проверка бака раствора перед start-cycle."
+    },
+    {
+      "code": "start_cycle_unsupported_runtime",
+      "title": "Runtime не поддерживается",
+      "message": "Start-cycle доступен только для зон на AE3 runtime."
+    },
+    {
       "code": "start_cycle_idempotency_key_conflict",
       "title": "Конфликт idempotency key",
       "message": "Идентичный запуск уже зарегистрирован, дублирующий запрос отклонён."
@@ -870,6 +915,11 @@
       "message": "Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача."
     },
     {
+      "code": "start_irrigation_intent_not_found",
+      "title": "Intent полива не найден",
+      "message": "Intent для start-irrigation не найден."
+    },
+    {
       "code": "start_irrigation_setup_pending",
       "title": "Зона не готова к поливу",
       "message": "Полив отклонён: зона ещё не готова. Сначала завершите setup/cycle_start."
@@ -880,6 +930,11 @@
       "message": "Повторный запуск полива отклонён: зона уже занята активной задачей."
     },
     {
+      "code": "start_lighting_tick_intent_not_found",
+      "title": "Intent lighting tick не найден",
+      "message": "Intent для start-lighting-tick не найден."
+    },
+    {
       "code": "start_lighting_tick_unsupported_runtime",
       "title": "Lighting tick не поддерживается",
       "message": "Освещение по AE3 доступно только для зон на AE3 runtime."
@@ -888,6 +943,11 @@
       "code": "start_lighting_tick_zone_busy",
       "title": "Освещение: зона занята",
       "message": "Запуск lighting tick отклонён: зона уже занята активной задачей."
+    },
+    {
+      "code": "ae3_stale_task_reclaimed",
+      "title": "Stale task reclaimed",
+      "message": "Задача застряла в claimed/running и переведена в failed фоновым janitor'ом."
     },
     {
       "code": "startup_recovery_correction_interrupted",
@@ -923,6 +983,11 @@
       "code": "system_type_locked",
       "title": "Тип системы заблокирован",
       "message": "Тип системы зоны заблокирован для изменения."
+    },
+    {
+      "code": "task_not_found",
+      "title": "Задача не найдена",
+      "message": "Задача automation-engine не найдена."
     },
     {
       "code": "task_execution_timeout",
@@ -1020,6 +1085,11 @@
       "code": "two_tank_solution_min_level_unavailable",
       "title": "Min раствора недоступен",
       "message": "Нет данных нижнего уровня раствора."
+    },
+    {
+      "code": "unauthorized",
+      "title": "Неавторизованный запрос",
+      "message": "Запрос отклонён: неверный или отсутствующий Bearer token."
     },
     {
       "code": "unauthenticated",

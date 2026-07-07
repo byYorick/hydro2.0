@@ -878,7 +878,7 @@ async def run_greenhouse_climate_tick(
                     "max_step_pct": int(float(execution.get("max_step_pct") or 25)),
                     "reason": decision.decision_reason,
                 }
-                cmd_id = str(uuid.uuid4())
+                cmd_id = f"ghc-{greenhouse_id}-{idempotency_key}-{side}-{target}"
                 try:
                     hl_id = await history_logger_client.publish(
                         greenhouse_uid=str(vent["greenhouse_uid"]),

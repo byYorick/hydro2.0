@@ -38,7 +38,7 @@ async def test_allocate_and_create_pending_assigns_monotonic_steps_under_concurr
             workflow_phase="tank_filling",
         )
 
-        async def _allocate(step_suffix: int) -> tuple[int, int] | None:
+        async def _allocate(step_suffix: int) -> tuple[int, int, bool] | None:
             return await command_repo.allocate_and_create_pending(
                 task_id=task_id,
                 zone_id=zone_id,
@@ -46,12 +46,13 @@ async def test_allocate_and_create_pending_assigns_monotonic_steps_under_concurr
                 channel="pump_main",
                 payload={"cmd": "dose", "params": {"ml": 1.0}},
                 now=now,
+                planner_step=f"solution_fill_check:{step_suffix}",
             )
 
         results = await asyncio.gather(_allocate(1), _allocate(2), _allocate(3))
         assert all(result is not None for result in results)
         step_numbers = sorted(
-            step_no for result in results if result is not None for (_, step_no) in (result,)
+            step_no for result in results if result is not None for (_, step_no, _) in (result,)
         )
         assert step_numbers == [1, 2, 3]
 

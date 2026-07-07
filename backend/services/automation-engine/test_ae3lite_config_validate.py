@@ -33,12 +33,25 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         start_cycle_rate_limit_window_sec=10,
         verbose_http_logging=False,
         http_client_timeout_sec=10.0,
+        http_client_connect_timeout_sec=2.0,
+        http_client_read_timeout_sec=8.0,
+        http_client_write_timeout_sec=5.0,
+        http_client_pool_timeout_sec=2.0,
+        hl_max_retries=2,
+        hl_retry_backoff_sec=0.5,
+        hl_breaker_fail_threshold=5,
+        hl_breaker_open_sec=15.0,
         worker_owner="test-worker",
         max_task_execution_sec=900,
         max_parallel_tasks=4,
         waiting_command_reconcile_batch_limit=32,
-        shutdown_grace_sec=30.0,
-    )
+        stale_claimed_ttl_sec=120,
+        stale_running_ttl_sec=960,
+            stale_task_reconcile_sec=60.0,
+            shutdown_grace_sec=30.0,
+            command_poll_default_sec=120.0,
+            command_poll_margin_sec=30.0,
+        )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)
 
@@ -47,6 +60,20 @@ class TestAe3RuntimeConfigValidate:
     def test_valid_config_does_not_raise(self) -> None:
         cfg = _config(history_logger_api_token="abc123", db_dsn="postgresql://x/y")
         cfg.validate()  # must not raise
+
+    def test_db_dsn_set_does_not_raise(self) -> None:
+        cfg = _config(db_dsn="postgresql://hydro:hydro@db:5432/hydro_dev")
+        cfg.validate()
+
+    def test_empty_db_dsn_raises_value_error(self) -> None:
+        cfg = _config(db_dsn="")
+        with pytest.raises(ValueError, match="AE_DB_DSN / DATABASE_URL"):
+            cfg.validate()
+
+    def test_whitespace_only_db_dsn_raises(self) -> None:
+        cfg = _config(db_dsn="   ")
+        with pytest.raises(ValueError, match="AE_DB_DSN / DATABASE_URL"):
+            cfg.validate()
 
     def test_empty_token_raises_value_error(self) -> None:
         cfg = _config(history_logger_api_token="")
@@ -86,6 +113,56 @@ class TestAe3RuntimeConfigValidate:
     def test_rate_limit_requires_positive_max_requests_when_enabled(self) -> None:
         cfg = _config(start_cycle_rate_limit_enabled=True, start_cycle_rate_limit_max_requests=0)
         with pytest.raises(ValueError, match="start_cycle_rate_limit_max_requests"):
+            cfg.validate()
+
+    def test_security_disabled_in_production_raises(self) -> None:
+        """enforce=0 запрещён вне non-production сред (fail-closed для staging/prod)."""
+        for env in ("production", "prod", "staging"):
+            cfg = _config(app_env=env, scheduler_security_baseline_enforce=False)
+            with pytest.raises(ValueError, match="AE_SCHEDULER_SECURITY_BASELINE_ENFORCE"):
+                cfg.validate()
+
+    def test_security_disabled_allowed_in_non_production(self) -> None:
+        for env in ("local", "dev", "development", "test", "testing"):
+            cfg = _config(app_env=env, scheduler_security_baseline_enforce=False)
+            cfg.validate()  # must not raise
+
+    def test_security_enabled_in_production_does_not_raise(self) -> None:
+        cfg = _config(
+            app_env="production",
+            scheduler_security_baseline_enforce=True,
+            scheduler_api_token="prod-token",
+        )
+        cfg.validate()
+
+    def test_hl_retry_backoff_negative_raises(self) -> None:
+        cfg = _config(hl_retry_backoff_sec=-0.1)
+        with pytest.raises(ValueError, match="hl_retry_backoff_sec"):
+            cfg.validate()
+
+    def test_hl_breaker_fail_threshold_non_positive_raises(self) -> None:
+        cfg = _config(hl_breaker_fail_threshold=0)
+        with pytest.raises(ValueError, match="hl_breaker_fail_threshold"):
+            cfg.validate()
+
+    def test_hl_breaker_open_sec_non_positive_raises(self) -> None:
+        cfg = _config(hl_breaker_open_sec=0.0)
+        with pytest.raises(ValueError, match="hl_breaker_open_sec"):
+            cfg.validate()
+
+    def test_http_client_granular_timeout_non_positive_raises(self) -> None:
+        cfg = _config(http_client_read_timeout_sec=0.0)
+        with pytest.raises(ValueError, match="http_client_read_timeout_sec"):
+            cfg.validate()
+
+    def test_stale_running_ttl_must_exceed_max_task_execution_sec(self) -> None:
+        cfg = _config(max_task_execution_sec=900, stale_running_ttl_sec=900)
+        with pytest.raises(ValueError, match="stale_running_ttl_sec"):
+            cfg.validate()
+
+    def test_stale_task_reconcile_sec_non_positive_raises(self) -> None:
+        cfg = _config(stale_task_reconcile_sec=0.0)
+        with pytest.raises(ValueError, match="stale_task_reconcile_sec"):
             cfg.validate()
 
 

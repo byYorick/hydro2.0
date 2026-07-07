@@ -44,33 +44,20 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         limit_reached = retry_count >= attempt_limit
 
         current_task = task
-        try:
-            current_task = await self._run_commands(
-                task=current_task,
-                plan=plan,
-                plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"),
-                now=now,
-            )
-        except TaskExecutionError as exc:
-            if not limit_reached or exc.code not in {"command_timeout", "ae3_command_poll_deadline_exceeded"}:
-                raise
-            # Audit F4: swallow the stop-command failure ONLY when the retry
-            # budget is already exhausted. The fail outcome below reports the
-            # primary cause (attempt_limit_reached); the stop-timeout is a
-            # secondary symptom of the same stuck window. Explicitly reset
-            # current_task to `task` to guarantee no partial mutation reaches
-            # the ``task_override`` we pass to the fail outcome below — this
-            # is technically a no-op (the assignment on the line above never
-            # completed if _run_commands raised), but making it explicit
-            # blocks future refactors from introducing phantom state.
-            current_task = task
-            _logger.warning(
-                "prepare_recirc_window: stop-команды завершились ошибкой после достижения лимита повторов; "
-                "сохраняется основная ошибка исчерпания лимита zone_id=%s retry=%s/%s code=%s",
-                task.zone_id,
-                retry_count,
-                attempt_limit,
-                exc.code,
+        stop_outcome = await self._ensure_flow_path_stopped(
+            task=current_task,
+            plan=plan,
+            now=now,
+            stage="prepare_recirculation_check",
+            reason="prepare_recirc_window_stop",
+        )
+        current_task = stop_outcome.task or current_task
+        if not stop_outcome.confirmed:
+            return StageOutcome(
+                kind="fail",
+                error_code=stop_outcome.error_code or "ae3_flow_stop_unconfirmed",
+                error_message=stop_outcome.error_message or "Не удалось подтвердить остановку prepare-recirculation",
+                task_override=current_task,
             )
 
         if limit_reached:

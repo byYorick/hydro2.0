@@ -13,7 +13,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
-from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.handlers.flow_path_guard import (
+    MANUAL_HOLD_STAGE,
+    decode_manual_hold_operator_step,
+    encode_manual_hold_return_stage,
+)
 from ae3lite.application.handlers.await_ready import AwaitReadyHandler
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.application.handlers.command import CommandHandler
@@ -21,6 +25,7 @@ from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
 from ae3lite.application.handlers.irrigation_recovery import IrrigationRecoveryCheckHandler
+from ae3lite.application.handlers.manual_hold import ManualHoldHandler
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
@@ -30,6 +35,7 @@ from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.services.zone_node_availability import resolve_task_error_with_node_offline
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
     CORRECTION_COMPLETED,
@@ -40,6 +46,7 @@ from ae3lite.infrastructure.metrics import (
     TASK_COMPLETED,
     TASK_FAILED,
     TICK_DURATION,
+    inc_observability_write_failed,
 )
 from common.db import create_zone_event
 
@@ -121,6 +128,7 @@ class WorkflowRouter:
         "irrigation_recovery": IrrigationRecoveryCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
         "prepare_recirc_window": PrepareRecircWindowHandler,
+        "manual_hold": ManualHoldHandler,
         "correction": CorrectionHandler,
     }
 
@@ -173,56 +181,57 @@ class WorkflowRouter:
         topology = task.topology
         current_stage = task.current_stage
 
-        # Подмашина коррекции имеет приоритет
-        if task.correction is not None:
-            handler = self._handlers["correction"]
+        with log_context_scope(stage=current_stage):
+            # Подмашина коррекции имеет приоритет
+            if task.correction is not None:
+                handler = self._handlers["correction"]
+                stage_def = self._registry.get(topology, current_stage)
+                outcome = await handler.run(
+                    task=task, plan=plan, stage_def=stage_def, now=now,
+                )
+                return await self._apply_outcome(
+                    task=task, plan=plan, outcome=outcome, now=now,
+                )
+
+            # Обычный dispatch stage
             stage_def = self._registry.get(topology, current_stage)
-            outcome = await handler.run(
-                task=task, plan=plan, stage_def=stage_def, now=now,
-            )
+            handler_key = stage_def.handler
+
+            # Терминальные ready-stage обрабатываются централизованно
+            if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "") == "irrigation_start":
+                if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
+                    return await self._apply_transition(
+                        task=task,
+                        plan=plan,
+                        outcome=StageOutcome(kind="transition", next_stage="irrigation_start"),
+                        now=now,
+                    )
+                return await self._complete_task(task=task, now=now)
+            if handler_key == "ready":
+                return await self._complete_task(task=task, now=now)
+
+            handler = self._handlers.get(handler_key)
+            if handler is None:
+                raise TaskExecutionError(
+                    "ae3_unknown_handler",
+                    f"Не найден handler для key={handler_key!r} (stage={current_stage})",
+                )
+
+            try:
+                outcome = await handler.run(
+                    task=task, plan=plan, stage_def=stage_def, now=now,
+                )
+            except TaskExecutionError as exc:
+                code, message = await self._remap_execution_error_for_task(
+                    task=task,
+                    error_code=str(exc.code),
+                    error_message=str(exc),
+                    node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
+                )
+                raise TaskExecutionError(code, message) from exc
             return await self._apply_outcome(
                 task=task, plan=plan, outcome=outcome, now=now,
             )
-
-        # Обычный dispatch stage
-        stage_def = self._registry.get(topology, current_stage)
-        handler_key = stage_def.handler
-
-        # Терминальные ready-stage обрабатываются централизованно
-        if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "") == "irrigation_start":
-            if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
-                return await self._apply_transition(
-                    task=task,
-                    plan=plan,
-                    outcome=StageOutcome(kind="transition", next_stage="irrigation_start"),
-                    now=now,
-                )
-            return await self._complete_task(task=task, now=now)
-        if handler_key == "ready":
-            return await self._complete_task(task=task, now=now)
-
-        handler = self._handlers.get(handler_key)
-        if handler is None:
-            raise TaskExecutionError(
-                "ae3_unknown_handler",
-                f"Не найден handler для key={handler_key!r} (stage={current_stage})",
-            )
-
-        try:
-            outcome = await handler.run(
-                task=task, plan=plan, stage_def=stage_def, now=now,
-            )
-        except TaskExecutionError as exc:
-            code, message = await self._remap_execution_error_for_task(
-                task=task,
-                error_code=str(exc.code),
-                error_message=str(exc),
-                node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
-            )
-            raise TaskExecutionError(code, message) from exc
-        return await self._apply_outcome(
-            task=task, plan=plan, outcome=outcome, now=now,
-        )
 
     # ── Outcome application ─────────────────────────────────────────
 
@@ -362,18 +371,6 @@ class WorkflowRouter:
             if not same_stage and str(task.current_stage or "").strip().lower() == "irrigation_start"
             else None
         )
-        deadline = (
-            task.workflow.stage_deadline_at
-            if same_stage
-            else self._compute_deadline(
-                task=task,
-                stage_def=next_def,
-                runtime=runtime,
-                now=now,
-                plan=plan,
-                irrigation_start_entered_at=irrigation_start_entered_at,
-            )
-        )
         clean_fill_cycle = (
             outcome.clean_fill_cycle
             if outcome.clean_fill_cycle is not None
@@ -386,15 +383,45 @@ class WorkflowRouter:
         )
         stage_entered_at = task.workflow.stage_entered_at if same_stage else now
 
+        if next_stage == MANUAL_HOLD_STAGE:
+            workflow_phase = task.workflow.workflow_phase
+            deadline = task.workflow.stage_deadline_at
+        else:
+            workflow_phase = next_def.workflow_phase
+            deadline = (
+                task.workflow.stage_deadline_at
+                if same_stage
+                else self._compute_deadline(
+                    task=task,
+                    stage_def=next_def,
+                    runtime=runtime,
+                    now=now,
+                    plan=plan,
+                    irrigation_start_entered_at=irrigation_start_entered_at,
+                )
+            )
+
+        pending_manual_step = None
+        if outcome.flow_hold_return_stage:
+            pending_manual_step = encode_manual_hold_return_stage(outcome.flow_hold_return_stage)
+        elif next_stage == MANUAL_HOLD_STAGE:
+            pending_manual_step = encode_manual_hold_return_stage(str(task.current_stage or ""))
+        elif str(task.current_stage or "").strip() == MANUAL_HOLD_STAGE:
+            operator_step = decode_manual_hold_operator_step(
+                getattr(task.workflow, "pending_manual_step", None)
+            )
+            if operator_step:
+                pending_manual_step = operator_step
+
         new_workflow = WorkflowState(
             current_stage=next_stage,
-            workflow_phase=next_def.workflow_phase,
+            workflow_phase=workflow_phase,
             stage_deadline_at=deadline,
             stage_retry_count=stage_retry_count,
             stage_entered_at=stage_entered_at,
             clean_fill_cycle=clean_fill_cycle,
             control_mode=task.workflow.control_mode,
-            pending_manual_step=None,
+            pending_manual_step=pending_manual_step,
         )
 
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
@@ -511,6 +538,7 @@ class WorkflowRouter:
                     },
                 )
             except Exception:
+                inc_observability_write_failed(kind="zone_event")
                 logger.warning(
                     "AE3 не смог записать IRRIGATION_CORRECTION_COMPLETED zone_id=%s task_id=%s",
                     int(getattr(task, "zone_id", 0) or 0),
@@ -767,6 +795,7 @@ class WorkflowRouter:
                 now=now,
             )
         except Exception:
+            inc_observability_write_failed(kind="zone_event")
             logger.warning(
                 "AE3 не смог записать переход stage task_id=%s from=%s to=%s",
                 task_id,
@@ -810,6 +839,7 @@ class WorkflowRouter:
                 },
             )
         except Exception:
+            inc_observability_write_failed(kind="zone_event")
             logger.warning(
                 "AE3 не смог записать %s zone_id=%s task_id=%s",
                 event_type,

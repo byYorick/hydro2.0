@@ -95,9 +95,6 @@ class AutomationSettings:
     # Health score weights
     HEALTH_WEIGHTS: Dict[str, float] = None
     
-    # Prometheus metrics
-    PROMETHEUS_PORT: int = 9401
-    
     def __post_init__(self):
         """Инициализация значений по умолчанию."""
         if self.PH_STABILITY_STD_DEV_THRESHOLDS is None:

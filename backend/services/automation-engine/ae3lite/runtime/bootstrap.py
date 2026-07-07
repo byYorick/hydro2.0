@@ -18,6 +18,7 @@ from ae3lite.application.use_cases import (
     RequestManualStepUseCase,
     SetControlModeUseCase,
     StartupRecoveryUseCase,
+    StaleTaskReconcileUseCase,
     WaitingCommandReconcileUseCase,
 )
 from ae3lite.application.services.workflow_topology import TopologyRegistry
@@ -73,12 +74,23 @@ def build_ae3_runtime_bundle(
     command_repository = PgAeCommandRepository()
     task_status_read_model = PgTaskStatusReadModel()
     zone_intent_repository = PgZoneIntentRepository()
-    http_client = httpx.AsyncClient(timeout=config.http_client_timeout_sec)
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=config.http_client_connect_timeout_sec,
+            read=config.http_client_read_timeout_sec,
+            write=config.http_client_write_timeout_sec,
+            pool=config.http_client_pool_timeout_sec,
+        )
+    )
     history_logger_client = HistoryLoggerClient(
         base_url=config.history_logger_url,
         token=config.history_logger_api_token,
         source="automation-engine",
         client=http_client,
+        max_retries=config.hl_max_retries,
+        retry_backoff_sec=config.hl_retry_backoff_sec,
+        breaker_fail_threshold=config.hl_breaker_fail_threshold,
+        breaker_open_sec=config.hl_breaker_open_sec,
     )
 
     create_task_from_intent_use_case = CreateTaskFromIntentUseCase(
@@ -92,6 +104,8 @@ def build_ae3_runtime_bundle(
         command_repository=command_repository,
         history_logger_client=history_logger_client,
         poll_interval_sec=config.reconcile_poll_interval_sec,
+        command_poll_default_sec=config.command_poll_default_sec,
+        command_poll_margin_sec=config.command_poll_margin_sec,
     )
     workflow_repository = PgZoneWorkflowRepository()
     alert_repository = BizAlertPublisher()
@@ -109,6 +123,13 @@ def build_ae3_runtime_bundle(
         lease_repository=zone_lease_repository,
         startup_recovery_use_case=startup_recovery_use_case,
         batch_limit=config.waiting_command_reconcile_batch_limit,
+    )
+    stale_task_reconcile_use_case = StaleTaskReconcileUseCase(
+        task_repository=task_repository,
+        lease_repository=zone_lease_repository,
+        alert_repository=alert_repository,
+        stale_claimed_ttl_sec=config.stale_claimed_ttl_sec,
+        stale_running_ttl_sec=config.stale_running_ttl_sec,
     )
     pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
@@ -147,6 +168,7 @@ def build_ae3_runtime_bundle(
         ),
         startup_recovery_use_case=startup_recovery_use_case,
         waiting_command_reconcile_use_case=waiting_command_reconcile_use_case,
+        stale_task_reconcile_use_case=stale_task_reconcile_use_case,
         task_repository=task_repository,
         command_repository=command_repository,
         zone_lease_repository=zone_lease_repository,
@@ -158,6 +180,7 @@ def build_ae3_runtime_bundle(
         max_task_execution_sec=config.max_task_execution_sec,
         max_parallel_tasks=config.max_parallel_tasks,
         reconcile_poll_interval_sec=config.reconcile_poll_interval_sec,
+        stale_task_reconcile_interval_sec=config.stale_task_reconcile_sec,
         shutdown_grace_sec=config.shutdown_grace_sec,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(

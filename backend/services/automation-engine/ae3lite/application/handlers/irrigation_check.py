@@ -170,8 +170,14 @@ class IrrigationCheckHandler(BaseStageHandler):
             if probe_outcome is not None:
                 return probe_outcome
 
-        if control_mode == "manual":
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
 
         if solution_min_guard_enabled:
             solution_min = await self._read_level(

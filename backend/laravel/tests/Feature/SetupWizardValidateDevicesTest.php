@@ -132,7 +132,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $response
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Validation failed');
+            ->assertJsonPath('status', 'error');
 
         $errors = $response->json('errors');
         $this->assertIsArray($errors);

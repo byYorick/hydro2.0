@@ -53,7 +53,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'correction_patch' => ['timing.stabilization_sec' => 120],
             ]);
 
-        $resp->assertStatus(409)->assertJsonPath('code', 'ZONE_NOT_IN_LIVE_MODE');
+        $resp->assertStatus(409)->assertJsonPath('code', 'zone_not_in_live_mode');
     }
 
     public function test_no_fields_rejected(): void
@@ -68,7 +68,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'reason' => 'no-op',
             ]);
 
-        $resp->assertStatus(422)->assertJsonPath('code', 'NO_FIELDS_PROVIDED');
+        $resp->assertStatus(422)->assertJsonPath('code', 'no_fields_provided');
     }
 
     public function test_non_whitelisted_path_rejected(): void
@@ -84,7 +84,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'correction_patch' => ['dosing.ec_dosing_mode' => 'multi_parallel'],
             ]);
 
-        $resp->assertStatus(422)->assertJsonPath('code', 'PATH_NOT_WHITELISTED');
+        $resp->assertStatus(422)->assertJsonPath('code', 'path_not_whitelisted');
     }
 
     public function test_base_config_categorical_paths_applied(): void
@@ -166,7 +166,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'calibration_patch' => ['transport_delay_sec' => 5],
             ]);
 
-        $resp->assertStatus(422)->assertJsonPath('code', 'CALIBRATION_PHASE_REQUIRED');
+        $resp->assertStatus(422)->assertJsonPath('code', 'calibration_phase_required');
     }
 
     public function test_calibration_phase_tank_recirc_applies(): void

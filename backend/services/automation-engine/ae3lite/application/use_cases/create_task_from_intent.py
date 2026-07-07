@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -9,6 +10,7 @@ from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError, TaskCreateError
 from ae3lite.infrastructure.metrics import TASK_CREATED
 from common.db import get_pool
+from common.trace_context import get_trace_id
 
 
 class CreateTaskFromIntentUseCase:
@@ -126,6 +128,11 @@ class CreateTaskFromIntentUseCase:
                     source=source,
                     intent_row=intent_row,
                 )
+                intent_meta = dict(meta.intent_meta) if isinstance(meta.intent_meta, Mapping) else {}
+                trace_id = str(get_trace_id() or "").strip()
+                if trace_id:
+                    intent_meta["trace_id"] = trace_id
+                meta = replace(meta, intent_meta=intent_meta)
                 await self._ensure_runtime_cycle_preconditions(
                     zone_id=zone_id,
                     meta=meta,

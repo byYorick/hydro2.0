@@ -30,11 +30,24 @@ class Ae3RuntimeConfig:
     start_cycle_rate_limit_window_sec: int
     verbose_http_logging: bool
     http_client_timeout_sec: float
+    http_client_connect_timeout_sec: float
+    http_client_read_timeout_sec: float
+    http_client_write_timeout_sec: float
+    http_client_pool_timeout_sec: float
+    hl_max_retries: int
+    hl_retry_backoff_sec: float
+    hl_breaker_fail_threshold: int
+    hl_breaker_open_sec: float
     worker_owner: str
     max_task_execution_sec: int
     max_parallel_tasks: int
     waiting_command_reconcile_batch_limit: int
+    stale_claimed_ttl_sec: int
+    stale_running_ttl_sec: int
+    stale_task_reconcile_sec: float
     shutdown_grace_sec: float
+    command_poll_default_sec: float
+    command_poll_margin_sec: float
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -83,6 +96,30 @@ class Ae3RuntimeConfig:
             start_cycle_rate_limit_window_sec=max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10"))),
             verbose_http_logging=_env_true("AE_DEV_VERBOSE_HTTP_LOGGING", default_verbose),
             http_client_timeout_sec=max(0.1, float(os.getenv("AE_HTTP_CLIENT_TIMEOUT_SEC", "10.0"))),
+            http_client_connect_timeout_sec=cls._http_timeout_component(
+                "AE_HTTP_CLIENT_CONNECT_TIMEOUT_SEC",
+                legacy_default="10.0",
+                granular_default="2.0",
+            ),
+            http_client_read_timeout_sec=cls._http_timeout_component(
+                "AE_HTTP_CLIENT_READ_TIMEOUT_SEC",
+                legacy_default="10.0",
+                granular_default="8.0",
+            ),
+            http_client_write_timeout_sec=cls._http_timeout_component(
+                "AE_HTTP_CLIENT_WRITE_TIMEOUT_SEC",
+                legacy_default="10.0",
+                granular_default="5.0",
+            ),
+            http_client_pool_timeout_sec=cls._http_timeout_component(
+                "AE_HTTP_CLIENT_POOL_TIMEOUT_SEC",
+                legacy_default="10.0",
+                granular_default="2.0",
+            ),
+            hl_max_retries=max(0, int(os.getenv("AE_HL_MAX_RETRIES", "2"))),
+            hl_retry_backoff_sec=max(0.0, float(os.getenv("AE_HL_RETRY_BACKOFF_SEC", "0.5"))),
+            hl_breaker_fail_threshold=max(1, int(os.getenv("AE_HL_BREAKER_FAIL_THRESHOLD", "5"))),
+            hl_breaker_open_sec=max(0.1, float(os.getenv("AE_HL_BREAKER_OPEN_SEC", "15"))),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
             max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
             max_parallel_tasks=max(1, int(os.getenv("AE_MAX_PARALLEL_TASKS", "4"))),
@@ -90,11 +127,39 @@ class Ae3RuntimeConfig:
                 1,
                 min(200, int(os.getenv("AE_WAITING_COMMAND_RECONCILE_BATCH_LIMIT", "32"))),
             ),
+            stale_claimed_ttl_sec=max(1, int(os.getenv("AE_STALE_CLAIMED_TTL_SEC", "120"))),
+            stale_running_ttl_sec=max(
+                1,
+                int(
+                    os.getenv(
+                        "AE_STALE_RUNNING_TTL_SEC",
+                        str(max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))) + 60),
+                    )
+                ),
+            ),
+            stale_task_reconcile_sec=max(1.0, float(os.getenv("AE_STALE_TASK_RECONCILE_SEC", "60"))),
             shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
+            command_poll_default_sec=max(1.0, float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))),
+            command_poll_margin_sec=max(0.0, float(os.getenv("AE_COMMAND_POLL_MARGIN_SEC", "30"))),
         )
+
+    @staticmethod
+    def _http_timeout_component(name: str, *, legacy_default: str, granular_default: str) -> float:
+        explicit = os.getenv(name)
+        if explicit is not None and str(explicit).strip() != "":
+            return max(0.1, float(explicit))
+        legacy = os.getenv("AE_HTTP_CLIENT_TIMEOUT_SEC")
+        if legacy is not None and str(legacy).strip() != "":
+            return max(0.1, float(legacy))
+        return max(0.1, float(granular_default))
 
     def validate(self) -> None:
         """Выбрасывает ValueError, если отсутствует обязательная конфигурация."""
+        if not str(self.db_dsn or "").strip():
+            raise ValueError(
+                "AE_DB_DSN / DATABASE_URL не задан. "
+                "Set AE_DB_DSN or DATABASE_URL to a PostgreSQL connection string."
+            )
         history_logger_api_token = str(self.history_logger_api_token or "").strip()
         scheduler_api_token = str(self.scheduler_api_token or "").strip()
         if not history_logger_api_token:
@@ -106,6 +171,15 @@ class Ae3RuntimeConfig:
             raise ValueError(
                 "При включённом scheduler security baseline обязателен scheduler_api_token. "
                 "Set AE_API_TOKEN (or SCHEDULER_API_TOKEN / PY_API_TOKEN)."
+            )
+        # Fail-closed: отключение security baseline допустимо только в non-production средах,
+        # чтобы enforce=0 не мог случайно уехать в staging/production.
+        non_production_envs = {"local", "dev", "development", "test", "testing"}
+        if not self.scheduler_security_baseline_enforce and self.app_env not in non_production_envs:
+            raise ValueError(
+                "AE_SCHEDULER_SECURITY_BASELINE_ENFORCE=0 разрешён только при "
+                "APP_ENV=local|dev|development|test|testing "
+                f"(текущий APP_ENV={self.app_env!r}). Включите security baseline или смените APP_ENV."
             )
         if self.start_cycle_rate_limit_enabled:
             if int(self.start_cycle_rate_limit_max_requests) <= 0:
@@ -122,6 +196,50 @@ class Ae3RuntimeConfig:
             raise ValueError(
                 "http_client_timeout_sec must be > 0. "
                 "Set AE_HTTP_CLIENT_TIMEOUT_SEC to a positive number."
+            )
+        for field_name, value in (
+            ("http_client_connect_timeout_sec", self.http_client_connect_timeout_sec),
+            ("http_client_read_timeout_sec", self.http_client_read_timeout_sec),
+            ("http_client_write_timeout_sec", self.http_client_write_timeout_sec),
+            ("http_client_pool_timeout_sec", self.http_client_pool_timeout_sec),
+        ):
+            if float(value) <= 0.0:
+                raise ValueError(f"{field_name} must be > 0.")
+        if int(self.hl_max_retries) < 0:
+            raise ValueError("hl_max_retries must be >= 0. Set AE_HL_MAX_RETRIES to a non-negative integer.")
+        if float(self.hl_retry_backoff_sec) < 0.0:
+            raise ValueError("hl_retry_backoff_sec must be >= 0. Set AE_HL_RETRY_BACKOFF_SEC to a non-negative number.")
+        if int(self.hl_breaker_fail_threshold) <= 0:
+            raise ValueError(
+                "hl_breaker_fail_threshold must be > 0. Set AE_HL_BREAKER_FAIL_THRESHOLD to a positive integer."
+            )
+        if float(self.hl_breaker_open_sec) <= 0.0:
+            raise ValueError("hl_breaker_open_sec must be > 0. Set AE_HL_BREAKER_OPEN_SEC to a positive number.")
+        if int(self.stale_claimed_ttl_sec) <= 0:
+            raise ValueError(
+                "stale_claimed_ttl_sec must be > 0. Set AE_STALE_CLAIMED_TTL_SEC to a positive integer."
+            )
+        if int(self.stale_running_ttl_sec) <= 0:
+            raise ValueError(
+                "stale_running_ttl_sec must be > 0. Set AE_STALE_RUNNING_TTL_SEC to a positive integer."
+            )
+        if int(self.stale_running_ttl_sec) <= int(self.max_task_execution_sec):
+            raise ValueError(
+                "stale_running_ttl_sec must be > max_task_execution_sec "
+                f"(got stale_running_ttl_sec={self.stale_running_ttl_sec}, "
+                f"max_task_execution_sec={self.max_task_execution_sec})."
+            )
+        if float(self.stale_task_reconcile_sec) <= 0.0:
+            raise ValueError(
+                "stale_task_reconcile_sec must be > 0. Set AE_STALE_TASK_RECONCILE_SEC to a positive number."
+            )
+        if float(self.command_poll_default_sec) <= 0.0:
+            raise ValueError(
+                "command_poll_default_sec must be > 0. Set AE_COMMAND_POLL_DEFAULT_SEC to a positive number."
+            )
+        if float(self.command_poll_margin_sec) < 0.0:
+            raise ValueError(
+                "command_poll_margin_sec must be >= 0. Set AE_COMMAND_POLL_MARGIN_SEC to a non-negative number."
             )
 
 

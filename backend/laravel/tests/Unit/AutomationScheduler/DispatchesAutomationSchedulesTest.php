@@ -16,6 +16,7 @@ use App\Services\AutomationScheduler\SchedulerRuntimeHelper;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\AutomationScheduler\ZoneScheduleItemBuilder;
 use App\Services\EffectiveTargetsService;
+use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Mockery;
 use ReflectionClass;
@@ -43,6 +44,7 @@ class DispatchesAutomationSchedulesTest extends TestCase
             scheduleDispatcher: new ScheduleDispatcher(
                 activeTaskStore: $activeTaskStore,
                 activeTaskPoller: $activeTaskPoller,
+                intentService: $this->app->make(ZoneAutomationIntentService::class),
             ),
             finalizer: new SchedulerCycleFinalizer(
                 zoneCursorStore: $zoneCursorStore,
@@ -53,6 +55,7 @@ class DispatchesAutomationSchedulesTest extends TestCase
             ),
             manualScheduleService: new ManualScheduleService(
                 itemBuilder: new ManualScheduleItemBuilder,
+                activeTaskStore: $activeTaskStore,
             ),
             activeTaskPoller: $activeTaskPoller,
             activeTaskStore: $activeTaskStore,

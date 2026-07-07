@@ -81,11 +81,14 @@ class CleanFillCheckHandler(BaseStageHandler):
         if pending_manual_step == "clean_fill_stop":
             _logger.info("clean_fill_check: запрошена ручная остановка zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
-        if control_mode == "manual":
-            return StageOutcome(
-                kind="poll",
-                due_delay_sec=int(runtime.level_poll_interval_sec),
-            )
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
 
         clean_max = await self._read_level(
             task=task,

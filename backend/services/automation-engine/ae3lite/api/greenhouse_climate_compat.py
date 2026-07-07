@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Annotated, Any, Awaitable, Callable
 
-from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from ae3lite.api.http_errors import api_error_detail
 from ae3lite.greenhouse_climate.run_tick import run_greenhouse_climate_tick
 from common.db import fetch
 
@@ -18,13 +19,17 @@ class StartClimateTickRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source: str = Field(default="laravel_scheduler", min_length=1, max_length=64)
-    idempotency_key: str = Field(..., min_length=8, max_length=191)
+    idempotency_key: str = Field(..., min_length=8, max_length=160)
 
 
 def bind_greenhouse_climate_tick_route(
     app: FastAPI,
     *,
     validate_scheduler_security_baseline_fn: Callable[[Request], Awaitable[None]],
+    is_climate_tick_rate_limit_enabled_fn: Callable[[], bool],
+    climate_tick_rate_limit_check_fn: Callable[[int], bool],
+    climate_tick_rate_limit_window_sec_fn: Callable[[], int],
+    climate_tick_rate_limit_max_requests_fn: Callable[[], int],
     history_logger_client: Any,
     logger: Any = logger,
 ) -> None:
@@ -38,13 +43,23 @@ def bind_greenhouse_climate_tick_route(
 
     @app.post("/greenhouses/{greenhouse_id}/start-climate-tick")
     async def greenhouse_start_climate_tick(
-        greenhouse_id: int,
+        greenhouse_id: Annotated[int, Path(..., gt=0)],
         request: Request,
         background_tasks: BackgroundTasks,
         req: StartClimateTickRequest = Body(...),
     ) -> dict[str, Any]:
         await validate_scheduler_security_baseline_fn(request)
         await _validate_greenhouse(greenhouse_id)
+        if is_climate_tick_rate_limit_enabled_fn() and not climate_tick_rate_limit_check_fn(
+            greenhouse_id
+        ):
+            raise api_error_detail(
+                "start_cycle_rate_limited",
+                status_code=429,
+                greenhouse_id=greenhouse_id,
+                window_sec=climate_tick_rate_limit_window_sec_fn(),
+                max_requests=climate_tick_rate_limit_max_requests_fn(),
+            )
         background_tasks.add_task(
             run_greenhouse_climate_tick,
             greenhouse_id=greenhouse_id,

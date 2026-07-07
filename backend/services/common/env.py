@@ -42,6 +42,7 @@ class Settings:
     pg_pass: str = os.getenv("PG_PASS") or os.getenv("POSTGRES_PASSWORD") or ""
     pg_pool_min_size: int = int(os.getenv("PG_POOL_MIN_SIZE", "1"))
     pg_pool_max_size: int = int(os.getenv("PG_POOL_MAX_SIZE", "5"))
+    pg_pool_acquire_timeout_sec: float = float(os.getenv("PG_POOL_ACQUIRE_TIMEOUT_SEC", "5.0"))
     # application_name помогает быстро диагностировать источник коннектов в pg_stat_activity.
     pg_app_name: str = os.getenv("PG_APP_NAME", f"hydro:{os.getenv('HOSTNAME', 'python-service')}")
 

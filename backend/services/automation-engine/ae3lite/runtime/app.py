@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, AsyncIterator, Mapping, Optional
+from typing import Any, AsyncIterator, Mapping, Optional, Annotated
 
-from fastapi import FastAPI, HTTPException, Request
+import httpx
+from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,7 +24,8 @@ from ae3lite.api import (
     bind_start_irrigation_route,
     bind_start_lighting_tick_route,
 )
-from ae3lite.api.http_errors import enrich_http_exception_content
+from ae3lite.api.http_errors import api_error_detail, enrich_http_exception_content
+from common.error_catalog import enrich_error_payload, present_error
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.api.rate_limit import SlidingWindowRateLimiter
 from ae3lite.api.responses import build_start_cycle_response
@@ -37,10 +42,41 @@ import asyncpg
 from common.db import fetch, get_pool
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log
-from common.trace_context import clear_trace_id, extract_trace_id_from_headers, set_trace_id
+from common.trace_context import clear_trace_id, extract_trace_id_from_headers, get_trace_id, set_trace_id
 from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
+
+_HL_READY_CHECK_CACHE: dict[str, float | bool | str] = {
+    "monotonic_at": 0.0,
+    "ok": False,
+    "reason": "unchecked",
+}
+_HL_READY_CHECK_TTL_SEC = 10.0
+_HL_READY_CHECK_TIMEOUT_SEC = 2.0
+
+
+async def _probe_history_logger_ready(*, base_url: str) -> tuple[bool, str]:
+    now = time.monotonic()
+    cached_at = float(_HL_READY_CHECK_CACHE["monotonic_at"])
+    if now - cached_at < _HL_READY_CHECK_TTL_SEC:
+        return bool(_HL_READY_CHECK_CACHE["ok"]), str(_HL_READY_CHECK_CACHE["reason"])
+
+    ok = False
+    reason = "history_logger_unreachable"
+    try:
+        async with httpx.AsyncClient(timeout=_HL_READY_CHECK_TIMEOUT_SEC) as client:
+            response = await client.get(f"{str(base_url).rstrip('/')}/health")
+        if response.status_code == 200:
+            ok = True
+            reason = "ok"
+    except Exception as exc:
+        logger.warning("Проверка готовности AE3 через HL probe завершилась ошибкой: %s", exc, exc_info=True)
+
+    _HL_READY_CHECK_CACHE["monotonic_at"] = now
+    _HL_READY_CHECK_CACHE["ok"] = ok
+    _HL_READY_CHECK_CACHE["reason"] = reason
+    return ok, reason
 
 
 class ControlModeRequest(BaseModel):
@@ -309,6 +345,49 @@ def _validate_runtime_config(runtime_config: Any) -> None:
         validate()
 
 
+def _internal_error_response(trace_id: Optional[str]) -> JSONResponse:
+    presentation = present_error("ae3_internal_error", None)
+    payload = enrich_error_payload(
+        {
+            "status": "error",
+            "code": presentation["code"] or "ae3_internal_error",
+            "error": presentation["code"] or "ae3_internal_error",
+            "message": presentation["message"],
+            "human_error_message": presentation["human_error_message"],
+            "title": presentation["title"],
+            "trace_id": trace_id,
+        }
+    )
+    headers = {"X-Trace-Id": trace_id} if trace_id else {}
+    return JSONResponse(status_code=500, content=payload, headers=headers)
+
+
+def _response_error_code(response: Any) -> str | None:
+    body = getattr(response, "body", None)
+    if not body:
+        return None
+    try:
+        raw = body.decode("utf-8") if isinstance(body, (bytes, bytearray)) else str(body)
+        payload = json.loads(raw)
+        if isinstance(payload, dict):
+            code = str(payload.get("error") or payload.get("code") or "").strip()
+            return code or None
+    except Exception:
+        return None
+    return None
+
+
+def _request_zone_id(request: Request) -> int | None:
+    raw_zone_id = request.path_params.get("zone_id")
+    if raw_zone_id is None:
+        return None
+    try:
+        zone_id = int(raw_zone_id)
+    except (TypeError, ValueError):
+        return None
+    return zone_id if zone_id > 0 else None
+
+
 def _critical_background_tasks_health(background_tasks: Mapping[str, Any]) -> tuple[bool, str]:
     if not background_tasks:
         return True, "ok"
@@ -340,10 +419,20 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     _validate_runtime_config(runtime_config)
     background_tasks: set[asyncio.Task] = set()
     critical_background_tasks: dict[str, asyncio.Task] = {}
-    rate_limiter = SlidingWindowRateLimiter(
+    start_cycle_rate_limiter = SlidingWindowRateLimiter(
         max_requests=runtime_config.start_cycle_rate_limit_max_requests,
         window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
     )
+    start_irrigation_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=runtime_config.start_cycle_rate_limit_max_requests,
+        window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
+    )
+    start_lighting_tick_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=runtime_config.start_cycle_rate_limit_max_requests,
+        window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
+    )
+    zone_read_rate_limiter = SlidingWindowRateLimiter(max_requests=60, window_sec=10.0)
+    climate_tick_rate_limiter = SlidingWindowRateLimiter(max_requests=60, window_sec=10.0)
 
     bundle = build_ae3_runtime_bundle(
         config=runtime_config,
@@ -446,6 +535,31 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             content=enrich_http_exception_content(exc),
         )
 
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        del request
+        code = "validation_error"
+        for err in exc.errors():
+            location = tuple(err.get("loc") or ())
+            if "idempotency_key" in location and err.get("type") == "missing":
+                code = "start_cycle_missing_idempotency_key"
+                break
+        http_exc = api_error_detail(code, status_code=422)
+        return JSONResponse(
+            status_code=422,
+            content=enrich_http_exception_content(http_exc),
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        del request
+        if isinstance(exc, HTTPException):
+            raise exc
+        return _internal_error_response(get_trace_id())
+
     app.state.ae3_runtime_bundle = bundle
     app.state.ae3_runtime_config = runtime_config
     app.state.ae3_critical_background_tasks = critical_background_tasks
@@ -458,6 +572,9 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         started_at = _utcnow()
         try:
             response = await call_next(request)
+        except HTTPException:
+            clear_trace_id()
+            raise
         except Exception as exc:
             duration_ms = max(0.0, (_utcnow() - started_at).total_seconds() * 1000.0)
             logger.error(
@@ -487,8 +604,9 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 )
             except Exception:
                 logger.warning("Не удалось отправить alert для исключения AE3 API", exc_info=True)
+            response = _internal_error_response(effective_trace_id)
             clear_trace_id()
-            raise
+            return response
 
         duration_ms = max(0.0, (_utcnow() - started_at).total_seconds() * 1000.0)
         if effective_trace_id:
@@ -504,6 +622,20 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 response.status_code,
                 duration_ms,
                 extra={"trace_id": effective_trace_id},
+            )
+
+        if 400 <= response.status_code < 500:
+            zone_id = _request_zone_id(request)
+            error_code = _response_error_code(response)
+            logger.warning(
+                "AE3 API client error",
+                extra={
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "error": error_code,
+                    "trace_id": effective_trace_id,
+                    "zone_id": zone_id,
+                },
             )
 
         if response.status_code >= 500:
@@ -562,7 +694,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         validate_scheduler_zone_fn=_validate_scheduler_zone,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
         is_start_cycle_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
-        start_cycle_rate_limit_check_fn=lambda zone_id: rate_limiter.check(zone_id=zone_id),
+        start_cycle_rate_limit_check_fn=lambda zone_id: start_cycle_rate_limiter.check(zone_id=zone_id),
         start_cycle_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
         start_cycle_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
         claim_start_cycle_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_cycle(
@@ -597,7 +729,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         validate_scheduler_zone_fn=_validate_scheduler_zone,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
         is_start_irrigation_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
-        start_irrigation_rate_limit_check_fn=lambda zone_id: rate_limiter.check(zone_id=zone_id),
+        start_irrigation_rate_limit_check_fn=lambda zone_id: start_irrigation_rate_limiter.check(zone_id=zone_id),
         start_irrigation_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
         start_irrigation_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
         claim_start_irrigation_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_irrigation(
@@ -629,7 +761,9 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         validate_scheduler_zone_fn=_validate_scheduler_zone,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
         is_start_lighting_tick_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
-        start_lighting_tick_rate_limit_check_fn=lambda zone_id: rate_limiter.check(zone_id=zone_id),
+        start_lighting_tick_rate_limit_check_fn=lambda zone_id: start_lighting_tick_rate_limiter.check(
+            zone_id=zone_id
+        ),
         start_lighting_tick_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
         start_lighting_tick_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
         claim_start_lighting_tick_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_lighting_tick(
@@ -663,20 +797,49 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     bind_greenhouse_climate_tick_route(
         app,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
+        is_climate_tick_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
+        climate_tick_rate_limit_check_fn=lambda greenhouse_id: climate_tick_rate_limiter.check(
+            zone_id=greenhouse_id
+        ),
+        climate_tick_rate_limit_window_sec_fn=lambda: 10,
+        climate_tick_rate_limit_max_requests_fn=lambda: 60,
         history_logger_client=bundle.history_logger_client,
         logger=logger,
     )
 
+    def _enforce_zone_read_rate_limit(zone_id: int) -> None:
+        if not runtime_config.start_cycle_rate_limit_enabled:
+            return
+        if zone_read_rate_limiter.check(zone_id=zone_id):
+            return
+        raise api_error_detail(
+            "start_cycle_rate_limited",
+            status_code=429,
+            zone_id=zone_id,
+            window_sec=10,
+            max_requests=60,
+        )
+
     @app.get("/zones/{zone_id}/state")
-    async def get_zone_state(zone_id: int) -> dict[str, Any]:
+    async def get_zone_state(
+        zone_id: Annotated[int, Path(gt=0)],
+        request: Request,
+    ) -> dict[str, Any]:
         """Возвращает полное automation state зоны: задачи, фазы и ошибки."""
+        await _validate_scheduler_security_baseline(request)
         await _validate_scheduler_zone(zone_id)
+        _enforce_zone_read_rate_limit(zone_id)
         return await bundle.get_zone_automation_state_use_case.run(zone_id=zone_id)
 
     @app.get("/zones/{zone_id}/control-mode")
-    async def get_zone_control_mode(zone_id: int) -> dict[str, Any]:
+    async def get_zone_control_mode(
+        zone_id: Annotated[int, Path(gt=0)],
+        request: Request,
+    ) -> dict[str, Any]:
         """Возвращает текущий `control_mode` и разрешённые manual step для зоны."""
+        await _validate_scheduler_security_baseline(request)
         await _validate_scheduler_zone(zone_id)
+        _enforce_zone_read_rate_limit(zone_id)
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
 
@@ -737,11 +900,12 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             db_reason = type(exc).__name__
             logger.warning("Проверка готовности AE3 через DB probe завершилась ошибкой: %s", exc, exc_info=True)
 
-        worker_ok, worker_reason = bundle.worker.drain_health()
+        worker_ok, worker_reason = await bundle.worker.drain_health()
         critical_ok, critical_reason = _critical_background_tasks_health(
             getattr(app.state, "ae3_critical_background_tasks", {}),
         )
-        all_ok = db_ready and worker_ok and critical_ok
+        hl_ready, hl_reason = await _probe_history_logger_ready(base_url=runtime_config.history_logger_url)
+        all_ok = db_ready and worker_ok and critical_ok and hl_ready
         payload = {
             "status": "ok" if all_ok else "degraded",
             "service": "automation-engine",
@@ -750,6 +914,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 "db": {"ok": db_ready, "reason": db_reason},
                 "worker": {"ok": worker_ok, "reason": worker_reason},
                 "critical_background_tasks": {"ok": critical_ok, "reason": critical_reason},
+                "history_logger": {"ok": hl_ready, "reason": hl_reason},
             },
         }
         return payload if all_ok else JSONResponse(status_code=503, content=payload)

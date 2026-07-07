@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import suppress
 from datetime import datetime, timezone as _tz
 from typing import Any, Callable, Optional
 
+from ae3lite.domain.errors import TaskClaimRollbackError
 from ae3lite.application.use_cases.execute_task import (
     TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
-from ae3lite.infrastructure.metrics import ACTIVE_TASKS, TICK_DURATION, TICK_ERRORS, ZONE_LEASE_LOST, ZONE_LEASE_RELEASE_FAILED
+from ae3lite.infrastructure.log_context import log_context_scope
+from ae3lite.infrastructure.metrics import (
+    ACTIVE_TASKS,
+    CLAIM_ROLLBACK_FAILED,
+    DRAIN_CRASHES,
+    TASK_EXECUTION_CRASHED,
+    TICK_DURATION,
+    TICK_ERRORS,
+    ZONE_LEASE_LOST,
+    ZONE_LEASE_RELEASE_FAILED,
+)
 from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 
 
@@ -38,6 +50,8 @@ class Ae3RuntimeWorker:
         max_task_execution_sec: int = 900,
         max_parallel_tasks: int = 1,
         reconcile_poll_interval_sec: float | None = None,
+        stale_task_reconcile_use_case: Any | None = None,
+        stale_task_reconcile_interval_sec: float | None = None,
         shutdown_grace_sec: float = 30.0,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
@@ -46,6 +60,7 @@ class Ae3RuntimeWorker:
         self._execute_task_use_case = execute_task_use_case
         self._startup_recovery_use_case = startup_recovery_use_case
         self._waiting_command_reconcile_use_case = waiting_command_reconcile_use_case
+        self._stale_task_reconcile_use_case = stale_task_reconcile_use_case
         self._task_repository = task_repository
         self._command_repository = command_repository
         self._zone_lease_repository = zone_lease_repository
@@ -60,6 +75,15 @@ class Ae3RuntimeWorker:
             0.1,
             float(reconcile_poll_interval_sec if reconcile_poll_interval_sec is not None else idle_poll_interval_sec),
         )
+        self._stale_task_reconcile_interval_sec = max(
+            1.0,
+            float(
+                stale_task_reconcile_interval_sec
+                if stale_task_reconcile_interval_sec is not None
+                else 60.0
+            ),
+        )
+        self._last_stale_task_reconcile_monotonic: float | None = None
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
@@ -73,6 +97,8 @@ class Ae3RuntimeWorker:
         self._shutdown_grace_sec = max(0.0, float(shutdown_grace_sec))
         self._active_shutdown_grace_sec: float | None = None
         self._inflight_automation_tasks: dict[asyncio.Task, Any] = {}
+        self._reconcile_consecutive_errors = 0
+        self._pending_health_cache: tuple[float, bool] | None = None
 
     def kick(self) -> Any:
         if self._shutting_down:
@@ -155,7 +181,7 @@ class Ae3RuntimeWorker:
     def _ensure_waiting_command_reconcile_loop(self) -> None:
         if self._shutting_down:
             return
-        if self._waiting_command_reconcile_use_case is None:
+        if self._waiting_command_reconcile_use_case is None and self._stale_task_reconcile_use_case is None:
             return
         if self._reconcile_loop_task is not None and not self._reconcile_loop_task.done():
             return
@@ -168,15 +194,35 @@ class Ae3RuntimeWorker:
         while not self._shutting_down:
             try:
                 await self._run_waiting_command_reconcile_once()
+                await self._maybe_run_stale_task_reconcile_once()
+                self._reconcile_consecutive_errors = 0
             except asyncio.CancelledError:
                 raise
             except Exception:
+                self._reconcile_consecutive_errors += 1
                 self._logger.warning(
-                    "AE3 waiting_command reconcile loop failed",
+                    "AE3 waiting_command reconcile loop failed: owner=%s consecutive_errors=%s",
+                    self._owner,
+                    self._reconcile_consecutive_errors,
                     exc_info=True,
                 )
             if self._shutting_down:
                 break
+            if self._reconcile_consecutive_errors >= 3:
+                exponent = self._reconcile_consecutive_errors - 2
+                sleep_sec = min(2**exponent, 30.0)
+                self._log_debug(
+                    "AE3 reconcile backoff sleep: owner=%s consecutive_errors=%s sleep_sec=%.1f",
+                    self._owner,
+                    self._reconcile_consecutive_errors,
+                    sleep_sec,
+                )
+                try:
+                    await asyncio.wait_for(self._reconcile_wake.wait(), timeout=sleep_sec)
+                except asyncio.TimeoutError:
+                    pass
+                self._reconcile_wake.clear()
+                continue
             try:
                 await asyncio.wait_for(
                     self._reconcile_wake.wait(),
@@ -218,6 +264,27 @@ class Ae3RuntimeWorker:
             else:
                 self._arm_respawn_on_done(drain)
 
+    async def _maybe_run_stale_task_reconcile_once(self) -> None:
+        if self._stale_task_reconcile_use_case is None:
+            return
+        now_mono = time.monotonic()
+        if self._last_stale_task_reconcile_monotonic is not None:
+            elapsed = now_mono - self._last_stale_task_reconcile_monotonic
+            if elapsed < self._stale_task_reconcile_interval_sec:
+                return
+        self._last_stale_task_reconcile_monotonic = now_mono
+        result = await self._stale_task_reconcile_use_case.run(
+            now=self._now_fn(),
+            owner=self._owner,
+        )
+        if bool(getattr(result, "kick_needed", False)) and not self._shutting_down:
+            self._pending_kicks += 1
+            drain = self._drain_task
+            if drain is None or drain.done():
+                self._spawn_drain_task()
+            else:
+                self._arm_respawn_on_done(drain)
+
     async def _drain_pending_tasks(self) -> None:
         self._log_debug("AE3 runtime drain started")
         drain_ok = False
@@ -226,7 +293,7 @@ class Ae3RuntimeWorker:
         try:
             while not self._shutting_down:
                 while not self._shutting_down and len(inflight) < self._max_parallel_tasks:
-                    claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
+                    claimed = await self._claim_next_task_safe()
                     if claimed is None:
                         break
 
@@ -234,7 +301,7 @@ class Ae3RuntimeWorker:
                     task, _lease = claimed
                     self._log_debug("AE3 runtime claimed task: task_id=%s zone_id=%s", task.id, task.zone_id)
                     worker_task = asyncio.create_task(
-                        self._execute_claimed_task(task=task),
+                        self._execute_claimed_task_safe(task=task),
                         name=f"ae3lite_claimed_task:{task.id}",
                     )
                     inflight.add(worker_task)
@@ -252,13 +319,13 @@ class Ae3RuntimeWorker:
                     for done_task in done:
                         inflight.discard(done_task)
                         self._inflight_automation_tasks.pop(done_task, None)
-                        await done_task
+                        await self._await_inflight_task_result(done_task)
                     continue
 
                 if self._shutting_down:
                     break
 
-                claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
+                claimed = await self._claim_next_task_safe()
                 if claimed is None:
                     if self._pending_kicks > 0:
                         self._log_debug("AE3 runtime drain retrying after deferred kick")
@@ -277,7 +344,7 @@ class Ae3RuntimeWorker:
                 task, _lease = claimed
                 self._log_debug("AE3 runtime claimed task: task_id=%s zone_id=%s", task.id, task.zone_id)
                 worker_task = asyncio.create_task(
-                    self._execute_claimed_task(task=task),
+                    self._execute_claimed_task_safe(task=task),
                     name=f"ae3lite_claimed_task:{task.id}",
                 )
                 inflight.add(worker_task)
@@ -300,6 +367,134 @@ class Ae3RuntimeWorker:
         finally:
             self._last_drain_exit_ok = drain_ok
             self._last_drain_exit_reason = drain_reason
+
+    async def _claim_next_task_safe(self) -> tuple[Any, Any] | None:
+        try:
+            return await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
+        except TaskClaimRollbackError:
+            CLAIM_ROLLBACK_FAILED.inc()
+            self._logger.warning(
+                "AE3 claim rollback failed after zone lease conflict: owner=%s",
+                self._owner,
+            )
+            return None
+
+    async def _await_inflight_task_result(self, done_task: asyncio.Task) -> None:
+        try:
+            await done_task
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Per-task isolation: _execute_claimed_task_safe не пробрасывает ошибки выполнения.
+            self._log_debug(
+                "AE3 runtime ignored inflight task exception after safe wrapper: task_name=%s",
+                done_task.get_name(),
+            )
+
+    async def _execute_claimed_task_safe(self, *, task: Any) -> None:
+        trace_id = self._task_trace_id(task)
+        context_kwargs: dict[str, Any] = {
+            "task_id": getattr(task, "id", None),
+            "zone_id": getattr(task, "zone_id", None),
+        }
+        if trace_id:
+            context_kwargs["trace_id"] = trace_id
+        with log_context_scope(**context_kwargs):
+            try:
+                await self._execute_claimed_task(task=task)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                error_name = type(exc).__name__
+                TASK_EXECUTION_CRASHED.labels(error=error_name).inc()
+                self._logger.error(
+                    "AE3 task execution crashed in worker wrapper: zone_id=%s task_id=%s owner=%s error_type=%s",
+                    getattr(task, "zone_id", None),
+                    getattr(task, "id", None),
+                    self._owner,
+                    error_name,
+                    exc_info=True,
+                )
+                await self._fail_task_after_execution_crash(task=task, exc=exc)
+
+    @staticmethod
+    def _task_trace_id(task: Any) -> str | None:
+        intent_meta = getattr(task, "intent_meta", None)
+        if not isinstance(intent_meta, dict):
+            return None
+        trace_id = str(intent_meta.get("trace_id") or "").strip()
+        return trace_id or None
+
+    async def _fail_task_after_execution_crash(self, *, task: Any, exc: Exception) -> None:
+        error_message = str(exc).strip() or type(exc).__name__
+        task_id = int(getattr(task, "id", 0) or 0)
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if task_id > 0 and self._task_repository is not None:
+            fail_for_recovery = getattr(self._task_repository, "fail_for_recovery", None)
+            if callable(fail_for_recovery):
+                try:
+                    await fail_for_recovery(
+                        task_id=task_id,
+                        error_code="ae3_task_execution_crashed",
+                        error_message=error_message,
+                        now=self._now_fn(),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    self._logger.warning(
+                        "AE3 runtime не смог перевести задачу в failed после crash: zone_id=%s task_id=%s owner=%s",
+                        zone_id,
+                        task_id,
+                        self._owner,
+                        exc_info=True,
+                    )
+        intent_id = int(getattr(task, "intent_id", 0) or 0)
+        if intent_id > 0:
+            await self._safe_mark_intent_terminal_result(
+                intent_id=intent_id,
+                now=self._now_fn(),
+                success=False,
+                error_code="ae3_task_execution_crashed",
+                error_message=error_message,
+            )
+        if zone_id > 0:
+            try:
+                released = await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+                if not released:
+                    await asyncio.sleep(0.05)
+                    await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._logger.warning(
+                    "AE3 runtime не смог освободить lease после crash: zone_id=%s task_id=%s owner=%s",
+                    zone_id,
+                    task_id,
+                    self._owner,
+                    exc_info=True,
+                )
+
+    async def _drain_supervisor(self) -> None:
+        backoff_sec = 1.0
+        while not self._shutting_down:
+            try:
+                await self._drain_pending_tasks()
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                DRAIN_CRASHES.inc()
+                self._logger.error(
+                    "AE3 drain supervisor caught crash: owner=%s backoff_sec=%.1f",
+                    self._owner,
+                    backoff_sec,
+                    exc_info=True,
+                )
+                if self._shutting_down:
+                    break
+                await asyncio.sleep(backoff_sec)
+                backoff_sec = min(backoff_sec * 2.0, 60.0)
 
     async def _execute_claimed_task(self, *, task: Any) -> None:
         intent_id = int(task.intent_id or 0)
@@ -611,7 +806,7 @@ class Ae3RuntimeWorker:
             return self._drain_task
         self._log_debug("AE3 runtime spawning drain task")
         task = self._spawn_background_task_fn(
-            self._drain_pending_tasks(),
+            self._drain_supervisor(),
             task_name="ae3lite_runtime_worker",
         )
         self._drain_task = task
@@ -820,13 +1015,18 @@ class Ae3RuntimeWorker:
         if callable(add_done_callback):
             add_done_callback(_on_done)
 
-    def drain_health(self) -> tuple[bool, str]:
+    async def drain_health(self) -> tuple[bool, str]:
         """Возвращает `(ok, reason)` для readiness-probe."""
         drain = self._drain_task
+        if drain is not None and not drain.done():
+            return True, self._owner
+
+        if drain is None or drain.done():
+            if await self._has_due_pending_cached():
+                return False, "drain_dead_with_pending"
+
         if drain is None:
             return self._last_drain_exit_ok, self._last_drain_exit_reason
-        if not drain.done():
-            return True, self._owner
         if drain.cancelled():
             return False, "worker_cancelled"
         try:
@@ -836,6 +1036,37 @@ class Ae3RuntimeWorker:
         if exc is not None:
             return False, f"worker_crashed:{type(exc).__name__}"
         return self._last_drain_exit_ok, self._last_drain_exit_reason
+
+    async def _has_due_pending_cached(self) -> bool:
+        now_mono = time.monotonic()
+        cached = self._pending_health_cache
+        if cached is not None and (now_mono - cached[0]) < 5.0:
+            return cached[1]
+
+        has_due_pending = await self._has_due_pending()
+        self._pending_health_cache = (now_mono, has_due_pending)
+        return has_due_pending
+
+    async def _has_due_pending(self) -> bool:
+        getter = getattr(self._claim_next_task_use_case, "next_pending_due_at", None)
+        if not callable(getter):
+            return False
+        next_due_at = await getter()
+        if next_due_at is None:
+            return False
+
+        now = self._now_fn()
+        next_due_utc = (
+            next_due_at.astimezone(_tz.utc)
+            if next_due_at.tzinfo is not None
+            else next_due_at.replace(tzinfo=_tz.utc)
+        )
+        now_utc = (
+            now.astimezone(_tz.utc)
+            if now.tzinfo is not None
+            else now.replace(tzinfo=_tz.utc)
+        )
+        return next_due_utc <= now_utc
 
     def _log_debug(self, message: str, *args: Any) -> None:
         debug = getattr(self._logger, "debug", None)

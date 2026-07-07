@@ -111,6 +111,7 @@ AE_COMMANDS = Table(
         _col("id", "bigint", nullable=False),
         _col("task_id", "bigint", nullable=False),
         _col("step_no", "integer", nullable=False),
+        _col("planner_step", "text"),
         _col("node_uid", "text", nullable=False),
         _col("channel", "text", nullable=False),
         _col("payload", "jsonb", nullable=False),
@@ -125,7 +126,7 @@ AE_COMMANDS = Table(
         _col("updated_at", "timestamp", nullable=False),
     ),
     enum_values={
-        "publish_status": frozenset({"pending", "accepted", "failed"}),
+        "publish_status": frozenset({"pending", "published_unconfirmed", "accepted", "failed"}),
     },
 )
 

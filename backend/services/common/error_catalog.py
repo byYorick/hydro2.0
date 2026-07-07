@@ -8,17 +8,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-_CATALOG_PATHS = (
-    Path("/app/error_codes.json"),
-    Path(__file__).resolve().parents[2] / "error_codes.json",
-    Path(__file__).resolve().parents[1] / "error_codes.json",
-)
+def _candidate_paths(filename: str) -> tuple[Path, ...]:
+    """Build candidate paths without assuming a fixed monorepo depth."""
+    here = Path(__file__).resolve()
+    candidates: list[Path] = [Path("/app") / filename]
+    for root in here.parents:
+        candidates.append(root / filename)
+    return tuple(candidates)
 
-_RAW_TRANSLATION_PATHS = (
-    Path("/app/api_error_raw_translations.json"),
-    Path(__file__).resolve().parents[2] / "api_error_raw_translations.json",
-    Path(__file__).resolve().parents[1] / "api_error_raw_translations.json",
-)
+
+_CATALOG_PATHS = _candidate_paths("error_codes.json")
+_RAW_TRANSLATION_PATHS = _candidate_paths("api_error_raw_translations.json")
 
 
 @lru_cache(maxsize=1)

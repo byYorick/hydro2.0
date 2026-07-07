@@ -105,7 +105,7 @@ class LaunchFlowManifestControllerTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/launch-flow/manifest?zone_id=abc')
             ->assertStatus(422)
-            ->assertJsonPath('error.code', 'invalid_zone_id');
+            ->assertJsonPath('code', 'invalid_zone_id');
     }
 
     public function test_manifest_returns_404_for_missing_zone(): void
@@ -115,7 +115,7 @@ class LaunchFlowManifestControllerTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/launch-flow/manifest?zone_id=9999999')
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'zone_not_found');
+            ->assertJsonPath('code', 'zone_not_found');
     }
 
     public function test_calibration_step_visible_when_zone_selected(): void

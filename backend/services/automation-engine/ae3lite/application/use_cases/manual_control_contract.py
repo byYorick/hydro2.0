@@ -28,6 +28,7 @@ _ALLOWED_MANUAL_STEPS_BY_STAGE: Final[dict[str, list[str]]] = {
     "irrigation_start": ["irrigation_stop"],
     "irrigation_check": ["irrigation_stop"],
     "irrigation_recovery_check": ["irrigation_recovery_stop"],
+    "manual_hold": [],
 }
 
 
@@ -45,8 +46,38 @@ def allowed_manual_steps_for_stage(stage: object) -> list[str]:
     return list(_ALLOWED_MANUAL_STEPS_BY_STAGE.get(normalized_stage, ()))
 
 
+def resolve_manual_control_stage(
+    *,
+    current_stage: object,
+    pending_manual_step: object = None,
+) -> str:
+    """Stage для allowed_manual_steps: в manual_hold — return check-stage."""
+    normalized_stage = str(current_stage or "").strip()
+    if normalized_stage == "manual_hold":
+        from ae3lite.application.handlers.flow_path_guard import decode_manual_hold_return_stage
+
+        return_stage = decode_manual_hold_return_stage(pending_manual_step)
+        if return_stage:
+            return return_stage
+    return normalized_stage
+
+
+def allowed_manual_steps_for_workflow(
+    *,
+    current_stage: object,
+    pending_manual_step: object = None,
+) -> list[str]:
+    effective_stage = resolve_manual_control_stage(
+        current_stage=current_stage,
+        pending_manual_step=pending_manual_step,
+    )
+    return allowed_manual_steps_for_stage(effective_stage)
+
+
 __all__ = [
     "AVAILABLE_CONTROL_MODES",
     "allowed_manual_steps_for_stage",
+    "allowed_manual_steps_for_workflow",
     "normalize_control_mode",
+    "resolve_manual_control_stage",
 ]

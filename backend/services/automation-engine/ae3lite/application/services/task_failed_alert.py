@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from ae3lite.infrastructure.metrics import inc_observability_write_failed
+
 logger = logging.getLogger(__name__)
 
 _RECOVERY_ALERT_DEDUPE_SOURCES = frozenset({"startup_recovery", "waiting_command_reconcile"})
@@ -125,6 +127,7 @@ async def emit_task_failed_alert(
             severity=alert_severity,
         )
     except Exception:
+        inc_observability_write_failed(kind="biz_alert")
         logger.warning(
             "AE3 не смог записать alert task-failed: task_id=%s zone_id=%s code=%s",
             getattr(task, "id", None),

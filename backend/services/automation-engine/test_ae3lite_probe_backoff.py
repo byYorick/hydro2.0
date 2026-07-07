@@ -13,10 +13,17 @@ from unittest.mock import patch
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
 
 
 _EXHAUSTED = StageOutcome(kind="fail", error_code="probe_exhausted", error_message="exhausted")
@@ -187,13 +194,11 @@ async def test_probe_backoff_escalates_on_streak_limit(monkeypatch) -> None:
             exhausted_outcome=_EXHAUSTED,
         )
 
-    assert out is _EXHAUSTED
+    assert out.kind == "fail"
+    assert out.error_code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
     args, _ = zone_event_mock.call_args
     assert args[1] == "IRR_STATE_PROBE_STREAK_EXHAUSTED"
-    alert_mock.assert_called_once()
-    _, alert_kwargs = alert_mock.call_args
-    assert alert_kwargs["code"] == "biz_irr_probe_streak_exhausted"
-    assert alert_kwargs["severity"] == "warning"
+    alert_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

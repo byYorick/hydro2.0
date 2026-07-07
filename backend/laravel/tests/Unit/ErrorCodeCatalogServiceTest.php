@@ -52,7 +52,7 @@ class ErrorCodeCatalogServiceTest extends TestCase
         ]);
 
         $this->assertSame('unauthenticated', $localized['code']);
-        $this->assertSame($localized['message'], $localized['human_error_message']);
+        $this->assertSame('Unauthorized', $localized['message']);
         $this->assertMatchesRegularExpression('/[А-Яа-яЁё]/u', (string) $localized['human_error_message']);
     }
 

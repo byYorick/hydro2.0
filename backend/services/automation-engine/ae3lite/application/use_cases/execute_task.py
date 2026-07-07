@@ -14,6 +14,7 @@ from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
+from ae3lite.infrastructure.metrics import TASK_RUNNING_TRANSITION_MISSED
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.service_logs import send_service_log
@@ -102,7 +103,16 @@ class ExecuteTaskUseCase:
 
         running_task = await self._task_repository.mark_running(task_id=task.id, owner=owner, now=now)
         if running_task is None:
-            raise TaskExecutionError("ae3_task_running_transition_failed", f"Не удалось перевести задачу {task.id} в состояние running")
+            # CAS-miss: другой worker или recovery уже изменил строку; задача остаётся claimed —
+            # startup recovery / janitor подберут её позже.
+            logger.warning(
+                "AE3 mark_running CAS miss: task remains claimed for startup recovery: zone_id=%s task_id=%s owner=%s",
+                task.zone_id,
+                task.id,
+                owner,
+            )
+            TASK_RUNNING_TRANSITION_MISSED.inc()
+            return task
 
         await self._preflight_required_nodes_online(task=running_task)
 

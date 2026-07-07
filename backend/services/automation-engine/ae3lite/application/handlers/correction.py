@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
@@ -38,7 +39,7 @@ from ae3lite.application.services.decision_window_reader import (
 )
 from ae3lite.application.services.sensor_mode_controller import SensorModeController
 from ae3lite.domain.entities.planned_command import PlannedCommand
-from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.domain.entities.workflow_state import ALERT_BLOCK_SNAPSHOT_CMD_PREFIX, CorrectionState
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePlan
 from ae3lite.domain.services.correction_transition_policy import (
@@ -46,6 +47,7 @@ from ae3lite.domain.services.correction_transition_policy import (
 )
 from ae3lite.domain.services.observation_analyzer import ObservationAnalyzer
 from ae3lite.domain.services.pid_output_event import build_pid_output_detail
+from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
 from common.db import create_zone_event
@@ -94,6 +96,29 @@ class _ObservationWindow:
 # (250 ms) chosen to balance CPU load with responsiveness when sensor data
 # is freshly stale. Does NOT belong in `zone.correction` schema.
 _STALE_RECHECK_DELAY_SEC = 0.25
+
+_AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES = max(
+    1,
+    int(os.getenv("AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES", "10")),
+)
+_ALERT_BLOCK_SNAPSHOT_PREFIX = ALERT_BLOCK_SNAPSHOT_CMD_PREFIX
+
+
+def _alert_block_retry_count(corr: CorrectionState) -> int:
+    raw = str(corr.snapshot_cmd_id or "")
+    if not raw.startswith(_ALERT_BLOCK_SNAPSHOT_PREFIX):
+        return 0
+    try:
+        return int(raw[len(_ALERT_BLOCK_SNAPSHOT_PREFIX):])
+    except ValueError:
+        return 0
+
+
+def _clear_alert_block_marker(corr: CorrectionState) -> CorrectionState:
+    raw = str(corr.snapshot_cmd_id or "")
+    if raw.startswith(_ALERT_BLOCK_SNAPSHOT_PREFIX):
+        return replace(corr, snapshot_cmd_id=None)
+    return corr
 
 
 def _pid_entry_or_none(pid_state: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
@@ -175,6 +200,25 @@ class CorrectionHandler(BaseStageHandler):
                 f"У задачи {task.id} активен correction stage, но correction state отсутствует",
             )
 
+        window_id = CorrectionEventLogger.correction_window_id(task=task)
+        with log_context_scope(correction_window_id=window_id):
+            return await self._run_correction_stage(
+                task=task,
+                plan=plan,
+                stage_def=stage_def,
+                now=now,
+                corr=corr,
+            )
+
+    async def _run_correction_stage(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        stage_def: Any,
+        now: datetime,
+        corr: CorrectionState,
+    ) -> StageOutcome:
         # Phase 5.5: live-mode hot-swap. If zone is in `live` and revision
         # advanced, `_checkpoint` returns a fresh `RuntimePlan` (otherwise
         # returns the existing one). We rebuild a new `CommandPlan` via
@@ -477,14 +521,36 @@ class CorrectionHandler(BaseStageHandler):
             pid_state=pid_state,
         )
         if blocked is not None:
+            retry_count = _alert_block_retry_count(corr) + 1
+            if retry_count >= _AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES:
+                raise TaskExecutionError(
+                    "correction_blocked_by_no_effect_alert",
+                    (
+                        "Коррекция заблокирована активным no-effect alert: "
+                        f"исчерпан лимит повторов ({_AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES})"
+                    ),
+                )
             await self._log_correction_event(
                 zone_id=task.zone_id,
                 event_type="CORRECTION_SKIPPED_BY_ALERT_BLOCK",
                 task=task,
                 corr=corr,
-                payload=blocked,
+                payload={
+                    **blocked,
+                    "alert_block_retry": retry_count,
+                    "alert_block_max_retries": _AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES,
+                },
             )
-            return StageOutcome(kind="retry", due_delay_sec=60)  # config-literal: short retry backoff after alert block
+            return StageOutcome(
+                kind="retry",
+                due_delay_sec=60,
+                correction=replace(
+                    corr,
+                    snapshot_cmd_id=f"{_ALERT_BLOCK_SNAPSHOT_PREFIX}{retry_count}",
+                ),
+            )
+
+        corr = _clear_alert_block_marker(corr)
 
         if self._should_log_limit_policy(task=task, corr=corr):
             await self._log_correction_event(
@@ -737,9 +803,12 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             _logger.warning(
-                "zone %s: телеметрия устарела во время correction check; повтор через %.1f с",
+                "zone %s: телеметрия устарела во время correction check; повтор через %.1f с "
+                "(task_id=%s correction_window_id=%s)",
                 task.zone_id,
                 retry_delay_sec,
+                getattr(task, "id", None),
+                CorrectionEventLogger.correction_window_id(task=task),
             )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
@@ -790,7 +859,14 @@ class CorrectionHandler(BaseStageHandler):
                     "ec_since_ts": self._serialize_metric_ts(ec.since_ts),
                 },
             )
-            _logger.warning("zone %s: %s, повтор через %.1f с", task.zone_id, msg, retry_delay_sec)
+            _logger.warning(
+                "zone %s: %s, повтор через %.1f с (task_id=%s correction_window_id=%s)",
+                task.zone_id,
+                msg,
+                retry_delay_sec,
+                getattr(task, "id", None),
+                CorrectionEventLogger.correction_window_id(task=task),
+            )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,
@@ -815,8 +891,14 @@ class CorrectionHandler(BaseStageHandler):
                 key="decision_window_retry_sec",
             )
             _logger.warning(
-                "zone %s: некорректное telemetry value (ph=%s, ec=%s); повтор через %.1f с",
-                task.zone_id, current_ph, current_ec, retry_delay_sec,
+                "zone %s: некорректное telemetry value (ph=%s, ec=%s); повтор через %.1f с "
+                "(task_id=%s correction_window_id=%s)",
+                task.zone_id,
+                current_ph,
+                current_ec,
+                retry_delay_sec,
+                getattr(task, "id", None),
+                CorrectionEventLogger.correction_window_id(task=task),
             )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
@@ -1063,10 +1145,34 @@ class CorrectionHandler(BaseStageHandler):
                         "node_uid": s.node_uid,
                         "channel": s.channel,
                         "amount_ml": s.amount_ml,
+                        "requested_ml": s.requested_ml if s.requested_ml is not None else s.amount_ml,
                         "duration_ms": s.duration_ms,
                     }
                     for s in dose_plan.ec_dose_sequence
                 ],
+                separators=(",", ":"),
+            )
+        elif dose_plan.needs_ec:
+            ec_dose_sequence_json = json.dumps(
+                {
+                    "component": dose_plan.ec_component or "single",
+                    "node_uid": dose_plan.ec_node_uid,
+                    "channel": dose_plan.ec_channel,
+                    "amount_ml": dose_plan.ec_amount_ml,
+                    "requested_ml": dose_plan.ec_requested_ml or dose_plan.ec_amount_ml,
+                    "duration_ms": dose_plan.ec_duration_ms,
+                },
+                separators=(",", ":"),
+            )
+        elif (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and (
+            dose_plan.ph_requested_ml and dose_plan.ph_requested_ml != dose_plan.ph_amount_ml
+        ):
+            ec_dose_sequence_json = json.dumps(
+                {
+                    "_kind": "ph_dose_meta",
+                    "requested_ml": dose_plan.ph_requested_ml,
+                    "effective_ml": dose_plan.ph_amount_ml,
+                },
                 separators=(",", ":"),
             )
         next_corr = replace(
@@ -1164,12 +1270,20 @@ class CorrectionHandler(BaseStageHandler):
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
         seq: list[dict[str, Any]] = []
+        ec_single_meta: dict[str, Any] | None = None
         if corr.ec_dose_sequence_json:
             try:
                 raw = json.loads(corr.ec_dose_sequence_json)
-                if not isinstance(raw, list):
+                if isinstance(raw, list):
+                    seq = list(raw)
+                elif isinstance(raw, dict):
+                    if raw.get("_kind") == "ph_dose_meta":
+                        seq = []
+                    else:
+                        ec_single_meta = dict(raw)
+                        seq = [ec_single_meta]
+                else:
                     raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON должен быть списком")
-                seq = list(raw)
             except Exception as exc:
                 if isinstance(exc, TaskExecutionError):
                     raise
@@ -1227,7 +1341,13 @@ class CorrectionHandler(BaseStageHandler):
                     step_no=idx + 1,
                     node_uid=str(item["node_uid"]),
                     channel=str(item["channel"]),
-                    payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
+                    payload={
+                        "cmd": "dose",
+                        "params": {
+                            "ml": float(item["amount_ml"]),
+                            "duration_ms": int(item["duration_ms"]),
+                        },
+                    },
                 ))
             result = await self._run_command_batch_checked(
                 task=current_task, commands=tuple(batch_cmds), now=now,
@@ -1252,7 +1372,13 @@ class CorrectionHandler(BaseStageHandler):
                     step_no=start_idx + 1,
                     node_uid=str(item["node_uid"]),
                     channel=str(item["channel"]),
-                    payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
+                    payload={
+                        "cmd": "dose",
+                        "params": {
+                            "ml": float(item["amount_ml"]),
+                            "duration_ms": int(item["duration_ms"]),
+                        },
+                    },
                 )
                 result = await self._run_command_batch_checked(
                     task=current_task, commands=(cmd,), now=now,
@@ -1279,7 +1405,13 @@ class CorrectionHandler(BaseStageHandler):
                 step_no=1,
                 node_uid=corr.ec_node_uid,
                 channel=corr.ec_channel,
-                payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
+                payload={
+                    "cmd": "dose",
+                    "params": {
+                        "ml": corr.ec_amount_ml,
+                        "duration_ms": int(corr.ec_duration_ms or 0),
+                    },
+                },
             )
             result = await self._run_command_batch_checked(
                 task=current_task, commands=(cmd,), now=now,
@@ -1297,6 +1429,15 @@ class CorrectionHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.debug("Не удалось прочитать EC pid_state для логирования события", exc_info=True)
+        effective_ml = float(corr.ec_amount_ml or 0.0)
+        requested_ml = effective_ml
+        if ec_single_meta is not None:
+            requested_ml = float(ec_single_meta.get("requested_ml") or effective_ml)
+        elif seq:
+            requested_ml = round(
+                sum(float(item.get("requested_ml") or item.get("amount_ml") or 0.0) for item in seq),
+                4,
+            )
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="EC_DOSING",
@@ -1306,7 +1447,9 @@ class CorrectionHandler(BaseStageHandler):
                 "node_uid": corr.ec_node_uid,
                 "channel": corr.ec_channel,
                 "duration_ms": corr.ec_duration_ms,
-                "amount_ml": corr.ec_amount_ml,
+                "amount_ml": effective_ml,
+                "effective_ml": effective_ml,
+                "requested_ml": requested_ml,
                 "dose_sequence": seq or None,
                 "seq_index": int(getattr(corr, "ec_current_seq_index", 0) or 0) if seq else None,
                 "observe_seq": self._observe_seq(corr=corr, pid_type="ec", after_dose=True),
@@ -1351,6 +1494,7 @@ class CorrectionHandler(BaseStageHandler):
                     "hold_until": wait_until,
                     "last_output_ms": corr.ec_duration_ms,
                     "last_correction_kind": "ec",
+                    "last_dose_at": now,
                 },
                 "ph": {
                     "hold_until": wait_until,
@@ -1406,6 +1550,14 @@ class CorrectionHandler(BaseStageHandler):
             )
         ph_step = "corr_dose_ph_up" if corr.needs_ph_up else "corr_dose_ph_down"
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step=ph_step).inc()
+        ph_requested_ml = float(corr.ph_amount_ml or 0.0)
+        if corr.ec_dose_sequence_json:
+            try:
+                raw_meta = json.loads(corr.ec_dose_sequence_json)
+                if isinstance(raw_meta, dict) and raw_meta.get("_kind") == "ph_dose_meta":
+                    ph_requested_ml = float(raw_meta.get("requested_ml") or ph_requested_ml)
+            except Exception:
+                _logger.debug("Не удалось прочитать ph_dose_meta из ec_dose_sequence_json", exc_info=True)
         current_task = await self._ensure_sensor_mode_active_for_dosing(
             task=task,
             plan=plan,
@@ -1419,7 +1571,13 @@ class CorrectionHandler(BaseStageHandler):
             step_no=1,
             node_uid=corr.ph_node_uid,
             channel=corr.ph_channel,
-            payload={"cmd": "dose", "params": {"ml": corr.ph_amount_ml}},
+            payload={
+                "cmd": "dose",
+                "params": {
+                    "ml": corr.ph_amount_ml,
+                    "duration_ms": int(corr.ph_duration_ms or 0),
+                },
+            },
         )
         result = await self._run_command_batch_checked(
             task=current_task, commands=(cmd,), now=now,
@@ -1438,6 +1596,7 @@ class CorrectionHandler(BaseStageHandler):
             except Exception:
                 _logger.debug("Не удалось прочитать PH pid_state для логирования события", exc_info=True)
         ph_direction = "up" if corr.needs_ph_up else "down"
+        effective_ml = float(corr.ph_amount_ml or 0.0)
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="PH_CORRECTED",
@@ -1447,7 +1606,9 @@ class CorrectionHandler(BaseStageHandler):
                 "node_uid": corr.ph_node_uid,
                 "channel": corr.ph_channel,
                 "duration_ms": corr.ph_duration_ms,
-                "amount_ml": corr.ph_amount_ml,
+                "amount_ml": effective_ml,
+                "effective_ml": effective_ml,
+                "requested_ml": ph_requested_ml,
                 "observe_seq": self._observe_seq(corr=corr, pid_type="ph", after_dose=True),
                 "direction": ph_direction,
                 "current_ph": current_ph,
@@ -1482,6 +1643,7 @@ class CorrectionHandler(BaseStageHandler):
                     "last_output_ms": corr.ph_duration_ms,
                     "last_correction_kind": "ph_up" if corr.needs_ph_up else "ph_down",
                     "feedforward_bias": 0.0,
+                    "last_dose_at": now,
                 },
             },
         )

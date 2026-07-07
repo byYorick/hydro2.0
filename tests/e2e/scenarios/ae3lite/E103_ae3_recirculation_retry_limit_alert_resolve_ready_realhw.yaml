@@ -589,15 +589,15 @@ actions:
       confidence: 0.85
       source: e2e_realhw_process_observe
       is_active: true
-        meta:
-          observe:
-            telemetry_period_sec: 2
-            window_min_samples: 2
-            decision_window_sec: 4
-            observe_poll_sec: 2
-            min_effect_fraction: 0.20
-            stability_max_slope: 2.0
-            no_effect_consecutive_limit: 3
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 2
+          decision_window_sec: 4
+          observe_poll_sec: 2
+          min_effect_fraction: 0.20
+          stability_max_slope: 2.0
+          no_effect_consecutive_limit: 3
 - step: apply_ae3_logic_profile
   type: api_put
   endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile

@@ -158,38 +158,63 @@ async def _expire_pool_connections(pool: asyncpg.pool.Pool) -> None:
         await pool.close()
 
 
+def _pool_acquire_kwargs() -> dict[str, float]:
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return {}
+    s = get_settings()
+    timeout = float(getattr(s, "pg_pool_acquire_timeout_sec", 5.0))
+    return {"timeout": timeout}
+
+
 async def _run_query(operation: str, query: str, *args: Any):
     pool = await get_pool()
+    acquire_kwargs = _pool_acquire_kwargs()
 
-    async with pool.acquire() as conn:
-        try:
-            return await getattr(conn, operation)(query, *args)
-        except Exception as exc:
-            if not _is_stale_schema_error(exc):
-                raise
+    try:
+        async with pool.acquire(**acquire_kwargs) as conn:
+            try:
+                return await getattr(conn, operation)(query, *args)
+            except Exception as exc:
+                if not _is_stale_schema_error(exc):
+                    raise
 
-            logger.warning(
-                "Detected stale PostgreSQL schema cache during %s; refreshing pool connections and retrying once: %s",
-                operation,
-                exc,
-            )
-            reload_schema_state = getattr(conn, "reload_schema_state", None)
-            if callable(reload_schema_state):
-                try:
-                    maybe_awaitable = reload_schema_state()
-                    if inspect.isawaitable(maybe_awaitable):
-                        await maybe_awaitable
-                except Exception:
-                    logger.warning(
-                        "Failed to reload PostgreSQL schema state after stale cache error",
-                        exc_info=True,
-                    )
+                logger.warning(
+                    "Detected stale PostgreSQL schema cache during %s; refreshing pool connections and retrying once: %s",
+                    operation,
+                    exc,
+                )
+                reload_schema_state = getattr(conn, "reload_schema_state", None)
+                if callable(reload_schema_state):
+                    try:
+                        maybe_awaitable = reload_schema_state()
+                        if inspect.isawaitable(maybe_awaitable):
+                            await maybe_awaitable
+                    except Exception:
+                        logger.warning(
+                            "Failed to reload PostgreSQL schema state after stale cache error",
+                            exc_info=True,
+                        )
+    except TimeoutError:
+        logger.error(
+            "PostgreSQL pool acquire timed out during %s (timeout=%ss)",
+            operation,
+            acquire_kwargs.get("timeout"),
+        )
+        raise
 
     await _expire_pool_connections(pool)
 
     retry_pool = await get_pool()
-    async with retry_pool.acquire() as conn:
-        return await getattr(conn, operation)(query, *args)
+    try:
+        async with retry_pool.acquire(**acquire_kwargs) as conn:
+            return await getattr(conn, operation)(query, *args)
+    except TimeoutError:
+        logger.error(
+            "PostgreSQL pool acquire timed out during %s retry (timeout=%ss)",
+            operation,
+            acquire_kwargs.get("timeout"),
+        )
+        raise
 
 
 async def execute(query: str, *args: Any) -> str:

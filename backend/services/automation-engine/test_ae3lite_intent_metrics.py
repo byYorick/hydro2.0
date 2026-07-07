@@ -133,7 +133,11 @@ async def test_claim_start_cycle_stale_running_same_key_falls_back_to_deduplicat
 async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
     before_failed = INTENT_TERMINAL.labels(status="failed")._value.get()
 
-    with patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute:
+    with (
+        patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch,
+        patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute,
+    ):
+        mock_fetch.side_effect = [[], []]
         mock_execute.return_value = "UPDATE 1"
         repo = PgZoneIntentRepository()
         await repo.mark_terminal(
@@ -147,7 +151,11 @@ async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
     assert INTENT_TERMINAL.labels(status="failed")._value.get() == before_failed + 1
 
     # No metric increment when 0 rows affected
-    with patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute:
+    with (
+        patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch,
+        patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute,
+    ):
+        mock_fetch.side_effect = [[], []]
         mock_execute.return_value = "UPDATE 0"
         repo = PgZoneIntentRepository()
         await repo.mark_terminal(
@@ -159,3 +167,27 @@ async def test_mark_terminal_records_metric_only_on_updated_rows() -> None:
         )
 
     assert INTENT_TERMINAL.labels(status="failed")._value.get() == before_failed + 1
+
+
+@pytest.mark.asyncio
+async def test_mark_terminal_does_not_requeue_when_ae_task_already_failed() -> None:
+    with (
+        patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch,
+        patch(f"{_MODULE}.execute", new_callable=AsyncMock) as mock_execute,
+    ):
+        mock_fetch.return_value = [{"?column?": 1}]
+        mock_execute.return_value = "UPDATE 1"
+        repo = PgZoneIntentRepository()
+        await repo.mark_terminal(
+            intent_id=77,
+            now=NOW,
+            success=False,
+            error_code="command_timeout",
+            error_message="task already failed",
+        )
+
+    assert mock_fetch.await_count == 1
+    mock_execute.assert_awaited_once()
+    update_sql = mock_execute.await_args.args[0]
+    assert "status = $2" in update_sql
+    assert mock_execute.await_args.args[2] == "failed"

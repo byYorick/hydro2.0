@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+# Технический маркер в поле ``snapshot_cmd_id``: счётчик повторов при блокировке
+# коррекции активным no-effect alert (``alert_block:N``). Не является реальным
+# cmd_id probe-команды и не должен попадать в causal-context событий
+# (см. CorrectionEventLogger._build_snapshot_context).
+ALERT_BLOCK_SNAPSHOT_CMD_PREFIX = "alert_block:"
+
 
 @dataclass(frozen=True)
 class WorkflowState:

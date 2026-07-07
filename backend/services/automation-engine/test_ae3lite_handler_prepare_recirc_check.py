@@ -19,6 +19,36 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+_IRR_OFF = {
+    "has_snapshot": True,
+    "is_stale": False,
+    "snapshot": {
+        "valve_solution_supply": False,
+        "valve_solution_fill": False,
+        "pump_main": False,
+    },
+}
+
+
+@pytest.fixture(autouse=True)
+def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
+        AsyncMock(return_value=None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.services.workflow_topology import StageDef
@@ -221,7 +251,11 @@ class _MockPlan:
                 for key in ("solution_fill", "tank_recirc", "irrigation", "generic")
             }
         self.runtime = make_runtime_plan(**payload)
-        self.named_plans = {"irr_state_probe": ("probe_cmd",)}
+        self.named_plans = {
+            "irr_state_probe": ("probe_cmd",),
+            "prepare_recirculation_stop": ("stop_cmd",),
+            "sensor_mode_deactivate": ("deact_cmd",),
+        }
 
 
 class _StageDef:
@@ -396,16 +430,19 @@ async def test_targets_not_reached_enters_correction() -> None:
 
 
 @pytest.mark.asyncio
-async def test_manual_prepare_recirculation_without_pending_step_polls() -> None:
-    handler = _make_handler(monitor=_Monitor(ph=4.0, ec=1.4))
+async def test_manual_prepare_recirculation_without_pending_step_enters_manual_hold() -> None:
+    handler = _make_handler(
+        monitor=_Monitor(ph=4.0, ec=1.4, irr_states=[dict(_IRR_MATCH)], irr_state=_IRR_OFF),
+    )
     outcome = await handler.run(
         task=_make_task(control_mode="manual"),
         plan=_MockPlan(),
         stage_def=_StageDef(),
         now=NOW,
     )
-    assert outcome.kind == "poll"
-    assert outcome.due_delay_sec == 10
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "manual_hold"
+    assert outcome.flow_hold_return_stage == "prepare_recirculation_check"
 
 
 @pytest.mark.asyncio

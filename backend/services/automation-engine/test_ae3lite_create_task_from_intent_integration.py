@@ -5,6 +5,13 @@ from uuid import uuid4
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from ae3lite.application.use_cases import CreateTaskFromIntentUseCase
 from ae3lite.domain.errors import TaskCreateError
 from ae3lite.infrastructure.repositories import (

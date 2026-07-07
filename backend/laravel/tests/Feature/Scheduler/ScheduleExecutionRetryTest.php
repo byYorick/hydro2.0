@@ -59,7 +59,7 @@ class ScheduleExecutionRetryTest extends TestCase
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/executions/{$taskId}/retry");
         $response->assertStatus(409);
-        $response->assertJsonPath('code', 'INVALID_STATE');
+        $response->assertJsonPath('code', 'invalid_state');
     }
 
     public function test_retry_rejects_completed_execution(): void
@@ -80,7 +80,7 @@ class ScheduleExecutionRetryTest extends TestCase
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/executions/{$taskId}/retry");
         $response->assertStatus(422);
-        $response->assertJsonPath('code', 'UNSUPPORTED_TASK_TYPE');
+        $response->assertJsonPath('code', 'unsupported_task_type');
     }
 
     public function test_retry_creates_intent_for_failed_irrigation(): void

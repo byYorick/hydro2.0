@@ -58,10 +58,8 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             ->postJson("/api/zones/{$zone->id}/commands", $payload);
 
         $response->assertStatus(422)
-            ->assertJson([
-                'status' => 'error',
-                'code' => 'SYSTEM_TYPE_LOCKED',
-            ]);
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'system_type_locked');
     }
 
     public function test_adjust_allows_same_system_type_for_active_cycle(): void

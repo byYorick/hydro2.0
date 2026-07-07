@@ -112,3 +112,72 @@ def test_source_parameter_has_no_effect() -> None:
     rl, _ = _make(max_requests=1)
     assert rl.check(zone_id=1, source="scheduler") is True
     assert rl.check(zone_id=1, source="api") is False  # same zone, blocked
+
+
+def test_evicts_lru_when_max_keys_exceeded() -> None:
+    rl = SlidingWindowRateLimiter(max_requests=1, window_sec=10.0, max_keys=2)
+    assert rl.check(zone_id=1) is True
+    assert rl.check(zone_id=2) is True
+    assert rl.check(zone_id=3) is True
+    assert 1 not in rl._events
+    assert rl.check(zone_id=1) is True
+
+
+@pytest.mark.asyncio
+async def test_state_endpoint_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from httpx import ASGITransport, AsyncClient
+
+    import ae3lite.runtime.app as runtime_app_module
+
+    async def _run_state(**kwargs):
+        return {"zone_id": kwargs.get("zone_id", 7), "state": "READY"}
+
+    bundle = SimpleNamespace(
+        create_task_from_intent_use_case=None,
+        solution_tank_startup_guard_use_case=None,
+        get_zone_control_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        request_manual_step_use_case=None,
+        set_control_mode_use_case=None,
+        get_zone_automation_state_use_case=SimpleNamespace(run=_run_state),
+        task_status_read_model=None,
+        zone_intent_repository=None,
+        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        http_client=SimpleNamespace(aclose=lambda: None),
+        history_logger_client=SimpleNamespace(),
+    )
+    monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
+
+    async def fetch_fn(query: str, *args: object):
+        if "FROM zones" in query:
+            return [{"id": args[0], "automation_runtime": "ae3"}]
+        return [{"ready": 1}]
+
+    monkeypatch.setattr(runtime_app_module, "fetch", fetch_fn)
+    cfg = SimpleNamespace(
+        start_cycle_rate_limit_max_requests=30,
+        start_cycle_rate_limit_window_sec=10,
+        start_cycle_rate_limit_enabled=True,
+        start_cycle_claim_stale_sec=60,
+        start_cycle_running_stale_sec=300,
+        db_dsn="",
+        scheduler_security_baseline_enforce=True,
+        scheduler_api_token="test-token",
+        scheduler_require_trace_id=False,
+        verbose_http_logging=False,
+    )
+    cfg.validate = lambda: None
+    cfg.validated = 1
+    app = runtime_app_module.create_app(cfg)
+    transport = ASGITransport(app=app)
+    headers = {"Authorization": "Bearer test-token"}
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for _ in range(60):
+            response = await client.get("/zones/7/state", headers=headers)
+            assert response.status_code == 200
+        blocked = await client.get("/zones/7/state", headers=headers)
+
+    assert blocked.status_code == 429
+    assert blocked.json()["code"] == "start_cycle_rate_limited"

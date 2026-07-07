@@ -698,6 +698,7 @@ async def test_process_telemetry_batch_falls_back_to_uid_lookup_for_unassigned_n
         mock_fetch.side_effect = [
             [],
             [{"id": 101, "uid": "nd-cold-cache-1", "zone_id": None}],
+            [{"id": 101, "uid": "nd-cold-cache-1", "zone_id": None, "pending_zone_id": None, "gh_uid": None}],
         ]
         mock_alert.return_value = True
 

@@ -6,11 +6,17 @@ import asyncio
 import logging
 import time
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
+from ae3lite.infrastructure.gateways.command_publish_pipeline import (
+    CommandPublishPipeline,
+    compute_poll_timeout_sec,
+    planner_step_for_command,
+)
+from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import (
     COMMAND_DISPATCH_FAILED,
     COMMAND_DISPATCH_DURATION,
@@ -18,6 +24,7 @@ from ae3lite.infrastructure.metrics import (
     COMMAND_POLL_ITERATIONS,
     COMMAND_ROUNDTRIP_DURATION,
     COMMAND_TERMINAL,
+    inc_observability_write_failed,
 )
 from common.db import create_zone_event
 from common.service_logs import send_service_log
@@ -41,13 +48,21 @@ class SequentialCommandGateway:
         poll_interval_sec: float,
         poll_backoff_factor: float = 1.5,
         poll_max_interval_sec: float = 5.0,
+        command_poll_default_sec: float = 120.0,
+        command_poll_margin_sec: float = 30.0,
     ) -> None:
         self._task_repository = task_repository
         self._command_repository = command_repository
         self._history_logger_client = history_logger_client
+        self._publish_pipeline = CommandPublishPipeline(
+            command_repository=command_repository,
+            history_logger_client=history_logger_client,
+        )
         self._poll_interval_sec = max(0.05, float(poll_interval_sec))
         self._poll_backoff_factor = max(1.0, float(poll_backoff_factor))
         self._poll_max_interval_sec = max(self._poll_interval_sec, float(poll_max_interval_sec))
+        self._command_poll_default_sec = max(1.0, float(command_poll_default_sec))
+        self._command_poll_margin_sec = max(0.0, float(command_poll_margin_sec))
 
     def _cleanup_race_batch_result(self, *, task: Any, message: str) -> dict[str, Any]:
         return {
@@ -76,12 +91,13 @@ class SequentialCommandGateway:
         current_task = task
         combined_statuses: list[dict[str, Any]] = []
 
-        for command in commands:
+        for seq_index, command in enumerate(commands):
             result = await self._run_command(
                 task=current_task,
                 command=command,
                 now=now,
                 track_task_state=track_task_state,
+                seq_index=seq_index,
             )
             combined_statuses.extend(result["command_statuses"])
             current_task = result["task"]
@@ -130,179 +146,247 @@ class SequentialCommandGateway:
         command: PlannedCommand,
         now: datetime,
         track_task_state: bool,
+        seq_index: int = 0,
     ) -> Mapping[str, Any]:
-        command_payload = dict(command.payload)
         complete_on_ack = self._complete_on_ack(command)
-        allocate_and_create = getattr(self._command_repository, "allocate_and_create_pending", None)
-        if callable(allocate_and_create):
-            allocated = await allocate_and_create(
-                task_id=task.id,
-                zone_id=int(task.zone_id),
-                node_uid=command.node_uid,
-                channel=command.channel,
-                payload=command_payload,
-                now=now,
-                stage_name=str(getattr(task, "current_stage", "") or "") or None,
-            )
-            if allocated is None:
-                logger.info(
-                    "AE3 command publish: task row missing at allocate_and_create_pending "
-                    "(likely concurrent cleanup) task_id=%s zone_id=%s",
-                    task.id,
-                    task.zone_id,
-                )
-                return self._cleanup_race_batch_result(
-                    task=task,
-                    message=(
-                        f"Задача {task.id} исчезла при вставке ae_commands "
-                        f"(вероятно параллельная очистка)"
-                    ),
-                )
-            ae_command_id, step_no = allocated
-            cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
-            command_payload["cmd_id"] = cmd_id
-            planned = replace(command, step_no=step_no, payload=command_payload)
-            cmd_name, params = self._extract_publish_payload(planned)
-        else:
-            step_no = await self._command_repository.get_next_step_no(task_id=task.id)
-            planned = replace(command, step_no=step_no)
-            cmd_name, params = self._extract_publish_payload(planned)
-            cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
-            command_payload["cmd_id"] = cmd_id
-            ae_command_id = await self._command_repository.create_pending(
-                task_id=task.id,
-                step_no=step_no,
-                node_uid=planned.node_uid,
-                channel=planned.channel,
-                payload=command_payload,
-                now=now,
-            )
-            if ae_command_id is None:
-                logger.info(
-                    "AE3 command publish: task row missing at create_pending "
-                    "(likely concurrent cleanup) task_id=%s zone_id=%s",
-                    task.id,
-                    task.zone_id,
-                )
-                return self._cleanup_race_batch_result(
-                    task=task,
-                    message=(
-                        f"Задача {task.id} исчезла при вставке ae_commands "
-                        f"(вероятно параллельная очистка)"
-                    ),
-                )
+        planned = command
+        planner_step = planner_step_for_command(task=task, command=command, seq_index=seq_index)
+        ae_command_id: int | None = None
+        cmd_id = ""
+        cmd_name = ""
         try:
-            greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
-            if not greenhouse_uid:
-                raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
-            _dispatch_start = time.monotonic()
-            published_cmd_id = await self._history_logger_client.publish(
-                greenhouse_uid=greenhouse_uid,
-                zone_id=task.zone_id,
-                node_uid=planned.node_uid,
-                channel=planned.channel,
-                cmd=cmd_name,
-                params=params,
-                cmd_id=cmd_id,
-            )
-            COMMAND_DISPATCHED.labels(stage=planned.channel or "unknown").inc()
-            COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
-            legacy_command_id = await self._command_repository.resolve_legacy_command_id(
-                zone_id=task.zone_id,
-                cmd_id=published_cmd_id,
-            )
-            if legacy_command_id is None:
-                raise CommandPublishError(
-                    f"Не найдена запись Legacy commands.id для zone_id={task.zone_id} cmd_id={published_cmd_id}"
+            with log_context_scope(
+                task_id=int(getattr(task, "id", 0) or 0) or None,
+                zone_id=int(getattr(task, "zone_id", 0) or 0) or None,
+            ):
+                published = await self._publish_pipeline.publish(
+                    task=task,
+                    command=command,
+                    now=now,
+                    planner_step=planner_step,
+                    seq_index=seq_index,
                 )
-            accepted_ok = await self._command_repository.mark_publish_accepted(
+        except CommandPublishError as exc:
+            if "исчезла" in str(exc).lower():
+                logger.info(
+                    "AE3 command publish: task row missing during allocate "
+                    "(likely concurrent cleanup) task_id=%s zone_id=%s",
+                    task.id,
+                    task.zone_id,
+                )
+                return self._cleanup_race_batch_result(task=task, message=str(exc))
+            return await self._handle_publish_failure(
+                task=task,
+                planned=command,
                 ae_command_id=ae_command_id,
-                external_id=str(legacy_command_id),
+                cmd_id=cmd_id,
+                cmd_name=cmd_name,
+                exc=exc,
                 now=now,
             )
-            if not accepted_ok:
-                if await self._task_row_missing(task_id=task.id):
-                    logger.warning(
-                        "AE3 command publish: mark_publish_accepted missed row and task gone "
-                        "(likely concurrent cleanup / cascade) task_id=%s zone_id=%s cmd_id=%s",
-                        task.id,
-                        task.zone_id,
-                        cmd_id,
-                    )
-                    return self._cleanup_race_batch_result(
-                        task=task,
-                        message=(
-                            f"Задача {task.id} исчезла после публикации в HL при связывании ae_commands "
-                            f"(вероятно параллельная очистка); cmd_id={cmd_id}"
-                        ),
-                    )
-                raise CommandPublishError(
-                    f"Не удалось обновить ae_commands.id={ae_command_id} после публикации (задача всё ещё существует)"
-                )
+        except Exception as exc:
+            return await self._handle_publish_failure(
+                task=task,
+                planned=command,
+                ae_command_id=ae_command_id,
+                cmd_id=cmd_id,
+                cmd_name=cmd_name,
+                exc=exc,
+                now=now,
+            )
+
+        ae_command_id = int(published.ae_command_id)
+        cmd_id = published.cmd_id
+        published_cmd_id = published.published_cmd_id
+        cmd_name = published.cmd_name
+        command_payload = dict(command.payload)
+        command_payload["cmd_id"] = cmd_id
+        planned = replace(command, step_no=published.step_no, payload=command_payload)
+
+        with log_context_scope(cmd_id=cmd_id):
+            external_id = published.external_id
             status_entry = {
-                "ae_command_id": int(ae_command_id),
+                "ae_command_id": ae_command_id,
                 "node_uid": planned.node_uid,
                 "channel": planned.channel,
                 "cmd": cmd_name,
-                "external_id": str(legacy_command_id),
+                "external_id": external_id,
                 "legacy_cmd_id": published_cmd_id,
                 "terminal_status": None,
             }
+
             if not track_task_state:
                 return {
                     "success": True,
                     "task": task,
                     "command_statuses": [status_entry],
                 }
-            waiting_task = await self._task_repository.mark_waiting_command(
-                task_id=task.id,
-                owner=str(task.claimed_by or ""),
-                now=now,
-            )
-            if waiting_task is None:
-                if await self._task_row_missing(task_id=task.id):
-                    logger.warning(
-                        "AE3 command publish: mark_waiting_command failed and task row absent "
-                        "(likely concurrent cleanup) task_id=%s zone_id=%s cmd_id=%s",
-                        task.id,
-                        task.zone_id,
-                        cmd_id,
-                    )
-                    return self._cleanup_race_batch_result(
-                        task=task,
-                        message=(
-                            f"Задача {task.id} исчезла до перехода в waiting_command "
-                            f"(вероятно параллельная очистка); cmd_id={cmd_id}"
-                        ),
-                    )
-                raise TaskExecutionError(
-                    "ae3_waiting_command_transition_failed",
-                    f"Не удалось перевести задачу {task.id} в waiting_command",
+
+            waiting_task = task
+            if task.status != "waiting_command":
+                waiting_task = await self._task_repository.mark_waiting_command(
+                    task_id=task.id,
+                    owner=str(task.claimed_by or ""),
+                    now=now,
                 )
-        except Exception as exc:
-            error_type = type(exc).__name__
-            normalized_error = str(exc).strip() or error_type
-            COMMAND_DISPATCH_FAILED.labels(
-                stage=planned.channel or "unknown",
-                error_type=error_type,
-            ).inc()
-            send_service_log(
-                service="automation-engine",
-                level="error",
-                message="Не удалось отправить команду AE3 до перехода в waiting_command",
-                context={
-                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
-                    "task_id": int(getattr(task, "id", 0) or 0) or None,
-                    "stage": str(getattr(task, "current_stage", "") or ""),
-                    "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
-                    "node_uid": str(planned.node_uid or ""),
-                    "channel": str(planned.channel or ""),
-                    "cmd": str(cmd_name or ""),
-                    "cmd_id": cmd_id,
-                    "error_type": error_type,
-                    "error_message": normalized_error,
-                },
+                if waiting_task is None:
+                    if await self._task_row_missing(task_id=task.id):
+                        logger.warning(
+                            "AE3 command publish: mark_waiting_command failed and task row absent "
+                            "(likely concurrent cleanup) task_id=%s zone_id=%s cmd_id=%s",
+                            task.id,
+                            task.zone_id,
+                            cmd_id,
+                        )
+                        return self._cleanup_race_batch_result(
+                            task=task,
+                            message=(
+                                f"Задача {task.id} исчезла до перехода в waiting_command "
+                                f"(вероятно параллельная очистка); cmd_id={cmd_id}"
+                            ),
+                        )
+                    raise TaskExecutionError(
+                        "ae3_waiting_command_transition_failed",
+                        f"Не удалось перевести задачу {task.id} в waiting_command",
+                    )
+
+            poll_timeout_sec = compute_poll_timeout_sec(
+                params=published.params,
+                default_sec=self._command_poll_default_sec,
+                margin_sec=self._command_poll_margin_sec,
             )
+            poll_started_at = _utcnow().replace(microsecond=0)
+            poll_deadline = poll_started_at + timedelta(seconds=poll_timeout_sec)
+            stage_deadline = (
+                task.workflow.stage_deadline_at
+                if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
+                else None
+            )
+            effective_deadline = (
+                min(stage_deadline, poll_deadline) if stage_deadline is not None else poll_deadline
+            )
+
+            roundtrip_started_at = time.monotonic()
+            poll_interval_sec = self._poll_interval_sec
+            poll_iterations = 0
+            while True:
+                await asyncio.sleep(poll_interval_sec)
+                reconcile_now = _utcnow().replace(microsecond=0)
+                result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
+                poll_iterations += 1
+                if result["state"] == "waiting_command":
+                    if complete_on_ack and str(result.get("legacy_status") or "").strip().upper() == "ACK":
+                        resumed_task = await self._task_repository.resume_after_waiting_command(
+                            task_id=task.id,
+                            owner=str(task.claimed_by or ""),
+                            now=reconcile_now,
+                        )
+                        self._observe_roundtrip_metrics(
+                            channel=planned.channel,
+                            terminal_status="ACK",
+                            roundtrip_started_at=roundtrip_started_at,
+                            poll_iterations=poll_iterations,
+                        )
+                        return {
+                            "success": True,
+                            "task": resumed_task or task,
+                            "command_statuses": [{**status_entry, "terminal_status": "ACK"}],
+                        }
+                    if reconcile_now > effective_deadline:
+                        await self._emit_poll_deadline_exceeded_event(
+                            task=task,
+                            command=planned,
+                            cmd_id=str(result.get("cmd_id") or status_entry.get("legacy_cmd_id") or ""),
+                            external_id=str(result.get("external_id") or status_entry.get("external_id") or ""),
+                            checked_at=reconcile_now,
+                            deadline=effective_deadline,
+                            poll_iterations=poll_iterations,
+                        )
+                        return {
+                            "success": False,
+                            "task": waiting_task,
+                            "command_statuses": [status_entry],
+                            "error_code": "ae3_command_poll_deadline_exceeded",
+                            "error_message": (
+                                f"Опрос команды превысил дедлайн для задачи {task.id} "
+                                f"stage={getattr(task, 'current_stage', None)}"
+                            ),
+                        }
+                    poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
+                    continue
+                self._observe_roundtrip_metrics(
+                    channel=planned.channel,
+                    terminal_status=result.get("legacy_status"),
+                    roundtrip_started_at=roundtrip_started_at,
+                    poll_iterations=poll_iterations,
+                )
+                task_state = result["task"]
+                task_status = str(getattr(task_state, "status", "") or "").strip().lower()
+                if task_state is not None and task_status in {"cancelled", "completed", "failed"}:
+                    raise TaskTerminalStateReached(
+                        task=task_state,
+                        message=f"Во время command roundtrip задача {task.id} перешла в состояние {task_status}",
+                    )
+                status_entry = {
+                    **status_entry,
+                    "external_id": result.get("external_id"),
+                    "legacy_cmd_id": result.get("cmd_id"),
+                    "terminal_status": result.get("legacy_status"),
+                }
+                if result["state"] == "done":
+                    return {
+                        "success": True,
+                        "task": task_state,
+                        "command_statuses": [status_entry],
+                    }
+                return {
+                    "success": False,
+                    "task": task_state,
+                    "command_statuses": [status_entry],
+                    "error_code": result["error_code"],
+                    "error_message": result["error_message"],
+                }
+
+    async def _handle_publish_failure(
+        self,
+        *,
+        task: Any,
+        planned: PlannedCommand,
+        ae_command_id: int | None,
+        cmd_id: str,
+        cmd_name: str,
+        exc: Exception,
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        error_type = type(exc).__name__
+        normalized_error = str(exc).strip() or error_type
+        if not cmd_name:
+            try:
+                cmd_name, _ = self._extract_publish_payload(planned)
+            except Exception:
+                cmd_name = ""
+        COMMAND_DISPATCH_FAILED.labels(
+            stage=planned.channel or "unknown",
+            error_type=error_type,
+        ).inc()
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message="Не удалось отправить команду AE3 до перехода в waiting_command",
+            context={
+                "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+                "task_id": int(getattr(task, "id", 0) or 0) or None,
+                "stage": str(getattr(task, "current_stage", "") or ""),
+                "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+                "node_uid": str(planned.node_uid or ""),
+                "channel": str(planned.channel or ""),
+                "cmd": str(cmd_name or ""),
+                "cmd_id": cmd_id or None,
+                "error_type": error_type,
+                "error_message": normalized_error,
+            },
+        )
+        if ae_command_id is not None:
             try:
                 await self._command_repository.mark_publish_failed(
                     ae_command_id=ae_command_id, last_error=normalized_error, now=now
@@ -313,114 +397,28 @@ class SequentialCommandGateway:
                     ae_command_id,
                     exc_info=True,
                 )
-            if await self._task_row_missing(task_id=task.id):
-                logger.info(
-                    "AE3 command publish: exception after create_pending but task row gone "
-                    "task_id=%s zone_id=%s exc=%s",
-                    task.id,
-                    task.zone_id,
-                    exc,
-                )
-                return self._cleanup_race_batch_result(
-                    task=task,
-                    message=(
-                        f"Задача {task.id} исчезла во время publish pipeline "
-                        f"(вероятно параллельная очистка): {exc}"
-                    ),
-                )
-            await self._maybe_raise_offline_instead_of_command_error(
+        if await self._task_row_missing(task_id=task.id):
+            logger.info(
+                "AE3 command publish: exception after create_pending but task row gone "
+                "task_id=%s zone_id=%s exc=%s",
+                task.id,
+                task.zone_id,
+                exc,
+            )
+            return self._cleanup_race_batch_result(
                 task=task,
-                planned=planned,
-                error_code="command_send_failed",
-                error_message=normalized_error,
+                message=(
+                    f"Задача {task.id} исчезла во время publish pipeline "
+                    f"(вероятно параллельная очистка): {exc}"
+                ),
             )
-            raise TaskExecutionError("command_send_failed", normalized_error) from exc
-
-        _poll_deadline = (
-            task.workflow.stage_deadline_at
-            if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
-            else None
+        await self._maybe_raise_offline_instead_of_command_error(
+            task=task,
+            planned=planned,
+            error_code="command_send_failed",
+            error_message=normalized_error,
         )
-        roundtrip_started_at = time.monotonic()
-        poll_interval_sec = self._poll_interval_sec
-        poll_iterations = 0
-        while True:
-            await asyncio.sleep(poll_interval_sec)
-            reconcile_now = _utcnow().replace(microsecond=0)
-            result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
-            poll_iterations += 1
-            if result["state"] == "waiting_command":
-                if complete_on_ack and str(result.get("legacy_status") or "").strip().upper() == "ACK":
-                    resumed_task = await self._task_repository.resume_after_waiting_command(
-                        task_id=task.id,
-                        owner=str(task.claimed_by or ""),
-                        now=reconcile_now,
-                    )
-                    self._observe_roundtrip_metrics(
-                        channel=planned.channel,
-                        terminal_status="ACK",
-                        roundtrip_started_at=roundtrip_started_at,
-                        poll_iterations=poll_iterations,
-                    )
-                    return {
-                        "success": True,
-                        "task": resumed_task or task,
-                        "command_statuses": [{**status_entry, "terminal_status": "ACK"}],
-                    }
-                if _poll_deadline is not None and reconcile_now > _poll_deadline:
-                    await self._emit_poll_deadline_exceeded_event(
-                        task=task,
-                        command=planned,
-                        cmd_id=str(result.get("cmd_id") or status_entry.get("legacy_cmd_id") or ""),
-                        external_id=str(result.get("external_id") or status_entry.get("external_id") or ""),
-                        checked_at=reconcile_now,
-                        deadline=_poll_deadline,
-                        poll_iterations=poll_iterations,
-                    )
-                    return {
-                        "success": False,
-                        "task": waiting_task,
-                        "command_statuses": [status_entry],
-                        "error_code": "ae3_command_poll_deadline_exceeded",
-                        "error_message": (
-                            f"Опрос команды превысил дедлайн stage для задачи {task.id} "
-                            f"stage={getattr(task, 'current_stage', None)}"
-                        ),
-                    }
-                poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
-                continue
-            self._observe_roundtrip_metrics(
-                channel=planned.channel,
-                terminal_status=result.get("legacy_status"),
-                roundtrip_started_at=roundtrip_started_at,
-                poll_iterations=poll_iterations,
-            )
-            task_state = result["task"]
-            task_status = str(getattr(task_state, "status", "") or "").strip().lower()
-            if task_state is not None and task_status in {"cancelled", "completed", "failed"}:
-                raise TaskTerminalStateReached(
-                    task=task_state,
-                    message=f"Во время command roundtrip задача {task.id} перешла в состояние {task_status}",
-                )
-            status_entry = {
-                **status_entry,
-                "external_id": result.get("external_id"),
-                "legacy_cmd_id": result.get("cmd_id"),
-                "terminal_status": result.get("legacy_status"),
-            }
-            if result["state"] == "done":
-                return {
-                    "success": True,
-                    "task": task_state,
-                    "command_statuses": [status_entry],
-                }
-            return {
-                "success": False,
-                "task": task_state,
-                "command_statuses": [status_entry],
-                "error_code": result["error_code"],
-                "error_message": result["error_message"],
-            }
+        raise TaskExecutionError("command_send_failed", normalized_error) from exc
 
     async def _emit_poll_deadline_exceeded_event(
         self,
@@ -453,6 +451,7 @@ class SequentialCommandGateway:
                 },
             )
         except Exception:
+            inc_observability_write_failed(kind="zone_event")
             logger.warning(
                 "AE3 не смог записать AE_COMMAND_POLL_DEADLINE_EXCEEDED zone_id=%s task_id=%s cmd_id=%s",
                 int(getattr(task, "zone_id", 0) or 0),

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Annotated
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Path, Request
 
 from ae3lite.application.dto import TaskStatusView
 from ae3lite.api.http_errors import api_error_detail
@@ -22,7 +22,10 @@ def bind_internal_task_route(
         return value.isoformat() if isinstance(value, datetime) else None
 
     @app.get("/internal/tasks/{task_id}")
-    async def internal_task_status(task_id: int, request: Request) -> dict[str, Any]:
+    async def internal_task_status(
+        task_id: Annotated[int, Path(gt=0)],
+        request: Request,
+    ) -> dict[str, Any]:
         await validate_scheduler_security_baseline_fn(request)
         task = await load_task_status_fn(task_id)
         if task is None:

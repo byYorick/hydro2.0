@@ -279,11 +279,9 @@ class PythonIngestControllerTest extends TestCase
                 'status' => 'SENT',
             ])
             ->assertOk()
-            ->assertJson([
-                'status' => 'ok',
-                'code' => 'COMMAND_NOT_FOUND_IGNORED',
-                'message' => 'Command not found; ack ignored',
-            ]);
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('code', 'command_not_found_ignored')
+            ->assertJsonPath('message', 'Команда не найдена — событие проигнорировано.');
     }
 
     public function test_command_ack_endpoint_accepts_timeout_as_terminal_status(): void
@@ -362,10 +360,8 @@ class PythonIngestControllerTest extends TestCase
                 'status' => 'ACK',
             ])
             ->assertOk()
-            ->assertJson([
-                'status' => 'ok',
-                'message' => 'Command already in final status',
-            ]);
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Command already in final status');
 
         $command->refresh();
         $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);

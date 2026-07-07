@@ -47,8 +47,14 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
 
         if pending_manual_step == "irrigation_recovery_stop":
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")
-        if control_mode == "manual":
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
 
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):

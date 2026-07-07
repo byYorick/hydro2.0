@@ -330,6 +330,8 @@ class RuntimePlan(BaseModel):
     # (content hash) — this is a simple integer counter incremented by
     # `ZoneConfigRevisionService::bumpAndAudit`.
     config_revision: int | None = None
+    # PR7: при semi=True разрешает продолжать активный flow-path без принудительного stop.
+    semi_allows_active_flow: bool = False
 
 
 # ─── Re-export of building blocks (handy for tests / type-aware consumers) ──

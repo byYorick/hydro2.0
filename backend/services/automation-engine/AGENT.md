@@ -130,6 +130,9 @@ Execution / FSM:
 Commands:
 - `command_send_failed`, `command_timeout`, `ae3_command_poll_deadline_exceeded`.
 - `ae3_missing_ae_command`, `ae3_legacy_command_not_found` — рассинхрон `ae_commands`/`commands`.
+- Command idempotency (PR5): `ae_commands.planner_step` стабилизирует `cmd_id` при retry;
+  `publish_status=published_unconfirmed` — re-drive после crash между HL publish и `external_id` link;
+  env: `AE_COMMAND_POLL_DEFAULT_SEC` (default 120), `AE_COMMAND_POLL_MARGIN_SEC` (default 30, добавляется к `duration_ms/1000`).
 
 IRR probe:
 - `irr_state_unavailable`, `irr_state_stale`, `irr_state_mismatch`.
@@ -139,6 +142,17 @@ Two-tank stages:
 - `prepare_recirculation_attempt_limit_reached`, `clean_fill_source_empty_stop`, `solution_fill_leak_detected`, `solution_fill_timeout_stop` и др. stage-terminal коды (см. каталог).
 
 Startup recovery: `startup_recovery_unconfirmed_command`, `startup_recovery_pending_resume_failed`, …
+
+Stale task janitor (PR3):
+- `ae3_stale_task_reclaimed` — task в `claimed`/`running` старше TTL с `ae_commands` → terminal fail.
+- Env: `AE_STALE_CLAIMED_TTL_SEC` (default 120), `AE_STALE_RUNNING_TTL_SEC` (default `AE_MAX_TASK_EXECUTION_SEC + 60`),
+  `AE_STALE_TASK_RECONCILE_SEC` (default 60, интервал janitor-тика в worker reconcile loop).
+
+Flow-path guard (PR7):
+- `ae3_flow_stop_unconfirmed` — stop/probe flow-path не подтвердил OFF.
+- `ae3_manual_hold_deadline_exceeded`, `ae3_manual_hold_return_stage_missing` — stage `manual_hold`.
+- Runtime flag `semi_allows_active_flow` (default false): при `semi` не останавливать активный fill без явного включения.
+- `pending_manual_step` в `manual_hold`: `__mh_return:{stage}` или `__mh_step:{stage}:{operator_step}`; API возвращает plain step оператору.
 
 Deprecated (не используются в runtime, оставлены только в backlog/catalog для compat):
 - `ae3_task_create_conflict` → заменён на `start_cycle_zone_busy` / `start_cycle_idempotency_key_conflict`.

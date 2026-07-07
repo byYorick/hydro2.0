@@ -1321,6 +1321,97 @@
           }
         }
       ]
+    },
+    {
+      "id": 205,
+      "title": "— Observability PR4 —",
+      "type": "text",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 217 },
+      "options": { "mode": "markdown", "content": "## Очередь и listeners" }
+    },
+    {
+      "id": 206,
+      "title": "Pending tasks",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 218 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ae3_pending_tasks or vector(0)",
+          "legendFormat": "pending"
+        }
+      ]
+    },
+    {
+      "id": 207,
+      "title": "Oldest pending task age (s)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 218 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ae3_oldest_pending_task_age_seconds or vector(0)",
+          "legendFormat": "age_sec"
+        }
+      ]
+    },
+    {
+      "id": 208,
+      "title": "Listener connected",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 218 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ae3_listener_connected",
+          "legendFormat": "{{listener}}"
+        }
+      ]
+    },
+    {
+      "id": 209,
+      "title": "Drain crashes (15m)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 218 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(ae3_drain_crashes_total[15m]) or vector(0)",
+          "legendFormat": "crashes"
+        }
+      ]
+    },
+    {
+      "id": 210,
+      "title": "Task duration p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 222 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, topology, outcome) (rate(ae3_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{topology}}/{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 211,
+      "title": "Observability write failures (rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 222 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (rate(ae3_observability_write_failed_total[5m]))",
+          "legendFormat": "{{kind}}"
+        }
+      ]
     }
   ],
   "id": null,

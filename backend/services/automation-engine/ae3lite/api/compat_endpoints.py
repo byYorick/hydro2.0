@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Annotated, Any, Awaitable, Callable, Mapping
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, Path, Request
 
 from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest, StartLightingTickRequest
+from ae3lite.api.http_errors import api_error_detail
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.errors import ErrorCodes, TaskCreateError
 from ae3lite.infrastructure.metrics import IRRIGATION_BLOCKED
 from common.db import create_zone_event
+from common.trace_context import get_trace_id
 from common.utils.time import utcnow_naive as _utcnow
 
 
@@ -23,6 +25,19 @@ def _optional_int(value: Any) -> int | None:
 def _normalized_status(value: Any) -> str | None:
     normalized = str(value or "").strip().lower()
     return normalized or None
+
+
+def _error_extra(details: Any, **defaults: Any) -> dict[str, Any]:
+    payload = dict(details if isinstance(details, dict) else {})
+    for key, value in defaults.items():
+        payload.setdefault(key, value)
+    return payload
+
+
+def _log_route_info(logger: Any, message: str, **extra: object) -> None:
+    info = getattr(logger, "info", None)
+    if callable(info):
+        info(message, extra=extra)
 
 
 def bind_start_cycle_route(
@@ -99,7 +114,11 @@ def bind_start_cycle_route(
             )
 
     @app.post("/zones/{zone_id}/start-cycle")
-    async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)) -> dict[str, Any]:
+    async def zone_start_cycle(
+        zone_id: Annotated[int, Path(..., gt=0)],
+        request: Request,
+        req: StartCycleRequest = Body(...),
+    ) -> dict[str, Any]:
         await validate_scheduler_zone_fn(zone_id)
         await validate_scheduler_security_baseline_fn(request)
         if ensure_solution_tank_startup_reset_fn is not None:
@@ -109,28 +128,25 @@ def bind_start_cycle_route(
                 raise
             except Exception as exc:
                 logger.warning(
-                    "AE3 compat start-cycle: startup guard бака раствора завершился ошибкой zone_id=%s",
+                    "AE3 compat start-cycle: startup guard бака раствора завершился ошибкой zone_id=%s trace_id=%s error=%s",
                     zone_id,
+                    get_trace_id(),
+                    exc,
                     exc_info=True,
                 )
-                raise HTTPException(
+                raise api_error_detail(
+                    "start_cycle_solution_tank_guard_failed",
                     status_code=503,
-                    detail={
-                        "error": "start_cycle_solution_tank_guard_failed",
-                        "zone_id": zone_id,
-                        "message": str(exc) or "Не пройдена startup-проверка бака раствора",
-                    },
+                    zone_id=zone_id,
                 ) from exc
 
         if is_start_cycle_rate_limit_enabled_fn() and not start_cycle_rate_limit_check_fn(zone_id):
-            raise HTTPException(
+            raise api_error_detail(
+                "start_cycle_rate_limited",
                 status_code=429,
-                detail={
-                    "error": "start_cycle_rate_limited",
-                    "zone_id": zone_id,
-                    "window_sec": start_cycle_rate_limit_window_sec_fn(),
-                    "max_requests": start_cycle_rate_limit_max_requests_fn(),
-                },
+                zone_id=zone_id,
+                window_sec=start_cycle_rate_limit_window_sec_fn(),
+                max_requests=start_cycle_rate_limit_max_requests_fn(),
             )
 
         now = _utcnow()
@@ -146,26 +162,26 @@ def bind_start_cycle_route(
         if decision == "zone_busy":
             await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
             active_status = _normalized_status(intent_row.get("status"))
-            raise HTTPException(
+            raise api_error_detail(
+                "start_cycle_zone_busy",
                 status_code=409,
-                detail={
-                    "error": "start_cycle_zone_busy",
-                    "zone_id": zone_id,
-                    "active_intent_id": _optional_int(intent_row.get("id")),
-                    "active_status": active_status,
-                },
+                zone_id=zone_id,
+                active_intent_id=_optional_int(intent_row.get("id")),
+                active_status=active_status,
             )
         if decision == "missing":
-            raise HTTPException(
+            raise api_error_detail(
+                "start_cycle_intent_not_found",
                 status_code=409,
-                detail={
-                    "error": "start_cycle_intent_not_found",
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                },
+                zone_id=zone_id,
+                idempotency_key=req.idempotency_key,
             )
         if decision not in {"claimed", "deduplicated", "terminal"}:
-            raise HTTPException(status_code=503, detail={"error": "start_cycle_intent_claim_unavailable", "zone_id": zone_id})
+            raise api_error_detail(
+                "start_cycle_intent_claim_unavailable",
+                status_code=503,
+                zone_id=zone_id,
+            )
 
         try:
             creation = await create_task_from_intent_fn(
@@ -185,43 +201,41 @@ def bind_start_cycle_route(
                     error_code=code,
                     error_message=str(exc),
                 )
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **(details if isinstance(details, dict) else {}),
                 ) from exc
             if code == "start_cycle_intent_terminal":
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        "idempotency_key": req.idempotency_key,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **_error_extra(details, idempotency_key=req.idempotency_key),
                 ) from exc
-            raise HTTPException(
+            logger.error(
+                "AE3 compat start-cycle: create task failed zone_id=%s code=%s trace_id=%s error=%s",
+                zone_id,
+                code,
+                get_trace_id(),
+                exc,
+                exc_info=True,
+            )
+            raise api_error_detail(
+                code,
                 status_code=503,
-                detail={
-                    "error": code,
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                    "message": str(exc),
-                    **(details if isinstance(details, dict) else {}),
-                },
+                zone_id=zone_id,
+                **_error_extra(details, idempotency_key=req.idempotency_key),
             ) from exc
 
         task = creation.task
-        _log_debug(
-            "AE3 compat start-cycle создал задачу: zone_id=%s task_id=%s status=%s created=%s decision=%s",
-            zone_id,
-            task.id,
-            task.status,
-            creation.created,
-            decision,
+        _log_route_info(
+            logger,
+            "AE3 compat start-cycle dispatch accepted",
+            zone_id=zone_id,
+            task_id=int(task.id),
+            idempotency_key=str(req.idempotency_key or "").strip() or None,
         )
         if task.status in {"pending", "claimed", "running", "waiting_command"}:
             _log_debug("AE3 compat start-cycle будит worker: zone_id=%s task_id=%s", zone_id, task.id)
@@ -312,7 +326,7 @@ def bind_start_irrigation_route(
 
     @app.post("/zones/{zone_id}/start-irrigation")
     async def zone_start_irrigation(
-        zone_id: int,
+        zone_id: Annotated[int, Path(..., gt=0)],
         request: Request,
         req: StartIrrigationRequest = Body(...),
     ) -> dict[str, Any]:
@@ -344,24 +358,19 @@ def bind_start_irrigation_route(
                     zone_id,
                     exc_info=True,
                 )
-            raise HTTPException(
+            raise api_error_detail(
+                ErrorCodes.START_IRRIGATION_SETUP_PENDING,
                 status_code=409,
-                detail={
-                    "error": ErrorCodes.START_IRRIGATION_SETUP_PENDING,
-                    "zone_id": zone_id,
-                    "workflow_phase": workflow_phase if workflow_phase != "" else "missing",
-                    "message": "Зона не готова к поливу: дождитесь завершения setup/cycle_start.",
-                },
+                zone_id=zone_id,
+                workflow_phase=workflow_phase if workflow_phase != "" else "missing",
             )
         if is_start_irrigation_rate_limit_enabled_fn() and not start_irrigation_rate_limit_check_fn(zone_id):
-            raise HTTPException(
+            raise api_error_detail(
+                "start_irrigation_rate_limited",
                 status_code=429,
-                detail={
-                    "error": "start_irrigation_rate_limited",
-                    "zone_id": zone_id,
-                    "window_sec": start_irrigation_rate_limit_window_sec_fn(),
-                    "max_requests": start_irrigation_rate_limit_max_requests_fn(),
-                },
+                zone_id=zone_id,
+                window_sec=start_irrigation_rate_limit_window_sec_fn(),
+                max_requests=start_irrigation_rate_limit_max_requests_fn(),
             )
 
         now = _utcnow()
@@ -373,26 +382,26 @@ def bind_start_irrigation_route(
         if decision == "zone_busy":
             await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
             active_status = _normalized_status(intent_row.get("status"))
-            raise HTTPException(
+            raise api_error_detail(
+                "start_irrigation_zone_busy",
                 status_code=409,
-                detail={
-                    "error": "start_irrigation_zone_busy",
-                    "zone_id": zone_id,
-                    "active_intent_id": _optional_int(intent_row.get("id")),
-                    "active_status": active_status,
-                },
+                zone_id=zone_id,
+                active_intent_id=_optional_int(intent_row.get("id")),
+                active_status=active_status,
             )
         if decision == "missing":
-            raise HTTPException(
+            raise api_error_detail(
+                "start_irrigation_intent_not_found",
                 status_code=409,
-                detail={
-                    "error": "start_irrigation_intent_not_found",
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                },
+                zone_id=zone_id,
+                idempotency_key=req.idempotency_key,
             )
         if decision not in {"claimed", "deduplicated", "terminal"}:
-            raise HTTPException(status_code=503, detail={"error": "start_irrigation_intent_claim_unavailable", "zone_id": zone_id})
+            raise api_error_detail(
+                "start_irrigation_intent_claim_unavailable",
+                status_code=503,
+                zone_id=zone_id,
+            )
 
         try:
             creation = await create_task_from_intent_fn(
@@ -418,35 +427,41 @@ def bind_start_irrigation_route(
                     error_code=code,
                     error_message=str(exc),
                 )
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **(details if isinstance(details, dict) else {}),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        "idempotency_key": req.idempotency_key,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **_error_extra(details, idempotency_key=req.idempotency_key),
                 ) from exc
-            raise HTTPException(
+            logger.error(
+                "AE3 compat start-irrigation: create task failed zone_id=%s code=%s trace_id=%s error=%s",
+                zone_id,
+                code,
+                get_trace_id(),
+                exc,
+                exc_info=True,
+            )
+            raise api_error_detail(
+                code,
                 status_code=503,
-                detail={
-                    "error": code,
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                    "message": str(exc),
-                    **(details if isinstance(details, dict) else {}),
-                },
+                zone_id=zone_id,
+                **_error_extra(details, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
+        _log_route_info(
+            logger,
+            "AE3 compat start-irrigation dispatch accepted",
+            zone_id=zone_id,
+            task_id=int(task.id),
+            idempotency_key=str(req.idempotency_key or "").strip() or None,
+        )
         if task.status in {"pending", "claimed", "running", "waiting_command"}:
             kick_worker_fn()
 
@@ -534,21 +549,19 @@ def bind_start_lighting_tick_route(
 
     @app.post("/zones/{zone_id}/start-lighting-tick")
     async def zone_start_lighting_tick(
-        zone_id: int,
+        zone_id: Annotated[int, Path(..., gt=0)],
         request: Request,
         req: StartLightingTickRequest = Body(...),
     ) -> dict[str, Any]:
         await validate_scheduler_zone_fn(zone_id)
         await validate_scheduler_security_baseline_fn(request)
         if is_start_lighting_tick_rate_limit_enabled_fn() and not start_lighting_tick_rate_limit_check_fn(zone_id):
-            raise HTTPException(
+            raise api_error_detail(
+                "start_lighting_tick_rate_limited",
                 status_code=429,
-                detail={
-                    "error": "start_lighting_tick_rate_limited",
-                    "zone_id": zone_id,
-                    "window_sec": start_lighting_tick_rate_limit_window_sec_fn(),
-                    "max_requests": start_lighting_tick_rate_limit_max_requests_fn(),
-                },
+                zone_id=zone_id,
+                window_sec=start_lighting_tick_rate_limit_window_sec_fn(),
+                max_requests=start_lighting_tick_rate_limit_max_requests_fn(),
             )
 
         now = _utcnow()
@@ -560,28 +573,25 @@ def bind_start_lighting_tick_route(
         if decision == "zone_busy":
             await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
             active_status = _normalized_status(intent_row.get("status"))
-            raise HTTPException(
+            raise api_error_detail(
+                "start_lighting_tick_zone_busy",
                 status_code=409,
-                detail={
-                    "error": "start_lighting_tick_zone_busy",
-                    "zone_id": zone_id,
-                    "active_intent_id": _optional_int(intent_row.get("id")),
-                    "active_status": active_status,
-                },
+                zone_id=zone_id,
+                active_intent_id=_optional_int(intent_row.get("id")),
+                active_status=active_status,
             )
         if decision == "missing":
-            raise HTTPException(
+            raise api_error_detail(
+                "start_lighting_tick_intent_not_found",
                 status_code=409,
-                detail={
-                    "error": "start_lighting_tick_intent_not_found",
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                },
+                zone_id=zone_id,
+                idempotency_key=req.idempotency_key,
             )
         if decision not in {"claimed", "deduplicated", "terminal"}:
-            raise HTTPException(
+            raise api_error_detail(
+                "start_lighting_tick_intent_claim_unavailable",
                 status_code=503,
-                detail={"error": "start_lighting_tick_intent_claim_unavailable", "zone_id": zone_id},
+                zone_id=zone_id,
             )
 
         try:
@@ -608,35 +618,41 @@ def bind_start_lighting_tick_route(
                     error_code=code,
                     error_message=str(exc),
                 )
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **(details if isinstance(details, dict) else {}),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
-                raise HTTPException(
+                raise api_error_detail(
+                    code,
                     status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        "idempotency_key": req.idempotency_key,
-                        **(details if isinstance(details, dict) else {}),
-                    },
+                    zone_id=zone_id,
+                    **_error_extra(details, idempotency_key=req.idempotency_key),
                 ) from exc
-            raise HTTPException(
+            logger.error(
+                "AE3 compat start-lighting-tick: create task failed zone_id=%s code=%s trace_id=%s error=%s",
+                zone_id,
+                code,
+                get_trace_id(),
+                exc,
+                exc_info=True,
+            )
+            raise api_error_detail(
+                code,
                 status_code=503,
-                detail={
-                    "error": code,
-                    "zone_id": zone_id,
-                    "idempotency_key": req.idempotency_key,
-                    "message": str(exc),
-                    **(details if isinstance(details, dict) else {}),
-                },
+                zone_id=zone_id,
+                **_error_extra(details, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
+        _log_route_info(
+            logger,
+            "AE3 compat start-lighting-tick dispatch accepted",
+            zone_id=zone_id,
+            task_id=int(task.id),
+            idempotency_key=str(req.idempotency_key or "").strip() or None,
+        )
         if task.status in {"pending", "claimed", "running", "waiting_command"}:
             kick_worker_fn()
 

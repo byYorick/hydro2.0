@@ -180,7 +180,7 @@ def test_multi_sequential_fail_closed_when_npk_excluded_and_no_safe_components()
         "ec_excluded_components": ("npk",),
     }
 
-    with pytest.raises(PlannerConfigurationError, match="no active EC components are configured"):
+    with pytest.raises(PlannerConfigurationError, match="активные EC-компоненты не настроены"):
         planner.build_dose_plan(
             current_ph=6.0,
             current_ec=1.0,
@@ -212,7 +212,7 @@ async def test_multi_sequential_irrigating_excluded_npk_requires_active_componen
     }
     process_calibrations = {"irrigation": {"ec_gain_per_ml": 0.1, "ec_component_gains": {}}}
 
-    with pytest.raises(PlannerConfigurationError, match="excludes NPK"):
+    with pytest.raises(PlannerConfigurationError, match="исключает NPK"):
         planner.build_dose_plan(
             current_ph=6.0,
             current_ec=1.0,
@@ -260,7 +260,7 @@ def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_clos
         "micro": _actuator("nd-mi", "pump_d", min_effective_ml=0.1),
     }
 
-    with pytest.raises(PlannerConfigurationError, match="no safe non-NPK doses during irrigation"):
+    with pytest.raises(PlannerConfigurationError, match="не дал безопасных non-NPK доз"):
         planner.build_dose_plan(
             current_ph=6.0,
             current_ec=1.0,

@@ -11,6 +11,11 @@ import asyncpg
 
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
+from ae3lite.infrastructure.metrics import (
+    OLDEST_PENDING_TASK_AGE_SECONDS,
+    PENDING_TASKS,
+    TASK_DURATION_SECONDS,
+)
 from common.db import execute, get_pool
 
 logger = logging.getLogger(__name__)
@@ -216,6 +221,61 @@ class PgAutomationTaskRepository:
         )
         return [AutomationTask.from_row(row) for row in rows]
 
+    async def list_stale_claimed_running_for_reconcile(
+        self,
+        *,
+        now: datetime,
+        stale_claimed_before: datetime,
+        stale_running_before: datetime,
+        limit: int = 16,
+    ) -> list[AutomationTask]:
+        """Stale claimed/running задачи для janitor (FOR UPDATE SKIP LOCKED, batch ≤16)."""
+        normalized_claimed_before = self._normalize_timestamp(stale_claimed_before)
+        normalized_running_before = self._normalize_timestamp(stale_running_before)
+        bounded_limit = max(1, min(int(limit), 16))
+        async with self._connection() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """
+                    WITH stale AS (
+                        SELECT id
+                        FROM ae_tasks
+                        WHERE (
+                            status = 'claimed'
+                            AND claimed_at IS NOT NULL
+                            AND claimed_at < $1
+                        ) OR (
+                            status = 'running'
+                            AND updated_at < $2
+                        )
+                        ORDER BY updated_at ASC, id ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT $3
+                    )
+                    SELECT tasks.*
+                    FROM ae_tasks AS tasks
+                    INNER JOIN stale ON stale.id = tasks.id
+                    ORDER BY tasks.updated_at ASC, tasks.id ASC
+                    """,
+                    normalized_claimed_before,
+                    normalized_running_before,
+                    bounded_limit,
+                )
+        return [AutomationTask.from_row(row) for row in rows]
+
+    async def task_has_ae_commands(self, *, task_id: int) -> bool:
+        row = await self._fetchrow(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM ae_commands
+                WHERE task_id = $1
+            ) AS has_commands
+            """,
+            task_id,
+        )
+        return bool(row["has_commands"]) if row is not None else False
+
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[Any]:
         """Pending-задачи при workflow_phase=idle (часто после терминального stop в payload)."""
         return await self._fetch(
@@ -414,7 +474,39 @@ class PgAutomationTaskRepository:
                     normalized_now,
                     owner,
                 )
-        return self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            self._log_fsm_success(
+                action="claim",
+                task=task,
+                from_status="pending",
+                to_status="claimed",
+                owner=owner,
+            )
+        return task
+
+    async def refresh_pending_queue_metrics(self, *, now: datetime) -> None:
+        """Обновляет gauge метрики очереди pending одним SQL-запросом."""
+        normalized_now = self._normalize_timestamp(now)
+        row = await self._fetchrow(
+            """
+            SELECT
+                COUNT(*)::double precision AS pending_count,
+                COALESCE(
+                    EXTRACT(EPOCH FROM ($1 - MIN(created_at))),
+                    0
+                )::double precision AS oldest_age_sec
+            FROM ae_tasks
+            WHERE status = 'pending'
+            """,
+            normalized_now,
+        )
+        if row is None:
+            PENDING_TASKS.set(0)
+            OLDEST_PENDING_TASK_AGE_SECONDS.set(0)
+            return
+        PENDING_TASKS.set(float(row["pending_count"] or 0))
+        OLDEST_PENDING_TASK_AGE_SECONDS.set(max(0.0, float(row["oldest_age_sec"] or 0)))
 
     async def next_pending_due_at(self) -> datetime | None:
         row = await self._fetchrow(
@@ -478,7 +570,23 @@ class PgAutomationTaskRepository:
             owner,
             normalized_now,
         )
-        return None if row is None else self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            self._log_fsm_success(
+                action="requeue",
+                task=task,
+                from_status="claimed|running",
+                to_status="pending",
+                owner=owner,
+            )
+        else:
+            await self._log_fsm_cas_miss(
+                action="requeue",
+                task_id=task_id,
+                to_status="pending",
+                owner=owner,
+            )
+        return task
 
     async def list_claimed_by_owner(self, *, owner: str) -> list[AutomationTask]:
         rows = await self._fetch(
@@ -556,6 +664,7 @@ class PgAutomationTaskRepository:
             next_status="running",
             allowed_statuses=("claimed", "running"),
             now=now,
+            action="mark_running",
         )
 
     async def resume_after_waiting_command(
@@ -571,6 +680,7 @@ class PgAutomationTaskRepository:
             next_status="running",
             allowed_statuses=("waiting_command",),
             now=now,
+            action="resume_after_waiting_command",
         )
 
     async def mark_waiting_command(self, *, task_id: int, owner: str, now: datetime) -> AutomationTask | None:
@@ -580,6 +690,7 @@ class PgAutomationTaskRepository:
             next_status="waiting_command",
             allowed_statuses=("claimed", "running", "waiting_command"),
             now=now,
+            action="mark_waiting_command",
         )
 
     async def recover_waiting_command(
@@ -715,7 +826,21 @@ class PgAutomationTaskRepository:
         )
         task = self._task_from_row(row)
         if task is not None:
+            self._log_fsm_success(
+                action="requeue",
+                task=task,
+                from_status="claimed|running|waiting_command",
+                to_status="pending",
+                owner=owner,
+            )
             await self._sync_intent_after_task_requeue(task=task, now=normalized_now)
+        else:
+            await self._log_fsm_cas_miss(
+                action="update_stage",
+                task_id=task_id,
+                to_status="pending",
+                owner=owner,
+            )
         return task
 
     async def _sync_intent_after_task_requeue(self, *, task: AutomationTask, now: datetime) -> None:
@@ -820,7 +945,24 @@ class PgAutomationTaskRepository:
             owner,
             normalized_now,
         )
-        return self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            self._observe_task_duration(row=row, outcome="completed")
+            self._log_fsm_success(
+                action="terminal",
+                task=task,
+                from_status="claimed|running|waiting_command",
+                to_status="completed",
+                owner=owner,
+            )
+        else:
+            await self._log_fsm_cas_miss(
+                action="terminal",
+                task_id=task_id,
+                to_status="completed",
+                owner=owner,
+            )
+        return task
 
     async def mark_failed(
         self,
@@ -955,6 +1097,7 @@ class PgAutomationTaskRepository:
         next_status: str,
         allowed_statuses: tuple[str, ...],
         now: datetime,
+        action: str,
     ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
         row = await self._fetchrow(
@@ -973,7 +1116,79 @@ class PgAutomationTaskRepository:
             normalized_now,
             list(allowed_statuses),
         )
-        return self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            self._log_fsm_success(
+                action=action,
+                task=task,
+                from_status="|".join(allowed_statuses),
+                to_status=next_status,
+                owner=owner,
+            )
+            return task
+        await self._log_fsm_cas_miss(
+            action=action,
+            task_id=task_id,
+            to_status=next_status,
+            owner=owner,
+        )
+        return None
+
+    @staticmethod
+    def _observe_task_duration(*, row: asyncpg.Record | None, outcome: str) -> None:
+        if row is None:
+            return
+        created_at = row.get("created_at")
+        completed_at = row.get("completed_at") or row.get("updated_at")
+        if created_at is None or completed_at is None:
+            return
+        duration_sec = max(0.0, (completed_at - created_at).total_seconds())
+        topology = str(row.get("topology") or "unknown").strip() or "unknown"
+        TASK_DURATION_SECONDS.labels(topology=topology, outcome=outcome).observe(duration_sec)
+
+    @staticmethod
+    def _log_fsm_success(
+        *,
+        action: str,
+        task: AutomationTask,
+        from_status: str,
+        to_status: str,
+        owner: str,
+    ) -> None:
+        logger.info(
+            "AE3 task FSM %s",
+            action,
+            extra={
+                "task_id": int(task.id),
+                "zone_id": int(task.zone_id),
+                "from_status": from_status,
+                "to_status": to_status,
+                "owner": owner,
+            },
+        )
+
+    async def _log_fsm_cas_miss(
+        self,
+        *,
+        action: str,
+        task_id: int,
+        to_status: str,
+        owner: str,
+    ) -> None:
+        current = await self.get_by_id(task_id=task_id)
+        from_status = str(current.status if current is not None else "missing")
+        zone_id = int(current.zone_id) if current is not None else None
+        logger.warning(
+            "AE3 task FSM CAS miss %s",
+            action,
+            extra={
+                "task_id": int(task_id),
+                "zone_id": zone_id,
+                "from_status": from_status,
+                "to_status": to_status,
+                "owner": owner,
+            },
+        )
 
     async def _mark_failed_row(
         self,
@@ -1028,4 +1243,21 @@ class PgAutomationTaskRepository:
                 list(RUNNING_TASK_STATUSES),
             )
 
-        return self._task_from_row(row)
+        task = self._task_from_row(row)
+        if task is not None:
+            self._observe_task_duration(row=row, outcome="failed")
+            self._log_fsm_success(
+                action="terminal",
+                task=task,
+                from_status="claimed|running|waiting_command",
+                to_status="failed",
+                owner=str(owner or task.claimed_by or ""),
+            )
+        elif require_owner and owner is not None:
+            await self._log_fsm_cas_miss(
+                action="terminal",
+                task_id=task_id,
+                to_status="failed",
+                owner=owner,
+            )
+        return task

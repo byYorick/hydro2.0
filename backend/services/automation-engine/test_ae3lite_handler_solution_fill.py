@@ -18,6 +18,25 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
+        AsyncMock(return_value=None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -120,6 +139,7 @@ class _Monitor:
         ph_stale: bool = False,
         ec_stale: bool = False,
         irr_state: dict | None = None,
+        irr_states: list[dict] | None = None,
         recent_storage_event: dict[str, Any] | None = None,
     ) -> None:
         self._level_call = 0
@@ -134,6 +154,7 @@ class _Monitor:
         self._ec_window = self._build_window(values=ec_samples if ec_samples is not None else [ec] * 3)
         self._ph_window_state = {"has_sensor": has_ph, "is_stale": ph_stale, "samples": self._ph_window}
         self._ec_window_state = {"has_sensor": has_ec, "is_stale": ec_stale, "samples": self._ec_window}
+        self._irr_states: list[dict] = list(irr_states) if irr_states is not None else []
         self._irr = irr_state if irr_state is not None else dict(_GOOD_IRR)
         self._irr_reads = 0
         self._recent_storage_event = recent_storage_event
@@ -165,6 +186,8 @@ class _Monitor:
 
     async def read_latest_irr_state(self, **_kw: Any) -> dict:
         self._irr_reads += 1
+        if self._irr_states:
+            return self._irr_states.pop(0)
         return self._irr
 
     async def read_latest_zone_event(self, **_kw: Any) -> dict[str, Any] | None:
@@ -358,17 +381,46 @@ async def test_filling_targets_not_reached_after_correction_exhaustion_returns_p
     assert outcome.due_delay_sec == 10
 
 
+_OFF_IRR = {
+    "has_snapshot": True,
+    "is_stale": False,
+    "snapshot": {
+        "valve_clean_supply": False,
+        "valve_solution_fill": False,
+        "pump_main": False,
+    },
+}
+
+
+def _flow_stop_plan(runtime: dict | None = None) -> _Plan:
+    plan = _Plan(runtime=runtime)
+    plan.named_plans = {
+        **dict(plan.named_plans),
+        "solution_fill_stop": ("stop_cmd",),
+        "sensor_mode_deactivate": ("deact_cmd",),
+    }
+    return plan
+
+
 @pytest.mark.asyncio
-async def test_manual_solution_fill_without_pending_step_polls() -> None:
-    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
+async def test_manual_solution_fill_without_pending_step_enters_manual_hold() -> None:
+    m = _Monitor(
+        max_triggered=False,
+        min_triggered=False,
+        ph=4.0,
+        ec=0.5,
+        irr_states=[dict(_GOOD_IRR)],
+        irr_state=_OFF_IRR,
+    )
     outcome = await _handler(m).run(
         task=_make_task(control_mode="manual"),
-        plan=_Plan(),
+        plan=_flow_stop_plan(),
         stage_def=_StageDef(),
         now=NOW,
     )
-    assert outcome.kind == "poll"
-    assert outcome.due_delay_sec == 10
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "manual_hold"
+    assert outcome.flow_hold_return_stage == "solution_fill_check"
 
 
 @pytest.mark.asyncio

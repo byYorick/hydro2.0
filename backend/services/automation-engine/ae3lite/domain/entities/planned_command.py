@@ -16,3 +16,4 @@ class PlannedCommand:
     payload: Mapping[str, Any]
     external_id: Optional[str] = None
     terminal_status: Optional[str] = None
+    planner_step: Optional[str] = None

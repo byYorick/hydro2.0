@@ -260,6 +260,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         ),
     ),
     # === Terminal ===
+    "manual_hold": StageDef("manual_hold", "manual_hold"),
     "complete_ready": StageDef("complete_ready", "ready", workflow_phase="ready"),
     "completed_run": StageDef("completed_run", "ready", workflow_phase="ready"),
     "completed_skip": StageDef("completed_skip", "ready", workflow_phase="ready"),

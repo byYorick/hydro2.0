@@ -8,6 +8,13 @@ from uuid import uuid4
 
 import pytest
 
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.application.use_cases import (
@@ -282,6 +289,35 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
         super().__init__()
         self._armed = True
 
+    async def _delete_task_if_armed(self, task_id: int) -> None:
+        if self._armed:
+            self._armed = False
+            await execute("DELETE FROM ae_tasks WHERE id = $1", task_id)
+
+    async def allocate_and_create_pending(  # type: ignore[override]
+        self,
+        *,
+        task_id: int,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        payload,
+        now: datetime,
+        stage_name=None,
+        planner_step=None,
+    ):
+        await self._delete_task_if_armed(task_id)
+        return await super().allocate_and_create_pending(
+            task_id=task_id,
+            zone_id=zone_id,
+            node_uid=node_uid,
+            channel=channel,
+            payload=payload,
+            now=now,
+            stage_name=stage_name,
+            planner_step=planner_step,
+        )
+
     async def create_pending(  # type: ignore[override]
         self,
         *,
@@ -293,9 +329,7 @@ class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
         now: datetime,
         stage_name=None,
     ):
-        if self._armed:
-            self._armed = False
-            await execute("DELETE FROM ae_tasks WHERE id = $1", task_id)
+        await self._delete_task_if_armed(task_id)
         return await super().create_pending(
             task_id=task_id,
             step_no=step_no,
@@ -612,6 +646,18 @@ async def test_runtime_worker_survives_task_delete_before_ae_command_insert() ->
     try:
         _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
         task_id = await _insert_pending_task(zone_id, prefix=prefix, now=now)
+        await execute(
+            """
+            UPDATE ae_tasks
+            SET status = 'failed',
+                error_code = 'test_isolation',
+                error_message = 'stale pending task removed by test harness',
+                updated_at = NOW()
+            WHERE status = 'pending'
+              AND id != $1
+            """,
+            task_id,
+        )
         worker = _build_worker(
             terminal_status="DONE",
             command_repository=_DeleteTaskBeforeFirstAeInsertRepo(),
@@ -857,7 +903,7 @@ async def test_runtime_worker_continues_draining_after_timeout_without_extra_kic
     ]
     assert len(terminal_calls) == 1
     assert terminal_calls[0]["intent_id"] == 1991
-    assert worker.drain_health() == (True, "idle")
+    assert await worker.drain_health() == (True, "idle")
 
 
 @pytest.mark.asyncio
@@ -1150,4 +1196,4 @@ async def test_runtime_worker_health_reports_unexpected_clean_exit() -> None:
     worker._last_drain_exit_ok = False
     worker._last_drain_exit_reason = "worker_unexpected_exit"
 
-    assert worker.drain_health() == (False, "worker_unexpected_exit")
+    assert await worker.drain_health() == (False, "worker_unexpected_exit")

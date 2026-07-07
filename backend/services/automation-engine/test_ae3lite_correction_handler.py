@@ -941,7 +941,7 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert len(dose_commands) == 1
     assert dose_commands[0].payload == {
         "cmd": "dose",
-        "params": {"ml": 2.0},
+        "params": {"ml": 2.0, "duration_ms": 2000},
     }
     assert create_event.await_count == 2
     reactivate_call = create_event.await_args_list[0]
@@ -1039,7 +1039,7 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert len(dose_commands) == 1
     assert dose_commands[0].payload == {
         "cmd": "dose",
-        "params": {"ml": 1.5},
+        "params": {"ml": 1.5, "duration_ms": 1500},
     }
     assert create_event.await_count == 2
     reactivate_call = create_event.await_args_list[0]
@@ -3008,3 +3008,100 @@ async def test_corr_check_not_blocked_when_block_flag_false(monkeypatch: pytest.
     outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
     # НЕ retry — флаг выключен, коррекция прошла до success.
     assert outcome.kind == "exit_correction"
+
+
+async def test_corr_check_sensor_out_of_bounds_retries_window_not_ready(monkeypatch: pytest.MonkeyPatch):
+    """PR8: pH=-1 / EC=999 in decision window → sensor_out_of_bounds, bounded retry."""
+    events: list[tuple[int, str, dict]] = []
+
+    async def _capture_event(zone_id, event_type, payload):
+        events.append((zone_id, event_type, dict(payload) if payload else {}))
+
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", _capture_event)
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(
+        ph_samples=[{"ts": NOW - timedelta(seconds=2), "value": -1.0}] * 3,
+        ec_samples=[{"ts": NOW - timedelta(seconds=2), "value": 999.0}] * 3,
+    )
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    skipped = [e for e in events if e[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"]
+    assert len(skipped) == 1
+    assert skipped[0][2]["ph_reason"] == "sensor_out_of_bounds"
+    assert skipped[0][2]["ec_reason"] == "sensor_out_of_bounds"
+
+
+async def test_corr_check_alert_block_exhausted_raises_terminal_fail(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES", "2")
+    from ae3lite.application.handlers import correction as correction_module
+
+    monkeypatch.setattr(correction_module, "_AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES", 2)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=5.8, ec=1.85)
+    handler = _make_handler(monitor=monitor)
+
+    runtime = deepcopy(RUNTIME)
+    runtime["correction"]["safety"] = {"block_on_active_no_effect_alert": True}
+    runtime["correction"]["controllers"]["ec"]["observe"] = {"no_effect_consecutive_limit": 3}
+    runtime["pid_state"] = {"ec": {"no_effect_count": 3}}
+    plan = _MockPlan(runtime=runtime)
+
+    outcome1 = await handler.run(task=task, plan=plan, stage_def=None, now=NOW)
+    assert outcome1.kind == "retry"
+    assert outcome1.correction.snapshot_cmd_id == "alert_block:1"
+
+    task2 = _make_task(corr=outcome1.correction)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task2, plan=plan, stage_def=None, now=NOW + timedelta(seconds=60))
+    assert exc_info.value.code == "correction_blocked_by_no_effect_alert"
+
+
+async def test_corr_dose_ec_persists_last_dose_at_only_after_done(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    pid_repo = _MockPidStateRepository()
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+    )
+    task = _make_task(corr=corr)
+    handler = _make_handler(gateway=_MockGateway(), pid_repo=pid_repo)
+
+    await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert len(pid_repo.upsert_calls) == 1
+    ec_update = next(
+        item for item in pid_repo.upsert_calls[0]["updates"] if item.get("pid_type") == "ec"
+    )
+    assert ec_update.get("last_dose_at") == NOW
+
+
+async def test_corr_dose_ec_failure_does_not_persist_last_dose_at(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    pid_repo = _MockPidStateRepository()
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+    )
+    task = _make_task(corr=corr)
+    handler = _make_handler(gateway=_MockGateway(success=False), pid_repo=pid_repo)
+
+    with pytest.raises(TaskExecutionError):
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert pid_repo.upsert_calls == []

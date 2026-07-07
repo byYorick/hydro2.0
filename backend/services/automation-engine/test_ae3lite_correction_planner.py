@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from ae3lite.domain.errors import PlannerConfigurationError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
 
 
@@ -1523,11 +1524,11 @@ def test_pid_integral_accumulates_over_time() -> None:
     )
 
 
-def test_build_dose_plan_sets_last_dose_at_when_dose_is_nonzero() -> None:
-    """pid_state_updates must include last_dose_at=now when dose_ml > 0.
+def test_build_dose_plan_does_not_set_last_dose_at_at_planning_time() -> None:
+    """last_dose_at must NOT appear in pid_state_updates at planning time.
 
-    BUG-5 regression: _compute_amount_ml omitted last_dose_at from the update
-    dict, making min_interval_sec enforcement permanently inoperative.
+    PR8: last_dose_at is persisted only after terminal DONE of the dose command
+    in correction handler, not speculatively during build_dose_plan.
     """
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
@@ -1560,10 +1561,8 @@ def test_build_dose_plan_sets_last_dose_at_when_dose_is_nonzero() -> None:
 
     assert plan.needs_ec is True
     assert plan.ec_duration_ms > 0
-    assert "ec" in plan.pid_state_updates
-    assert plan.pid_state_updates["ec"].get("last_dose_at") == now, (
-        "last_dose_at must be set to now when a non-zero dose is computed"
-    )
+    if "ec" in plan.pid_state_updates:
+        assert "last_dose_at" not in plan.pid_state_updates["ec"]
 
 
 def test_build_dose_plan_does_not_set_last_dose_at_when_dose_is_zero() -> None:
@@ -1661,7 +1660,7 @@ def test_build_dose_plan_strips_phantom_last_dose_at_when_duration_below_min_ec(
 
 
 def test_build_dose_plan_strips_phantom_last_dose_at_when_duration_below_min_ph() -> None:
-    """pH symmetric regression: duration below min_dose_ms → last_dose_at stripped."""
+    """pH symmetric regression: duration below min_dose_ms → no dose, no last_dose_at."""
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
 
@@ -1700,8 +1699,8 @@ def test_build_dose_plan_strips_phantom_last_dose_at_when_duration_below_min_ph(
     )
 
 
-def test_build_dose_plan_keeps_last_dose_at_when_duration_valid() -> None:
-    """Positive control: when dose survives _dose_ml_to_ms, last_dose_at must remain."""
+def test_build_dose_plan_valid_duration_has_no_planning_last_dose_at() -> None:
+    """Positive control: valid dose plan still must not stamp last_dose_at at planning."""
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
 
@@ -1731,7 +1730,7 @@ def test_build_dose_plan_keeps_last_dose_at_when_duration_valid() -> None:
 
     assert plan.needs_ec is True
     assert plan.ec_duration_ms > 0
-    assert plan.pid_state_updates["ec"].get("last_dose_at") == now
+    assert "last_dose_at" not in plan.pid_state_updates.get("ec", {})
 
 
 # ── Фаза 1: Регрессионный тест integral spike при reset ───────────────────────
@@ -1884,7 +1883,7 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_low() -> None:
     from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
     from ae3lite.domain.errors import PlannerConfigurationError
 
-    with pytest.raises(PlannerConfigurationError, match="valid range"):
+    with pytest.raises(PlannerConfigurationError, match="вне допустимого диапазона"):
         _dose_ml_to_ms(1.0, {"ml_per_sec": 0.001}, _correction_config())
 
 
@@ -1894,7 +1893,7 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
     from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
     from ae3lite.domain.errors import PlannerConfigurationError
 
-    with pytest.raises(PlannerConfigurationError, match="valid range"):
+    with pytest.raises(PlannerConfigurationError, match="вне допустимого диапазона"):
         _dose_ml_to_ms(1.0, {"ml_per_sec": 200.0}, _correction_config())
 
 
@@ -2158,3 +2157,121 @@ def test_normalize_phase_key_from_phase_utils() -> None:
     assert normalize_phase_key(None) == "generic"
     assert normalize_phase_key("") == "generic"
     assert normalize_phase_key("unknown_phase") == "unknown_phase"
+
+
+def test_build_dose_plan_requires_solution_volume_l() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    config = _correction_config()
+    del config["solution_volume_l"]
+
+    with pytest.raises(PlannerConfigurationError, match="solution_volume_l"):
+        planner.build_dose_plan(
+            current_ph=6.0,
+            current_ec=1.0,
+            target_ph=6.0,
+            target_ec=2.0,
+            ph_tolerance_pct=5.0,
+            ec_tolerance_pct=5.0,
+            correction_config=config,
+            workflow_phase="tank_filling",
+            process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+            pid_state={},
+            now=now,
+            ec_actuators={
+                "pump_a": {
+                    "node_uid": "ec-node",
+                    "channel": "pump_a",
+                    "calibration": {"ml_per_sec": 1.0},
+                },
+            },
+            ph_up_actuator=None,
+            ph_down_actuator=None,
+        )
+
+
+def test_build_dose_plan_rejects_far_zone_lte_close_zone() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    with pytest.raises(PlannerConfigurationError, match="far_zone"):
+        planner.build_dose_plan(
+            current_ph=6.0,
+            current_ec=1.0,
+            target_ph=6.0,
+            target_ec=2.0,
+            ph_tolerance_pct=5.0,
+            ec_tolerance_pct=5.0,
+            correction_config=_correction_config(),
+            workflow_phase="tank_filling",
+            process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+            pid_configs={
+                "ec": {
+                    "config": {
+                        "close_zone": 1.0,
+                        "far_zone": 0.5,
+                        "zone_coeffs": {
+                            "close": {"kp": 1.0, "ki": 0.0, "kd": 0.0},
+                            "far": {"kp": 2.0, "ki": 0.0, "kd": 0.0},
+                        },
+                    }
+                }
+            },
+            pid_state={},
+            now=now,
+            ec_actuators={
+                "pump_a": {
+                    "node_uid": "ec-node",
+                    "channel": "pump_a",
+                    "calibration": {"ml_per_sec": 1.0},
+                },
+            },
+            ph_up_actuator=None,
+            ph_down_actuator=None,
+        )
+
+
+def test_build_dose_plan_clamp_recalculates_effective_ml() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+    config = _correction_config(
+        ec_overrides={"kp": 500.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+        dosing_overrides={
+            "solution_volume_l": 10.0,
+            "pump_calibration": {
+                "min_dose_ms": 50,
+                "max_dose_ms": 300_000,
+                "ml_per_sec_min": 0.01,
+                "ml_per_sec_max": 100.0,
+            },
+        },
+    )
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=0.5,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=config,
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 0.01}},
+        pid_state={},
+        now=now,
+        ec_actuators={
+            "pump_a": {
+                "node_uid": "ec-node",
+                "channel": "pump_a",
+                "calibration": {"ml_per_sec": 0.1},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is True
+    assert plan.ec_requested_ml > plan.ec_amount_ml
+    assert plan.ec_duration_ms == 300_000
+    assert plan.ec_amount_ml == pytest.approx(0.1 * 300_000 / 1000)
+    assert plan.dose_discarded_reason == "clamped_to_max_dose_ms"

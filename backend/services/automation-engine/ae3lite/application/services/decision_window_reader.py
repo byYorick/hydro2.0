@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any, Mapping, Optional
 
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.services.metric_window_validator import decision_window_bounds_reason
 from ae3lite.domain.services.telemetry_window_summary import (
     decision_window_since_ts,
     summarize_window,
@@ -116,6 +117,21 @@ class DecisionWindowReader:
                 reason=str(summary.get("reason") or "unknown"),
                 sample_count=int(len(window["samples"])),
                 slope=summary.get("slope"),
+                latest_sample_ts=window.get("latest_sample_ts"),
+                since_ts=since_ts,
+                window_min_samples=window_min_samples,
+                telemetry_period_sec=telemetry_period_sec,
+            )
+        bounds_reason = decision_window_bounds_reason(
+            sensor_type=sensor_type,
+            value=summary["value"],
+        )
+        if bounds_reason is not None:
+            return DecisionWindowResult(
+                ready=False,
+                reason=bounds_reason,
+                sample_count=int(summary["sample_count"]),
+                slope=float(summary["slope"]) if summary.get("slope") is not None else None,
                 latest_sample_ts=window.get("latest_sample_ts"),
                 since_ts=since_ts,
                 window_min_samples=window_min_samples,

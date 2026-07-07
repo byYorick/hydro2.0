@@ -115,7 +115,7 @@ class AlertLocalizationTest extends TestCase
             ->assertJsonPath('data.data.0.title', 'Ошибка задачи автоматики')
             ->assertJsonPath(
                 'data.data.0.message',
-                'Зона '.$zone->id.' («'.$zone->name.'»): Задача AE3 #77 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 1. Причина: Выполнение задачи AE3 превысило допустимый runtime timeout.'
+                'Зона '.$zone->id.' («'.$zone->name.'»): Задача AE3 #77 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 1. Причина: Выполнение задачи превысило допустимый runtime timeout.'
             );
     }
 

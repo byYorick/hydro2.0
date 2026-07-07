@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\Zone;
 use App\Services\ZoneAutomationStateService;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
@@ -53,6 +54,8 @@ class ZoneAutomationStateServiceTest extends TestCase
     {
         Cache::flush();
 
+        config()->set('services.automation_engine.scheduler_api_token', 'test-scheduler-token');
+
         $zone = Zone::factory()->create();
         $apiUrl = $this->automationEngineUrl();
         $service = app(ZoneAutomationStateService::class);
@@ -79,6 +82,12 @@ class ZoneAutomationStateServiceTest extends TestCase
         $cached = $service->getCachedState($zone->id);
         $this->assertIsArray($cached);
         $this->assertSame('TANK_RECIRC', $cached['state']);
+
+        Http::assertSent(function (HttpRequest $request) use ($zone): bool {
+            return $request->url() === "{$this->automationEngineUrl()}/zones/{$zone->id}/state"
+                && $request->hasHeader('Authorization', 'Bearer test-scheduler-token')
+                && $request->hasHeader('X-Trace-Id');
+        });
     }
 
     public function test_resolve_returns_null_when_upstream_and_cache_unavailable(): void

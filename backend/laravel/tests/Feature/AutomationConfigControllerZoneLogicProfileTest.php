@@ -154,17 +154,9 @@ class AutomationConfigControllerZoneLogicProfileTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('status', 'error');
 
-        $this->assertStringContainsString(
-            'two_tank_commands.solution_fill_start',
-            (string) $response->json('message')
-        );
-        $this->assertStringContainsString(
-            'valve_solution_fill',
-            (string) $response->json('message')
-        );
-        $this->assertStringContainsString(
-            'pump_main',
-            (string) $response->json('message')
-        );
+        $validationMessage = (string) $response->json('message');
+        $this->assertStringContainsString('two_tank_commands.solution_fill_start', $validationMessage);
+        $this->assertStringContainsString('valve_solution_fill', $validationMessage);
+        $this->assertStringContainsString('pump_main', $validationMessage);
     }
 }

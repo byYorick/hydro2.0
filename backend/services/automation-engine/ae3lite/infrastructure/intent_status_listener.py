@@ -16,9 +16,12 @@ from typing import Any, Callable, Coroutine
 
 import asyncpg
 
+from ae3lite.infrastructure.metrics import LISTENER_CONNECTED, LISTENER_RECONNECT_TOTAL
+
 logger = logging.getLogger(__name__)
 
 _CHANNEL = "scheduler_intent_terminal"
+_LISTENER_NAME = "intent_status"
 _KEEPALIVE_INTERVAL_SEC = 30
 
 
@@ -58,6 +61,8 @@ class IntentStatusListener:
                 logger.info("IntentStatusListener: получена отмена, listener завершает работу")
                 return
             except Exception as exc:
+                LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(0)
+                LISTENER_RECONNECT_TOTAL.labels(listener=_LISTENER_NAME).inc()
                 logger.warning(
                     "IntentStatusListener: ошибка соединения, переподключение через %.1f с: %s",
                     backoff,
@@ -72,6 +77,7 @@ class IntentStatusListener:
 
     async def _run_once(self) -> None:
         conn: asyncpg.Connection = await asyncpg.connect(self._dsn)
+        LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(1)
         logger.info("IntentStatusListener: соединение установлено, прослушивается channel=%s", _CHANNEL)
         try:
             await conn.add_listener(_CHANNEL, self._notify_handler)
@@ -94,6 +100,7 @@ class IntentStatusListener:
                     exc_info=True,
                 )
             await conn.close()
+            LISTENER_CONNECTED.labels(listener=_LISTENER_NAME).set(0)
             logger.info("IntentStatusListener: соединение закрыто")
 
     def _notify_handler(

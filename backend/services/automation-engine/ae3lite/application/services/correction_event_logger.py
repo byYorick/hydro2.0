@@ -27,10 +27,11 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
-from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.domain.entities.workflow_state import ALERT_BLOCK_SNAPSHOT_CMD_PREFIX, CorrectionState
+
+from ae3lite.infrastructure.metrics import inc_observability_write_failed
 
 _logger = logging.getLogger(__name__)
-
 
 CreateEventFn = Callable[[int, str, Mapping[str, Any]], Awaitable[None]]
 ProbeSnapshotContextFn = Callable[..., Optional[Mapping[str, Any]]]
@@ -70,6 +71,7 @@ class CorrectionEventLogger:
         try:
             await self._create_event(zone_id, event_type, event_payload)
         except Exception:
+            inc_observability_write_failed(kind="zone_event")
             _logger.warning("Не удалось записать zone event %s", event_type, exc_info=True)
 
     # ── Pure static helpers ─────────────────────────────────────────
@@ -191,6 +193,10 @@ class CorrectionEventLogger:
             else None
         )
         cmd_id = str(corr.snapshot_cmd_id or "").strip() or None
+        if cmd_id is not None and cmd_id.startswith(ALERT_BLOCK_SNAPSHOT_CMD_PREFIX):
+            # Технический маркер alert-block retry, а не cmd_id probe-команды —
+            # не должен попадать в causal-context UI-событий.
+            cmd_id = None
         source_event_type = str(corr.snapshot_source_event_type or "").strip() or None
         event_id = corr.snapshot_event_id if isinstance(corr.snapshot_event_id, int) else None
         context = {

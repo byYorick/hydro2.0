@@ -185,6 +185,18 @@ COMMAND_POLL_ITERATIONS = Counter(
     ["channel", "terminal_status"],
 )
 
+COMMAND_PUBLISH_REDRIVEN = Counter(
+    "ae3_command_publish_redriven_total",
+    "Publish pipeline continued via reconcile after HL publish without confirmed external_id",
+    ["reason"],
+)
+
+COMMAND_CMD_ID_REUSED = Counter(
+    "ae3_command_cmd_id_reused_total",
+    "Stable cmd_id reused for planner_step retry",
+    ["stage"],
+)
+
 # ─── Irrigation ─────────────────────────────────────────────────────
 
 IRRIGATION_DECISION = Counter(
@@ -358,6 +370,78 @@ WAITING_COMMAND_RECONCILE = Counter(
     ["outcome"],
 )
 
+STALE_TASKS_RECLAIMED = Counter(
+    "ae3_stale_tasks_reclaimed_total",
+    "Stale claimed/running tasks reclaimed by background janitor",
+    ["from_status", "action"],
+)
+
+# ─── Pending queue observability (PR4) ─────────────────────────────
+
+PENDING_TASKS = Gauge(
+    "ae3_pending_tasks",
+    "Количество задач AE3 в статусе pending",
+)
+
+OLDEST_PENDING_TASK_AGE_SECONDS = Gauge(
+    "ae3_oldest_pending_task_age_seconds",
+    "Возраст самой старой pending-задачи в секундах",
+)
+
+TASK_DURATION_SECONDS = Histogram(
+    "ae3_task_duration_seconds",
+    "Wall-clock длительность задачи от created_at до terminal transition",
+    ["topology", "outcome"],
+    buckets=[5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200],
+)
+
+LISTENER_CONNECTED = Gauge(
+    "ae3_listener_connected",
+    "Состояние PostgreSQL NOTIFY listener (1=connected, 0=down)",
+    ["listener"],
+)
+
+LISTENER_RECONNECT_TOTAL = Counter(
+    "ae3_listener_reconnect_total",
+    "Переподключения PostgreSQL NOTIFY listener после ошибки",
+    ["listener"],
+)
+
+OBSERVABILITY_WRITE_FAILED = Counter(
+    "ae3_observability_write_failed_total",
+    "Ошибки записи zone_events/alerts, проглоченные без прерывания runtime",
+    ["kind"],
+)
+
+# ─── Worker drain supervisor (PR2) ─────────────────────────────────
+
+DRAIN_CRASHES = Counter(
+    "ae3_drain_crashes_total",
+    "Total unhandled crashes in AE3 drain loop recovered by drain supervisor",
+)
+
+TASK_EXECUTION_CRASHED = Counter(
+    "ae3_task_execution_crashed_total",
+    "Total task executions that crashed in worker wrapper (isolated per-task)",
+    ["error"],
+)
+
+FLOW_STOP_FAILED = Counter(
+    "ae3_flow_stop_failed_total",
+    "Flow-path stop не подтверждён OFF (команда или probe)",
+    ["stage"],
+)
+
+CLAIM_ROLLBACK_FAILED = Counter(
+    "ae3_claim_rollback_failed_total",
+    "Total claim rollbacks that failed after zone lease conflict",
+)
+
+TASK_RUNNING_TRANSITION_MISSED = Counter(
+    "ae3_task_running_transition_missed_total",
+    "Total mark_running CAS misses; task remains claimed for startup recovery",
+)
+
 # ─── Greenhouse climate ─────────────────────────────────────────────
 
 GREENHOUSE_CLIMATE_TICK_TOTAL = Counter(
@@ -399,6 +483,12 @@ GREENHOUSE_CLIMATE_COMMAND_FAILED_TOTAL = Counter(
     "Greenhouse climate actuator command failures grouped by side and failure code",
     ["side", "failure"],
 )
+
+
+def inc_observability_write_failed(*, kind: str) -> None:
+    """Инкрементирует счётчик проглоченных ошибок observability-записи."""
+    normalized = str(kind or "").strip().lower() or "unknown"
+    OBSERVABILITY_WRITE_FAILED.labels(kind=normalized).inc()
 
 
 def initialize_counter_series() -> None:

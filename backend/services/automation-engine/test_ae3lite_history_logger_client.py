@@ -88,8 +88,14 @@ async def test_history_logger_client_retries_once_on_retryable_http_status(monke
         sleep_calls.append(delay)
 
     monkeypatch.setattr(history_logger_client_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(history_logger_client_module.random, "uniform", lambda _a, _b: 1.0)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    gateway = HistoryLoggerClient(base_url="http://history-logger:9300", client=client)
+    gateway = HistoryLoggerClient(
+        base_url="http://history-logger:9300",
+        client=client,
+        max_retries=1,
+        retry_backoff_sec=1.0,
+    )
 
     try:
         command_id = await gateway.publish(
@@ -124,8 +130,14 @@ async def test_history_logger_client_retries_once_on_transport_error(monkeypatch
         sleep_calls.append(delay)
 
     monkeypatch.setattr(history_logger_client_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(history_logger_client_module.random, "uniform", lambda _a, _b: 1.0)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    gateway = HistoryLoggerClient(base_url="http://history-logger:9300", client=client)
+    gateway = HistoryLoggerClient(
+        base_url="http://history-logger:9300",
+        client=client,
+        max_retries=1,
+        retry_backoff_sec=1.0,
+    )
 
     try:
         command_id = await gateway.publish(
@@ -170,3 +182,121 @@ async def test_history_logger_client_request_error_without_message_still_has_con
     message = str(exc_info.value)
     assert "ReadTimeout" in message
     assert "url=http://history-logger:9300/commands" in message
+
+
+def _publish_kwargs() -> dict[str, object]:
+    return {
+        "greenhouse_uid": "gh-1",
+        "zone_id": 9,
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_main",
+        "cmd": "set_relay",
+        "params": {"state": True},
+    }
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_4xx_does_not_retry() -> None:
+    attempts = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(422, json={"detail": "invalid_payload"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(
+        base_url="http://history-logger:9300",
+        client=client,
+        max_retries=3,
+        retry_backoff_sec=0.5,
+    )
+
+    try:
+        with pytest.raises(CommandPublishError, match="invalid_payload"):
+            await gateway.publish(**_publish_kwargs())
+    finally:
+        await client.aclose()
+
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_retries_transport_errors_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleep_calls: list[float] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ConnectError("connection dropped", request=request)
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(history_logger_client_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(history_logger_client_module.random, "uniform", lambda _a, _b: 1.0)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(
+        base_url="http://history-logger:9300",
+        client=client,
+        max_retries=2,
+        retry_backoff_sec=0.5,
+        breaker_fail_threshold=99,
+    )
+
+    try:
+        with pytest.raises(CommandPublishError):
+            await gateway.publish(**_publish_kwargs())
+    finally:
+        await client.aclose()
+
+    assert attempts == 3
+    assert sleep_calls == [pytest.approx(0.5), pytest.approx(1.0)]
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_breaker_opens_and_fast_fails_without_http() -> None:
+    attempts = 0
+    now = {"value": 1000.0}
+    fail_requests = True
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if fail_requests:
+            raise httpx.ConnectError("connection dropped", request=request)
+        return httpx.Response(200, json={"status": "ok", "data": {"command_id": "cmd-half-open"}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(
+        base_url="http://history-logger:9300",
+        client=client,
+        max_retries=0,
+        breaker_fail_threshold=2,
+        breaker_open_sec=15.0,
+        now_fn=lambda: now["value"],
+    )
+
+    try:
+        with pytest.raises(CommandPublishError):
+            await gateway.publish(**_publish_kwargs())
+        with pytest.raises(CommandPublishError):
+            await gateway.publish(**_publish_kwargs())
+        assert attempts == 2
+
+        with pytest.raises(CommandPublishError, match="hl_circuit_open"):
+            await gateway.publish(**_publish_kwargs())
+        assert attempts == 2
+
+        now["value"] += 16.0
+        fail_requests = False
+        command_id = await gateway.publish(**_publish_kwargs())
+        assert command_id == "cmd-half-open"
+        assert attempts == 3
+    finally:
+        await client.aclose()
+

@@ -320,50 +320,61 @@ class PgZoneIntentRepository:
         if not success:
             normalized_code = str(error_code or "").strip().lower()
             if normalized_code in {str(code).strip().lower() for code in _TRANSIENT_RETRYABLE_ERROR_CODES}:
-                rows = await fetch(
+                failed_task_rows = await fetch(
                     """
-                    SELECT retry_count, max_retries
-                    FROM zone_automation_intents
-                    WHERE id = $1
-                      AND status IN ('pending', 'claimed', 'running')
+                    SELECT 1
+                    FROM ae_tasks
+                    WHERE intent_id = $1
+                      AND status = 'failed'
                     LIMIT 1
                     """,
                     intent_id,
                 )
-                if rows:
-                    row = dict(rows[0])
-                    retry_count = int(row.get("retry_count") or 0)
-                    max_retries = max(1, int(row.get("max_retries") or 3))
-                    if retry_count + 1 < max_retries:
-                        backoff_sec = min(300, 30 * (retry_count + 1))
-                        retry_at = now + timedelta(seconds=backoff_sec)
-                        result = await execute(
-                            """
-                            UPDATE zone_automation_intents
-                            SET status = 'pending',
-                                retry_count = retry_count + 1,
-                                completed_at = NULL,
-                                updated_at = $2,
-                                not_before = $3,
-                                error_code = $4,
-                                error_message = $5
-                            WHERE id = $1
-                              AND status IN ('pending', 'claimed', 'running')
-                            """,
-                            intent_id,
-                            now,
-                            retry_at,
-                            error_code,
-                            error_message,
-                        )
-                        if _affected_rows(result) > 0:
-                            logger.info(
-                                "AE3 intent requeued after transient failure: intent_id=%s code=%s retry_count=%s",
+                if not failed_task_rows:
+                    rows = await fetch(
+                        """
+                        SELECT retry_count, max_retries
+                        FROM zone_automation_intents
+                        WHERE id = $1
+                          AND status IN ('pending', 'claimed', 'running')
+                        LIMIT 1
+                        """,
+                        intent_id,
+                    )
+                    if rows:
+                        row = dict(rows[0])
+                        retry_count = int(row.get("retry_count") or 0)
+                        max_retries = max(1, int(row.get("max_retries") or 3))
+                        if retry_count + 1 < max_retries:
+                            backoff_sec = min(300, 30 * (retry_count + 1))
+                            retry_at = now + timedelta(seconds=backoff_sec)
+                            result = await execute(
+                                """
+                                UPDATE zone_automation_intents
+                                SET status = 'pending',
+                                    retry_count = retry_count + 1,
+                                    completed_at = NULL,
+                                    updated_at = $2,
+                                    not_before = $3,
+                                    error_code = $4,
+                                    error_message = $5
+                                WHERE id = $1
+                                  AND status IN ('pending', 'claimed', 'running')
+                                """,
                                 intent_id,
-                                normalized_code,
-                                retry_count + 1,
+                                now,
+                                retry_at,
+                                error_code,
+                                error_message,
                             )
-                            return
+                            if _affected_rows(result) > 0:
+                                logger.info(
+                                    "AE3 intent requeued after transient failure: intent_id=%s code=%s retry_count=%s",
+                                    intent_id,
+                                    normalized_code,
+                                    retry_count + 1,
+                                )
+                                return
 
         status = "completed" if success else "failed"
         result = await execute(

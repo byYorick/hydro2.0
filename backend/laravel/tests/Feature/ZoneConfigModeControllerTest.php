@@ -43,7 +43,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addHour()->toIso8601String(),
             ]);
 
-        $response->assertStatus(403)->assertJsonPath('code', 'FORBIDDEN_SET_LIVE');
+        $response->assertStatus(403)->assertJsonPath('code', 'forbidden_set_live');
     }
 
     public function test_update_to_live_blocked_when_control_mode_auto(): void
@@ -60,7 +60,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addHour()->toIso8601String(),
             ]);
 
-        $response->assertStatus(409)->assertJsonPath('code', 'CONFIG_MODE_CONFLICT_WITH_AUTO');
+        $response->assertStatus(409)->assertJsonPath('code', 'config_mode_conflict_with_auto');
     }
 
     public function test_update_to_live_rejects_ttl_too_short(): void
@@ -77,7 +77,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addSeconds(60)->toIso8601String(),
             ]);
 
-        $response->assertStatus(422)->assertJsonPath('code', 'TTL_OUT_OF_RANGE');
+        $response->assertStatus(422)->assertJsonPath('code', 'ttl_out_of_range');
     }
 
     public function test_update_to_live_rejects_ttl_too_long(): void
@@ -94,7 +94,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addDays(8)->toIso8601String(),
             ]);
 
-        $response->assertStatus(422)->assertJsonPath('code', 'TTL_OUT_OF_RANGE');
+        $response->assertStatus(422)->assertJsonPath('code', 'ttl_out_of_range');
     }
 
     public function test_update_to_live_succeeds_with_valid_ttl(): void
@@ -174,7 +174,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addDays(2)->toIso8601String(),
             ]);
 
-        $response->assertStatus(422)->assertJsonPath('code', 'TTL_TOTAL_EXCEEDED');
+        $response->assertStatus(422)->assertJsonPath('code', 'ttl_total_exceeded');
     }
 
     public function test_update_live_keeps_original_live_started_at_when_zone_is_already_live(): void
@@ -267,7 +267,7 @@ class ZoneConfigModeControllerTest extends TestCase
                 'live_until' => Carbon::now()->addHours(2)->toIso8601String(),
             ]);
 
-        $response->assertStatus(409)->assertJsonPath('code', 'NOT_IN_LIVE_MODE');
+        $response->assertStatus(409)->assertJsonPath('code', 'not_in_live_mode');
     }
 
     public function test_changes_returns_filtered_timeline(): void

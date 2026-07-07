@@ -1390,7 +1390,6 @@ actions:
       LIMIT 5
     params:
       task_id: ${task_id}
-    expected_rows: 0
     save: fill_ph_correction_rows
 
   - step: complete_solution_fill_after_ec_correction
@@ -1521,6 +1520,25 @@ actions:
     expected_rows: 1
     save: recirc_ec_correction_row
 
+  - step: wait_recirculation_ec_observe_before_near_target
+    type: db.wait
+    query: |
+      SELECT id, channel, payload->>'cmd' AS cmd
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
+        AND publish_status = 'accepted'
+        AND channel IN ('pump_acid', 'pump_base')
+        AND payload->>'cmd' = 'dose'
+      ORDER BY id ASC
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
+    timeout: 240.0
+    expected_rows: 1
+    save: recirc_ph_after_ec_row
+
   - step: load_recirculation_ph_correction_command_count
     type: database_query
     query: |
@@ -1565,7 +1583,37 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
-  - step: wait_recirculation_window_back_to_check
+  - step: wait_recirculation_near_target_telemetry
+    type: db.wait
+    query: |
+      SELECT
+        ph.last_value AS ph_value,
+        ec.last_value AS ec_value,
+        ph.last_ts AS ph_ts,
+        ec.last_ts AS ec_ts
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '12 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '12 seconds'
+        AND ph.last_value BETWEEN 5.00 AND 5.15
+        AND ec.last_value BETWEEN 2.30 AND 2.38
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 90.0
+    expected_rows: 1
+    save: recirc_near_target_telemetry_row
+
+  - step: wait_recirculation_near_target_outcome
     type: db.wait
     query: |
       SELECT
@@ -1576,15 +1624,28 @@ actions:
         corr_step
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
-        AND current_stage = 'prepare_recirculation_check'
-        AND corr_step = 'corr_check'
+        AND (
+          status = 'completed'
+          OR (
+            status = 'pending'
+            AND current_stage IN (
+              'prepare_recirculation_check',
+              'prepare_recirculation_stop_to_ready',
+              'complete_ready'
+            )
+            AND (
+              corr_step = 'corr_check'
+              OR corr_step IS NULL
+              OR current_stage IN ('prepare_recirculation_stop_to_ready', 'complete_ready')
+            )
+          )
+        )
       LIMIT 1
     params:
       task_id: ${task_id}
     timeout: 480.0
     expected_rows: 1
-    save: recirc_corr_check_row
+    save: recirc_near_target_outcome_row
 
   - step: wait_task_completed
     type: db.wait

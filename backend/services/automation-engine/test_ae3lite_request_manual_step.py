@@ -71,6 +71,34 @@ async def test_request_manual_step_returns_numeric_task_id() -> None:
     assert repo.calls[0]["manual_step"] == "clean_fill_stop"
 
 
+async def test_request_manual_step_from_manual_hold_encodes_operator_step() -> None:
+    task = SimpleNamespace(
+        id=321,
+        workflow=WorkflowState(
+            current_stage="manual_hold",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=1,
+            control_mode="manual",
+            pending_manual_step="__mh_return:solution_fill_check",
+        ),
+    )
+    repo = _TaskRepository(task)
+
+    async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [{"control_mode": "manual"}]
+
+    result = await RequestManualStepUseCase(
+        task_repository=repo,
+        fetch_fn=fetch_fn,
+    ).run(zone_id=7, manual_step="solution_fill_stop", now=NOW)
+
+    assert result["pending_manual_step"] == "solution_fill_stop"
+    assert repo.calls[0]["manual_step"] == "__mh_step:solution_fill_check:solution_fill_stop"
+
+
 async def test_request_manual_step_rejects_auto_mode() -> None:
     async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
         return [{"control_mode": "auto"}]

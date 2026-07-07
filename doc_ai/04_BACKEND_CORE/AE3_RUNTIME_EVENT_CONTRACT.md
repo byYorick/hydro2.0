@@ -251,6 +251,36 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. При этом runtime возвращает `409` с `error_code=start_irrigation_setup_pending`.
 3. Для метрик используется счётчик `ae3_start_irrigation_blocked_total{reason="setup_pending"}`.
 
+### 4.9 `AE_TASK_RECLAIMED`
+
+Назначение:
+- observability фонового janitor'а (`StaleTaskReconcileUseCase`), когда stale
+  `claimed`/`running` task переводится в `requeue` или terminal `fail`.
+
+Обязательные поля:
+
+1. `task_id`
+2. `from_status` — `claimed` | `running`
+3. `action` — `requeue` | `fail`
+4. `age_sec` — возраст задачи в секундах на момент reclaim
+5. `recovery_source` — `stale_task_reconcile`
+
+Метрика: `ae3_stale_tasks_reclaimed_total{from_status,action}`.
+
+### 4.10 `CONTROL_MODE_FLOW_STOPPED`
+
+Назначение: AE3 подтвердил остановку flow-path после переключения `control_mode` в `manual`/`semi` (fail-closed по умолчанию) на активном check-stage.
+
+Обязательные поля: `task_id`, `stage`, `reason`, `commands[]`, `control_mode`.
+
+### 4.11 `FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE`
+
+Назначение: stop-команда и/или post-stop probe не подтвердили OFF; оборудование может оставаться активным.
+
+Обязательные поля: `task_id`, `stage`, `reason`, `commands[]` (+ диагностические поля ошибки).
+
+Метрика: `ae3_flow_stop_failed_total{stage}`; biz-alert `biz_flow_stop_failed_hardware_may_be_active` (critical).
+
 ## 5. E2E / Read-Model Guidance
 
 1. Новый e2e/assertion contract не должен доказывать причинность по `created_at`,

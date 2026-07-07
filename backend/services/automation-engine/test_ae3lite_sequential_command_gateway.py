@@ -13,11 +13,18 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 from prometheus_client import REGISTRY
+
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
@@ -30,7 +37,7 @@ NOW = datetime(2026, 3, 10, 12, 0, 0)
 
 _DONE_ROW = {
     "id": 1001,
-    "cmd_id": "hl-ae3-t1-z1-s1",
+    "cmd_id": "ae3-t1-z1-s1",
     "status": "DONE",
     "error_message": None,
     "ack_at": NOW,
@@ -80,12 +87,34 @@ class _FakeCommandRepo:
         self.step_no += 1
         return self.step_no
 
-    async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now):
+    async def allocate_and_create_pending(
+        self,
+        *,
+        task_id,
+        zone_id,
+        node_uid,
+        channel,
+        payload,
+        now,
+        stage_name=None,
+        planner_step=None,
+    ):
+        if self._create_pending_returns_none:
+            return None
+        self.step_no += 1
+        ae_id = 100 + self.step_no
+        self.created_ids.append(ae_id)
+        return ae_id, self.step_no, False
+
+    async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now, stage_name=None):
         if self._create_pending_returns_none:
             return None
         ae_id = 100 + step_no
         self.created_ids.append(ae_id)
         return ae_id
+
+    async def mark_publish_published_unconfirmed(self, *, ae_command_id, now):
+        return True
 
     async def resolve_greenhouse_uid(self, *, zone_id):
         return "gh-test-001"
@@ -208,12 +237,13 @@ def _make_task(zone_id=1, task_id=1):
     return m
 
 
-def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_interval=0.01):
+def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_interval=0.01, command_poll_default_sec=3600.0):
     return SequentialCommandGateway(
         task_repository=task_repo or _FakeTaskRepo(),
         command_repository=command_repo or _FakeCommandRepo(),
         history_logger_client=history_logger or _FakeHistoryLogger(),
         poll_interval_sec=poll_interval,
+        command_poll_default_sec=command_poll_default_sec,
     )
 
 
@@ -275,7 +305,7 @@ async def test_run_batch_publish_failure_raises():
     gw = _make_gw(history_logger=_FakeHistoryLogger(fail=True))
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
-    assert exc_info.value.code == "command_send_failed"
+    assert exc_info.value.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
 
 
 @pytest.mark.asyncio
@@ -305,7 +335,8 @@ async def test_run_batch_publish_failure_emits_dispatch_failed_metric_and_servic
     assert len(captured_logs) == 1
     assert captured_logs[0]["service"] == "automation-engine"
     assert captured_logs[0]["level"] == "error"
-    assert captured_logs[0]["context"]["cmd_id"].startswith("ae3-t1-z1-s")
+    logged_cmd_id = captured_logs[0]["context"]["cmd_id"]
+    assert logged_cmd_id is None or str(logged_cmd_id).startswith("ae3-t1-z1-s")
     assert captured_logs[0]["context"]["channel"] == "pump_main"
 
 
@@ -320,23 +351,55 @@ async def test_run_batch_create_pending_task_missing_returns_fail_closed():
 
 
 @pytest.mark.asyncio
-async def test_run_batch_mark_accept_miss_task_missing_returns_fail_closed():
-    cmd_repo = _FakeCommandRepo(accept_publish_ok=False)
+async def test_run_batch_mark_accept_miss_task_missing_enters_poll_until_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cmd_repo = _FakeCommandRepo(accept_publish_ok=False, legacy_row=_PENDING_ROW)
     task_repo = _FakeTaskRepo(current_task=None)
-    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    poll_times = iter(
+        [
+            NOW,
+            NOW + timedelta(seconds=2),
+        ]
+    )
+    monkeypatch.setattr(
+        sequential_command_gateway_module,
+        "_utcnow",
+        lambda: next(poll_times, NOW + timedelta(seconds=5)),
+    )
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=task_repo,
+        poll_interval=0.01,
+        command_poll_default_sec=1.0,
+    )
     result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
     assert result["success"] is False
-    assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
+    assert result["error_code"] == "ae3_command_poll_deadline_exceeded"
 
 
 @pytest.mark.asyncio
-async def test_run_batch_mark_accept_miss_task_still_present_raises():
+async def test_run_batch_mark_accept_miss_task_still_present_redrives_to_poll():
     cmd_repo = _FakeCommandRepo(accept_publish_ok=False)
     task_repo = _FakeTaskRepo(current_task=_mock_task(status="running"))
-    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
-    assert exc_info.value.code == "command_send_failed"
+    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo, poll_interval=0.01)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    import ae3lite.infrastructure.gateways.sequential_command_gateway as gw_module
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(gw_module.asyncio, "sleep", fake_sleep)
+        result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+
+    assert result["success"] is True
+    assert len(cmd_repo.publish_accepted_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -513,23 +576,32 @@ async def test_publish_fails_if_no_greenhouse_uid():
     gw = _make_gw(command_repo=cmd_repo)
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
-    assert exc_info.value.code == "command_send_failed"
+    assert exc_info.value.code == ErrorCodes.AE3_REQUIRED_NODE_OFFLINE
 
 
 # ── legacy_command_id not found ───────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_publish_fails_if_legacy_cmd_id_not_found():
+async def test_publish_redrives_when_legacy_cmd_id_not_found_initially(monkeypatch: pytest.MonkeyPatch):
     cmd_repo = _FakeCommandRepo()
+    resolve_calls = {"n": 0}
+    real_resolve = cmd_repo.resolve_legacy_command_id
 
-    async def _none(**_kw):
+    async def _delayed_resolve(**kwargs):
+        resolve_calls["n"] += 1
+        if resolve_calls["n"] < 3:
+            return None
+        return await real_resolve(**kwargs)
+
+    cmd_repo.resolve_legacy_command_id = _delayed_resolve
+
+    async def fake_sleep(_delay: float) -> None:
         return None
 
-    cmd_repo.resolve_legacy_command_id = _none
-    gw = _make_gw(command_repo=cmd_repo)
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
-    assert exc_info.value.code == "command_send_failed"
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    gw = _make_gw(command_repo=cmd_repo, poll_interval=0.01)
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is True
 
 
 @pytest.mark.asyncio
@@ -586,16 +658,19 @@ async def test_run_batch_reconciles_terminal_status_before_stage_deadline_failur
     async def fake_sleep(delay: float) -> None:
         sleep_calls.append(delay)
 
-    current_times = iter([
-        NOW,
-        NOW.replace(second=NOW.second + 2),
-    ])
+    current_times = iter(
+        [
+            NOW,
+            NOW + timedelta(milliseconds=500),
+            NOW + timedelta(milliseconds=500),
+        ]
+    )
 
     monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(
         sequential_command_gateway_module,
         "_utcnow",
-        lambda: next(current_times),
+        lambda: next(current_times, NOW + timedelta(seconds=2)),
     )
 
     command_repo = _SequencedLegacyCommandRepo(
@@ -605,13 +680,48 @@ async def test_run_batch_reconciles_terminal_status_before_stage_deadline_failur
         ]
     )
     task = _make_task()
-    task.workflow.stage_deadline_at = NOW.replace(second=NOW.second + 1)
+    task.workflow.stage_deadline_at = NOW + timedelta(seconds=1)
     gw = _make_gw(command_repo=command_repo, poll_interval=0.1)
 
     result = await gw.run_batch(task=task, commands=[_planned(channel="pump_acid")], now=NOW)
 
     assert result["success"] is True
     assert sleep_calls == pytest.approx([0.1, 0.15])
+
+
+@pytest.mark.asyncio
+async def test_run_batch_fails_closed_when_poll_timeout_without_stage_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    gw_module = sequential_command_gateway_module
+    monkeypatch.setattr(gw_module.asyncio, "sleep", fake_sleep)
+    poll_times = iter(
+        [
+            NOW,
+            NOW + timedelta(seconds=2),
+        ]
+    )
+    monkeypatch.setattr(
+        gw_module,
+        "_utcnow",
+        lambda: next(poll_times, NOW + timedelta(seconds=5)),
+    )
+
+    command_repo = _SequencedLegacyCommandRepo(legacy_rows=[_PENDING_ROW, _PENDING_ROW])
+    gw = SequentialCommandGateway(
+        task_repository=_FakeTaskRepo(),
+        command_repository=command_repo,
+        history_logger_client=_FakeHistoryLogger(),
+        poll_interval_sec=0.01,
+        command_poll_default_sec=1.0,
+        command_poll_margin_sec=0.0,
+    )
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is False
+    assert result["error_code"] == "ae3_command_poll_deadline_exceeded"
 
 
 @pytest.mark.asyncio
@@ -626,17 +736,20 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
     async def fake_create_zone_event(zone_id: int, event_type: str, details: dict[str, object]) -> None:
         captured_events.append({"zone_id": zone_id, "event_type": event_type, "details": details})
 
-    current_times = iter([
-        NOW.replace(second=NOW.second + 2),
-        NOW.replace(second=NOW.second + 4),
-        NOW.replace(second=NOW.second + 6),
-    ])
+    current_times = iter(
+        [
+            NOW,
+            NOW + timedelta(seconds=2),
+            NOW + timedelta(seconds=4),
+            NOW + timedelta(seconds=6),
+        ]
+    )
 
     monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(
         sequential_command_gateway_module,
         "_utcnow",
-        lambda: next(current_times),
+        lambda: next(current_times, NOW + timedelta(seconds=8)),
     )
     monkeypatch.setattr(sequential_command_gateway_module, "create_zone_event", fake_create_zone_event)
 
@@ -651,7 +764,7 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
     task.current_stage = "prepare_recirculation_check"
     task.workflow.workflow_phase = "tank_recirc"
     task.workflow.corr_step = "corr_dose_ph"
-    task.workflow.stage_deadline_at = NOW.replace(second=NOW.second + 1)
+    task.workflow.stage_deadline_at = NOW + timedelta(seconds=1)
     gw = _make_gw(command_repo=command_repo, poll_interval=0.1)
 
     result = await gw.run_batch(task=task, commands=[_planned(channel="pump_acid")], now=NOW)

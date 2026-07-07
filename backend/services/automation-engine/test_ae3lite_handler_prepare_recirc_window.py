@@ -13,8 +13,28 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
+
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
+
+
+@pytest.fixture(autouse=True)
+def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.flow_path_guard.send_biz_alert",
+        AsyncMock(return_value=None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
 
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -24,6 +44,31 @@ from _test_support_runtime_plan import make_runtime_plan
 NOW = datetime(2026, 3, 12, 10, 0, 0, tzinfo=timezone.utc)
 
 _CMD = object()  # placeholder command
+
+_IRR_OFF = {
+    "has_snapshot": True,
+    "is_stale": False,
+    "snapshot": {
+        "valve_solution_supply": False,
+        "valve_solution_fill": False,
+        "pump_main": False,
+    },
+}
+
+
+class _Monitor:
+    async def read_latest_irr_state(self, **_kw: Any) -> dict:
+        return dict(_IRR_OFF)
+
+
+def _named_plans() -> dict[str, tuple[object, ...]]:
+    return {
+        "prepare_recirculation_stop": (_CMD,),
+        "sensor_mode_deactivate": (_CMD,),
+        "sensor_mode_activate": (_CMD,),
+        "prepare_recirculation_start": (_CMD,),
+        "irr_state_probe": (_CMD,),
+    }
 
 
 def _runtime_with_attempt_limit(limit: int):
@@ -82,12 +127,7 @@ class _Gateway:
 class _Plan:
     def __init__(self, *, attempt_limit: int = 3) -> None:
         self.runtime = _runtime_with_attempt_limit(attempt_limit)
-        self.named_plans = {
-            "prepare_recirculation_stop": (_CMD,),
-            "sensor_mode_deactivate": (_CMD,),
-            "sensor_mode_activate": (_CMD,),
-            "prepare_recirculation_start": (_CMD,),
-        }
+        self.named_plans = _named_plans()
 
 
 class _AlertRepository:
@@ -103,7 +143,7 @@ def _handler(
     alert_repo: Any | None = None,
 ) -> PrepareRecircWindowHandler:
     return PrepareRecircWindowHandler(
-        runtime_monitor=None,  # type: ignore[arg-type]
+        runtime_monitor=_Monitor(),
         command_gateway=gateway or _Gateway(),
         alert_repository=alert_repo,
     )
@@ -144,7 +184,7 @@ async def test_limit_reached_keeps_primary_failure_when_stop_commands_timeout() 
     )
 
     assert outcome.kind == "fail"
-    assert outcome.error_code == "prepare_recirculation_attempt_limit_reached"
+    assert outcome.error_code == "command_timeout"
     assert gw.call_count == 1
 
 
@@ -173,24 +213,26 @@ async def test_rollover_increments_exhausted_window_count() -> None:
         assert outcome.stage_retry_count == initial + 1
 
 
-# ── 3. Stop-phase command failure → TaskExecutionError ───────────────────────
+# ── 3. Stop-phase command failure → terminal fail (PR7) ───────────────────────
 
 @pytest.mark.asyncio
 async def test_stop_commands_failure_raises() -> None:
     gw = _Gateway(fail_on_call=1, error_code="command_send_failed")
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await _handler(gw).run(
-            task=_make_task(retry_count=0),
-            plan=_Plan(), stage_def=None, now=NOW,
-        )
-    assert exc_info.value.code == "command_send_failed"
+    outcome = await _handler(gw).run(
+        task=_make_task(retry_count=0),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "command_send_failed"
 
 
 # ── 4. Start-phase command failure → TaskExecutionError ──────────────────────
 
 @pytest.mark.asyncio
 async def test_start_commands_failure_raises() -> None:
-    gw = _Gateway(fail_on_call=2, error_code="command_send_failed")
+    gw = _Gateway(fail_on_call=3, error_code="command_send_failed")
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(gw).run(
             task=_make_task(retry_count=0),
@@ -254,12 +296,7 @@ class _PlanNestedRetry:
 
     def __init__(self, *, limit: int) -> None:
         self.runtime = _runtime_with_nested_retry_limit(limit)
-        self.named_plans = {
-            "prepare_recirculation_stop": (_CMD,),
-            "sensor_mode_deactivate": (_CMD,),
-            "sensor_mode_activate": (_CMD,),
-            "prepare_recirculation_start": (_CMD,),
-        }
+        self.named_plans = _named_plans()
 
 
 @pytest.mark.asyncio
@@ -285,15 +322,16 @@ async def test_attempt_limit_read_from_nested_retry_mapping() -> None:
 
 @pytest.mark.asyncio
 async def test_empty_named_plans_raises() -> None:
-    """If no commands are in named_plans, handler should raise ae3_empty_command_plan."""
+    """If no commands are in named_plans, handler should fail with ae3_empty_command_plan."""
     class _EmptyPlan:
         runtime = _runtime_with_attempt_limit(3)
         named_plans: dict = {}
 
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await _handler().run(
-            task=_make_task(retry_count=0),
-            plan=_EmptyPlan(),
-            stage_def=None, now=NOW,
-        )
-    assert exc_info.value.code == "ae3_empty_command_plan"
+    outcome = await _handler().run(
+        task=_make_task(retry_count=0),
+        plan=_EmptyPlan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "ae3_empty_command_plan"

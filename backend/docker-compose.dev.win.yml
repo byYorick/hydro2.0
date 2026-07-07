@@ -247,6 +247,9 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - AE_DB_DSN=postgresql://hydro:hydro@db:5432/hydro_dev
+      - AE_WORKER_OWNER=ae3-${HOSTNAME:-dev}
+      - PG_POOL_MAX_SIZE=10
       - LARAVEL_API_URL=http://laravel
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
@@ -262,11 +265,11 @@ services:
       - ./services/common:/app/common
       - ../schemas:/schemas:ro
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/live', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
-      interval: 30s
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9405/health/ready\", timeout=2).read()' || exit 1"]
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
