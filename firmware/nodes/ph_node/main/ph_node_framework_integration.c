@@ -877,10 +877,8 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
             }
             s_ph_sensor_error_active = true;
         }
-        ph_value = 6.5f;
-        using_stub = true;
-        is_stable = false;
-        raw_value = 6500;
+        ESP_LOGW(TAG, "pH telemetry skipped: cache miss or stale (no placeholder publish)");
+        return ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGI(

@@ -21,22 +21,34 @@ route:
         severity: warning
       receiver: 'warning-receiver'
 
-# Получатели уведомлений
+# Доставка алертов: только Laravel webhook (Bearer из /alertmanager/webhook_token).
 receivers:
   - name: 'default-receiver'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
   - name: 'critical-receiver'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
   - name: 'warning-receiver'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
 # Подавление дубликатов
 inhibit_rules:

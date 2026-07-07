@@ -9,6 +9,7 @@
 #include "node_telemetry_engine.h"
 #include "node_state_manager.h"
 #include "node_watchdog.h"
+#include "node_link_loss_failsafe.h"
 #include "node_utils.h"
 #include "memory_pool.h"
 #include "i2c_cache.h"
@@ -194,6 +195,13 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
     err = node_state_manager_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init state manager: %s", esp_err_to_name(err));
+        goto cleanup;
+    }
+
+    err = node_link_loss_failsafe_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init link-loss failsafe: %s", esp_err_to_name(err));
+        node_state_manager_deinit();
         goto cleanup;
     }
 

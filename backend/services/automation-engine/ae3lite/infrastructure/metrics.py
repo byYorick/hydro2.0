@@ -289,6 +289,18 @@ ZONE_LEASE_RELEASE_FAILED = Counter(
     ["zone_id"],
 )
 
+LEASE_HEARTBEAT_FAILED = Counter(
+    "ae3_lease_heartbeat_failed_total",
+    "Consecutive lease extend failures during task heartbeat (per failed attempt)",
+    ["zone_id"],
+)
+
+INTENT_SYNC_FAILED = Counter(
+    "ae3_intent_sync_failed_total",
+    "Intent↔task sync operations exhausted retries without persisting status",
+    ["operation"],
+)
+
 # ─── Stage deadline and correction exhaustion ────────────────────────
 
 STAGE_DEADLINE_EXCEEDED = Counter(
@@ -386,6 +398,17 @@ PENDING_TASKS = Gauge(
 OLDEST_PENDING_TASK_AGE_SECONDS = Gauge(
     "ae3_oldest_pending_task_age_seconds",
     "Возраст самой старой pending-задачи в секундах",
+)
+
+OLDEST_ACTIVE_TASK_AGE_SECONDS = Gauge(
+    "ae3_oldest_active_task_age_seconds",
+    "Возраст самой старой активной задачи по статусу (секунды)",
+    ["status"],
+)
+
+RECONCILE_CONSECUTIVE_ERRORS = Gauge(
+    "ae3_reconcile_consecutive_errors",
+    "Подряд идущие ошибки фонового waiting_command/stale reconcile loop",
 )
 
 TASK_DURATION_SECONDS = Histogram(

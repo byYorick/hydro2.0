@@ -11,6 +11,24 @@ class AlertWebhookControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const WEBHOOK_SECRET = 'test-alertmanager-webhook-secret';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.alertmanager.webhook_secret' => self::WEBHOOK_SECRET]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postWebhook(array $payload): \Illuminate\Testing\TestResponse
+    {
+        return $this->withHeaders(['X-Webhook-Secret' => self::WEBHOOK_SECRET])
+            ->postJson('/api/alerts/webhook', $payload);
+    }
+
     public function test_webhook_creates_alert_on_firing(): void
     {
         $zone = Zone::factory()->create();
@@ -33,7 +51,7 @@ class AlertWebhookControllerTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/alerts/webhook', $payload);
+        $response = $this->postWebhook($payload);
 
         $response->assertStatus(200);
         $response->assertJson(['status' => 'ok']);
@@ -43,6 +61,12 @@ class AlertWebhookControllerTest extends TestCase
             'type' => 'NodeOffline',
             'status' => 'ACTIVE',
         ]);
+    }
+
+    public function test_webhook_rejects_request_without_secret(): void
+    {
+        $this->postJson('/api/alerts/webhook', ['alerts' => []])
+            ->assertStatus(401);
     }
 
     public function test_webhook_resolves_alert_on_resolved(): void
@@ -67,7 +91,7 @@ class AlertWebhookControllerTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/alerts/webhook', $payload);
+        $response = $this->postWebhook($payload);
 
         $response->assertStatus(200);
         $response->assertJson(['status' => 'ok']);
@@ -87,7 +111,7 @@ class AlertWebhookControllerTest extends TestCase
     {
         $payload = ['alerts' => []];
 
-        $response = $this->postJson('/api/alerts/webhook', $payload);
+        $response = $this->postWebhook($payload);
 
         $response->assertStatus(200);
         $response->assertJson(['status' => 'ok']);
@@ -97,7 +121,7 @@ class AlertWebhookControllerTest extends TestCase
     {
         $payload = [];
 
-        $response = $this->postJson('/api/alerts/webhook', $payload);
+        $response = $this->postWebhook($payload);
 
         $response->assertStatus(200);
         $response->assertJson(['status' => 'ok']);

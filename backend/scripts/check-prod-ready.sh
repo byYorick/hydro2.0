@@ -62,6 +62,7 @@ required_vars=(
     MQTT_HISTORY_LOGGER_PASS
     MQTT_ESP32_NODE_PASS
     GRAFANA_ADMIN_PASSWORD
+    ALERTMANAGER_WEBHOOK_SECRET
 )
 
 for var in "${required_vars[@]}"; do
@@ -81,6 +82,29 @@ done
 
 if [ "${errors}" -eq 0 ]; then
     ok "Обязательные переменные заданы"
+fi
+
+echo ""
+echo "Проверка Alertmanager config (без placeholder SMTP/Telegram)..."
+am_config="${BACKEND_DIR}/configs/prod/alertmanager/config.yml"
+if grep -qE 'smtp_smarthost|telegram_configs|email_configs' "${am_config}"; then
+    fail "prod alertmanager/config.yml содержит placeholder SMTP/Telegram/email receivers"
+else
+    ok "Alertmanager: доставка только через Laravel webhook"
+fi
+
+if ! grep -q 'credentials_file: /alertmanager/webhook_token' "${am_config}"; then
+    fail "prod alertmanager/config.yml не содержит bearer credentials_file"
+else
+    ok "Alertmanager webhook bearer credentials_file настроен"
+fi
+
+echo ""
+echo "Проверка volume backups_data в compose..."
+if ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config 2>/dev/null | grep -q 'backups_data:/backups'; then
+    ok "laravel монтирует backups_data:/backups"
+else
+    fail "laravel не монтирует backups_data:/backups"
 fi
 
 if ! command -v docker >/dev/null 2>&1; then

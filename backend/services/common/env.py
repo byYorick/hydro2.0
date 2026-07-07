@@ -95,6 +95,12 @@ class Settings:
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
 
+    mqtt_publish_ack_timeout_sec: float = float(os.getenv("MQTT_PUBLISH_ACK_TIMEOUT_SEC", "5.0"))
+    telemetry_shutdown_drain_timeout_sec: float = float(
+        os.getenv("TELEMETRY_SHUTDOWN_DRAIN_TIMEOUT_SEC", "30.0")
+    )
+    telemetry_max_pg_retries: int = int(os.getenv("TELEMETRY_MAX_PG_RETRIES", "3"))
+
 
 def get_settings() -> Settings:
     """Получить настройки с проверкой обязательных параметров безопасности."""

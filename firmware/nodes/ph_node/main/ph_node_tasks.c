@@ -23,6 +23,7 @@
 #include "ina209.h"
 #include "pump_driver.h"
 #include "node_telemetry_engine.h"
+#include "node_state_manager.h"
 #include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -404,11 +405,14 @@ void ph_node_publish_telemetry(void) {
         raw_value = (int32_t)cached.raw_thousandths;
         is_stable = cached.stable;
     } else {
-        ESP_LOGW(TAG, "pH telemetry: cache miss or stale (stub for MQTT)");
-        ph_value = 6.5f;
-        using_stub = true;
-        is_stable = false;
-        raw_value = 6500;
+        ESP_LOGW(TAG, "pH telemetry skipped: cache miss or stale (no placeholder publish)");
+        node_state_manager_report_error(
+            ERROR_LEVEL_ERROR,
+            "ph_sensor",
+            ESP_ERR_INVALID_RESPONSE,
+            "pH telemetry cache empty or stale"
+        );
+        return;
     }
 
     ESP_LOGI(

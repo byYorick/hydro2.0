@@ -23,6 +23,7 @@
 #include "i2c_bus.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "cJSON.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -110,9 +111,10 @@ static esp_err_t ec_node_merge_ec_calibration_into_nvs(uint8_t stage, uint16_t k
     return err;
 }
 
-/** Последний удачный EC для телеметрии (mS/cm): при срыве чтения не шлём 1.2 на график. */
+/** Последний удачный EC для телеметрии (mS/cm): при срыве чтения не шлём placeholder. */
 static float s_ec_telemetry_last_good = NAN;
 static bool s_ec_telemetry_have_last_good = false;
+static uint64_t s_ec_telemetry_last_good_ts_ms = 0;
 
 /**
  * Макс. |ΔEC| между опросами телеметрии (~2 с): выше — считаем глитчем по шине/байтам.
@@ -183,6 +185,7 @@ void ec_node_ec_poll_sensor_once(void)
                 using_stub = false;
                 s_ec_telemetry_last_good = ec_value;
                 s_ec_telemetry_have_last_good = true;
+                s_ec_telemetry_last_good_ts_ms = esp_timer_get_time() / 1000;
                 resolved = true;
             }
         } else {
@@ -190,6 +193,7 @@ void ec_node_ec_poll_sensor_once(void)
             using_stub = false;
             s_ec_telemetry_last_good = ec_value;
             s_ec_telemetry_have_last_good = true;
+            s_ec_telemetry_last_good_ts_ms = esp_timer_get_time() / 1000;
             resolved = true;
         }
     }
@@ -202,8 +206,7 @@ void ec_node_ec_poll_sensor_once(void)
         } else {
             ESP_LOGW(TAG, "EC read fail");
             node_state_manager_report_error(ERROR_LEVEL_ERROR, "ec_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read EC sensor value");
-            ec_value = 1.2f;
-            using_stub = true;
+            return;
         }
     }
 
@@ -916,6 +919,8 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
 
     float ec_value = NAN;
     bool using_stub = false;
+    bool is_stable = true;
+    uint32_t stale_age_sec = 0;
     uint16_t tds_value = 0;
     trema_ec_error_t read_error = TREMA_EC_ERROR_NOT_INITIALIZED;
 
@@ -926,11 +931,19 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         using_stub = snap.using_stub;
         tds_value = snap.tds_ppm;
         read_error = TREMA_EC_ERROR_NONE;
+        is_stable = true;
     } else if (s_ec_telemetry_have_last_good && isfinite(s_ec_telemetry_last_good)) {
         ec_value = s_ec_telemetry_last_good;
         using_stub = true;
+        is_stable = false;
         read_error = TREMA_EC_ERROR_NONE;
-        ESP_LOGI(TAG, "EC tx cache miss st=1");
+        if (s_ec_telemetry_last_good_ts_ms > 0) {
+            uint64_t now_ms = esp_timer_get_time() / 1000;
+            if (now_ms >= s_ec_telemetry_last_good_ts_ms) {
+                stale_age_sec = (uint32_t)((now_ms - s_ec_telemetry_last_good_ts_ms) / 1000ULL);
+            }
+        }
+        ESP_LOGI(TAG, "EC tx cache miss (last-good age=%u s)", (unsigned)stale_age_sec);
     } else {
         ESP_LOGW(TAG, "EC no cache");
         node_state_manager_report_error(
@@ -939,24 +952,39 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
             ESP_ERR_INVALID_STATE,
             "EC sensor not initialized or telemetry cache empty"
         );
-        ec_value = 1.2f;
-        using_stub = true;
-        read_error = sensor_ready ? TREMA_EC_ERROR_I2C : TREMA_EC_ERROR_NOT_INITIALIZED;
+        return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGD(TAG, "EC tx prep EC=%.3f TDS=%u st=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub);
+    ESP_LOGD(TAG, "EC tx prep EC=%.3f TDS=%u st=%d stable=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub, (int)is_stable);
 
-    // Публикация EC через node_telemetry_engine
-    int32_t raw_value = (int32_t)(ec_value * 1000);  // Raw value в тысячных
-    esp_err_t err = node_telemetry_publish_sensor(
-        "ec_sensor",
-        METRIC_TYPE_EC,
-        ec_value,
-        "mS/cm",
-        raw_value,
-        using_stub,
-        true  // is_stable - всегда true для EC
-    );
+    int32_t raw_value = (int32_t)(ec_value * 1000);
+    esp_err_t err = ESP_OK;
+    if (stale_age_sec > 0) {
+        char json_buf[256];
+        int len = snprintf(
+            json_buf,
+            sizeof(json_buf),
+            "{\"metric_type\":\"EC\",\"value\":%.3f,\"ts\":%llu,\"unit\":\"mS/cm\",\"raw\":%d,\"stub\":true,\"stable\":false,\"stale_age_sec\":%u}",
+            (double)ec_value,
+            (unsigned long long)node_utils_get_timestamp_seconds(),
+            (int)raw_value,
+            (unsigned)stale_age_sec);
+        if (len > 0 && (size_t)len < sizeof(json_buf)) {
+            err = mqtt_manager_publish_telemetry("ec_sensor", json_buf);
+        } else {
+            err = ESP_ERR_INVALID_SIZE;
+        }
+    } else {
+        err = node_telemetry_publish_sensor(
+            "ec_sensor",
+            METRIC_TYPE_EC,
+            ec_value,
+            "mS/cm",
+            raw_value,
+            using_stub,
+            is_stable
+        );
+    }
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "EC pub fail %s", esp_err_to_name(err));

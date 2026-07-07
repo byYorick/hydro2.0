@@ -48,6 +48,9 @@ class Ae3RuntimeConfig:
     shutdown_grace_sec: float
     command_poll_default_sec: float
     command_poll_margin_sec: float
+    lease_heartbeat_max_failures: int
+    lease_heartbeat_transient_retries: int
+    intent_sync_max_retries: int
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -116,7 +119,7 @@ class Ae3RuntimeConfig:
                 legacy_default="10.0",
                 granular_default="2.0",
             ),
-            hl_max_retries=max(0, int(os.getenv("AE_HL_MAX_RETRIES", "2"))),
+            hl_max_retries=max(0, int(os.getenv("AE_HL_MAX_RETRIES", "1"))),
             hl_retry_backoff_sec=max(0.0, float(os.getenv("AE_HL_RETRY_BACKOFF_SEC", "0.5"))),
             hl_breaker_fail_threshold=max(1, int(os.getenv("AE_HL_BREAKER_FAIL_THRESHOLD", "5"))),
             hl_breaker_open_sec=max(0.1, float(os.getenv("AE_HL_BREAKER_OPEN_SEC", "15"))),
@@ -141,6 +144,9 @@ class Ae3RuntimeConfig:
             shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
             command_poll_default_sec=max(1.0, float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))),
             command_poll_margin_sec=max(0.0, float(os.getenv("AE_COMMAND_POLL_MARGIN_SEC", "30"))),
+            lease_heartbeat_max_failures=max(1, int(os.getenv("AE_LEASE_HEARTBEAT_MAX_FAILURES", "3"))),
+            lease_heartbeat_transient_retries=max(0, int(os.getenv("AE_LEASE_HEARTBEAT_TRANSIENT_RETRIES", "1"))),
+            intent_sync_max_retries=max(0, int(os.getenv("AE_INTENT_SYNC_MAX_RETRIES", "2"))),
         )
 
     @staticmethod

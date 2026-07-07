@@ -112,6 +112,7 @@ class ErrorCodes:
     AE3_COMMAND_POLL_DEADLINE_EXCEEDED = "ae3_command_poll_deadline_exceeded"
     AE3_INVALID_PLANNED_COMMAND = "ae3_invalid_planned_command"
     COMMAND_SEND_FAILED = "command_send_failed"
+    COMMAND_PROTOCOL_VIOLATION = "command_protocol_violation"
     # Параллельная очистка удалила `ae_tasks`, пока publish pipeline ещё выполнялся.
     # Это симметрично случаю с пропавшей задачей в `finalize_task`.
     AE3_TASK_MISSING_DURING_PUBLISH = "task_missing_during_publish"

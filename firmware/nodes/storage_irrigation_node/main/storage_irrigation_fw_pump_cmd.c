@@ -179,8 +179,16 @@ void storage_irrigation_node_done_timer_cb(TimerHandle_t timer) {
     event.current_valid = entry->current_valid;
     event.auto_off = entry->auto_off;
     event.duration_ms = entry->duration_ms;
-    if (xQueueSend(g_done_queue, &event, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Done queue full for channel %s", entry->channel_name);
+    bool sent = false;
+    for (int attempt = 0; attempt < 40; attempt++) {
+        if (xQueueSend(g_done_queue, &event, 0) == pdTRUE) {
+            sent = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (!sent) {
+        ESP_LOGE(TAG, "Done queue full for channel %s after retries", entry->channel_name);
     }
 }
 

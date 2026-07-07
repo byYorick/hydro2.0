@@ -1,16 +1,12 @@
 global:
   resolve_timeout: 5m
-  # SMTP настройки (заполнить в production)
-  smtp_smarthost: 'smtp.example.com:587'
-  smtp_from: 'alerts@hydro.example.com'
-  smtp_auth_username: 'alerts@hydro.example.com'
-  smtp_auth_password: 'password'
 
-# Шаблоны для уведомлений
+# Доставка алертов наружу: только Laravel webhook (Bearer из /alertmanager/webhook_token).
+# SMTP/Telegram receivers намеренно не используются — операторские уведомления через Laravel AlertService.
+
 templates:
   - '/etc/alertmanager/templates/*.tmpl'
 
-# Маршрутизация алертов
 route:
   receiver: 'default-receiver'
   group_by: ['alertname', 'severity']
@@ -26,41 +22,37 @@ route:
         severity: warning
       receiver: 'warning-receiver'
 
-# Получатели уведомлений
 receivers:
   - name: 'default-receiver'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
   - name: 'critical-receiver'
-    email_configs:
-      - to: 'admin@example.com'
-        headers:
-          Subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
-    telegram_configs:
-      - bot_token: 'YOUR_BOT_TOKEN'
-        chat_id: -123456789
-        api_url: 'https://api.telegram.org'
-        message: '🚨 CRITICAL: {{ .GroupLabels.alertname }}\n{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
   - name: 'warning-receiver'
-    email_configs:
-      - to: 'admin@example.com'
-        headers:
-          Subject: 'WARNING: {{ .GroupLabels.alertname }}'
     webhook_configs:
       - url: 'http://laravel:80/api/alerts/webhook'
         send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /alertmanager/webhook_token
 
-# Подавление дубликатов
 inhibit_rules:
   - source_match:
       severity: 'critical'
     target_match:
       severity: 'warning'
     equal: ['alertname', 'instance']
-

@@ -165,7 +165,27 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
-### 2.10. Датчики субстрата (soil)
+### 2.12. Системные события (system)
+
+Канал `system` используется для событий уровня ноды (не привязанных к конкретному actuator channel).
+
+| event_code | Описание |
+|------------|----------|
+| `link_loss_failsafe` | Актуаторы переведены в safe state после таймаута потери MQTT (`link_loss_timeout_sec`) |
+
+Пример payload:
+
+```json
+{
+  "event_code": "link_loss_failsafe",
+  "timeout_sec": 120,
+  "stopped_pumps": ["pump_main"],
+  "stopped_relays": ["valve_irrigation"],
+  "ts": 1737355600
+}
+```
+
+### 2.13. Датчики субстрата (soil)
 
 Канонические ключи:
 

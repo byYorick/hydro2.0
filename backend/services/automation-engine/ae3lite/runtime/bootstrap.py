@@ -182,6 +182,9 @@ def build_ae3_runtime_bundle(
         reconcile_poll_interval_sec=config.reconcile_poll_interval_sec,
         stale_task_reconcile_interval_sec=config.stale_task_reconcile_sec,
         shutdown_grace_sec=config.shutdown_grace_sec,
+        lease_heartbeat_max_failures=config.lease_heartbeat_max_failures,
+        lease_heartbeat_transient_retries=config.lease_heartbeat_transient_retries,
+        intent_sync_max_retries=config.intent_sync_max_retries,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
         task_repository=task_repository,

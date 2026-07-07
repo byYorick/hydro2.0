@@ -671,26 +671,49 @@ esp_err_t pump_driver_stop(const char *channel_name) {
 }
 
 esp_err_t pump_driver_emergency_stop(void) {
-    ESP_LOGW(TAG, "EMERGENCY STOP - all pumps");
-    
+    ESP_LOGW(TAG, "EMERGENCY STOP - all pumps (including latched)");
+
     if (!s_initialized) {
         return ESP_OK;
     }
-    
+
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex");
         return ESP_ERR_TIMEOUT;
     }
-    
-    // Используем версию без mutex, так как mutex уже взят
+
     for (size_t i = 0; i < s_channel_count; i++) {
-        if (s_channels[i].initialized && s_channels[i].is_running) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+        if (s_channels[i].is_running || s_channels[i].current_state == PUMP_STATE_ON) {
             pump_stop_internal_unlocked(&s_channels[i]);
         }
     }
-    
+
     xSemaphoreGive(s_mutex);
     return ESP_OK;
+}
+
+void pump_driver_append_active_channels_json(cJSON *pumps_arr) {
+    if (!pumps_arr || !cJSON_IsArray(pumps_arr) || !s_initialized) {
+        return;
+    }
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return;
+    }
+
+    for (size_t i = 0; i < s_channel_count; i++) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+        if (s_channels[i].is_running || s_channels[i].current_state == PUMP_STATE_ON) {
+            cJSON_AddItemToArray(pumps_arr, cJSON_CreateString(s_channels[i].channel_name));
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
 }
 
 esp_err_t pump_driver_get_state(const char *channel_name, pump_driver_state_t *state) {

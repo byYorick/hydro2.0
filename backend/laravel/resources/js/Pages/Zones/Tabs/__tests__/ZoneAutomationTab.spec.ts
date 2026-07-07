@@ -9,6 +9,8 @@ const apiPostMock = vi.hoisted(() => vi.fn())
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
+      automationStateBootstrap: null,
+      automationState: undefined,
       auth: {
         user: {
           role: roleState.role,
@@ -555,8 +557,47 @@ describe('ZoneAutomationTab.vue', () => {
     expect(editButton).toBeUndefined()
   })
 
-  it('блокирует ручное управление двухбаковой схемой для не-operator роли', async () => {
-    roleState.role = 'engineer'
+  it('блокирует ручное управление двухбаковой схемой для viewer', async () => {
+    roleState.role = 'viewer'
+
+    apiGetMock.mockImplementation((url: string) => {
+      if (url.includes('/automation-logic-profile')) {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              active_mode: 'working',
+              profiles: {
+                working: {
+                  mode: 'working',
+                  is_active: true,
+                  subsystems: {},
+                  updated_at: '2026-02-10T08:00:00Z',
+                },
+              },
+            },
+          },
+        })
+      }
+
+      if (url.includes('/state')) {
+        const zoneId = Number(url.match(/\/api\/zones\/(\d+)\/state/)?.[1] ?? 42)
+        const response = defaultStateResponse(zoneId)
+        response.data.control_mode = 'semi'
+        response.data.allowed_manual_steps = ['clean_fill_start', 'solution_fill_start']
+        return Promise.resolve(response)
+      }
+
+      return Promise.resolve({
+        data: {
+          status: 'ok',
+          data: {
+            control_mode: 'semi',
+            allowed_manual_steps: ['clean_fill_start', 'solution_fill_start'],
+          },
+        },
+      })
+    })
 
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -570,9 +611,9 @@ describe('ZoneAutomationTab.vue', () => {
 
     await flushPromises()
 
-    const modeSelect = wrapper.find('select.input-select')
-    expect(modeSelect.exists()).toBe(true)
-    expect(modeSelect.attributes('disabled')).toBeDefined()
+    const semiModeButton = wrapper.findAll('button').find((btn) => btn.text().includes('Полуавто'))
+    expect(semiModeButton).toBeTruthy()
+    expect(semiModeButton!.attributes('disabled')).toBeDefined()
 
     const manualStepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
     expect(manualStepButton).toBeTruthy()

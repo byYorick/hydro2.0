@@ -8,6 +8,7 @@
 
 #include "wifi_manager.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "freertos/FreeRTOS.h"
@@ -90,12 +91,25 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                     xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                     s_reconnect_attempts = 0;  // Сбрасываем счетчик
                 } else {
-                    // Попытка переподключения
-                    if (s_max_reconnect_attempts > 0) {
-                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/%d)", s_reconnect_attempts, s_max_reconnect_attempts);
-                    } else {
-                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/unlimited)", s_reconnect_attempts);
+                    uint32_t delay_ms = 1000U;
+                    if (s_reconnect_attempts > 1) {
+                        delay_ms = 1000U << (s_reconnect_attempts - 1);
+                        if (delay_ms > 60000U) {
+                            delay_ms = 60000U;
+                        }
                     }
+                    delay_ms += (esp_random() % 500U);
+                    if (delay_ms > 60000U) {
+                        delay_ms = 60000U;
+                    }
+                    if (s_max_reconnect_attempts > 0) {
+                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi in %u ms (attempt %d/%d)",
+                                 (unsigned)delay_ms, s_reconnect_attempts, s_max_reconnect_attempts);
+                    } else {
+                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi in %u ms (attempt %d/unlimited)",
+                                 (unsigned)delay_ms, s_reconnect_attempts);
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
                     esp_wifi_connect();
                 }
                 break;

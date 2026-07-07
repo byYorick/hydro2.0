@@ -12,6 +12,7 @@ import asyncpg
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.infrastructure.metrics import (
+    OLDEST_ACTIVE_TASK_AGE_SECONDS,
     OLDEST_PENDING_TASK_AGE_SECONDS,
     PENDING_TASKS,
     TASK_DURATION_SECONDS,
@@ -507,6 +508,33 @@ class PgAutomationTaskRepository:
             return
         PENDING_TASKS.set(float(row["pending_count"] or 0))
         OLDEST_PENDING_TASK_AGE_SECONDS.set(max(0.0, float(row["oldest_age_sec"] or 0)))
+
+    async def refresh_active_task_age_metrics(self, *, now: datetime) -> None:
+        """Обновляет gauge возраста самой старой активной задачи по статусу."""
+        normalized_now = self._normalize_timestamp(now)
+        for status in ("claimed", "running", "waiting_command"):
+            OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status=status).set(0.0)
+        rows = await self._fetch(
+            """
+            SELECT
+                status,
+                COALESCE(
+                    EXTRACT(EPOCH FROM ($1 - MIN(updated_at))),
+                    0
+                )::double precision AS oldest_age_sec
+            FROM ae_tasks
+            WHERE status IN ('claimed', 'running', 'waiting_command')
+            GROUP BY status
+            """,
+            normalized_now,
+        )
+        for row in rows:
+            status = str(row["status"] or "").strip()
+            if not status:
+                continue
+            OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status=status).set(
+                max(0.0, float(row["oldest_age_sec"] or 0))
+            )
 
     async def next_pending_due_at(self) -> datetime | None:
         row = await self._fetchrow(

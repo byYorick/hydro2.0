@@ -195,6 +195,32 @@ class SchedulerMetricsControllerTest extends TestCase
         );
     }
 
+    public function test_metrics_endpoint_renders_missed_windows_and_lock_skipped_counters(): void
+    {
+        $zone = Zone::factory()->create();
+
+        /** @var SchedulerMetricsStore $metricsStore */
+        $metricsStore = $this->app->make(SchedulerMetricsStore::class);
+        $metricsStore->recordMissedWindowsTotal($zone->id, 'irrigation', 4);
+        $metricsStore->recordLockSkippedTotal(2);
+
+        $response = $this->get('/api/system/scheduler/metrics');
+        $response->assertOk();
+
+        $body = $response->getContent();
+        $this->assertIsString($body);
+        $this->assertStringContainsString('# TYPE laravel_scheduler_missed_windows_total counter', $body);
+        $this->assertStringContainsString(
+            sprintf(
+                'laravel_scheduler_missed_windows_total{task_type="irrigation",zone_id="%d"} 4',
+                $zone->id,
+            ),
+            $body,
+        );
+        $this->assertStringContainsString('# TYPE laravel_scheduler_lock_skipped_total counter', $body);
+        $this->assertStringContainsString('laravel_scheduler_lock_skipped_total 2', $body);
+    }
+
     /**
      * @param  array<string, int|string>  $labels
      */

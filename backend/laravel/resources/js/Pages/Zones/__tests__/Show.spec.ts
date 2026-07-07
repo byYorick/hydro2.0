@@ -161,6 +161,20 @@ vi.mock('@/Components/AutomationEngine.vue', () => ({
   },
 }))
 
+vi.mock('@/Pages/Zones/Tabs/ZoneAutomationTab.vue', () => ({
+  default: {
+    name: 'ZoneAutomationTab',
+    props: ['zoneId', 'targets', 'telemetry', 'devices', 'zoneName', 'activeGrowCycle', 'currentRecipePhase', 'automationStateRefreshSeq', 'irrigationActionLoading'],
+    emits: ['start-irrigation', 'force-irrigation', 'refresh-automation-state'],
+    template: `
+      <div class="zone-automation-tab">
+        <button type="button">Запустить полив</button>
+        <button type="button">Принудительный полив</button>
+      </div>
+    `,
+  },
+}))
+
 const sampleZone = {
   id: 1,
   name: 'Test Zone',
@@ -268,6 +282,8 @@ const usePageMock = vi.hoisted(() => vi.fn(() => ({
     devices: sampleDevices,
     alerts: sampleAlerts,
     events: sampleEvents,
+    automationStateBootstrap: null,
+    automationState: undefined,
     auth: { user: { role: 'operator' } },
   },
   url: '/zones/1',
@@ -286,6 +302,7 @@ vi.mock('@inertiajs/vue3', () => ({
 const zonesStoreMock = {
   allZones: [],
   cacheVersion: 0,
+  zoneEventSeq: {} as Record<number, number>,
   initFromProps: vi.fn(),
   upsert: vi.fn(),
   remove: vi.fn(),
@@ -749,14 +766,18 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toBeTruthy()
   })
 
-  it('отображает обе кнопки полива в overview', async () => {
+  it('отображает обе кнопки полива на вкладке автоматизации', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
 
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
-    await new Promise(resolve => setTimeout(resolve, 100))
 
-    // Labels обновились: "Запустить полив" + "Принудительный полив"
+    const automationTab = wrapper.findAll('button').find((button) => button.text().includes('Автоматизация'))
+    expect(automationTab).toBeTruthy()
+    await automationTab?.trigger('click')
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 200))
+
     expect(wrapper.text()).toContain('Запустить полив')
     expect(wrapper.text()).toContain('Принудительный')
   })

@@ -31,6 +31,12 @@
 void oled_ui_notify_mqtt_tx(void) __attribute__((weak));
 void oled_ui_notify_mqtt_rx(void) __attribute__((weak));
 
+/** Optional hook from node_framework link-loss fail-safe (weak default: no-op). */
+void node_link_loss_failsafe_on_mqtt_connected(bool connected) __attribute__((weak));
+void node_link_loss_failsafe_on_mqtt_connected(bool connected) {
+    (void)connected;
+}
+
 // Условный include для diagnostics (может быть не всегда доступен)
 #ifdef __has_include
     #if __has_include("diagnostics.h")
@@ -86,6 +92,56 @@ static char s_rx_payload_buf[MQTT_MANAGER_BUFFER_SIZE_BYTES + 1] = {0};
 static int s_rx_expected_len = 0;
 static int s_rx_received_len = 0;
 static bool s_rx_assembly_active = false;
+
+#define MQTT_TIME_SYNC_RETRY_INTERVAL_MS 15000
+#define MQTT_TIME_SYNC_RETRY_MAX_ATTEMPTS 40
+
+static TaskHandle_t s_time_sync_retry_task = NULL;
+
+static void mqtt_time_sync_retry_task(void *arg) {
+    (void)arg;
+    int attempts = 0;
+    while (mqtt_manager_is_connected() && !node_utils_is_time_synced() &&
+           attempts < MQTT_TIME_SYNC_RETRY_MAX_ATTEMPTS) {
+        vTaskDelay(pdMS_TO_TICKS(MQTT_TIME_SYNC_RETRY_INTERVAL_MS));
+        if (!mqtt_manager_is_connected() || node_utils_is_time_synced()) {
+            break;
+        }
+        attempts++;
+        esp_err_t err = node_utils_request_time();
+        if (err == ESP_OK) {
+            ESP_LOGD(TAG, "Time sync retry attempt %d/%d", attempts, MQTT_TIME_SYNC_RETRY_MAX_ATTEMPTS);
+        } else {
+            ESP_LOGW(TAG, "Time sync retry failed: %s", esp_err_to_name(err));
+        }
+    }
+    s_time_sync_retry_task = NULL;
+    vTaskDelete(NULL);
+}
+
+static void mqtt_start_time_sync_retry_task(void) {
+    if (node_utils_is_time_synced() || s_time_sync_retry_task != NULL) {
+        return;
+    }
+    BaseType_t created = xTaskCreate(
+        mqtt_time_sync_retry_task,
+        "mqtt_time_sync",
+        3072,
+        NULL,
+        3,
+        &s_time_sync_retry_task);
+    if (created != pdPASS) {
+        s_time_sync_retry_task = NULL;
+        ESP_LOGW(TAG, "Failed to start time sync retry task");
+    }
+}
+
+static void mqtt_stop_time_sync_retry_task(void) {
+    if (s_time_sync_retry_task != NULL) {
+        vTaskDelete(s_time_sync_retry_task);
+        s_time_sync_retry_task = NULL;
+    }
+}
 
 // Mutex для защиты s_node_info и статических буферов от гонок данных
 static SemaphoreHandle_t s_node_info_mutex = NULL;
@@ -1025,6 +1081,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     esp_err_to_name(time_req_err)
                 );
             }
+            mqtt_start_time_sync_retry_task();
 
             if (!s_is_connected) {
                 ESP_LOGW(TAG, "MQTT disconnected before connection callback, skip connected callback");
@@ -1039,16 +1096,19 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             } else {
                 ESP_LOGW(TAG, "No connection callback registered");
             }
+            node_link_loss_failsafe_on_mqtt_connected(true);
             break;
 
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT disconnected from broker");
             s_is_connected = false;
+            mqtt_stop_time_sync_retry_task();
 
             // Вызов callback отключения
             if (s_connection_cb) {
                 s_connection_cb(false, s_connection_user_ctx);
             }
+            node_link_loss_failsafe_on_mqtt_connected(false);
             break;
 
         case MQTT_EVENT_SUBSCRIBED:

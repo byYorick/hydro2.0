@@ -14,9 +14,10 @@ from ae3lite.config.schema import RuntimePlan
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from ae3lite.application.runtime_event_contract import with_runtime_event_contract
-from ae3lite.infrastructure.metrics import TASK_RUNNING_TRANSITION_MISSED
+from ae3lite.infrastructure.metrics import FLOW_STOP_FAILED, TASK_RUNNING_TRANSITION_MISSED, inc_observability_write_failed
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
+from common.biz_alerts import send_biz_alert
 from common.service_logs import send_service_log
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import (
@@ -1450,12 +1451,37 @@ class ExecuteTaskUseCase:
                 track_task_state=False,
             )
             if not bool(result.get("success")):
+                stage = str(getattr(task, "current_stage", "") or "unknown")
+                error_code = str(result.get("error_code") or "unknown")
+                FLOW_STOP_FAILED.labels(stage=stage or "unknown").inc()
                 logger.error(
                     "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s error_code=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
-                    result.get("error_code"),
+                    error_code,
                 )
+                try:
+                    await send_biz_alert(
+                        zone_id=int(task.zone_id),
+                        code="biz_flow_stop_failed_hardware_may_be_active",
+                        severity="critical",
+                        message="Не удалось подтвердить остановку flow-path; оборудование может оставаться активным",
+                        details={
+                            "task_id": int(getattr(task, "id", 0) or 0),
+                            "stage": stage,
+                            "reason": "fail_safe_shutdown_non_success",
+                            "error_code": error_code,
+                        },
+                        scope_parts=(f"stage:{stage}",),
+                    )
+                except Exception:
+                    inc_observability_write_failed(kind="biz_alert")
+                    logger.warning(
+                        "AE3 fail-safe shutdown: не удалось создать biz-alert zone_id=%s task_id=%s",
+                        getattr(task, "zone_id", None),
+                        getattr(task, "id", None),
+                        exc_info=True,
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:

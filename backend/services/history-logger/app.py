@@ -65,6 +65,13 @@ async def lifespan(app: FastAPI):
     if state.telemetry_queue is None:
         state.telemetry_queue = TelemetryQueue()
 
+    try:
+        reclaimed = await state.telemetry_queue.reclaim_processing()
+        if reclaimed:
+            logger.info("Reclaimed %s telemetry item(s) from processing list", reclaimed)
+    except Exception:
+        logger.warning("Failed to reclaim telemetry processing list on startup", exc_info=True)
+
     task = asyncio.create_task(process_telemetry_queue())
     state.background_tasks.append(task)
 

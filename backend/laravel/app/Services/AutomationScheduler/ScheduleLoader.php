@@ -6,6 +6,7 @@ use App\Models\GrowCycle;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ScheduleLoader
 {
@@ -73,6 +74,11 @@ class ScheduleLoader
                 continue;
             }
             if (isset($payload['error'])) {
+                Log::warning('Laravel scheduler skipped zone due to effective targets error', [
+                    'zone_id' => $zoneId,
+                    'cycle_id' => (int) $cycle->id,
+                    'error' => $payload['error'],
+                ]);
                 continue;
             }
             if (! is_array($payload['targets'] ?? null)) {

@@ -10,7 +10,11 @@ from common.utils.time import normalize_device_timestamp, utcnow
 from common.db import create_zone_event, execute, fetch
 from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id
-from metrics import COMMAND_RESPONSE_ERROR, COMMAND_RESPONSE_RECEIVED
+from metrics import (
+    COMMAND_RESPONSE_ERROR,
+    COMMAND_RESPONSE_RECEIVED,
+    COMMAND_STATUS_DELIVERY_DROPPED,
+)
 from utils import _extract_channel_from_topic, _extract_gh_uid, _extract_node_uid, _parse_json
 
 from ._shared import (
@@ -305,6 +309,8 @@ def _log_delivery_result(
             delivery_result.http_status,
             delivery_result.queue_error,
         )
+        if delivery_result.dropped:
+            COMMAND_STATUS_DELIVERY_DROPPED.inc()
         COMMAND_RESPONSE_ERROR.inc()
 
 

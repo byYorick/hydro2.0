@@ -101,6 +101,8 @@ _AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES = max(
     1,
     int(os.getenv("AE_CORRECTION_ALERT_BLOCK_MAX_RETRIES", "10")),
 )
+# Retry cadence while corrections are blocked by an active alert (operational backoff).
+_ALERT_BLOCK_RETRY_DELAY_SEC = 60
 _ALERT_BLOCK_SNAPSHOT_PREFIX = ALERT_BLOCK_SNAPSHOT_CMD_PREFIX
 
 
@@ -543,7 +545,7 @@ class CorrectionHandler(BaseStageHandler):
             )
             return StageOutcome(
                 kind="retry",
-                due_delay_sec=60,
+                due_delay_sec=_ALERT_BLOCK_RETRY_DELAY_SEC,
                 correction=replace(
                     corr,
                     snapshot_cmd_id=f"{_ALERT_BLOCK_SNAPSHOT_PREFIX}{retry_count}",

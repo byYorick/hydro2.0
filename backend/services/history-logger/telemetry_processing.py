@@ -6,6 +6,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+import asyncpg
 import httpx
 
 import state
@@ -13,7 +14,7 @@ from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from common.simulation_events import record_simulation_event_throttled
-from common.redis_queue import TelemetryQueueItem
+from common.redis_queue import PopBatchResult, QueueEntry, TelemetryQueueItem
 from common.utils.time import utcnow
 from common.trace_context import clear_trace_id, set_trace_id_from_payload
 from metrics import (
@@ -70,6 +71,19 @@ from utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class PgTransportError(Exception):
+    """Транспортная ошибка PostgreSQL — батч можно безопасно requeue."""
+
+
+def _is_pg_transport_error(exc: Exception) -> bool:
+    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError, OSError)):
+        return True
+    sqlstate = getattr(exc, "sqlstate", None)
+    return sqlstate in {"08000", "08003", "08006", "08001", "08004", "57P01", "57P02", "57P03"}
+
+
 _anomaly_alert_last_sent = telemetry_anomaly_module._anomaly_alert_last_sent
 _anomaly_resolved_last_sent = telemetry_anomaly_module._anomaly_resolved_last_sent
 
@@ -1590,6 +1604,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 )
                 _sensor_cache.clear()
                 return
+            if _is_pg_transport_error(e):
+                raise PgTransportError(str(e)) from e
             logger.error(
                 "Failed to insert telemetry batch",
                 extra={
@@ -1639,6 +1655,65 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
     TELEM_BATCH_SIZE.observe(processed_count)
 
 
+def _queue_entries_to_samples(entries: List[QueueEntry]) -> List[TelemetrySampleModel]:
+    samples: List[TelemetrySampleModel] = []
+    for entry in entries:
+        item = entry.item
+        samples.append(
+            TelemetrySampleModel(
+                node_uid=item.node_uid,
+                zone_uid=item.zone_uid,
+                zone_id=None,
+                gh_uid=getattr(item, "gh_uid", None),
+                metric_type=item.metric_type,
+                value=item.value,
+                ts=item.ts,
+                raw=item.raw,
+                channel=item.channel,
+            )
+        )
+    return samples
+
+
+async def _handle_pop_batch(pop: PopBatchResult) -> None:
+    if not pop.entries:
+        return
+
+    queue = _get_telemetry_queue()
+    if queue is None:
+        return
+
+    samples = _queue_entries_to_samples(pop.entries)
+    try:
+        await process_telemetry_batch(samples)
+    except PgTransportError:
+        await queue.requeue_batch(pop.entries)
+        return
+
+    await queue.ack_batch([entry.raw for entry in pop.entries])
+
+
+async def _drain_telemetry_queue_on_shutdown() -> None:
+    queue = _get_telemetry_queue()
+    if queue is None:
+        return
+
+    settings = get_settings()
+    deadline = time.monotonic() + settings.telemetry_shutdown_drain_timeout_sec
+    batch_size = max(1, int(settings.telemetry_batch_size))
+
+    while time.monotonic() < deadline:
+        pending = await queue.total_pending_size()
+        if pending <= 0:
+            break
+
+        pop = await queue.pop_batch(batch_size)
+        if not pop.entries:
+            break
+
+        await _handle_pop_batch(pop)
+
+
 async def process_telemetry_queue() -> None:
     """
     Фоновая задача для обработки очереди телеметрии из Redis.
@@ -1673,25 +1748,10 @@ async def process_telemetry_queue() -> None:
 
             if should_flush:
                 batch_size = min(s.telemetry_batch_size, queue_size)
-                queue_items = await _get_telemetry_queue().pop_batch(batch_size)
+                pop = await _get_telemetry_queue().pop_batch(batch_size)
 
-                if queue_items:
-                    samples = []
-                    for item in queue_items:
-                        sample = TelemetrySampleModel(
-                            node_uid=item.node_uid,
-                            zone_uid=item.zone_uid,
-                            zone_id=None,
-                            gh_uid=getattr(item, "gh_uid", None),
-                            metric_type=item.metric_type,
-                            value=item.value,
-                            ts=item.ts,
-                            raw=item.raw,
-                            channel=item.channel,
-                        )
-                        samples.append(sample)
-
-                    await process_telemetry_batch(samples)
+                if pop.entries:
+                    await _handle_pop_batch(pop)
                     last_flush = utcnow()
 
             await asyncio.sleep(s.queue_check_interval_sec)
@@ -1703,23 +1763,5 @@ async def process_telemetry_queue() -> None:
     logger.info(
         "Shutting down telemetry queue processor, processing remaining items..."
     )
-    remaining_items = await _get_telemetry_queue().pop_batch(
-        s.telemetry_batch_size * s.final_batch_multiplier
-    )
-    if remaining_items:
-        samples = []
-        for item in remaining_items:
-            sample = TelemetrySampleModel(
-                node_uid=item.node_uid,
-                zone_uid=item.zone_uid,
-                zone_id=None,
-                gh_uid=getattr(item, "gh_uid", None),
-                metric_type=item.metric_type,
-                value=item.value,
-                ts=item.ts,
-                raw=item.raw,
-                channel=item.channel,
-            )
-            samples.append(sample)
-        await process_telemetry_batch(samples)
+    await _drain_telemetry_queue_on_shutdown()
     logger.info("Telemetry queue processor stopped")

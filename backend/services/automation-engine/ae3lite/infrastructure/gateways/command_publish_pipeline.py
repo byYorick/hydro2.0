@@ -181,6 +181,7 @@ class CommandPublishPipeline:
             if not greenhouse_uid:
                 raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
 
+            _dispatch_start = time.monotonic()
             published_cmd_id = await self._history_logger_client.publish(
                 greenhouse_uid=greenhouse_uid,
                 zone_id=task.zone_id,
@@ -190,7 +191,6 @@ class CommandPublishPipeline:
                 params=params,
                 cmd_id=cmd_id,
             )
-            _dispatch_start = time.monotonic()
             COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
             COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
         except Exception as exc:

@@ -261,10 +261,10 @@ esp_err_t relay_driver_deinit(void) {
         return ESP_OK;
     }
     
-    // Устанавливаем все реле в безопасное состояние (разомкнуто)
+    // Устанавливаем все реле в безопасное состояние (OPEN / de-energized)
     for (size_t i = 0; i < s_channel_count; i++) {
         if (s_channels[i].initialized) {
-            relay_driver_set_gpio_state(s_channels[i].gpio_pin, false, s_channels[i].active_high);
+            (void)relay_driver_set_state(s_channels[i].channel_name, RELAY_STATE_OPEN);
         }
     }
     
@@ -371,4 +371,45 @@ esp_err_t relay_driver_get_state(const char *channel_name, relay_state_t *state)
 
 bool relay_driver_is_initialized(void) {
     return s_initialized;
+}
+
+esp_err_t relay_driver_emergency_stop_all_safe(void) {
+    if (!s_initialized) {
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "EMERGENCY STOP - all relays to safe OPEN state");
+
+    esp_err_t first_err = ESP_OK;
+    for (size_t i = 0; i < s_channel_count; i++) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+        esp_err_t err = relay_driver_set_state(s_channels[i].channel_name, RELAY_STATE_OPEN);
+        if (err != ESP_OK && first_err == ESP_OK) {
+            first_err = err;
+        }
+    }
+    return first_err;
+}
+
+void relay_driver_append_active_channels_json(cJSON *relays_arr) {
+    if (!relays_arr || !cJSON_IsArray(relays_arr) || !s_initialized) {
+        return;
+    }
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        return;
+    }
+
+    for (size_t i = 0; i < s_channel_count; i++) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+        if (s_channels[i].current_state == RELAY_STATE_CLOSED) {
+            cJSON_AddItemToArray(relays_arr, cJSON_CreateString(s_channels[i].channel_name));
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
 }

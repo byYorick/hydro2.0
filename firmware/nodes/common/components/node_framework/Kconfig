@@ -1,0 +1,11 @@
+menu "Hydro Node Framework"
+
+config HYDRO_ALLOW_LEGACY_HMAC
+    bool "Allow commands without HMAC (ts/sig)"
+    default n
+    help
+        When enabled, incoming MQTT commands without ts/sig fields may be accepted
+        if NodeConfig allow_legacy_hmac is also true. Production builds must keep
+        this disabled (default).
+
+endmenu

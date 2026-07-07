@@ -47,11 +47,14 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         waiting_command_reconcile_batch_limit=32,
         stale_claimed_ttl_sec=120,
         stale_running_ttl_sec=960,
-            stale_task_reconcile_sec=60.0,
-            shutdown_grace_sec=30.0,
-            command_poll_default_sec=120.0,
-            command_poll_margin_sec=30.0,
-        )
+        stale_task_reconcile_sec=60.0,
+        shutdown_grace_sec=30.0,
+        command_poll_default_sec=120.0,
+        command_poll_margin_sec=30.0,
+        lease_heartbeat_max_failures=3,
+        lease_heartbeat_transient_retries=1,
+        intent_sync_max_retries=2,
+    )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)
 

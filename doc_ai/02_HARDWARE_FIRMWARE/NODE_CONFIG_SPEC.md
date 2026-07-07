@@ -70,6 +70,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
 | `fail_safe_guards` | object | Нет | Локальные fail-safe guard-параметры узла; для `irrig` используются как mirror от `zone.logic_profile` |
+| `link_loss_timeout_sec` | integer | Нет | Таймаут (сек) после потери MQTT, по истечении которого нода переводит актуаторы в safe state. Дублируется в `fail_safe_guards.link_loss_timeout_sec` (mirror). `0` = отключено |
+| `allow_legacy_hmac` | boolean | Нет | Разрешить команды без `ts`/`sig` (только dev). В production-сборке игнорируется, если `CONFIG_HYDRO_ALLOW_LEGACY_HMAC=n` |
 
 ---
 
@@ -414,7 +416,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
     "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
-    "estop_debounce_ms": 80
+    "estop_debounce_ms": 80,
+    "link_loss_timeout_sec": 120
   },
   "wifi": {
     "ssid": "HydroFarm",
@@ -438,7 +441,10 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - `fail_safe_guards` не задаёт GPIO или channel map и не может переопределить firmware-locked каналы;
 - backend зеркалирует сюда значения из `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`;
 - поля `recirculation_solution_min_guard_enabled` и `irrigation_solution_min_guard_enabled` являются firmware mirror
-  для frontend/AE3-полей `recirculation_stop_on_solution_min` и `irrigation_stop_on_solution_min`.
+  для frontend/AE3-полей `recirculation_stop_on_solution_min` и `irrigation_stop_on_solution_min`;
+- `link_loss_timeout_sec` (top-level или в `fail_safe_guards`) — единая policy link-loss fail-safe: по истечении
+  таймаута после `MQTT DISCONNECTED` нода останавливает насосы (включая latched) и переводит реле в safe OPEN;
+  после reconnect публикуется `event_code=link_loss_failsafe` на канале `system`.
 
 ### 4.3. Климатическая нода (climate)
 

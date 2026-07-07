@@ -597,7 +597,7 @@ Payload:
 - `history-logger` инкрементирует `node_event_received_total{event_code=...}` только для
   разрешённого набора кодов, включая `level_switch_changed`, `clean_fill_source_empty`,
   `solution_fill_source_empty`, `solution_fill_leak_detected`, `recirculation_solution_low`,
-  `irrigation_solution_low`, `emergency_stop_activated`;
+  `irrigation_solution_low`, `emergency_stop_activated`, `link_loss_failsafe`;
 - неизвестные/кастомные коды агрегируются в `event_code="OTHER"`.
 
 Backend обязан:
@@ -636,7 +636,8 @@ Backend обязан логировать.
 - ограничивать max_duration насосов,
 - соблюдать min_off_time,
 - предотвращать повторные команды,
-- безопасно завершать действие при потере MQTT.
+- безопасно завершать действие при потере MQTT (link-loss fail-safe: `link_loss_timeout_sec`, event `link_loss_failsafe`);
+- на невалидный JSON команды отвечать `command_response` со статусом `INVALID` и `error_code=invalid_json`, если извлекается `cmd_id`;
 
 Backend обязан:
 - учитывать время выполнения команды,

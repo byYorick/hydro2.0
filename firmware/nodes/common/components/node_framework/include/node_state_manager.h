@@ -136,6 +136,16 @@ esp_err_t node_state_manager_register_safe_mode_callback(
     void *user_ctx
 );
 
+/**
+ * @brief Invoke registered actuator fail-safe without entering safe_mode.
+ *
+ * Used by link-loss policy and other non-fatal emergency paths.
+ *
+ * @param reason Diagnostic reason string (logged only)
+ * @return ESP_OK if callback succeeded or no callback registered
+ */
+esp_err_t node_state_manager_invoke_actuator_failsafe(const char *reason);
+
 #ifdef __cplusplus
 }
 #endif

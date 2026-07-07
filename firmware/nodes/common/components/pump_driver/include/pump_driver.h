@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "cJSON.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -143,6 +144,11 @@ esp_err_t pump_driver_stop(const char *channel_name);
  * @return esp_err_t ESP_OK при успехе
  */
 esp_err_t pump_driver_emergency_stop(void);
+
+/**
+ * @brief Append names of currently active pump channels to JSON array (for diagnostics/events).
+ */
+void pump_driver_append_active_channels_json(cJSON *pumps_arr);
 
 /**
  * @brief Получение текущего состояния насоса

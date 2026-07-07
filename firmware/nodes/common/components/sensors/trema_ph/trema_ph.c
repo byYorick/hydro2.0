@@ -102,14 +102,13 @@ static void trema_ph_mutex_take(void)
         if (s_trema_mutex == NULL) {
             static bool s_mutex_fail_logged;
             if (!s_mutex_fail_logged) {
-                ESP_LOGE(TAG, "recursive mutex create failed (heap?) — trema_ph без защиты от гонок");
+                ESP_LOGE(TAG, "recursive mutex create failed (heap?) — trema_ph init aborted");
                 s_mutex_fail_logged = true;
             }
+            return;
         }
     }
-    if (s_trema_mutex != NULL) {
-        (void)xSemaphoreTakeRecursive(s_trema_mutex, portMAX_DELAY);
-    }
+    (void)xSemaphoreTakeRecursive(s_trema_mutex, portMAX_DELAY);
 }
 
 static void trema_ph_mutex_give(void)
@@ -117,6 +116,17 @@ static void trema_ph_mutex_give(void)
     if (s_trema_mutex != NULL) {
         xSemaphoreGiveRecursive(s_trema_mutex);
     }
+}
+
+static bool trema_ph_ensure_mutex(void)
+{
+    trema_ph_mutex_take();
+    if (s_trema_mutex == NULL) {
+        trema_ph_mutex_give();
+        return false;
+    }
+    trema_ph_mutex_give();
+    return true;
 }
 
 static QueueHandle_t s_sample_q;
@@ -429,6 +439,10 @@ static esp_err_t trema_ph_read_header_with_discovery(uint8_t hdr[4])
 
 bool trema_ph_init(void)
 {
+    if (!trema_ph_ensure_mutex()) {
+        return false;
+    }
+
     trema_ph_mutex_take();
     bool ok = false;
 

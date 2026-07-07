@@ -255,6 +255,20 @@ async def publish_command_mqtt(
             raise RuntimeError(
                 f"MQTT publish failed with rc={result.rc} for topic {topic}"
             )
+
+        from metrics import COMMANDS_PUBLISH_UNCONFIRMED
+
+        settings = get_settings()
+        puback_ok = await asyncio.to_thread(
+            result.wait_for_publish,
+            timeout=settings.mqtt_publish_ack_timeout_sec,
+        )
+        if not puback_ok:
+            COMMANDS_PUBLISH_UNCONFIRMED.inc()
+            raise RuntimeError(
+                f"MQTT PUBACK timeout after {settings.mqtt_publish_ack_timeout_sec}s for topic {topic}"
+            )
+
         logger.info(
             "[MQTT_PUBLISH] SUCCESS: Command published successfully to %s, cmd_id=%s, payload_size=%s",
             topic,

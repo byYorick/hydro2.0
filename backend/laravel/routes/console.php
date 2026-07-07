@@ -14,7 +14,7 @@ Artisan::command('inspire', function () {
 // RETENTION_SAMPLES_DAYS=90. Текущий дефолт --days=30 здесь означает, что реальная
 // retention для telemetry_samples — 30 дней (более агрессивная политика побеждает).
 // Если нужно изменить, синхронизировать с RETENTION_SAMPLES_DAYS в docker-compose.
-Schedule::command('telemetry:cleanup-raw --days=30')
+Schedule::command('telemetry:cleanup-raw --days='.config('hydro.telemetry_retention_days', 30))
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
 
@@ -41,7 +41,24 @@ Schedule::command('backup:full')
     ->dailyAt('03:00')
     ->description('Полный бэкап всех компонентов системы')
     ->onFailure(function () {
-        \Log::error('Ошибка при создании полного бэкапа');
+        \Log::error('Ошибка при создании полного бэкапа (scheduled backup:full)');
+
+        try {
+            app(\App\Services\AlertService::class)->createOrUpdateActive([
+                'source' => 'infra',
+                'code' => 'infra_backup_full_failed',
+                'type' => 'Scheduled full backup failed',
+                'status' => 'ACTIVE',
+                'details' => [
+                    'command' => 'backup:full',
+                    'backup_dir' => env('BACKUP_DIR', '/backups'),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Не удалось создать infra-алерт о провале backup:full', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     });
 
 // Ротация бэкапов: ежедневно в 3:30 (после создания бэкапа)

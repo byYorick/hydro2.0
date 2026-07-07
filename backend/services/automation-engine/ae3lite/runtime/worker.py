@@ -18,6 +18,9 @@ from ae3lite.infrastructure.metrics import (
     ACTIVE_TASKS,
     CLAIM_ROLLBACK_FAILED,
     DRAIN_CRASHES,
+    INTENT_SYNC_FAILED,
+    LEASE_HEARTBEAT_FAILED,
+    RECONCILE_CONSECUTIVE_ERRORS,
     TASK_EXECUTION_CRASHED,
     TICK_DURATION,
     TICK_ERRORS,
@@ -53,6 +56,9 @@ class Ae3RuntimeWorker:
         stale_task_reconcile_use_case: Any | None = None,
         stale_task_reconcile_interval_sec: float | None = None,
         shutdown_grace_sec: float = 30.0,
+        lease_heartbeat_max_failures: int = 3,
+        lease_heartbeat_transient_retries: int = 1,
+        intent_sync_max_retries: int = 2,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
@@ -96,6 +102,9 @@ class Ae3RuntimeWorker:
         self._shutting_down = False
         self._shutdown_grace_sec = max(0.0, float(shutdown_grace_sec))
         self._active_shutdown_grace_sec: float | None = None
+        self._lease_heartbeat_max_failures = max(1, int(lease_heartbeat_max_failures))
+        self._lease_heartbeat_transient_retries = max(0, int(lease_heartbeat_transient_retries))
+        self._intent_sync_max_retries = max(0, int(intent_sync_max_retries))
         self._inflight_automation_tasks: dict[asyncio.Task, Any] = {}
         self._reconcile_consecutive_errors = 0
         self._pending_health_cache: tuple[float, bool] | None = None
@@ -196,10 +205,12 @@ class Ae3RuntimeWorker:
                 await self._run_waiting_command_reconcile_once()
                 await self._maybe_run_stale_task_reconcile_once()
                 self._reconcile_consecutive_errors = 0
+                RECONCILE_CONSECUTIVE_ERRORS.set(0)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self._reconcile_consecutive_errors += 1
+                RECONCILE_CONSECUTIVE_ERRORS.set(self._reconcile_consecutive_errors)
                 self._logger.warning(
                     "AE3 waiting_command reconcile loop failed: owner=%s consecutive_errors=%s",
                     self._owner,
@@ -685,56 +696,93 @@ class Ae3RuntimeWorker:
                 exc_info=True,
             )
 
+    async def _extend_lease_with_transient_retry(self, *, zone_id: int) -> bool:
+        """Продлевает lease с retry на transient DB-ошибки."""
+        max_attempts = 1 + self._lease_heartbeat_transient_retries
+        last_exc: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                return bool(
+                    await self._zone_lease_repository.extend(
+                        zone_id=zone_id,
+                        owner=self._owner,
+                        now=self._now_fn(),
+                        lease_ttl_sec=self._lease_ttl_sec,
+                    )
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if attempt + 1 >= max_attempts:
+                    self._logger.warning(
+                        "AE3 lease heartbeat: extend failed after transient retries zone_id=%s owner=%s",
+                        zone_id,
+                        self._owner,
+                        exc_info=True,
+                    )
+                    return False
+        if last_exc is not None:
+            return False
+        return False
+
     async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
         """Периодически продлевает zone lease во время выполнения задачи.
 
-        Heartbeat срабатывает примерно каждые 1/3 от TTL.
+        Heartbeat срабатывает примерно каждые 1/3 от TTL. После
+        ``lease_heartbeat_max_failures`` подряд неудачных extend (с учётом
+        transient retry) сигнализирует lease_lost и завершается.
         """
         interval = max(10.0, self._lease_ttl_sec / 3.0)
+        consecutive_failures = 0
         while True:
             await asyncio.sleep(interval)
             try:
-                extended = await self._zone_lease_repository.extend(
-                    zone_id=zone_id,
-                    owner=self._owner,
-                    now=self._now_fn(),
-                    lease_ttl_sec=self._lease_ttl_sec,
-                )
+                extended = await self._extend_lease_with_transient_retry(zone_id=zone_id)
                 if extended:
+                    consecutive_failures = 0
                     self._log_debug("AE3 lease heartbeat extended: zone_id=%s owner=%s", zone_id, self._owner)
-                else:
-                    self._logger.error(
-                        "AE3 lease heartbeat: failed to extend lease for zone_id=%s owner=%s — "
-                        "signaling lease_lost; in-flight task execution will be cancelled",
-                        zone_id,
-                        self._owner,
+                    continue
+
+                consecutive_failures += 1
+                LEASE_HEARTBEAT_FAILED.labels(zone_id=str(zone_id)).inc()
+                if consecutive_failures < self._lease_heartbeat_max_failures:
+                    continue
+
+                self._logger.error(
+                    "AE3 lease heartbeat: failed to extend lease for zone_id=%s owner=%s after %s attempts — "
+                    "signaling lease_lost; in-flight task execution will be cancelled",
+                    zone_id,
+                    self._owner,
+                    consecutive_failures,
+                )
+                ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
+                lease_lost_event.set()
+                try:
+                    await send_infra_alert(
+                        code="ae3_zone_lease_lost",
+                        alert_type="AE3 Zone Lease Lost",
+                        message=(
+                            "Heartbeat zone lease не смог продлить lease; worker помечает lease_lost "
+                            "и отменяет выполняющуюся задачу для этой зоны."
+                        ),
+                        severity="critical",
+                        zone_id=int(zone_id),
+                        service="automation-engine",
+                        component="worker:heartbeat",
+                        details={
+                            "owner": self._owner,
+                            "consecutive_failures": consecutive_failures,
+                            "message": "Heartbeat zone lease не смог продлить lease: зона могла быть перехвачена или зависнуть.",
+                        },
                     )
-                    ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
-                    lease_lost_event.set()
-                    try:
-                        await send_infra_alert(
-                            code="ae3_zone_lease_lost",
-                            alert_type="AE3 Zone Lease Lost",
-                            message=(
-                                "Heartbeat zone lease не смог продлить lease; worker помечает lease_lost "
-                                "и отменяет выполняющуюся задачу для этой зоны."
-                            ),
-                            severity="critical",
-                            zone_id=int(zone_id),
-                            service="automation-engine",
-                            component="worker:heartbeat",
-                            details={
-                                "owner": self._owner,
-                                "message": "Heartbeat zone lease не смог продлить lease: зона могла быть перехвачена или зависнуть.",
-                            },
-                        )
-                    except Exception:
-                        self._logger.warning(
-                            "AE3 не смог отправить alert lease_lost zone_id=%s",
-                            zone_id,
-                            exc_info=True,
-                        )
-                    break
+                except Exception:
+                    self._logger.warning(
+                        "AE3 не смог отправить alert lease_lost zone_id=%s",
+                        zone_id,
+                        exc_info=True,
+                    )
+                break
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -747,12 +795,22 @@ class Ae3RuntimeWorker:
                 )
 
     async def _safe_mark_intent_running(self, *, intent_id: int) -> None:
-        try:
-            await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            self._logger.warning("AE3 runtime не смог перевести intent в running: intent_id=%s", intent_id, exc_info=True)
+        max_attempts = 1 + self._intent_sync_max_retries
+        for attempt in range(max_attempts):
+            try:
+                await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if attempt + 1 >= max_attempts:
+                    INTENT_SYNC_FAILED.labels(operation="mark_running").inc()
+                    self._logger.warning(
+                        "AE3 runtime не смог перевести intent в running: intent_id=%s",
+                        intent_id,
+                        exc_info=True,
+                    )
+                    return
 
     async def _safe_mark_intent_terminal(self, *, task: Any, intent_id: int) -> None:
         await self._safe_mark_intent_terminal_result(
@@ -772,18 +830,28 @@ class Ae3RuntimeWorker:
         error_code: Any,
         error_message: Any,
     ) -> None:
-        try:
-            await self._zone_intent_repository.mark_terminal(
-                intent_id=intent_id,
-                now=now,
-                success=success,
-                error_code=error_code,
-                error_message=error_message,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            self._logger.warning("AE3 runtime не смог перевести intent в terminal: intent_id=%s", intent_id, exc_info=True)
+        max_attempts = 1 + self._intent_sync_max_retries
+        for attempt in range(max_attempts):
+            try:
+                await self._zone_intent_repository.mark_terminal(
+                    intent_id=intent_id,
+                    now=now,
+                    success=success,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if attempt + 1 >= max_attempts:
+                    INTENT_SYNC_FAILED.labels(operation="mark_terminal").inc()
+                    self._logger.warning(
+                        "AE3 runtime не смог перевести intent в terminal: intent_id=%s",
+                        intent_id,
+                        exc_info=True,
+                    )
+                    return
 
     def _current_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         try:

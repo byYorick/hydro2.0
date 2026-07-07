@@ -34,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
             'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
             'verify.history-logger.webhook' => \App\Http\Middleware\VerifyHistoryLoggerWebhook::class,
+            'verify.scheduler.metrics' => \App\Http\Middleware\VerifySchedulerMetricsToken::class,
             'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
             'ae.legacy.sql.guard' => \App\Http\Middleware\AutomationEngineLegacySqlGuard::class,
         ]);

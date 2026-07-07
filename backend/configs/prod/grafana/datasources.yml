@@ -17,7 +17,7 @@ datasources:
     database: hydro
     user: hydro
     secureJsonData:
-      password: change-me
+      password: $__env{POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       timescaledb: true

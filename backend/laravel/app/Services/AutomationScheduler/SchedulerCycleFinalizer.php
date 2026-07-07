@@ -102,6 +102,25 @@ class SchedulerCycleFinalizer
         return $lastCompletedAt->addSeconds($intervalSec)->lte($now);
     }
 
+    public function countMissedIntervalTicks(
+        CarbonImmutable $lastCompletedAt,
+        int $intervalSec,
+        CarbonImmutable $now,
+    ): int {
+        if ($intervalSec <= 0) {
+            return 0;
+        }
+
+        $missed = 0;
+        $nextTick = $lastCompletedAt->addSeconds($intervalSec);
+        while ($nextTick->lt($now)) {
+            $missed++;
+            $nextTick = $nextTick->addSeconds($intervalSec);
+        }
+
+        return $missed;
+    }
+
     public function isTimeInWindow(string $nowTime, string $startTime, string $endTime): bool
     {
         $now = ScheduleSpecHelper::timeToSeconds($nowTime);

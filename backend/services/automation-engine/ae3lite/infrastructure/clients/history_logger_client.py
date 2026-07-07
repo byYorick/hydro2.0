@@ -119,7 +119,7 @@ class HistoryLoggerClient:
         )
         self._max_retries = max(
             0,
-            int(max_retries if max_retries is not None else os.getenv("AE_HL_MAX_RETRIES", "2")),
+            int(max_retries if max_retries is not None else os.getenv("AE_HL_MAX_RETRIES", "1")),
         )
         self._breaker = _HlCircuitBreaker(
             fail_threshold=int(

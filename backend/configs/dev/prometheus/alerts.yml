@@ -12,13 +12,13 @@ groups:
           description: "Service {{ $labels.job }} has been down for more than 2 minutes."
 
       - alert: MQTTBrokerDown
-        expr: up{job="mqtt-bridge"} == 0
+        expr: probe_success{job="mqtt-broker"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "MQTT broker is unreachable"
-          description: "MQTT bridge service is not responding."
+          summary: "MQTT broker TCP probe failed"
+          description: "Blackbox TCP probe to mqtt:1883 failed for more than 1 minute."
 
   - name: history_logger_alerts
     interval: 30s
@@ -397,3 +397,208 @@ groups:
         annotations:
           summary: "AE3 irrigation: excessive inline corrections"
           description: "Inline correction entered {{ $value }} times in last 30m during irrigation. Check dosing calibration and sensor stability."
+
+  # R2.4 / reliability observability (dev+prod parity; thresholds may differ in prod comments)
+  - name: infrastructure_self_monitoring
+    interval: 30s
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus self-scrape target is unreachable for more than 2 minutes."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager is down"
+          description: "Alertmanager metrics endpoint is unreachable for more than 2 minutes."
+
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Grafana is down"
+          description: "Grafana metrics endpoint is unreachable for more than 2 minutes."
+
+      - alert: PostgresExporterDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres exporter is down"
+          description: "postgres_exporter scrape target is unreachable for more than 2 minutes."
+
+      - alert: RedisExporterDown
+        expr: up{job="redis-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis exporter is down"
+          description: "redis_exporter scrape target is unreachable for more than 2 minutes."
+
+      - alert: PostgresUnavailable
+        expr: (pg_up or vector(0)) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL reported down by exporter"
+          description: "postgres_exporter pg_up gauge is 0 for more than 2 minutes."
+
+  - name: reliability_observability_alerts
+    interval: 30s
+    rules:
+      - alert: HistoryLoggerTelemetryDeserializeFailed
+        expr: (sum(increase(telemetry_deserialize_failed_total[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger telemetry deserialize failures"
+          description: "Telemetry items were moved to dead list after Redis pop deserialize failure."
+
+      - alert: HistoryLoggerPgWriteFailed
+        expr: (sum(increase(telemetry_pg_write_failed_total[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger PostgreSQL write failures"
+          description: "telemetry_pg_write_failed_total increased during the last 10 minutes."
+
+      - alert: HistoryLoggerDeadListNotEmpty
+        expr: (telemetry_dead_list_size or vector(0)) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger telemetry dead list is not empty"
+          description: "telemetry_dead_list_size is {{ $value }} for 10 minutes."
+
+      - alert: HistoryLoggerCommandsPublishUnconfirmed
+        expr: (sum(increase(commands_published_unconfirmed_total[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger MQTT command publishes without PUBACK"
+          description: "commands_published_unconfirmed_total increased during the last 10 minutes."
+
+      - alert: HistoryLoggerCommandStatusDeliveryDropped
+        expr: (sum(increase(command_status_delivery_dropped_total[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger dropped command status deliveries"
+          description: "command_status_delivery_dropped_total increased during the last 10 minutes."
+
+      - alert: HistoryLoggerCommandStatusDlqNotEmpty
+        expr: (command_status_dlq_size or vector(0)) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Command status DLQ is not empty"
+          description: "command_status_dlq_size is {{ $value }} for 10 minutes."
+
+      - alert: HistoryLoggerAlertDlqNotEmpty
+        expr: (alert_dlq_size or vector(0)) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alert delivery DLQ is not empty"
+          description: "alert_dlq_size is {{ $value }} for 10 minutes."
+
+      - alert: HistoryLoggerRedisDisconnected
+        expr: (redis_connected or vector(1)) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger lost Redis connectivity"
+          description: "redis_connected gauge is 0 for more than 2 minutes."
+
+      - alert: HistoryLoggerQueueUtilizationHigh
+        expr: (telemetry_queue_utilization or vector(0)) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger telemetry queue utilization is high"
+          description: "telemetry_queue_utilization is {{ $value }} (threshold 0.95) for 5 minutes."
+
+      - alert: HistoryLoggerMqttPublishErrorsSustained
+        expr: (sum(rate(mqtt_publish_errors_total[5m])) or vector(0)) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger MQTT publish errors sustained"
+          description: "mqtt_publish_errors_total rate stayed above 0 for 5 minutes."
+
+      - alert: AE3OldestActiveTaskStale
+        expr: max(ae3_oldest_active_task_age_seconds) > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 active task age exceeds 15 minutes"
+          description: "ae3_oldest_active_task_age_seconds max is {{ $value }}s (threshold 900s)."
+
+      - alert: AE3IntentSyncFailed
+        expr: (sum(increase(ae3_intent_sync_failed_total[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 intent sync failures detected"
+          description: "ae3_intent_sync_failed_total increased during the last 15 minutes."
+
+      - alert: AE3ReconcileLoopDegraded
+        expr: (ae3_reconcile_consecutive_errors or vector(0)) > 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 reconcile loop degraded"
+          description: "ae3_reconcile_consecutive_errors is {{ $value }} (threshold 3) for 5 minutes."
+
+      - alert: AE3LeaseHeartbeatFailed
+        expr: (sum(increase(ae3_lease_heartbeat_failed_total[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 lease heartbeat failures detected"
+          description: "ae3_lease_heartbeat_failed_total increased during the last 10 minutes."
+
+      - alert: LaravelSchedulerMissedWindows
+        expr: (sum(increase(laravel_scheduler_missed_windows_total[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Laravel scheduler missed irrigation/light windows"
+          description: "laravel_scheduler_missed_windows_total increased during the last 15 minutes."
+
+      - alert: LaravelSchedulerLockSkipped
+        expr: (sum(increase(laravel_scheduler_lock_skipped_total[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Laravel scheduler skipped cycles due to lock contention"
+          description: "laravel_scheduler_lock_skipped_total increased during the last 15 minutes."

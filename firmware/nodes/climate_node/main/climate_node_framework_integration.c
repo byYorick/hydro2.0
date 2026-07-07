@@ -555,26 +555,6 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
         esp_err_t report_err = (sht_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : sht_err;
         ESP_LOGW(TAG, "Failed to read SHT3x: %s", esp_err_to_name(report_err));
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "sht3x", report_err, "Failed to read SHT3x sensor");
-        
-        // Публикация ошибок
-        node_telemetry_publish_sensor(
-            "temperature",
-            METRIC_TYPE_TEMPERATURE,
-            NAN,
-            "°C",
-            0,
-            true,  // stub (ошибка)
-            false
-        );
-        node_telemetry_publish_sensor(
-            "humidity",
-            METRIC_TYPE_HUMIDITY,
-            NAN,
-            "%",
-            0,
-            true,  // stub (ошибка)
-            false
-        );
     }
 
     // Чтение CO₂ (CCS811)
@@ -582,22 +562,21 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     esp_err_t ccs_err = ccs811_read(&ccs_reading);
     
     bool co2_stub = (ccs_err != ESP_OK) || !ccs_reading.valid;
-    float co2_value = (float)ccs_reading.co2_ppm;
-
     if (co2_stub) {
         esp_err_t report_err = (ccs_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : ccs_err;
-        ESP_LOGW(TAG, "Failed to read CCS811 (will publish stub): %s", esp_err_to_name(report_err));
+        ESP_LOGW(TAG, "Failed to read CCS811: %s", esp_err_to_name(report_err));
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "ccs811", report_err, "Failed to read CCS811 sensor");
+        return ESP_OK;
     }
 
     esp_err_t err = node_telemetry_publish_sensor(
         "co2",
         METRIC_TYPE_CUSTOM,  // CO₂ пока нет в enum, используем CUSTOM
-        co2_value,
+        (float)ccs_reading.co2_ppm,
         "ppm",
         ccs_reading.co2_ppm,
-        co2_stub,
-        !co2_stub
+        false,
+        true
     );
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish CO2: %s", esp_err_to_name(err));

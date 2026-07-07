@@ -628,3 +628,82 @@ esp_err_t node_utils_publish_device_status_extended(void)
     free(json_str);
     return err;
 }
+
+esp_err_t node_utils_publish_event(const char *channel, const char *event_code, cJSON *details) {
+    if (event_code == NULL || event_code[0] == '\0') {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!mqtt_manager_is_connected()) {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!node_utils_is_time_synced()) {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    mqtt_node_info_t node_info = {0};
+    esp_err_t info_err = mqtt_manager_get_node_info(&node_info);
+    if (info_err != ESP_OK || node_info.gh_uid == NULL || node_info.zone_uid == NULL || node_info.node_uid == NULL) {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return info_err != ESP_OK ? info_err : ESP_ERR_INVALID_STATE;
+    }
+
+    const char *channel_name = (channel != NULL && channel[0] != '\0') ? channel : "system";
+    char topic[192] = {0};
+    int written = snprintf(
+        topic,
+        sizeof(topic),
+        "hydro/%s/%s/%s/%s/event",
+        node_info.gh_uid,
+        node_info.zone_uid,
+        node_info.node_uid,
+        channel_name);
+    if (written <= 0 || (size_t)written >= sizeof(topic)) {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    cJSON *payload = cJSON_CreateObject();
+    if (!payload) {
+        if (details) {
+            cJSON_Delete(details);
+        }
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(payload, "event_code", event_code);
+    cJSON_AddNumberToObject(payload, "ts", (double)node_utils_get_timestamp_seconds());
+
+    if (details != NULL) {
+        if (cJSON_IsObject(details)) {
+            for (cJSON *child = details->child; child != NULL; child = child->next) {
+                if (child->string != NULL) {
+                    cJSON_AddItemToObject(payload, child->string, cJSON_Duplicate(child, 1));
+                }
+            }
+        }
+        cJSON_Delete(details);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(payload);
+    cJSON_Delete(payload);
+    if (!json_str) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = mqtt_manager_publish_raw(topic, json_str, 1, 0);
+    free(json_str);
+    return err;
+}

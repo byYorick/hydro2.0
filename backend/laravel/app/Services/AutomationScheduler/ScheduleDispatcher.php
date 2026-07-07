@@ -2,6 +2,7 @@
 
 namespace App\Services\AutomationScheduler;
 
+use App\Services\AlertService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
@@ -434,6 +435,14 @@ class ScheduleDispatcher
                     'schedule_key' => $scheduleKey,
                     'correlation_id' => $correlationId,
                 ]);
+                if ($taskType === 'irrigation' && $err === 'start_irrigation_intent_terminal') {
+                    $this->raiseIrrigationWindowMissedAlert(
+                        zoneId: $zoneId,
+                        scheduleKey: $scheduleKey,
+                        correlationId: $correlationId,
+                        detail: $detail,
+                    );
+                }
 
                 return [
                     'dispatched' => false,
@@ -913,6 +922,38 @@ class ScheduleDispatcher
         }
 
         return $workflowPhase !== 'ready';
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function raiseIrrigationWindowMissedAlert(
+        int $zoneId,
+        string $scheduleKey,
+        string $correlationId,
+        array $detail,
+    ): void {
+        try {
+            app(AlertService::class)->createOrUpdateActive([
+                'zone_id' => $zoneId,
+                'source' => 'biz',
+                'code' => 'biz_irrigation_window_missed',
+                'type' => 'Irrigation window missed',
+                'status' => 'ACTIVE',
+                'details' => [
+                    'schedule_key' => $scheduleKey,
+                    'correlation_id' => $correlationId,
+                    'error' => $detail['error'] ?? 'start_irrigation_intent_terminal',
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to raise biz_irrigation_window_missed alert', [
+                'zone_id' => $zoneId,
+                'schedule_key' => $scheduleKey,
+                'correlation_id' => $correlationId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function recordRetryableDispatchFailure(

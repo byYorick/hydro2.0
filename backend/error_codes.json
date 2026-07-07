@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-06-23T08:44:23Z",
+  "updated_at": "2026-07-07T12:10:06Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -70,6 +70,16 @@
       "message": "Не удалось перевести задачу в failed."
     },
     {
+      "code": "ae3_flow_stop_unconfirmed",
+      "title": "Остановка flow-path не подтверждена",
+      "message": "AE3 не смог подтвердить OFF-состояние насосов/клапанов после stop-команды."
+    },
+    {
+      "code": "ae3_internal_error",
+      "title": "Внутренняя ошибка AE3",
+      "message": "Внутренняя ошибка automation-engine. Повторите позже или обратитесь к инженеру."
+    },
+    {
       "code": "ae3_invalid_planned_command",
       "title": "Некорректная PlannedCommand",
       "message": "PlannedCommand без обязательных cmd/params."
@@ -78,6 +88,16 @@
       "code": "ae3_legacy_command_not_found",
       "title": "Legacy-команда не найдена",
       "message": "Не найдена запись legacy commands."
+    },
+    {
+      "code": "ae3_manual_hold_deadline_exceeded",
+      "title": "Превышен deadline manual_hold",
+      "message": "Зона оставалась в manual_hold дольше допустимого stage deadline."
+    },
+    {
+      "code": "ae3_manual_hold_return_stage_missing",
+      "title": "manual_hold без return stage",
+      "message": "Задача в manual_hold без сохранённого return stage."
     },
     {
       "code": "ae3_missing_ae_command",
@@ -195,14 +215,14 @@
       "message": "Этап workflow завершился с ошибкой."
     },
     {
+      "code": "ae3_stale_task_reclaimed",
+      "title": "Stale task reclaimed",
+      "message": "Задача застряла в claimed/running и переведена в failed фоновым janitor'ом."
+    },
+    {
       "code": "ae3_task_complete_failed",
       "title": "Ошибка завершения задачи",
       "message": "Не удалось перевести задачу в completed."
-    },
-    {
-      "code": "ae3_internal_error",
-      "title": "Внутренняя ошибка AE3",
-      "message": "Внутренняя ошибка automation-engine. Повторите позже или обратитесь к инженеру."
     },
     {
       "code": "ae3_task_create_conflict",
@@ -213,21 +233,6 @@
       "code": "ae3_task_create_failed",
       "title": "Не удалось создать задачу AE3",
       "message": "AE3 не смог создать canonical task для запуска цикла."
-    },
-    {
-      "code": "ae3_flow_stop_unconfirmed",
-      "title": "Остановка flow-path не подтверждена",
-      "message": "AE3 не смог подтвердить OFF-состояние насосов/клапанов после stop-команды."
-    },
-    {
-      "code": "ae3_manual_hold_deadline_exceeded",
-      "title": "Превышен deadline manual_hold",
-      "message": "Зона оставалась в manual_hold дольше допустимого stage deadline."
-    },
-    {
-      "code": "ae3_manual_hold_return_stage_missing",
-      "title": "manual_hold без return stage",
-      "message": "Задача в manual_hold без сохранённого return stage."
     },
     {
       "code": "ae3_task_execution_crashed",
@@ -320,6 +325,11 @@
       "message": "Не удалось выполнить запрос. Проверьте параметры и журналы сервиса."
     },
     {
+      "code": "biz_irrigation_window_missed",
+      "title": "Пропущено окно полива",
+      "message": "Scheduler не выполнил dispatch полива в запланированное окно."
+    },
+    {
       "code": "biz_recipe_completed_review_required",
       "title": "Рецепт завершён",
       "message": "Цикл выращивания завершён, требуется проверка агронома."
@@ -373,6 +383,12 @@
       "code": "command_not_found_ignored",
       "title": "Команда не найдена",
       "message": "Команда не найдена — событие проигнорировано."
+    },
+    {
+      "code": "command_protocol_violation",
+      "title": "Нарушение протокола команд",
+      "message": "Получен недопустимый промежуточный статус команды (например ACCEPTED). Проверьте прошивку узла и history-logger.",
+      "source_layer": "backend_ae3"
     },
     {
       "code": "command_send_failed",
@@ -607,15 +623,15 @@
       "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
     },
     {
-      "code": "missing_trace_id",
-      "title": "Нет trace id",
-      "message": "В запросе отсутствует обязательный заголовок X-Trace-Id."
-    },
-    {
       "code": "missing_node_secret",
       "title": "Нет node_secret",
       "message": "В NodeConfig отсутствует node_secret для проверки подписи.",
       "source_layer": "firmware_mqtt"
+    },
+    {
+      "code": "missing_trace_id",
+      "title": "Нет trace id",
+      "message": "В запросе отсутствует обязательный заголовок X-Trace-Id."
     },
     {
       "code": "motor_error",
@@ -798,6 +814,11 @@
       "message": "Отсутствует runtime-план для активной задачи."
     },
     {
+      "code": "scheduler_security_token_not_configured",
+      "title": "Scheduler token не настроен",
+      "message": "Automation-engine отклонил запрос: scheduler API token не сконфигурирован."
+    },
+    {
       "code": "send_failed",
       "title": "Ошибка отправки",
       "message": "Команду не удалось поставить в путь до узла."
@@ -865,21 +886,6 @@
       "message": "Активный алерт блокирует запуск цикла."
     },
     {
-      "code": "scheduler_security_token_not_configured",
-      "title": "Scheduler token не настроен",
-      "message": "Automation-engine отклонил запрос: scheduler API token не сконфигурирован."
-    },
-    {
-      "code": "start_cycle_solution_tank_guard_failed",
-      "title": "Startup guard бака раствора",
-      "message": "Не пройдена startup-проверка бака раствора перед start-cycle."
-    },
-    {
-      "code": "start_cycle_unsupported_runtime",
-      "title": "Runtime не поддерживается",
-      "message": "Start-cycle доступен только для зон на AE3 runtime."
-    },
-    {
       "code": "start_cycle_idempotency_key_conflict",
       "title": "Конфликт idempotency key",
       "message": "Идентичный запуск уже зарегистрирован, дублирующий запрос отклонён."
@@ -908,6 +914,16 @@
       "code": "start_cycle_rate_limited",
       "title": "Rate limit запуска",
       "message": "Слишком частые запросы start-cycle."
+    },
+    {
+      "code": "start_cycle_solution_tank_guard_failed",
+      "title": "Startup guard бака раствора",
+      "message": "Не пройдена startup-проверка бака раствора перед start-cycle."
+    },
+    {
+      "code": "start_cycle_unsupported_runtime",
+      "title": "Runtime не поддерживается",
+      "message": "Start-cycle доступен только для зон на AE3 runtime."
     },
     {
       "code": "start_cycle_zone_busy",
@@ -945,11 +961,6 @@
       "message": "Запуск lighting tick отклонён: зона уже занята активной задачей."
     },
     {
-      "code": "ae3_stale_task_reclaimed",
-      "title": "Stale task reclaimed",
-      "message": "Задача застряла в claimed/running и переведена в failed фоновым janitor'ом."
-    },
-    {
       "code": "startup_recovery_correction_interrupted",
       "title": "Startup recovery: прервана коррекция",
       "message": "Коррекция была прервана во время startup recovery."
@@ -985,11 +996,6 @@
       "message": "Тип системы зоны заблокирован для изменения."
     },
     {
-      "code": "task_not_found",
-      "title": "Задача не найдена",
-      "message": "Задача automation-engine не найдена."
-    },
-    {
       "code": "task_execution_timeout",
       "title": "Таймаут выполнения задачи",
       "message": "Выполнение задачи превысило допустимый runtime timeout."
@@ -998,6 +1004,11 @@
       "code": "task_missing_during_publish",
       "title": "Задача исчезла при publish",
       "message": "Задача удалена во время публикации команды."
+    },
+    {
+      "code": "task_not_found",
+      "title": "Задача не найдена",
+      "message": "Задача automation-engine не найдена."
     },
     {
       "code": "time_not_synced",
@@ -1087,14 +1098,14 @@
       "message": "Нет данных нижнего уровня раствора."
     },
     {
-      "code": "unauthorized",
-      "title": "Неавторизованный запрос",
-      "message": "Запрос отклонён: неверный или отсутствующий Bearer token."
-    },
-    {
       "code": "unauthenticated",
       "title": "Требуется авторизация",
       "message": "Для выполнения действия нужно войти в систему."
+    },
+    {
+      "code": "unauthorized",
+      "title": "Неавторизованный запрос",
+      "message": "Запрос отклонён: неверный или отсутствующий Bearer token."
     },
     {
       "code": "unknown_command",

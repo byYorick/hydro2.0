@@ -92,6 +92,18 @@ MQTT_PUBLISH_ERRORS = Counter(
     "MQTT publish errors",
     ["error_type"],
 )
+COMMANDS_PUBLISH_UNCONFIRMED = Counter(
+    "commands_published_unconfirmed_total",
+    "MQTT command publishes without PUBACK confirmation",
+)
+COMMAND_STATUS_DELIVERY_DROPPED = Counter(
+    "command_status_delivery_dropped_total",
+    "Command status updates dropped after delivery retries exhausted",
+)
+TELEMETRY_DESERIALIZE_FAILED = Counter(
+    "telemetry_deserialize_failed_total",
+    "Telemetry queue items moved to dead list after deserialize failure",
+)
 
 TELEMETRY_QUEUE_AGE = Gauge(
     "telemetry_queue_age_seconds",

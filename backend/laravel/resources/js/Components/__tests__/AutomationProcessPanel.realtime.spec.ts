@@ -16,6 +16,15 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
+vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => ({
+    props: {
+      automationStateBootstrap: null,
+      automationState: undefined,
+    },
+  }),
+}))
+
 async function unwrapRealtime(rawPromise: Promise<unknown>): Promise<unknown> {
   const raw = await rawPromise
   if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {

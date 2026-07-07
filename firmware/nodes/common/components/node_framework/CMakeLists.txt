@@ -7,6 +7,7 @@ idf_component_register(
         "node_telemetry_engine.c"
         "node_state_manager.c"
         "node_watchdog.c"
+        "node_link_loss_failsafe.c"
     INCLUDE_DIRS 
         "include"
     PRIV_REQUIRES 

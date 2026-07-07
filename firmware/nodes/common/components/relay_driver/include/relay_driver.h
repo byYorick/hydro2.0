@@ -17,6 +17,7 @@
 #define RELAY_DRIVER_H
 
 #include "esp_err.h"
+#include "cJSON.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -107,6 +108,16 @@ esp_err_t relay_driver_get_state(const char *channel_name, relay_state_t *state)
  * @return true если драйвер инициализирован
  */
 bool relay_driver_is_initialized(void);
+
+/**
+ * @brief Перевести все реле в безопасное состояние OPEN с учётом NC/NO.
+ */
+esp_err_t relay_driver_emergency_stop_all_safe(void);
+
+/**
+ * @brief Append names of CLOSED relay channels to JSON array (for diagnostics/events).
+ */
+void relay_driver_append_active_channels_json(cJSON *relays_arr);
 
 #ifdef __cplusplus
 }

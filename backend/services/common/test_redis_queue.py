@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 from common.redis_queue import (
+    PopBatchResult,
     TelemetryQueue,
     TelemetryQueueItem,
     get_redis_client,
@@ -85,21 +86,21 @@ async def test_telemetry_queue_pop_batch_empty(mock_redis_client):
         mock_pipeline.execute = AsyncMock(return_value=[])
         mock_redis_client.pipeline.return_value = mock_pipeline
         
-        items = await queue.pop_batch(100)
-        
-        assert items == []
+        result = await queue.pop_batch(100)
+
+        assert result.entries == []
 
 
 @pytest.mark.asyncio
 async def test_telemetry_queue_pop_batch_success(mock_redis_client):
     """Тест успешного извлечения батча из очереди."""
     import json
-    
+
     with patch('common.redis_queue.get_redis_client', return_value=mock_redis_client):
         queue = TelemetryQueue()
         queue._client = mock_redis_client
-        
-        # Создаем тестовые данные
+        queue._pop_script = AsyncMock()
+
         test_item = {
             "node_uid": "nd-ph-1",
             "zone_uid": "zn-1",
@@ -110,19 +111,15 @@ async def test_telemetry_queue_pop_batch_success(mock_redis_client):
             "channel": "ph_sensor"
         }
         test_json = json.dumps(test_item).encode('utf-8')
-        
-        mock_redis_client.llen.return_value = 1
-        mock_pipeline = MagicMock()
-        mock_pipeline.lpop = MagicMock()
-        mock_pipeline.execute = AsyncMock(return_value=[test_json])
-        mock_redis_client.pipeline.return_value = mock_pipeline
-        
-        items = await queue.pop_batch(100)
-        
-        assert len(items) == 1
-        assert items[0].node_uid == "nd-ph-1"
-        assert items[0].metric_type == "PH"
-        assert items[0].value == 6.5
+
+        queue._pop_script.return_value = [test_json]
+
+        result = await queue.pop_batch(100)
+
+        assert len(result.entries) == 1
+        assert result.entries[0].item.node_uid == "nd-ph-1"
+        assert result.entries[0].item.metric_type == "PH"
+        assert result.entries[0].item.value == 6.5
 
 
 @pytest.mark.asyncio
@@ -148,8 +145,11 @@ async def test_telemetry_queue_clear(mock_redis_client):
         queue._client = mock_redis_client
         
         await queue.clear()
-        
-        mock_redis_client.delete.assert_called_once_with(TelemetryQueue.QUEUE_KEY)
+
+        mock_redis_client.delete.assert_called_once_with(
+            TelemetryQueue.QUEUE_KEY,
+            TelemetryQueue.PROCESSING_KEY,
+        )
 
 
 @pytest.mark.asyncio
@@ -185,18 +185,13 @@ async def test_telemetry_queue_pop_batch_invalid_json(mock_redis_client):
     with patch('common.redis_queue.get_redis_client', return_value=mock_redis_client):
         queue = TelemetryQueue()
         queue._client = mock_redis_client
-        
-        mock_redis_client.llen.return_value = 1
-        mock_pipeline = MagicMock()
-        mock_pipeline.lpop = MagicMock()
-        # Возвращаем невалидный JSON
-        mock_pipeline.execute = AsyncMock(return_value=[b"invalid json"])
-        mock_redis_client.pipeline.return_value = mock_pipeline
-        
-        items = await queue.pop_batch(100)
-        
-        # Невалидные элементы должны быть пропущены
-        assert items == []
+        queue._pop_script = AsyncMock(return_value=[b"invalid json"])
+        queue._move_raw_to_dead = AsyncMock(return_value=True)
+
+        result = await queue.pop_batch(100)
+
+        assert result.entries == []
+        queue._move_raw_to_dead.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -250,12 +245,12 @@ async def test_close_redis_client(mock_redis_client):
 async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
     """Тест извлечения частичного батча (меньше запрошенного)."""
     import json
-    
+
     with patch('common.redis_queue.get_redis_client', return_value=mock_redis_client):
         queue = TelemetryQueue()
         queue._client = mock_redis_client
-        
-        # Создаем тестовые данные
+        queue._pop_script = AsyncMock()
+
         test_item = {
             "node_uid": "nd-ph-1",
             "metric_type": "PH",
@@ -263,15 +258,9 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
             "ts": datetime.now().isoformat(),
         }
         test_json = json.dumps(test_item).encode('utf-8')
-        
-        # В очереди только 1 элемент, запрашиваем 100
-        mock_redis_client.llen.return_value = 1
-        mock_pipeline = MagicMock()
-        mock_pipeline.lpop = MagicMock()
-        mock_pipeline.execute = AsyncMock(return_value=[test_json, None])  # Второй lpop вернет None
-        mock_redis_client.pipeline.return_value = mock_pipeline
-        
-        items = await queue.pop_batch(100)
-        
-        assert len(items) == 1
-        assert items[0].node_uid == "nd-ph-1"
+        queue._pop_script.return_value = [test_json]
+
+        result = await queue.pop_batch(100)
+
+        assert len(result.entries) == 1
+        assert result.entries[0].item.node_uid == "nd-ph-1"

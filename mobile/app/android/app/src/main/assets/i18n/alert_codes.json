@@ -1,15 +1,15 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-06-23T08:44:23Z",
+  "updated_at": "2026-07-07T12:10:05Z",
   "codes": [
     {
       "code": "ae3_api_http_5xx",
       "source": "infra",
       "category": "infrastructure",
       "severity": "error",
-      "title": "Ошибка AE3 API уровня HTTP 5xx",
-      "description": "AE3 API завершил запрос серверной ошибкой.",
-      "recommendation": "Проверьте логи AE3 API, stack trace и доступность зависимостей.",
+      "title": "Ошибка API automation-engine (HTTP 5xx)",
+      "description": "REST API automation-engine завершил запрос внутренней серверной ошибкой (код 5xx).",
+      "recommendation": "Откройте логи контейнера automation-engine и найдите trace_id из деталей алерта. Проверьте доступность PostgreSQL, history-logger и mqtt-bridge. Если ошибка повторяется после рестарта — зафиксируйте трассировку стека и время запроса для разработчика.",
       "node_related": false
     },
     {
@@ -17,9 +17,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "error",
-      "title": "Необработанное исключение AE3 API",
-      "description": "AE3 API вернул необработанное исключение во время запроса.",
-      "recommendation": "Проверьте trace_id, stack trace и входной payload проблемного запроса.",
+      "title": "Необработанное исключение в API automation-engine",
+      "description": "Во время обработки HTTP-запроса automation-engine произошло необработанное исключение.",
+      "recommendation": "Найдите в логах automation-engine trace_id и полную трассировку стека. Сверьте входную полезную нагрузку запроса с контрактом API. Убедитесь, что миграции БД применены и read-model зоны консистентен.",
       "node_related": false
     },
     {
@@ -27,9 +27,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "error",
-      "title": "Сбой фоновой задачи AE3",
-      "description": "Одна из фоновых задач AE3 runtime завершилась с ошибкой.",
-      "recommendation": "Проверьте stack trace фоновой задачи и состояние зависимых сервисов.",
+      "title": "Сбой фоновой задачи automation-engine",
+      "description": "Одна из фоновых задач runtime automation-engine завершилась с необработанной ошибкой.",
+      "recommendation": "Проверьте логи automation-engine за время алерта — ищите traceback и имя задачи. Убедитесь, что PostgreSQL и Redis отвечают стабильно. При повторяющихся падениях перезапустите контейнер и понаблюдайте за метриками ae3_tick_errors_total.",
       "node_related": false
     },
     {
@@ -37,9 +37,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Высокая задержка диспетча команд AE3",
-      "description": "Время от enqueue до MQTT publish выросло.",
-      "recommendation": "Проверьте очередь команд, history-logger, загрузку MQTT-брокера.",
+      "title": "Высокая задержка отправки команд",
+      "description": "Время от постановки команды в очередь до публикации в MQTT превышает норму.",
+      "recommendation": "Проверьте загрузку history-logger (очередь команд, метрики обработки). Убедитесь, что MQTT-брокер не перегружен и нет сетевых задержек между сервисами. Посмотрите последние команды зоны в UI — нет ли массовых TIMEOUT или SEND_FAILED.",
       "node_related": false
     },
     {
@@ -47,9 +47,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Высокая доля упавших команд AE3",
-      "description": "Команды узлам возвращают ERROR/TIMEOUT чаще обычного.",
-      "recommendation": "Посмотрите последние command_response, состояние нод и сетевую связность.",
+      "title": "Высокая доля неуспешных команд",
+      "description": "Команды к узлам чаще обычного завершаются статусами ERROR, TIMEOUT или другими неуспешными исходами.",
+      "recommendation": "В разделе «Команды» зоны отфильтруйте последние неуспешные ответы (command_response). Проверьте, онлайн ли целевые узлы и нет ли проблем с Wi-Fi или MQTT. Сверьте привязки каналов и параметры команд с NodeConfig на узле.",
       "node_related": false
     },
     {
@@ -57,9 +57,39 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Correction window исчерпан",
-      "description": "AE3 исчерпал лимит dose-попыток в окне коррекции (pH/EC).",
-      "recommendation": "Проверьте dosing calibration, концентрацию растворов и свежесть сенсоров.",
+      "title": "Исчерпано окно коррекции pH/EC",
+      "description": "Automation-engine исчерпал лимит попыток дозирования в текущем окне коррекции и не достиг целевых pH/EC.",
+      "recommendation": "Проверьте калибровки дозирующих насосов и наличие реагентов в ёмкостях. Убедитесь, что датчики pH/EC дают свежие и правдоподобные показания. При необходимости выполните ручную коррекцию раствора и перезапустите цикл после устранения причины.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_drain_crash_loop",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Цикл сброса очереди AE3 падает повторно",
+      "description": "Супервизор drain loop в automation-engine завершился с ошибкой более 3 раз за 15 минут.",
+      "recommendation": "Срочно откройте логи automation-engine — ищите traceback в drain supervisor. Проверьте доступность PostgreSQL и Redis. Перезапустите контейнер automation-engine; при повторении эскалируйте разработчикам.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_flow_stop_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Не подтверждена остановка потока",
+      "description": "Automation-engine не смог подтвердить остановку потока (flow-path) — оборудование может оставаться активным.",
+      "recommendation": "Немедленно проверьте физическое состояние насосов и клапанов в зоне из алерта. При необходимости остановите оборудование вручную (E-STOP). Проверьте ответы узла на команды остановки и датчик потока.",
+      "node_related": true
+    },
+    {
+      "code": "ae3_intent_sync_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Intent Sync Failed",
+      "description": "AE3 Intent Sync Failed: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -67,9 +97,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Частые отложенные probe irr_state",
-      "description": "AE3 часто откладывает probe из-за отсутствия свежих данных.",
-      "recommendation": "Проверьте связь с irrig-нодой и настройки irr_state_max_age_sec.",
+      "title": "Частые отложенные опросы состояния полива",
+      "description": "Automation-engine часто откладывает опрос снимка состояния полива (irr_state), потому что данные устарели или отсутствуют.",
+      "recommendation": "Проверьте связь с узлом полива (irrig-нода): heartbeat, MQTT, питание. Убедитесь, что узел публикует телеметрию уровней и события level_switch. При частых срабатываниях fail-safe на прошивке проверьте датчики уровня и настройку irr_state_max_age_sec.",
       "node_related": false
     },
     {
@@ -77,9 +107,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Исчерпана серия probe irr_state",
-      "description": "AE3 не может получить свежий snapshot irrigation state после серии попыток.",
-      "recommendation": "Проверьте irrig-ноду, её heartbeat и publishing level_switches.",
+      "title": "Исчерпана серия опросов состояния полива",
+      "description": "После серии попыток automation-engine не смог получить актуальный снимок состояния полива (irr_state).",
+      "recommendation": "Проверьте irrig-узел: онлайн ли он, публикует ли heartbeat и события переключения уровней. Откройте вкладку узла — есть ли свежая телеметрия level_switch. При offline-узле проверьте питание, Wi-Fi и MQTT; при online — прошивку и wiring датчиков уровня.",
       "node_related": false
     },
     {
@@ -87,9 +117,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Избыточные inline-коррекции в irrigation",
-      "description": "В процессе полива AE3 слишком часто заходит в inline correction pH/EC.",
-      "recommendation": "Проверьте pump calibration, стабильность pH/EC сенсоров и пороги dead/close/far zones PID.",
+      "title": "Слишком частые коррекции pH/EC во время полива",
+      "description": "Во время полива automation-engine слишком часто запускает встроенную коррекцию pH/EC.",
+      "recommendation": "Проверьте стабильность показаний pH/EC — возможен дрейф или загрязнение электродов. Сверьте калибровки насосов и PID-пороги (зоны dead/close/far) в correction_config зоны. Убедитесь, что перемешивание раствора достаточное для корректных измерений.",
       "node_related": false
     },
     {
@@ -97,9 +127,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Частые replay irrigation setup",
-      "description": "Setup irrigation пересобирается чаще нормы.",
-      "recommendation": "Проверьте стабильность level-switches, подачи воды и setup commands.",
+      "title": "Частые повторные настройки контура полива",
+      "description": "Этап подготовки контура полива (irrigation setup) перезапускается чаще, чем ожидается для нормальной работы.",
+      "recommendation": "Проверьте стабильность датчиков уровня — нет ли дребезга контактов или ложных срабатываний. Убедитесь в стабильной подаче воды и отсутствии утечек в магистрали. Посмотрите журнал команд setup на irrig-узле — не возвращают ли они ERROR или TIMEOUT.",
       "node_related": false
     },
     {
@@ -107,9 +137,29 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Частые срабатывания solution_min в irrigation",
-      "description": "В процессе irrigation уровень раствора проседает ниже min чаще нормы.",
-      "recommendation": "Проверьте ёмкость бака, объём подачи, скорость возврата и герметичность магистрали.",
+      "title": "Частое падение уровня раствора при поливе",
+      "description": "Во время полива уровень раствора в баке опускается ниже минимума чаще нормы.",
+      "recommendation": "Проверьте объём бака раствора, скорость подачи и возврата жидкости в контур. Осмотрите магистрали на утечки и правильность работы насосов. Убедитесь, что датчик нижнего уровня исправен и не даёт ложных срабатываний.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_lease_heartbeat_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Lease Heartbeat Failed",
+      "description": "AE3 Lease Heartbeat Failed: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_listener_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Отключён PostgreSQL listener automation-engine",
+      "description": "Подписка на NOTIFY PostgreSQL (listener) в automation-engine неактивна более 5 минут.",
+      "recommendation": "Проверьте подключение automation-engine к PostgreSQL. Убедитесь, что БД принимает соединения и не перезагружалась. Перезапустите automation-engine — listener должен переподключиться автоматически.",
       "node_related": false
     },
     {
@@ -117,9 +167,39 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Частые перезагрузки ноды",
-      "description": "Узел перезагружается слишком часто за окно.",
-      "recommendation": "Проверьте питание, логи узла, supervisor, брутовый reset.",
+      "title": "Частые перезагрузки узла ESP32",
+      "description": "Узел перезагружается слишком часто за короткий промежуток времени.",
+      "recommendation": "Проверьте питание узла: стабильность напряжения, блок питания, качество контактов. Откройте serial-лог узла — ищите brownout, watchdog reset или panic. Убедитесь, что недавнее OTA-обновление прошло успешно и прошивка соответствует типу узла.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_oldest_active_task_stale",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Oldest Active Task Stale",
+      "description": "AE3 Oldest Active Task Stale: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_pending_task_stuck",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Задача зависла в очереди pending",
+      "description": "Самая старая задача в статусе pending не забирается worker более 10 минут.",
+      "recommendation": "Проверьте, работает ли worker automation-engine (метрика ae3_tick_duration_seconds). Убедитесь, что нет зависших lease, блокирующих обработку. Перезапустите automation-engine при «молчаливом» worker.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_reconcile_loop_degraded",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Reconcile Loop Degraded",
+      "description": "AE3 Reconcile Loop Degraded: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -127,9 +207,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Стадия AE3 превысила дедлайн",
-      "description": "Стадия workflow не завершилась в отведённое время.",
-      "recommendation": "Проверьте логи стадии, состояние связанных нод и реле.",
+      "title": "Превышен дедлайн этапа workflow",
+      "description": "Этап сценария автоматики зоны не завершился в отведённое максимальное время.",
+      "recommendation": "В UI зоны откройте активную задачу и журнал событий — на каком шаге застрял процесс. Проверьте связанные узлы и реле: отвечают ли они на команды. Сверьте stage_deadline в конфигурации с реальным временем выполнения операции.",
       "node_related": false
     },
     {
@@ -137,9 +217,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Застрявшая AE3-задача",
-      "description": "Задача не меняет состояние дольше stage_deadline.",
-      "recommendation": "Проверьте event log задачи, heartbeat нод и целостность runtime_plan.",
+      "title": "Застрявшая задача automation-engine",
+      "description": "Задача автоматики долго не меняет состояние и превысила допустимый дедлайн этапа.",
+      "recommendation": "Откройте детали задачи в UI: текущий stage, error_code и журнал событий. Проверьте online-статус узлов зоны и целостность runtime_plan задачи. При необходимости переведите зону в ручной режим, устраните причину и перезапустите цикл.",
       "node_related": false
     },
     {
@@ -147,9 +227,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Всплеск упавших AE3-задач",
-      "description": "Growth-rate падающих задач AE3 превышает порог за окно наблюдения.",
-      "recommendation": "Проверьте логи automation-engine, error_code у последних failed задач и состояние зависимостей.",
+      "title": "Всплеск упавших задач automation-engine",
+      "description": "За короткое окно наблюдения резко выросло число задач, завершившихся с ошибкой.",
+      "recommendation": "Проверьте логи automation-engine и error_code у последних failed-задач — ищите общую причину. Убедитесь, что PostgreSQL, history-logger и MQTT работают стабильно. Если всплеск затронул одну зону — проверьте её конфигурацию и узлы; если много зон — инфраструктуру.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_worker_silent",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Worker automation-engine не обрабатывает задачи",
+      "description": "В очереди есть pending-задачи, но worker не выполняет циклы обработки более 5 минут.",
+      "recommendation": "Срочно проверьте логи automation-engine — worker мог зависнуть или упасть. Перезапустите контейнер: docker compose restart automation-engine. После рестарта убедитесь, что pending-задачи начали обрабатываться.",
       "node_related": false
     },
     {
@@ -157,9 +247,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Ошибки цикла AE3 worker",
-      "description": "Цикл worker AE3 завершается с ошибкой чаще нормы.",
-      "recommendation": "Посмотрите логи automation-engine и traceback ae3_background_task_crashed.",
+      "title": "Ошибки рабочего цикла automation-engine",
+      "description": "Основной цикл обработки задач (worker tick) завершается с ошибкой чаще допустимой нормы.",
+      "recommendation": "Откройте логи automation-engine — ищите traceback и метрику ae3_background_task_crashed. Проверьте доступность БД и отсутствие deadlock. При повторении перезапустите контейнер automation-engine и понаблюдайте за ae3_tick_errors_total.",
       "node_related": false
     },
     {
@@ -167,9 +257,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "critical",
-      "title": "Потерян lease зоны",
-      "description": "AE3 runtime потерял lease зоны во время выполнения задачи.",
-      "recommendation": "Проверьте heartbeat worker, БД и наличие параллельного владельца зоны.",
+      "title": "Потеряна эксклюзивная блокировка зоны",
+      "description": "Runtime automation-engine потерял lease (блокировку) зоны во время выполнения задачи — возможен параллельный владелец.",
+      "recommendation": "Проверьте, не запущено ли несколько экземпляров automation-engine. Убедитесь в стабильности PostgreSQL и heartbeat worker-процесса. Найдите в БД активные lease и задачи по zone_id — при зависших записях обратитесь к runbook или инженеру.",
       "node_related": false
     },
     {
@@ -177,9 +267,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Не удалось освободить lease зоны",
-      "description": "AE3 runtime не смог освободить блокировку зоны после завершения задачи.",
-      "recommendation": "Проверьте состояние worker, таблицу lease и не осталось ли зависшей задачи по зоне.",
+      "title": "Не удалось освободить блокировку зоны",
+      "description": "Automation-engine не смог освободить lease зоны после завершения задачи.",
+      "recommendation": "Проверьте состояние worker и таблицу lease в БД — нет ли зависшей записи по зоне. Убедитесь, что нет активной задачи в статусе pending/running для этой зоны. При повторении перезапустите automation-engine; если блокировка осталась — потребуется ручная очистка lease.",
+      "node_related": false
+    },
+    {
+      "code": "alertmanager_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Alertmanager Down",
+      "description": "Alertmanager Down: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -187,9 +287,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Низкий процент подтверждения эффекта команд",
-      "description": "Доля команд с подтверждённым effect ниже нормы.",
-      "recommendation": "Проверьте command_response и связь между planner и history-logger.",
+      "title": "Низкий процент успешных команд",
+      "description": "Доля команд с подтверждённым положительным эффектом (статус DONE) ниже целевого порога SLO.",
+      "recommendation": "Проверьте последние command_response в зонах — какие статусы преобладают (ERROR, TIMEOUT, NO_EFFECT). Убедитесь, что history-logger доставляет ответы узлов в automation-engine без задержек. При массовых NO_EFFECT проверьте калибровки насосов и фактическое исполнение на узле.",
       "node_related": false
     },
     {
@@ -197,9 +297,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Низкий процент восстановления AE3-задач",
-      "description": "Recovery задач AE3 завершается неуспешно чаще нормы.",
-      "recommendation": "Проверьте handlers recovery, logs и целостность snapshot данных.",
+      "title": "Низкий процент успешного восстановления задач",
+      "description": "Восстановление задач automation-engine после рестарта или сбоя завершается неуспешно чаще нормы.",
+      "recommendation": "Проверьте логи startup recovery в automation-engine — какие error_code встречаются. Убедитесь, что снимки состояния зон (snapshot) в БД консистентны и не повреждены. Проверьте, не остались ли осиротевшие lease или задачи без владельца после аварий.",
       "node_related": false
     },
     {
@@ -207,9 +307,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "error",
-      "title": "Ошибка задачи автоматики",
-      "description": "Задача automation-engine завершилась с ошибкой.",
-      "recommendation": "Проверьте логи automation-engine, состояние зоны и наличие активного цикла.",
+      "title": "Ошибка задачи автоматики зоны",
+      "description": "Задача automation-engine для зоны завершилась с ошибкой.",
+      "recommendation": "Откройте вкладку автоматики зоны: error_code, stage и журнал событий задачи. Проверьте, активен ли цикл выращивания и готовы ли узлы зоны. Устраните первичную причину (конфигурация, offline-узел, команда) и при необходимости перезапустите цикл.",
       "node_related": false
     },
     {
@@ -217,9 +317,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Таймаут заполнения бака чистой водой",
-      "description": "Бак чистой воды не удалось заполнить в пределах допустимого времени.",
-      "recommendation": "Проверьте подачу воды, клапаны, насос и датчики уровня.",
+      "title": "Таймаут наполнения бака чистой водой",
+      "description": "Этап наполнения бака чистой водой не завершился за отведённое время.",
+      "recommendation": "Проверьте подачу воды: открыт ли кран, работает ли насос, исправны ли клапаны. Убедитесь, что датчики верхнего/нижнего уровня чистого бака реагируют корректно. Осмотрите магистраль на засорение или пережатие шлангов.",
       "node_related": true
     },
     {
@@ -227,9 +327,9 @@
       "source": "biz",
       "category": "config",
       "severity": "error",
-      "title": "Ошибка конфигурации",
-      "description": "Обнаружена некорректная конфигурация зоны/контроллера.",
-      "recommendation": "Проверьте bindings, targets и активный цикл выращивания.",
+      "title": "Ошибка конфигурации зоны",
+      "description": "Обнаружена некорректная или неполная конфигурация зоны или контроллера.",
+      "recommendation": "Откройте настройки зоны: привязки узлов (bindings), целевые значения и активный цикл выращивания. Проверьте, что все обязательные каналы и контроллеры настроены. Исправьте конфигурацию в UI и повторите запуск цикла.",
       "node_related": false
     },
     {
@@ -237,9 +337,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "error",
-      "title": "Исчерпаны попытки коррекции",
-      "description": "Цикл коррекции исчерпал все настроенные попытки и не достиг целевого состояния.",
-      "recommendation": "Проверьте дозирующие насосы pH/EC, калибровки и актуальные цели зоны.",
+      "title": "Исчерпаны попытки коррекции раствора",
+      "description": "Цикл коррекции pH/EC исчерпал все настроенные попытки дозирования и не достиг целевых значений.",
+      "recommendation": "Проверьте дозирующие насосы pH/EC: калибровки, наличие реагентов, отсутствие засоров. Убедитесь, что датчики pH/EC откалиброваны и показания стабильны. При необходимости выполните ручную коррекцию и проверьте целевые значения активной фазы рецепта.",
       "node_related": true
     },
     {
@@ -247,9 +347,9 @@
       "source": "biz",
       "category": "safety",
       "severity": "critical",
-      "title": "Риск сухого хода",
-      "description": "Низкий уровень воды создаёт риск работы насоса без жидкости.",
-      "recommendation": "Остановите насосы и восстановите уровень воды.",
+      "title": "Риск сухого хода насоса",
+      "description": "Уровень воды слишком низкий — есть риск работы насоса без жидкости, что может привести к повреждению оборудования.",
+      "recommendation": "Немедленно остановите насосы зоны (E-STOP или ручной режим). Восстановите уровень воды в баке и проверьте датчики уровня. Только после подтверждения нормального уровня разрешите автоматику снова.",
       "node_related": true
     },
     {
@@ -258,8 +358,8 @@
       "category": "agronomy",
       "severity": "error",
       "title": "Коррекция EC не даёт эффекта",
-      "description": "После дозирования EC не наблюдается ожидаемая реакция раствора.",
-      "recommendation": "Проверьте насосы компонентов EC, реагенты, телеметрию и перемешивание.",
+      "description": "После дозирования удобрений электропроводность раствора не изменилась в ожидаемую сторону.",
+      "recommendation": "Проверьте насосы компонентов EC (NPK, кальций, магний, микро): работают ли они, есть ли реагент. Убедитесь, что раствор перемешивается и датчик EC даёт свежие показания. Перекалибруйте насосы при подозрении на неверный расход.",
       "node_related": true
     },
     {
@@ -267,9 +367,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Высокий EC",
-      "description": "Электропроводность раствора выше целевого диапазона.",
-      "recommendation": "Проверьте дозирование удобрений и при необходимости разбавьте раствор.",
+      "title": "Высокий EC раствора",
+      "description": "Электропроводность питательного раствора выше целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте, не было ли избыточного дозирования удобрений. При необходимости разбавьте раствор чистой водой до целевого EC. Убедитесь, что датчик EC откалиброван и показания стабильны.",
       "node_related": false
     },
     {
@@ -277,9 +377,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Высокая влажность",
-      "description": "Влажность воздуха выше целевого диапазона.",
-      "recommendation": "Проверьте осушение, вентиляцию и циркуляцию воздуха.",
+      "title": "Высокая влажность воздуха",
+      "description": "Влажность в зоне выше целевого диапазона рецепта.",
+      "recommendation": "Проверьте работу вентиляции, осушителя и циркуляции воздуха. Убедитесь, что климат-узел online и исполнительные каналы реагируют на команды. При длительном превышении скорректируйте уставки или физические условия в теплице.",
       "node_related": false
     },
     {
@@ -287,9 +387,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Высокий pH",
-      "description": "Показания pH выше целевого диапазона.",
-      "recommendation": "Проверьте дозирование pH-down и калибровку сенсора.",
+      "title": "Высокий pH раствора",
+      "description": "Кислотность раствора выше целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте наличие и работу насоса pH-down (кислота). Убедитесь, что датчик pH откалиброван и электрод чистый. При необходимости выполните ручную коррекцию и проверьте срок годности реагента.",
       "node_related": false
     },
     {
@@ -297,9 +397,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Высокая температура",
-      "description": "Температура воздуха выше целевого диапазона.",
-      "recommendation": "Проверьте вентиляцию, охлаждение и настройки климата.",
+      "title": "Высокая температура воздуха",
+      "description": "Температура в зоне выше целевого диапазона рецепта.",
+      "recommendation": "Проверьте вентиляцию, охлаждение и работу климат-контроллера. Убедитесь, что датчик температуры online и показания актуальны. При жаркой погоде усильте обдув или снизьте нагрев дополнительных источников.",
       "node_related": false
     },
     {
@@ -307,9 +407,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Исчерпан streak probe IRR",
-      "description": "AE3 исчерпал лимит подряд идущих отложенных probe irr_state.",
-      "recommendation": "Проверьте связь с irrig-нодой и irr_state_max_age_sec.",
+      "title": "Исчерпан лимит опросов состояния полива",
+      "description": "Automation-engine исчерпал допустимое число подряд идущих отложенных опросов irr_state.",
+      "recommendation": "Проверьте irrig-узел: online, heartbeat, публикация телеметрии уровней. Убедитесь, что irr_state_max_age_sec в конфигурации соответствует реальной частоте телеметрии. При offline-узле устраните проблему связи; при online — проверьте датчики и прошивку.",
       "node_related": false
     },
     {
@@ -317,9 +417,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "error",
-      "title": "Коррекция во время полива исчерпана",
-      "description": "Попытки коррекции во время полива исчерпаны, полив продолжается без новых коррекций.",
-      "recommendation": "Проверьте дозирующие каналы, калибровки и текущие pH/EC target.",
+      "title": "Исчерпаны попытки коррекции во время полива",
+      "description": "Во время полива исчерпан лимит коррекций pH/EC — полив продолжается без новых дозирований.",
+      "recommendation": "Проверьте дозирующие каналы и калибровки насосов pH/EC. Сверьте текущие целевые pH/EC с активной фазой рецепта. После полива оцените раствор вручную и при необходимости выполните коррекцию.",
       "node_related": true
     },
     {
@@ -327,9 +427,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Разрешён деградированный полив",
-      "description": "Decision-controller полива разрешил запуск в деградированном режиме.",
-      "recommendation": "Проверьте reason_code в деталях алерта и состояние входных датчиков.",
+      "title": "Полив разрешён в деградированном режиме",
+      "description": "Контроллер решений полива разрешил запуск, хотя часть входных данных недоступна или устарела.",
+      "recommendation": "Откройте детали алерта — поле reason_code объясняет, каких данных не хватало. Проверьте датчики влажности почвы, уровня и телеметрию, от которых зависит стратегия полива. Устраните причину деградации, чтобы вернуться к штатному режиму.",
       "node_related": false
     },
     {
@@ -337,9 +437,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "error",
-      "title": "Decision-controller полива отклонил запуск",
-      "description": "AE3 остановил запуск полива на этапе принятия решения.",
-      "recommendation": "Проверьте strategy/reason_code в деталях алерта и конфигурацию automation profile зоны.",
+      "title": "Запуск полива отклонён контроллером",
+      "description": "Automation-engine остановил запуск полива на этапе принятия решения — условия не выполнены.",
+      "recommendation": "В деталях алерта найдите strategy и reason_code — они указывают причину отказа. Проверьте automation profile зоны, состояние workflow и входную телеметрию. Устраните блокирующее условие (offline-датчик, E-STOP, неготовность зоны) и повторите полив.",
       "node_related": false
     },
     {
@@ -347,9 +447,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "info",
-      "title": "Полив пропущен решением контроллера",
-      "description": "Decision-controller полива решил пропустить текущий запуск.",
-      "recommendation": "Проверьте reason_code в деталях алерта и входную телеметрию стратегии полива.",
+      "title": "Полив пропущен по решению контроллера",
+      "description": "Контроллер решений полива решил пропустить текущий запланированный полив — это информационный алерт.",
+      "recommendation": "Проверьте reason_code в деталях: типичные причины — влажность в норме, недавний полив, деградированные данные. Сверьте телеметрию влажности/уровня со стратегией полива. Если пропуски неожиданны — проверьте датчики и расписание полива в рецепте.",
       "node_related": false
     },
     {
@@ -358,8 +458,8 @@
       "category": "operations",
       "severity": "error",
       "title": "Исчерпаны повторы полива",
-      "description": "AE3 исчерпал бюджет повторов после повторных срабатываний нижнего уровня раствора.",
-      "recommendation": "Проверьте наличие раствора, работу насосов и повторные срабатывания solution_min.",
+      "description": "Automation-engine исчерпал бюджет повторных попыток полива после срабатываний нижнего уровня раствора.",
+      "recommendation": "Проверьте наличие раствора в баке и работу насосов подачи/возврата. Убедитесь, что датчик нижнего уровня исправен и не даёт ложных срабатываний. Осмотрите контур на утечки — возможна постоянная просадка уровня.",
       "node_related": true
     },
     {
@@ -367,9 +467,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Сработал нижний уровень раствора",
-      "description": "Во время полива датчик нижнего уровня раствора сообщил о нехватке раствора.",
-      "recommendation": "Проверьте уровень раствора, датчик и причину просадки уровня в контуре.",
+      "title": "Сработал датчик нижнего уровня раствора",
+      "description": "Во время полива датчик сообщил, что уровень раствора опустился ниже минимума.",
+      "recommendation": "Проверьте фактический уровень в баке раствора и исправность датчика. Убедитесь, что насосы подачи и возврата работают штатно. При повторных срабатываниях ищите утечку или недостаточный объём бака.",
       "node_related": true
     },
     {
@@ -377,9 +477,19 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Таймаут ожидания READY перед поливом",
-      "description": "Полив не дождался перехода зоны в состояние READY в допустимое время.",
-      "recommendation": "Проверьте workflow_phase зоны, активный цикл и логи automation-engine.",
+      "title": "Таймаут ожидания готовности зоны к поливу",
+      "description": "Запуск полива не дождался перехода зоны в состояние READY за отведённое время.",
+      "recommendation": "Проверьте текущую фазу workflow зоны — возможно, застрял этап startup или prepare. Убедитесь, что активный цикл выращивания запущен и узлы online. Откройте логи automation-engine для этой зоны и найдите блокирующий этап.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_window_missed",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Пропущено окно полива",
+      "description": "Laravel scheduler не смог выполнить dispatch полива в запланированное окно (terminal failure от automation-engine).",
+      "recommendation": "Проверьте активные задачи зоны, состояние workflow и логи scheduler/automation-engine. Убедитесь, что зона не занята другой задачей и automation-engine доступен.",
       "node_related": false
     },
     {
@@ -388,8 +498,8 @@
       "category": "agronomy",
       "severity": "error",
       "title": "Сбой освещения",
-      "description": "Свет должен быть включен, но фактические показания это не подтверждают.",
-      "recommendation": "Проверьте световой канал, драйвер и датчик освещенности.",
+      "description": "Освещение должно быть включено по расписанию, но датчик или обратная связь это не подтверждают.",
+      "recommendation": "Проверьте световой канал: реле/PWM, драйвер, питание светильников. Убедитесь, что датчик освещённости (если есть) исправен и откалиброван. Попробуйте ручную команду включения света для диагностики.",
       "node_related": true
     },
     {
@@ -397,9 +507,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Низкий EC",
-      "description": "Электропроводность раствора ниже целевого диапазона.",
-      "recommendation": "Проверьте дозирование удобрений и работу насосов компонентов.",
+      "title": "Низкий EC раствора",
+      "description": "Электропроводность питательного раствора ниже целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте дозирование удобрений — возможно, насосы компонентов EC не сработали. Убедитесь, что ёмкости с удобрениями не пусты и насосы откалиброваны. При необходимости дозируйте вручную до целевого EC.",
       "node_related": false
     },
     {
@@ -407,9 +517,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Низкая влажность",
-      "description": "Влажность воздуха ниже целевого диапазона.",
-      "recommendation": "Проверьте увлажнение и уставки климат-контроллера.",
+      "title": "Низкая влажность воздуха",
+      "description": "Влажность в зоне ниже целевого диапазона рецепта.",
+      "recommendation": "Проверьте увлажнитель, туманогенератор или другие исполнительные устройства климата. Убедитесь, что климат-узел online и уставки контроллера корректны. При сухом воздухе в теплице усильте увлажнение или снизьте вентиляцию.",
       "node_related": false
     },
     {
@@ -417,9 +527,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Низкий pH",
-      "description": "Показания pH ниже целевого диапазона.",
-      "recommendation": "Проверьте дозирование pH-up и калибровку сенсора.",
+      "title": "Низкий pH раствора",
+      "description": "Кислотность раствора ниже целевого диапазона активной фазы рецепта.",
+      "recommendation": "Проверьте наличие и работу насоса pH-up (щелочь). Убедитесь, что датчик pH откалиброван. При необходимости выполните ручную коррекцию и проверьте срок годности реагента.",
       "node_related": false
     },
     {
@@ -427,9 +537,9 @@
       "source": "biz",
       "category": "agronomy",
       "severity": "warning",
-      "title": "Низкая температура",
-      "description": "Температура воздуха ниже целевого диапазона.",
-      "recommendation": "Проверьте обогрев и уставки климат-контроллера.",
+      "title": "Низкая температура воздуха",
+      "description": "Температура в зоне ниже целевого диапазона рецепта.",
+      "recommendation": "Проверьте обогрев, тепловую завесу и уставки климат-контроллера. Убедитесь, что датчик температуры online. При холодной погоде усильте обогрев или уменьшите приток холодного воздуха.",
       "node_related": false
     },
     {
@@ -437,9 +547,9 @@
       "source": "biz",
       "category": "safety",
       "severity": "critical",
-      "title": "Нет потока воды",
-      "description": "Насос работает, но датчик потока не фиксирует расход.",
-      "recommendation": "Проверьте насос, магистрали и датчик потока.",
+      "title": "Нет потока воды при работающем насосе",
+      "description": "Насос включён, но датчик расхода не фиксирует движение жидкости — возможен засор или неисправность.",
+      "recommendation": "Немедленно остановите насос, если есть риск сухого хода. Проверьте магистраль на засор, пережатие шлангов и положение клапанов. Убедитесь, что датчик потока исправен и правильно установлен.",
       "node_related": true
     },
     {
@@ -447,9 +557,9 @@
       "source": "biz",
       "category": "node",
       "severity": "error",
-      "title": "Узел офлайн",
-      "description": "Узел зоны не отвечает длительное время.",
-      "recommendation": "Проверьте питание, Wi-Fi и связь с брокером MQTT.",
+      "title": "Узел зоны не на связи",
+      "description": "Один из узлов зоны длительное время не отправляет heartbeat и телеметрию.",
+      "recommendation": "Проверьте питание узла и индикацию на плате. Убедитесь, что Wi-Fi сеть доступна и MQTT-брокер работает. При физическом доступе перезагрузите узел и проверьте NodeConfig (gh_uid, zone_uid, mqtt).",
       "node_related": true
     },
     {
@@ -457,9 +567,9 @@
       "source": "biz",
       "category": "safety",
       "severity": "critical",
-      "title": "Сверхток насоса",
-      "description": "Зафиксирован превышенный ток исполнительного канала.",
-      "recommendation": "Проверьте насос, питание и заклинивание механики.",
+      "title": "Сверхток на исполнительном канале",
+      "description": "Зафиксирован ток выше допустимого предела — насос или привод под нагрузкой или заклинил.",
+      "recommendation": "Немедленно остановите канал (E-STOP). Проверьте насос на заклинивание, механические препятствия и состояние подшипников. Убедитесь, что блок питания и предохранители рассчитаны на нагрузку.",
       "node_related": true
     },
     {
@@ -468,8 +578,8 @@
       "category": "agronomy",
       "severity": "error",
       "title": "Коррекция pH не даёт эффекта",
-      "description": "После дозирования pH не наблюдается ожидаемая реакция раствора.",
-      "recommendation": "Проверьте насосы pH-up/pH-down, реагенты, телеметрию и перемешивание.",
+      "description": "После дозирования кислоты или щелочи pH раствора не изменился в ожидаемую сторону.",
+      "recommendation": "Проверьте насосы pH-up и pH-down: работают ли, есть ли реагент в ёмкостях. Убедитесь в перемешивании раствора и актуальности показаний датчика pH. Перекалибруйте насосы при подозрении на неверный расход.",
       "node_related": true
     },
     {
@@ -478,8 +588,8 @@
       "category": "operations",
       "severity": "error",
       "title": "Исчерпаны попытки подготовки рециркуляции",
-      "description": "Этап подготовки рециркуляции превысил максимальное число попыток.",
-      "recommendation": "Проверьте насосы, клапаны и сенсоры рециркуляционного контура.",
+      "description": "Этап подготовки рециркуляционного контура превысил максимальное число попыток.",
+      "recommendation": "Проверьте насосы и клапаны рециркуляционного контура — отвечают ли на команды. Убедитесь, что датчики уровня и pH/EC в контуре дают корректные показания. Осмотрите магистрали на засоры и утечки.",
       "node_related": false
     },
     {
@@ -487,9 +597,9 @@
       "source": "biz",
       "category": "safety",
       "severity": "critical",
-      "title": "Насос не отключился",
-      "description": "Исполнительный канал остался активным дольше допустимого.",
-      "recommendation": "Проверьте реле/драйвер и аварийное отключение.",
+      "title": "Насос не отключился вовремя",
+      "description": "Исполнительный канал остался активным дольше максимально допустимого времени.",
+      "recommendation": "Немедленно отключите насос вручную (E-STOP или реле). Проверьте реле/драйвер на залипание контактов. Убедитесь, что прошивка узла получает команду остановки и отвечает DONE.",
       "node_related": true
     },
     {
@@ -497,9 +607,9 @@
       "source": "biz",
       "category": "operations",
       "severity": "warning",
-      "title": "Таймаут заполнения бака раствором",
-      "description": "Бак раствора не удалось заполнить до завершения этапа.",
-      "recommendation": "Проверьте подачу раствора, насос, клапаны и датчики уровня.",
+      "title": "Таймаут наполнения бака раствором",
+      "description": "Бак питательного раствора не наполнился за отведённое время этапа.",
+      "recommendation": "Проверьте подачу воды/раствора: насос, клапаны, наличие исходной жидкости. Убедитесь, что датчики уровня бака раствора работают корректно. Осмотрите магистраль на засорение.",
       "node_related": true
     },
     {
@@ -507,9 +617,9 @@
       "source": "biz",
       "category": "config",
       "severity": "critical",
-      "title": "Не настроен correction config зоны",
-      "description": "Для зоны отсутствует обязательная конфигурация коррекции.",
-      "recommendation": "Проверьте correction_config зоны и заполните обязательные разделы runtime, timing, dosing, retry, tolerance, controllers и safety.",
+      "title": "Не настроена конфигурация коррекции зоны",
+      "description": "Для зоны отсутствует обязательный раздел correction_config — автоматическая коррекция pH/EC невозможна.",
+      "recommendation": "Откройте настройки зоны → correction_config и заполните обязательные разделы: runtime, timing, dosing, retry, tolerance, controllers, safety. Сверьте с документацией EFFECTIVE_TARGETS_SPEC и повторите запуск цикла.",
       "node_related": false
     },
     {
@@ -518,8 +628,8 @@
       "category": "config",
       "severity": "critical",
       "title": "Не завершена калибровка дозирующих насосов",
-      "description": "Для одного или нескольких дозирующих каналов отсутствует обязательная калибровка.",
-      "recommendation": "Проверьте калибровки дозирующих насосов pH/EC и повторите запуск цикла.",
+      "description": "Для одного или нескольких дозирующих каналов зоны отсутствует обязательная калибровка расхода.",
+      "recommendation": "Откройте калибровки насосов pH/EC в UI зоны и выполните процедуру для всех каналов. Убедитесь, что насосы физически исправны перед калибровкой. После калибровки повторите запуск цикла выращивания.",
       "node_related": true
     },
     {
@@ -527,9 +637,9 @@
       "source": "biz",
       "category": "config",
       "severity": "critical",
-      "title": "Не настроен PID-контур зоны",
-      "description": "Для зоны отсутствует обязательная PID-конфигурация коррекции.",
-      "recommendation": "Проверьте authority-документы zone.pid.ph и zone.pid.ec и заполните обязательные параметры.",
+      "title": "Не настроен PID-контур коррекции",
+      "description": "Для зоны отсутствует обязательная PID-конфигурация контуров pH и/или EC.",
+      "recommendation": "Заполните параметры zone.pid.ph и zone.pid.ec в конфигурации зоны. Используйте типовые значения из документации или скопируйте с рабочей зоны аналогичного типа. Без PID автоматическая коррекция работать не будет.",
       "node_related": false
     },
     {
@@ -537,9 +647,49 @@
       "source": "biz",
       "category": "config",
       "severity": "critical",
-      "title": "Не настроены phase targets рецепта",
-      "description": "Для активной фазы рецепта отсутствуют обязательные целевые значения.",
-      "recommendation": "Проверьте recipe phase targets и заполните обязательные цели для активной фазы.",
+      "title": "Не заданы целевые значения фазы рецепта",
+      "description": "В активной фазе рецепта отсутствуют обязательные целевые параметры (pH, EC, климат и др.).",
+      "recommendation": "Откройте рецепт и активную фазу — заполните все обязательные targets. Убедитесь, что цикл выращивания привязан к правильному рецепту. После исправления перезапустите или возобновите цикл.",
+      "node_related": false
+    },
+    {
+      "code": "grafana_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Grafana Down",
+      "description": "Grafana Down: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_alert_dlq_not_empty",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Alert Dlq Not Empty",
+      "description": "History Logger Alert Dlq Not Empty: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_command_status_delivery_dropped",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Command Status Delivery Dropped",
+      "description": "History Logger Command Status Delivery Dropped: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_command_status_dlq_not_empty",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Command Status Dlq Not Empty",
+      "description": "History Logger Command Status Dlq Not Empty: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -547,9 +697,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Self-heal статусов команд: нет корреляции",
-      "description": "При восстановлении зависших статусов команд не найдена корреляция с исходной командой (no_correlation).",
-      "recommendation": "Проверьте журнал history-logger: рассинхрон cmd_id, потерянные command_response и дубликаты статусов.",
+      "title": "Самовосстановление статусов: нет связи с командой",
+      "description": "При попытке восстановить зависший статус команды не найдена исходная запись (no_correlation).",
+      "recommendation": "Проверьте логи history-logger: рассинхрон cmd_id, потерянные command_response, дубликаты. Сверьте таблицу commands в БД с журналом MQTT-ответов. При массовых случаях проверьте нагрузку на history-logger и Redis.",
       "node_related": false
     },
     {
@@ -557,9 +707,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Self-heal статусов команд: replay не удался",
-      "description": "Путь самовосстановления зависших статусов команд сообщил об ошибке replay за последние 10 минут.",
-      "recommendation": "Проверьте логи history-logger, таблицу commands и корреляцию cmd_id.",
+      "title": "Самовосстановление статусов: повтор не удался",
+      "description": "Механизм самовосстановления зависших статусов команд сообщил об ошибке повторной обработки за последние 10 минут.",
+      "recommendation": "Откройте логи history-logger и найдите записи pipeline_command_status_repair с outcome=replay_failed. Проверьте таблицу commands и корреляцию cmd_id с ответами узлов. Убедитесь, что PostgreSQL и Redis доступны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_commands_publish_unconfirmed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Commands Publish Unconfirmed",
+      "description": "History Logger Commands Publish Unconfirmed: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -567,9 +727,19 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "error",
-      "title": "Ошибки записи History Logger в БД",
-      "description": "History Logger фиксирует ошибки при записи телеметрии или команд в PostgreSQL.",
-      "recommendation": "Проверьте PostgreSQL, миграции, диск и логи history-logger.",
+      "title": "Ошибки записи history-logger в базу данных",
+      "description": "Сервис history-logger фиксирует ошибки при записи телеметрии или команд в PostgreSQL.",
+      "recommendation": "Проверьте состояние PostgreSQL: место на диске, блокировки, медленные запросы. Убедитесь, что все миграции применены. Откройте логи history-logger — ищите database_errors и текст ошибки PG.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_dead_list_not_empty",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Dead List Not Empty",
+      "description": "History Logger Dead List Not Empty: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -577,9 +747,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "History Logger отбрасывает сообщения",
-      "description": "Сервис сбрасывает входящие MQTT-сообщения из-за перегрузки или ошибок.",
-      "recommendation": "Снизьте нагрузку, проверьте очередь и ошибки ingest в логах.",
+      "title": "History-logger отбрасывает входящие сообщения",
+      "description": "Сервис сбрасывает MQTT-сообщения из-за переполнения очереди или внутренних ошибок.",
+      "recommendation": "Срочно снизьте нагрузку или увеличьте ресурсы history-logger. Проверьте метрики telemetry_dropped_total и размер очереди. Убедитесь, что PostgreSQL успевает обрабатывать запись — иначе очередь растёт бесконечно.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_mqtt_publish_errors_sustained",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger MQTT Publish Errors Sustained",
+      "description": "History Logger MQTT Publish Errors Sustained: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -587,9 +767,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "History Logger: трафик есть, прогресса нет",
-      "description": "В MQTT поступают сообщения, но очередь History Logger не продвигается.",
-      "recommendation": "Проверьте зависшие задачи, deadlock в БД и ошибки pipeline.",
+      "title": "Телеметрия поступает, но не обрабатывается",
+      "description": "В MQTT приходят сообщения, но очередь history-logger не продвигается — обработка зависла.",
+      "recommendation": "Проверьте, не завис ли worker history-logger (перезапуск контейнера). Ищите deadlock или долгие транзакции в PostgreSQL. Откройте логи pipeline — возможна ошибка на этапе десериализации или записи.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_pg_write_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Pg Write Failed",
+      "description": "History Logger Pg Write Failed: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -597,9 +787,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Переполнение очереди History Logger",
-      "description": "Очередь обработки сообщений History Logger превысила допустимый размер.",
-      "recommendation": "Проверьте нагрузку MQTT, скорость записи в БД и ресурсы history-logger.",
+      "title": "Переполнение очереди history-logger",
+      "description": "Внутренняя очередь обработки сообщений превысила допустимый размер.",
+      "recommendation": "Проверьте нагрузку MQTT — возможен всплеск телеметрии от узлов. Убедитесь, что PostgreSQL не является узким местом (медленные INSERT). Рассмотрите увеличение ресурсов контейнера history-logger.",
       "node_related": false
     },
     {
@@ -607,9 +797,29 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Очередь History Logger не двигается",
-      "description": "Очередь History Logger давно не обрабатывает новые элементы.",
-      "recommendation": "Проверьте зависшие воркеры, блокировки БД и ошибки в логах history-logger.",
+      "title": "Очередь history-logger не обрабатывается",
+      "description": "Очередь сообщений давно не уменьшается — элементы не извлекаются на обработку.",
+      "recommendation": "Перезапустите контейнер history-logger и проверьте, началась ли обработка. Проверьте блокировки в PostgreSQL и доступность Redis. Изучите логи на предмет повторяющихся исключений в pipeline.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_queue_utilization_high",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Queue Utilization High",
+      "description": "History Logger Queue Utilization High: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_redis_disconnected",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Redis Disconnected",
+      "description": "History Logger Redis Disconnected: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -617,9 +827,19 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Медленная обработка в History Logger",
-      "description": "Время обработки сообщений History Logger выше нормы.",
-      "recommendation": "Проверьте нагрузку БД, индексы и ресурсы контейнера.",
+      "title": "Медленная обработка в history-logger",
+      "description": "Время обработки одного сообщения телеметрии выше нормы (p99 > 5 с).",
+      "recommendation": "Проверьте нагрузку на PostgreSQL: индексы, vacuum, место на диске. Убедитесь, что контейнер history-logger не упирается в CPU/RAM. При росте числа узлов рассмотрите оптимизацию batch-записи.",
+      "node_related": false
+    },
+    {
+      "code": "history_logger_telemetry_deserialize_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "History Logger Telemetry Deserialize Failed",
+      "description": "History Logger Telemetry Deserialize Failed: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -627,9 +847,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Всплеск неизвестных событий узлов",
-      "description": "History Logger получает много событий от незарегистрированных или неизвестных узлов.",
-      "recommendation": "Проверьте регистрацию нод, прошивку и контракт event_code.",
+      "title": "Всплеск событий от неизвестных узлов",
+      "description": "History-logger получает много событий от узлов, не зарегистрированных в системе.",
+      "recommendation": "Проверьте, нет ли «чужих» ESP32 в сети с префиксом hydro/. Убедитесь, что новые узлы прошли регистрацию в Laravel. Сверьте event_code в прошивке с каталогом NODE_CHANNELS_REFERENCE.",
       "node_related": true
     },
     {
@@ -637,9 +857,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Повторы snapshot исчерпаны",
-      "description": "AE3 исчерпал допустимые попытки получить runtime snapshot зоны.",
-      "recommendation": "Проверьте read-model зоны, БД и логи automation-engine.",
+      "title": "Исчерпаны попытки получить снимок состояния зоны",
+      "description": "Automation-engine исчерпал допустимые повторы сборки runtime-снимка зоны из БД.",
+      "recommendation": "Проверьте доступность PostgreSQL и целостность данных зоны в read-model. Убедитесь, что у зоны есть активный цикл и корректный automation bundle. Откройте логи automation-engine — ищите ae3_snapshot_* ошибки.",
       "node_related": false
     },
     {
@@ -647,9 +867,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Повтор snapshot запланирован",
-      "description": "AE3 не смог сразу получить runtime snapshot и запланировал повторную попытку.",
-      "recommendation": "Проверьте доступность read-model, БД и свежесть snapshot-данных зоны.",
+      "title": "Запланирован повтор сборки снимка зоны",
+      "description": "Automation-engine не смог сразу собрать runtime-снимок и запланировал повторную попытку.",
+      "recommendation": "Обычно это transient-сбой — понаблюдайте, исчезнет ли алерт. Если повторяется: проверьте нагрузку на БД и свежесть данных зоны. Убедитесь, что нет блокировок при чтении таблиц цикла и рецепта.",
       "node_related": false
     },
     {
@@ -657,9 +877,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Ошибка основного цикла автоматики",
-      "description": "Главный цикл automation-engine завершился исключением.",
-      "recommendation": "Проверьте логи automation-engine и health зависимостей.",
+      "title": "Критическая ошибка основного цикла автоматики",
+      "description": "Главный цикл automation-engine завершился необработанным исключением.",
+      "recommendation": "Срочно проверьте логи automation-engine — полный traceback. Убедитесь, что PostgreSQL, Redis и history-logger доступны. Перезапустите контейнер; при повторении эскалируйте разработчикам.",
       "node_related": false
     },
     {
@@ -667,9 +887,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "ACK для неизвестной команды",
-      "description": "History-logger получил ACK, но не нашёл соответствующую команду в Laravel.",
-      "recommendation": "Проверьте консистентность command_status delivery и сохранение команд в БД.",
+      "title": "Ответ узла на неизвестную команду",
+      "description": "History-logger получил ACK от узла, но не нашёл соответствующую команду в базе данных.",
+      "recommendation": "Проверьте цепочку доставки статусов команд: history-logger → Laravel. Возможна потеря записи в таблице commands или рассинхрон cmd_id. Сверьте время жизни команд и нет ли дубликатов cmd_id.",
       "node_related": true
     },
     {
@@ -677,9 +897,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Узел занят",
-      "description": "Узел временно не может принять команду.",
-      "recommendation": "Повторите позже и проверьте очередь команд.",
+      "title": "Узел занят — команда отклонена",
+      "description": "Узел вернул статус BUSY и временно не может принять команду.",
+      "recommendation": "Подождите завершения текущей операции на узле и повторите команду. Проверьте, нет ли зависшей предыдущей команды в статусе waiting. При частых BUSY проверьте прошивку и очередь команд на узле.",
       "node_related": true
     },
     {
@@ -687,9 +907,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Команда завершилась ошибкой",
-      "description": "Исполнитель вернул статус ошибки.",
-      "recommendation": "Проверьте параметры команды и состояние узла.",
+      "title": "Команда завершилась с ошибкой на узле",
+      "description": "Исполнительный узел вернул терминальный статус ERROR.",
+      "recommendation": "Откройте детали команды: параметры, канал, error_code в ответе узла. Проверьте физическое состояние исполнительного устройства. Повторите команду вручную для диагностики.",
       "node_related": true
     },
     {
@@ -697,9 +917,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Команда отклонена",
-      "description": "Исполнитель не принял команду из-за некорректных параметров.",
-      "recommendation": "Проверьте payload команды и конфигурацию канала.",
+      "title": "Команда отклонена узлом как некорректная",
+      "description": "Узел вернул статус INVALID — параметры команды не прошли валидацию на прошивке.",
+      "recommendation": "Сверьте payload команды с допустимыми параметрами канала в NodeConfig. Проверьте cmd, channel и числовые пределы (длительность, доза). Убедитесь, что версия прошивки поддерживает эту команду.",
       "node_related": true
     },
     {
@@ -707,9 +927,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "critical",
-      "title": "Несоответствие node-zone",
-      "description": "Команда отклонена: node_uid не принадлежит целевой зоне.",
-      "recommendation": "Проверьте привязку ноды к зоне и актуальность bindings.",
+      "title": "Узел не принадлежит целевой зоне",
+      "description": "Команда отклонена: node_uid не привязан к zone_id, указанному в команде.",
+      "recommendation": "Откройте карточку узла в Laravel и проверьте привязку к зоне. Убедитесь, что NodeConfig на ESP32 содержит правильные gh_uid и zone_uid. При недавнем перемещении узла обновите bindings и перешлите конфиг.",
       "node_related": true
     },
     {
@@ -717,9 +937,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Ошибка валидации node-zone",
-      "description": "Не удалось проверить соответствие node_uid и zone_id перед отправкой команды.",
-      "recommendation": "Проверьте доступность БД и состояние automation-engine.",
+      "title": "Не удалось проверить принадлежность узла зоне",
+      "description": "Перед отправкой команды automation-engine не смог проверить соответствие node_uid и zone_id.",
+      "recommendation": "Проверьте доступность PostgreSQL — возможен сбой read-model. Убедитесь, что automation-engine подключён к БД. При повторении перезапустите automation-engine и проверьте миграции.",
       "node_related": true
     },
     {
@@ -727,9 +947,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "critical",
-      "title": "Команда не отправлена",
-      "description": "Команда не дошла до исполнительного узла.",
-      "recommendation": "Проверьте MQTT, маршрутизацию и привязку нод.",
+      "title": "Команда не дошла до узла",
+      "description": "Команда не была доставлена исполнительному узлу — сбой на пути history-logger → MQTT.",
+      "recommendation": "Проверьте MQTT-брокер и подключение history-logger к нему. Убедитесь, что узел online и подписан на топик команд. Посмотрите логи history-logger на ошибки публикации.",
       "node_related": true
     },
     {
@@ -737,9 +957,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Не удалось поставить retry статуса",
-      "description": "Не удалось поставить повторную обработку статуса команды в очередь.",
-      "recommendation": "Проверьте очередь command status и нагрузку history-logger.",
+      "title": "Не удалось поставить повтор обработки статуса команды",
+      "description": "History-logger не смог поставить повторную обработку статуса команды во внутреннюю очередь.",
+      "recommendation": "Проверьте нагрузку history-logger и доступность Redis. Убедитесь, что очередь command status не переполнена. При повторении перезапустите history-logger.",
       "node_related": false
     },
     {
@@ -747,9 +967,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "critical",
-      "title": "Таймаут команды",
-      "description": "Подтверждение команды не получено вовремя.",
-      "recommendation": "Проверьте узел, канал, очередь команд и задержки сети.",
+      "title": "Таймаут ожидания ответа на команду",
+      "description": "Подтверждение или терминальный ответ по команде не получен в отведённое время.",
+      "recommendation": "Проверьте, online ли узел и получает ли он MQTT-команды. Убедитесь, что канал исправен и команда не зависла в waiting_command. Проверьте задержки сети Wi-Fi и нагрузку на MQTT-брокер.",
       "node_related": true
     },
     {
@@ -757,9 +977,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Контроллер в cooldown",
-      "description": "Контроллер временно пропущен после серии ошибок.",
-      "recommendation": "Устраните первичную причину ошибки и дождитесь завершения cooldown.",
+      "title": "Контроллер временно отключён (cooldown)",
+      "description": "Контроллер зоны пропущен из-за защитной паузы после серии ошибок.",
+      "recommendation": "Найдите и устраните первичную причину ошибок контроллера в логах. Дождитесь окончания cooldown — контроллер возобновит работу автоматически. Не сбрасывайте cooldown вручную, пока причина не устранена.",
       "node_related": false
     },
     {
@@ -767,9 +987,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Сбой контроллера автоматики",
-      "description": "Один из контроллеров зоны завершился исключением.",
-      "recommendation": "Проверьте логи контроллера и входные данные.",
+      "title": "Сбой контроллера зоны",
+      "description": "Один из контроллеров автоматики зоны завершился с исключением.",
+      "recommendation": "Проверьте логи automation-engine для этой зоны — имя контроллера и traceback. Сверьте входные данные: телеметрию, targets, конфигурацию. Исправьте причину и дождитесь следующего цикла обработки.",
       "node_related": false
     },
     {
@@ -777,9 +997,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сбой контроллера",
-      "description": "Один из контроллеров или управляющих сервисов работает с критической ошибкой.",
-      "recommendation": "Проверьте логи контроллера, состояние зависимостей и последние deployment-изменения.",
+      "title": "Критический сбой контроллера",
+      "description": "Контроллер или управляющий сервис работает с критической ошибкой, влияющей на автоматику.",
+      "recommendation": "Проверьте логи затронутого сервиса и недавние изменения конфигурации или деплоя. Убедитесь в доступности зависимостей (БД, MQTT, history-logger). При критическом влиянии на зоны рассмотрите перевод в ручной режим.",
       "node_related": false
     },
     {
@@ -787,9 +1007,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "Нет насоса для коррекции",
-      "description": "Контроллер коррекции не нашёл подходящий actuator для дозирования.",
-      "recommendation": "Проверьте bindings каналов дозирующих насосов и типы actuator.",
+      "title": "Нет доступного насоса для коррекции",
+      "description": "Контроллер коррекции не нашёл подходящий исполнительный канал для дозирования.",
+      "recommendation": "Проверьте привязки (bindings) дозирующих насосов pH/EC к зоне. Убедитесь, что каналы имеют тип actuator и узел online. Проверьте automation bundle — корректны ли command plans.",
       "node_related": true
     },
     {
@@ -797,9 +1017,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "EC batch не сформирован",
-      "description": "Контроллер EC не смог собрать пакет дозирования компонентов.",
-      "recommendation": "Проверьте калибровки насосов и доступность EC-компонентов (npk/calcium/magnesium/micro).",
+      "title": "Не сформирован пакет дозирования EC",
+      "description": "Контроллер EC не смог собрать пакет дозирования компонентов питательного раствора.",
+      "recommendation": "Проверьте калибровки насосов компонентов EC (NPK, кальций, магний, микро). Убедитесь, что все компоненты привязаны и узлы online. Проверьте ec_dosing_mode и distinct каналы для multi_parallel.",
       "node_related": true
     },
     {
@@ -807,9 +1027,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "pH batch не сформирован",
-      "description": "Контроллер pH не смог собрать пакет дозирования кислоты/щелочи.",
-      "recommendation": "Проверьте калибровки pH-насосов и доступность ph_acid_pump/ph_base_pump.",
+      "title": "Не сформирован пакет дозирования pH",
+      "description": "Контроллер pH не смог собрать пакет дозирования кислоты или щелочи.",
+      "recommendation": "Проверьте калибровки насосов ph_acid_pump и ph_base_pump. Убедитесь, что каналы привязаны и узел дозирования online. Проверьте наличие реагентов в ёмкостях.",
       "node_related": true
     },
     {
@@ -817,9 +1037,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Открыт DB circuit breaker",
-      "description": "Автоматика перешла в режим ограниченной обработки из-за проблем БД.",
-      "recommendation": "Восстановите стабильность БД и сетевого доступа.",
+      "title": "Сработал предохранитель базы данных (circuit breaker)",
+      "description": "Automation-engine перешёл в ограниченный режим из-за повторяющихся ошибок подключения к PostgreSQL.",
+      "recommendation": "Восстановите стабильную работу PostgreSQL: проверьте диск, память, сеть. Убедитесь, что нет исчерпания пула соединений. После восстановления БД circuit breaker закроется автоматически — понаблюдайте за метриками.",
       "node_related": false
     },
     {
@@ -827,9 +1047,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "База данных недоступна",
-      "description": "Сервис не может подключиться к PostgreSQL.",
-      "recommendation": "Проверьте состояние БД, сеть и креды подключения.",
+      "title": "База данных PostgreSQL недоступна",
+      "description": "Сервис не может установить соединение с PostgreSQL.",
+      "recommendation": "Проверьте контейнер postgres: docker compose ps, логи, место на диске. Убедитесь в корректности credentials в .env / docker-compose. Проверьте сетевую связность между сервисами в Docker-сети.",
       "node_related": false
     },
     {
@@ -837,9 +1057,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Ошибка режима Drain",
-      "description": "Режим слива завершился ошибкой.",
-      "recommendation": "Проверьте дренажный канал и состояние исполнительных устройств.",
+      "title": "Ошибка режима слива",
+      "description": "Операция слива (drain) завершилась с ошибкой.",
+      "recommendation": "Проверьте дренажный канал: насос, клапан, датчики уровня. Убедитесь, что узел online и команды слива не возвращают ERROR. Осмотрите магистраль на засоры.",
       "node_related": true
     },
     {
@@ -847,9 +1067,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Ошибка режима Fill",
-      "description": "Режим наполнения завершился ошибкой.",
-      "recommendation": "Проверьте water loop, клапаны и датчики уровня.",
+      "title": "Ошибка режима наполнения",
+      "description": "Операция наполнения (fill) завершилась с ошибкой.",
+      "recommendation": "Проверьте контур подачи воды: насос, клапаны, датчики уровня. Убедитесь в наличии воды на входе. Проверьте ответы узла на команды fill в журнале команд.",
       "node_related": true
     },
     {
@@ -857,9 +1077,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Ошибка калибровки расхода",
-      "description": "Операция калибровки расхода завершилась ошибкой.",
-      "recommendation": "Проверьте датчик потока, насос и условия теста.",
+      "title": "Ошибка калибровки датчика расхода",
+      "description": "Процедура калибровки расхода воды завершилась с ошибкой.",
+      "recommendation": "Проверьте датчик потока: установка, wiring, отсутствие засора. Убедитесь, что насос создаёт стабильный поток во время калибровки. Повторите калибровку при исправных условиях.",
       "node_related": true
     },
     {
@@ -867,9 +1087,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "error",
-      "title": "Проверка свежести данных не пройдена",
-      "description": "Данные устарели, контроллеры могут принимать решения по stale-state.",
-      "recommendation": "Проверьте telemetry ingest и частоту обновлений.",
+      "title": "Данные зоны устарели",
+      "description": "Телеметрия или снимок состояния устарели — контроллеры могут принимать решения по неактуальным данным.",
+      "recommendation": "Проверьте, публикуют ли узлы зоны телеметрию с актуальным timestamp. Убедитесь, что history-logger успевает записывать данные. Проверьте offline-узлы и задержки MQTT.",
       "node_related": false
     },
     {
@@ -877,9 +1097,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "MQTT недоступен",
-      "description": "Потеряно подключение к MQTT-брокеру.",
-      "recommendation": "Проверьте брокер, сеть и параметры подключения.",
+      "title": "Потеряно подключение к MQTT",
+      "description": "Сервис потерял соединение с MQTT-брокером.",
+      "recommendation": "Проверьте контейнер mosquitto и его логи. Убедитесь в сетевой доступности брокера из контейнера сервиса. Проверьте учётные данные MQTT в конфигурации.",
       "node_related": false
     },
     {
@@ -887,9 +1107,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сбой сети",
-      "description": "Критически нарушена сетевая связность между сервисами или узлами.",
-      "recommendation": "Проверьте сеть, Wi-Fi, MQTT broker и маршрутизацию между сервисами.",
+      "title": "Критический сбой сети",
+      "description": "Нарушена связность между сервисами платформы или узлами ESP32.",
+      "recommendation": "Проверьте Docker-сеть, Wi-Fi точки доступа и маршрутизацию. Убедитесь, что MQTT-брокер доступен и узлы в той же сети. При массовом offline проверьте роутер и питание сетевого оборудования.",
       "node_related": false
     },
     {
@@ -897,9 +1117,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Проблема питания",
-      "description": "Зафиксирована критическая проблема питания узла или исполнительного контура.",
-      "recommendation": "Проверьте блок питания, автоматы защиты и фактическое напряжение на узле.",
+      "title": "Проблема электропитания узла или контура",
+      "description": "Зафиксирована критическая проблема питания на узле или исполнительном оборудовании.",
+      "recommendation": "Проверьте блок питания, автоматы защиты и напряжение на узле мультиметром. Убедитесь, что нет перегрузки линии при включении насосов. При частых brownout усильте питание или добавьте стабилизацию.",
       "node_related": true
     },
     {
@@ -908,8 +1128,8 @@
       "category": "operations",
       "severity": "error",
       "title": "Ошибка калибровки насоса",
-      "description": "Операция калибровки насоса завершилась ошибкой.",
-      "recommendation": "Проверьте насос, исполнительный канал и параметры калибровочного прогона.",
+      "description": "Процедура калибровки расхода насоса завершилась с ошибкой.",
+      "recommendation": "Проверьте насос, исполнительный канал и отсутствие засора в линии. Убедитесь, что условия калибровочного прогона соблюдены (объём, время). Повторите калибровку после устранения механических проблем.",
       "node_related": true
     },
     {
@@ -917,9 +1137,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сбой насосного контура",
-      "description": "Инфраструктурный мониторинг зафиксировал отказ насосного канала.",
-      "recommendation": "Проверьте насос, реле, питание и защитные interlock-механизмы.",
+      "title": "Отказ насосного контура",
+      "description": "Инфраструктурный мониторинг зафиксировал критический отказ насосного канала.",
+      "recommendation": "Проверьте насос, реле, питание и срабатывание защитных блокировок (interlock). Убедитесь, что нет сухого хода и заклинивания. При необходимости остановите контур вручную до ремонта.",
       "node_related": true
     },
     {
@@ -927,9 +1147,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Ошибка команды планировщика",
-      "description": "Scheduler не смог выполнить команду в зоне.",
-      "recommendation": "Проверьте scheduler, automation-engine и связи нод.",
+      "title": "Ошибка команды планировщика расписаний",
+      "description": "Laravel scheduler-dispatch не смог выполнить команду или intent в зоне.",
+      "recommendation": "Проверьте логи artisan automation:dispatch-schedules и ответ automation-engine. Убедитесь, что зона не заблокирована активной задачей или lease. Сверьте intents в таблице zone_automation_intents.",
       "node_related": true
     },
     {
@@ -938,8 +1158,8 @@
       "category": "operations",
       "severity": "critical",
       "title": "Таймаут команды планировщика",
-      "description": "Scheduler не дождался ответа downstream-сервиса.",
-      "recommendation": "Проверьте сетевую связность и очередь задач.",
+      "description": "Планировщик не дождался ответа от automation-engine или downstream-сервиса.",
+      "recommendation": "Проверьте сетевую связность Laravel → automation-engine → history-logger. Убедитесь, что automation-engine не перегружен зависшими задачами. Проверьте таймауты HTTP в конфигурации hydro.php.",
       "node_related": true
     },
     {
@@ -947,9 +1167,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сбой сенсорного контура",
-      "description": "Инфраструктурный мониторинг зафиксировал критический сбой сенсора или его канала.",
-      "recommendation": "Проверьте сенсор, wiring, питание и последние диагностические payload узла.",
+      "title": "Критический сбой датчика",
+      "description": "Инфраструктурный мониторинг зафиксировал отказ сенсорного канала.",
+      "recommendation": "Проверьте датчик: питание, wiring (I2C/аналог), чистоту электрода. Откройте диагностическую телеметрию узла — нет ли error code -1 или 999. При необходимости замените или перекалибруйте датчик.",
       "node_related": true
     },
     {
@@ -957,9 +1177,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сервис недоступен",
-      "description": "Один из сервисов платформы не отвечает.",
-      "recommendation": "Проверьте контейнер, healthcheck и логи сервиса.",
+      "title": "Сервис платформы не отвечает",
+      "description": "Один из сервисов backend не проходит проверку работоспособности.",
+      "recommendation": "Выполните docker compose ps и проверьте статус контейнера. Откройте логи сервиса и healthcheck endpoint. Перезапустите контейнер при необходимости: docker compose restart <service>.",
       "node_related": false
     },
     {
@@ -967,9 +1187,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "warning",
-      "title": "Некорректный timestamp телеметрии",
-      "description": "В telemetry payload пришла некорректная временная метка.",
-      "recommendation": "Проверьте формат timestamp на узле и сериализацию telemetry payload.",
+      "title": "Некорректная метка времени в телеметрии",
+      "description": "Узел прислал телеметрию с невалидным полем ts (временная метка).",
+      "recommendation": "Проверьте прошивку узла: узел должен получить hydro/time/response перед публикацией ts. Убедитесь, что формат ts — Unix-время в секундах. Перезагрузите узел при рассинхроне часов.",
       "node_related": true
     },
     {
@@ -977,9 +1197,9 @@
       "source": "infra",
       "category": "config",
       "severity": "error",
-      "title": "Нода телеметрии не найдена",
-      "description": "Телеметрия пришла от ноды, отсутствующей в backend-конфигурации.",
-      "recommendation": "Проверьте регистрацию ноды, topic telemetry и provisioning.",
+      "title": "Телеметрия от незарегистрированного узла",
+      "description": "Сообщение пришло от node_uid, отсутствующего в конфигурации backend.",
+      "recommendation": "Зарегистрируйте узел в Laravel или проверьте правильность node_uid в NodeConfig. Убедитесь, что MQTT-топик соответствует зарегистрированному узлу. При тестовом узле удалите его из сети или завершите provisioning.",
       "node_related": true
     },
     {
@@ -987,9 +1207,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "Нода телеметрии не назначена зоне",
-      "description": "Телеметрия пришла от ноды без корректной привязки к зоне.",
-      "recommendation": "Проверьте zone_id ноды, привязки и provisioning в Laravel.",
+      "title": "Узел не привязан к зоне",
+      "description": "Телеметрия пришла от зарегистрированного, но не назначенного на зону узла.",
+      "recommendation": "Откройте карточку узла и назначьте его на зону в UI. Проверьте zone_id и привязки в Laravel. После назначения перешлите NodeConfig на узел.",
       "node_related": true
     },
     {
@@ -997,9 +1217,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "Несоответствие ноды и зоны в телеметрии",
-      "description": "Зона в telemetry topic не совпадает с backend-привязкой ноды.",
-      "recommendation": "Проверьте MQTT namespace, zone_id ноды и конфигурацию маршрутизации.",
+      "title": "Несоответствие зоны в телеметрии и в backend",
+      "description": "Зона в MQTT-топике телеметрии не совпадает с привязкой узла в базе данных.",
+      "recommendation": "Сверьте zone_uid в NodeConfig на ESP32 с фактической зоной в Laravel. Проверьте MQTT namespace: hydro/{gh}/{zone}/... Исправьте конфигурацию и перешлите NodeConfig.",
       "node_related": true
     },
     {
@@ -1007,9 +1227,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "Сэмпл телеметрии отброшен: нода не найдена",
-      "description": "History-logger отбросил telemetry sample, потому что нода не распознана.",
-      "recommendation": "Проверьте регистрацию ноды и соответствие telemetry topic фактической конфигурации.",
+      "title": "Телеметрия отброшена: узел не найден",
+      "description": "History-logger отбросил сэмпл телеметрии, потому что не распознал узел.",
+      "recommendation": "Зарегистрируйте узел или исправьте node_uid в MQTT-топике. Сверьте gh_uid/zone_uid/node_uid в топике с конфигурацией. Проверьте, не шлёт ли старый узел телеметрию после переназначения.",
       "node_related": true
     },
     {
@@ -1017,9 +1237,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "warning",
-      "title": "Не удалось разобрать timestamp телеметрии",
-      "description": "History-logger не смог распарсить timestamp из telemetry payload.",
-      "recommendation": "Проверьте формат ts_device и соответствие контракту телеметрии.",
+      "title": "Не удалось разобрать метку времени телеметрии",
+      "description": "History-logger не смог распарсить поле ts из полезной нагрузки телеметрии.",
+      "recommendation": "Проверьте формат ts на узле — должен быть числовой Unix timestamp в секундах. Сверьте payload с контрактом MQTT_SPEC_FULL. Обновите прошивку при несовместимом формате.",
       "node_related": true
     },
     {
@@ -1027,9 +1247,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "warning",
-      "title": "Смещение timestamp телеметрии",
-      "description": "Временная метка телеметрии заметно расходится с серверным временем.",
-      "recommendation": "Проверьте синхронизацию часов ноды и источник timestamp в telemetry payload.",
+      "title": "Расхождение времени узла и сервера",
+      "description": "Метка времени телеметрии заметно отличается от серверного времени (> допустимого порога).",
+      "recommendation": "Убедитесь, что узел получает время через hydro/time/response. Проверьте NTP на хосте и синхронизацию времени в Docker. Перезагрузите узел для повторной синхронизации.",
       "node_related": true
     },
     {
@@ -1037,9 +1257,9 @@
       "source": "infra",
       "category": "config",
       "severity": "error",
-      "title": "Зона телеметрии не найдена",
-      "description": "Телеметрия пришла для зоны, отсутствующей в актуальной конфигурации.",
-      "recommendation": "Проверьте namespace telemetry topic и привязку зоны в backend.",
+      "title": "Телеметрия для несуществующей зоны",
+      "description": "Сообщение пришло для zone_uid, отсутствующего в конфигурации backend.",
+      "recommendation": "Проверьте MQTT-топик — корректен ли сегмент zone. Убедитесь, что зона существует в Laravel и не удалена. Исправьте NodeConfig на узле при неверном zone_uid.",
       "node_related": true
     },
     {
@@ -1048,8 +1268,8 @@
       "category": "infrastructure",
       "severity": "error",
       "title": "Неизвестная инфраструктурная ошибка",
-      "description": "Сервис вернул необработанную ошибку без явной классификации.",
-      "recommendation": "Проверьте детали алерта и stack trace в логах.",
+      "description": "Сервис вернул ошибку без классификации в каталоге кодов.",
+      "recommendation": "Откройте детали алерта и логи сервиса — найдите трассировку стека. Зафиксируйте время, zone_id и контекст для передачи разработчикам. При повторении проверьте недавние изменения конфигурации или деплоя.",
       "node_related": false
     },
     {
@@ -1057,9 +1277,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Зона пропущена по backoff",
-      "description": "Зона временно не обрабатывается из-за накопленных ошибок.",
-      "recommendation": "Проверьте ошибки зоны и восстановите стабильную обработку.",
+      "title": "Зона временно пропущена (backoff)",
+      "description": "Automation-engine временно не обрабатывает зону из-за накопленных ошибок.",
+      "recommendation": "Просмотрите последние алерты и ошибки этой зоны — устраните первичную причину. Backoff снимется автоматически после стабилизации. Не форсируйте обработку, пока причина ошибок не устранена.",
       "node_related": false
     },
     {
@@ -1067,9 +1287,9 @@
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Данные зоны недоступны",
-      "description": "Доступ к данным зоны временно невозможен.",
-      "recommendation": "Проверьте БД, circuit-breaker и API доступность.",
+      "title": "Данные зоны временно недоступны",
+      "description": "Automation-engine не может прочитать данные зоны из read-model.",
+      "recommendation": "Проверьте PostgreSQL и не открыт ли circuit breaker. Убедитесь, что API и read-model доступны. Проверьте, существует ли зона и активен ли цикл.",
       "node_related": false
     },
     {
@@ -1077,9 +1297,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "error",
-      "title": "Деградированный режим зоны",
-      "description": "Выполняются только safety-check и health-check без полной автоматики.",
-      "recommendation": "Проверьте корректность целей и состояние контроллеров.",
+      "title": "Зона в деградированном режиме",
+      "description": "Выполняются только проверки безопасности и здоровья — полная автоматика приостановлена.",
+      "recommendation": "Проверьте активные алерты зоны и error_code последней задачи. Убедитесь в корректности целевых значений и конфигурации. Устраните блокирующие проблемы для возврата в штатный режим.",
       "node_related": false
     },
     {
@@ -1087,9 +1307,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "critical",
-      "title": "Высокий процент ошибок зон",
-      "description": "Слишком много зон завершаются ошибкой в рамках цикла.",
-      "recommendation": "Проверьте общую инфраструктуру и состояние core-сервисов.",
+      "title": "Высокий процент ошибок обработки зон",
+      "description": "Слишком много зон завершают цикл обработки с ошибкой — возможна общая инфраструктурная проблема.",
+      "recommendation": "Проверьте PostgreSQL, MQTT, history-logger и automation-engine — общие зависимости. Ищите общий error_code в логах нескольких зон. При деплое недавних изменений рассмотрите откат.",
       "node_related": false
     },
     {
@@ -1098,8 +1318,8 @@
       "category": "operations",
       "severity": "error",
       "title": "Ошибка обработки зоны",
-      "description": "Automation Engine завершил обработку зоны с ошибкой.",
-      "recommendation": "Проверьте конфигурацию зоны, targets и входную телеметрию.",
+      "description": "Automation-engine завершил цикл обработки зоны с ошибкой.",
+      "recommendation": "Откройте логи automation-engine для zone_id из алерта. Проверьте конфигурацию зоны, целевые значения и свежесть телеметрии. Устраните error_code и дождитесь следующего цикла.",
       "node_related": false
     },
     {
@@ -1107,9 +1327,9 @@
       "source": "infra",
       "category": "config",
       "severity": "warning",
-      "title": "Отсутствуют targets зоны",
-      "description": "Для активной зоны не найден корректный набор целей управления.",
-      "recommendation": "Проверьте активный цикл и effective targets.",
+      "title": "Отсутствуют целевые значения зоны",
+      "description": "Для активной зоны не найден корректный набор effective targets.",
+      "recommendation": "Проверьте активный цикл выращивания и текущую фазу рецепта. Убедитесь, что в фазе заданы обязательные chemical и климатические targets. Пересоберите automation bundle при изменении рецепта.",
       "node_related": false
     },
     {
@@ -1117,9 +1337,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Большой backlog активных задач AE3",
-      "description": "Число активных задач автоматики превышает порог.",
-      "recommendation": "Проверьте зависшие ae_tasks, lease и доступность automation-engine.",
+      "title": "Большая очередь активных задач AE3",
+      "description": "Число активных задач automation-engine превышает порог — возможны зависшие задачи.",
+      "recommendation": "Проверьте таблицу ae_tasks на зависшие записи в статусах pending/running/waiting_command. Убедитесь, что automation-engine online и обрабатывает задачи. Проверьте lease — нет ли осиротевших блокировок.",
       "node_related": false
     },
     {
@@ -1127,9 +1347,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Долгий цикл scheduler-dispatch",
-      "description": "Один цикл dispatch расписаний занимает больше нормы.",
-      "recommendation": "Проверьте нагрузку на БД, число зон и блокировки при dispatch.",
+      "title": "Долгий цикл планировщика расписаний",
+      "description": "Один цикл команды automation:dispatch-schedules занимает больше 5 секунд (p95).",
+      "recommendation": "Проверьте нагрузку на PostgreSQL при dispatch — возможны медленные запросы. Убедитесь, что число зон с расписаниями не выросло аномально. Проверьте блокировки advisory lock при параллельном запуске cron.",
       "node_related": false
     },
     {
@@ -1137,9 +1357,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Структурное отставание dispatch",
-      "description": "Цикл dispatch системно отстаёт от расписания.",
-      "recommendation": "Проверьте cron, очередь Laravel, БД и метрики scheduler-dispatch.",
+      "title": "Планировщик системно отстаёт от расписания",
+      "description": "Цикл dispatch не укладывается в интервал cron и накапливает отставание.",
+      "recommendation": "Проверьте, что cron Laravel scheduler запускается каждую минуту без пропусков. Убедитесь в достаточных ресурсах CPU/RAM у контейнера laravel. Метрики: laravel_scheduler_dispatch_cycle_overrun_seconds в Prometheus/Grafana.",
       "node_related": false
     },
     {
@@ -1147,9 +1367,29 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Высокий процент ошибок dispatch расписания",
-      "description": "Laravel scheduler-dispatch завершается с ошибками чаще допустимого порога.",
-      "recommendation": "Проверьте логи artisan automation:dispatch-schedules, AE3 и intents в БД.",
+      "title": "Высокий процент ошибок dispatch расписаний",
+      "description": "Команда automation:dispatch-schedules завершается с ошибками чаще допустимого порога.",
+      "recommendation": "Проверьте логи Laravel: storage/logs и вывод artisan automation:dispatch-schedules. Убедитесь, что automation-engine принимает POST /zones/{id}/start-cycle. Проверьте таблицу zone_automation_intents на ошибочные записи.",
+      "node_related": false
+    },
+    {
+      "code": "laravel_scheduler_lock_skipped",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Laravel Scheduler Lock Skipped",
+      "description": "Laravel Scheduler Lock Skipped: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "laravel_scheduler_missed_windows",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Laravel Scheduler Missed Windows",
+      "description": "Laravel Scheduler Missed Windows: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     },
     {
@@ -1157,9 +1397,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Старый pending intent",
-      "description": "Самый старый intent в статусе pending не обрабатывается слишком долго.",
-      "recommendation": "Проверьте dispatch, AE3 и причину блокировки соответствующей зоны.",
+      "title": "Старый необработанный intent расписания",
+      "description": "Самый старый intent в статусе pending не обрабатывается более 10 минут.",
+      "recommendation": "Найдите intent в БД (zone_automation_intents) и связанную зону. Проверьте, не блокирует ли зону активная задача, lease или offline runtime. Убедитесь, что scheduler-dispatch и automation-engine работают.",
       "node_related": false
     },
     {
@@ -1167,9 +1407,9 @@
       "source": "infra",
       "category": "operations",
       "severity": "warning",
-      "title": "Накопились pending intents",
-      "description": "В очереди zone_automation_intents много необработанных записей.",
-      "recommendation": "Проверьте scheduler-dispatch, AE3 ingress и блокировки зон.",
+      "title": "Накопились необработанные intents расписаний",
+      "description": "В таблице zone_automation_intents много записей в статусе pending.",
+      "recommendation": "Проверьте работу automation:dispatch-schedules и доступность automation-engine. Ищите зоны с блокировками (busy, lease, offline узлы). Метрика laravel_scheduler_pending_intents_count в Grafana.",
       "node_related": false
     },
     {
@@ -1178,8 +1418,8 @@
       "category": "infrastructure",
       "severity": "critical",
       "title": "MQTT-брокер недоступен",
-      "description": "Брокер MQTT не отвечает или недоступен для подписчиков.",
-      "recommendation": "Проверьте Mosquitto, сеть, учётные данные и нагрузку на брокер.",
+      "description": "Брокер Mosquitto не отвечает — узлы и сервисы не могут обмениваться сообщениями.",
+      "recommendation": "Проверьте контейнер mqtt: docker compose logs mqtt. Убедитесь, что порт 1883 доступен внутри Docker-сети. При перегрузке перезапустите брокер; проверьте число подключений.",
       "node_related": false
     },
     {
@@ -1187,19 +1427,59 @@
       "source": "node",
       "category": "node",
       "severity": "error",
-      "title": "Ошибка узла",
-      "description": "Узел сообщил об ошибке на уровне железа, канала или firmware.",
-      "recommendation": "Проверьте питание, wiring, firmware и диагностические payload ноды.",
+      "title": "Ошибка на узле ESP32",
+      "description": "Узел сообщил об ошибке на уровне железа, канала или прошивки.",
+      "recommendation": "Откройте карточку узла — диагностическая телеметрия и последние события. Проверьте питание, wiring и serial-лог узла при физическом доступе. При повторении рассмотрите обновление или откат прошивки.",
       "node_related": true
+    },
+    {
+      "code": "postgres_exporter_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Postgres Exporter Down",
+      "description": "Postgres Exporter Down: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "postgres_unavailable",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Postgres Unavailable",
+      "description": "Postgres Unavailable: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "prometheus_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Prometheus Down",
+      "description": "Prometheus Down: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
+      "code": "redis_exporter_down",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Redis Exporter Down",
+      "description": "Redis Exporter Down: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
     },
     {
       "code": "service_down",
       "source": "infra",
       "category": "infrastructure",
       "severity": "critical",
-      "title": "Сервис недоступен",
-      "description": "Prometheus не получает метрики health с одного из сервисов платформы.",
-      "recommendation": "Проверьте контейнер, healthcheck, сеть и логи сервиса.",
+      "title": "Сервис не отдаёт метрики health",
+      "description": "Prometheus не получает метрики up=1 с одного из сервисов платформы (automation-engine, history-logger, mqtt-bridge, laravel-scheduler).",
+      "recommendation": "Определите какой job недоступен в Prometheus (Status → Targets). Проверьте контейнер: docker compose ps и docker compose logs <service>. Перезапустите сервис после устранения причины падения.",
       "node_related": false
     }
   ]

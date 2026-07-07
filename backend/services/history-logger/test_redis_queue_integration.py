@@ -5,7 +5,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
-from common.redis_queue import TelemetryQueue, TelemetryQueueItem
+from common.redis_queue import PopBatchResult, QueueEntry, TelemetryQueue, TelemetryQueueItem
 from models import TelemetrySampleModel
 
 
@@ -14,8 +14,9 @@ def mock_redis_queue():
     """Создает мок Redis очереди."""
     queue = AsyncMock(spec=TelemetryQueue)
     queue.push = AsyncMock(return_value=True)
-    queue.pop_batch = AsyncMock(return_value=[])
+    queue.pop_batch = AsyncMock(return_value=PopBatchResult())
     queue.size = AsyncMock(return_value=0)
+    queue.total_pending_size = AsyncMock(return_value=0)
     return queue
 
 
@@ -73,7 +74,12 @@ async def test_process_telemetry_queue_flush_by_size(mock_redis_queue):
     ]
     
     mock_redis_queue.size.return_value = 200
-    mock_redis_queue.pop_batch.return_value = queue_items
+    mock_redis_queue.pop_batch.return_value = PopBatchResult(
+        entries=[
+            QueueEntry(raw=queue_items[0].to_json(), item=queue_items[0])
+            for _ in queue_items
+        ]
+    )
     
     with patch('state.telemetry_queue', mock_redis_queue), \
          patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
@@ -127,7 +133,12 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
         
         mock_shutdown.is_set = is_set
         
-        mock_redis_queue.pop_batch.return_value = queue_items
+        mock_redis_queue.pop_batch.return_value = PopBatchResult(
+        entries=[
+            QueueEntry(raw=queue_items[0].to_json(), item=queue_items[0])
+            for _ in queue_items
+        ]
+    )
         
         from telemetry_processing import process_telemetry_queue
         
@@ -166,7 +177,12 @@ async def test_graceful_shutdown_processes_remaining(mock_redis_queue):
     ]
     
     mock_redis_queue.size.side_effect = [1, 0]  # Сначала есть элементы, потом очередь пуста
-    mock_redis_queue.pop_batch.return_value = queue_items
+    mock_redis_queue.pop_batch.return_value = PopBatchResult(
+        entries=[
+            QueueEntry(raw=queue_items[0].to_json(), item=queue_items[0])
+            for _ in queue_items
+        ]
+    )
     
     with patch('state.telemetry_queue', mock_redis_queue), \
          patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock) as mock_process, \

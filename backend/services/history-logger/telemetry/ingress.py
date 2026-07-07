@@ -90,6 +90,7 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
         data = _parse_json(payload)
         if not data:
             logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
+            TELEMETRY_DROPPED.labels(reason="invalid_json").inc()
             return
 
         if isinstance(data, dict):

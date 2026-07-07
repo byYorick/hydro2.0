@@ -32,8 +32,9 @@ from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
 
-_NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "ACCEPTED", "RUNNING"})
+_NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "RUNNING"})
 _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"})
+_PROTOCOL_VIOLATION_STATUSES = frozenset({"ACCEPTED"})
 
 
 class SequentialCommandGateway:
@@ -510,6 +511,11 @@ class SequentialCommandGateway:
         now: datetime,
     ) -> Mapping[str, Any]:
         legacy_status = str(legacy_row.get("status") or "").strip().upper()
+        if legacy_status in _PROTOCOL_VIOLATION_STATUSES:
+            raise TaskExecutionError(
+                "command_protocol_violation",
+                f"Legacy status {legacy_status} не является terminal outcome протокола 2.0",
+            )
         if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
             raise TaskExecutionError("ae3_unsupported_legacy_status", f"Неподдерживаемый legacy status={legacy_status or 'empty'}")
         external_id = str(legacy_row.get("id") or "")

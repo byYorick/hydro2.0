@@ -94,6 +94,7 @@ return [
         'scheduler_active_task_cleanup_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH', 500),
         'scheduler_active_task_poll_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_POLL_BATCH', 500),
         'scheduler_cursor_persist_enabled' => env('AUTOMATION_LARAVEL_SCHEDULER_CURSOR_PERSIST_ENABLED', true),
+        'scheduler_metrics_token' => env('AUTOMATION_LARAVEL_SCHEDULER_METRICS_TOKEN', ''),
     ],
 
     'digital_twin' => [

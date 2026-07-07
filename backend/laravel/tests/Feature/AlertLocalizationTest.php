@@ -38,7 +38,7 @@ class AlertLocalizationTest extends TestCase
             ->getJson("/api/alerts?zone_id={$zone->id}")
             ->assertOk()
             ->assertJsonPath('data.data.0.code', 'biz_zone_correction_config_missing')
-            ->assertJsonPath('data.data.0.title', 'Не настроен correction config зоны')
+            ->assertJsonPath('data.data.0.title', 'Не настроена конфигурация коррекции зоны')
             ->assertJsonPath(
                 'data.data.0.message',
                 'В зоне 1 в correction_config.base отсутствуют обязательные поля: runtime, timing, dosing, retry, tolerance, controllers, safety; критические параметры коррекции переведены в fail-closed режим.'
@@ -112,7 +112,7 @@ class AlertLocalizationTest extends TestCase
             ->getJson("/api/alerts?zone_id={$zone->id}")
             ->assertOk()
             ->assertJsonPath('data.data.0.code', 'biz_ae3_task_failed')
-            ->assertJsonPath('data.data.0.title', 'Ошибка задачи автоматики')
+            ->assertJsonPath('data.data.0.title', 'Ошибка задачи автоматики зоны')
             ->assertJsonPath(
                 'data.data.0.message',
                 'Зона '.$zone->id.' («'.$zone->name.'»): Задача AE3 #77 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 1. Причина: Выполнение задачи превысило допустимый runtime timeout.'
@@ -306,7 +306,7 @@ class AlertLocalizationTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/alerts?zone_id={$zone->id}")
             ->assertOk()
-            ->assertJsonPath('data.data.0.title', 'Таймаут ожидания READY перед поливом')
+            ->assertJsonPath('data.data.0.title', 'Таймаут ожидания готовности зоны к поливу')
             ->assertJsonPath(
                 'data.data.0.message',
                 'Полив превысил время ожидания на этапе await_ready: зона так и не перешла в состояние READY.'
@@ -337,8 +337,8 @@ class AlertLocalizationTest extends TestCase
             ->getJson("/api/alerts?zone_id={$zone->id}")
             ->assertOk()
             ->assertJsonPath('data.data.0.code', 'biz_low_ph')
-            ->assertJsonPath('data.data.0.title', 'Низкий pH')
-            ->assertJsonPath('data.data.0.message', 'Показания pH ниже целевого диапазона.');
+            ->assertJsonPath('data.data.0.title', 'Низкий pH раствора')
+            ->assertJsonPath('data.data.0.message', 'Кислотность раствора ниже целевого диапазона активной фазы рецепта.');
     }
 
     public function test_alerts_api_localizes_legacy_pump_failure_type_when_code_is_empty(): void
@@ -365,6 +365,6 @@ class AlertLocalizationTest extends TestCase
             ->getJson("/api/alerts?zone_id={$zone->id}")
             ->assertOk()
             ->assertJsonPath('data.data.0.code', 'infra_pump_failure')
-            ->assertJsonPath('data.data.0.title', 'Сбой насосного контура');
+            ->assertJsonPath('data.data.0.title', 'Отказ насосного контура');
     }
 }

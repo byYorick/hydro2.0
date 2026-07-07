@@ -426,3 +426,18 @@ esp_err_t node_state_manager_register_safe_mode_callback(
     ESP_LOGI(TAG, "Safe mode callback registered");
     return ESP_OK;
 }
+
+esp_err_t node_state_manager_invoke_actuator_failsafe(const char *reason) {
+    if (!s_state_manager.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGW(TAG, "Actuator fail-safe invoked: %s", reason ? reason : "unknown");
+
+    if (!s_state_manager.safe_mode_callback) {
+        ESP_LOGW(TAG, "No actuator fail-safe callback registered");
+        return ESP_OK;
+    }
+
+    return s_state_manager.safe_mode_callback(s_state_manager.safe_mode_user_ctx);
+}

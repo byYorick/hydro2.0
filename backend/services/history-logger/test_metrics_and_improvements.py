@@ -18,7 +18,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 services_dir = os.path.dirname(current_dir)
 sys.path.insert(0, services_dir)
 
-from common.redis_queue import TelemetryQueueItem
+from common.redis_queue import PopBatchResult, TelemetryQueueItem
 
 
 class TestExtractZoneIdFromUid:
@@ -113,7 +113,8 @@ class TestMetrics:
         
         mock_queue = AsyncMock()
         mock_queue.size = AsyncMock(return_value=100)
-        mock_queue.pop_batch = AsyncMock(return_value=[])
+        mock_queue.pop_batch = AsyncMock(return_value=PopBatchResult())
+        mock_queue.total_pending_size = AsyncMock(return_value=0)
         
         # Создаем mock для shutdown_event
         mock_shutdown = AsyncMock()
@@ -134,6 +135,7 @@ class TestMetrics:
             mock_settings.return_value.telemetry_flush_ms = 500
             mock_settings.return_value.queue_check_interval_sec = 0.1
             mock_settings.return_value.final_batch_multiplier = 10
+            mock_settings.return_value.telemetry_shutdown_drain_timeout_sec = 5.0
             
             # Запускаем процессор (он завершится после первой итерации)
             await process_telemetry_queue()

@@ -307,10 +307,57 @@ class SchedulerCycleOrchestrator
                 $taskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
 
                 if ($intervalSec > 0) {
+                    $hasWindow = is_string($schedule->startTime)
+                        && is_string($schedule->endTime)
+                        && $schedule->startTime !== ''
+                        && $schedule->endTime !== '';
+                    if (
+                        $hasWindow
+                        && ! $this->finalizer->isTimeInWindow(
+                            $now->format('H:i:s'),
+                            $schedule->startTime,
+                            $schedule->endTime,
+                        )
+                    ) {
+                        $executedKeys[$scheduleKey] = true;
+
+                        continue;
+                    }
+
                     if (
                         $this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)
                         && ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)
                     ) {
+                        $lastCompletedAt = $context->lastRunByTaskName[$taskName] ?? null;
+                        if ($lastCompletedAt instanceof CarbonImmutable) {
+                            $missedTicks = $this->finalizer->countMissedIntervalTicks(
+                                $lastCompletedAt,
+                                $intervalSec,
+                                $now,
+                            );
+                            if ($missedTicks > 0) {
+                                $this->schedulerMetricsStore->recordMissedWindowsTotal(
+                                    $zoneId,
+                                    $taskType,
+                                    $missedTicks,
+                                );
+                                $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
+                                    'metric' => SchedulerConstants::METRIC_MISSED_WINDOWS_TOTAL,
+                                    'labels' => [
+                                        'zone_id' => $zoneId,
+                                        'task_type' => $taskType,
+                                    ],
+                                    'value' => $missedTicks,
+                                ]);
+                                Log::warning('Laravel scheduler missed interval ticks', [
+                                    'zone_id' => $zoneId,
+                                    'task_type' => $taskType,
+                                    'missed_ticks' => $missedTicks,
+                                    'schedule_key' => $scheduleKey,
+                                ]);
+                            }
+                        }
+
                         $executedKeys[$scheduleKey] = true;
                         $batchDispatchJobs[] = [
                             'zoneId' => $zoneId,
@@ -692,18 +739,26 @@ class SchedulerCycleOrchestrator
             return;
         }
 
-        try {
-            foreach (array_chunk($this->schedulerLogsBuffer, 500) as $chunk) {
-                DB::table('scheduler_logs')->insert($chunk);
+        $attempts = 0;
+        while ($this->schedulerLogsBuffer !== [] && $attempts < 2) {
+            $attempts++;
+            try {
+                foreach (array_chunk($this->schedulerLogsBuffer, 500) as $chunk) {
+                    DB::table('scheduler_logs')->insert($chunk);
+                }
+                $this->schedulerLogsBuffer = [];
+
+                return;
+            } catch (\Throwable $e) {
+                Log::warning('Failed to flush scheduler log buffer from laravel dispatcher', [
+                    'buffer_size' => count($this->schedulerLogsBuffer),
+                    'attempt' => $attempts,
+                    'error' => $e->getMessage(),
+                ]);
             }
-        } catch (\Throwable $e) {
-            Log::warning('Failed to flush scheduler log buffer from laravel dispatcher', [
-                'buffer_size' => count($this->schedulerLogsBuffer),
-                'error' => $e->getMessage(),
-            ]);
-        } finally {
-            $this->schedulerLogsBuffer = [];
         }
+
+        $this->schedulerLogsBuffer = [];
     }
 
     /**

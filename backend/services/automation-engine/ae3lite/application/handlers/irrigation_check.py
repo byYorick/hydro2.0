@@ -28,6 +28,10 @@ from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
 
+# Sanity clamp for requested irrigation duration (protects against corrupt read-model).
+_IRRIGATION_DURATION_MAX_SEC = 3600
+_IRRIGATION_DURATION_FALLBACK_SEC = 120
+
 
 class IrrigationCheckHandler(BaseStageHandler):
     _STALE_RECHECK_DELAY_SEC = 0.25
@@ -432,14 +436,14 @@ class IrrigationCheckHandler(BaseStageHandler):
             execution = getattr(runtime, "irrigation_execution", None)
             raw = getattr(execution, "duration_sec", None) if execution is not None else None
         try:
-            return max(1, min(3600, int(raw)))
+            return max(1, min(_IRRIGATION_DURATION_MAX_SEC, int(raw)))
         except (TypeError, ValueError):
             execution = getattr(runtime, "irrigation_execution", None)
             fallback = getattr(execution, "duration_sec", None) if execution is not None else None
             try:
-                return max(1, min(3600, int(fallback)))
+                return max(1, min(_IRRIGATION_DURATION_MAX_SEC, int(fallback)))
             except (TypeError, ValueError):
-                return 120
+                return _IRRIGATION_DURATION_FALLBACK_SEC
 
     def _resolve_irrigation_pump_stop_at(
         self,

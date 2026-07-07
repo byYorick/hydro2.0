@@ -13,6 +13,30 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ---
 
+## Статус выполнения (2026-07-07)
+
+| Этап | Статус | Примечание |
+|------|--------|------------|
+| **R1** | ✅ | Alertmanager bearer, prod healthchecks, exporters |
+| **R2** | ✅ | 60 alert rules (dev+prod), метрики в коде |
+| **R3** | ✅ | processing-list, PUBACK, shutdown drain; HL 527 passed |
+| **R4** | ✅ | lease fail-closed, waiting_command janitor, HL retry=1; AE 1668+ passed |
+| **R5** | ✅ | link-loss fail-safe, честная телеметрия; 6 нод собраны |
+| **R6** | ✅ | window_interval, missed ticks, fail-closed token; Laravel 1126 passed |
+| **R7** | ✅ | `/backups` volume, check-скрипты, backup onFailure |
+
+**Отклонения / осознанные компромиссы:**
+- R5 HMAC canonical `cJSON_Print` — heap на однопоточном mqtt path (приемлемо для v1)
+- Replay пропущенных interval-окон — только метрика + лог, без автоматического replay (по дизайну)
+
+**Закрыто в финальной итерации (2026-07-07):**
+- Prometheus exporter: `laravel_scheduler_missed_windows_total`, `laravel_scheduler_lock_skipped_total`
+- Workspace `missed_total` / `suppressed_total` из `scheduler_logs` + totals fallback
+- HL chaos-сценарий PG down → requeue → recovery (`test_reliability_r3.py`)
+- Vitest: мок `automationStateBootstrap` в AutomationProcessPanel / ZoneShow / ZoneAutomationTab
+
+---
+
 ## 1. Резюме аудита
 
 ### Что уже сделано хорошо (не трогаем)

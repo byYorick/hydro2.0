@@ -84,7 +84,7 @@ Route::get('system/health', [SystemController::class, 'health'])
         'throttle:300,1',
     ]);
 Route::get('system/scheduler/metrics', SchedulerMetricsController::class)
-    ->middleware('throttle:300,1');
+    ->middleware(['verify.scheduler.metrics', 'throttle:300,1']);
 
 // E2E Auth Bootstrap endpoint - создание пользователя и токена для E2E тестов
 // Регистрируется только в testing/e2e окружениях.

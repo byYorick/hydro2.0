@@ -18,6 +18,7 @@ class ScheduleWorkspaceService
         private readonly ManualScheduleService $manualScheduleService,
         private readonly ExecutionRunReadModel $executionRunReadModel,
         private readonly AutomationRuntimeConfigService $runtimeConfig,
+        private readonly SchedulerMetricsStore $schedulerMetricsStore,
     ) {}
 
     /**
@@ -44,6 +45,8 @@ class ScheduleWorkspaceService
             $this->scheduleLoader->collectIntervalTaskNames($schedules)
         );
         $planWindows = $this->buildPlanWindows($zone->id, $schedules, $lastRunByTaskName, $now, $horizonEnd);
+        $lookbackStart = $this->resolveLookbackStart($now, $resolvedHorizon);
+        $planSummary = $this->schedulerMetricsStore->planSummaryForZone($zone->id, $lookbackStart);
         $recentRuns = $this->executionRunReadModel->listForZone($zone->id, 10);
         $activeRun = collect($recentRuns)->first(static fn (array $run): bool => (bool) ($run['is_active'] ?? false));
         $capabilities = $this->capabilitiesForZone($zone, $planWindows);
@@ -58,8 +61,8 @@ class ScheduleWorkspaceService
                 'windows' => $planWindows,
                 'summary' => [
                     'planned_total' => count($planWindows),
-                    'suppressed_total' => 0,
-                    'missed_total' => 0,
+                    'suppressed_total' => $planSummary['suppressed_total'],
+                    'missed_total' => $planSummary['missed_total'],
                 ],
             ],
             'execution' => [
@@ -84,6 +87,13 @@ class ScheduleWorkspaceService
         return $horizon === '7d'
             ? $now->addDays(7)
             : $now->addDay();
+    }
+
+    private function resolveLookbackStart(CarbonImmutable $now, string $horizon): CarbonImmutable
+    {
+        return $horizon === '7d'
+            ? $now->subDays(7)
+            : $now->subDay();
     }
 
     /**

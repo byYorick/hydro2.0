@@ -57,6 +57,10 @@ final class SchedulerConstants
 
     public const METRIC_ZONE_CONFIG_AUTO_REVERTS_TOTAL = 'ae3_zone_config_auto_reverts_total';
 
+    public const METRIC_MISSED_WINDOWS_TOTAL = 'laravel_scheduler_missed_windows_total';
+
+    public const METRIC_LOCK_SKIPPED_TOTAL = 'laravel_scheduler_lock_skipped_total';
+
     /** @var list<float> */
     public const CYCLE_DURATION_BUCKETS = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0];
 

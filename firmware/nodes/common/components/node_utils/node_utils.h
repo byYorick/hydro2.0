@@ -12,6 +12,7 @@
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
+#include "cJSON.h"
 #include <stddef.h>
 #include <stdbool.h>
 
@@ -225,6 +226,15 @@ esp_err_t node_utils_publish_config_report_resilient(void);
  * Канонический payload: status + ts + online + ip + rssi + fw.
  */
 esp_err_t node_utils_publish_device_status_extended(void);
+
+/**
+ * @brief Публикация channel-level event (hydro/{gh}/{zone}/{node}/{channel}/event).
+ *
+ * @param channel MQTT channel id (например, "system"); NULL → "system"
+ * @param event_code Код события
+ * @param details Опциональный JSON object; поля сливаются в payload (ownership передаётся функции)
+ */
+esp_err_t node_utils_publish_event(const char *channel, const char *event_code, cJSON *details);
 
 #ifdef __cplusplus
 }

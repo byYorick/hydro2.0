@@ -28,6 +28,10 @@ class SchedulerPrometheusMetricsExporter
             '',
             ...$this->renderZoneConfigAutoRevertsCounter(),
             '',
+            ...$this->renderMissedWindowsCounters(),
+            '',
+            ...$this->renderLockSkippedCounter(),
+            '',
         ];
 
         return implode("\n", $lines);
@@ -204,6 +208,62 @@ class SchedulerPrometheusMetricsExporter
                 (float) ($row->total ?? 0),
             );
         }
+
+        return $lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function renderMissedWindowsCounters(): array
+    {
+        $metricName = SchedulerConstants::METRIC_MISSED_WINDOWS_TOTAL;
+        $lines = [
+            '# HELP '.$metricName.' Total irrigation/schedule windows missed due to scheduler lag, per zone and task type.',
+            '# TYPE '.$metricName.' counter',
+        ];
+
+        if (! Schema::hasTable('laravel_scheduler_missed_windows_totals')) {
+            return $lines;
+        }
+
+        $rows = DB::table('laravel_scheduler_missed_windows_totals')
+            ->select(['zone_id', 'task_type', 'total'])
+            ->orderBy('zone_id')
+            ->orderBy('task_type')
+            ->get();
+
+        foreach ($rows as $row) {
+            $lines[] = $this->renderMetricLine(
+                $metricName,
+                [
+                    'zone_id' => (string) ($row->zone_id ?? ''),
+                    'task_type' => (string) ($row->task_type ?? ''),
+                ],
+                (float) ($row->total ?? 0),
+            );
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function renderLockSkippedCounter(): array
+    {
+        $metricName = SchedulerConstants::METRIC_LOCK_SKIPPED_TOTAL;
+        $lines = [
+            '# HELP '.$metricName.' Total scheduler dispatch cycles skipped because the cache lock was already held.',
+            '# TYPE '.$metricName.' counter',
+        ];
+
+        if (! Schema::hasTable('laravel_scheduler_lock_skipped_totals')) {
+            return $lines;
+        }
+
+        $total = (int) (DB::table('laravel_scheduler_lock_skipped_totals')->sum('total') ?? 0);
+        $lines[] = $this->renderMetricLine($metricName, [], $total);
 
         return $lines;
     }

@@ -13,11 +13,23 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "mbedtls/md.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <ctype.h>
+
+#ifdef __has_include
+    #if __has_include("diagnostics.h")
+        #include "diagnostics.h"
+        #define NODE_CMD_DIAGNOSTICS_AVAILABLE 1
+    #endif
+#endif
+#ifndef NODE_CMD_DIAGNOSTICS_AVAILABLE
+    #define NODE_CMD_DIAGNOSTICS_AVAILABLE 0
+#endif
 
 static const char *TAG = "node_command_handler";
 static bool g_logged_missing_hmac = false;
@@ -207,6 +219,15 @@ static void log_command_response_summary(
     );
 }
 
+static void build_log_preview(const char *data, int data_len, char *preview, size_t preview_size);
+static esp_err_t publish_command_response_json(
+    const char *topic,
+    const char *channel,
+    const char *cmd,
+    const char *cmd_id,
+    cJSON *response
+);
+
 static void build_log_preview(const char *data, int data_len, char *preview, size_t preview_size) {
     if (preview == NULL || preview_size == 0) {
         return;
@@ -234,6 +255,98 @@ static void build_log_preview(const char *data, int data_len, char *preview, siz
             preview[len - 2] = '.';
             preview[len - 1] = '.';
         }
+    }
+}
+
+static void node_command_report_invalid_json(const char *data, int data_len) {
+#if NODE_CMD_DIAGNOSTICS_AVAILABLE
+    if (diagnostics_is_initialized()) {
+        diagnostics_update_mqtt_metrics(false, true, true);
+    }
+#else
+    (void)data;
+    (void)data_len;
+#endif
+}
+
+static bool try_extract_json_string_field(
+    const char *data,
+    int data_len,
+    const char *field_name,
+    char *out,
+    size_t out_size
+) {
+    if (data == NULL || data_len <= 0 || field_name == NULL || out == NULL || out_size == 0) {
+        return false;
+    }
+
+    char pattern[32];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", field_name);
+    const char *field = NULL;
+    for (const char *cursor = data; cursor < data + data_len; cursor++) {
+        const size_t remaining = (size_t)(data + data_len - cursor);
+        if (remaining < strlen(pattern)) {
+            break;
+        }
+        if (memcmp(cursor, pattern, strlen(pattern)) == 0) {
+            field = cursor;
+            break;
+        }
+    }
+    if (field == NULL) {
+        return false;
+    }
+
+    const char *value_start = strchr(field + strlen(pattern), '"');
+    if (value_start == NULL) {
+        return false;
+    }
+    value_start++;
+    const char *value_end = value_start;
+    while (value_end < data + data_len && *value_end != '\0' && *value_end != '"') {
+        if (*value_end == '\\' && (value_end + 1) < data + data_len) {
+            value_end += 2;
+            continue;
+        }
+        value_end++;
+    }
+    if (value_end >= data + data_len || *value_end != '"') {
+        return false;
+    }
+
+    size_t value_len = (size_t)(value_end - value_start);
+    if (value_len == 0 || value_len >= out_size) {
+        return false;
+    }
+
+    memcpy(out, value_start, value_len);
+    out[value_len] = '\0';
+    return true;
+}
+
+static void node_command_respond_invalid_json(
+    const char *topic,
+    const char *channel,
+    const char *data,
+    int data_len,
+    const char *reason
+) {
+    char cmd_id[64] = {0};
+    if (!try_extract_json_string_field(data, data_len, "cmd_id", cmd_id, sizeof(cmd_id))) {
+        node_command_report_invalid_json(data, data_len);
+        return;
+    }
+
+    cJSON *response = node_command_handler_create_response(
+        cmd_id,
+        "INVALID",
+        "invalid_json",
+        reason ? reason : "Command payload is not valid JSON object",
+        NULL
+    );
+    if (response) {
+        (void)publish_command_response_json(topic, channel, NULL, cmd_id, response);
+        cJSON_Delete(response);
     }
 }
 
@@ -373,6 +486,9 @@ static esp_err_t get_node_secret(char *secret_out, size_t secret_size) {
  * @brief Проверить, разрешен ли legacy режим без HMAC (через кэш).
  */
 static bool get_allow_legacy_hmac(void) {
+#if !CONFIG_HYDRO_ALLOW_LEGACY_HMAC
+    return false;
+#else
     init_mutexes();
     if (s_secret_cache.mutex == NULL) {
         return false;
@@ -389,6 +505,7 @@ static bool get_allow_legacy_hmac(void) {
     bool allow = s_secret_cache.flags_loaded ? s_secret_cache.allow_legacy : false;
     xSemaphoreGive(s_secret_cache.mutex);
     return allow;
+#endif
 }
 
 /**
@@ -827,11 +944,15 @@ void node_command_handler_process(
                  channel ? channel : "default",
                  data_len,
                  preview);
+        node_command_respond_invalid_json(topic, channel, data, data_len,
+                                          "Command payload is not valid JSON");
         return;
     }
 
     if (!cJSON_IsObject(json)) {
         ESP_LOGE(TAG, "Invalid command format: root JSON must be an object");
+        node_command_respond_invalid_json(topic, channel, data, data_len,
+                                          "Command root JSON must be an object");
         cJSON_Delete(json);
         return;
     }

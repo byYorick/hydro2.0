@@ -2,6 +2,7 @@
 
 namespace App\Services\AutomationScheduler;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -130,5 +131,118 @@ class SchedulerMetricsStore
         $formatted = rtrim(rtrim(number_format($value, 6, '.', ''), '0'), '.');
 
         return $formatted === '' ? '0' : $formatted;
+    }
+
+    public function recordMissedWindowsTotal(int $zoneId, string $taskType, int $increment): void
+    {
+        if ($increment <= 0 || ! Schema::hasTable('laravel_scheduler_missed_windows_totals')) {
+            return;
+        }
+
+        $timestamp = SchedulerRuntimeHelper::nowUtc()->toDateTimeString();
+        DB::statement(
+            <<<'SQL'
+            INSERT INTO laravel_scheduler_missed_windows_totals
+                (zone_id, task_type, total, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (zone_id, task_type) DO UPDATE
+            SET total = laravel_scheduler_missed_windows_totals.total + EXCLUDED.total,
+                updated_at = EXCLUDED.updated_at
+            SQL,
+            [$zoneId, $taskType, $increment, $timestamp, $timestamp],
+        );
+    }
+
+    public function recordLockSkippedTotal(int $increment = 1): void
+    {
+        if ($increment <= 0 || ! Schema::hasTable('laravel_scheduler_lock_skipped_totals')) {
+            return;
+        }
+
+        $timestamp = SchedulerRuntimeHelper::nowUtc()->toDateTimeString();
+        $existing = DB::table('laravel_scheduler_lock_skipped_totals')->orderBy('id')->first();
+        if ($existing === null) {
+            DB::table('laravel_scheduler_lock_skipped_totals')->insert([
+                'total' => $increment,
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ]);
+
+            return;
+        }
+
+        DB::table('laravel_scheduler_lock_skipped_totals')
+            ->where('id', $existing->id)
+            ->update([
+                'total' => (int) ($existing->total ?? 0) + $increment,
+                'updated_at' => $timestamp,
+            ]);
+    }
+
+    public function sumMetricLogInLookback(
+        int $zoneId,
+        string $metric,
+        CarbonImmutable $since,
+        ?string $result = null,
+    ): int {
+        if (! Schema::hasTable('scheduler_logs')) {
+            return 0;
+        }
+
+        $query = DB::table('scheduler_logs')
+            ->where('task_name', SchedulerConstants::METRICS_LOG_TASK_NAME)
+            ->where('status', 'metric')
+            ->where('created_at', '>=', $since->toDateTimeString())
+            ->whereRaw("details->>'metric' = ?", [$metric])
+            ->whereRaw("(details->'labels'->>'zone_id')::bigint = ?", [$zoneId]);
+
+        if ($result !== null) {
+            $query->whereRaw("details->'labels'->>'result' = ?", [$result]);
+        }
+
+        $rows = $query->get(['details']);
+        $sum = 0;
+        foreach ($rows as $row) {
+            $details = is_string($row->details ?? null)
+                ? json_decode($row->details, true)
+                : (array) ($row->details ?? []);
+            if (! is_array($details)) {
+                continue;
+            }
+            $sum += max(0, (int) ($details['value'] ?? 0));
+        }
+
+        return $sum;
+    }
+
+    /**
+     * @return array{missed_total: int, suppressed_total: int}
+     */
+    public function planSummaryForZone(int $zoneId, CarbonImmutable $since): array
+    {
+        $missedTotal = $this->sumMetricLogInLookback(
+            $zoneId,
+            SchedulerConstants::METRIC_MISSED_WINDOWS_TOTAL,
+            $since,
+        );
+
+        if ($missedTotal === 0 && Schema::hasTable('laravel_scheduler_missed_windows_totals')) {
+            $missedTotal = (int) DB::table('laravel_scheduler_missed_windows_totals')
+                ->where('zone_id', $zoneId)
+                ->where('updated_at', '>=', $since->toDateTimeString())
+                ->sum('total');
+        }
+
+        $suppressedTotal = $this->sumMetricLogInLookback(
+            $zoneId,
+            SchedulerConstants::METRIC_DISPATCHES_TOTAL,
+            $since,
+            'backpressure',
+        );
+
+        return [
+            'missed_total' => $missedTotal,
+            'suppressed_total' => $suppressedTotal,
+        ];
     }
 }

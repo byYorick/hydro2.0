@@ -9,6 +9,12 @@ services:
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
   db:
     image: timescale/timescaledb:latest-pg16
@@ -67,6 +73,12 @@ services:
         reservations:
           cpus: '1'
           memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hydro} -d ${POSTGRES_DB:-hydro}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
   redis:
     image: redis:7-alpine
@@ -92,6 +104,12 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
   laravel:
     build:
@@ -189,18 +207,23 @@ services:
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET must be set}
+      - BACKUP_DIR=/backups
     volumes:
       # Production: образ из Dockerfile, без bind-mount исходников с хоста
       - laravel_storage:/app/storage
       - laravel_bootstrap_cache:/app/bootstrap/cache
       # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
       - ../schemas:/schemas:ro
+      - backups_data:/backups
     ports:
       - "8080:80"
       - "6001:6001"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/api/system/health || exit 1"]
       interval: 30s
@@ -230,9 +253,14 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
-      - mqtt
-      - db
-      - laravel
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9000:9000"
     healthcheck:
@@ -273,9 +301,12 @@ services:
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
-      - mqtt
-      - db
-      - laravel
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "9405:9405"
     healthcheck:
@@ -310,19 +341,49 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - mqtt
-      - db
-      - laravel
-      - redis
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9300)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+  blackbox:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox
+    command:
+      - '--config.file=/etc/blackbox/blackbox.yml'
+    volumes:
+      - ./configs/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-hydro}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-hydro}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
@@ -340,11 +401,27 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - automation-engine
-      - mqtt-bridge
+      automation-engine:
+        condition: service_healthy
+      mqtt-bridge:
+        condition: service_healthy
+      history-logger:
+        condition: service_healthy
+      postgres-exporter:
+        condition: service_started
+      redis-exporter:
+        condition: service_started
+      blackbox:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.5.2
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
@@ -353,6 +430,7 @@ services:
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
       - GF_DEFAULT_LANGUAGE=ru
       - GF_USERS_DEFAULT_LANGUAGE=ru
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - ./configs/prod/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./configs/prod/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -361,23 +439,43 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - prometheus
-      - db
+      prometheus:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET must be set}
     command:
       - '--config.file=/etc/alertmanager/config.yml'
       - '--storage.path=/alertmanager'
     volumes:
       - ./configs/prod/alertmanager/config.yml:/etc/alertmanager/config.yml:ro
+      - ./scripts/alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
       - alertmanager_data:/alertmanager
     ports:
       - "9093:9093"
     depends_on:
-      - prometheus
-      - laravel
+      prometheus:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
   digital-twin:
     build:
@@ -392,7 +490,8 @@ services:
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
@@ -414,7 +513,8 @@ services:
     volumes:
       - ../tests/node_sim:/node-sim:ro
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
     ports:
       - "9100:9100"
     restart: unless-stopped
@@ -431,7 +531,8 @@ services:
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics
     healthcheck:
@@ -453,3 +554,4 @@ volumes:
   grafana_data:
   alertmanager_data:
   wal_archive:
+  backups_data:

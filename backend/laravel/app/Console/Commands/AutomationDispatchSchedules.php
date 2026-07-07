@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\AutomationScheduler\SchedulerCycleService;
+use App\Services\AutomationScheduler\SchedulerMetricsStore;
 use App\Services\GreenhouseClimate\GreenhouseClimateDispatchService;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Cache\Lock;
@@ -19,6 +20,7 @@ class AutomationDispatchSchedules extends Command
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly SchedulerCycleService $schedulerCycleService,
+        private readonly SchedulerMetricsStore $schedulerMetricsStore,
         private readonly GreenhouseClimateDispatchService $greenhouseClimateDispatchService,
     ) {
         parent::__construct();
@@ -33,8 +35,17 @@ class AutomationDispatchSchedules extends Command
         }
 
         $zoneFilter = $this->resolveZoneFilter();
+        $cfg = $this->schedulerConfig();
+        if (trim((string) ($cfg['token'] ?? '')) === '') {
+            Log::error('Laravel scheduler dispatcher: missing scheduler api token');
+            $this->schedulerCycleService->runCycle($cfg, $zoneFilter);
+
+            return self::FAILURE;
+        }
+
         $lockResult = $this->acquireDispatchLock();
         if ($lockResult['state'] === 'busy') {
+            $this->schedulerMetricsStore->recordLockSkippedTotal();
             Log::info('Laravel scheduler dispatcher skipped due to active lock');
             $this->line('Dispatch lock already acquired, skip current cycle.');
 
@@ -52,7 +63,7 @@ class AutomationDispatchSchedules extends Command
         $lock = $lockResult['lock'];
         $cycleStartedAt = microtime(true);
         try {
-            $stats = $this->schedulerCycleService->runCycle($this->schedulerConfig(), $zoneFilter);
+            $stats = $this->schedulerCycleService->runCycle($cfg, $zoneFilter);
             $durationMs = (int) round((microtime(true) - $cycleStartedAt) * 1000);
             $this->line(sprintf(
                 'Dispatch cycle finished: zones=%d schedules=%d attempted=%d success=%d pending_retry=%d duration_ms=%d',

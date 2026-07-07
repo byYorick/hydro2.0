@@ -144,7 +144,7 @@ class ZoneShowEventsFormattingTest extends TestCase
             ->assertInertia(function (AssertableInertia $page) use ($zone): void {
                 $page->component('Zones/Show')
                     ->has('alerts', 1)
-                    ->where('alerts.0.title', 'Ошибка задачи автоматики')
+                    ->where('alerts.0.title', 'Ошибка задачи автоматики зоны')
                     ->where(
                         'alerts.0.message',
                         sprintf(
