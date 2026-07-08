@@ -25,13 +25,13 @@ class LightingDesiredStateDispatchTest extends TestCase
 
     public function test_window_exit_dispatches_lighting_tick_with_desired_state_off(): void
     {
-        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 20:00:30', 'UTC'));
+        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 22:00:30', 'UTC'));
         [$zone, $cycle] = $this->createZoneAndCycle();
-        $this->seedZoneCursor($zone->id, CarbonImmutable::parse('2026-07-07 19:30:00', 'UTC'));
+        $this->seedZoneCursor($zone->id, CarbonImmutable::parse('2026-07-07 21:30:00', 'UTC'));
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
             'lighting' => [
-                'start_time' => '08:00:00',
-                'photoperiod_hours' => 12,
+                'start_time' => '06:00:00',
+                'photoperiod_hours' => 16,
                 'brightness' => 80,
                 'brightness_night' => 0,
             ],
