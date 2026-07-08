@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
@@ -47,6 +48,38 @@ def _coerce_bool(value: object) -> bool | None:
     if text in {"false", "0", "no", "off"}:
         return False
     return None
+
+
+def _extract_diagnostics_execution(config: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    zone_bundle = config.get("zone")
+    if not isinstance(zone_bundle, Mapping):
+        return None
+    logic_profile = zone_bundle.get("logic_profile")
+    if not isinstance(logic_profile, Mapping):
+        return None
+    active_profile = logic_profile.get("active_profile")
+    if not isinstance(active_profile, Mapping):
+        return None
+    subsystems = active_profile.get("subsystems")
+    if not isinstance(subsystems, Mapping):
+        return None
+    diagnostics = subsystems.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        return None
+    execution = diagnostics.get("execution")
+    if not isinstance(execution, Mapping):
+        return None
+    return execution
+
+
+def _solution_topup_enabled_from_execution(execution: Mapping[str, Any]) -> bool:
+    startup = execution.get("startup")
+    startup_map = startup if isinstance(startup, Mapping) else {}
+    guards = execution.get("fail_safe_guards")
+    guards_map = guards if isinstance(guards, Mapping) else {}
+    raw = startup_map.get("solution_topup_enabled", guards_map.get("solution_topup_enabled", True))
+    coerced = _coerce_bool(raw)
+    return True if coerced is None else coerced
 
 
 class TriggerSolutionTopupFromLevelEventUseCase:
@@ -150,7 +183,11 @@ class TriggerSolutionTopupFromLevelEventUseCase:
                 "solution_max_triggered": solution_max.get("is_triggered"),
             }
 
-        topology = await self._resolve_topology(zone_id=zone_id)
+        execution_ctx = await self._load_zone_execution_context(zone_id=zone_id)
+        if not bool(execution_ctx.get("solution_topup_enabled", True)):
+            return {"triggered": False, "reason": "solution_topup_disabled"}
+
+        topology = str(execution_ctx.get("topology") or "two_tank_drip_substrate_trays")
         now_utc = now.astimezone(timezone.utc).replace(tzinfo=None) if now.tzinfo else now
         idempotency_key = (
             f"level_event:z{zone_id}:solution_topup:"
@@ -181,6 +218,7 @@ class TriggerSolutionTopupFromLevelEventUseCase:
         decision = str(claim.get("decision") or "").strip().lower()
         intent_row = dict(claim.get("intent") or {})
         if decision == "zone_busy":
+            await self._mark_requested_intent_terminal_zone_busy(claim=claim, zone_id=zone_id, now=now_utc)
             return {"triggered": False, "reason": "intent_claim_zone_busy", "intent_id": intent_id}
         if decision == "missing":
             return {"triggered": False, "reason": "intent_claim_missing", "intent_id": intent_id}
@@ -203,6 +241,13 @@ class TriggerSolutionTopupFromLevelEventUseCase:
                 solution_topup_trigger="level_switch",
             )
         except TaskCreateError as exc:
+            error_code = str(exc.code or "ae3_task_create_failed")
+            await self._mark_intent_terminal(
+                intent_row=intent_row,
+                now=now_utc,
+                error_code=error_code,
+                error_message=str(exc),
+            )
             _logger.info(
                 "Level-event solution_topup preconditions failed zone_id=%s code=%s",
                 zone_id,
@@ -210,10 +255,16 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             )
             return {
                 "triggered": False,
-                "reason": str(exc.code or "task_create_failed"),
+                "reason": error_code,
                 "intent_id": intent_id,
             }
         except Exception as exc:
+            await self._mark_intent_terminal(
+                intent_row=intent_row,
+                now=now_utc,
+                error_code="ae3_task_create_failed",
+                error_message=str(exc),
+            )
             _logger.warning(
                 "Level-event solution_topup task create failed zone_id=%s error=%s",
                 zone_id,
@@ -230,7 +281,9 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             "idempotency_key": idempotency_key,
         }
 
-    async def _resolve_topology(self, *, zone_id: int) -> str:
+    async def _load_zone_execution_context(self, *, zone_id: int) -> dict[str, Any]:
+        topology = "two_tank_drip_substrate_trays"
+        solution_topup_enabled = True
         rows = await self._fetch_fn(
             """
             SELECT aeb.config
@@ -254,21 +307,12 @@ class TriggerSolutionTopupFromLevelEventUseCase:
         if rows:
             config = dict(rows[0]).get("config")
             if isinstance(config, Mapping):
-                zone_bundle = config.get("zone")
-                if isinstance(zone_bundle, Mapping):
-                    logic_profile = zone_bundle.get("logic_profile")
-                    if isinstance(logic_profile, Mapping):
-                        active_profile = logic_profile.get("active_profile")
-                        if isinstance(active_profile, Mapping):
-                            subsystems = active_profile.get("subsystems")
-                            if isinstance(subsystems, Mapping):
-                                diagnostics = subsystems.get("diagnostics")
-                                if isinstance(diagnostics, Mapping):
-                                    execution = diagnostics.get("execution")
-                                    if isinstance(execution, Mapping):
-                                        topology = str(execution.get("topology") or "").strip().lower()
-                                        if topology:
-                                            return topology
+                execution = _extract_diagnostics_execution(config)
+                if execution is not None:
+                    solution_topup_enabled = _solution_topup_enabled_from_execution(execution)
+                    resolved_topology = str(execution.get("topology") or "").strip().lower()
+                    if resolved_topology:
+                        topology = resolved_topology
 
         fallback_rows = await self._fetch_fn(
             """
@@ -283,11 +327,73 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             zone_id,
         )
         if fallback_rows:
-            topology = str(dict(fallback_rows[0]).get("topology") or "").strip().lower()
-            if topology:
-                return topology
+            fallback_topology = str(dict(fallback_rows[0]).get("topology") or "").strip().lower()
+            if fallback_topology:
+                topology = fallback_topology
 
-        return "two_tank_drip_substrate_trays"
+        return {
+            "topology": topology,
+            "solution_topup_enabled": solution_topup_enabled,
+        }
+
+    async def _mark_intent_terminal(
+        self,
+        *,
+        intent_row: Mapping[str, Any],
+        now: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        intent_id = int(intent_row.get("id") or 0)
+        if intent_id <= 0:
+            return
+        try:
+            await self._zone_intent_repository.mark_terminal(
+                intent_id=intent_id,
+                now=now,
+                success=False,
+                error_code=error_code,
+                error_message=error_message,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _logger.warning(
+                "Level-event solution_topup не смог перевести intent в terminal: intent_id=%s",
+                intent_id,
+                exc_info=True,
+            )
+
+    async def _mark_requested_intent_terminal_zone_busy(
+        self,
+        *,
+        claim: Mapping[str, Any],
+        zone_id: int,
+        now: datetime,
+    ) -> None:
+        requested = claim.get("requested_intent")
+        requested_intent = requested if isinstance(requested, Mapping) else {}
+        requested_intent_id = int(requested_intent.get("id") or 0)
+        requested_status = str(requested_intent.get("status") or "").strip().lower()
+        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
+            return
+        try:
+            await self._zone_intent_repository.mark_terminal(
+                intent_id=requested_intent_id,
+                now=now,
+                success=False,
+                error_code="start_solution_topup_zone_busy",
+                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _logger.warning(
+                "Level-event solution_topup не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
+                zone_id,
+                requested_intent_id,
+                exc_info=True,
+            )
 
 
 __all__ = ["TriggerSolutionTopupFromLevelEventUseCase"]

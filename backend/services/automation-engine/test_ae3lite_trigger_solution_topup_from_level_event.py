@@ -16,6 +16,25 @@ from ae3lite.domain.errors import TaskCreateError
 NOW = datetime(2026, 7, 8, 12, 0, 0, tzinfo=timezone.utc)
 
 
+def _bundle_config(*, solution_topup_enabled: bool = True) -> dict:
+    return {
+        "zone": {
+            "logic_profile": {
+                "active_profile": {
+                    "subsystems": {
+                        "diagnostics": {
+                            "execution": {
+                                "topology": "two_tank_drip_substrate_trays",
+                                "startup": {"solution_topup_enabled": solution_topup_enabled},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
 def _level_event(*, channel: str = "level_solution_max", state: bool = False, initial: bool = False) -> dict:
     return {
         "zone_id": 5,
@@ -149,6 +168,7 @@ async def test_trigger_maps_task_create_precondition_failure(monkeypatch: pytest
             "topology": "two_tank_drip_substrate_trays",
         },
     })
+    zone_intent_repository.mark_terminal = AsyncMock(return_value=None)
     create_task = AsyncMock()
     create_task.run = AsyncMock(side_effect=TaskCreateError(
         "start_solution_topup_cooldown_active",
@@ -165,3 +185,52 @@ async def test_trigger_maps_task_create_precondition_failure(monkeypatch: pytest
 
     assert result["triggered"] is False
     assert result["reason"] == "start_solution_topup_cooldown_active"
+    zone_intent_repository.mark_terminal.assert_awaited_once_with(
+        intent_id=91,
+        now=NOW.replace(tzinfo=None),
+        success=False,
+        error_code="start_solution_topup_cooldown_active",
+        error_message="cooldown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_trigger_skips_when_solution_topup_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fetch_fn(query: str, *args: object):
+        if "FROM zones z" in query:
+            return [{"automation_runtime": "ae3", "workflow_phase": "ready"}]
+        if "FROM ae_tasks" in query:
+            return []
+        if "FROM grow_cycles" in query:
+            return [{"config": _bundle_config(solution_topup_enabled=False)}]
+        return []
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.trigger_solution_topup_from_level_event.load_zone_level_monitor_config",
+        AsyncMock(return_value={
+            "solution_min_sensor_labels": ("level_solution_min",),
+            "solution_max_sensor_labels": ("level_solution_max",),
+            "level_switch_on_threshold": 0.5,
+            "telemetry_max_age_sec": 60,
+        }),
+    )
+    runtime_monitor = AsyncMock()
+    runtime_monitor.read_level_switch = AsyncMock(side_effect=[
+        {"is_triggered": True, "has_level": True},
+        {"is_triggered": False, "has_level": True},
+    ])
+    zone_intent_repository = AsyncMock()
+    create_task = AsyncMock()
+    use_case = TriggerSolutionTopupFromLevelEventUseCase(
+        zone_intent_repository=zone_intent_repository,
+        create_task_from_intent_use_case=create_task,
+        runtime_monitor=runtime_monitor,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=5, event_data=_level_event(), now=NOW)
+
+    assert result["triggered"] is False
+    assert result["reason"] == "solution_topup_disabled"
+    zone_intent_repository.upsert_solution_topup_intent.assert_not_awaited()
+    create_task.run.assert_not_awaited()
