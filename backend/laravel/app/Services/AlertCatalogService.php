@@ -101,6 +101,8 @@ class AlertCatalogService
             'echigh' => 'biz_high_ec',
             'temperaturelow' => 'biz_low_temp',
             'temperaturehigh' => 'biz_high_temp',
+            'solutiontemphigh' => 'biz_solution_temp_high',
+            'solutiontemplow' => 'biz_solution_temp_low',
             'nodeoffline' => 'biz_node_offline',
             'pumpfailure' => 'infra_pump_failure',
             'mqttdown' => 'infra_mqtt_down',

@@ -638,3 +638,15 @@ groups:
         annotations:
           summary: "Zone telemetry_last is stale"
           description: "telemetry_last_age_seconds max is {{ $value }}s (threshold 600s) for 5 minutes."
+
+  - name: agronomy_alerts
+    interval: 30s
+    rules:
+      - alert: SolutionTempOutOfBand
+        expr: sum(solution_temp_breach_active) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Solution temperature outside recipe thresholds"
+          description: "At least one zone has active biz_solution_temp_high/low alert (solution_temp_c breach)."

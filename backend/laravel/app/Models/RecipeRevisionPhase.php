@@ -61,6 +61,9 @@ class RecipeRevisionPhase extends Model
         'temp_air_target',
         'humidity_target',
         'co2_target',
+        'solution_temp_target',
+        'solution_temp_min',
+        'solution_temp_max',
         // Прогресс фазы
         'progress_model',
         'phase_advance_strategy',
@@ -91,6 +94,9 @@ class RecipeRevisionPhase extends Model
         'nutrient_solution_volume_l' => 'decimal:2',
         'temp_air_target' => 'decimal:2',
         'humidity_target' => 'decimal:2',
+        'solution_temp_target' => 'decimal:2',
+        'solution_temp_min' => 'decimal:2',
+        'solution_temp_max' => 'decimal:2',
         'base_temp_c' => 'decimal:2',
         'target_gdd' => 'decimal:2',
         'dli_target' => 'decimal:2',
@@ -200,6 +206,16 @@ class RecipeRevisionPhase extends Model
 
         if ($this->humidity_target !== null) {
             $targets['humidity_air'] = (float) $this->humidity_target;
+        }
+
+        $solutionMin = $this->solution_temp_min ?? $this->solution_temp_target;
+        $solutionMax = $this->solution_temp_max ?? $this->solution_temp_target;
+        if ($solutionMin !== null || $solutionMax !== null) {
+            $targets['solution_temp'] = [
+                'target' => $this->solution_temp_target,
+                'min' => $solutionMin,
+                'max' => $solutionMax,
+            ];
         }
 
         if ($this->lighting_photoperiod_hours !== null) {

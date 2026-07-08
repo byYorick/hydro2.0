@@ -741,6 +741,55 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals(0.07, $result['targets']['nutrition']['ec_stop_tolerance']);
     }
 
+    #[Test]
+    public function it_includes_solution_temp_targets_from_active_phase_snapshot(): void
+    {
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'Solution Temp Phase',
+            'ph_target' => 6.0,
+            'ec_target' => 1.5,
+            'solution_temp_target' => 20.0,
+            'solution_temp_min' => 18.0,
+            'solution_temp_max' => 22.0,
+        ]);
+
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+
+        $snapshotPhase = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $phase->id,
+            'phase_index' => 0,
+            'name' => 'Solution Temp Phase',
+            'ph_target' => 6.0,
+            'ec_target' => 1.5,
+            'solution_temp_target' => 20.0,
+            'solution_temp_min' => 18.0,
+            'solution_temp_max' => 22.0,
+        ]);
+
+        $cycle->update(['current_phase_id' => $snapshotPhase->id]);
+
+        $result = $this->service->getEffectiveTargets($cycle->id);
+
+        $this->assertArrayHasKey('solution_temp', $result['targets']);
+        $this->assertEquals(20.0, $result['targets']['solution_temp']['target']);
+        $this->assertEquals(18.0, $result['targets']['solution_temp']['min']);
+        $this->assertEquals(22.0, $result['targets']['solution_temp']['max']);
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $overrides
      */

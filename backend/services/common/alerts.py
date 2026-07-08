@@ -46,6 +46,8 @@ class AlertCode(str, Enum):
     BIZ_LOW_TEMP = "biz_low_temp"
     BIZ_HIGH_HUMIDITY = "biz_high_humidity"
     BIZ_LOW_HUMIDITY = "biz_low_humidity"
+    BIZ_SOLUTION_TEMP_HIGH = "biz_solution_temp_high"
+    BIZ_SOLUTION_TEMP_LOW = "biz_solution_temp_low"
     BIZ_LIGHT_FAILURE = "biz_light_failure"
     BIZ_NODE_OFFLINE = "biz_node_offline"
     BIZ_CONFIG_ERROR = "biz_config_error"

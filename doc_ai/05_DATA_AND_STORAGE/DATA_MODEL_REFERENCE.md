@@ -434,6 +434,9 @@ mist_mode ENUM('NORMAL', 'SPRAY') NULL
 temp_air_target DECIMAL(5,2) NULL
 humidity_target DECIMAL(5,2) NULL
 co2_target INT NULL
+solution_temp_target DECIMAL(5,2) NULL
+solution_temp_min DECIMAL(5,2) NULL
+solution_temp_max DECIMAL(5,2) NULL
 
 -- Прогресс
 progress_model VARCHAR NULL -- TIME|TIME_WITH_TEMPERATURE_CORRECTION|GDD
@@ -578,6 +581,9 @@ mist_mode ENUM('NORMAL', 'SPRAY') NULL
 temp_air_target DECIMAL(5,2) NULL
 humidity_target DECIMAL(5,2) NULL
 co2_target INT NULL
+solution_temp_target DECIMAL(5,2) NULL
+solution_temp_min DECIMAL(5,2) NULL
+solution_temp_max DECIMAL(5,2) NULL
 
 -- Прогресс
 progress_model VARCHAR NULL

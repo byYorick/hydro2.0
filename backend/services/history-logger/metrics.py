@@ -139,6 +139,11 @@ TELEMETRY_LAST_AGE_SECONDS = Gauge(
     "Seconds since newest telemetry_last update in zone",
     ["zone_id"],
 )
+SOLUTION_TEMP_BREACH_ACTIVE = Gauge(
+    "solution_temp_breach_active",
+    "1 when zone solution temperature is outside recipe thresholds (alert active)",
+    ["zone_id", "direction"],
+)
 
 TELEMETRY_QUEUE_AGE = Gauge(
     "telemetry_queue_age_seconds",

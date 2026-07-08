@@ -161,6 +161,9 @@ interface Targets {
   // EC контроль
   ec?: EcTarget;
 
+  // Температура раствора (solution_temp_c)
+  solution_temp?: SolutionTempTarget;
+
   // Полив
   irrigation?: IrrigationTarget;
 
@@ -265,6 +268,36 @@ interface EcTarget {
   }
 }
 ```
+
+### 4.2.1. Solution Temperature (solution_temp_c)
+
+Пороги температуры **питательного раствора** (канал `solution_temp_c`, domain `temp_water`).
+Источник — колонки фазы рецепта / snapshot `grow_cycle_phases`:
+`solution_temp_target`, `solution_temp_min`, `solution_temp_max`.
+
+```typescript
+interface SolutionTempTarget {
+  target: number;   // Целевая t° раствора (°C)
+  min: number;      // Нижний порог алерта (°C)
+  max: number;      // Верхний порог алерта (°C)
+}
+```
+
+**Пример:**
+```json
+{
+  "solution_temp": {
+    "target": 20.0,
+    "min": 18.0,
+    "max": 22.0
+  }
+}
+```
+
+**Алерты (этап C.1 `AGRO_AUTONOMY_MASTER_PLAN.md`):**
+- при устойчивом выходе `solution_temp_c` выше `max` N минут → `biz_solution_temp_high`;
+- при устойчивом выходе ниже `min` N минут → `biz_solution_temp_low`;
+- проверка выполняется в `history-logger` на ingest-пути телеметрии (env `SOLUTION_TEMP_ALERT_DELAY_MINUTES`, default `10`).
 
 ### 4.3. Irrigation Controller
 

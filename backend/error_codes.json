@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-08T07:15:18Z",
+  "updated_at": "2026-07-08T08:34:05Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -338,6 +338,16 @@
       "code": "biz_recipe_completed_review_required",
       "title": "Рецепт завершён",
       "message": "Цикл выращивания завершён, требуется проверка агронома."
+    },
+    {
+      "code": "biz_solution_temp_high",
+      "title": "Высокая температура раствора",
+      "message": "Температура питательного раствора выше целевого диапазона активной фазы рецепта."
+    },
+    {
+      "code": "biz_solution_temp_low",
+      "title": "Низкая температура раствора",
+      "message": "Температура питательного раствора ниже целевого диапазона активной фазы рецепта."
     },
     {
       "code": "calibration_phase_required",

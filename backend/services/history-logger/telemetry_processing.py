@@ -1893,6 +1893,28 @@ async def process_telemetry_batch(
     result.processed_count = processed_count
     TELEM_PROCESSED.inc(processed_count)
     TELEM_BATCH_SIZE.observe(processed_count)
+    try:
+        from handlers.solution_temp_threshold_alerts import (
+            is_solution_temp_channel,
+            process_solution_temp_telemetry_batch,
+        )
+
+        solution_temp_items = [
+            {
+                "zone_id": item.get("zone_id"),
+                "channel": getattr(item.get("sample"), "channel", None),
+                "value": getattr(item.get("sample"), "value", None),
+                "ts": _normalize_ts_for_db(item["sample"].ts),
+            }
+            for item in writable_items
+            if item.get("zone_id") is not None
+            and item.get("sample") is not None
+            and is_solution_temp_channel(getattr(item["sample"], "channel", None))
+        ]
+        if solution_temp_items:
+            await process_solution_temp_telemetry_batch(solution_temp_items)
+    except Exception:
+        logger.error("solution_temp threshold evaluation failed", exc_info=True)
     return result
 
 

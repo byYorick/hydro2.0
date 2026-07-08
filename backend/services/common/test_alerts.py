@@ -88,6 +88,8 @@ def test_alert_code_enum():
     assert AlertCode.BIZ_LOW_TEMP.value == "biz_low_temp"
     assert AlertCode.BIZ_HIGH_HUMIDITY.value == "biz_high_humidity"
     assert AlertCode.BIZ_LOW_HUMIDITY.value == "biz_low_humidity"
+    assert AlertCode.BIZ_SOLUTION_TEMP_HIGH.value == "biz_solution_temp_high"
+    assert AlertCode.BIZ_SOLUTION_TEMP_LOW.value == "biz_solution_temp_low"
     assert AlertCode.BIZ_LIGHT_FAILURE.value == "biz_light_failure"
     assert AlertCode.BIZ_NODE_OFFLINE.value == "biz_node_offline"
     assert AlertCode.BIZ_CONFIG_ERROR.value == "biz_config_error"
