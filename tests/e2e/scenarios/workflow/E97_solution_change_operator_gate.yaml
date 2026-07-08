@@ -1,0 +1,414 @@
+# E97: solution_change — operator gate G1 (await_operator_drain_confirm)
+# Wave 3 audit gap — CORRECTION_CYCLE_SPEC.md §10.4
+# Запуск:
+#   cd tests/e2e && python -m runner.e2e_runner scenarios/workflow/E97_solution_change_operator_gate.yaml
+# DoD:
+# - POST /api/zones/{id}/start-solution-change создаёт task
+# - task останавливается на await_operator_drain_confirm
+# - manual step solution_drain_confirm переводит stage в solution_drain_start
+
+name: E97_solution_change_operator_gate
+auth_role: operator
+description: |
+  Проверяет полуавтоматическую подмену раствора (solution_change v1, этап D.1):
+  1) зона two-tank в ready с включённой подсистемой solution_change,
+  2) API start-solution-change создаёт task на gate G1,
+  3) manual step solution_drain_confirm снимает gate,
+  4) current_stage переходит в solution_drain_start (без полной симуляции слива).
+
+actions:
+  - step: set_test_context
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: ${TEST_NODE_UID}
+    idempotency_key: e97-solution-change-${TIMESTAMP_MS}
+    trace_id: e97-trace-${TIMESTAMP_MS}
+
+  - step: get_zone_row
+    type: database_query
+    query: |
+      SELECT id, greenhouse_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+    greenhouse_id: ${zone_row.0.greenhouse_id}
+
+  - step: ensure_ae3_virtual_irrig_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (
+        zone_id, uid, name, type, hardware_id, status, lifecycle_state,
+        created_at, updated_at, last_seen_at
+      )
+      VALUES (
+        :zone_id, 'nd-test-irrig-1', 'E97 AE3 Irrigation Node', 'irrig',
+        'nd-test-irrig-1', 'online', 'ASSIGNED_TO_ZONE', NOW(), NOW(), NOW()
+      )
+      ON CONFLICT (uid) DO UPDATE
+      SET zone_id = EXCLUDED.zone_id,
+          type = 'irrig',
+          status = 'online',
+          lifecycle_state = 'ASSIGNED_TO_ZONE',
+          last_seen_at = NOW(),
+          updated_at = NOW()
+    params:
+      zone_id: ${zone_id}
+
+  - step: resolve_irrig_node
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = 'nd-test-irrig-1'
+      LIMIT 1
+    expected_rows: 1
+    save: irrig_node_row
+
+  - step: set_irrig_node_id
+    type: set
+    irrig_node_id: ${irrig_node_row.0.node_id}
+
+  - step: upsert_irrig_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT :node_id, channel_name, channel_type, NOW(), NOW()
+      FROM (VALUES
+        ('pump_main', 'ACTUATOR'),
+        ('valve_clean_fill', 'ACTUATOR'),
+        ('valve_solution_fill', 'ACTUATOR'),
+        ('valve_drain', 'ACTUATOR'),
+        ('level_clean_min', 'SENSOR'),
+        ('level_clean_max', 'SENSOR'),
+        ('level_solution_min', 'SENSOR'),
+        ('level_solution_max', 'SENSOR'),
+        ('system', 'SERVICE')
+      ) AS items(channel_name, channel_type)
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW()
+    params:
+      node_id: ${irrig_node_id}
+
+  - step: ensure_zone_automation_runtime_ae3
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET automation_runtime = 'ae3',
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_automation_artifacts
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (SELECT id FROM ae_tasks WHERE zone_id = :zone_id);
+      DELETE FROM ae_stage_transitions
+      WHERE task_id IN (SELECT id FROM ae_tasks WHERE zone_id = :zone_id);
+      DELETE FROM ae_tasks WHERE zone_id = :zone_id;
+      DELETE FROM ae_zone_leases WHERE zone_id = :zone_id;
+      DELETE FROM zone_automation_intents WHERE zone_id = :zone_id;
+      DELETE FROM grow_cycles WHERE zone_id = :zone_id;
+      DELETE FROM zone_workflow_state WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: e97-plant-${TIMESTAMP_S}
+      scientific_name: Solution Change Gate Test
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: e97-recipe-${TIMESTAMP_S}
+      description: Solution change operator gate
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: E97 solution_change revision
+    save: revision_response
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Growth
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
+      ec_target: 1.5
+      ec_min: 1.3
+      ec_max: 1.7
+      temp_air_target: 22.0
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_running_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: apply_two_tank_logic_profile_with_solution_change
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+    payload:
+      payload:
+        active_mode: working
+        profiles:
+          working:
+            mode: working
+            is_active: true
+            subsystems:
+              diagnostics:
+                execution:
+                  workflow: cycle_start
+                  topology: two_tank_drip_substrate_trays
+                  required_node_types:
+                    - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    solution_change_enabled: true
+                    solution_change_operator_confirm_timeout_sec: 3600
+                    solution_drain_timeout_sec: 900
+                    telemetry_max_age_sec: 120
+                  two_tank_commands:
+                    solution_drain_start:
+                      - channel: valve_drain
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_drain_stop:
+                      - channel: valve_drain
+                        cmd: set_relay
+                        params:
+                          state: false
+                    clean_fill_start:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_fill_start:
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+              solution_change:
+                enabled: true
+
+  - step: validate_zone_bundle
+    type: api_post
+    endpoint: /api/automation-bundles/zone/${zone_id}/validate
+    payload: {}
+
+  - step: validate_cycle_bundle
+    type: api_post
+    endpoint: /api/automation-bundles/grow_cycle/${cycle_id}/validate
+    payload: {}
+
+  - step: insert_ready_workflow_state
+    type: database_execute
+    query: |
+      INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)
+      VALUES (:zone_id, 'ready', 1, NOW(), '{}'::jsonb)
+      ON CONFLICT (zone_id) DO UPDATE
+      SET workflow_phase = 'ready',
+          version = zone_workflow_state.version + 1,
+          updated_at = NOW()
+    params:
+      zone_id: ${zone_id}
+
+  - step: start_solution_change_api
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start-solution-change
+    payload:
+      source: e2e_operator
+      trigger: operator
+      idempotency_key: ${idempotency_key}
+    save: start_solution_change_response
+
+  - step: set_task_id_from_response
+    type: set
+    task_id: ${start_solution_change_response.data.task_id}
+
+  - step: wait_gate_stage
+    type: db.wait
+    query: |
+      SELECT id, task_type, status, current_stage
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND task_type = 'solution_change'
+        AND current_stage = 'await_operator_drain_confirm'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: gate_task_row
+
+  - step: send_drain_confirm_manual_step
+    type: http_request
+    method: POST
+    url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/zones/${zone_id}/manual-step
+    headers:
+      Accept: application/json
+      Content-Type: application/json
+      X-Trace-Id: ${trace_id}
+      Authorization: Bearer dev-token-12345
+    body:
+      manual_step: solution_drain_confirm
+    retries: 2
+    retry_delay_seconds: 1
+    capture_response: manual_step_response
+
+  - step: wait_stage_after_gate
+    type: db.wait
+    query: |
+      SELECT id, current_stage, status
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND current_stage = 'solution_drain_start'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: drain_start_task_row
+
+assertions:
+  - name: start_solution_change_http_ok
+    type: custom_assert
+    condition: "bool(context.get('start_solution_change_response', {}).get('data', {}).get('task_id'))"
+
+  - name: task_at_await_operator_drain_confirm
+    type: custom_assert
+    condition: "str((context.get('gate_task_row') or [{}])[0].get('current_stage', '')) == 'await_operator_drain_confirm'"
+
+  - name: manual_step_accepted
+    type: json_assertion
+    source: manual_step_response
+    path: json
+    expected:
+      - field: status
+        operator: equals
+        value: ok
+      - field: data.manual_step
+        operator: equals
+        value: solution_drain_confirm
+
+  - name: stage_advanced_to_solution_drain_start
+    type: custom_assert
+    condition: "str((context.get('drain_start_task_row') or [{}])[0].get('current_stage', '')) == 'solution_drain_start'"
+
+  - name: gate_passed_event_recorded
+    type: database_query
+    query: |
+      SELECT type
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'SOLUTION_CHANGE_GATE_PASSED'
+        AND payload_json->>'manual_step' = 'solution_drain_confirm'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: type
+        operator: equals
+        value: SOLUTION_CHANGE_GATE_PASSED
+
+cleanup:
+  - step: cancel_solution_change_task
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      UPDATE ae_tasks
+      SET status = 'cancelled',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: delete_test_ae_artifacts
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      DELETE FROM ae_commands WHERE task_id = CAST(:task_id AS bigint);
+      DELETE FROM ae_stage_transitions WHERE task_id = CAST(:task_id AS bigint);
+      DELETE FROM ae_tasks WHERE id = CAST(:task_id AS bigint);
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+    condition: ${cycle_id}
+
+  - step: delete_test_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    optional: true
+    condition: ${cycle_id}
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+    condition: "bool(context.get('recipe_response', {}).get('data', {}).get('id'))"
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+    condition: "bool(context.get('plant_response', {}).get('data', {}).get('id'))"
