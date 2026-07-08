@@ -571,11 +571,27 @@ class CreateTaskFromIntentUseCase:
                 f"Подмена раствора доступна только в ready, текущая фаза: {workflow_phase or 'missing'}",
                 details={"workflow_phase": workflow_phase or "missing"},
             )
-        if workflow_phase in {"irrigating", "irrig_recirc"}:
+
+        active_irrigation_row = await conn.fetchrow(
+            """
+            SELECT id, status
+            FROM ae_tasks
+            WHERE zone_id = $1
+              AND task_type = 'irrigation_start'
+              AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        if active_irrigation_row is not None:
             raise TaskCreateError(
                 "solution_change_active_irrigation",
                 "Подмена раствора запрещена во время активного полива",
-                details={"workflow_phase": workflow_phase},
+                details={
+                    "active_irrigation_task_id": int(active_irrigation_row.get("id") or 0) or None,
+                    "active_irrigation_task_status": str(active_irrigation_row.get("status") or "").strip().lower() or None,
+                },
             )
 
         enabled = await self._resolve_solution_change_enabled_from_bundle(zone_id=zone_id, conn=conn)

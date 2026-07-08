@@ -320,3 +320,57 @@ async def test_create_task_from_intent_fails_closed_without_active_grow_cycle() 
             )
 
     assert exc.value.code == "ae3_snapshot_no_active_grow_cycle"
+
+
+@pytest.mark.asyncio
+async def test_ensure_solution_change_preconditions_rejects_active_irrigation_task() -> None:
+    conn = _FakeConn()
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=_TaskRepo(conn),
+        zone_lease_repository=_LeaseRepo(conn),
+        zone_intent_repository=PgZoneIntentRepository(),
+        zone_alert_repository=_AlertRepo(conn),
+    )
+    meta = SimpleNamespace(task_type="solution_change", topology="two_tank")
+    conn.fetchrow_results = [
+        {"workflow_phase": "ready"},
+        {"id": 501, "status": "running"},
+    ]
+
+    with pytest.raises(TaskCreateError) as exc:
+        await use_case._ensure_solution_change_preconditions(zone_id=7, meta=meta, conn=conn)
+
+    assert exc.value.code == "solution_change_active_irrigation"
+    assert exc.value.details["active_irrigation_task_id"] == 501
+    assert exc.value.details["active_irrigation_task_status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_ensure_solution_change_preconditions_allows_when_no_active_irrigation_task() -> None:
+    conn = _FakeConn()
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=_TaskRepo(conn),
+        zone_lease_repository=_LeaseRepo(conn),
+        zone_intent_repository=PgZoneIntentRepository(),
+        zone_alert_repository=_AlertRepo(conn),
+    )
+    meta = SimpleNamespace(task_type="solution_change", topology="two_tank")
+    conn.fetchrow_results = [
+        {"workflow_phase": "ready"},
+        None,
+        {
+            "config": {
+                "zone": {
+                    "logic_profile": {
+                        "active_profile": {
+                            "subsystems": {
+                                "solution_change": {"enabled": True},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    ]
+
+    await use_case._ensure_solution_change_preconditions(zone_id=7, meta=meta, conn=conn)
