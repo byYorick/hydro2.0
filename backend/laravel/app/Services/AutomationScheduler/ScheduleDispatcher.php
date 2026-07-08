@@ -344,7 +344,7 @@ class ScheduleDispatcher
 
             $brightness = $this->resolveLightingBrightnessPct($payload, $desiredState);
             if ($brightness !== null) {
-                $requestPayload['brightness'] = $brightness;
+                $requestPayload['brightness_pct'] = $brightness;
             }
         } elseif ($taskType === 'solution_topup') {
             $endpoint = '/start-solution-topup';

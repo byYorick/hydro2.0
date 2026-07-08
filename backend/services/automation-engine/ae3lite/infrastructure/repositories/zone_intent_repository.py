@@ -311,6 +311,8 @@ class PgZoneIntentRepository:
                 if desired_state in {"on", "off"}:
                     intent_payload["desired_state"] = desired_state
                 brightness_pct = payload_raw.get("brightness_pct")
+                if brightness_pct is None:
+                    brightness_pct = payload_raw.get("brightness")
                 if brightness_pct is not None:
                     try:
                         intent_payload["brightness_pct"] = max(0, min(100, int(brightness_pct)))

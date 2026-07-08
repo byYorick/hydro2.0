@@ -64,7 +64,7 @@ class LightingDesiredStateDispatchTest extends TestCase
             $payload = $request->data();
 
             return ($payload['desired_state'] ?? null) === 'off'
-                && ($payload['brightness'] ?? null) === 0;
+                && ($payload['brightness_pct'] ?? null) === 0;
         });
         Carbon::setTestNow();
     }
@@ -144,7 +144,7 @@ class LightingDesiredStateDispatchTest extends TestCase
 
             return ($payload['source'] ?? null) === 'laravel_scheduler'
                 && ($payload['desired_state'] ?? null) === 'off'
-                && ($payload['brightness'] ?? null) === 5;
+                && ($payload['brightness_pct'] ?? null) === 5;
         });
     }
 
@@ -212,7 +212,7 @@ class LightingDesiredStateDispatchTest extends TestCase
             $payload = $request->data();
 
             return ($payload['desired_state'] ?? null) === 'on'
-                && ($payload['brightness'] ?? null) === 60;
+                && ($payload['brightness_pct'] ?? null) === 60;
         });
     }
 

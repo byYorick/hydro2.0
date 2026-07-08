@@ -36,6 +36,6 @@ return [
     'telegram' => [
         'enabled' => env('ALERTS_TELEGRAM_ENABLED', true),
         'dedup_ttl_seconds' => (int) env('ALERTS_TELEGRAM_DEDUP_TTL_SECONDS', 60),
-        'severities' => ['critical', 'error'],
+        'severities' => ['critical', 'error', 'warning'],
     ],
 ];

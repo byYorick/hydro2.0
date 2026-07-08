@@ -85,6 +85,19 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
 
 @pytest.mark.asyncio
+async def test_compat_start_lighting_tick_rejects_legacy_brightness_field() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        StartLightingTickRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z7:lighting",
+            desired_state="on",
+            brightness=60,
+        )
+
+
+@pytest.mark.asyncio
 async def test_compat_start_lighting_tick_routes_to_canonical_task_creation() -> None:
     endpoint, captured = _bind_test_route(
         creation_result=TaskCreationResult(task=_task(task_id=778, zone_id=7, status="pending"), created=True),

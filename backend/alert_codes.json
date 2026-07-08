@@ -573,6 +573,36 @@
       "node_related": false
     },
     {
+      "code": "biz_solution_topup_timeout",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Таймаут автодолива раствора",
+      "description": "Автодолив бака раствора не завершился за отведённое время.",
+      "recommendation": "Проверьте насос долива, клапаны, уровень чистой воды и датчики level_switch. Убедитесь, что нет утечки и зона не в E-STOP. При необходимости выполните долив вручную.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_topup_source_empty",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Пустой бак чистой воды при автодоливе",
+      "description": "Во время автодолива раствора закончилась чистая вода в баке подачи.",
+      "recommendation": "Немедленно долейте бак чистой воды и проверьте датчик clean_min. Убедитесь, что клапан подачи чистой воды открывается и магистраль не пережата.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_topup_leak",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Утечка при автодоливе раствора",
+      "description": "При автодоливе пропал нижний уровень раствора — возможна утечка контура.",
+      "recommendation": "Остановите долив, осмотрите бак раствора, соединения и дренаж. Проверьте level_switch solution_min/max и отсутствие перелива.",
+      "node_related": true
+    },
+    {
       "code": "biz_no_flow",
       "source": "biz",
       "category": "safety",

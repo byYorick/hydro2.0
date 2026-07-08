@@ -58,23 +58,29 @@ class TelegramAlertNotifierTest extends TestCase
         });
     }
 
-    public function test_warning_alert_does_not_trigger_telegram_notification(): void
+    public function test_warning_severity_triggers_telegram_notification(): void
     {
-        Http::fake();
+        Http::fake([
+            'api.telegram.org/*' => Http::response(['ok' => true], 200),
+        ]);
 
         $zone = Zone::factory()->create();
         $service = app(AlertService::class);
 
         $service->create([
             'zone_id' => $zone->id,
-            'code' => 'biz_ph_drift',
-            'type' => 'ph_drift',
+            'code' => 'biz_solution_temp_high',
+            'type' => 'solution_temp_high',
             'source' => 'biz',
             'severity' => 'warning',
-            'details' => ['message' => 'Небольшой дрейф pH'],
+            'details' => ['message' => 'Температура раствора выше нормы'],
         ]);
 
-        Http::assertNothingSent();
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/bot'.self::BOT_TOKEN.'/sendMessage')
+                && $request['chat_id'] === self::CHAT_ID
+                && str_contains((string) $request['text'], 'WARNING');
+        });
     }
 
     public function test_telegram_dedup_suppresses_duplicate_for_same_code_and_zone(): void
