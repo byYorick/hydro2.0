@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.8-canonical
-**Дата:** 2026-05-28
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — этап A doc-first 2026-07-08)
+**Версия:** 3.9-canonical
+**Дата:** 2026-07-08
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — этап A doc-first 2026-07-08; **solution_change semi-auto v1 — этап D.1 doc-first 2026-07-08**)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -16,7 +16,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Цель документа одна: зафиксировать минимальный scope `v1`, который можно безопасно
 реализовать и проверить в production на ограниченном числе зон.
 
-Если требование не нужно для `cycle_start` или `irrigation_start` runtime v1, его в этом документе быть не должно.
+Если требование не нужно для `cycle_start`, `irrigation_start`, `lighting_tick`, `greenhouse_climate_tick` или **doc-first** `solution_change` semi-auto v1, его в этом документе быть не должно.
 Этот план рассчитан на выполнение одним ИИ-агентом последовательно, без распараллеливания deliverables.
 
 ---
@@ -24,12 +24,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 1. Scope v1
 
 AE3-Lite v1 это:
-1. DB-backed executor для `cycle_start`, `irrigation_start`, `lighting_tick` и `greenhouse_climate_tick`.
+1. DB-backed executor для `cycle_start`, `irrigation_start`, `lighting_tick`, `greenhouse_climate_tick` и **`solution_change` (semi-auto v1, этап D.1)**.
 2. Protected command pipeline без изменений:
    `Laravel scheduler-dispatch -> Automation-Engine -> history-logger -> MQTT -> ESP32`.
 3. Внешние ingress (scheduler/API compat):
    `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`,
    `POST /zones/{id}/start-lighting-tick` (dispatch света для `zones.automation_runtime='ae3'`, см. C1),
+   `POST /zones/{id}/start-solution-change` (полуавтоматическая подмена раствора, см. D.1 / `CORRECTION_CYCLE_SPEC.md` §10),
    `POST /greenhouses/{id}/start-climate-tick` (климат крыши на уровне теплицы; single-writer lease на `greenhouse_id`; см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
 4. Один canonical status endpoint:
    `GET /internal/tasks/{task_id}`.
@@ -38,7 +39,7 @@ AE3-Lite v1 это:
 
 AE3-Lite v1 не включает:
 1. `ventilation_tick` на уровне зоны вне контура greenhouse climate (см. roadmap / `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`)
-2. `solution_change`
+2. **полностью автоматический** `solution_change` без operator gates и CIP (этап D.2; semi-auto v1 **в scope**, см. §1 и §7.2.3)
 3. `mist`
 4. `diagnostics` как отдельный productized runtime (compat через `start-cycle` допускается см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`)
 5. `recovery` как отдельный business task
@@ -58,7 +59,8 @@ AE3-Lite v1 не включает:
 1. Команды на узлы публикуются только через `history-logger` (`POST /commands`).
 2. Прямой MQTT publish из AE и Laravel запрещён.
 3. До полного cutover внешние ingress runtime ограничены `POST /zones/{id}/start-cycle`,
-   `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick` и
+   `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`,
+   `POST /zones/{id}/start-solution-change` и
    `POST /greenhouses/{id}/start-climate-tick` (см. §1 scope).
 4. В production v1 допускается только одна активная реплика AE3-Lite.
 5. На одну зону допускается не более одной активной execution task (`ae_tasks` / `ae_zone_leases`).
@@ -256,8 +258,9 @@ Execution record внутри task:
 1. `cycle_start`
 2. `irrigation_start`
 3. `lighting_tick`
+4. `solution_change` — полуавтоматическая подмена раствора (drain → clean_fill → solution_fill → prepare_recirc → `ready` с operator gates; см. `CORRECTION_CYCLE_SPEC.md` §10)
 
-Greenhouse climate runtime (`greenhouse_climate_tick`) исполняется отдельной таблицей `greenhouse_automation_tasks` (и lease в `greenhouse_automation_leases`), не в `ae_tasks` — см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`. Поэтому в DB CHECK constraint на `ae_tasks.task_type` лежат именно три значения выше.
+Greenhouse climate runtime (`greenhouse_climate_tick`) исполняется отдельной таблицей `greenhouse_automation_tasks` (и lease в `greenhouse_automation_leases`), не в `ae_tasks` — см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`. Поэтому в DB CHECK constraint на `ae_tasks.task_type` лежат четыре значения выше (после миграции D.1; до реализации — doc-first only).
 
 Другие task types считаются out of scope и не должны появляться ни в migration, ни в API, ни в runtime wiring `v1`.
 
@@ -291,6 +294,7 @@ Terminal:
 `zone_workflow_state` мутируется только каноническими AE3 task-ами:
 1. `cycle_start` управляет переходами `idle -> tank_filling -> tank_recirc -> ready`
 2. `irrigation_start` управляет переходами `ready -> irrigating -> irrig_recirc -> ready`
+3. `solution_change` управляет переходами `ready -> (drain + refill substages) -> tank_recirc -> ready`; не переводит зону в `irrigating`
 
 `startup` как отдельная `workflow_phase` не существует: возврат в startup кодируется как
 `workflow_phase='idle'` + `payload.ae3_cycle_start_stage='startup'`.
@@ -653,6 +657,34 @@ runtime = plan.runtime
 Контракт Pydantic: `ae3lite/api/contracts.py` → `StartLightingTickRequest`.
 
 **Baseline до этапа A (текущий код):** request содержит только `source` + `idempotency_key`; planner всегда ON с duty из `targets.lighting.brightness`/`pwm_duty` (fallback `100`). Поля `desired_state` / `brightness_pct` — целевое расширение §A.3 `AGRO_AUTONOMY_MASTER_PLAN.md`.
+
+### 7.2.3 `POST /zones/{id}/start-solution-change` (semi-auto v1, этап D.1)
+
+Ingress для **полуавтоматической подмены раствора** (`task_type='solution_change'`). Полная семантика workflow, operator gates и UI — `CORRECTION_CYCLE_SPEC.md` §10.
+
+**Статус реализации:** doc-first SPEC; endpoint, planner и handlers — отдельный PR после принятия контракта.
+
+Требования (целевой контракт):
+
+1. принимает `source`, `idempotency_key` (как у `start-irrigation`);
+2. опционально `trigger: operator|scheduler` (audit);
+3. ingress только при `workflow_phase='ready'` и отсутствии active irrigation;
+4. создаёт canonical task `task_type='solution_change'`;
+5. первый runtime stage — `await_operator_drain_confirm` (G1); **drain не начинается** до manual step `solution_drain_confirm`;
+6. после успешного refill (`solution_fill_check`) — `await_operator_refill_confirm` (G2) до manual step `solution_refill_confirm`;
+7. reuse handlers: `solution_drain_*` (новые), `clean_fill_*`, `solution_fill_*`, `prepare_recirculation_*` (существующие);
+8. при active task или active lease — `409 start_solution_change_zone_busy`;
+9. scheduler intent `SOLUTION_CHANGE_TICK` (Laravel `ScheduleDispatcher`) маршрутизируется в этот endpoint, но v1 **не bypass** operator gates.
+
+Новые manual steps (дополнение к `manual_control_contract.py` / Vue `AutomationManualStep`):
+
+| Step | Stage |
+|------|-------|
+| `solution_drain_confirm` | `await_operator_drain_confirm` |
+| `solution_refill_confirm` | `await_operator_refill_confirm` |
+| `solution_change_abort` | любой pre-terminal stage |
+
+Fail-safe: terminal failure синхронизирует `workflow_phase='idle'`, batch OFF актуаторов (инвариант §5.4).
 
 ### 7.2.2 `POST /greenhouses/{id}/start-climate-tick`
 

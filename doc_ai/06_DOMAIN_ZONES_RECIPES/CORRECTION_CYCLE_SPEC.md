@@ -4,7 +4,7 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
-**Дата обновления:** 2026-07-02 (PR8: effective_ml/requested_ml при clamp, last_dose_at после DONE, fail-closed volume/PID zones, единый MetricWindowValidator)
+**Дата обновления:** 2026-07-08 (этап D.1: §10 solution_change semi-auto v1; PR8: effective_ml/requested_ml при clamp, last_dose_at после DONE, fail-closed volume/PID zones, единый MetricWindowValidator)
 **Статус:** Рабочий документ (требует валидации)
 
 ---
@@ -1146,10 +1146,195 @@ AE3-Lite поддерживает вход в коррекцию **во врем
 
 ---
 
-## 10. Связанные документы
+## 10. Полуавтоматическая подмена раствора (`solution_change` v1)
+
+> **Этап D.1** из `doc_ai/AGRO_AUTONOMY_MASTER_PLAN.md`.  
+> **Статус:** doc-first SPEC (реализация runtime — отдельный PR после принятия контракта).  
+> **Связанные документы:** `doc_ai/04_BACKEND_CORE/ae3lite.md` §1 / §7.2.3, `WATER_FLOW_ENGINE.md` §19 (out-of-scope sibling `solution_topup`), `CONTROL_MODES_SPEC.md` §5.
+
+### 10.1. Проблема и цель
+
+Для длинных циклов плодовых раствор деградирует; штатный startup (`cycle_start`) покрывает только первичное наполнение, а не **полную замену** раствора в работающей зоне.
+
+**Цель v1 (полуавтомат):** оператор инициирует подмену одной командой; AE3 проводит зону через drain → refill → recirc → `ready`, но **останавливается на явных точках подтверждения** перед сливом и после наполнения. Полный автомат без подтверждений и CIP — этап D.2.
+
+### 10.2. Предусловия ingress
+
+Подмена разрешена только если одновременно:
+
+| Условие | Fail-closed code (черновик) |
+|---------|----------------------------|
+| `zone_workflow_state.workflow_phase = 'ready'` | `solution_change_zone_not_ready` |
+| Нет active `ae_tasks` / active lease на зоне | `start_solution_change_zone_busy` |
+| Нет активного полива (`irrigating` / `irrig_recirc`) | `solution_change_active_irrigation` |
+| Two-tank topology (`tanks_count >= 2`, IRR-нода online) | `solution_change_topology_unsupported` |
+| `subsystems.solution_change.enabled = true` в effective targets / zone bundle | `solution_change_disabled` |
+
+Ingress (целевой контракт):
+
+- **Ручной:** `POST /zones/{id}/start-solution-change` (`source`, `idempotency_key`, опционально `trigger=operator|scheduler`).
+- **По расписанию:** Laravel `ScheduleDispatcher` создаёт intent `SOLUTION_CHANGE_TICK` и вызывает тот же endpoint; в v1 task **не начинает drain** до первого operator confirm (см. §10.4).
+
+Команды на узлы — только через `history-logger` → MQTT (инвариант AE3).
+
+### 10.3. Workflow (reuse two-tank stages)
+
+Canonical business task: `task_type='solution_change'`.  
+Внутри task переиспользуются существующие stage handlers two-tank контура; отличие — **prefixed drain-подконтур** и **operator gates**.
+
+```
+workflow_phase=ready
+    │
+    ▼
+await_operator_drain_confirm          ◄── GATE 1 (UI confirm)
+    │
+    ▼
+solution_drain_start → solution_drain_check
+    │                      (до solution_min=false или timeout)
+    ▼
+clean_fill_start → clean_fill_check
+    │
+    ▼
+solution_fill_start → solution_fill_check
+    │                      (+ штатная EC/pH correction, prepare-targets)
+    ▼
+await_operator_refill_confirm         ◄── GATE 2 (UI confirm)
+    │
+    ▼
+prepare_recirculation_start → prepare_recirculation_check
+    │                              (+ correction window)
+    ▼
+complete_ready  →  workflow_phase='ready'
+```
+
+**Семантика drain (новые stages, черновик):**
+
+- `solution_drain_start` — открыть drain path (клапан слива / насос слива по topology IRR-ноды); зеркалит паттерн `clean_fill_start` / `solution_fill_start`.
+- `solution_drain_check` — poll read-model до подтверждения опустошения бака раствора (`level_solution_min` **not triggered** / coarse percent ниже порога); fail-safe по `solution_drain_timeout_sec`.
+- При `solution_drain_check` success AE3 **не** переводит зону в `idle/startup reset` — task продолжается в refill-ветку (в отличие от guard depletion в `ready`).
+
+**Reuse без изменения контракта handlers:**
+
+- `clean_fill_*`, `solution_fill_*`, `prepare_recirculation_*` — те же stage keys, correction sub-machine, terminal codes (`solution_fill_leak_stop`, `prepare_recirculation_attempt_limit_reached`, …) что и в `cycle_start`.
+- `workflow_phase` во время task: `tank_filling` (drain+clean+solution fill) → `tank_recirc` (prepare recirc) → `ready`.
+
+### 10.4. Точки подтверждения оператора
+
+| Gate | Stage key | Когда | Действие оператора | Manual step (черновик) |
+|------|-----------|-------|--------------------|------------------------|
+| **G1 — перед drain** | `await_operator_drain_confirm` | Task создана, физическая подготовка (отключение полива, доступ к сливу) | Подтвердить начало слива | `solution_drain_confirm` |
+| **G2 — после refill** | `await_operator_refill_confirm` | `solution_fill_check` успешно завершён (`solution_max`, targets в tolerance или operator override) | Подтвердить переход к перемешиванию/коррекции | `solution_refill_confirm` |
+
+Поведение gates:
+
+1. Task в gate-stage переводится в `poll` / `manual_hold` (аналог startup manual); **клапаны и насосы OFF** до confirm.
+2. Таймаут ожидания: `solution_change_operator_confirm_timeout_sec` (default **3600**); истечение → `solution_change_operator_timeout` + fail-safe stop + task `failed`.
+3. Оператор может отменить: `solution_change_abort` → `solution_change_aborted_by_operator`, workflow → `idle`, alert info.
+4. В `control_mode='auto'` gates **не bypass** — semi-auto v1 всегда требует confirm (расписание только будит intent и показывает badge в UI).
+
+Scheduler v1: intent `SOLUTION_CHANGE_TICK` переводится в «ожидает подтверждения»; автоматический drain **запрещён**.
+
+### 10.5. UI flow (Vue, без реализации в этом PR)
+
+Источник истины для кнопок: `allowed_manual_steps[]` из AE3 (`GET /api/zones/{id}/automation-state` → proxy AE3), **не** хардкод в UI (`CLAUDE.md`, `FRONTEND_UI_UX_SPEC.md`).
+
+**Существующие компоненты (расширить, не дублировать):**
+
+| Компонент / composable | Роль для `solution_change` |
+|------------------------|----------------------------|
+| `Pages/Zones/Tabs/ZoneAutomationTab.vue` | Контейнер вкладки «Автоматика»; прокидывает `allowedManualSteps`, `@run-manual-step` |
+| `Components/ZoneAutomationOpsPanel.vue` | Кнопки manual steps + primary action «Подмена раствора» (новый emit `start-solution-change`) |
+| `Components/ZoneAutomation/AutomationObservabilityPanel.vue` | Badge `pending_manual_step` / stage label на gate |
+| `composables/useZoneAutomationScheduler.ts` | `runManualStep()` → `POST /api/zones/{id}/manual-step` |
+| `composables/zoneAutomationUtils.ts` | Зеркало `manual_control_contract.py`; добавить mapping для gate stages |
+| `types/Automation.ts` | Расширить union `AutomationManualStep` новыми step codes |
+| `composables/useZoneScheduleWorkspace.ts` | Label `solution_change` уже есть («Смена раствора») |
+
+**Целевой UX v1:**
+
+1. В `ready` + `semi|manual`: кнопка **«Подмена раствора»** рядом с «Запустить полив» / «Диагностика» (`ZoneAutomationOpsPanel`).
+2. Modal confirm для G1/G2 с checklist (слив подготовлен / уровень после refill OK); confirm отправляет соответствующий `manual_step`.
+3. На gate stages в `allowed_manual_steps` только confirm/abort; на fill/recirc stages — существующие `*_stop` (как в startup).
+4. Timeline / observability: события `SOLUTION_CHANGE_STARTED`, `SOLUTION_CHANGE_GATE_PASSED`, `SOLUTION_CHANGE_COMPLETED` (см. §10.7).
+5. Schedule workspace: `task_type=solution_change` показывает «ожидает подтверждения оператора», если intent pending на G1.
+
+**Новые manual steps (черновик, добавить в контракт AE3 + Vue union):**
+
+| Step | Label (RU) | Stage |
+|------|------------|-------|
+| `solution_drain_confirm` | Подтвердить слив | `await_operator_drain_confirm` |
+| `solution_refill_confirm` | Подтвердить наполнение | `await_operator_refill_confirm` |
+| `solution_change_abort` | Отменить подмену | любой pre-terminal stage gate/fill |
+
+Существующие steps (`clean_fill_start`, `solution_fill_stop`, …) остаются для `control_mode=manual` **внутри** fill-подконтура; в v1 полуавтомат fill-stages идут автоматически после G1, stop-кнопки доступны как emergency override.
+
+### 10.6. Intent / task / API (черновик контракта)
+
+| Поле | Значение |
+|------|----------|
+| Scheduler `task_type` | `solution_change` |
+| DB `zone_automation_intents.intent_type` | `SOLUTION_CHANGE_TICK` (manual start — `SOLUTION_CHANGE_START`, опционально) |
+| AE3 `ae_tasks.task_type` | `solution_change` (новое значение CHECK constraint — миграция Laravel) |
+| Ingress endpoint | `POST /zones/{id}/start-solution-change` |
+| Payload intent (optional) | `{ "trigger": "operator\|scheduler", "requested_by_user_id": … }` |
+| Idempotency | `(zone_id, idempotency_key)` как у `start-irrigation` |
+
+Recipe / effective targets (уже частично в UI):
+
+```json
+{
+  "extensions": {
+    "subsystems": {
+      "solution_change": {
+        "enabled": true,
+        "execution": {
+          "interval_sec": 10800,
+          "duration_sec": 120
+        }
+      }
+    }
+  }
+}
+```
+
+Парсер: `resources/js/services/automation/subsystemParsers/solutionChangeParser.ts`.  
+Runtime bundle keys (черновик): `solution_drain_timeout_sec`, `solution_change_operator_confirm_timeout_sec`.
+
+### 10.7. Error codes (черновик)
+
+Добавить в `ERROR_CODE_CATALOG.md` после принятия SPEC:
+
+| code | Домен | Когда |
+|------|-------|-------|
+| `start_solution_change_zone_busy` | `ae3_ingress` | Active task/lease при ingress |
+| `solution_change_zone_not_ready` | `ae3_ingress` | `workflow_phase != ready` |
+| `solution_change_active_irrigation` | `ae3_ingress` | Полив активен |
+| `solution_change_disabled` | `ae3_config` | Subsystem disabled в bundle |
+| `solution_change_topology_unsupported` | `ae3_config` | Не two-tank / нет IRR |
+| `solution_drain_timeout_stop` | `solution_drain_check` | Слив не завершён за timeout |
+| `solution_drain_incomplete_stop` | `solution_drain_check` | Уровень не подтверждён empty |
+| `solution_change_operator_timeout` | `await_operator_*` | Истёк таймаут gate |
+| `solution_change_aborted_by_operator` | `solution_change` | Cancel manual step |
+| `solution_change_gate_invalid_step` | `ae3_manual` | Неверный manual step для stage |
+
+Terminal failure обязан: fail-safe OFF актуаторов, sync `workflow_phase='idle'` (инвариант ae3lite §5.4.13).
+
+### 10.8. Критерии приёмки D.1 (документ)
+
+1. Оператор может инициировать подмену; SPEC фиксирует drain→refill→ready с двумя gates.
+2. Переиспользованы two-tank stages и существующие fail-safe codes fill/recirc.
+3. UI contract описан через `allowed_manual_steps` и существующие Vue-компоненты automation tab.
+4. `solution_change` снят с out-of-scope AE3 v1 в `ae3lite.md` как **doc-first semi-auto v1**.
+
+---
+
+## 11. Связанные документы
 
 - `ARCHITECTURE_FLOWS.md` — архитектурные схемы и пайплайны
 - `EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets
+- `doc_ai/04_BACKEND_CORE/ae3lite.md` — runtime AE3, ingress `start-solution-change`
+- `doc_ai/06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — гидравлические подсистемы
+- `doc_ai/06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md` — manual steps baseline
 - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол
 - `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` — каналы нод
 
@@ -1157,3 +1342,4 @@ AE3-Lite поддерживает вход в коррекцию **во врем
 
 **Документ создан после обсуждения логики коррекции 2026-02-14**
 **Обновлён 2026-03-11: добавлен раздел 9 (логирование событий коррекции)**
+**Обновлён 2026-07-08: добавлен раздел 10 (solution_change semi-auto v1, этап D.1)**

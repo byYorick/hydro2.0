@@ -22,6 +22,35 @@ Breaking-change: обратная совместимость со старыми
 - Snapshot immutability и роль `GrowCyclePhase` как единственного runtime-источника зафиксированы в §3.5.
 - Уточнена семантика `changeRecipeRevision('now' | 'next_phase')` и инвариант пересчёта compiled bundle при смене фазы (§3.3).
 - Добавлен endpoint `GET /api/recipes/{recipe}/active-usage` для предупреждения UI о редактировании используемого рецепта (§4.1).
+- Подсистема `solution_change` (полуавтоматическая подмена раствора, этап D.1): см. §2.2.1 и `CORRECTION_CYCLE_SPEC.md` §10.
+
+---
+
+### 2.2.1. Подсистема `solution_change` (этап D.1, doc-first)
+
+Конфигурация в phase targets (column `extensions` / derived API):
+
+```json
+{
+  "extensions": {
+    "subsystems": {
+      "solution_change": {
+        "enabled": true,
+        "execution": {
+          "interval_sec": 10800,
+          "duration_sec": 120
+        }
+      }
+    }
+  }
+}
+```
+
+- `enabled` — разрешает ingress `start-solution-change` и scheduler intent `SOLUTION_CHANGE_TICK`;
+- `execution.interval_sec` / `duration_sec` — параметры расписания (Laravel manual schedules / recipe plan); в semi-auto v1 расписание **не** bypass operator gates;
+- alias `subsystems.solution` — deprecated, UI parser принимает для совместимости (`solutionChangeParser.ts`).
+
+Runtime authority: AE3 read-model + `CORRECTION_CYCLE_SPEC.md` §10; Recipe Engine хранит только targets/flags, не orchestration FSM.
 
 ---
 
