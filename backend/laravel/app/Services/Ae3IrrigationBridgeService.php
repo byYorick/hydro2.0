@@ -190,6 +190,86 @@ class Ae3IrrigationBridgeService
      * @throws ConnectionException
      * @throws RequestException
      */
+    public function startSolutionChange(int $zoneId, array $payload): array
+    {
+        $cfg = $this->runtimeConfig->schedulerConfig();
+        $apiUrl = (string) ($cfg['api_url'] ?? config('services.automation_engine.api_url'));
+        $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
+
+        /** @var Response $response */
+        $response = Http::acceptJson()
+            ->timeout($timeout)
+            ->withHeaders($this->automationEngineHeaders())
+            ->post("{$apiUrl}/zones/{$zoneId}/start-solution-change", $payload);
+
+        $response->throw();
+
+        $decoded = $response->json();
+        if (! is_array($decoded)) {
+            throw new \RuntimeException('automation_engine_invalid_payload');
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function dispatchStartSolutionChange(
+        int $zoneId,
+        array $payload,
+    ): array {
+        $source = trim((string) ($payload['source'] ?? 'laravel_api'));
+        $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
+        $trigger = isset($payload['trigger']) ? trim((string) $payload['trigger']) : null;
+
+        $normalizedPayload = [
+            'source' => $source !== '' ? $source : 'laravel_api',
+            'idempotency_key' => $idempotencyKey,
+            'trigger' => $trigger !== '' ? $trigger : 'manual',
+        ];
+
+        $this->intentService->upsertStartSolutionChangeIntent(
+            zoneId: $zoneId,
+            source: $normalizedPayload['source'],
+            idempotencyKey: $idempotencyKey,
+            trigger: $normalizedPayload['trigger'],
+        );
+
+        try {
+            return $this->startSolutionChange($zoneId, $normalizedPayload);
+        } catch (RequestException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_solution_change_http_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        } catch (ConnectionException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_solution_change_connection_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
     public function startCycle(int $zoneId, array $payload): array
     {
         $cfg = $this->runtimeConfig->schedulerConfig();

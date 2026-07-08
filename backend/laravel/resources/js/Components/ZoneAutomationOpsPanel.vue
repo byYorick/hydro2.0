@@ -78,6 +78,14 @@
           >
             {{ diagnosticsActionLoading ? 'Отправка...' : 'Диагностика' }}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || solutionChangeActionLoading"
+            @click="$emit('start-solution-change')"
+          >
+            {{ solutionChangeActionLoading ? 'Отправка...' : 'Подмена раствора' }}
+          </Button>
         </div>
       </div>
 
@@ -151,6 +159,7 @@ interface Props {
   automationStateMetaLabel: string | null
   irrigationActionLoading?: boolean
   diagnosticsActionLoading?: boolean
+  solutionChangeActionLoading?: boolean
   currentStage?: string | null
   workflowPhase?: string | null
 }
@@ -158,6 +167,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   irrigationActionLoading: false,
   diagnosticsActionLoading: false,
+  solutionChangeActionLoading: false,
   currentStage: null,
   workflowPhase: null,
 })
@@ -188,6 +198,7 @@ defineEmits<{
   (e: 'start-irrigation'): void
   (e: 'force-irrigation'): void
   (e: 'run-diagnostics'): void
+  (e: 'start-solution-change'): void
   (e: 'select-mode', mode: ModeValue): void
   (e: 'run-manual-step', step: AutomationManualStep): void
 }>()
@@ -201,6 +212,9 @@ const MANUAL_STEP_LABELS: Record<AutomationManualStep, string> = {
   prepare_recirculation_stop: 'Стоп рециркуляции setup',
   irrigation_stop: 'Стоп полива',
   irrigation_recovery_stop: 'Стоп рециркуляции полива',
+  solution_drain_confirm: 'Подтвердить слив',
+  solution_refill_confirm: 'Подтвердить наполнение',
+  solution_change_abort: 'Отменить подмену',
 }
 
 const STEP_VARIANTS: Record<AutomationManualStep, 'secondary' | 'outline'> = {
@@ -212,6 +226,9 @@ const STEP_VARIANTS: Record<AutomationManualStep, 'secondary' | 'outline'> = {
   prepare_recirculation_stop: 'outline',
   irrigation_stop: 'outline',
   irrigation_recovery_stop: 'outline',
+  solution_drain_confirm: 'secondary',
+  solution_refill_confirm: 'secondary',
+  solution_change_abort: 'outline',
 }
 
 const visibleManualSteps = computed(() => {

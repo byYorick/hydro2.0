@@ -17,6 +17,9 @@ export type AutomationManualStep =
   | 'prepare_recirculation_stop'
   | 'irrigation_stop'
   | 'irrigation_recovery_stop'
+  | 'solution_drain_confirm'
+  | 'solution_refill_confirm'
+  | 'solution_change_abort'
 
 export interface AutomationTimelineEvent {
   event: string

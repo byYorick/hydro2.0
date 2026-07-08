@@ -131,6 +131,13 @@ export const zonesApi = {
     return apiPost<Record<string, unknown>>(`/zones/${zoneId}/start-cycle`, payload ?? {})
   },
 
+  startSolutionChange(
+    zoneId: number,
+    payload?: { source?: string; trigger?: string; idempotency_key?: string },
+  ): Promise<Record<string, unknown>> {
+    return apiPost<Record<string, unknown>>(`/zones/${zoneId}/start-solution-change`, payload ?? {})
+  },
+
   /**
    * Запуск / сохранение калибровки насоса. Возвращает `run_token` при запуске.
    */

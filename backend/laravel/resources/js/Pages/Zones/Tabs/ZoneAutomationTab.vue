@@ -38,6 +38,7 @@
         :automation-state-meta-label="automationStateMetaLabel"
         :irrigation-action-loading="props.irrigationActionLoading ?? false"
         :diagnostics-action-loading="diagnosticsLoading"
+        :solution-change-action-loading="solutionChangeLoading"
         :current-stage="automationCurrentStage"
         :workflow-phase="lastAutomationSnapshot?.workflow_phase ?? null"
         @select-mode="onControlModeSelect"
@@ -45,6 +46,7 @@
         @start-irrigation="emit('start-irrigation')"
         @force-irrigation="emit('force-irrigation')"
         @run-diagnostics="runDiagnostics"
+        @start-solution-change="runSolutionChange"
       />
 
       <ZoneAutomationConfigSection>
@@ -409,7 +411,9 @@ const {
   applyAutomationProfile,
   resetToRecommended,
   runDiagnostics,
+  runSolutionChange,
   diagnosticsLoading,
+  solutionChangeLoading,
   automationControlMode,
   controlModeAvailable,
   allowedManualSteps,

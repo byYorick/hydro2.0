@@ -1208,3 +1208,74 @@ def test_planner_builds_solution_topup_named_plans_from_solution_fill() -> None:
     assert "solution_topup_stop" in plan.named_plans
     assert plan.named_plans["solution_topup_start"] == plan.named_plans["solution_fill_start"]
     assert plan.named_plans["solution_topup_stop"] == plan.named_plans["solution_fill_stop"]
+
+
+def test_cycle_start_planner_builds_solution_change_plan() -> None:
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_drain", node_channel_id=446, role="valve_drain"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = AutomationTask.from_row({
+        "id": 43,
+        "zone_id": snapshot.zone_id,
+        "task_type": "solution_change",
+        "status": "pending",
+        "idempotency_key": "sched:z1:solution_change",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": None,
+        "claimed_at": None,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "two_tank",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "SOLUTION_CHANGE_TICK",
+        "intent_id": 8,
+        "intent_meta": {},
+        "current_stage": "await_operator_drain_confirm",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+
+    plan = planner.build(task=task, snapshot=snapshot)
+
+    assert plan.workflow == "solution_change"
+    assert "solution_drain_start" in plan.named_plans
+    assert "solution_drain_stop" in plan.named_plans
+    assert "solution_fill_start" in plan.named_plans

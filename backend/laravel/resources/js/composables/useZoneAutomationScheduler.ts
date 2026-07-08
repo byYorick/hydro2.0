@@ -82,6 +82,9 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     prepare_recirculation_stop: false,
     irrigation_stop: false,
     irrigation_recovery_stop: false,
+    solution_drain_confirm: false,
+    solution_refill_confirm: false,
+    solution_change_abort: false,
   })
 
   let refreshInFlight = false
@@ -208,6 +211,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   }
 
   const diagnosticsLoading = ref(false)
+  const solutionChangeLoading = ref(false)
 
   async function runDiagnostics(): Promise<boolean> {
     if (!props.zoneId || diagnosticsLoading.value) return false
@@ -225,6 +229,25 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       return false
     } finally {
       diagnosticsLoading.value = false
+    }
+  }
+
+  async function runSolutionChange(): Promise<boolean> {
+    if (!props.zoneId || solutionChangeLoading.value) return false
+
+    solutionChangeLoading.value = true
+    try {
+      await api.zones.startSolutionChange(props.zoneId, { source: 'frontend', trigger: 'operator' })
+      showToast('Подмена раствора запущена — ожидается подтверждение оператора.', 'success')
+      await fetchAutomationControlMode()
+      onControlModeChanged?.()
+      return true
+    } catch (error: unknown) {
+      logger.warn('[ZoneAutomationTab] Failed to start solution change', { error, zoneId: props.zoneId })
+      showToast(extractHumanErrorMessage(error, 'Не удалось запустить подмену раствора.'), 'error')
+      return false
+    } finally {
+      solutionChangeLoading.value = false
     }
   }
 
@@ -337,7 +360,9 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     hydrateControlModeFromProp,
     runManualStep,
     runDiagnostics,
+    runSolutionChange,
     diagnosticsLoading,
+    solutionChangeLoading,
     resetForZoneChange,
     formatDateTime: (value: string | null | undefined) => {
       if (!value) return '—'

@@ -350,6 +350,9 @@ class ScheduleDispatcher
             $endpoint = '/start-solution-topup';
             $requestPayload['mode'] = 'normal';
             $requestPayload['trigger'] = 'periodic_tick';
+        } elseif ($taskType === 'solution_change') {
+            $endpoint = '/start-solution-change';
+            $requestPayload['trigger'] = 'scheduler';
         }
 
         return [
@@ -894,7 +897,7 @@ class ScheduleDispatcher
             return true;
         }
 
-        return in_array($taskType, ['irrigation', 'lighting', 'solution_topup', 'diagnostics'], true);
+        return in_array($taskType, ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics'], true);
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

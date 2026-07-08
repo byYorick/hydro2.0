@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
@@ -10,6 +11,7 @@ from ae3lite.api.contracts import (
     StartCycleRequest,
     StartIrrigationRequest,
     StartLightingTickRequest,
+    StartSolutionChangeRequest,
     StartSolutionTopupRequest,
 )
 from ae3lite.domain.errors import ErrorCodes, TaskCreateError
@@ -112,6 +114,91 @@ class PgZoneIntentRepository:
             claimed_stale_after_sec=claimed_stale_after_sec,
             running_stale_after_sec=running_stale_after_sec,
         )
+
+    async def claim_start_solution_change(
+        self,
+        *,
+        zone_id: int,
+        req: StartSolutionChangeRequest,
+        now: datetime,
+        claimed_stale_after_sec: int = 180,
+        running_stale_after_sec: int = 1800,
+    ) -> dict[str, Any]:
+        return await self._claim_by_idempotency_key(
+            zone_id=zone_id,
+            idempotency_key=req.idempotency_key,
+            now=now,
+            claimed_stale_after_sec=claimed_stale_after_sec,
+            running_stale_after_sec=running_stale_after_sec,
+        )
+
+    async def upsert_solution_topup_intent(
+        self,
+        *,
+        zone_id: int,
+        idempotency_key: str,
+        source: str,
+        trigger: str,
+        topology: str,
+        now: datetime,
+        mode: str = "normal",
+    ) -> int | None:
+        normalized_mode = "force" if str(mode).strip().lower() == "force" else "normal"
+        normalized_topology = str(topology or "").strip().lower() or "two_tank_drip_substrate_trays"
+        intent_source = str(source or "").strip() or "level_event"
+        payload = {
+            "mode": normalized_mode,
+            "task_type": "solution_topup",
+            "workflow": "solution_topup",
+            "topology": normalized_topology,
+            "trigger": str(trigger or "").strip() or "level_switch",
+        }
+        rows = await fetch(
+            """
+            INSERT INTO zone_automation_intents (
+                zone_id,
+                intent_type,
+                task_type,
+                topology,
+                irrigation_mode,
+                irrigation_requested_duration_sec,
+                intent_source,
+                idempotency_key,
+                payload,
+                status,
+                not_before,
+                retry_count,
+                max_retries,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                $1, 'SOLUTION_TOPUP', 'solution_topup', $2,
+                NULL, NULL, $3, $4, $5::jsonb,
+                'pending', $6, 0, 3, $6, $6
+            )
+            ON CONFLICT (zone_id, idempotency_key)
+            DO UPDATE SET
+                task_type = EXCLUDED.task_type,
+                topology = EXCLUDED.topology,
+                intent_source = EXCLUDED.intent_source,
+                payload = EXCLUDED.payload,
+                not_before = EXCLUDED.not_before,
+                updated_at = EXCLUDED.updated_at
+            WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
+            RETURNING id
+            """,
+            zone_id,
+            normalized_topology,
+            intent_source,
+            idempotency_key,
+            json.dumps(payload),
+            now,
+        )
+        if not rows:
+            return None
+        intent_id = rows[0].get("id")
+        return int(intent_id) if intent_id is not None else None
 
     async def _claim_by_idempotency_key(
         self,
@@ -278,6 +365,7 @@ class PgZoneIntentRepository:
         is_irrigation = task_type == "irrigation_start"
         is_lighting_tick = task_type == "lighting_tick"
         is_solution_topup = task_type == "solution_topup"
+        is_solution_change = task_type == "solution_change"
 
         if is_lighting_tick:
             current_stage = "apply"
@@ -285,6 +373,9 @@ class PgZoneIntentRepository:
             topology = "lighting_tick"
         elif is_solution_topup:
             current_stage = "solution_topup_guard"
+            workflow_phase = "ready"
+        elif is_solution_change:
+            current_stage = "await_operator_drain_confirm"
             workflow_phase = "ready"
         elif is_irrigation:
             current_stage = "await_ready"
@@ -324,6 +415,12 @@ class PgZoneIntentRepository:
                 mode = str(payload_raw.get("mode") or "").strip().lower()
                 if mode in {"normal", "force"}:
                     intent_payload["mode"] = mode
+                trigger = str(payload_raw.get("trigger") or "").strip()
+                if trigger:
+                    intent_payload["trigger"] = trigger
+        if is_solution_change:
+            payload_raw = intent_row.get("payload")
+            if isinstance(payload_raw, Mapping):
                 trigger = str(payload_raw.get("trigger") or "").strip()
                 if trigger:
                     intent_payload["trigger"] = trigger

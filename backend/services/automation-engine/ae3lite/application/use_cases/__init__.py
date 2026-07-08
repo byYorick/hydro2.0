@@ -12,6 +12,7 @@ from .request_manual_step import RequestManualStepUseCase
 from .set_control_mode import SetControlModeUseCase
 from .startup_recovery import StartupRecoveryUseCase
 from .stale_task_reconcile import StaleTaskReconcileUseCase
+from .trigger_solution_topup_from_level_event import TriggerSolutionTopupFromLevelEventUseCase
 from .waiting_command_reconcile import WaitingCommandReconcileUseCase
 from .workflow_router import WorkflowRouter
 
@@ -28,6 +29,7 @@ __all__ = [
     "SetControlModeUseCase",
     "StartupRecoveryUseCase",
     "StaleTaskReconcileUseCase",
+    "TriggerSolutionTopupFromLevelEventUseCase",
     "WaitingCommandReconcileUseCase",
     "WorkflowRouter",
 ]

@@ -2197,6 +2197,43 @@ class BaseStageHandler:
             return "tank_recirc"
         return "generic"
 
+    async def _check_solution_change_abort(
+        self,
+        *,
+        task: Any,
+        pending_manual_step: str,
+    ) -> StageOutcome | None:
+        """Обрабатывает operator abort для task_type=solution_change."""
+        if str(getattr(task, "task_type", "") or "").strip().lower() != "solution_change":
+            return None
+        from ae3lite.application.use_cases.manual_control_contract import SOLUTION_CHANGE_ABORT_STEP
+
+        if str(pending_manual_step or "").strip() != SOLUTION_CHANGE_ABORT_STEP:
+            return None
+        _logger.info(
+            "solution_change: operator abort zone_id=%s task_id=%s stage=%s",
+            task.zone_id,
+            getattr(task, "id", None),
+            getattr(task.workflow, "current_stage", None),
+        )
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "SOLUTION_CHANGE_ABORTED",
+                {
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "zone_id": int(getattr(task, "zone_id", 0) or 0),
+                    "stage": str(getattr(task.workflow, "current_stage", "") or ""),
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "solution_change_abort: не удалось записать SOLUTION_CHANGE_ABORTED zone_id=%s",
+                getattr(task, "zone_id", None),
+                exc_info=True,
+            )
+        return StageOutcome(kind="transition", next_stage="solution_change_abort_stop")
+
     # ── Sensor consistency check (max=1, min=0 → error) ────────────
 
     async def _check_sensor_consistency(

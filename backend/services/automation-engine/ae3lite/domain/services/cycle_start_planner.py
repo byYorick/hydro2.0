@@ -47,6 +47,8 @@ class CycleStartPlanner:
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
         if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_topup":
             return self._build_solution_topup_plan(task=task, snapshot=snapshot)
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+            return self._build_solution_change_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"CycleStartPlanner не поддерживает task_type={task.task_type}")
         if task.zone_id != snapshot.zone_id:
@@ -441,6 +443,44 @@ class CycleStartPlanner:
         return CommandPlan(
             task_type=task.task_type,
             workflow="solution_topup",
+            topology=topology,
+            steps=plan.steps,
+            targets=plan.targets,
+            named_plans=named_plans,
+            runtime=plan.runtime,
+        )
+
+    def _build_solution_change_plan(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+    ) -> CommandPlan:
+        """Two-tank command plans для semi-auto подмены раствора."""
+        if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
+            raise PlannerConfigurationError("Для solution_change требуется zone.automation_runtime='ae3'")
+        topology = str(task.topology or "two_tank").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise PlannerConfigurationError(f"solution_change не поддерживает topology={topology}")
+        plan = self._build_two_tank_plan(
+            task=task,
+            snapshot=snapshot,
+            workflow="solution_change",
+            topology=topology,
+        )
+        named_plans = dict(plan.named_plans)
+        drain_start = named_plans.get("solution_drain_start")
+        drain_stop = named_plans.get("solution_drain_stop")
+        if drain_start:
+            named_plans["solution_drain_start"] = drain_start
+        if drain_stop:
+            named_plans["solution_drain_stop"] = drain_stop
+        irr_probe = named_plans.get("irr_state_probe")
+        if irr_probe:
+            named_plans["irr_state_probe"] = irr_probe
+        return CommandPlan(
+            task_type=task.task_type,
+            workflow="solution_change",
             topology=topology,
             steps=plan.steps,
             targets=plan.targets,

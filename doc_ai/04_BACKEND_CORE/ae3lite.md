@@ -662,7 +662,7 @@ runtime = plan.runtime
 
 Ingress для **полуавтоматической подмены раствора** (`task_type='solution_change'`). Полная семантика workflow, operator gates и UI — `CORRECTION_CYCLE_SPEC.md` §10.
 
-**Статус реализации:** doc-first SPEC; endpoint, planner и handlers — отдельный PR после принятия контракта.
+**Статус реализации:** semi-auto v1 (этап D.1) — endpoint, planner, handlers и operator gates в canonical scope AE3.
 
 Требования (целевой контракт):
 

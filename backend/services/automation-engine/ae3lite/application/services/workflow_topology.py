@@ -58,6 +58,69 @@ TWO_TANK: Mapping[str, StageDef] = {
     # === Startup ===
     "startup": StageDef("startup", "startup"),
 
+    # === Solution change path (semi-auto v1) ===
+    "await_operator_drain_confirm": StageDef(
+        "await_operator_drain_confirm", "solution_change_gate",
+        workflow_phase="ready",
+        timeout_key="solution_change_operator_confirm_timeout_sec",
+    ),
+    "solution_drain_start": StageDef(
+        "solution_drain_start", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_drain_start",),
+        next_stage="solution_drain_check",
+        timeout_key="solution_drain_timeout_sec",
+    ),
+    "solution_drain_check": StageDef(
+        "solution_drain_check", "solution_drain_check",
+        workflow_phase="tank_filling",
+        timeout_key="solution_drain_timeout_sec",
+    ),
+    "solution_drain_stop_to_clean_fill": StageDef(
+        "solution_drain_stop_to_clean_fill", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_drain_stop",),
+        next_stage="clean_fill_start",
+    ),
+    "solution_drain_timeout_stop": StageDef(
+        "solution_drain_timeout_stop", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_drain_stop",),
+        terminal_error=(
+            "solution_drain_timeout_stop",
+            "Слив раствора не завершился за отведённое время.",
+        ),
+    ),
+    "solution_fill_stop_to_refill_confirm": StageDef(
+        "solution_fill_stop_to_refill_confirm", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
+        next_stage="await_operator_refill_confirm",
+    ),
+    "await_operator_refill_confirm": StageDef(
+        "await_operator_refill_confirm", "solution_change_gate",
+        workflow_phase="tank_filling",
+        timeout_key="solution_change_operator_confirm_timeout_sec",
+    ),
+    "solution_change_operator_timeout_stop": StageDef(
+        "solution_change_operator_timeout_stop", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_drain_stop", "solution_fill_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "solution_change_operator_timeout",
+            "Истёк таймаут ожидания подтверждения оператора при подмене раствора.",
+        ),
+    ),
+    "solution_change_abort_stop": StageDef(
+        "solution_change_abort_stop", "command",
+        workflow_phase="idle",
+        command_plans=("solution_drain_stop", "solution_fill_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "solution_change_aborted_by_operator",
+            "Подмена раствора отменена оператором.",
+        ),
+    ),
+
     # === Clean fill path ===
     "clean_fill_start": StageDef(
         "clean_fill_start", "command",

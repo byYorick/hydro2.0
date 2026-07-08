@@ -24,6 +24,9 @@ def resolve_workflow_phase_after_task_failure(task: Any) -> str:
     if task_type == "solution_topup":
         return "ready"
 
+    if task_type == "solution_change":
+        return "idle"
+
     if workflow_phase in {"irrigating", "irrig_recirc"}:
         return "ready"
 

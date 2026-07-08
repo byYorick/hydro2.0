@@ -23,6 +23,7 @@ from ae3lite.api import (
     bind_start_cycle_route,
     bind_start_irrigation_route,
     bind_start_lighting_tick_route,
+    bind_start_solution_change_route,
     bind_start_solution_topup_route,
 )
 from ae3lite.api.http_errors import api_error_detail, enrich_http_exception_content
@@ -97,7 +98,7 @@ class ManualStepRequest(BaseModel):
         ...,
         min_length=1,
         max_length=64,
-        pattern="^(clean_fill_start|clean_fill_stop|solution_fill_start|force_solution_fill_start|solution_fill_stop|prepare_recirculation_start|prepare_recirculation_stop|irrigation_stop|irrigation_recovery_stop)$",
+        pattern="^(clean_fill_start|clean_fill_stop|solution_fill_start|force_solution_fill_start|solution_fill_stop|prepare_recirculation_start|prepare_recirculation_stop|irrigation_stop|irrigation_recovery_stop|solution_drain_confirm|solution_refill_confirm|solution_change_abort)$",
     )
     source: str = Field(default="laravel_manual_step", min_length=1, max_length=64)
 
@@ -283,6 +284,7 @@ def _build_zone_event_listener_callback(
     *,
     worker: Any,
     solution_tank_startup_guard_use_case: Any | None,
+    trigger_solution_topup_from_level_event_use_case: Any | None = None,
     now_fn: Any,
     logger: logging.Logger,
 ) -> Any:
@@ -310,6 +312,29 @@ def _build_zone_event_listener_callback(
             except Exception as exc:
                 logger.warning(
                     "ZoneEventListener: startup guard failed for zone_id=%s event_type=%s channel=%s error=%s",
+                    zone_id,
+                    event_type,
+                    channel,
+                    exc,
+                    exc_info=True,
+                )
+
+        if zone_id > 0 and trigger_solution_topup_from_level_event_use_case is not None:
+            try:
+                topup_result = await trigger_solution_topup_from_level_event_use_case.run(
+                    zone_id=zone_id,
+                    event_data=data,
+                    now=now_fn(),
+                )
+                if bool(topup_result.get("triggered")):
+                    logger.info(
+                        "ZoneEventListener: reactive solution_topup started zone_id=%s task_id=%s",
+                        zone_id,
+                        topup_result.get("task_id"),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "ZoneEventListener: reactive solution_topup failed zone_id=%s event_type=%s channel=%s error=%s",
                     zone_id,
                     event_type,
                     channel,
@@ -442,6 +467,10 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         max_requests=runtime_config.start_cycle_rate_limit_max_requests,
         window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
     )
+    start_solution_change_rate_limiter = SlidingWindowRateLimiter(
+        max_requests=runtime_config.start_cycle_rate_limit_max_requests,
+        window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
+    )
     zone_read_rate_limiter = SlidingWindowRateLimiter(max_requests=60, window_sec=10.0)
     climate_tick_rate_limiter = SlidingWindowRateLimiter(max_requests=60, window_sec=10.0)
 
@@ -515,6 +544,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 on_zone_event=_build_zone_event_listener_callback(
                     worker=bundle.worker,
                     solution_tank_startup_guard_use_case=bundle.solution_tank_startup_guard_use_case,
+                    trigger_solution_topup_from_level_event_use_case=bundle.trigger_solution_topup_from_level_event_use_case,
                     now_fn=_utcnow,
                     logger=logger,
                 ),
@@ -829,6 +859,40 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             allow_create=allow_create,
             solution_topup_mode=solution_topup_mode,
             solution_topup_trigger=solution_topup_trigger,
+        ),
+        kick_worker_fn=bundle.worker.kick,
+        build_start_cycle_response_fn=build_start_cycle_response,
+        mark_intent_terminal_fn=lambda *, intent_id, now, success, error_code, error_message: bundle.zone_intent_repository.mark_terminal(
+            intent_id=intent_id, now=now, success=success,
+            error_code=error_code, error_message=error_message,
+        ),
+        logger=logger,
+    )
+    bind_start_solution_change_route(
+        app,
+        validate_scheduler_zone_fn=_validate_scheduler_zone,
+        validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
+        load_zone_workflow_phase_fn=_load_zone_workflow_phase,
+        is_start_solution_change_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
+        start_solution_change_rate_limit_check_fn=lambda zone_id: start_solution_change_rate_limiter.check(
+            zone_id=zone_id
+        ),
+        start_solution_change_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
+        start_solution_change_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
+        claim_start_solution_change_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_solution_change(
+            zone_id=zone_id,
+            req=req,
+            now=now,
+            claimed_stale_after_sec=runtime_config.start_cycle_claim_stale_sec,
+            running_stale_after_sec=runtime_config.start_cycle_running_stale_sec,
+        ),
+        create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now, allow_create=True: bundle.create_task_from_intent_use_case.run(
+            zone_id=zone_id,
+            source=source,
+            idempotency_key=idempotency_key,
+            intent_row=intent_row,
+            now=now,
+            allow_create=allow_create,
         ),
         kick_worker_fn=bundle.worker.kick,
         build_start_cycle_response_fn=build_start_cycle_response,

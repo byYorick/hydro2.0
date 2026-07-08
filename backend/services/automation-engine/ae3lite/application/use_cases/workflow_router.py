@@ -34,6 +34,11 @@ from ae3lite.application.handlers.solution_topup import (
     SolutionTopupCompleteHandler,
     SolutionTopupGuardHandler,
 )
+from ae3lite.application.handlers.solution_change import (
+    SolutionChangeCompleteHandler,
+    SolutionChangeOperatorGateHandler,
+    SolutionDrainCheckHandler,
+)
 from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
@@ -132,6 +137,9 @@ class WorkflowRouter:
         "solution_topup_guard": SolutionTopupGuardHandler,
         "solution_topup_check": SolutionTopupCheckHandler,
         "solution_topup_complete": SolutionTopupCompleteHandler,
+        "solution_change_gate": SolutionChangeOperatorGateHandler,
+        "solution_drain_check": SolutionDrainCheckHandler,
+        "solution_change_complete": SolutionChangeCompleteHandler,
         "irrigation_check": IrrigationCheckHandler,
         "irrigation_recovery": IrrigationRecoveryCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
@@ -219,6 +227,15 @@ class WorkflowRouter:
                 return await self._complete_task(task=task, now=now)
             if handler_key == "solution_topup_complete":
                 handler = self._handlers.get("solution_topup_complete")
+                if handler is not None:
+                    outcome = await handler.run(
+                        task=task, plan=plan, stage_def=stage_def, now=now,
+                    )
+                    return await self._apply_outcome(
+                        task=task, plan=plan, outcome=outcome, now=now,
+                    )
+            if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+                handler = self._handlers.get("solution_change_complete")
                 if handler is not None:
                     outcome = await handler.run(
                         task=task, plan=plan, stage_def=stage_def, now=now,
@@ -703,6 +720,24 @@ class WorkflowRouter:
                 return None
             try:
                 base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
+        if stage_def.name in {"solution_drain_check", "solution_drain_start"}:
+            base_raw = getattr(runtime, "solution_drain_timeout_sec", None) or runtime.solution_fill_timeout_sec
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
+        if stage_def.name in {"await_operator_drain_confirm", "await_operator_refill_confirm"}:
+            base_raw = getattr(runtime, "solution_change_operator_confirm_timeout_sec", None)
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(60, int(base_raw))
             except (TypeError, ValueError):
                 return None
             return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))

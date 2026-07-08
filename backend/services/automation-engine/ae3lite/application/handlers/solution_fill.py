@@ -113,6 +113,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
             raise
 
         if pending_manual_step == "solution_fill_stop":
+            if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_refill_confirm")
             if await self._should_finish_to_ready(task=task, plan=plan, now=now, runtime=runtime):
                 return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
             return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
@@ -295,6 +297,16 @@ class SolutionFillCheckHandler(BaseStageHandler):
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
             prefer_probe_snapshot=True,
         )
+
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+            _logger.info(
+                "solution_fill_check: refill завершён, ожидание operator confirm (G2) zone_id=%s",
+                task.zone_id,
+            )
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_stop_to_refill_confirm",
+            )
 
         if await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime):
             _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)

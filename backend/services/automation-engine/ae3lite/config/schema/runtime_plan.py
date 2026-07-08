@@ -269,6 +269,9 @@ class RuntimePlan(BaseModel):
     solution_topup_enabled: bool = True
     solution_topup_timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 900
     solution_topup_cooldown_sec: Annotated[int, Field(ge=0, le=86400)] = 300
+    solution_change_enabled: bool = False
+    solution_drain_timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 900
+    solution_change_operator_confirm_timeout_sec: Annotated[int, Field(ge=60, le=86400)] = 3600
     telemetry_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_wait_timeout_sec: Annotated[float, Field(ge=0.0, le=30.0)]

@@ -161,6 +161,11 @@ class CreateTaskFromIntentUseCase:
                     conn=conn,
                     now=now,
                 )
+                await self._ensure_solution_change_preconditions(
+                    zone_id=zone_id,
+                    meta=meta,
+                    conn=conn,
+                )
                 await self._assert_required_nodes_available_for_task(
                     zone_id=zone_id,
                     topology=meta.topology,
@@ -531,6 +536,96 @@ class CreateTaskFromIntentUseCase:
                             "Cooldown после предыдущего solution_topup ещё не истёк",
                             details={"cooldown_sec": cooldown_sec},
                         )
+
+    async def _ensure_solution_change_preconditions(
+        self,
+        *,
+        zone_id: int,
+        meta: Any,
+        conn: Any,
+    ) -> None:
+        if str(getattr(meta, "task_type", "") or "").strip().lower() != "solution_change":
+            return
+
+        topology = str(getattr(meta, "topology", "") or "").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise TaskCreateError(
+                "solution_change_topology_unsupported",
+                f"Подмена раствора поддерживается только для two-tank topology, получено: {topology or 'empty'}",
+                details={"topology": topology or "empty"},
+            )
+
+        workflow_row = await conn.fetchrow(
+            """
+            SELECT workflow_phase
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        workflow_phase = str((workflow_row or {}).get("workflow_phase") or "").strip().lower()
+        if workflow_phase != "ready":
+            raise TaskCreateError(
+                "solution_change_zone_not_ready",
+                f"Подмена раствора доступна только в ready, текущая фаза: {workflow_phase or 'missing'}",
+                details={"workflow_phase": workflow_phase or "missing"},
+            )
+        if workflow_phase in {"irrigating", "irrig_recirc"}:
+            raise TaskCreateError(
+                "solution_change_active_irrigation",
+                "Подмена раствора запрещена во время активного полива",
+                details={"workflow_phase": workflow_phase},
+            )
+
+        enabled = await self._resolve_solution_change_enabled_from_bundle(zone_id=zone_id, conn=conn)
+        if not enabled:
+            raise TaskCreateError(
+                "solution_change_disabled",
+                "Подсистема solution_change отключена в effective targets",
+                details={"zone_id": zone_id},
+            )
+
+    async def _resolve_solution_change_enabled_from_bundle(self, *, zone_id: int, conn: Any) -> bool:
+        row = await conn.fetchrow(
+            """
+            SELECT aeb.config
+            FROM grow_cycles gc
+            JOIN automation_effective_bundles aeb
+              ON aeb.scope_type = 'grow_cycle'
+             AND aeb.scope_id = gc.id
+            WHERE gc.zone_id = $1
+              AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+            ORDER BY
+                CASE gc.status
+                    WHEN 'RUNNING' THEN 0
+                    WHEN 'PAUSED' THEN 1
+                    ELSE 2
+                END,
+                gc.id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        config = (row or {}).get("config")
+        if not isinstance(config, Mapping):
+            return False
+        zone_bundle = config.get("zone")
+        if not isinstance(zone_bundle, Mapping):
+            return False
+        logic_profile = zone_bundle.get("logic_profile")
+        if not isinstance(logic_profile, Mapping):
+            return False
+        active_profile = logic_profile.get("active_profile")
+        if not isinstance(active_profile, Mapping):
+            return False
+        subsystems = active_profile.get("subsystems")
+        if not isinstance(subsystems, Mapping):
+            return False
+        solution_change = subsystems.get("solution_change")
+        if isinstance(solution_change, Mapping) and solution_change.get("enabled") is not None:
+            return bool(solution_change.get("enabled"))
+        return False
 
     def _merge_solution_topup_intent_payload(
         self,
