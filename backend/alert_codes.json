@@ -663,6 +663,16 @@
       "node_related": true
     },
     {
+      "code": "biz_solution_drain_timeout",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Таймаут слива раствора",
+      "description": "Превышено время слива бака раствора при подмене.",
+      "recommendation": "Проверьте клапан и насос слива, датчики уровня бака раствора и дренажную магистраль на засоры. Убедитесь, что оператор подтвердил начало слива. При необходимости завершите слив вручную.",
+      "node_related": true
+    },
+    {
       "code": "biz_solution_fill_timeout",
       "source": "biz",
       "category": "operations",

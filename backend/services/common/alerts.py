@@ -49,6 +49,7 @@ class AlertCode(str, Enum):
     BIZ_SOLUTION_TEMP_HIGH = "biz_solution_temp_high"
     BIZ_SOLUTION_TEMP_LOW = "biz_solution_temp_low"
     BIZ_SOLUTION_TOPUP_TIMEOUT = "biz_solution_topup_timeout"
+    BIZ_SOLUTION_DRAIN_TIMEOUT = "biz_solution_drain_timeout"
     BIZ_SOLUTION_TOPUP_SOURCE_EMPTY = "biz_solution_topup_source_empty"
     BIZ_SOLUTION_TOPUP_LEAK = "biz_solution_topup_leak"
     BIZ_LIGHT_FAILURE = "biz_light_failure"
