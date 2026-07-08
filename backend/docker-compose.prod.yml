@@ -209,6 +209,8 @@ services:
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET must be set}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       - BACKUP_DIR=/backups
     volumes:
       # Production: образ из Dockerfile, без bind-mount исходников с хоста

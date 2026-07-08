@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "generated_at": "2026-07-02T12:02:21+00:00",
+    "generated_at": "2026-07-08T08:43:24+00:00",
     "tracked_tables_count": 29,
     "tables": {
         "ae_commands": {
@@ -1568,6 +1568,21 @@
                 "recipe_revision_phase_id": {
                     "data_type": "bigint",
                     "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "solution_temp_max": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "solution_temp_min": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
+                    "is_nullable": "YES"
+                },
+                "solution_temp_target": {
+                    "data_type": "numeric",
+                    "udt_name": "numeric",
                     "is_nullable": "YES"
                 },
                 "started_at": {

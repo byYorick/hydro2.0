@@ -15,14 +15,18 @@ class AlertService
 
     private AlertPolicyService $alertPolicyService;
 
+    private TelegramAlertNotifier $telegramAlertNotifier;
+
     public function __construct(
         ?AlertCatalogService $alertCatalog = null,
         ?AlertLocalizationService $alertLocalization = null,
-        ?AlertPolicyService $alertPolicyService = null
+        ?AlertPolicyService $alertPolicyService = null,
+        ?TelegramAlertNotifier $telegramAlertNotifier = null,
     ) {
         $this->alertCatalog = $alertCatalog ?? app(AlertCatalogService::class);
         $this->alertLocalization = $alertLocalization ?? app(AlertLocalizationService::class);
         $this->alertPolicyService = $alertPolicyService ?? app(AlertPolicyService::class);
+        $this->telegramAlertNotifier = $telegramAlertNotifier ?? app(TelegramAlertNotifier::class);
     }
 
     /**
@@ -72,6 +76,7 @@ class AlertService
             // Делаем это за пределами `DB::afterCommit`, потому что в тестах
             // внешняя транзакция RefreshDatabase никогда не коммитится.
             UnifiedDashboardService::invalidate();
+            $this->telegramAlertNotifier->notifyIfEligible($alert);
 
             return $alert;
         } catch (\Exception $e) {
@@ -233,6 +238,9 @@ class AlertService
         // или счётчики измениться — UI должен увидеть это сразу.
         if (! ($result['rate_limited'] ?? false)) {
             UnifiedDashboardService::invalidate();
+            if (($result['created'] ?? false) && $result['alert'] instanceof Alert) {
+                $this->telegramAlertNotifier->notifyIfEligible($result['alert']);
+            }
         }
 
         return $result;

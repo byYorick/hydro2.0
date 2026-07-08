@@ -7,9 +7,10 @@ import time
 from typing import Any, Callable, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
+from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.config.errors import ConfigValidationError
 from ae3lite.config.loader import load_zone_correction
-from ae3lite.config.runtime_plan_builder import resolve_two_tank_runtime
+from ae3lite.config.runtime_plan_builder import _build_day_night_config, resolve_two_tank_runtime
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
@@ -44,6 +45,10 @@ class CycleStartPlanner:
         """
         if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_topup":
+            return self._build_solution_topup_plan(task=task, snapshot=snapshot)
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+            return self._build_solution_change_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"CycleStartPlanner не поддерживает task_type={task.task_type}")
         if task.zone_id != snapshot.zone_id:
@@ -372,8 +377,20 @@ class CycleStartPlanner:
 
         targets = snapshot.targets if isinstance(snapshot.targets, Mapping) else {}
         lighting_targets = targets.get("lighting") if isinstance(targets.get("lighting"), Mapping) else {}
-        duty = self._resolve_lighting_pwm_duty(lighting_targets)
-        cmd, params = self._lighting_cmd_for_channel(channel=str(ref.channel or "").strip().lower(), duty=duty)
+        payload = self._lighting_tick_intent_payload(task)
+        desired_state = str(payload.get("desired_state") or "on").strip().lower()
+        if desired_state not in {"on", "off"}:
+            desired_state = "on"
+        channel = str(ref.channel or "").strip().lower()
+        if desired_state == "off":
+            cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=0, desired_on=False)
+        else:
+            duty = self._resolve_lighting_on_duty(
+                task=task,
+                snapshot=snapshot,
+                lighting_targets=lighting_targets,
+            )
+            cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=duty, desired_on=True)
         planned = PlannedCommand(
             step_no=1,
             node_uid=ref.node_uid,
@@ -395,6 +412,82 @@ class CycleStartPlanner:
             runtime=None,
         )
 
+    def _build_solution_topup_plan(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+    ) -> CommandPlan:
+        """Two-tank command plans для автодолива в ready (reuse solution_fill hydraulics)."""
+        if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
+            raise PlannerConfigurationError("Для solution_topup требуется zone.automation_runtime='ae3'")
+        topology = str(task.topology or "two_tank").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise PlannerConfigurationError(f"solution_topup не поддерживает topology={topology}")
+        plan = self._build_two_tank_plan(
+            task=task,
+            snapshot=snapshot,
+            workflow="solution_topup",
+            topology=topology,
+        )
+        named_plans = dict(plan.named_plans)
+        fill_start = named_plans.get("solution_fill_start")
+        fill_stop = named_plans.get("solution_fill_stop")
+        if fill_start:
+            named_plans["solution_topup_start"] = fill_start
+        if fill_stop:
+            named_plans["solution_topup_stop"] = fill_stop
+        irr_probe = named_plans.get("irr_state_probe")
+        if irr_probe:
+            named_plans["irr_state_probe"] = irr_probe
+        return CommandPlan(
+            task_type=task.task_type,
+            workflow="solution_topup",
+            topology=topology,
+            steps=plan.steps,
+            targets=plan.targets,
+            named_plans=named_plans,
+            runtime=plan.runtime,
+        )
+
+    def _build_solution_change_plan(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+    ) -> CommandPlan:
+        """Two-tank command plans для semi-auto подмены раствора."""
+        if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
+            raise PlannerConfigurationError("Для solution_change требуется zone.automation_runtime='ae3'")
+        topology = str(task.topology or "two_tank").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise PlannerConfigurationError(f"solution_change не поддерживает topology={topology}")
+        plan = self._build_two_tank_plan(
+            task=task,
+            snapshot=snapshot,
+            workflow="solution_change",
+            topology=topology,
+        )
+        named_plans = dict(plan.named_plans)
+        drain_start = named_plans.get("solution_drain_start")
+        drain_stop = named_plans.get("solution_drain_stop")
+        if drain_start:
+            named_plans["solution_drain_start"] = drain_start
+        if drain_stop:
+            named_plans["solution_drain_stop"] = drain_stop
+        irr_probe = named_plans.get("irr_state_probe")
+        if irr_probe:
+            named_plans["irr_state_probe"] = irr_probe
+        return CommandPlan(
+            task_type=task.task_type,
+            workflow="solution_change",
+            topology=topology,
+            steps=plan.steps,
+            targets=plan.targets,
+            named_plans=named_plans,
+            runtime=plan.runtime,
+        )
+
     def _pick_lighting_actuator(self, actuators: Sequence[ZoneActuatorRef]) -> ZoneActuatorRef | None:
         preferred = ("light_main", "main_light", "pwm_light", "light_pwm")
         for name in preferred:
@@ -407,8 +500,64 @@ class CycleStartPlanner:
                 return a
         return None
 
+    def _lighting_tick_intent_payload(self, task: AutomationTask) -> Mapping[str, Any]:
+        intent_meta = getattr(task, "intent_meta", None)
+        if not isinstance(intent_meta, Mapping):
+            return {}
+        payload = intent_meta.get("intent_payload")
+        return dict(payload) if isinstance(payload, Mapping) else {}
+
+    def _clamp_brightness_pct(self, raw: Any, *, default: int = 100) -> int:
+        try:
+            return max(0, min(100, int(float(raw))))
+        except (TypeError, ValueError):
+            return default
+
+    def _pick_target_brightness(self, lighting_targets: Mapping[str, Any], *, day: bool) -> int | None:
+        keys = ("brightness", "brightness_pct", "pwm_duty") if day else ("brightness_night",)
+        for key in keys:
+            raw = lighting_targets.get(key)
+            if raw is None:
+                continue
+            try:
+                return max(0, min(100, int(float(raw))))
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _resolve_lighting_on_duty(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+        lighting_targets: Mapping[str, Any],
+    ) -> int:
+        payload = self._lighting_tick_intent_payload(task)
+        if payload.get("brightness_pct") is not None:
+            return self._clamp_brightness_pct(payload["brightness_pct"])
+
+        day_duty = self._pick_target_brightness(lighting_targets, day=True)
+        night_duty = self._pick_target_brightness(lighting_targets, day=False)
+        if day_duty is not None or night_duty is not None:
+            day_night_cfg = _build_day_night_config(snapshot)
+            is_day = (
+                BaseStageHandler._is_day_now(day_night_cfg)
+                if bool(day_night_cfg.get("enabled"))
+                else True
+            )
+            chosen = day_duty if is_day else night_duty
+            if chosen is not None:
+                return chosen
+            fallback = night_duty if is_day else day_duty
+            if fallback is not None:
+                return fallback
+
+        return self._resolve_lighting_pwm_duty(lighting_targets)
+
     def _resolve_lighting_pwm_duty(self, lighting_targets: Mapping[str, Any]) -> int:
         raw = lighting_targets.get("pwm_duty") if isinstance(lighting_targets, Mapping) else None
+        if raw is None:
+            raw = lighting_targets.get("brightness") if isinstance(lighting_targets, Mapping) else None
         if raw is None:
             raw = lighting_targets.get("brightness_pct") if isinstance(lighting_targets, Mapping) else None
         try:
@@ -417,8 +566,19 @@ class CycleStartPlanner:
             return 100
         return max(0, min(100, v))
 
-    def _lighting_cmd_for_channel(self, *, channel: str, duty: int) -> tuple[str, dict[str, Any]]:
-        if "pwm" in channel or channel in {"light_main", "main_light"}:
+    def _lighting_cmd_for_channel(
+        self,
+        *,
+        channel: str,
+        duty: int,
+        desired_on: bool = True,
+    ) -> tuple[str, dict[str, Any]]:
+        is_pwm_channel = "pwm" in channel or channel in {"light_main", "main_light"}
+        if not desired_on:
+            if is_pwm_channel:
+                return "set_pwm", {"duty": 0}
+            return "set_relay", {"state": False}
+        if is_pwm_channel:
             return "set_pwm", {"duty": duty}
         return "set_relay", {"state": True}
 

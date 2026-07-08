@@ -22,6 +22,8 @@ _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "prepare_recirculation_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply"),
     "irrigation_recovery_start": ("valve_irrigation", "valve_solution_supply", "valve_solution_fill", "pump_main"),
     "irrigation_recovery_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply", "valve_irrigation"),
+    "solution_drain_start": ("valve_drain",),
+    "solution_drain_stop": ("valve_drain",),
 }
 
 
@@ -74,6 +76,8 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
         ],
+        "solution_drain_start": [{"channel": "valve_drain", "cmd": "set_relay", "params": {"state": True}}],
+        "solution_drain_stop": [{"channel": "valve_drain", "cmd": "set_relay", "params": {"state": False}}],
     }
     return [dict(item) for item in defaults.get(plan_name, ())]
 
@@ -230,6 +234,46 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             minimum=0.0,
             maximum=1.0,
         ),
+        "solution_topup_enabled": bool(
+            _to_mapping(execution.get("startup")).get(
+                "solution_topup_enabled",
+                _to_mapping(execution.get("fail_safe_guards")).get("solution_topup_enabled", True),
+            )
+        ),
+        "solution_topup_timeout_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_topup_timeout_sec"),
+            _require_int(
+                fill_runtime_cfg.get("solution_fill_timeout_sec"),
+                path="correction_config.base/phases.solution_fill.runtime.solution_fill_timeout_sec",
+                minimum=30,
+            ),
+            30,
+            86400,
+        ),
+        "solution_topup_cooldown_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_topup_cooldown_sec"),
+            300,
+            0,
+            86400,
+        ),
+        "solution_change_enabled": _resolve_solution_change_enabled(snapshot=snapshot, execution=execution),
+        "solution_drain_timeout_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_drain_timeout_sec"),
+            _resolve_bounded_int(
+                _to_mapping(execution.get("startup")).get("solution_fill_timeout_sec"),
+                900,
+                30,
+                86400,
+            ),
+            30,
+            86400,
+        ),
+        "solution_change_operator_confirm_timeout_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_change_operator_confirm_timeout_sec"),
+            3600,
+            60,
+            86400,
+        ),
         "telemetry_max_age_sec": _require_int(
             fill_timing_cfg.get("telemetry_max_age_sec"),
             path="correction_config.base/phases.solution_fill.timing.telemetry_max_age_sec",
@@ -329,6 +373,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "prepare_recirculation_stop",
         "irrigation_recovery_start",
         "irrigation_recovery_stop",
+        "solution_drain_start",
+        "solution_drain_stop",
     ):
         runtime["command_specs"][plan_name] = _normalize_command_plan(
             commands_cfg.get(plan_name),
@@ -338,6 +384,26 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
         _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
+
+
+def _resolve_solution_change_enabled(*, snapshot: Any, execution: Mapping[str, Any]) -> bool:
+    startup = _to_mapping(execution.get("startup"))
+    if startup.get("solution_change_enabled") is not None:
+        return bool(startup.get("solution_change_enabled"))
+    targets = getattr(snapshot, "targets", None)
+    if not isinstance(targets, Mapping):
+        return False
+    solution_change = targets.get("solution_change")
+    if isinstance(solution_change, Mapping) and solution_change.get("enabled") is not None:
+        return bool(solution_change.get("enabled"))
+    extensions = targets.get("extensions")
+    if isinstance(extensions, Mapping):
+        subsystems = extensions.get("subsystems")
+        if isinstance(subsystems, Mapping):
+            node = subsystems.get("solution_change")
+            if isinstance(node, Mapping) and node.get("enabled") is not None:
+                return bool(node.get("enabled"))
+    return False
 
 
 __all__ = [
@@ -968,6 +1034,18 @@ def _build_fail_safe_guards(execution: Mapping[str, Any]) -> dict[str, Any]:
         "solution_fill_solution_min_check_delay_ms": _resolve_bounded_int(
             guards.get("solution_fill_solution_min_check_delay_ms"),
             60000,
+            0,
+            3600000,
+        ),
+        "solution_topup_clean_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_topup_clean_min_check_delay_ms"),
+            _resolve_bounded_int(guards.get("solution_fill_clean_min_check_delay_ms"), 5000, 0, 3600000),
+            0,
+            3600000,
+        ),
+        "solution_topup_solution_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_topup_solution_min_check_delay_ms"),
+            _resolve_bounded_int(guards.get("solution_fill_solution_min_check_delay_ms"), 60000, 0, 3600000),
             0,
             3600000,
         ),

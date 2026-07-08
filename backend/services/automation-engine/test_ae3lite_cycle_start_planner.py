@@ -920,6 +920,38 @@ def test_cycle_start_planner_fails_closed_on_ambiguous_actuator_resolution() -> 
         planner.build(task=_task(now), snapshot=ambiguous_snapshot)
 
 
+def _lighting_task(*, intent_meta: dict | None = None) -> AutomationTask:
+    now = datetime.now(timezone.utc)
+    return AutomationTask.from_row({
+        "id": 81,
+        "zone_id": 9,
+        "task_type": "lighting_tick",
+        "status": "claimed",
+        "idempotency_key": "lt-test",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": "w",
+        "claimed_at": now,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "lighting_tick",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "lighting_tick",
+        "intent_id": 1,
+        "intent_meta": intent_meta or {},
+        "current_stage": "apply",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+
+
 def test_planner_builds_lighting_tick_single_pwm_command() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()
@@ -974,3 +1006,276 @@ def test_planner_builds_lighting_tick_single_pwm_command() -> None:
     assert plan.steps[0].channel == "light_main"
     assert plan.steps[0].payload["cmd"] == "set_pwm"
     assert plan.steps[0].payload["params"]["duty"] == 73
+
+
+def test_planner_lighting_tick_off_pwm_sets_duty_zero() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 80}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "off"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["cmd"] == "set_pwm"
+    assert plan.steps[0].payload["params"]["duty"] == 0
+
+
+def test_planner_lighting_tick_off_relay_sets_state_false() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 80}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-relay",
+                    node_type="relay",
+                    channel="relay_light",
+                    node_channel_id=502,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "off"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["cmd"] == "set_relay"
+    assert plan.steps[0].payload["params"]["state"] is False
+
+
+def test_planner_lighting_tick_on_uses_day_brightness_from_targets() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 64, "brightness_night": 12}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "on"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 64
+
+
+def test_planner_lighting_tick_on_explicit_brightness_pct_overrides_targets() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 64, "brightness_night": 12}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(
+        intent_meta={"intent_payload": {"desired_state": "on", "brightness_pct": 41}},
+    )
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 41
+
+
+def test_planner_lighting_tick_on_uses_night_brightness_when_not_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ae3lite.application.handlers.base import BaseStageHandler
+
+    monkeypatch.setattr(BaseStageHandler, "_is_day_now", staticmethod(lambda _cfg: False))
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "phase_targets": {
+                "day_night_enabled": True,
+                "extensions": {
+                    "day_night": {
+                        "lighting": {"day_start_time": "06:00", "day_hours": 12.0},
+                    },
+                },
+            },
+            "targets": {"lighting": {"brightness": 80, "brightness_night": 15}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "on"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 15
+
+
+def test_planner_builds_solution_topup_named_plans_from_solution_fill() -> None:
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = AutomationTask.from_row({
+        "id": 42,
+        "zone_id": snapshot.zone_id,
+        "task_type": "solution_topup",
+        "status": "pending",
+        "idempotency_key": "sched:z1:solution_topup",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": None,
+        "claimed_at": None,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "two_tank",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "SOLUTION_TOPUP_TICK",
+        "intent_id": 7,
+        "intent_meta": {},
+        "current_stage": "solution_topup_guard",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+
+    plan = planner.build(task=task, snapshot=snapshot)
+
+    assert plan.workflow == "solution_topup"
+    assert plan.topology == "two_tank"
+    assert "solution_topup_start" in plan.named_plans
+    assert "solution_topup_stop" in plan.named_plans
+    assert plan.named_plans["solution_topup_start"] == plan.named_plans["solution_fill_start"]
+    assert plan.named_plans["solution_topup_stop"] == plan.named_plans["solution_fill_stop"]
+
+
+def test_cycle_start_planner_builds_solution_change_plan() -> None:
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "irr_state_wait_timeout_sec": 5.0,
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_drain", node_channel_id=446, role="valve_drain"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = AutomationTask.from_row({
+        "id": 43,
+        "zone_id": snapshot.zone_id,
+        "task_type": "solution_change",
+        "status": "pending",
+        "idempotency_key": "sched:z1:solution_change",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": None,
+        "claimed_at": None,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "two_tank",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "SOLUTION_CHANGE_TICK",
+        "intent_id": 8,
+        "intent_meta": {},
+        "current_stage": "await_operator_drain_confirm",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+
+    plan = planner.build(task=task, snapshot=snapshot)
+
+    assert plan.workflow == "solution_change"
+    assert "solution_drain_start" in plan.named_plans
+    assert "solution_drain_stop" in plan.named_plans
+    assert "solution_fill_start" in plan.named_plans

@@ -18,6 +18,7 @@ from ae3lite.application.handlers.flow_path_guard import (
     decode_manual_hold_operator_step,
     encode_manual_hold_return_stage,
 )
+from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.application.handlers.await_ready import AwaitReadyHandler
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.application.handlers.command import CommandHandler
@@ -29,6 +30,16 @@ from ae3lite.application.handlers.manual_hold import ManualHoldHandler
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
+from ae3lite.application.handlers.solution_topup import (
+    SolutionTopupCheckHandler,
+    SolutionTopupCompleteHandler,
+    SolutionTopupGuardHandler,
+)
+from ae3lite.application.handlers.solution_change import (
+    SolutionChangeCompleteHandler,
+    SolutionChangeOperatorGateHandler,
+    SolutionDrainCheckHandler,
+)
 from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
@@ -124,6 +135,12 @@ class WorkflowRouter:
         "command": CommandHandler,
         "clean_fill": CleanFillCheckHandler,
         "solution_fill": SolutionFillCheckHandler,
+        "solution_topup_guard": SolutionTopupGuardHandler,
+        "solution_topup_check": SolutionTopupCheckHandler,
+        "solution_topup_complete": SolutionTopupCompleteHandler,
+        "solution_change_gate": SolutionChangeOperatorGateHandler,
+        "solution_drain_check": SolutionDrainCheckHandler,
+        "solution_change_complete": SolutionChangeCompleteHandler,
         "irrigation_check": IrrigationCheckHandler,
         "irrigation_recovery": IrrigationRecoveryCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
@@ -209,6 +226,24 @@ class WorkflowRouter:
                 return await self._complete_task(task=task, now=now)
             if handler_key == "ready":
                 return await self._complete_task(task=task, now=now)
+            if handler_key == "solution_topup_complete":
+                handler = self._handlers.get("solution_topup_complete")
+                if handler is not None:
+                    outcome = await handler.run(
+                        task=task, plan=plan, stage_def=stage_def, now=now,
+                    )
+                    return await self._apply_outcome(
+                        task=task, plan=plan, outcome=outcome, now=now,
+                    )
+            if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+                handler = self._handlers.get("solution_change_complete")
+                if handler is not None:
+                    outcome = await handler.run(
+                        task=task, plan=plan, stage_def=stage_def, now=now,
+                    )
+                    return await self._apply_outcome(
+                        task=task, plan=plan, outcome=outcome, now=now,
+                    )
 
             handler = self._handlers.get(handler_key)
             if handler is None:
@@ -680,6 +715,33 @@ class WorkflowRouter:
                     slack = _DEFAULT_CORRECTION_SLACK_SEC
             total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
+        if stage_def.name in {"solution_topup_check", "solution_topup_start"}:
+            base_raw = getattr(runtime, "solution_topup_timeout_sec", None) or runtime.solution_fill_timeout_sec
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
+        if stage_def.name in {"solution_drain_check", "solution_drain_start"}:
+            base_raw = getattr(runtime, "solution_drain_timeout_sec", None) or runtime.solution_fill_timeout_sec
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
+        if stage_def.name in {"await_operator_drain_confirm", "await_operator_refill_confirm"}:
+            base_raw = getattr(runtime, "solution_change_operator_confirm_timeout_sec", None)
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(60, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
         if stage_def.name == "prepare_recirculation_check":
             # Базовое окно берётся из retry-конфига; inline EC/pH-коррекциям нужно
             # дополнительное wall time на реальном пути HL→MQTT→node.

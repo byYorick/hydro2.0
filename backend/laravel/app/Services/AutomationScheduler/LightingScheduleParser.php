@@ -24,6 +24,8 @@ final class LightingScheduleParser
             $lightingConfig['interval_sec'] ?? ($lightingConfig['every_sec'] ?? ($lightingConfig['interval'] ?? null)),
         );
 
+        $lightingPayload = $this->lightingSchedulePayload($lightingConfig);
+
         $window = $this->parseWindow($zoneId, $lightingConfig, $lightingScheduleSpec, $nowUtc);
         if ($window !== null) {
             return [
@@ -33,6 +35,7 @@ final class LightingScheduleParser
                     startTime: $window['start_time'],
                     endTime: $window['end_time'],
                     intervalSec: $intervalSec,
+                    payload: $lightingPayload,
                 ),
             ];
         }
@@ -44,6 +47,7 @@ final class LightingScheduleParser
                 zoneId: $zoneId,
                 taskType: 'lighting',
                 time: $timeSpec,
+                payload: $lightingPayload,
             );
         }
 
@@ -52,6 +56,7 @@ final class LightingScheduleParser
                 zoneId: $zoneId,
                 taskType: 'lighting',
                 intervalSec: $intervalSec,
+                payload: $lightingPayload,
             );
         }
 
@@ -105,6 +110,38 @@ final class LightingScheduleParser
             'start_time' => $start,
             'end_time' => $end,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $lightingConfig
+     * @return array<string, mixed>
+     */
+    private function lightingSchedulePayload(array $lightingConfig): array
+    {
+        $payload = [];
+
+        $brightness = $this->normalizeBrightnessPct($lightingConfig['brightness'] ?? null);
+        if ($brightness !== null) {
+            $payload['brightness'] = $brightness;
+        }
+
+        $brightnessNight = $this->normalizeBrightnessPct(
+            $lightingConfig['brightness_night'] ?? ($lightingConfig['lux_night'] ?? null),
+        );
+        if ($brightnessNight !== null) {
+            $payload['brightness_night'] = $brightnessNight;
+        }
+
+        return $payload;
+    }
+
+    private function normalizeBrightnessPct(mixed $value): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return max(0, min(100, (int) $value));
     }
 
     private function resolveZoneTimezone(int $zoneId): ?string

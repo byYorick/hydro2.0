@@ -79,7 +79,9 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps, deps: ZoneAu
     syncControlModeFromAutomationState: scheduler.syncControlModeFromAutomationState,
     runManualStep: scheduler.runManualStep,
     runDiagnostics: scheduler.runDiagnostics,
+    runSolutionChange: scheduler.runSolutionChange,
     diagnosticsLoading: scheduler.diagnosticsLoading,
+    solutionChangeLoading: scheduler.solutionChangeLoading,
     formatDateTime: scheduler.formatDateTime,
   }
 }

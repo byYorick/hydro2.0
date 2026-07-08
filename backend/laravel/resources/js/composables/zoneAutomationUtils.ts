@@ -18,6 +18,9 @@ export const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
   'prepare_recirculation_stop',
   'irrigation_stop',
   'irrigation_recovery_stop',
+  'solution_drain_confirm',
+  'solution_refill_confirm',
+  'solution_change_abort',
 ])
 
 export function normalizeAutomationControlMode(value: unknown): AutomationControlMode {
@@ -55,15 +58,18 @@ export function normalizeAutomationManualSteps(value: unknown): AutomationManual
 /** Зеркало ae3lite/application/use_cases/manual_control_contract.py */
 const ALLOWED_MANUAL_STEPS_BY_STAGE: Record<string, AutomationManualStep[]> = {
   startup: ['clean_fill_start', 'solution_fill_start', 'force_solution_fill_start'],
-  clean_fill_start: ['clean_fill_stop'],
-  clean_fill_check: ['clean_fill_stop'],
-  solution_fill_start: ['solution_fill_stop'],
-  solution_fill_check: ['solution_fill_stop'],
+  clean_fill_start: ['clean_fill_stop', 'solution_change_abort'],
+  clean_fill_check: ['clean_fill_stop', 'solution_change_abort'],
+  solution_fill_start: ['solution_fill_stop', 'solution_change_abort'],
+  solution_fill_check: ['solution_fill_stop', 'solution_change_abort'],
   prepare_recirculation_start: ['prepare_recirculation_stop'],
   prepare_recirculation_check: ['prepare_recirculation_stop'],
   irrigation_start: ['irrigation_stop'],
   irrigation_check: ['irrigation_stop'],
   irrigation_recovery_check: ['irrigation_recovery_stop'],
+  await_operator_drain_confirm: ['solution_drain_confirm', 'solution_change_abort'],
+  await_operator_refill_confirm: ['solution_refill_confirm', 'solution_change_abort'],
+  solution_drain_check: ['solution_change_abort'],
 }
 
 export function allowedManualStepsForStage(stage: unknown): AutomationManualStep[] {
@@ -72,16 +78,15 @@ export function allowedManualStepsForStage(stage: unknown): AutomationManualStep
   return [...(ALLOWED_MANUAL_STEPS_BY_STAGE[normalizedStage] ?? [])]
 }
 
-/** API — source of truth; при пустом списке выводим шаги из current_stage (manual/semi). */
+/** API — source of truth; gate steps solution_change показываем из API даже в auto. */
 export function resolveAllowedManualSteps(
   controlMode: AutomationControlMode,
   currentStage: string | null | undefined,
   fromApi: AutomationManualStep[] | undefined,
 ): AutomationManualStep[] {
-  if (controlMode === 'auto') return []
-  const derived = allowedManualStepsForStage(currentStage)
   if (fromApi && fromApi.length > 0) return fromApi
-  return derived
+  if (controlMode === 'auto') return []
+  return allowedManualStepsForStage(currentStage)
 }
 
 export function toFiniteNumber(value: unknown): number | null {

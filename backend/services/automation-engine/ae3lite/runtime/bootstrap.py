@@ -19,6 +19,7 @@ from ae3lite.application.use_cases import (
     SetControlModeUseCase,
     StartupRecoveryUseCase,
     StaleTaskReconcileUseCase,
+    TriggerSolutionTopupFromLevelEventUseCase,
     WaitingCommandReconcileUseCase,
 )
 from ae3lite.application.services.workflow_topology import TopologyRegistry
@@ -50,6 +51,7 @@ class Ae3RuntimeBundle:
 
     create_task_from_intent_use_case: CreateTaskFromIntentUseCase
     solution_tank_startup_guard_use_case: GuardSolutionTankStartupResetUseCase
+    trigger_solution_topup_from_level_event_use_case: TriggerSolutionTopupFromLevelEventUseCase
     get_zone_control_state_use_case: GetZoneControlStateUseCase
     request_manual_step_use_case: RequestManualStepUseCase
     set_control_mode_use_case: SetControlModeUseCase
@@ -204,6 +206,12 @@ def build_ae3_runtime_bundle(
         workflow_repository=workflow_repository,
         fetch_fn=fetch,
     )
+    trigger_solution_topup_from_level_event_use_case = TriggerSolutionTopupFromLevelEventUseCase(
+        zone_intent_repository=zone_intent_repository,
+        create_task_from_intent_use_case=create_task_from_intent_use_case,
+        runtime_monitor=runtime_monitor,
+        fetch_fn=fetch,
+    )
     get_zone_automation_state_use_case = GetZoneAutomationStateUseCase(
         task_repository=task_repository,
         workflow_repository=workflow_repository,
@@ -213,6 +221,7 @@ def build_ae3_runtime_bundle(
     return Ae3RuntimeBundle(
         create_task_from_intent_use_case=create_task_from_intent_use_case,
         solution_tank_startup_guard_use_case=solution_tank_startup_guard_use_case,
+        trigger_solution_topup_from_level_event_use_case=trigger_solution_topup_from_level_event_use_case,
         get_zone_control_state_use_case=get_zone_control_state_use_case,
         request_manual_step_use_case=request_manual_step_use_case,
         set_control_mode_use_case=set_control_mode_use_case,

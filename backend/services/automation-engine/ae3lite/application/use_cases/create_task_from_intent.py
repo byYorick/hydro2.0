@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from ae3lite.application.dto import TaskCreationResult
+from ae3lite.application.level_monitor import load_zone_level_monitor_config, solution_topup_need_active
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError, TaskCreateError
 from ae3lite.infrastructure.metrics import TASK_CREATED
 from common.db import get_pool
@@ -47,6 +48,10 @@ class CreateTaskFromIntentUseCase:
         intent_row: Mapping[str, Any],
         now: datetime,
         allow_create: bool = True,
+        lighting_desired_state: str | None = None,
+        lighting_brightness_pct: int | None = None,
+        solution_topup_mode: str | None = None,
+        solution_topup_trigger: str | None = None,
     ) -> TaskCreationResult:
         normalized_key = str(idempotency_key or "").strip()
         if normalized_key == "":
@@ -129,11 +134,34 @@ class CreateTaskFromIntentUseCase:
                     intent_row=intent_row,
                 )
                 intent_meta = dict(meta.intent_meta) if isinstance(meta.intent_meta, Mapping) else {}
+                if str(meta.task_type or "").strip().lower() == "lighting_tick":
+                    intent_meta = self._merge_lighting_tick_intent_payload(
+                        intent_meta=intent_meta,
+                        lighting_desired_state=lighting_desired_state,
+                        lighting_brightness_pct=lighting_brightness_pct,
+                    )
+                if str(meta.task_type or "").strip().lower() == "solution_topup":
+                    intent_meta = self._merge_solution_topup_intent_payload(
+                        intent_meta=intent_meta,
+                        solution_topup_mode=solution_topup_mode,
+                        solution_topup_trigger=solution_topup_trigger,
+                    )
                 trace_id = str(get_trace_id() or "").strip()
                 if trace_id:
                     intent_meta["trace_id"] = trace_id
                 meta = replace(meta, intent_meta=intent_meta)
                 await self._ensure_runtime_cycle_preconditions(
+                    zone_id=zone_id,
+                    meta=meta,
+                    conn=conn,
+                )
+                await self._ensure_solution_topup_preconditions(
+                    zone_id=zone_id,
+                    meta=meta,
+                    conn=conn,
+                    now=now,
+                )
+                await self._ensure_solution_change_preconditions(
                     zone_id=zone_id,
                     meta=meta,
                     conn=conn,
@@ -374,3 +402,284 @@ class CreateTaskFromIntentUseCase:
         if value.tzinfo is None:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    async def _ensure_solution_topup_preconditions(
+        self,
+        *,
+        zone_id: int,
+        meta: Any,
+        conn: Any,
+        now: datetime,
+    ) -> None:
+        if str(getattr(meta, "task_type", "") or "").strip().lower() != "solution_topup":
+            return
+
+        workflow_row = await conn.fetchrow(
+            """
+            SELECT workflow_phase
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        workflow_phase = str((workflow_row or {}).get("workflow_phase") or "").strip().lower()
+        if workflow_phase != "ready":
+            raise TaskCreateError(
+                "start_solution_topup_not_ready",
+                f"Автодолив доступен только в ready, текущая фаза: {workflow_phase or 'missing'}",
+                details={"workflow_phase": workflow_phase or "missing"},
+            )
+
+        from ae3lite.infrastructure.read_models.zone_runtime_monitor import PgZoneRuntimeMonitor
+
+        level_cfg = await load_zone_level_monitor_config(zone_id=zone_id, fetch_fn=conn.fetch)
+        monitor = PgZoneRuntimeMonitor()
+        solution_min = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=level_cfg["solution_min_sensor_labels"],
+            threshold=level_cfg["level_switch_on_threshold"],
+            telemetry_max_age_sec=int(level_cfg["telemetry_max_age_sec"]),
+        )
+        solution_max = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=level_cfg["solution_max_sensor_labels"],
+            threshold=level_cfg["level_switch_on_threshold"],
+            telemetry_max_age_sec=int(level_cfg["telemetry_max_age_sec"]),
+        )
+        if not solution_topup_need_active(
+            solution_min_triggered=bool(solution_min.get("is_triggered")),
+            solution_max_triggered=bool(solution_max.get("is_triggered")),
+        ):
+            raise TaskCreateError(
+                "start_solution_topup_level_not_low",
+                "Нет условия need-topup: требуется solution_min=true и solution_max=false",
+                details={
+                    "solution_min_triggered": solution_min.get("is_triggered"),
+                    "solution_max_triggered": solution_max.get("is_triggered"),
+                },
+            )
+
+        intent_payload = {}
+        intent_meta = getattr(meta, "intent_meta", None)
+        if isinstance(intent_meta, Mapping):
+            nested = intent_meta.get("intent_payload")
+            if isinstance(nested, Mapping):
+                intent_payload = dict(nested)
+        mode = str(intent_payload.get("mode") or "normal").strip().lower()
+        if mode != "force":
+            cooldown_sec = 300
+            startup_row = await conn.fetchrow(
+                """
+                SELECT aeb.config
+                FROM grow_cycles gc
+                JOIN automation_effective_bundles aeb
+                  ON aeb.scope_type = 'grow_cycle'
+                 AND aeb.scope_id = gc.id
+                WHERE gc.zone_id = $1
+                  AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+                ORDER BY
+                    CASE gc.status
+                        WHEN 'RUNNING' THEN 0
+                        WHEN 'PAUSED' THEN 1
+                        ELSE 2
+                    END,
+                    gc.id DESC
+                LIMIT 1
+                """,
+                zone_id,
+            )
+            config = (startup_row or {}).get("config")
+            if isinstance(config, Mapping):
+                zone_bundle = config.get("zone")
+                if isinstance(zone_bundle, Mapping):
+                    logic_profile = zone_bundle.get("logic_profile")
+                    if isinstance(logic_profile, Mapping):
+                        active_profile = logic_profile.get("active_profile")
+                        if isinstance(active_profile, Mapping):
+                            subsystems = active_profile.get("subsystems")
+                            if isinstance(subsystems, Mapping):
+                                diagnostics = subsystems.get("diagnostics")
+                                if isinstance(diagnostics, Mapping):
+                                    execution = diagnostics.get("execution")
+                                    if isinstance(execution, Mapping):
+                                        startup = execution.get("startup")
+                                        if isinstance(startup, Mapping) and startup.get("solution_topup_cooldown_sec") is not None:
+                                            try:
+                                                cooldown_sec = max(0, int(startup.get("solution_topup_cooldown_sec")))
+                                            except (TypeError, ValueError):
+                                                pass
+            recent = await conn.fetchrow(
+                """
+                SELECT created_at
+                FROM zone_events
+                WHERE zone_id = $1
+                  AND type IN (
+                        'SOLUTION_TOPUP_DONE',
+                        'SOLUTION_TOPUP_TIMEOUT',
+                        'SOLUTION_TOPUP_SOURCE_EMPTY',
+                        'SOLUTION_TOPUP_LEAK_DETECTED'
+                  )
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                zone_id,
+            )
+            if recent and cooldown_sec > 0:
+                created_at = recent.get("created_at")
+                if isinstance(created_at, datetime):
+                    anchor = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at
+                    now_naive = self._normalize_utc(now)
+                    if anchor + timedelta(seconds=cooldown_sec) > now_naive:
+                        raise TaskCreateError(
+                            "start_solution_topup_cooldown_active",
+                            "Cooldown после предыдущего solution_topup ещё не истёк",
+                            details={"cooldown_sec": cooldown_sec},
+                        )
+
+    async def _ensure_solution_change_preconditions(
+        self,
+        *,
+        zone_id: int,
+        meta: Any,
+        conn: Any,
+    ) -> None:
+        if str(getattr(meta, "task_type", "") or "").strip().lower() != "solution_change":
+            return
+
+        topology = str(getattr(meta, "topology", "") or "").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise TaskCreateError(
+                "solution_change_topology_unsupported",
+                f"Подмена раствора поддерживается только для two-tank topology, получено: {topology or 'empty'}",
+                details={"topology": topology or "empty"},
+            )
+
+        workflow_row = await conn.fetchrow(
+            """
+            SELECT workflow_phase
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        workflow_phase = str((workflow_row or {}).get("workflow_phase") or "").strip().lower()
+        if workflow_phase != "ready":
+            raise TaskCreateError(
+                "solution_change_zone_not_ready",
+                f"Подмена раствора доступна только в ready, текущая фаза: {workflow_phase or 'missing'}",
+                details={"workflow_phase": workflow_phase or "missing"},
+            )
+
+        active_irrigation_row = await conn.fetchrow(
+            """
+            SELECT id, status
+            FROM ae_tasks
+            WHERE zone_id = $1
+              AND task_type = 'irrigation_start'
+              AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        if active_irrigation_row is not None:
+            raise TaskCreateError(
+                "solution_change_active_irrigation",
+                "Подмена раствора запрещена во время активного полива",
+                details={
+                    "active_irrigation_task_id": int(active_irrigation_row.get("id") or 0) or None,
+                    "active_irrigation_task_status": str(active_irrigation_row.get("status") or "").strip().lower() or None,
+                },
+            )
+
+        enabled = await self._resolve_solution_change_enabled_from_bundle(zone_id=zone_id, conn=conn)
+        if not enabled:
+            raise TaskCreateError(
+                "solution_change_disabled",
+                "Подсистема solution_change отключена в effective targets",
+                details={"zone_id": zone_id},
+            )
+
+    async def _resolve_solution_change_enabled_from_bundle(self, *, zone_id: int, conn: Any) -> bool:
+        row = await conn.fetchrow(
+            """
+            SELECT aeb.config
+            FROM grow_cycles gc
+            JOIN automation_effective_bundles aeb
+              ON aeb.scope_type = 'grow_cycle'
+             AND aeb.scope_id = gc.id
+            WHERE gc.zone_id = $1
+              AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+            ORDER BY
+                CASE gc.status
+                    WHEN 'RUNNING' THEN 0
+                    WHEN 'PAUSED' THEN 1
+                    ELSE 2
+                END,
+                gc.id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        config = (row or {}).get("config")
+        if not isinstance(config, Mapping):
+            return False
+        zone_bundle = config.get("zone")
+        if not isinstance(zone_bundle, Mapping):
+            return False
+        logic_profile = zone_bundle.get("logic_profile")
+        if not isinstance(logic_profile, Mapping):
+            return False
+        active_profile = logic_profile.get("active_profile")
+        if not isinstance(active_profile, Mapping):
+            return False
+        subsystems = active_profile.get("subsystems")
+        if not isinstance(subsystems, Mapping):
+            return False
+        solution_change = subsystems.get("solution_change")
+        if isinstance(solution_change, Mapping) and solution_change.get("enabled") is not None:
+            return bool(solution_change.get("enabled"))
+        return False
+
+    def _merge_solution_topup_intent_payload(
+        self,
+        *,
+        intent_meta: dict[str, Any],
+        solution_topup_mode: str | None,
+        solution_topup_trigger: str | None,
+    ) -> dict[str, Any]:
+        merged = dict(intent_meta)
+        payload = dict(merged.get("intent_payload") or {}) if isinstance(merged.get("intent_payload"), Mapping) else {}
+        if solution_topup_mode is not None:
+            normalized_mode = str(solution_topup_mode).strip().lower()
+            if normalized_mode in {"normal", "force"}:
+                payload["mode"] = normalized_mode
+        if solution_topup_trigger is not None:
+            trigger = str(solution_topup_trigger).strip()
+            if trigger:
+                payload["trigger"] = trigger
+        merged["intent_payload"] = payload
+        return merged
+
+    def _merge_lighting_tick_intent_payload(
+        self,
+        *,
+        intent_meta: dict[str, Any],
+        lighting_desired_state: str | None,
+        lighting_brightness_pct: int | None,
+    ) -> dict[str, Any]:
+        merged = dict(intent_meta)
+        payload = dict(merged.get("intent_payload") or {}) if isinstance(merged.get("intent_payload"), Mapping) else {}
+        if lighting_desired_state is not None:
+            normalized_state = str(lighting_desired_state).strip().lower()
+            if normalized_state in {"on", "off"}:
+                payload["desired_state"] = normalized_state
+        if lighting_brightness_pct is not None:
+            try:
+                payload["brightness_pct"] = max(0, min(100, int(lighting_brightness_pct)))
+            except (TypeError, ValueError):
+                pass
+        merged["intent_payload"] = payload
+        return merged

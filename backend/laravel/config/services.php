@@ -56,6 +56,14 @@ return [
         'allowed_ips' => env('ALERTMANAGER_ALLOWED_IPS') ? explode(',', env('ALERTMANAGER_ALLOWED_IPS')) : [],
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('TELEGRAM_CHAT_IDS', ''))
+        ))),
+    ],
+
     'history_logger' => [
         'url' => env('HISTORY_LOGGER_URL', 'http://history-logger:9300'),
         'token' => env('HISTORY_LOGGER_API_TOKEN') ?? env('PY_INGEST_TOKEN'), // Токен для аутентификации

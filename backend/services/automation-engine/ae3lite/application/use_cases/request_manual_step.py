@@ -11,6 +11,7 @@ from ae3lite.application.handlers.flow_path_guard import (
 )
 from ae3lite.application.use_cases.manual_control_contract import (
     allowed_manual_steps_for_workflow,
+    is_solution_change_gate_manual_step,
     normalize_control_mode,
 )
 from ae3lite.domain.errors import ManualControlError
@@ -36,19 +37,23 @@ class RequestManualStepUseCase:
         now: datetime,
     ) -> dict[str, Any]:
         control_mode = await self._load_control_mode(zone_id=zone_id)
-        if control_mode == "auto":
-            raise ManualControlError(
-                "manual_step_forbidden_in_auto_mode",
-                "manual step disabled in auto mode",
-                status_code=409,
-                details={"zone_id": zone_id},
-            )
-
         task = await self._task_repository.get_active_for_zone(zone_id=zone_id)
         if task is None:
             raise ManualControlError(
                 "manual_step_no_active_task",
                 "no active automation task for zone",
+                status_code=409,
+                details={"zone_id": zone_id},
+            )
+
+        task_type = str(getattr(task, "task_type", "") or "").strip().lower()
+        if control_mode == "auto" and not is_solution_change_gate_manual_step(
+            task_type=task_type,
+            manual_step=manual_step,
+        ):
+            raise ManualControlError(
+                "manual_step_forbidden_in_auto_mode",
+                "manual step disabled in auto mode",
                 status_code=409,
                 details={"zone_id": zone_id},
             )

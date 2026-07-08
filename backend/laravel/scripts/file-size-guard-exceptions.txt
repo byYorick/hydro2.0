@@ -20,14 +20,14 @@
 backend/laravel/app/Http/Controllers/AutomationConfigController.php|805
 backend/laravel/app/Http/Controllers/PythonIngestController.php|777
 backend/laravel/app/Http/Controllers/SetupWizardController.php|898
-backend/laravel/app/Services/AlertService.php|761
+backend/laravel/app/Services/AlertService.php|826
 backend/laravel/app/Services/AutomationConfigDocumentService.php|649
 backend/laravel/app/Services/AutomationConfigRegistry.php|680
 backend/laravel/app/Services/AutomationRuntimeConfigService.php|799
 backend/laravel/app/Services/AutomationScheduler/ActiveTaskPoller.php|584
 backend/laravel/app/Services/AutomationScheduler/ExecutionRunReadModel.php|610
-backend/laravel/app/Services/AutomationScheduler/ScheduleDispatcher.php|629
-backend/laravel/app/Services/AutomationScheduler/SchedulerCycleOrchestrator.php|514
+backend/laravel/app/Services/AutomationScheduler/ScheduleDispatcher.php|1031
+backend/laravel/app/Services/AutomationScheduler/SchedulerCycleOrchestrator.php|791
 backend/laravel/app/Services/PythonBridgeService.php|701
 backend/laravel/app/Services/SimulationOrchestratorService.php|1294
 backend/laravel/app/Services/SystemAutomationSettingsCatalog.php|631
@@ -70,5 +70,5 @@ backend/laravel/tests/Feature/GrowCycleServiceTest.php|1281
 backend/laravel/tests/Feature/PythonIngestControllerTest.php|840
 backend/laravel/tests/Feature/RecipesTest.php|546
 backend/laravel/tests/Feature/ZonesTest.php|976
-backend/laravel/tests/Unit/EffectiveTargetsServiceTest.php|796
+backend/laravel/tests/Unit/EffectiveTargetsServiceTest.php|845
 backend/laravel/tests/Unit/Services/ZoneReadinessServiceTest.php|509

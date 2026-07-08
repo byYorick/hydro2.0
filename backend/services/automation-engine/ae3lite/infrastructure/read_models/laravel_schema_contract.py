@@ -101,7 +101,7 @@ AE_TASKS = Table(
     ),
     enum_values={
         "status": frozenset({"pending", "claimed", "running", "waiting_command", "completed", "failed"}),
-        "task_type": frozenset({"cycle_start", "irrigation_start", "lighting_tick"}),
+        "task_type": frozenset({"cycle_start", "irrigation_start", "lighting_tick", "solution_topup", "solution_change"}),
     },
 )
 
@@ -219,7 +219,7 @@ ZONE_AUTOMATION_INTENTS = Table(
     ),
     enum_values={
         "status": frozenset({"pending", "claimed", "running", "failed", "completed", "cancelled"}),
-        "task_type": frozenset({"cycle_start", "irrigation_start", "lighting_tick"}),
+        "task_type": frozenset({"cycle_start", "irrigation_start", "lighting_tick", "solution_topup", "solution_change"}),
     },
 )
 

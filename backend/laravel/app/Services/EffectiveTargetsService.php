@@ -233,6 +233,19 @@ class EffectiveTargetsService
             ];
         }
 
+        // Температура раствора
+        if ($phase->solution_temp_target !== null) {
+            $targets['solution_temp'] = [
+                'target' => (float) $phase->solution_temp_target,
+                'min' => $phase->solution_temp_min !== null
+                    ? (float) $phase->solution_temp_min
+                    : (float) $phase->solution_temp_target,
+                'max' => $phase->solution_temp_max !== null
+                    ? (float) $phase->solution_temp_max
+                    : (float) $phase->solution_temp_target,
+            ];
+        }
+
         // Климат (запрос к климату теплицы)
         $climateRequest = [];
         if ($phase->temp_air_target !== null) {
@@ -357,6 +370,9 @@ class EffectiveTargetsService
             'ec.target',
             'ec.min',
             'ec.max',
+            'solution_temp.target',
+            'solution_temp.min',
+            'solution_temp.max',
         ], true);
     }
 

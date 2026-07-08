@@ -214,7 +214,8 @@ class ScheduleDispatcherTest extends TestCase
             $payload = $request->data();
 
             return ($payload['source'] ?? null) === 'laravel_scheduler'
-                && str_starts_with((string) ($payload['idempotency_key'] ?? ''), 'sch:z'.$zone->id.':lighting:');
+                && str_starts_with((string) ($payload['idempotency_key'] ?? ''), 'sch:z'.$zone->id.':lighting:')
+                && ($payload['desired_state'] ?? null) === 'on';
         });
 
         $row = DB::table('zone_automation_intents')

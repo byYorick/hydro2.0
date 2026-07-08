@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-08T07:15:18Z",
+  "updated_at": "2026-07-08T08:34:05Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -338,6 +338,16 @@
       "code": "biz_recipe_completed_review_required",
       "title": "Рецепт завершён",
       "message": "Цикл выращивания завершён, требуется проверка агронома."
+    },
+    {
+      "code": "biz_solution_temp_high",
+      "title": "Высокая температура раствора",
+      "message": "Температура питательного раствора выше целевого диапазона активной фазы рецепта."
+    },
+    {
+      "code": "biz_solution_temp_low",
+      "title": "Низкая температура раствора",
+      "message": "Температура питательного раствора ниже целевого диапазона активной фазы рецепта."
     },
     {
       "code": "calibration_phase_required",
@@ -850,6 +860,41 @@
       "source_layer": "firmware_mqtt"
     },
     {
+      "code": "solution_change_aborted_by_operator",
+      "title": "Подмена отменена оператором",
+      "message": "Подмена раствора отменена оператором."
+    },
+    {
+      "code": "solution_change_active_irrigation",
+      "title": "Подмена раствора: активный полив",
+      "message": "Дождитесь завершения полива перед подменой раствора."
+    },
+    {
+      "code": "solution_change_disabled",
+      "title": "Подмена раствора отключена",
+      "message": "Подмена раствора отключена в настройках зоны/рецепта."
+    },
+    {
+      "code": "solution_change_operator_timeout",
+      "title": "Таймаут подтверждения оператора",
+      "message": "Ожидание подтверждения оператора превысило лимит — задача остановлена."
+    },
+    {
+      "code": "solution_change_topology_unsupported",
+      "title": "Подмена раствора не поддерживается",
+      "message": "Контур зоны не поддерживает автоматическую подмену раствора."
+    },
+    {
+      "code": "solution_change_zone_not_ready",
+      "title": "Подмена раствора: зона не готова",
+      "message": "Подмена раствора доступна только когда зона в фазе «готова»."
+    },
+    {
+      "code": "solution_drain_timeout_stop",
+      "title": "Таймаут слива раствора",
+      "message": "Слив раствора не завершился в отведённое время."
+    },
+    {
       "code": "solution_fill_completed",
       "title": "Наполнение раствора завершено",
       "message": "Бак раствора наполнен (level_solution_max).",
@@ -964,6 +1009,11 @@
       "code": "start_lighting_tick_zone_busy",
       "title": "Освещение: зона занята",
       "message": "Запуск lighting tick отклонён: зона уже занята активной задачей."
+    },
+    {
+      "code": "start_solution_change_zone_busy",
+      "title": "Подмена раствора: зона занята",
+      "message": "Зона занята — подмену раствора нельзя начать сейчас."
     },
     {
       "code": "startup_recovery_correction_interrupted",
