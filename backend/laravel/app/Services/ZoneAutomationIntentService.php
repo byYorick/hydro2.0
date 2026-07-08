@@ -108,6 +108,85 @@ class ZoneAutomationIntentService
         return $intentId;
     }
 
+    public function upsertStartSolutionTopupIntent(
+        int $zoneId,
+        string $source,
+        string $idempotencyKey,
+        string $mode = 'normal',
+        ?string $trigger = null,
+    ): ?int {
+        $this->documents->ensureZoneDefaults($zoneId);
+
+        $now = CarbonImmutable::now('UTC')->setMicroseconds(0);
+        $intentSource = trim($source) !== '' ? trim($source) : 'laravel_api';
+        $topology = $this->resolveAe3TopologyForZone($zoneId);
+        $normalizedMode = $mode === 'force' ? 'force' : 'normal';
+        $payload = [
+            'mode' => $normalizedMode,
+            'task_type' => 'solution_topup',
+            'workflow' => 'solution_topup',
+            'topology' => $topology,
+        ];
+        if (is_string($trigger) && trim($trigger) !== '') {
+            $payload['trigger'] = trim($trigger);
+        }
+
+        $row = DB::selectOne(
+            "
+            INSERT INTO zone_automation_intents (
+                zone_id,
+                intent_type,
+                task_type,
+                topology,
+                irrigation_mode,
+                irrigation_requested_duration_sec,
+                intent_source,
+                idempotency_key,
+                payload,
+                status,
+                not_before,
+                retry_count,
+                max_retries,
+                created_at,
+                updated_at
+            )
+            VALUES (?, 'SOLUTION_TOPUP', 'solution_topup', ?, NULL, NULL, ?, ?, ?::jsonb, 'pending', ?, 0, 3, ?, ?)
+            ON CONFLICT (zone_id, idempotency_key)
+            DO UPDATE SET
+                task_type = EXCLUDED.task_type,
+                topology = EXCLUDED.topology,
+                intent_source = EXCLUDED.intent_source,
+                payload = EXCLUDED.payload,
+                not_before = EXCLUDED.not_before,
+                updated_at = EXCLUDED.updated_at
+            WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
+            RETURNING id
+            ",
+            [
+                $zoneId,
+                $topology,
+                $intentSource,
+                $idempotencyKey,
+                json_encode($payload, JSON_THROW_ON_ERROR),
+                $now,
+                $now,
+                $now,
+            ],
+        );
+
+        $intentId = isset($row->id) ? (int) $row->id : null;
+
+        Log::info('Start solution topup intent upserted', [
+            'zone_id' => $zoneId,
+            'idempotency_key' => $idempotencyKey,
+            'intent_id' => $intentId,
+            'mode' => $normalizedMode,
+            'source' => $intentSource,
+        ]);
+
+        return $intentId;
+    }
+
     public function upsertStartCycleIntent(
         int $zoneId,
         string $source,

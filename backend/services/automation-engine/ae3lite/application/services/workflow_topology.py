@@ -259,6 +259,61 @@ TWO_TANK: Mapping[str, StageDef] = {
             "Recovery не восстановил целевые параметры после полива.",
         ),
     ),
+    # === Solution topup path (ready autofill) ===
+    "solution_topup_guard": StageDef(
+        "solution_topup_guard", "solution_topup_guard",
+        workflow_phase="ready",
+    ),
+    "solution_topup_start": StageDef(
+        "solution_topup_start", "command",
+        workflow_phase="ready",
+        command_plans=("solution_topup_start",),
+        next_stage="solution_topup_check",
+        timeout_key="solution_topup_timeout_sec",
+    ),
+    "solution_topup_check": StageDef(
+        "solution_topup_check", "solution_topup_check",
+        workflow_phase="ready",
+        timeout_key="solution_topup_timeout_sec",
+    ),
+    "solution_topup_stop": StageDef(
+        "solution_topup_stop", "command",
+        workflow_phase="ready",
+        command_plans=("solution_topup_stop",),
+        next_stage="solution_topup_complete",
+    ),
+    "solution_topup_complete": StageDef(
+        "solution_topup_complete", "solution_topup_complete",
+        workflow_phase="ready",
+    ),
+    "solution_topup_source_empty_stop": StageDef(
+        "solution_topup_source_empty_stop", "command",
+        workflow_phase="ready",
+        command_plans=("solution_topup_stop",),
+        terminal_error=(
+            "solution_topup_source_empty",
+            "Автодолив остановлен: в баке чистой воды не осталось воды для подачи.",
+        ),
+    ),
+    "solution_topup_leak_stop": StageDef(
+        "solution_topup_leak_stop", "command",
+        workflow_phase="ready",
+        command_plans=("solution_topup_stop",),
+        terminal_error=(
+            "solution_topup_leak_detected",
+            "Автодолив остановлен: нижний уровень раствора пропал, возможна утечка.",
+        ),
+    ),
+    "solution_topup_timeout_stop": StageDef(
+        "solution_topup_timeout_stop", "command",
+        workflow_phase="ready",
+        command_plans=("solution_topup_stop",),
+        terminal_error=(
+            "solution_topup_timeout",
+            "Автодолив не завершился за отведённое время.",
+        ),
+    ),
+
     # === Terminal ===
     "manual_hold": StageDef("manual_hold", "manual_hold"),
     "complete_ready": StageDef("complete_ready", "ready", workflow_phase="ready"),

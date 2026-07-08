@@ -230,6 +230,28 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             minimum=0.0,
             maximum=1.0,
         ),
+        "solution_topup_enabled": bool(
+            _to_mapping(execution.get("startup")).get(
+                "solution_topup_enabled",
+                _to_mapping(execution.get("fail_safe_guards")).get("solution_topup_enabled", True),
+            )
+        ),
+        "solution_topup_timeout_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_topup_timeout_sec"),
+            _require_int(
+                fill_runtime_cfg.get("solution_fill_timeout_sec"),
+                path="correction_config.base/phases.solution_fill.runtime.solution_fill_timeout_sec",
+                minimum=30,
+            ),
+            30,
+            86400,
+        ),
+        "solution_topup_cooldown_sec": _resolve_bounded_int(
+            _to_mapping(execution.get("startup")).get("solution_topup_cooldown_sec"),
+            300,
+            0,
+            86400,
+        ),
         "telemetry_max_age_sec": _require_int(
             fill_timing_cfg.get("telemetry_max_age_sec"),
             path="correction_config.base/phases.solution_fill.timing.telemetry_max_age_sec",
@@ -968,6 +990,18 @@ def _build_fail_safe_guards(execution: Mapping[str, Any]) -> dict[str, Any]:
         "solution_fill_solution_min_check_delay_ms": _resolve_bounded_int(
             guards.get("solution_fill_solution_min_check_delay_ms"),
             60000,
+            0,
+            3600000,
+        ),
+        "solution_topup_clean_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_topup_clean_min_check_delay_ms"),
+            _resolve_bounded_int(guards.get("solution_fill_clean_min_check_delay_ms"), 5000, 0, 3600000),
+            0,
+            3600000,
+        ),
+        "solution_topup_solution_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_topup_solution_min_check_delay_ms"),
+            _resolve_bounded_int(guards.get("solution_fill_solution_min_check_delay_ms"), 60000, 0, 3600000),
             0,
             3600000,
         ),

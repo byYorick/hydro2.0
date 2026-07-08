@@ -22,6 +22,7 @@ class ScheduleDispatcher
         'start_cycle_zone_busy',
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
+        'start_solution_topup_zone_busy',
     ];
 
     private const ZONE_SETUP_PENDING_REASON = 'zone_setup_pending';
@@ -345,6 +346,10 @@ class ScheduleDispatcher
             if ($brightness !== null) {
                 $requestPayload['brightness'] = $brightness;
             }
+        } elseif ($taskType === 'solution_topup') {
+            $endpoint = '/start-solution-topup';
+            $requestPayload['mode'] = 'normal';
+            $requestPayload['trigger'] = 'periodic_tick';
         }
 
         return [
@@ -655,9 +660,13 @@ class ScheduleDispatcher
             $aeTaskType = match ($taskType) {
                 'irrigation' => 'irrigation_start',
                 'lighting' => 'lighting_tick',
+                'solution_topup' => 'solution_topup',
                 default => 'cycle_start',
             };
-            $aeTopology = $taskType === 'lighting' ? 'lighting_tick' : $topology;
+            $aeTopology = match ($taskType) {
+                'lighting' => 'lighting_tick',
+                default => $topology,
+            };
             $irrigationMode = $taskType === 'irrigation' ? 'normal' : null;
             $irrigationDurationSec = null;
             if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
@@ -847,6 +856,7 @@ class ScheduleDispatcher
         return match ($normalized) {
             'irrigation' => 'IRRIGATE_ONCE',
             'lighting' => 'LIGHTING_TICK',
+            'solution_topup' => 'SOLUTION_TOPUP_TICK',
             'ventilation' => 'VENTILATION_TICK',
             'solution_change' => 'SOLUTION_CHANGE_TICK',
             'mist' => 'MIST_TICK',
@@ -884,7 +894,7 @@ class ScheduleDispatcher
             return true;
         }
 
-        return in_array($taskType, ['irrigation', 'lighting', 'diagnostics'], true);
+        return in_array($taskType, ['irrigation', 'lighting', 'solution_topup', 'diagnostics'], true);
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

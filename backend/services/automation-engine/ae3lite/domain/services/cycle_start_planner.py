@@ -45,6 +45,8 @@ class CycleStartPlanner:
         """
         if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_topup":
+            return self._build_solution_topup_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"CycleStartPlanner не поддерживает task_type={task.task_type}")
         if task.zone_id != snapshot.zone_id:
@@ -406,6 +408,44 @@ class CycleStartPlanner:
             targets=dict(targets),
             named_plans={},
             runtime=None,
+        )
+
+    def _build_solution_topup_plan(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+    ) -> CommandPlan:
+        """Two-tank command plans для автодолива в ready (reuse solution_fill hydraulics)."""
+        if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
+            raise PlannerConfigurationError("Для solution_topup требуется zone.automation_runtime='ae3'")
+        topology = str(task.topology or "two_tank").strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            raise PlannerConfigurationError(f"solution_topup не поддерживает topology={topology}")
+        plan = self._build_two_tank_plan(
+            task=task,
+            snapshot=snapshot,
+            workflow="solution_topup",
+            topology=topology,
+        )
+        named_plans = dict(plan.named_plans)
+        fill_start = named_plans.get("solution_fill_start")
+        fill_stop = named_plans.get("solution_fill_stop")
+        if fill_start:
+            named_plans["solution_topup_start"] = fill_start
+        if fill_stop:
+            named_plans["solution_topup_stop"] = fill_stop
+        irr_probe = named_plans.get("irr_state_probe")
+        if irr_probe:
+            named_plans["irr_state_probe"] = irr_probe
+        return CommandPlan(
+            task_type=task.task_type,
+            workflow="solution_topup",
+            topology=topology,
+            steps=plan.steps,
+            targets=plan.targets,
+            named_plans=named_plans,
+            runtime=plan.runtime,
         )
 
     def _pick_lighting_actuator(self, actuators: Sequence[ZoneActuatorRef]) -> ZoneActuatorRef | None:

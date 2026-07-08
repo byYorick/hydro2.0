@@ -966,6 +966,56 @@
       "message": "Запуск lighting tick отклонён: зона уже занята активной задачей."
     },
     {
+      "code": "start_solution_topup_zone_busy",
+      "title": "Автодолив: зона занята",
+      "message": "Запуск solution_topup отклонён: зона уже занята активной задачей."
+    },
+    {
+      "code": "start_solution_topup_not_ready",
+      "title": "Автодолив: зона не в ready",
+      "message": "Автодолив доступен только когда workflow_phase=ready."
+    },
+    {
+      "code": "start_solution_topup_level_not_low",
+      "title": "Автодолив: уровень не требует долива",
+      "message": "Нет условия need-topup: требуется solution_min=true и solution_max=false."
+    },
+    {
+      "code": "start_solution_topup_cooldown_active",
+      "title": "Автодолив: активен cooldown",
+      "message": "Cooldown после предыдущего solution_topup ещё не истёк."
+    },
+    {
+      "code": "start_solution_topup_intent_not_found",
+      "title": "Intent для start-solution-topup не найден",
+      "message": "Intent для start-solution-topup не найден."
+    },
+    {
+      "code": "start_solution_topup_rate_limited",
+      "title": "Автодолив: rate limit",
+      "message": "Превышен лимит запросов start-solution-topup для зоны."
+    },
+    {
+      "code": "start_solution_topup_intent_claim_unavailable",
+      "title": "Автодолив: claim intent недоступен",
+      "message": "Не удалось claim intent для start-solution-topup."
+    },
+    {
+      "code": "solution_topup_timeout",
+      "title": "Таймаут автодолива",
+      "message": "Автодолив бака раствора не завершился за отведённое время."
+    },
+    {
+      "code": "solution_topup_source_empty",
+      "title": "Автодолив: источник пуст",
+      "message": "Автодолив остановлен: в баке чистой воды не осталось воды для подачи."
+    },
+    {
+      "code": "solution_topup_leak_detected",
+      "title": "Автодолив: возможная утечка",
+      "message": "Автодолив остановлен: нижний уровень раствора пропал, возможна утечка."
+    },
+    {
       "code": "startup_recovery_correction_interrupted",
       "title": "Startup recovery: прервана коррекция",
       "message": "Коррекция была прервана во время startup recovery."

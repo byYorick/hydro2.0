@@ -34,4 +34,15 @@ class StartLightingTickRequest(BaseModel):
     brightness_pct: int | None = Field(default=None, ge=0, le=100)
 
 
-__all__ = ["StartCycleRequest", "StartIrrigationRequest", "StartLightingTickRequest"]
+class StartSolutionTopupRequest(BaseModel):
+    """Совместимый с scheduler/API one-shot solution topup dispatch (этап B)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(default="laravel_scheduler", min_length=1, max_length=64)
+    idempotency_key: str = Field(..., min_length=8, max_length=160)
+    mode: str = Field(default="normal", min_length=4, max_length=16, pattern="^(normal|force)$")
+    trigger: str | None = Field(default=None, min_length=3, max_length=32)
+
+
+__all__ = ["StartCycleRequest", "StartIrrigationRequest", "StartLightingTickRequest", "StartSolutionTopupRequest"]

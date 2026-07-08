@@ -6,7 +6,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
 
-from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest, StartLightingTickRequest
+from ae3lite.api.contracts import (
+    StartCycleRequest,
+    StartIrrigationRequest,
+    StartLightingTickRequest,
+    StartSolutionTopupRequest,
+)
 from ae3lite.domain.errors import ErrorCodes, TaskCreateError
 from ae3lite.domain.intent_metadata import IntentMetadata
 from ae3lite.infrastructure.metrics import INTENT_CLAIMED, INTENT_STALE_RECLAIMED, INTENT_TERMINAL
@@ -79,6 +84,23 @@ class PgZoneIntentRepository:
         *,
         zone_id: int,
         req: StartLightingTickRequest,
+        now: datetime,
+        claimed_stale_after_sec: int = 180,
+        running_stale_after_sec: int = 1800,
+    ) -> dict[str, Any]:
+        return await self._claim_by_idempotency_key(
+            zone_id=zone_id,
+            idempotency_key=req.idempotency_key,
+            now=now,
+            claimed_stale_after_sec=claimed_stale_after_sec,
+            running_stale_after_sec=running_stale_after_sec,
+        )
+
+    async def claim_start_solution_topup(
+        self,
+        *,
+        zone_id: int,
+        req: StartSolutionTopupRequest,
         now: datetime,
         claimed_stale_after_sec: int = 180,
         running_stale_after_sec: int = 1800,
@@ -255,11 +277,15 @@ class PgZoneIntentRepository:
 
         is_irrigation = task_type == "irrigation_start"
         is_lighting_tick = task_type == "lighting_tick"
+        is_solution_topup = task_type == "solution_topup"
 
         if is_lighting_tick:
             current_stage = "apply"
             workflow_phase = "ready"
             topology = "lighting_tick"
+        elif is_solution_topup:
+            current_stage = "solution_topup_guard"
+            workflow_phase = "ready"
         elif is_irrigation:
             current_stage = "await_ready"
             workflow_phase = "ready"
@@ -290,6 +316,15 @@ class PgZoneIntentRepository:
                         intent_payload["brightness_pct"] = max(0, min(100, int(brightness_pct)))
                     except (TypeError, ValueError):
                         pass
+        if is_solution_topup:
+            payload_raw = intent_row.get("payload")
+            if isinstance(payload_raw, Mapping):
+                mode = str(payload_raw.get("mode") or "").strip().lower()
+                if mode in {"normal", "force"}:
+                    intent_payload["mode"] = mode
+                trigger = str(payload_raw.get("trigger") or "").strip()
+                if trigger:
+                    intent_payload["trigger"] = trigger
 
         return IntentMetadata(
             task_type=task_type,

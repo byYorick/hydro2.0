@@ -31,6 +31,7 @@ final class SchedulerConstants
     public const SUPPORTED_TASK_TYPES = [
         'irrigation',
         'lighting',
+        'solution_topup',
         'ventilation',
         'solution_change',
         'mist',

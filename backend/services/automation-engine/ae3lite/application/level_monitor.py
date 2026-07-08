@@ -70,6 +70,15 @@ def solution_tank_is_depleted(level_state: Mapping[str, Any]) -> bool:
     return not solution_tank_has_solution(level_state)
 
 
+def solution_topup_need_active(
+    *,
+    solution_min_triggered: bool | None,
+    solution_max_triggered: bool | None,
+) -> bool:
+    """True когда раствор в баке есть (min), но уровень ниже max."""
+    return solution_min_triggered is True and solution_max_triggered is False
+
+
 def coarse_clean_tank_level_percent(*, clean_max_triggered: bool | None) -> int | None:
     if clean_max_triggered is None:
         return None

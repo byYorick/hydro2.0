@@ -81,6 +81,8 @@ class FailSafeGuards(BaseModel):
     clean_fill_min_check_delay_ms: LargeMs
     solution_fill_clean_min_check_delay_ms: LargeMs
     solution_fill_solution_min_check_delay_ms: LargeMs
+    solution_topup_clean_min_check_delay_ms: LargeMs = 5000
+    solution_topup_solution_min_check_delay_ms: LargeMs = 60000
     recirculation_stop_on_solution_min: bool
     irrigation_stop_on_solution_min: bool
     estop_debounce_ms: EstopMs
@@ -264,6 +266,9 @@ class RuntimePlan(BaseModel):
     level_poll_interval_sec: Annotated[int, Field(ge=5, le=3600)]
     clean_fill_retry_cycles: Annotated[int, Field(ge=0, le=20)]
     level_switch_on_threshold: Annotated[float, Field(ge=0.0, le=1.0)]
+    solution_topup_enabled: bool = True
+    solution_topup_timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 900
+    solution_topup_cooldown_sec: Annotated[int, Field(ge=0, le=86400)] = 300
     telemetry_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_max_age_sec: Annotated[int, Field(ge=5, le=3600)]
     irr_state_wait_timeout_sec: Annotated[float, Field(ge=0.0, le=30.0)]
