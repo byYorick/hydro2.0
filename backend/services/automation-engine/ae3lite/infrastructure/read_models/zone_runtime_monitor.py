@@ -9,6 +9,7 @@ from typing import Any, Mapping, Optional, Sequence
 from common.db import get_pool
 
 from ae3lite.domain.level_switch_semantics import level_switch_is_triggered
+from ae3lite.domain.services.metric_window_validator import is_stub_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,8 @@ class PgZoneRuntimeMonitor:
                     s.id AS sensor_id,
                     s.label AS sensor_label,
                     tl.last_value AS value,
-                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts,
+                    tl.last_quality AS last_quality
                 FROM sensors s
                 LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
                 WHERE s.zone_id = $1
@@ -341,6 +343,8 @@ class PgZoneRuntimeMonitor:
             value = None
         sample_ts = row.get("sample_ts")
         age_sec = self._age_sec(sample_ts)
+        if is_stub_telemetry(quality=row.get("last_quality")):
+            return {"has_value": False, "is_stale": True, "value": None}
         is_stale = bool(value is not None and ((age_sec or 0.0) > max(0, int(telemetry_max_age_sec))))
         return {
             "sensor_id": row.get("sensor_id"),
@@ -373,17 +377,30 @@ class PgZoneRuntimeMonitor:
                 "samples": (),
                 "latest_sample_ts": None,
             }
+        if is_stub_telemetry(quality=sensor_row.get("last_quality")):
+            return {
+                "has_sensor": True,
+                "has_samples": False,
+                "is_stale": True,
+                "sensor_id": sensor_row.get("sensor_id"),
+                "sensor_label": sensor_row.get("sensor_label"),
+                "samples": (),
+                "latest_sample_ts": sensor_row.get("sample_ts"),
+                "sample_age_sec": self._age_sec(sensor_row.get("sample_ts")),
+            }
 
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT ts, value
+                SELECT ts, value, quality, metadata
                 FROM (
-                    SELECT ts, value, id
+                    SELECT ts, value, quality, metadata, id
                     FROM telemetry_samples
                     WHERE sensor_id = $1
                       AND ts >= $2
+                      AND COALESCE(quality, 'GOOD') <> 'STUB'
+                      AND COALESCE(metadata->>'stub', 'false') NOT IN ('true', '1')
                     ORDER BY ts DESC, id DESC
                     LIMIT $3
                 ) recent
@@ -404,6 +421,8 @@ class PgZoneRuntimeMonitor:
                 value = None
             ts = row.get("ts")
             latest_sample_ts = ts if ts is not None else latest_sample_ts
+            if is_stub_telemetry(quality=row.get("quality"), metadata=row.get("metadata")):
+                continue
             if value is None:
                 continue
             samples.append({"ts": ts, "value": value})

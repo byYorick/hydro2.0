@@ -135,6 +135,19 @@ class TestSensorValueInBounds:
         assert BaseStageHandler._sensor_value_in_bounds(sensor_type="TEMPERATURE", value=25.0) is True
 
 
+class TestStubTelemetryRejection:
+    def test_is_stub_telemetry_detects_quality_and_metadata(self) -> None:
+        from ae3lite.domain.services.metric_window_validator import (
+            STUB_TELEMETRY_REASON,
+            is_stub_telemetry,
+        )
+
+        assert is_stub_telemetry(quality="STUB") is True
+        assert is_stub_telemetry(metadata={"stub": True}) is True
+        assert is_stub_telemetry(quality="GOOD", metadata={"stub": "false"}) is False
+        assert STUB_TELEMETRY_REASON == "stub_telemetry"
+
+
 # ── multi_parallel distinct channels ─────────────────────────────────────────
 
 

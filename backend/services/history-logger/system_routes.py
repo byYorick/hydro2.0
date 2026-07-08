@@ -10,6 +10,7 @@ from common.alert_queue import get_alert_queue
 from common.command_status_queue import get_status_queue
 from common.infra_monitor import check_db_health, check_mqtt_health
 from common.mqtt import get_mqtt_client
+from common.redis_queue import TelemetryQueue, get_redis_client, update_redis_health
 from common.pipeline_metrics import (
     COMMAND_ACK_TO_DONE_LATENCY,
     COMMAND_E2E_LATENCY,
@@ -23,7 +24,8 @@ from common.pipeline_metrics import (
     update_queue_metrics,
 )
 from common.db import get_pool
-from metrics import WS_AUTH_TOTAL, WS_BROADCAST_TOTAL
+from metrics import ALERT_DLQ_SIZE, COMMAND_STATUS_DLQ_SIZE, WS_AUTH_TOTAL, WS_BROADCAST_TOTAL
+import state as hl_state
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +111,13 @@ async def health():
             and alert_metrics["oldest_age_seconds"] < 3600
         )
         update_queue_health("alerts", alerts_healthy)
+        alert_dlq_size = alert_metrics.get("dlq_size", 0)
+        ALERT_DLQ_SIZE.set(alert_dlq_size)
         health_status["components"]["queue_alerts"] = {
             "status": "ok" if alerts_healthy else "degraded",
             "size": alert_metrics["size"],
             "oldest_age_seconds": alert_metrics["oldest_age_seconds"],
-            "dlq_size": alert_metrics.get("dlq_size", 0),
+            "dlq_size": alert_dlq_size,
             "success_rate": alert_metrics.get("success_rate", 1.0),
         }
 
@@ -128,11 +132,13 @@ async def health():
             and status_metrics["oldest_age_seconds"] < 3600
         )
         update_queue_health("status_updates", status_healthy)
+        status_dlq_size = status_metrics.get("dlq_size", 0)
+        COMMAND_STATUS_DLQ_SIZE.set(status_dlq_size)
         health_status["components"]["queue_status_updates"] = {
             "status": "ok" if status_healthy else "degraded",
             "size": status_metrics["size"],
             "oldest_age_seconds": status_metrics["oldest_age_seconds"],
-            "dlq_size": status_metrics.get("dlq_size", 0),
+            "dlq_size": status_dlq_size,
             "success_rate": status_metrics.get("success_rate", 1.0),
         }
 
@@ -143,6 +149,50 @@ async def health():
         health_status["components"]["queue_alerts"] = "unknown"
         health_status["components"]["queue_status_updates"] = "unknown"
         health_status["status"] = "degraded"
+
+    redis_ok = False
+    try:
+        redis_client = await get_redis_client()
+        await redis_client.ping()
+        redis_ok = True
+        update_redis_health(True)
+    except Exception as e:
+        logger.warning(f"Redis health check failed: {e}")
+        update_redis_health(False)
+        health_status["status"] = "degraded"
+
+    health_status["components"]["redis"] = "ok" if redis_ok else "fail"
+
+    if redis_ok:
+        try:
+            telemetry_queue = hl_state.telemetry_queue or TelemetryQueue()
+            telemetry_metrics = await telemetry_queue.get_health_metrics()
+            telemetry_healthy = (
+                telemetry_metrics["depth"] < 10000
+                and telemetry_metrics["utilization"] < 0.95
+                and telemetry_metrics["oldest_age_seconds"] < 3600
+            )
+            update_queue_health("telemetry", telemetry_healthy)
+            health_status["components"]["queue_telemetry"] = {
+                "status": "ok" if telemetry_healthy else "degraded",
+                "size": telemetry_metrics["size"],
+                "processing_size": telemetry_metrics["processing_size"],
+                "depth": telemetry_metrics["depth"],
+                "utilization": telemetry_metrics["utilization"],
+                "oldest_age_seconds": telemetry_metrics["oldest_age_seconds"],
+                "dead_list_size": telemetry_metrics["dead_list_size"],
+                "max_size": telemetry_metrics["max_size"],
+            }
+            if not telemetry_healthy:
+                health_status["status"] = "degraded"
+        except Exception as e:
+            logger.warning(f"Telemetry queue health check failed: {e}")
+            health_status["components"]["queue_telemetry"] = "unknown"
+            update_queue_health("telemetry", False)
+            health_status["status"] = "degraded"
+    else:
+        health_status["components"]["queue_telemetry"] = "unknown"
+        update_queue_health("telemetry", False)
 
     return health_status
 

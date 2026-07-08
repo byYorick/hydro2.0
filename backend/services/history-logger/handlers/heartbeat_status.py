@@ -304,4 +304,60 @@ async def monitor_offline_nodes() -> None:
         try:
             await asyncio.wait_for(state.shutdown_event.wait(), timeout=interval_sec)
         except asyncio.TimeoutError:
+            pass
+
+        try:
+            await refresh_connectivity_age_metrics()
+        except Exception as exc:
+            logger.warning("[OFFLINE_MONITOR] Failed to refresh connectivity age metrics: %s", exc)
+
+
+async def refresh_connectivity_age_metrics() -> None:
+    """Обновляет Prometheus gauges node_last_seen_age_seconds и telemetry_last_age_seconds."""
+    from metrics import NODE_LAST_SEEN_AGE_SECONDS, TELEMETRY_LAST_AGE_SECONDS
+
+    node_rows = await fetch(
+        """
+        SELECT
+            n.uid AS node_uid,
+            COALESCE(n.zone_id::text, '') AS zone_id,
+            EXTRACT(
+                EPOCH FROM (
+                    NOW() - COALESCE(n.last_seen_at, n.last_heartbeat_at, n.updated_at, n.created_at)
+                )
+            ) AS age_seconds
+        FROM nodes n
+        WHERE n.uid IS NOT NULL
+          AND n.uid <> ''
+        """
+    )
+    NODE_LAST_SEEN_AGE_SECONDS.clear()
+    for row in node_rows or []:
+        node_uid = str(row.get("node_uid") or "").strip()
+        if not node_uid:
             continue
+        zone_id = str(row.get("zone_id") or "0")
+        age = float(row.get("age_seconds") or 0.0)
+        NODE_LAST_SEEN_AGE_SECONDS.labels(node_uid=node_uid, zone_id=zone_id).set(max(0.0, age))
+
+    zone_rows = await fetch(
+        """
+        SELECT
+            s.zone_id::text AS zone_id,
+            MAX(
+                EXTRACT(EPOCH FROM (NOW() - COALESCE(tl.last_ts, tl.updated_at)))
+            ) AS age_seconds
+        FROM telemetry_last tl
+        INNER JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id IS NOT NULL
+          AND COALESCE(tl.last_quality, 'GOOD') <> 'STUB'
+        GROUP BY s.zone_id
+        """
+    )
+    TELEMETRY_LAST_AGE_SECONDS.clear()
+    for row in zone_rows or []:
+        zone_id = str(row.get("zone_id") or "").strip()
+        if not zone_id:
+            continue
+        age = float(row.get("age_seconds") or 0.0)
+        TELEMETRY_LAST_AGE_SECONDS.labels(zone_id=zone_id).set(max(0.0, age))

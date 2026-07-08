@@ -221,6 +221,42 @@ class SchedulerMetricsControllerTest extends TestCase
         $this->assertStringContainsString('laravel_scheduler_lock_skipped_total 2', $body);
     }
 
+    public function test_metrics_endpoint_renders_active_hang_hints_gauge(): void
+    {
+        $zone = Zone::factory()->create();
+        $staleAt = now()->subMinutes(5);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'waiting_command',
+            'idempotency_key' => 'metrics-hang-hint-'.uniqid(),
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'clean_fill_check',
+            'workflow_phase' => 'tank_filling',
+            'control_mode_snapshot' => 'auto',
+            'scheduled_for' => $staleAt,
+            'due_at' => $staleAt,
+            'stage_entered_at' => $staleAt,
+            'created_at' => $staleAt,
+            'updated_at' => $staleAt,
+        ]);
+
+        $response = $this->get('/api/system/scheduler/metrics');
+        $response->assertOk();
+
+        $body = $response->getContent();
+        $this->assertIsString($body);
+        $this->assertStringContainsString('# TYPE laravel_zone_hang_hints_active gauge', $body);
+        $this->assertStringContainsString(
+            sprintf(
+                'laravel_zone_hang_hints_active{code="waiting_command_stuck",zone_id="%d"} 1',
+                $zone->id,
+            ),
+            $body,
+        );
+    }
+
     /**
      * @param  array<string, int|string>  $labels
      */

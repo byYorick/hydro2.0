@@ -648,6 +648,122 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 200,
+      "title": "— Reliability (R2) —",
+      "type": "text",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "options": { "mode": "markdown", "content": "## Reliability (R2)" }
+    },
+    {
+      "id": 201,
+      "title": "HL telemetry PG write failures",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(telemetry_pg_write_failed_total[5m])) by (stage)",
+          "refId": "A",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 202,
+      "title": "Telemetry dead-list size",
+      "type": "stat",
+      "gridPos": { "h": 7, "w": 4, "x": 8, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "telemetry_dead_list_size or vector(0)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "value": 0, "color": "green" }, { "value": 1, "color": "red" }] } } }
+    },
+    {
+      "id": 203,
+      "title": "Command status DLQ",
+      "type": "stat",
+      "gridPos": { "h": 7, "w": 4, "x": 12, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "command_status_dlq_size or vector(0)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 204,
+      "title": "AE3 oldest active task age",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "ae3_oldest_active_task_age_seconds",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 205,
+      "title": "Scheduler missed windows",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(laravel_scheduler_missed_windows_total[15m])) by (task_type)",
+          "refId": "A",
+          "legendFormat": "{{task_type}}"
+        }
+      ]
+    },
+    {
+      "id": 206,
+      "title": "Active hang hints",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 38 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(laravel_zone_hang_hints_active) by (code)",
+          "refId": "A",
+          "legendFormat": "{{code}}"
+        }
+      ]
+    },
+    {
+      "id": 207,
+      "title": "Node last seen age (max)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 45 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "max(node_last_seen_age_seconds) by (zone_id)",
+          "refId": "A",
+          "legendFormat": "zone {{zone_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 208,
+      "title": "Telemetry last age by zone",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 45 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "telemetry_last_age_seconds",
+          "refId": "A",
+          "legendFormat": "zone {{zone_id}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
     }
   ],
   "id": null,

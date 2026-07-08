@@ -105,6 +105,7 @@ services:
       - DB_DATABASE=hydro_dev
       - DB_USERNAME=hydro
       - DB_PASSWORD=hydro
+      - TELEMETRY_RETENTION_DAYS=${TELEMETRY_RETENTION_DAYS:-30}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REVERB_APP_ID=app
@@ -568,6 +569,7 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - RETENTION_SAMPLES_DAYS=${RETENTION_SAMPLES_DAYS:-30}
       - PYTHONPATH=/app
     depends_on:
       db:

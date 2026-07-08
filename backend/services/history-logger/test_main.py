@@ -63,16 +63,37 @@ def test_health_endpoint(client):
         "success_rate": 1.0,
     }
 
+    redis_client = AsyncMock()
+    redis_client.ping = AsyncMock(return_value=True)
+
+    telemetry_queue = AsyncMock()
+    telemetry_queue.get_health_metrics = AsyncMock(
+        return_value={
+            "size": 12,
+            "processing_size": 3,
+            "depth": 15,
+            "utilization": 0.0003,
+            "oldest_age_seconds": 1.5,
+            "dead_list_size": 0,
+            "max_size": 50000,
+        }
+    )
+
     with patch("system_routes.get_pool", new_callable=AsyncMock) as mock_get_pool, \
          patch("system_routes.check_db_health", new_callable=AsyncMock), \
          patch("system_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
          patch("system_routes.check_mqtt_health", new_callable=AsyncMock), \
          patch("system_routes.get_alert_queue", new_callable=AsyncMock) as mock_get_alert_queue, \
-         patch("system_routes.get_status_queue", new_callable=AsyncMock) as mock_get_status_queue:
+         patch("system_routes.get_status_queue", new_callable=AsyncMock) as mock_get_status_queue, \
+         patch("system_routes.get_redis_client", new_callable=AsyncMock) as mock_get_redis, \
+         patch("system_routes.update_redis_health") as mock_update_redis_health, \
+         patch("system_routes.hl_state") as mock_state:
         mock_get_pool.return_value = _PoolStub()
         mock_get_mqtt.return_value = _MqttStub()
         mock_get_alert_queue.return_value = queue
         mock_get_status_queue.return_value = queue
+        mock_get_redis.return_value = redis_client
+        mock_state.telemetry_queue = telemetry_queue
 
         response = client.get("/health")
 
@@ -80,6 +101,11 @@ def test_health_endpoint(client):
     data = response.json()
     assert data["status"] in {"ok", "degraded"}
     assert "components" in data
+    assert data["components"]["redis"] == "ok"
+    assert data["components"]["queue_telemetry"]["depth"] == 15
+    assert data["components"]["queue_telemetry"]["utilization"] == 0.0003
+    mock_update_redis_health.assert_called_once_with(True)
+    telemetry_queue.get_health_metrics.assert_awaited_once()
 
 
 def test_ws_broadcast_metrics_endpoint(client):

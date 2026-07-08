@@ -324,6 +324,7 @@ def _build_use_case(
     alert_repository: _AlertRepositoryRecorder | None = None,
     workflow_repository: PgZoneWorkflowRepository | None = None,
     use_startup_recovery_lock: bool = False,
+    worker_owner: str | None = None,
 ) -> tuple[
     StartupRecoveryUseCase,
     PgAutomationTaskRepository,
@@ -349,6 +350,7 @@ def _build_use_case(
         topology_registry=TopologyRegistry(),
         alert_repository=alert_repository,
         use_startup_recovery_lock=use_startup_recovery_lock,
+        worker_owner=worker_owner,
     )
     return recovery_use_case, task_repo, command_repo, lease_repo, alert_repository
 
@@ -658,7 +660,9 @@ async def test_startup_recovery_fails_pending_irrigation_when_workflow_idle_term
 async def test_startup_recovery_foreign_lease_owner_not_released_on_fail() -> None:
     prefix = f"ae3-recovery-foreign-lease-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    recovery_use_case, task_repo, _command_repo, lease_repo, _ = _build_use_case()
+    recovery_use_case, task_repo, _command_repo, lease_repo, _ = _build_use_case(
+        worker_owner="worker-b",
+    )
     await recovery_use_case.run(now=now)
     baseline_scanned = await _count_active_recovery_tasks()
 
@@ -676,10 +680,10 @@ async def test_startup_recovery_foreign_lease_owner_not_released_on_fail() -> No
         result = await recovery_use_case.run(now=now + timedelta(seconds=1))
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
-        assert result.scanned_tasks == baseline_scanned + 1
-        assert result.failed_tasks == 1
+        assert result.scanned_tasks == baseline_scanned
+        assert result.failed_tasks == 0
         assert updated_task is not None
-        assert updated_task.status == "failed"
+        assert updated_task.status == "claimed"
         lease = await lease_repo.get(zone_id=zone_id)
         assert lease is not None
         assert lease.owner == "other-worker"
@@ -1208,5 +1212,65 @@ async def test_waiting_command_reconcile_skips_inflight_task() -> None:
         assert updated_task is not None
         assert updated_task.status == "waiting_command"
         assert updated_task.current_stage == "clean_fill_start"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_waiting_command_reconcile_poll_deadline_fails_stale_task() -> None:
+    """W5: waiting_command с истёкшим poll deadline → fail-closed без republish."""
+    prefix = f"ae3-wc-reconcile-deadline-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(seconds=150)
+    reconcile_use_case, _recovery, task_repo, command_repo, _workflow_repo = (
+        _build_waiting_command_reconcile_use_case()
+    )
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=stale_at,
+            topology="two_tank",
+            current_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+        )
+        await execute(
+            """
+            UPDATE ae_tasks
+            SET updated_at = $2
+            WHERE id = $1
+            """,
+            task_id,
+            stale_at,
+        )
+        legacy_id = await _insert_legacy_command(
+            zone_id=zone_id,
+            cmd_id="ae3-wc-reconcile-deadline-1",
+            status="ACK",
+            ack_at=stale_at + timedelta(seconds=1),
+            now=stale_at + timedelta(seconds=1),
+        )
+        await _insert_ae_command(
+            task_id=task_id,
+            now=stale_at,
+            cmd_id="ae3-wc-reconcile-deadline-1",
+            external_id=str(legacy_id),
+        )
+
+        result = await reconcile_use_case.run(now=now, worker_owner="worker-a")
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+
+        assert result.failed_tasks == 1
+        assert result.kick_needed is True
+        assert updated_task is not None
+        assert updated_task.status == "failed"
+        assert updated_task.error_code == "ae3_command_poll_deadline_exceeded"
+        ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
+        assert ae_command is not None
+        assert ae_command["terminal_status"] is None or ae_command["terminal_status"] == ""
     finally:
         await _cleanup(prefix)

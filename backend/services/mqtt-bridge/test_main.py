@@ -33,64 +33,45 @@ async def test_metrics_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_send_zone_command_success(mock_auth, mock_publisher):
+async def test_send_zone_command_returns_410_gone(mock_auth):
     mock_auth.return_value = None
 
-    with patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("main.mark_command_sent", new_callable=AsyncMock) as mock_mark_sent, \
-         patch("main.record_simulation_event", new_callable=AsyncMock) as mock_record_event, \
-         patch("main.new_command_id", return_value="cmd-zone-1"), \
-         patch("main.get_settings", return_value=Mock(mqtt_zone_format="id", node_default_secret=None)):
-        mock_fetch.return_value = []
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/bridge/zones/1/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "node_uid": "nd-irrig-1",
+                "channel": "default",
+                "params": {"duration_ms": 1000},
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                    "params": {"duration_ms": 1000},
-                },
-                headers={"Authorization": "Bearer test-token"},
-            )
-
-    assert response.status_code == 200
-    assert response.json()["data"]["command_id"] == "cmd-zone-1"
-    mock_publisher.publish_command.assert_called_once()
-    mock_mark_sent.assert_awaited_once_with("cmd-zone-1")
-    mock_record_event.assert_awaited_once()
+    assert response.status_code == 410
+    assert response.json()["detail"] == "endpoint_deprecated_use_history_logger"
 
 
 @pytest.mark.asyncio
-async def test_send_node_command_success(mock_auth, mock_publisher):
+async def test_send_node_command_returns_410_gone(mock_auth):
     mock_auth.return_value = None
 
-    with patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("main.mark_command_sent", new_callable=AsyncMock) as mock_mark_sent, \
-         patch("main.record_simulation_event", new_callable=AsyncMock), \
-         patch("main.new_command_id", return_value="cmd-node-1"), \
-         patch("main.get_settings", return_value=Mock(mqtt_zone_format="id", node_default_secret=None)):
-        mock_fetch.return_value = []
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/bridge/nodes/nd-irrig-1/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "channel": "default",
+                "params": {"duration_ms": 1000},
+            },
+            headers={"Authorization": "Bearer test-token"},
+        )
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/nodes/nd-irrig-1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "zone_id": 1,
-                    "channel": "default",
-                    "params": {"duration_ms": 1000},
-                },
-                headers={"Authorization": "Bearer test-token"},
-            )
-
-    assert response.status_code == 200
-    assert response.json()["data"]["command_id"] == "cmd-node-1"
-    mock_publisher.publish_command.assert_called_once()
-    mock_mark_sent.assert_awaited_once_with("cmd-node-1")
+    assert response.status_code == 410
+    assert response.json()["detail"] == "endpoint_deprecated_use_history_logger"
 
 
 @pytest.mark.asyncio
@@ -118,36 +99,10 @@ async def test_publish_node_config_success(mock_auth, mock_publisher):
 
 
 @pytest.mark.asyncio
-async def test_send_zone_command_returns_503_when_bridge_not_ready(mock_auth):
-    mock_auth.return_value = None
-    publisher = Mock()
-    publisher.is_ready.return_value = False
-
-    with patch("main.publisher", publisher):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post(
-                "/bridge/zones/1/commands",
-                json={
-                    "cmd": "run_pump",
-                    "greenhouse_uid": "gh-1",
-                    "node_uid": "nd-irrig-1",
-                    "channel": "default",
-                },
-                headers={"Authorization": "Bearer test-token"},
-            )
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "bridge_not_ready"
-
-
-@pytest.mark.asyncio
 async def test_auth_requires_token_when_configured():
     settings = Settings(bridge_api_token="required-token-123")
-    publisher = Mock()
-    publisher.is_ready.return_value = False
 
-    with patch("main.get_settings", return_value=settings), \
-         patch("main.publisher", publisher):
+    with patch("main.get_settings", return_value=settings):
         transport = ASGITransport(app=app, client=("10.0.0.2", 1234))
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
@@ -183,7 +138,7 @@ async def test_auth_requires_token_when_configured():
                 },
                 headers={"Authorization": "Bearer required-token-123"},
             )
-            assert response.status_code == 503
+            assert response.status_code == 410
 
 
 @pytest.mark.asyncio

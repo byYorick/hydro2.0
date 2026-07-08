@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +13,7 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.infrastructure.gateways.command_publish_pipeline import CommandPublishPipeline
 from ae3lite.infrastructure.metrics import COMMAND_DISPATCH_DURATION, OLDEST_ACTIVE_TASK_AGE_SECONDS
 from ae3lite.infrastructure.repositories.automation_task_repository import PgAutomationTaskRepository
+from ae3lite.runtime.worker import Ae3RuntimeWorker
 
 
 @pytest.mark.asyncio
@@ -75,3 +78,46 @@ async def test_refresh_active_task_age_metrics_sets_gauges(monkeypatch: pytest.M
     assert OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status="running")._value.get() == 42.5
     assert OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status="waiting_command")._value.get() == 10.0
     assert OLDEST_ACTIVE_TASK_AGE_SECONDS.labels(status="claimed")._value.get() == 0.0
+
+
+def _build_metrics_worker(*, task_repository: object) -> Ae3RuntimeWorker:
+    return Ae3RuntimeWorker(
+        owner="metrics-test",
+        claim_next_task_use_case=SimpleNamespace(run=AsyncMock(return_value=None)),
+        idle_poll_interval_sec=0.01,
+        execute_task_use_case=SimpleNamespace(run=AsyncMock(return_value=None)),
+        startup_recovery_use_case=SimpleNamespace(run=AsyncMock(return_value=None)),
+        waiting_command_reconcile_use_case=SimpleNamespace(run=AsyncMock(return_value=None)),
+        task_repository=task_repository,
+        zone_lease_repository=SimpleNamespace(release=AsyncMock(return_value=True)),
+        zone_intent_repository=SimpleNamespace(
+            mark_running=AsyncMock(return_value=None),
+            mark_terminal=AsyncMock(return_value=None),
+        ),
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(
+            coro,
+            name=str(kwargs.get("task_name") or "ae3-metrics-test"),
+        ),
+        now_fn=lambda: datetime(2026, 7, 7, 12, 0, 0),
+        logger=MagicMock(),
+        stale_task_reconcile_interval_sec=60.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_refresh_active_task_age_metrics_throttled(monkeypatch: pytest.MonkeyPatch) -> None:
+    refresh = AsyncMock()
+    task_repository = SimpleNamespace(refresh_active_task_age_metrics=refresh)
+    worker = _build_metrics_worker(task_repository=task_repository)
+    worker._active_task_age_metrics_interval_sec = 60.0
+
+    await worker._maybe_refresh_active_task_age_metrics_once()
+    await worker._maybe_refresh_active_task_age_metrics_once()
+
+    assert refresh.await_count == 1
+    refresh.assert_awaited_once_with(now=datetime(2026, 7, 7, 12, 0, 0))
+
+    worker._last_active_task_age_metrics_monotonic = None
+    monkeypatch.setattr("ae3lite.runtime.worker.time.monotonic", lambda: 100.0)
+    await worker._maybe_refresh_active_task_age_metrics_once()
+    assert refresh.await_count == 2

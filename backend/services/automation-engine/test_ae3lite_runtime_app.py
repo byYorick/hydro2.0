@@ -155,6 +155,37 @@ async def test_zone_event_listener_callback_accepts_storage_state_fail_safe_even
 
 
 @pytest.mark.asyncio
+async def test_zone_event_listener_callback_kicks_worker_on_emergency_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kicks: list[str] = []
+
+    class _Worker:
+        def kick(self) -> None:
+            kicks.append("kick")
+
+    monkeypatch.setattr(runtime_app_module, "send_service_log", lambda **_kwargs: None)
+
+    callback = runtime_app_module._build_zone_event_listener_callback(
+        worker=_Worker(),
+        solution_tank_startup_guard_use_case=None,
+        now_fn=lambda: NOW.replace(tzinfo=None),
+        logger=logging.getLogger("ae3-runtime-test"),
+    )
+
+    await callback(
+        {
+            "source": "node_event",
+            "zone_id": 22,
+            "event_type": "EMERGENCY_STOP_ACTIVATED",
+            "channel": "estop",
+        }
+    )
+
+    assert kicks == ["kick"]
+
+
+@pytest.mark.asyncio
 async def test_zone_event_listener_callback_ignores_irrelevant_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

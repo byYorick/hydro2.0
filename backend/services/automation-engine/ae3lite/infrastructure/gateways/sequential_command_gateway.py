@@ -121,6 +121,34 @@ class SequentialCommandGateway:
             "command_statuses": combined_statuses,
         }
 
+    async def waiting_command_poll_deadline_exceeded(self, *, task: Any, now: datetime) -> bool:
+        ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
+        params: Mapping[str, Any] = {}
+        if ae_command is not None:
+            payload = ae_command.get("payload")
+            if isinstance(payload, Mapping):
+                raw_params = payload.get("params")
+                if isinstance(raw_params, Mapping):
+                    params = raw_params
+        poll_timeout_sec = compute_poll_timeout_sec(
+            params=params,
+            default_sec=self._command_poll_default_sec,
+            margin_sec=self._command_poll_margin_sec,
+        )
+        waiting_since = getattr(task, "updated_at", None)
+        if not isinstance(waiting_since, datetime):
+            return False
+        poll_deadline = waiting_since + timedelta(seconds=poll_timeout_sec)
+        stage_deadline = (
+            task.workflow.stage_deadline_at
+            if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
+            else None
+        )
+        effective_deadline = (
+            min(stage_deadline, poll_deadline) if stage_deadline is not None else poll_deadline
+        )
+        return now > effective_deadline
+
     async def recover_waiting_command(self, *, task: Any, now: datetime) -> Mapping[str, Any]:
         ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
         if ae_command is None:

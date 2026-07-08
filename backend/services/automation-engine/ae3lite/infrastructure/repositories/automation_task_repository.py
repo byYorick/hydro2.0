@@ -195,16 +195,48 @@ class PgAutomationTaskRepository:
         )
         return self._task_from_row(row)
 
-    async def list_for_startup_recovery(self) -> list[AutomationTask]:
-        rows = await self._fetch(
-            """
-            SELECT *
-            FROM ae_tasks
-            WHERE status = ANY($1::text[])
-            ORDER BY updated_at ASC, id ASC
-            """,
-            list(RUNNING_TASK_STATUSES),
-        )
+    async def list_for_startup_recovery(
+        self,
+        *,
+        worker_owner: str | None = None,
+        now: datetime | None = None,
+    ) -> list[AutomationTask]:
+        normalized_worker = str(worker_owner or "").strip()
+        if normalized_worker and now is not None:
+            normalized_now = self._normalize_timestamp(now)
+            rows = await self._fetch(
+                """
+                SELECT tasks.*
+                FROM ae_tasks AS tasks
+                WHERE tasks.status = ANY($1::text[])
+                  AND NOT (
+                    tasks.claimed_by IS NOT NULL
+                    AND tasks.claimed_by <> $2
+                    AND EXISTS (
+                        SELECT 1
+                        FROM ae_zone_leases AS leases
+                        WHERE leases.zone_id = tasks.zone_id
+                          AND leases.owner IS NOT NULL
+                          AND leases.owner <> $2
+                          AND leases.leased_until > $3
+                    )
+                  )
+                ORDER BY tasks.updated_at ASC, tasks.id ASC
+                """,
+                list(RUNNING_TASK_STATUSES),
+                normalized_worker,
+                normalized_now,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT *
+                FROM ae_tasks
+                WHERE status = ANY($1::text[])
+                ORDER BY updated_at ASC, id ASC
+                """,
+                list(RUNNING_TASK_STATUSES),
+            )
         return [AutomationTask.from_row(row) for row in rows]
 
     async def list_waiting_command_for_reconcile(self, *, limit: int = 32) -> list[AutomationTask]:
@@ -726,47 +758,32 @@ class PgAutomationTaskRepository:
         *,
         task_id: int,
         now: datetime,
-        owner: str | None = None,
+        owner: str,
     ) -> AutomationTask | None:
-        """Перевод task в `waiting_command` после рестарта worker'а.
+        """Переводит task в `waiting_command` после reconcile legacy-команды.
 
-        S2.3 (AUDIT_2026_05_28_BUGFIX_PLAN): если передан `owner`, в SQL
-        добавляется guard `claimed_by IN (owner, NULL)` — иначе при гонке
-        двух worker'ов второй может перехватить `running/claimed` task,
-        которую уже взял первый. ``owner=None`` сохраняет старое поведение
-        для startup_recovery, где claim ещё не выполнен.
+        Требует ``owner`` (``task.claimed_by``): guard ``claimed_by = owner`` защищает
+        от split-brain, когда другой worker уже держит lease на зону.
         """
         normalized_now = self._normalize_timestamp(now)
-        if owner is None:
-            row = await self._fetchrow(
-                """
-                UPDATE ae_tasks
-                SET status = 'waiting_command',
-                    updated_at = $2
-                WHERE id = $1
-                  AND status = ANY($3::text[])
-                RETURNING *
-                """,
-                task_id,
-                normalized_now,
-                list(RUNNING_TASK_STATUSES),
-            )
-        else:
-            row = await self._fetchrow(
-                """
-                UPDATE ae_tasks
-                SET status = 'waiting_command',
-                    updated_at = $2
-                WHERE id = $1
-                  AND status = ANY($3::text[])
-                  AND (claimed_by = $4 OR claimed_by IS NULL)
-                RETURNING *
-                """,
-                task_id,
-                normalized_now,
-                list(RUNNING_TASK_STATUSES),
-                owner,
-            )
+        normalized_owner = str(owner or "").strip()
+        if not normalized_owner:
+            return None
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks
+            SET status = 'waiting_command',
+                updated_at = $2
+            WHERE id = $1
+              AND status = ANY($3::text[])
+              AND claimed_by = $4
+            RETURNING *
+            """,
+            task_id,
+            normalized_now,
+            list(RUNNING_TASK_STATUSES),
+            normalized_owner,
+        )
         return self._task_from_row(row)
 
     # ── Stage transition (replaces requeue_pending) ─────────────────

@@ -430,6 +430,12 @@ LISTENER_RECONNECT_TOTAL = Counter(
     ["listener"],
 )
 
+LISTENER_INVALID_PAYLOAD = Counter(
+    "ae3_listener_invalid_payload_total",
+    "Некорректный JSON/payload в PostgreSQL NOTIFY listener",
+    ["listener"],
+)
+
 OBSERVABILITY_WRITE_FAILED = Counter(
     "ae3_observability_write_failed_total",
     "Ошибки записи zone_events/alerts, проглоченные без прерывания runtime",

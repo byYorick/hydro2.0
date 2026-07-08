@@ -35,11 +35,48 @@ async def test_safe_mark_intent_running_retries_then_increments_metric() -> None
     worker = _build_worker(intent_repo=intent_repo)
 
     before = INTENT_SYNC_FAILED.labels(operation="mark_running")._value.get()
-    await worker._safe_mark_intent_running(intent_id=42)
+    ok = await worker._safe_mark_intent_running(intent_id=42)
     after = INTENT_SYNC_FAILED.labels(operation="mark_running")._value.get()
 
+    assert ok is False
     assert intent_repo.mark_running.await_count == 3
     assert after == before + 1
+
+
+@pytest.mark.asyncio
+async def test_execute_claimed_task_aborts_when_intent_sync_exhausted() -> None:
+    intent_repo = AsyncMock()
+    intent_repo.mark_running = AsyncMock(side_effect=RuntimeError("db"))
+    intent_repo.mark_terminal = AsyncMock(return_value=None)
+    task_repo = AsyncMock()
+    task_repo.fail_for_recovery = AsyncMock(return_value=None)
+    lease_repo = AsyncMock()
+    lease_repo.release = AsyncMock(return_value=True)
+    execute_uc = AsyncMock()
+
+    worker = Ae3RuntimeWorker(
+        owner="test-worker",
+        claim_next_task_use_case=MagicMock(),
+        idle_poll_interval_sec=0.1,
+        execute_task_use_case=execute_uc,
+        startup_recovery_use_case=MagicMock(),
+        task_repository=task_repo,
+        zone_lease_repository=lease_repo,
+        zone_intent_repository=intent_repo,
+        spawn_background_task_fn=MagicMock(),
+        now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        logger=logging.getLogger("test-intent-sync"),
+        intent_sync_max_retries=0,
+    )
+    task = MagicMock(id=7, zone_id=3, intent_id=42, topology="two_tank")
+
+    await worker._execute_claimed_task(task=task)
+
+    execute_uc.run.assert_not_awaited()
+    task_repo.fail_for_recovery.assert_awaited_once()
+    assert task_repo.fail_for_recovery.await_args.kwargs["error_code"] == "ae3_intent_sync_failed"
+    lease_repo.release.assert_awaited()
+    intent_repo.mark_terminal.assert_awaited_once()
 
 
 @pytest.mark.asyncio

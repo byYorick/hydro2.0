@@ -32,6 +32,8 @@ class SchedulerPrometheusMetricsExporter
             '',
             ...$this->renderLockSkippedCounter(),
             '',
+            ...$this->renderHangHintsGauges(),
+            '',
         ];
 
         return implode("\n", $lines);
@@ -241,6 +243,34 @@ class SchedulerPrometheusMetricsExporter
                     'task_type' => (string) ($row->task_type ?? ''),
                 ],
                 (float) ($row->total ?? 0),
+            );
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Active hang hints detected from PostgreSQL (parity with ZoneAutomationObservabilityService thresholds).
+     *
+     * @return list<string>
+     */
+    private function renderHangHintsGauges(): array
+    {
+        $metricName = SchedulerConstants::METRIC_HANG_HINTS_ACTIVE;
+        $lines = [
+            '# HELP '.$metricName.' Active zone hang hints (1 = present).',
+            '# TYPE '.$metricName.' gauge',
+        ];
+
+        $hints = app(ZoneHangHintsQuery::class)->fetchActiveHints();
+        foreach ($hints as $hint) {
+            $lines[] = $this->renderMetricLine(
+                $metricName,
+                [
+                    'code' => $hint['code'],
+                    'zone_id' => (string) $hint['zone_id'],
+                ],
+                1,
             );
         }
 

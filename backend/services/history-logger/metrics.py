@@ -74,6 +74,14 @@ CONFIG_REPORT_ERROR = Counter(
     "Total error config_report messages",
     ["node_uid"],
 )
+CONFIG_REPORT_BUFFER_EXPIRED = Counter(
+    "config_report_buffer_expired_total",
+    "Buffered config_report entries dropped after TTL expiry",
+)
+CONFIG_REPORT_BUFFER_OVERFLOW = Counter(
+    "config_report_buffer_overflow_total",
+    "Buffered config_report entries dropped due to buffer capacity",
+)
 COMMAND_RESPONSE_RECEIVED = Counter(
     "command_response_received_total",
     "Total command_response messages received",
@@ -103,6 +111,33 @@ COMMAND_STATUS_DELIVERY_DROPPED = Counter(
 TELEMETRY_DESERIALIZE_FAILED = Counter(
     "telemetry_deserialize_failed_total",
     "Telemetry queue items moved to dead list after deserialize failure",
+)
+TELEMETRY_PG_WRITE_FAILED = Counter(
+    "telemetry_pg_write_failed_total",
+    "Failed PostgreSQL writes during telemetry batch processing",
+    ["stage"],
+)
+TELEMETRY_DEAD_LIST_SIZE = Gauge(
+    "telemetry_dead_list_size",
+    "Current size of hydro:telemetry:dead Redis list",
+)
+COMMAND_STATUS_DLQ_SIZE = Gauge(
+    "command_status_dlq_size",
+    "Current size of command status DLQ",
+)
+ALERT_DLQ_SIZE = Gauge(
+    "alert_dlq_size",
+    "Current size of alert DLQ",
+)
+NODE_LAST_SEEN_AGE_SECONDS = Gauge(
+    "node_last_seen_age_seconds",
+    "Seconds since node last_seen_at (or fallback heartbeat timestamp)",
+    ["node_uid", "zone_id"],
+)
+TELEMETRY_LAST_AGE_SECONDS = Gauge(
+    "telemetry_last_age_seconds",
+    "Seconds since newest telemetry_last update in zone",
+    ["zone_id"],
 )
 
 TELEMETRY_QUEUE_AGE = Gauge(
@@ -208,3 +243,6 @@ def initialize_counter_series() -> None:
         "DatabaseError",
     ):
         DATABASE_ERRORS.labels(error_type=error_type)
+
+    for stage in ("last", "samples"):
+        TELEMETRY_PG_WRITE_FAILED.labels(stage=stage)

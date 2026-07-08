@@ -37,6 +37,23 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ---
 
+## Статус повторного аудита (2026-07-08)
+
+Повторная проверка закрыла оставшиеся пробелы из §Definition of Done и R6.4/R7:
+
+| Область | Закрыто |
+|---------|---------|
+| **R7.2 SPOF** | `08_SECURITY_AND_OPS/SINGLE_INSTANCE_SPOF_RUNBOOK.md` — SPOF-карта, recovery, retention/env |
+| **R7.3 mqtt-bridge** | `POST /bridge/zones/{id}/commands` → HTTP 410 (только HL публикует команды) |
+| **R6.4 / R7 retention** | `TELEMETRY_RETENTION_DAYS` и `RETENTION_SAMPLES_DAYS` синхронизированы на **30** в docker-compose |
+| **AE3 recovery** | foreign lease skip; `waiting_command` poll-deadline reconcile (W5); legacy `ACCEPTED` → `command_protocol_violation` + unit-тест |
+| **HL telemetry** | processing-list reclaim, `telemetry_dead_cli.py`, метрики phantom/drop |
+| **Тесты** | дубликат `test_waiting_command_reconcile_poll_deadline_fails_stale_task` удалён |
+
+**Остаётся осознанным компромиссом (без изменений):** interval replay только метрика+лог; R5 HMAC heap на mqtt path; HA вне скоупа v1.
+
+---
+
 ## 1. Резюме аудита
 
 ### Что уже сделано хорошо (не трогаем)

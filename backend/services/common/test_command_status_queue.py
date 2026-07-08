@@ -280,6 +280,32 @@ async def test_send_status_to_laravel_does_not_enqueue_when_disabled():
 
 
 @pytest.mark.asyncio
+async def test_send_status_to_laravel_missing_url_emits_delivery_dropped_alert_when_disabled():
+    settings = SimpleNamespace(
+        laravel_api_url=None,
+        history_logger_api_token="token",
+        ingest_token="token",
+    )
+    queue = AsyncMock()
+
+    with patch("common.command_status_queue.get_settings", return_value=settings), \
+         patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.emit_status_delivery_dropped_alert", new=AsyncMock()) as mock_alert:
+        ok = await send_status_to_laravel(
+            "cmd-no-url",
+            CommandStatus.ACK,
+            {"zone_id": 8, "node_uid": "nd-1", "channel": "pump_1"},
+            enqueue_on_failure=False,
+        )
+
+    assert ok is False
+    queue.enqueue.assert_not_called()
+    mock_alert.assert_awaited_once()
+    assert mock_alert.await_args.kwargs["cmd_id"] == "cmd-no-url"
+    assert mock_alert.await_args.kwargs["reason"] == "laravel_api_url_missing"
+
+
+@pytest.mark.asyncio
 async def test_send_status_to_laravel_missing_url_does_not_enqueue_when_disabled():
     settings = SimpleNamespace(
         laravel_api_url=None,

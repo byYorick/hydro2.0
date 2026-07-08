@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 
 import chain_webhook
-from common.command_status_queue import deliver_status_to_laravel, normalize_status
+from common.command_status_queue import (
+    deliver_status_to_laravel,
+    emit_status_delivery_dropped_alert,
+    normalize_status,
+)
 from common.utils.time import normalize_device_timestamp, utcnow
 from common.db import create_zone_event, execute, fetch
 from common.simulation_events import record_simulation_event
@@ -142,6 +146,24 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             channel=channel,
             existing_status=existing_status,
         )
+        if delivery_result.dropped:
+            try:
+                await emit_status_delivery_dropped_alert(
+                    cmd_id=cmd_id,
+                    status_value=normalized_status.value,
+                    details=details,
+                    reason=delivery_result.reason,
+                    http_status=delivery_result.http_status,
+                    queue_error=delivery_result.queue_error,
+                    queue_metrics=delivery_result.queue_metrics,
+                )
+            except Exception as alert_error:
+                logger.warning(
+                    "[COMMAND_RESPONSE] Failed to emit delivery-dropped alert for cmd_id=%s: %s",
+                    cmd_id,
+                    alert_error,
+                    exc_info=True,
+                )
 
         await _maybe_persist_irr_state_snapshot(
             zone_id=zone_id,

@@ -55,6 +55,7 @@ class TelemetrySampleModel(BaseModel):
     ts: Optional[datetime] = None
     raw: Optional[dict] = None
     channel: Optional[str] = None
+    stub: bool = False
 
 
 class CommandRequest(BaseModel):

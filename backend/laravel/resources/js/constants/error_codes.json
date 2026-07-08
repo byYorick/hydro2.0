@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-07T12:10:06Z",
+  "updated_at": "2026-07-08T07:15:18Z",
   "codes": [
     {
       "code": "actuator_apply_failed",
@@ -73,6 +73,11 @@
       "code": "ae3_flow_stop_unconfirmed",
       "title": "Остановка flow-path не подтверждена",
       "message": "AE3 не смог подтвердить OFF-состояние насосов/клапанов после stop-команды."
+    },
+    {
+      "code": "ae3_intent_sync_failed",
+      "title": "Сбой синхронизации intent",
+      "message": "AE3 не смог синхронизировать статус intent с задачей после исчерпания retry."
     },
     {
       "code": "ae3_internal_error",

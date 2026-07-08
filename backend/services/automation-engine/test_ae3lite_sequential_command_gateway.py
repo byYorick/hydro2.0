@@ -9,6 +9,7 @@ Covers:
  - recover_waiting_command: non-terminal status → waiting_command
  - recover_waiting_command: terminal DONE → done
  - recover_waiting_command: terminal ERROR → failed
+ - recover_waiting_command: legacy ACCEPTED → command_protocol_violation
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ _DONE_ROW = {
     "created_at": NOW,
 }
 _ERROR_ROW = {**_DONE_ROW, "status": "ERROR", "error_message": "hw_error", "ack_at": None, "failed_at": NOW}
+_ACCEPTED_ROW = {**_DONE_ROW, "status": "ACCEPTED", "ack_at": NOW}
 _PENDING_ROW = {**_DONE_ROW, "status": "PENDING"}
 _MISSING = object()
 
@@ -473,6 +475,25 @@ async def test_done_status_success():
 # ── recover_waiting_command ────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_waiting_command_poll_deadline_exceeded_uses_task_updated_at():
+    stale_at = NOW - timedelta(seconds=200)
+    task = _mock_task(updated_at=stale_at)
+    cmd_repo = _FakeCommandRepo(
+        ae_command_row={
+            "id": 9,
+            "external_id": None,
+            "payload": {"cmd_id": "ae3-t1-z1-s1", "params": {"state": True}},
+        },
+    )
+    gw = _make_gw(command_repo=cmd_repo, command_poll_default_sec=120.0)
+
+    assert await gw.waiting_command_poll_deadline_exceeded(task=task, now=NOW) is True
+
+    fresh_task = _mock_task(updated_at=NOW - timedelta(seconds=30))
+    assert await gw.waiting_command_poll_deadline_exceeded(task=fresh_task, now=NOW) is False
+
+
+@pytest.mark.asyncio
 async def test_recover_waiting_command_no_ae_command_raises():
     cmd_repo = _FakeCommandRepo(ae_command_row=None)
 
@@ -561,6 +582,15 @@ async def test_recover_waiting_command_pending_returns_waiting():
     result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
     assert result["state"] == "waiting_command"
     assert result["legacy_status"] == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_recover_waiting_command_accepted_raises_protocol_violation():
+    cmd_repo = _FakeCommandRepo(legacy_row=_ACCEPTED_ROW)
+    gw = _make_gw(command_repo=cmd_repo)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await gw.recover_waiting_command(task=_make_task(), now=NOW)
+    assert exc_info.value.code == "command_protocol_violation"
 
 
 # ── greenhouse_uid not found ───────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-07-07T12:10:05Z",
+  "updated_at": "2026-07-08T07:15:18Z",
   "codes": [
     {
       "code": "ae3_api_http_5xx",
@@ -170,6 +170,16 @@
       "title": "Частые перезагрузки узла ESP32",
       "description": "Узел перезагружается слишком часто за короткий промежуток времени.",
       "recommendation": "Проверьте питание узла: стабильность напряжения, блок питания, качество контактов. Откройте serial-лог узла — ищите brownout, watchdog reset или panic. Убедитесь, что недавнее OTA-обновление прошло успешно и прошивка соответствует типу узла.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_observability_write_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "AE3 Observability Write Failed",
+      "description": "AE3 не смог записать biz-alert или observability-событие (тихий провал task_failed_alert).",
+      "recommendation": "Проверьте доступность PostgreSQL, логи automation-engine и метрику ae3_observability_write_failed_total.",
       "node_related": false
     },
     {
@@ -633,6 +643,36 @@
       "node_related": true
     },
     {
+      "code": "biz_zone_hang_hint_scheduler_intent_claimed_stuck",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Scheduler intent завис в статусе claimed",
+      "description": "Intent планировщика в статусе claimed не перешёл в running дольше порога (180 с).",
+      "recommendation": "Проверьте automation-engine и Laravel scheduler dispatch: intent должен быть принят AE3. Убедитесь, что нет блокировки lease и что POST /zones/{id}/start-cycle доступен.",
+      "node_related": false
+    },
+    {
+      "code": "biz_zone_hang_hint_scheduler_intent_pending",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Scheduler intent завис в статусе pending",
+      "description": "Intent планировщика в статусе pending не был обработан дольше порога (300 с).",
+      "recommendation": "Проверьте Laravel scheduler dispatch и очередь zone_automation_intents. Убедитесь, что automation:dispatch-schedules выполняется и AE3 принимает intents.",
+      "node_related": false
+    },
+    {
+      "code": "biz_zone_hang_hint_waiting_command_stuck",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Задача AE3 зависла в waiting_command",
+      "description": "Задача автоматики ждёт ответ по команде дольше порога (120 с).",
+      "recommendation": "Проверьте MQTT, history-logger и command_response для последней команды. Убедитесь, что целевой узел online и канал исправен.",
+      "node_related": true
+    },
+    {
       "code": "biz_zone_pid_config_missing",
       "source": "biz",
       "category": "config",
@@ -880,6 +920,16 @@
       "title": "Критическая ошибка основного цикла автоматики",
       "description": "Главный цикл automation-engine завершился необработанным исключением.",
       "recommendation": "Срочно проверьте логи automation-engine — полный traceback. Убедитесь, что PostgreSQL, Redis и history-logger доступны. Перезапустите контейнер; при повторении эскалируйте разработчикам.",
+      "node_related": false
+    },
+    {
+      "code": "infra_backup_full_failed",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Провал scheduled полного бэкапа",
+      "description": "Команда backup:full завершилась с ошибкой при ежедневном запуске по расписанию.",
+      "recommendation": "Проверьте логи Laravel (storage/logs), наличие pg_dump в контейнере, доступность volume /backups и свободное место на диске. Запустите backup:full вручную и прогоните restore-тест на dev.",
       "node_related": false
     },
     {
@@ -1413,6 +1463,16 @@
       "node_related": false
     },
     {
+      "code": "laravel_zone_hang_hints_active",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Laravel Zone Hang Hints Active",
+      "description": "Laravel Zone Hang Hints Active: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
+    },
+    {
       "code": "mqtt_broker_down",
       "source": "infra",
       "category": "infrastructure",
@@ -1431,6 +1491,16 @@
       "description": "Узел сообщил об ошибке на уровне железа, канала или прошивки.",
       "recommendation": "Откройте карточку узла — диагностическая телеметрия и последние события. Проверьте питание, wiring и serial-лог узла при физическом доступе. При повторении рассмотрите обновление или откат прошивки.",
       "node_related": true
+    },
+    {
+      "code": "node_last_seen_stale",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Node Last Seen Stale",
+      "description": "Node Last Seen Stale: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
+      "node_related": false
     },
     {
       "code": "postgres_exporter_down",
@@ -1480,6 +1550,16 @@
       "title": "Сервис не отдаёт метрики health",
       "description": "Prometheus не получает метрики up=1 с одного из сервисов платформы (automation-engine, history-logger, mqtt-bridge, laravel-scheduler).",
       "recommendation": "Определите какой job недоступен в Prometheus (Status → Targets). Проверьте контейнер: docker compose ps и docker compose logs <service>. Перезапустите сервис после устранения причины падения.",
+      "node_related": false
+    },
+    {
+      "code": "zone_telemetry_last_stale",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Zone Telemetry Last Stale",
+      "description": "Zone Telemetry Last Stale: требуется проверка по журналам и метрикам.",
+      "recommendation": "Проверьте логи сервисов, метрики Prometheus и состояние зоны.",
       "node_related": false
     }
   ]

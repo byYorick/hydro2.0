@@ -33,6 +33,21 @@ def sensor_value_in_bounds(*, sensor_type: str, value: Any) -> bool:
     return True
 
 
+STUB_TELEMETRY_REASON = "stub_telemetry"
+
+
+def is_stub_telemetry(*, quality: Any = None, metadata: Any = None) -> bool:
+    """Return True when sample or last-value row is marked as stub/placeholder."""
+    normalized_quality = str(quality or "").strip().upper()
+    if normalized_quality == "STUB":
+        return True
+    if isinstance(metadata, dict):
+        stub_value = metadata.get("stub")
+        if stub_value is True or str(stub_value).strip().lower() in {"1", "true", "yes"}:
+            return True
+    return False
+
+
 def decision_window_bounds_reason(*, sensor_type: str, value: Any) -> str | None:
     """Return ``sensor_out_of_bounds`` when value fails sanity bounds, else None."""
     if sensor_value_in_bounds(sensor_type=sensor_type, value=value):

@@ -57,13 +57,12 @@ Telemetry хранится в двух формах:
 30 дней (фактический)
 ```
 
-> **Реализация (двойной механизм):**
-> - Laravel `telemetry:cleanup-raw --days=30` — ежедневно в 02:00, удаляет `telemetry_samples` старше 30 дней
-> - Python `telemetry-aggregator` (env `RETENTION_SAMPLES_DAYS=90`) — настроен на 90 дней
+> **Реализация (двойной механизм, синхронизировано):**
+> - Laravel `telemetry:cleanup-raw` — env `TELEMETRY_RETENTION_DAYS` (дефолт **30**), ежедневно в 02:00
+> - Python `telemetry-aggregator` — env `RETENTION_SAMPLES_DAYS` (дефолт **30**)
 >
-> Фактический retention = **30 дней** (более агрессивная политика Laravel побеждает).
-> Python-сервис также выполняет cleanup, но Laravel успевает раньше (настроен на меньший срок).
-> При изменении срока хранения — обновлять **оба** места: `routes/console.php` и `.env` сервиса.
+> Оба дефолта заданы в `docker-compose.dev.yml` / `docker-compose.prod.yml`.
+> При изменении срока — обновлять env в compose **и** этот документ.
 
 Частота данных:
 

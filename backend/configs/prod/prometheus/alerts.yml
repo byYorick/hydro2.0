@@ -567,6 +567,15 @@ groups:
           summary: "AE3 intent sync failures detected"
           description: "ae3_intent_sync_failed_total increased during the last 15 minutes."
 
+      - alert: AE3ObservabilityWriteFailed
+        expr: (sum(increase(ae3_observability_write_failed_total{kind="biz_alert"}[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 biz_alert observability write failures detected"
+          description: "ae3_observability_write_failed_total{kind=\"biz_alert\"} increased during the last 15 minutes."
+
       - alert: AE3ReconcileLoopDegraded
         expr: (ae3_reconcile_consecutive_errors or vector(0)) > 3
         for: 5m
@@ -602,3 +611,30 @@ groups:
         annotations:
           summary: "Laravel scheduler skipped cycles due to lock contention"
           description: "laravel_scheduler_lock_skipped_total increased during the last 15 minutes."
+
+      - alert: LaravelZoneHangHintsActive
+        expr: (sum(laravel_zone_hang_hints_active) or vector(0)) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Active zone hang hints detected"
+          description: "laravel_zone_hang_hints_active > 0 for at least 5 minutes."
+
+      - alert: NodeLastSeenStale
+        expr: max(node_last_seen_age_seconds) > 120
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Node last seen age exceeds offline threshold"
+          description: "node_last_seen_age_seconds max is {{ $value }}s (threshold 120s) for 3 minutes."
+
+      - alert: ZoneTelemetryLastStale
+        expr: max(telemetry_last_age_seconds) > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zone telemetry_last is stale"
+          description: "telemetry_last_age_seconds max is {{ $value }}s (threshold 600s) for 5 minutes."

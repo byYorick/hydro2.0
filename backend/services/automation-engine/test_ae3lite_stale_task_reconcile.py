@@ -156,7 +156,7 @@ async def test_stale_running_with_commands_fails_with_ae3_stale_task_reclaimed()
         updated = await task_repo.get_by_id(task_id=task_id)
         assert result.failed_tasks == 1
         assert result.requeued_tasks == 0
-        assert result.kick_needed is False
+        assert result.kick_needed is True
         assert updated is not None
         assert updated.status == "failed"
         assert updated.error_code == "ae3_stale_task_reclaimed"

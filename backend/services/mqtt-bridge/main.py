@@ -11,8 +11,6 @@ import asyncio
 import logging
 import os
 import time
-from common.schemas import CommandRequest
-from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from common.env import get_settings
@@ -238,235 +236,26 @@ async def live_node_status(
 async def send_zone_command(
     request: Request,
     zone_id: int = Path(..., ge=1),
-    req: CommandRequest = Body(...),
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/commands").inc()
-    
-    # Проверяем готовность bridge
-    if not publisher or not publisher.is_ready():
-        raise HTTPException(
-            status_code=503,
-            detail="bridge_not_ready"
-        )
-    
-    if not (req.greenhouse_uid and req.node_uid and req.channel):
-        raise HTTPException(status_code=400, detail="greenhouse_uid, node_uid and channel are required")
-    
-    # Use cmd_id from Laravel if provided, otherwise generate new one
-    cmd_id = req.cmd_id or new_command_id()
-    _ensure_trace_for_command(cmd_id)
-    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
-    try:
-        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    # Получаем hardware_id из запроса для временного топика
-    hardware_id = req.hardware_id
-    
-    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
-    zone_uid = None
-    s = get_settings()
-    if s.mqtt_zone_format == "uid":
-        rows = await fetch(
-            """
-            SELECT uid
-            FROM zones
-            WHERE id = $1
-            """,
-            zone_id,
-        )
-        if rows and len(rows) > 0:
-            zone_uid = rows[0].get("uid")
-            if not zone_uid:
-                logger.warning(f"Zone {zone_id} has no uid, using zn-{zone_id} as fallback")
-        else:
-            logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
-    
-    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
-    node_preconfig = False
-    if req.node_uid:
-        node_rows = await fetch(
-            """
-            SELECT lifecycle_state
-            FROM nodes
-            WHERE uid = $1
-            """,
-            req.node_uid,
-        )
-        if node_rows and len(node_rows) > 0:
-            lifecycle_state = node_rows[0].get("lifecycle_state")
-            # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
-            node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
-    
-    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
-    try:
-        publisher.publish_command(
-            req.greenhouse_uid, 
-            zone_id, 
-            req.node_uid, 
-            req.channel, 
-            payload, 
-            hardware_id=hardware_id, 
-            zone_uid=zone_uid,
-            node_preconfig=node_preconfig
-        )
-        # Команда успешно опубликована - помечаем как sent
-        await mark_command_sent(cmd_id)
-        await record_simulation_event(
-            zone_id,
-            service="mqtt-bridge",
-            stage="command_publish",
-            status="sent",
-            message="Команда опубликована в MQTT",
-            payload={
-                "cmd_id": cmd_id,
-                "cmd": req.cmd,
-                "channel": req.channel,
-                "node_uid": req.node_uid,
-                "greenhouse_uid": req.greenhouse_uid,
-                "hardware_id": hardware_id,
-            },
-        )
-        return {"status": "ok", "data": {"command_id": cmd_id}}
-    except Exception as e:
-        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
-        await record_simulation_event(
-            zone_id,
-            service="mqtt-bridge",
-            stage="command_publish",
-            status="failed",
-            level="error",
-            message="Ошибка публикации команды в MQTT",
-            payload={
-                "cmd_id": cmd_id,
-                "cmd": req.cmd,
-                "channel": req.channel,
-                "node_uid": req.node_uid,
-                "greenhouse_uid": req.greenhouse_uid,
-                "hardware_id": hardware_id,
-                "error": str(e),
-            },
-        )
-        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+    raise HTTPException(
+        status_code=410,
+        detail="endpoint_deprecated_use_history_logger",
+    )
 
 
 @app.post("/bridge/nodes/{node_uid}/commands")
 async def send_node_command(
     request: Request,
     node_uid: str = Path(..., min_length=1),
-    req: CommandRequest = Body(...),
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/commands").inc()
-    
-    # Проверяем готовность bridge
-    if not publisher or not publisher.is_ready():
-        raise HTTPException(
-            status_code=503,
-            detail="bridge_not_ready"
-        )
-    
-    if not (req.greenhouse_uid and req.zone_id and req.channel):
-        raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
-    
-    # Use cmd_id from Laravel if provided, otherwise generate new one
-    cmd_id = req.cmd_id or new_command_id()
-    _ensure_trace_for_command(cmd_id)
-    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
-    try:
-        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    # Получаем hardware_id из запроса для временного топика
-    hardware_id = req.hardware_id
-    
-    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
-    zone_uid = None
-    s = get_settings()
-    if s.mqtt_zone_format == "uid" and req.zone_id:
-        rows = await fetch(
-            """
-            SELECT uid
-            FROM zones
-            WHERE id = $1
-            """,
-            req.zone_id,
-        )
-        if rows and len(rows) > 0:
-            zone_uid = rows[0].get("uid")
-            if not zone_uid:
-                logger.warning(f"Zone {req.zone_id} has no uid, using zn-{req.zone_id} as fallback")
-        else:
-            logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
-    
-    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
-    node_preconfig = False
-    node_rows = await fetch(
-        """
-        SELECT lifecycle_state
-        FROM nodes
-        WHERE uid = $1
-        """,
-        node_uid,
+    raise HTTPException(
+        status_code=410,
+        detail="endpoint_deprecated_use_history_logger",
     )
-    if node_rows and len(node_rows) > 0:
-        lifecycle_state = node_rows[0].get("lifecycle_state")
-        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
-        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
-    
-    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
-    try:
-        publisher.publish_command(
-            req.greenhouse_uid, 
-            req.zone_id, 
-            node_uid, 
-            req.channel, 
-            payload, 
-            hardware_id=hardware_id, 
-            zone_uid=zone_uid,
-            node_preconfig=node_preconfig
-        )
-        # Команда успешно опубликована - помечаем как sent
-        await mark_command_sent(cmd_id)
-        await record_simulation_event(
-            req.zone_id,
-            service="mqtt-bridge",
-            stage="command_publish",
-            status="sent",
-            message="Команда опубликована в MQTT",
-            payload={
-                "cmd_id": cmd_id,
-                "cmd": req.cmd,
-                "channel": req.channel,
-                "node_uid": node_uid,
-                "greenhouse_uid": req.greenhouse_uid,
-                "hardware_id": hardware_id,
-            },
-        )
-        return {"status": "ok", "data": {"command_id": cmd_id}}
-    except Exception as e:
-        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
-        await record_simulation_event(
-            req.zone_id,
-            service="mqtt-bridge",
-            stage="command_publish",
-            status="failed",
-            level="error",
-            message="Ошибка публикации команды в MQTT",
-            payload={
-                "cmd_id": cmd_id,
-                "cmd": req.cmd,
-                "channel": req.channel,
-                "node_uid": node_uid,
-                "greenhouse_uid": req.greenhouse_uid,
-                "hardware_id": hardware_id,
-                "error": str(e),
-            },
-        )
-        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
 from common.schemas import NodeConfigModel

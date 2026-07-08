@@ -9,7 +9,11 @@ from typing import Any, Callable, Coroutine
 
 import asyncpg
 
-from ae3lite.infrastructure.metrics import LISTENER_CONNECTED, LISTENER_RECONNECT_TOTAL
+from ae3lite.infrastructure.metrics import (
+    LISTENER_CONNECTED,
+    LISTENER_INVALID_PAYLOAD,
+    LISTENER_RECONNECT_TOTAL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +98,18 @@ class ZoneEventListener:
         try:
             data: dict[str, Any] = json.loads(payload)
         except json.JSONDecodeError:
+            LISTENER_INVALID_PAYLOAD.labels(listener=_LISTENER_NAME).inc()
             logger.warning(
                 "ZoneEventListener: получен некорректный JSON payload в channel=%s payload=%r",
+                channel,
+                payload,
+            )
+            return
+
+        if not isinstance(data, dict):
+            LISTENER_INVALID_PAYLOAD.labels(listener=_LISTENER_NAME).inc()
+            logger.warning(
+                "ZoneEventListener: payload не является object в channel=%s payload=%r",
                 channel,
                 payload,
             )

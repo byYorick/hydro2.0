@@ -247,12 +247,18 @@ def _coerce_optional_bool(value: Any) -> bool | None:
     return None
 
 
+_RUNTIME_CRITICAL_NODE_EVENT_TYPES = frozenset({
+    "LEVEL_SWITCH_CHANGED",
+    "EMERGENCY_STOP_ACTIVATED",
+})
+
+
 def _is_runtime_zone_event_relevant(data: Mapping[str, Any]) -> bool:
     if str(data.get("source") or "").strip().lower() != "node_event":
         return False
     event_type = str(data.get("event_type") or "").strip().upper()
     channel = str(data.get("channel") or "").strip().lower()
-    return event_type == "LEVEL_SWITCH_CHANGED" or channel == "storage_state"
+    return event_type in _RUNTIME_CRITICAL_NODE_EVENT_TYPES or channel == "storage_state"
 
 
 def _zone_event_indicates_solution_min_depletion(data: Mapping[str, Any]) -> bool:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone as _tz
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
@@ -46,6 +46,7 @@ class StartupRecoveryUseCase:
         topology_registry: Optional[TopologyRegistry] = None,
         alert_repository: Any | None = None,
         use_startup_recovery_lock: bool = True,
+        worker_owner: str | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
@@ -54,6 +55,7 @@ class StartupRecoveryUseCase:
         self._registry = topology_registry or TopologyRegistry()
         self._alert_repository = alert_repository
         self._use_startup_recovery_lock = bool(use_startup_recovery_lock)
+        self._worker_owner = str(worker_owner or "").strip() or None
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
         STARTUP_RECOVERY_RUN.inc()
@@ -92,7 +94,11 @@ class StartupRecoveryUseCase:
         now: datetime,
         released_expired_leases: int,
     ) -> StartupRecoveryResult:
-        tasks = await self._task_repository.list_for_startup_recovery()
+        list_for_recovery = self._task_repository.list_for_startup_recovery
+        if self._worker_owner:
+            tasks = await list_for_recovery(worker_owner=self._worker_owner, now=now)
+        else:
+            tasks = await list_for_recovery()
 
         completed_tasks = 0
         failed_tasks = 0
@@ -101,6 +107,17 @@ class StartupRecoveryUseCase:
         terminal_outcomes: list[StartupRecoveryTerminalOutcome] = []
 
         for task in tasks:
+            if await self._should_skip_foreign_owned_task(task=task, now=now):
+                STARTUP_RECOVERY_SKIPPED.labels(reason="foreign_lease_task").inc()
+                logger.info(
+                    "Startup recovery: skip foreign-lease task task_id=%s zone_id=%s claimed_by=%s worker=%s",
+                    task.id,
+                    task.zone_id,
+                    task.claimed_by,
+                    self._worker_owner,
+                )
+                continue
+
             outcome, terminal_outcome, observability_task = await self._recover_task(task=task, now=now)
             STARTUP_RECOVERY_TASK.labels(outcome=outcome).inc()
             if outcome == "completed":
@@ -331,6 +348,23 @@ class StartupRecoveryUseCase:
         recovery_source: str,
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
         if result["state"] == "waiting_command":
+            poll_deadline_exceeded = getattr(
+                self._command_gateway,
+                "waiting_command_poll_deadline_exceeded",
+                None,
+            )
+            if callable(poll_deadline_exceeded) and await poll_deadline_exceeded(task=task, now=now):
+                failed_task = await self._fail_task(
+                    task=task,
+                    error_code="ae3_command_poll_deadline_exceeded",
+                    error_message=(
+                        f"Опрос команды превысил дедлайн для задачи {task.id} "
+                        f"stage={task.current_stage}"
+                    ),
+                    now=now,
+                    recovery_source=recovery_source,
+                )
+                return "failed", self._build_terminal_outcome(task=failed_task), failed_task
             if task.status in {"claimed", "running"}:
                 await self._persist_waiting_command_status(task=task, now=now)
             return "waiting_command", None, None
@@ -386,8 +420,11 @@ class StartupRecoveryUseCase:
         recover_waiting_command = getattr(self._task_repository, "recover_waiting_command", None)
         if not callable(recover_waiting_command):
             return None
+        owner = str(task.claimed_by or "").strip()
+        if not owner:
+            return None
         try:
-            return await recover_waiting_command(task_id=task.id, now=now, owner=None)
+            return await recover_waiting_command(task_id=task.id, now=now, owner=owner)
         except Exception:
             logger.warning(
                 "Startup recovery: failed to persist waiting_command task_id=%s zone_id=%s",
@@ -856,6 +893,60 @@ class StartupRecoveryUseCase:
                 workflow_phase,
                 exc_info=True,
             )
+
+    async def _should_skip_foreign_owned_task(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> bool:
+        worker_owner = self._worker_owner
+        if not worker_owner:
+            return False
+
+        task_owner = str(task.claimed_by or "").strip()
+        if not task_owner or task_owner == worker_owner:
+            return False
+
+        return await self._foreign_lease_blocks_recovery(zone_id=int(task.zone_id), now=now)
+
+    async def _foreign_lease_blocks_recovery(
+        self,
+        *,
+        zone_id: int,
+        now: datetime,
+    ) -> bool:
+        worker_owner = self._worker_owner
+        if not worker_owner:
+            return False
+
+        get_lease = getattr(self._lease_repository, "get", None)
+        if not callable(get_lease):
+            return False
+
+        lease = await get_lease(zone_id=zone_id)
+        if lease is None:
+            return False
+
+        lease_owner = str(getattr(lease, "owner", "") or "").strip()
+        if lease_owner == "" or lease_owner == worker_owner:
+            return False
+
+        leased_until = getattr(lease, "leased_until", None)
+        if leased_until is None:
+            return True
+
+        normalized_now = (
+            now.astimezone(_tz.utc).replace(tzinfo=None)
+            if now.tzinfo is not None
+            else now.replace(microsecond=0)
+        )
+        lease_until = (
+            leased_until.astimezone(_tz.utc).replace(tzinfo=None)
+            if getattr(leased_until, "tzinfo", None) is not None
+            else leased_until
+        )
+        return lease_until > normalized_now
 
     def _build_terminal_outcome(self, *, task: AutomationTask) -> StartupRecoveryTerminalOutcome | None:
         intent_id = task.intent_id or 0

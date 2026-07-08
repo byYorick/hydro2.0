@@ -10,10 +10,8 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote')->hourly();
 
 // Retention политики: очистка старых raw данных (ежедневно в 2:00)
-// ВНИМАНИЕ: Python telemetry-aggregator (сервис) также выполняет cleanup согласно
-// RETENTION_SAMPLES_DAYS=90. Текущий дефолт --days=30 здесь означает, что реальная
-// retention для telemetry_samples — 30 дней (более агрессивная политика побеждает).
-// Если нужно изменить, синхронизировать с RETENTION_SAMPLES_DAYS в docker-compose.
+// TELEMETRY_RETENTION_DAYS (Laravel) и RETENTION_SAMPLES_DAYS (Python telemetry-aggregator)
+// синхронизируются через docker-compose env (дефолт 30 дней).
 Schedule::command('telemetry:cleanup-raw --days='.config('hydro.telemetry_retention_days', 30))
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
@@ -135,6 +133,13 @@ Schedule::command('ae3:reap-stale-tasks')
     ->withoutOverlapping(1)
     ->onOneServer()
     ->description('AE3 watchdog: stale tasks, orphan scheduler intents, intent sync');
+
+// Bridge active hang hints (PostgreSQL) → AlertService for operator notifications.
+Schedule::command('automation:bridge-hang-hints')
+    ->everyMinute()
+    ->withoutOverlapping(1)
+    ->onOneServer()
+    ->description('Bridge zone hang hints from PostgreSQL into AlertService');
 
 // Retention: ежедневно удаляет terminal ae_tasks и intents старше 90 дней,
 // чтобы runtime таблицы не росли бесконечно. Audit остаётся в zone_events.

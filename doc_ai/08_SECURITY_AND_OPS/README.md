@@ -57,6 +57,12 @@ Breaking-change: обратная совместимость со старыми
 - Процедуры восстановления
 - Предотвращение сбоев
 
+#### [SINGLE_INSTANCE_SPOF_RUNBOOK.md](SINGLE_INSTANCE_SPOF_RUNBOOK.md)
+**Single-instance SPOF и recovery**
+- SPOF-карта компонентов v1
+- Краткие runbook-сценарии без HA
+- Синхронизация retention env
+
 ### Мониторинг и логирование
 
 #### [LOGGING_AND_MONITORING.md](LOGGING_AND_MONITORING.md)

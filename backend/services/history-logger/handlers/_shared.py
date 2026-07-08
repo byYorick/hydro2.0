@@ -168,6 +168,13 @@ def prune_pending_config_reports_locked(now_ts: float) -> None:
     ]
     for hardware_id in expired_keys:
         PENDING_CONFIG_REPORTS.pop(hardware_id, None)
+    if expired_keys:
+        try:
+            from metrics import CONFIG_REPORT_BUFFER_EXPIRED
+
+            CONFIG_REPORT_BUFFER_EXPIRED.inc(len(expired_keys))
+        except Exception:
+            pass
 
 
 async def store_pending_config_report(hardware_id: str, topic: str, payload: bytes) -> None:
@@ -187,6 +194,12 @@ async def store_pending_config_report(hardware_id: str, topic: str, payload: byt
                 "[CONFIG_REPORT] Dropped buffered config_report due to buffer limit: hardware_id=%s",
                 dropped_hardware_id,
             )
+            try:
+                from metrics import CONFIG_REPORT_BUFFER_OVERFLOW
+
+                CONFIG_REPORT_BUFFER_OVERFLOW.inc()
+            except Exception:
+                pass
 
 
 async def pop_pending_config_report(hardware_id: str) -> Optional[Dict[str, Any]]:

@@ -15,4 +15,4 @@ class StaleTaskReconcileResult:
 
     @property
     def kick_needed(self) -> bool:
-        return self.requeued_tasks > 0
+        return self.requeued_tasks > 0 or self.failed_tasks > 0 or self.failed_tasks > 0 or self.failed_tasks > 0

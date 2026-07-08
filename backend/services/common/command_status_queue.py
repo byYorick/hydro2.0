@@ -893,6 +893,41 @@ async def _emit_status_retry_enqueue_failed_alert(
     )
 
 
+async def emit_status_delivery_dropped_alert(
+    *,
+    cmd_id: str,
+    status_value: str,
+    details: Optional[Dict[str, Any]],
+    reason: str,
+    http_status: Optional[int] = None,
+    queue_error: Optional[str] = None,
+    queue_metrics: Optional[Dict[str, Any]] = None,
+) -> None:
+    zone_id = _extract_zone_id_from_details(details)
+    await send_infra_alert(
+        code="history_logger_command_status_delivery_dropped",
+        alert_type="Command Status Delivery Dropped",
+        message=f"Статус команды {cmd_id} не доставлен в Laravel: {reason}",
+        severity="warning",
+        zone_id=zone_id,
+        service="history-logger",
+        component="command_status_delivery",
+        node_uid=details.get("node_uid") if isinstance(details, dict) else None,
+        channel=details.get("channel") if isinstance(details, dict) else None,
+        cmd=details.get("command") if isinstance(details, dict) else None,
+        error_type="status_delivery_dropped",
+        details={
+            "cmd_id": cmd_id,
+            "status": status_value,
+            "reason": reason,
+            "http_status": http_status,
+            "queue_error": queue_error,
+            "queue_size": (queue_metrics or {}).get("size"),
+            "queue_dlq_size": (queue_metrics or {}).get("dlq_size"),
+        },
+    )
+
+
 async def _build_retry_delivery_result(
     *,
     cmd_id: str,
@@ -906,6 +941,22 @@ async def _build_retry_delivery_result(
     status_value = status.value if isinstance(status, CommandStatus) else str(status)
 
     if not enqueue_on_failure:
+        try:
+            await emit_status_delivery_dropped_alert(
+                cmd_id=cmd_id,
+                status_value=status_value,
+                details=sanitized_details,
+                reason=reason,
+                http_status=http_status,
+                queue_error=queue_error,
+            )
+        except Exception as alert_error:
+            logger.error(
+                "[STATUS_DELIVERY] Failed to emit delivery-dropped alert for cmd_id=%s: %s",
+                cmd_id,
+                alert_error,
+                exc_info=True,
+            )
         return StatusDeliveryResult(
             delivered=False,
             queued=False,

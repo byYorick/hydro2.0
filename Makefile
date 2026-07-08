@@ -146,7 +146,7 @@ reset-db: up
 		laravel php artisan migrate:fresh --seed --seeder=$(RESET_DB_SEEDER_CLASS)
 
 .PHONY: test test-laravel
-test-laravel: up
+test-laravel: test-db-init
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$(LARAVEL_TEST_DB)'" | grep -q 1 \
 		|| $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -c "CREATE DATABASE $(LARAVEL_TEST_DB);"
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \

@@ -22,6 +22,26 @@ try:
         QUEUE_SIZE = _NoOpGauge()
 
     try:
+        QUEUE_UTILIZATION = Gauge(
+            "telemetry_queue_utilization",
+            "Telemetry queue utilization (size / max_size)",
+        )
+    except ValueError:
+        class _NoOpGaugeUtil:
+            def set(self, *args, **kwargs): pass
+        QUEUE_UTILIZATION = _NoOpGaugeUtil()
+
+    try:
+        REDIS_CONNECTED = Gauge(
+            "redis_connected",
+            "Redis connection status for telemetry queue (1=connected, 0=disconnected)",
+        )
+    except ValueError:
+        class _NoOpGaugeRedis:
+            def set(self, *args, **kwargs): pass
+        REDIS_CONNECTED = _NoOpGaugeRedis()
+
+    try:
         QUEUE_DROPPED = Counter("telemetry_queue_dropped_total", "Dropped messages due to queue overflow")
     except ValueError:
         class _NoOpCounter:
@@ -43,6 +63,8 @@ except ImportError:
     class _Gauge:
         def set(self, *args, **kwargs): pass
     QUEUE_SIZE = _Gauge()
+    QUEUE_UTILIZATION = _Gauge()
+    REDIS_CONNECTED = _Gauge()
     QUEUE_DROPPED = _Counter()
     QUEUE_OVERFLOW_ALERTS = _Counter()
 
@@ -100,6 +122,7 @@ class TelemetryQueueItem:
     ts: Optional[datetime] = None
     raw: Optional[dict] = None
     channel: Optional[str] = None
+    stub: bool = False
     enqueued_at: Optional[datetime] = None
 
     def dict(self) -> dict:
@@ -189,6 +212,7 @@ class TelemetryQueue:
     QUEUE_KEY = "hydro:telemetry:queue"
     PROCESSING_KEY = "hydro:telemetry:processing"
     DEAD_KEY = "hydro:telemetry:dead"
+    DEAD_TTL_SEC = 7 * 24 * 3600
     MAX_QUEUE_SIZE = 50000
 
     def __init__(self):
@@ -364,14 +388,25 @@ class TelemetryQueue:
             logger.error(f"Failed to reclaim telemetry processing list: {e}", exc_info=True)
             return 0
 
+    async def move_entries_to_dead(self, entries: List[QueueEntry], *, reason: str) -> int:
+        if not entries:
+            return 0
+        moved = 0
+        for entry in entries:
+            if await self._move_raw_to_dead(entry.raw, reason=reason):
+                moved += 1
+        return moved
+
     async def _move_raw_to_dead(self, raw: bytes, *, reason: str) -> bool:
         try:
             await self._ensure_client()
+            await self.prune_expired_dead()
+            inner, retry = _unwrap_queue_bytes(raw)
             dead_payload = json.dumps(
                 {
                     "reason": reason,
-                    "retry": _unwrap_queue_bytes(raw)[1],
-                    "payload_b64": base64.b64encode(_unwrap_queue_bytes(raw)[0]).decode("ascii"),
+                    "retry": retry,
+                    "payload_b64": base64.b64encode(inner).decode("ascii"),
                     "moved_at": utcnow().isoformat(),
                 },
                 separators=(",", ":"),
@@ -379,8 +414,10 @@ class TelemetryQueue:
             await self._client.lrem(self.PROCESSING_KEY, 1, raw)
             await self._client.rpush(self.DEAD_KEY, dead_payload)
             try:
-                from metrics import TELEMETRY_DESERIALIZE_FAILED
+                from metrics import TELEMETRY_DEAD_LIST_SIZE, TELEMETRY_DESERIALIZE_FAILED
 
+                dead_size = await self._client.llen(self.DEAD_KEY)
+                TELEMETRY_DEAD_LIST_SIZE.set(int(dead_size or 0))
                 if reason == "deserialize_failed":
                     TELEMETRY_DESERIALIZE_FAILED.inc()
             except Exception:
@@ -408,6 +445,191 @@ class TelemetryQueue:
         except Exception as e:
             logger.error(f"Failed to get queue size: {e}", exc_info=True)
             return 0
+
+    async def dead_list_size(self) -> int:
+        try:
+            await self._ensure_client()
+            return int(await self._client.llen(self.DEAD_KEY) or 0)
+        except Exception as e:
+            logger.error(f"Failed to get telemetry dead list size: {e}", exc_info=True)
+            return 0
+
+    @staticmethod
+    def _parse_dead_entry(raw: bytes) -> Optional[dict]:
+        try:
+            obj = json.loads(raw.decode("utf-8"))
+            if not isinstance(obj, dict):
+                return None
+            return {
+                "reason": obj.get("reason"),
+                "retry": obj.get("retry"),
+                "payload_b64": obj.get("payload_b64"),
+                "moved_at": obj.get("moved_at"),
+            }
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            return None
+
+    @staticmethod
+    def _dead_entry_age_seconds(moved_at: Optional[str], *, now: Optional[datetime] = None) -> Optional[float]:
+        if not moved_at:
+            return None
+        try:
+            moved_dt = datetime.fromisoformat(str(moved_at))
+            if moved_dt.tzinfo is None:
+                moved_dt = moved_dt.replace(tzinfo=timezone.utc)
+            reference = now or utcnow()
+            return max(0.0, (reference - moved_dt).total_seconds())
+        except (TypeError, ValueError):
+            return None
+
+    async def _update_dead_list_metric(self) -> None:
+        try:
+            from metrics import TELEMETRY_DEAD_LIST_SIZE
+
+            dead_size = await self.dead_list_size()
+            TELEMETRY_DEAD_LIST_SIZE.set(dead_size)
+        except Exception:
+            pass
+
+    async def prune_expired_dead(self) -> int:
+        try:
+            await self._ensure_client()
+            raw_items = await self._client.lrange(self.DEAD_KEY, 0, -1)
+            if not raw_items:
+                return 0
+
+            now = utcnow()
+            removed = 0
+            for raw in raw_items:
+                entry = self._parse_dead_entry(raw)
+                if entry is None:
+                    continue
+                age = self._dead_entry_age_seconds(entry.get("moved_at"), now=now)
+                if age is None or age <= self.DEAD_TTL_SEC:
+                    continue
+                count = await self._client.lrem(self.DEAD_KEY, 1, raw)
+                removed += int(count or 0)
+
+            if removed:
+                await self._update_dead_list_metric()
+            return removed
+        except Exception as e:
+            logger.error(f"Failed to prune expired telemetry dead list items: {e}", exc_info=True)
+            return 0
+
+    async def list_dead(self, limit: int = 100, offset: int = 0) -> List[dict]:
+        try:
+            await self._ensure_client()
+            await self.prune_expired_dead()
+            if limit <= 0:
+                return []
+
+            end = offset + limit - 1
+            raw_items = await self._client.lrange(self.DEAD_KEY, offset, end)
+            items: List[dict] = []
+            for index, raw in enumerate(raw_items, start=offset):
+                entry = self._parse_dead_entry(raw)
+                if entry is None:
+                    items.append({"index": index, "parse_error": True, "raw": raw.decode("utf-8", errors="replace")})
+                    continue
+                entry["index"] = index
+                entry["age_seconds"] = self._dead_entry_age_seconds(entry.get("moved_at"))
+                items.append(entry)
+            return items
+        except Exception as e:
+            logger.error(f"Failed to list telemetry dead list: {e}", exc_info=True)
+            return []
+
+    async def replay_dead(self, index: int) -> bool:
+        try:
+            await self._ensure_client()
+            raw = await self._client.lindex(self.DEAD_KEY, index)
+            if not raw:
+                return False
+
+            entry = self._parse_dead_entry(raw)
+            if entry is None or not entry.get("payload_b64"):
+                return False
+
+            inner = base64.b64decode(str(entry["payload_b64"]))
+            wrapped = _wrap_queue_bytes(inner, 0)
+            await self._client.lpush(self.QUEUE_KEY, wrapped)
+            await self._client.lrem(self.DEAD_KEY, 1, raw)
+            await self._update_dead_list_metric()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to replay telemetry dead list item {index}: {e}", exc_info=True)
+            return False
+
+    async def purge_dead(self, index: int) -> bool:
+        try:
+            await self._ensure_client()
+            raw = await self._client.lindex(self.DEAD_KEY, index)
+            if not raw:
+                return False
+            removed = await self._client.lrem(self.DEAD_KEY, 1, raw)
+            if int(removed or 0) > 0:
+                await self._update_dead_list_metric()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to purge telemetry dead list item {index}: {e}", exc_info=True)
+            return False
+
+    async def purge_dead_all(self) -> int:
+        try:
+            await self._ensure_client()
+            size = await self.dead_list_size()
+            if size <= 0:
+                return 0
+            await self._client.delete(self.DEAD_KEY)
+            await self._update_dead_list_metric()
+            return size
+        except Exception as e:
+            logger.error(f"Failed to purge telemetry dead list: {e}", exc_info=True)
+            return 0
+
+    async def get_dead_metrics(self) -> dict:
+        await self.prune_expired_dead()
+        size = await self.dead_list_size()
+        oldest_age = None
+        items = await self.list_dead(limit=1, offset=0)
+        if items:
+            oldest_age = items[0].get("age_seconds")
+        return {
+            "size": size,
+            "oldest_age_seconds": oldest_age or 0.0,
+            "ttl_seconds": self.DEAD_TTL_SEC,
+        }
+
+    async def get_health_metrics(self) -> dict:
+        """Метрики очереди телеметрии для /health и Prometheus."""
+        try:
+            await self._ensure_client()
+            queue_size = int(await self._client.llen(self.QUEUE_KEY) or 0)
+            processing_size = int(await self._client.llen(self.PROCESSING_KEY) or 0)
+            total_pending = queue_size + processing_size
+            utilization = (
+                total_pending / self.MAX_QUEUE_SIZE if self.MAX_QUEUE_SIZE > 0 else 0.0
+            )
+            oldest_age = await self.get_oldest_age_seconds()
+            dead_size = await self.dead_list_size()
+
+            QUEUE_SIZE.set(queue_size)
+            QUEUE_UTILIZATION.set(utilization)
+
+            return {
+                "size": queue_size,
+                "processing_size": processing_size,
+                "depth": total_pending,
+                "utilization": utilization,
+                "oldest_age_seconds": oldest_age or 0.0,
+                "dead_list_size": dead_size,
+                "max_size": self.MAX_QUEUE_SIZE,
+            }
+        except Exception as e:
+            logger.error(f"Failed to collect telemetry queue health metrics: {e}", exc_info=True)
+            raise
 
     async def get_oldest_age_seconds(self) -> Optional[float]:
         try:
@@ -456,6 +678,11 @@ async def get_redis_client():
             raise
 
     return _redis_client
+
+
+def update_redis_health(connected: bool) -> None:
+    """Обновляет gauge redis_connected."""
+    REDIS_CONNECTED.set(1 if connected else 0)
 
 
 async def close_redis_client():

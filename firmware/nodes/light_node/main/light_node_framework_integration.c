@@ -78,17 +78,6 @@ esp_err_t light_node_publish_telemetry_callback(void *user_ctx) {
     } else {
         ESP_LOGW(TAG, "Failed to read light sensor: success=%d, lux=%.0f", read_success, light_lux);
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "light_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read light sensor value");
-        
-        // Публикация ошибки
-        node_telemetry_publish_sensor(
-            "light",
-            METRIC_TYPE_CUSTOM,
-            NAN,
-            "lux",
-            0,
-            true,  // stub (ошибка)
-            false
-        );
     }
 
     return ESP_OK;

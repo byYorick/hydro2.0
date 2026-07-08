@@ -166,6 +166,7 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
             ts=ts,
             raw=filtered_raw,
             channel=channel_name,
+            stub=bool(getattr(validated_data, "stub", False)),
             enqueued_at=utcnow(),
         )
 

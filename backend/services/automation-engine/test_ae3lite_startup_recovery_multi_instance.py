@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import asyncpg
 import pytest
 
 from ae3lite.application.services.task_failed_alert import recovery_task_failed_dedupe_key
+from ae3lite.application.services.workflow_topology import TopologyRegistry
+from ae3lite.application.use_cases.startup_recovery import StartupRecoveryUseCase
+from ae3lite.domain.entities import ZoneLease
 from ae3lite.infrastructure.advisory_locks import AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY
 from common.env import get_settings
 
+from test_ae3lite_recovery_topology import (
+    NOW,
+    _MockCommandGateway,
+    _MockTaskRepo,
+    _make_task,
+)
 from test_ae3lite_startup_recovery_integration import _build_use_case
 
 pytestmark = pytest.mark.integration
@@ -84,3 +94,46 @@ async def test_startup_recovery_skips_when_advisory_lock_held() -> None:
             )
         finally:
             await conn.close()
+
+
+class _LeaseRepoWithForeignLease:
+    async def release_expired(self, *, now: datetime) -> int:
+        return 0
+
+    async def get(self, *, zone_id: int) -> ZoneLease:
+        return ZoneLease(
+            zone_id=zone_id,
+            owner="worker-a",
+            leased_until=NOW + timedelta(minutes=10),
+            updated_at=NOW,
+        )
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_worker_b_skips_foreign_lease_task_from_worker_a() -> None:
+    """Recovery worker-b не трогает in-flight задачу worker-a с живым lease."""
+    task = _make_task(
+        task_id=42,
+        zone_id=7,
+        status="running",
+        stage="clean_fill_start",
+        claimed_by="worker-a",
+    )
+    repo = _MockTaskRepo(tasks=[task])
+    recovery_b = StartupRecoveryUseCase(
+        task_repository=repo,
+        lease_repository=_LeaseRepoWithForeignLease(),
+        command_gateway=_MockCommandGateway(recover_state="waiting_command"),
+        topology_registry=TopologyRegistry(),
+        use_startup_recovery_lock=False,
+        worker_owner="worker-b",
+    )
+
+    result = await recovery_b.run(now=NOW)
+
+    assert result.scanned_tasks == 1
+    assert result.failed_tasks == 0
+    assert result.waiting_command_tasks == 0
+    assert repo.failed == []
+    assert repo.waiting_command_persisted == []
+    assert task.status == "running"

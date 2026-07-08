@@ -117,6 +117,7 @@ def build_ae3_runtime_bundle(
         workflow_repository=workflow_repository,
         topology_registry=topology_registry,
         alert_repository=alert_repository,
+        worker_owner=config.worker_owner,
     )
     waiting_command_reconcile_use_case = WaitingCommandReconcileUseCase(
         task_repository=task_repository,

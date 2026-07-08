@@ -456,3 +456,33 @@ async def test_handle_command_response_marks_dropped_delivery_in_simulation_even
         mock_record.assert_awaited_once()
         assert mock_record.await_args.kwargs["payload"]["delivery"] == "dropped"
         assert mock_record.await_args.kwargs["payload"]["delivery_reason"] == "http_500"
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_emits_infra_alert_on_dropped_delivery():
+    from mqtt_handlers import handle_command_response
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps(
+        {"cmd_id": "cmd-delivery-drop-alert", "status": "DONE", "ts": 1737979200042}
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("handlers.command_response.emit_status_delivery_dropped_alert", new_callable=AsyncMock) as mock_alert, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock), \
+         patch("mqtt_handlers.COMMAND_RESPONSE_ERROR"):
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "set_relay"}]
+        mock_send.return_value = _delivery_result(
+            delivered=False,
+            queued=False,
+            dropped=True,
+            reason="http_500",
+        )
+
+        await handle_command_response(topic, payload)
+
+        mock_alert.assert_awaited_once()
+        assert mock_alert.await_args.kwargs["cmd_id"] == "cmd-delivery-drop-alert"
+        assert mock_alert.await_args.kwargs["status_value"] == "DONE"
+        assert mock_alert.await_args.kwargs["reason"] == "http_500"

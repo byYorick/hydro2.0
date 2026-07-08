@@ -101,9 +101,14 @@ class _MockTaskRepo:
         self.requeued: list[dict] = []
         self.completed: list[int] = []
         self.transitions: list[dict] = []
-        self.waiting_command_persisted: list[int] = []
+        self.waiting_command_persisted: list[dict[str, Any]] = []
 
-    async def list_for_startup_recovery(self) -> list[AutomationTask]:
+    async def list_for_startup_recovery(
+        self,
+        *,
+        worker_owner: str | None = None,
+        now: datetime | None = None,
+    ) -> list[AutomationTask]:
         return self._tasks
 
     async def fetch_pending_with_idle_zone_workflow_rows(self) -> list[dict]:
@@ -168,8 +173,8 @@ class _MockTaskRepo:
     async def record_transition(self, *, task_id, from_stage, to_stage, workflow_phase, now, **kwargs):
         self.transitions.append({"task_id": task_id, "to_stage": to_stage})
 
-    async def recover_waiting_command(self, *, task_id, now, owner=None):
-        self.waiting_command_persisted.append(task_id)
+    async def recover_waiting_command(self, *, task_id, now, owner: str):
+        self.waiting_command_persisted.append({"task_id": task_id, "owner": owner})
         task = next((t for t in self._tasks if t.id == task_id), None)
         if task is None:
             return _make_task(task_id=task_id, status="waiting_command")
@@ -249,11 +254,16 @@ class _MockCommandGateway:
         failed_error_code: str | None = None,
         failed_error_message: str | None = None,
         simulate_missing_ae_command: bool = False,
+        poll_deadline_exceeded: bool = False,
     ):
         self._state = recover_state
         self._failed_error_code = failed_error_code
         self._failed_error_message = failed_error_message
         self._simulate_missing_ae_command = simulate_missing_ae_command
+        self._poll_deadline_exceeded = poll_deadline_exceeded
+
+    async def waiting_command_poll_deadline_exceeded(self, *, task, now) -> bool:
+        return self._poll_deadline_exceeded
 
     async def recover_waiting_command(self, *, task, now) -> dict:
         if self._simulate_missing_ae_command:
@@ -303,6 +313,7 @@ def _make_use_case(
     gateway_state: str = "done",
     gateway_failed_error_code: str | None = None,
     gateway_simulate_missing_ae_command: bool = False,
+    gateway_poll_deadline_exceeded: bool = False,
     alert_repository: _AlertRepositoryRecorder | None = None,
     lease_repository: _MockLeaseRepo | None = None,
     workflow_repository: _MockWorkflowRepo | None = None,
@@ -317,6 +328,7 @@ def _make_use_case(
             recover_state=gateway_state,
             failed_error_code=gateway_failed_error_code,
             simulate_missing_ae_command=gateway_simulate_missing_ae_command,
+            poll_deadline_exceeded=gateway_poll_deadline_exceeded,
         ),
         workflow_repository=workflow_repository,
         topology_registry=TopologyRegistry(),
@@ -433,6 +445,25 @@ async def test_recovery_command_still_pending_stays_waiting():
     assert len(repo.requeued) == 0
 
 
+async def test_recovery_waiting_command_poll_deadline_fails_task():
+    """waiting_command + poll deadline exceeded → fail-closed с ae3_command_poll_deadline_exceeded."""
+    task = _make_task(status="waiting_command", stage="clean_fill_start")
+    alerts = _AlertRepositoryRecorder()
+    uc, repo, _leases = _make_use_case(
+        tasks=[task],
+        gateway_state="waiting_command",
+        gateway_poll_deadline_exceeded=True,
+        alert_repository=alerts,
+    )
+
+    result = await uc.run(now=NOW)
+
+    assert result.failed_tasks == 1
+    assert result.waiting_command_tasks == 0
+    assert repo.failed[0]["error_code"] == "ae3_command_poll_deadline_exceeded"
+    assert len(alerts.calls) == 1
+
+
 async def test_recovery_claimed_task_fails():
     """Task stuck in claimed status (no confirmed command) → fail immediately."""
     task = _make_task(status="claimed", stage="clean_fill_start")
@@ -532,7 +563,7 @@ async def test_recovery_running_with_pending_legacy_stays_waiting_command():
 
     assert result.failed_tasks == 0
     assert result.waiting_command_tasks == 1
-    assert repo.waiting_command_persisted == [task.id]
+    assert repo.waiting_command_persisted == [{"task_id": task.id, "owner": "worker-a"}]
 
 
 async def test_recovery_running_without_ae_command_fails():

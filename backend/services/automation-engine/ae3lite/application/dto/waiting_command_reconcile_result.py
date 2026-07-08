@@ -18,4 +18,4 @@ class WaitingCommandReconcileResult:
 
     @property
     def kick_needed(self) -> bool:
-        return self.progressed_tasks > 0
+        return self.progressed_tasks > 0 or self.failed_tasks > 0 or self.failed_tasks > 0 or self.failed_tasks > 0

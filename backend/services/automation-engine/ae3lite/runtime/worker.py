@@ -90,6 +90,8 @@ class Ae3RuntimeWorker:
             ),
         )
         self._last_stale_task_reconcile_monotonic: float | None = None
+        self._last_active_task_age_metrics_monotonic: float | None = None
+        self._active_task_age_metrics_interval_sec = self._stale_task_reconcile_interval_sec
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
@@ -204,6 +206,7 @@ class Ae3RuntimeWorker:
             try:
                 await self._run_waiting_command_reconcile_once()
                 await self._maybe_run_stale_task_reconcile_once()
+                await self._maybe_refresh_active_task_age_metrics_once()
                 self._reconcile_consecutive_errors = 0
                 RECONCILE_CONSECUTIVE_ERRORS.set(0)
             except asyncio.CancelledError:
@@ -295,6 +298,27 @@ class Ae3RuntimeWorker:
                 self._spawn_drain_task()
             else:
                 self._arm_respawn_on_done(drain)
+
+    async def _maybe_refresh_active_task_age_metrics_once(self) -> None:
+        if self._task_repository is None:
+            return
+        refresh = getattr(self._task_repository, "refresh_active_task_age_metrics", None)
+        if not callable(refresh):
+            return
+        now_mono = time.monotonic()
+        if self._last_active_task_age_metrics_monotonic is not None:
+            elapsed = now_mono - self._last_active_task_age_metrics_monotonic
+            if elapsed < self._active_task_age_metrics_interval_sec:
+                return
+        self._last_active_task_age_metrics_monotonic = now_mono
+        try:
+            await refresh(now=self._now_fn())
+        except Exception:
+            self._logger.warning(
+                "AE3 reconcile: failed to refresh active task age metrics: owner=%s",
+                self._owner,
+                exc_info=True,
+            )
 
     async def _drain_pending_tasks(self) -> None:
         self._log_debug("AE3 runtime drain started")
@@ -510,7 +534,9 @@ class Ae3RuntimeWorker:
     async def _execute_claimed_task(self, *, task: Any) -> None:
         intent_id = int(task.intent_id or 0)
         if intent_id > 0:
-            await self._safe_mark_intent_running(intent_id=intent_id)
+            if not await self._safe_mark_intent_running(intent_id=intent_id):
+                await self._abort_task_after_intent_sync_failure(task=task, intent_id=intent_id)
+                return
 
         lease_lost_event = asyncio.Event()
         heartbeat_task = self._spawn_background_task_fn(
@@ -794,12 +820,65 @@ class Ae3RuntimeWorker:
                     exc_info=True,
                 )
 
-    async def _safe_mark_intent_running(self, *, intent_id: int) -> None:
+    async def _abort_task_after_intent_sync_failure(self, *, task: Any, intent_id: int) -> None:
+        error_code = "ae3_intent_sync_failed"
+        error_message = (
+            f"Не удалось синхронизировать intent {intent_id} в running после исчерпания retry"
+        )
+        task_id = int(getattr(task, "id", 0) or 0)
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        if task_id > 0 and self._task_repository is not None:
+            fail_for_recovery = getattr(self._task_repository, "fail_for_recovery", None)
+            if callable(fail_for_recovery):
+                try:
+                    await fail_for_recovery(
+                        task_id=task_id,
+                        error_code=error_code,
+                        error_message=error_message,
+                        now=self._now_fn(),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    self._logger.warning(
+                        "AE3 runtime не смог перевести задачу в failed после intent sync failure: "
+                        "zone_id=%s task_id=%s owner=%s",
+                        zone_id,
+                        task_id,
+                        self._owner,
+                        exc_info=True,
+                    )
+        await self._safe_mark_intent_terminal_result(
+            intent_id=intent_id,
+            now=self._now_fn(),
+            success=False,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        if zone_id > 0:
+            try:
+                released = await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+                if not released:
+                    await asyncio.sleep(0.05)
+                    await self._zone_lease_repository.release(zone_id=zone_id, owner=self._owner)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._logger.warning(
+                    "AE3 runtime не смог освободить lease после intent sync failure: "
+                    "zone_id=%s task_id=%s owner=%s",
+                    zone_id,
+                    task_id,
+                    self._owner,
+                    exc_info=True,
+                )
+
+    async def _safe_mark_intent_running(self, *, intent_id: int) -> bool:
         max_attempts = 1 + self._intent_sync_max_retries
         for attempt in range(max_attempts):
             try:
                 await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
-                return
+                return True
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -810,7 +889,8 @@ class Ae3RuntimeWorker:
                         intent_id,
                         exc_info=True,
                     )
-                    return
+                    return False
+        return False
 
     async def _safe_mark_intent_terminal(self, *, task: Any, intent_id: int) -> None:
         await self._safe_mark_intent_terminal_result(
