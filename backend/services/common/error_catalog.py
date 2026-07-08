@@ -26,7 +26,10 @@ def _codes_by_code() -> dict[str, dict[str, str]]:
     path = next((candidate for candidate in _CATALOG_PATHS if candidate.is_file()), None)
     if path is None:
         return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return {}
+    data = json.loads(raw)
     result: dict[str, dict[str, str]] = {}
     for row in data.get("codes", []):
         if not isinstance(row, dict):
@@ -45,7 +48,10 @@ def _raw_translations() -> dict[str, Any]:
     path = next((candidate for candidate in _RAW_TRANSLATION_PATHS if candidate.is_file()), None)
     if path is None:
         return {"code_by_exact_message": {}, "exact": {}, "patterns": []}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return {"code_by_exact_message": {}, "exact": {}, "patterns": []}
+    data = json.loads(raw)
     return {
         "code_by_exact_message": data.get("code_by_exact_message") or {},
         "exact": data.get("exact") or {},

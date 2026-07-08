@@ -135,6 +135,7 @@ class AutomationEngineE2ESeeder extends Seeder
                     ['channel' => 'valve_solution_fill', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_solution_fill'],
                     ['channel' => 'valve_solution_supply', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_solution_supply'],
                     ['channel' => 'valve_irrigation', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_irrigation'],
+                    ['channel' => 'valve_drain', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_drain'],
                 ],
             ],
             [

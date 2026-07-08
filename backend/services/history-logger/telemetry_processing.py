@@ -5,7 +5,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import asyncpg
 import httpx
@@ -133,6 +133,13 @@ def _is_pg_transport_error(exc: Exception) -> bool:
         return True
     sqlstate = getattr(exc, "sqlstate", None)
     return sqlstate in {"08000", "08003", "08006", "08001", "08004", "57P01", "57P02", "57P03"}
+
+
+def _persist_quality_for_sample(sample: Any) -> str:
+    """Map in-memory STUB marker to DB-allowed quality; stub stays in metadata."""
+    if bool(getattr(sample, "stub", False)):
+        return "UNCERTAIN"
+    return "GOOD"
 
 
 _anomaly_alert_last_sent = telemetry_anomaly_module._anomaly_alert_last_sent
@@ -1643,7 +1650,7 @@ async def process_telemetry_batch(
         sample_ts = _normalize_ts_for_db(sample.ts)
         existing_ts = telemetry_last_updates.get(sensor_id, {}).get("ts")
         if existing_ts is None or sample_ts > existing_ts:
-            sample_quality = "STUB" if bool(getattr(sample, "stub", False)) else "GOOD"
+            sample_quality = _persist_quality_for_sample(sample)
             telemetry_last_updates[sensor_id] = {
                 "value": sample.value,
                 "ts": sample_ts,
@@ -1750,7 +1757,7 @@ async def process_telemetry_batch(
         sample_ts_values.append(_normalize_ts_for_db(sample.ts))
         zone_ids.append(int(item["zone_id"]) if item["zone_id"] is not None else None)
         sample_values.append(sample.value)
-        qualities.append("STUB" if bool(getattr(sample, "stub", False)) else "GOOD")
+        qualities.append(_persist_quality_for_sample(sample))
         metadata_values.append(metadata or None)
 
     if sensor_ids:

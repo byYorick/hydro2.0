@@ -1112,13 +1112,14 @@ class E2ERunner:
             host = "history-logger" if in_container else "localhost"
         default_port = "9300" if in_container else "9302"
         port = os.getenv("HISTORY_LOGGER_PORT", default_port)
-        _add_history_logger_url(f"http://{host}:{port}")
 
         if in_container:
+            _add_history_logger_url(f"http://{host}:{port}")
             _add_history_logger_url("http://history-logger:9300")
         else:
-            _add_history_logger_url("http://localhost:9302")
-            _add_history_logger_url("http://127.0.0.1:9302")
+            _add_history_logger_url(f"http://localhost:{port}")
+            _add_history_logger_url(f"http://127.0.0.1:{port}")
+            _add_history_logger_url(f"http://{host}:{port}")
 
         if not history_logger_urls:
             raise ValueError(f"Unable to resolve history-logger URL for {error_label}")
@@ -1178,7 +1179,12 @@ class E2ERunner:
                 f"{error_label} failed: no response from history-logger (endpoints={history_logger_urls})"
             )
 
-        upstream = resp.json() if resp.text else {}
+        upstream: Dict[str, Any] = {}
+        if resp.text and resp.text.strip():
+            try:
+                upstream = resp.json()
+            except ValueError:
+                upstream = {"detail": resp.text}
         command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
 
         if 400 <= resp.status_code < 500:

@@ -153,6 +153,8 @@ WORKFLOW_SCENARIOS=(
   "scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml"
   "scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml"
   "scenarios/workflow/E94_startup_to_ready_smoke.yaml"
+  "scenarios/workflow/E96_reactive_solution_topup_level_switch.yaml"
+  "scenarios/workflow/E97_solution_change_operator_gate.yaml"
 )
 AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"
@@ -683,20 +685,60 @@ PY
 }
 
 get_auth_token() {
-  "$PYTHON_BIN" - <<'PY' "$LARAVEL_URL"
+  if [ -n "${LARAVEL_API_TOKEN:-}" ]; then
+    printf '%s\n' "$LARAVEL_API_TOKEN"
+    return 0
+  fi
+
+  local token=""
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if token="$(
+      "$PYTHON_BIN" - <<'PY' "$LARAVEL_URL" "$attempt"
 import httpx
 import sys
+import time
+
 base = sys.argv[1].rstrip("/")
+attempt = int(sys.argv[2])
 payload = {"email": "e2e@test.local", "role": "agronomist"}
 with httpx.Client(timeout=15.0) as c:
     resp = c.post(base + "/api/e2e/auth/token", json=payload)
-resp.raise_for_status()
-payload = resp.json()
-token = ((payload.get("data") or {}).get("token")) or ""
-if not token:
-    raise SystemExit(1)
-print(token)
+    if resp.status_code == 429 and attempt < 5:
+        time.sleep(min(2 ** attempt, 15))
+        raise SystemExit(2)
+    resp.raise_for_status()
+    body = resp.json()
+    token = ((body.get("data") or {}).get("token")) or ""
+    if not token:
+        raise SystemExit(1)
+    print(token)
 PY
+    )"; then
+      printf '%s\n' "$token"
+      return 0
+    fi
+    local exit_code=$?
+    if [ "$exit_code" -eq 2 ]; then
+      echo "⚠️ e2e auth token rate-limited (429), retry $attempt/5..."
+      sleep $((attempt * 2))
+      continue
+    fi
+    break
+  done
+
+  echo "⚠️ API token недоступен, пробую artisan e2e:auth-bootstrap..."
+  token="$(
+    "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T laravel \
+      php artisan e2e:auth-bootstrap --email=e2e@test.local --role=agronomist --no-interaction 2>/dev/null \
+      | tail -n1 | tr -d '\r' || true
+  )"
+  if [ -n "$token" ]; then
+    printf '%s\n' "$token"
+    return 0
+  fi
+
+  return 1
 }
 
 api_request_code() {
@@ -1835,6 +1877,34 @@ prepare_real_hardware_node() {
       'infra_telemetry_sample_dropped_node_not_found'
     );
   " >/dev/null
+
+  echo "🧩 Проверяю канонические actuator-каналы irrig-ноды (valve_drain и др.)..."
+  local irrig_node_id
+  irrig_node_id="$(db_query_line "SELECT id FROM nodes WHERE uid = '${TEST_NODE_UID}' AND zone_id = ${zone_id} LIMIT 1;")"
+  if [ -n "$irrig_node_id" ]; then
+    db_query_line "
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT ${irrig_node_id}, channel_name, channel_type, NOW(), NOW()
+      FROM (VALUES
+        ('pump_main', 'ACTUATOR'),
+        ('valve_clean_fill', 'ACTUATOR'),
+        ('valve_clean_supply', 'ACTUATOR'),
+        ('valve_solution_fill', 'ACTUATOR'),
+        ('valve_solution_supply', 'ACTUATOR'),
+        ('valve_irrigation', 'ACTUATOR'),
+        ('valve_drain', 'ACTUATOR'),
+        ('storage_state', 'SERVICE'),
+        ('system', 'SERVICE')
+      ) AS items(channel_name, channel_type)
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW();
+    " >/dev/null || true
+    publish_code="$(api_request_code "POST" "$LARAVEL_URL/api/nodes/${irrig_node_id}/config/publish" "{}" "$token" "/tmp/e2e_irrig_topology_publish.json")"
+    if [ "$publish_code" -lt 200 ] || [ "$publish_code" -ge 300 ]; then
+      echo "⚠️ topology republish для irrig node_id=${irrig_node_id} вернул HTTP $publish_code (продолжаю)"
+    fi
+  fi
 
   echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
   rm -f "$live_topics_file"

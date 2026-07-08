@@ -17,6 +17,12 @@ from common.mqtt import AsyncMqttClient, MqttClient
 logger = logging.getLogger(__name__)
 
 
+def _wait_mqtt_message_puback(result: Any, timeout: float) -> bool:
+    """Block for PUBACK and return whether the message was published."""
+    result.wait_for_publish(timeout=timeout)
+    return bool(result.is_published())
+
+
 # ── Command validation bounds (audit F2 + F7) ─────────────────────────
 
 #: Maximum acceptable offset between a caller-supplied ``ts`` and server
@@ -259,9 +265,11 @@ async def publish_command_mqtt(
         from metrics import COMMANDS_PUBLISH_UNCONFIRMED
 
         settings = get_settings()
+        # paho wait_for_publish() returns None on success; use is_published().
         puback_ok = await asyncio.to_thread(
-            result.wait_for_publish,
-            timeout=settings.mqtt_publish_ack_timeout_sec,
+            _wait_mqtt_message_puback,
+            result,
+            settings.mqtt_publish_ack_timeout_sec,
         )
         if not puback_ok:
             COMMANDS_PUBLISH_UNCONFIRMED.inc()

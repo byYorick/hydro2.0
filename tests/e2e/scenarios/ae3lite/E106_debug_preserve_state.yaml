@@ -13,7 +13,6 @@ cleanup:
     optional: true
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state

@@ -158,6 +158,7 @@ typedef struct {
     bool valve_solution_fill_on;
     bool valve_solution_supply_on;
     bool valve_irrigation_on;
+    bool valve_drain_on;
     bool clean_fill_stage_active;
     bool clean_max_latched;
     bool solution_fill_stage_active;
@@ -237,6 +238,7 @@ typedef struct {
     bool valve_solution_fill_on;
     bool valve_solution_supply_on;
     bool valve_irrigation_on;
+    bool valve_drain_on;
     bool tank_fill_on;
     bool tank_drain_on;
     bool irrigation_on;
@@ -316,6 +318,7 @@ static const channel_def_t IRRIGATION_CHANNELS[] = {
     {.name = "valve_solution_fill", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_solution_supply", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_irrigation", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_drain", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "level_clean_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_clean_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_solution_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
@@ -456,6 +459,7 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .valve_solution_fill_on = false,
     .valve_solution_supply_on = false,
     .valve_irrigation_on = false,
+    .valve_drain_on = false,
     .clean_fill_stage_active = false,
     .clean_max_latched = false,
     .solution_fill_stage_active = false,
@@ -510,6 +514,7 @@ static virtual_state_t s_virtual_state = {
     .valve_solution_fill_on = false,
     .valve_solution_supply_on = false,
     .valve_irrigation_on = false,
+    .valve_drain_on = false,
     .clean_fill_stage_active = false,
     .clean_max_latched = false,
     .solution_fill_stage_active = false,
@@ -1489,6 +1494,7 @@ static void stop_all_virtual_irrigation_paths(void) {
     s_virtual_state.valve_solution_fill_on = false;
     s_virtual_state.valve_solution_supply_on = false;
     s_virtual_state.valve_irrigation_on = false;
+    s_virtual_state.valve_drain_on = false;
     s_virtual_state.tank_fill_on = false;
     s_virtual_state.tank_drain_on = false;
     s_virtual_state.irrigation_on = false;
@@ -1677,6 +1683,7 @@ static void handle_virtual_irrigation_estop(bool pressed) {
         s_virtual_irrig_estop.valve_solution_fill_on = s_virtual_state.valve_solution_fill_on;
         s_virtual_irrig_estop.valve_solution_supply_on = s_virtual_state.valve_solution_supply_on;
         s_virtual_irrig_estop.valve_irrigation_on = s_virtual_state.valve_irrigation_on;
+        s_virtual_irrig_estop.valve_drain_on = s_virtual_state.valve_drain_on;
         s_virtual_irrig_estop.tank_fill_on = s_virtual_state.tank_fill_on;
         s_virtual_irrig_estop.tank_drain_on = s_virtual_state.tank_drain_on;
         s_virtual_irrig_estop.irrigation_on = s_virtual_state.irrigation_on;
@@ -1705,6 +1712,7 @@ static void handle_virtual_irrigation_estop(bool pressed) {
         s_virtual_state.valve_solution_fill_on = s_virtual_irrig_estop.valve_solution_fill_on;
         s_virtual_state.valve_solution_supply_on = s_virtual_irrig_estop.valve_solution_supply_on;
         s_virtual_state.valve_irrigation_on = s_virtual_irrig_estop.valve_irrigation_on;
+        s_virtual_state.valve_drain_on = s_virtual_irrig_estop.valve_drain_on;
         s_virtual_state.tank_fill_on = s_virtual_irrig_estop.tank_fill_on;
         s_virtual_state.tank_drain_on = s_virtual_irrig_estop.tank_drain_on;
         s_virtual_state.irrigation_on = s_virtual_irrig_estop.irrigation_on;
@@ -1839,7 +1847,8 @@ static bool is_irrigation_storage_actuator_channel(const char *channel) {
             strcmp(channel, "valve_clean_supply") == 0 ||
             strcmp(channel, "valve_solution_fill") == 0 ||
             strcmp(channel, "valve_solution_supply") == 0 ||
-            strcmp(channel, "valve_irrigation") == 0
+            strcmp(channel, "valve_irrigation") == 0 ||
+            strcmp(channel, "valve_drain") == 0
         );
 }
 
@@ -1883,6 +1892,7 @@ static bool is_supported_actuator_command(const char *channel, const char *cmd) 
         strcmp(channel, "valve_solution_fill") == 0 ||
         strcmp(channel, "valve_solution_supply") == 0 ||
         strcmp(channel, "valve_irrigation") == 0 ||
+        strcmp(channel, "valve_drain") == 0 ||
         strcmp(channel, "fan_air") == 0 ||
         strcmp(channel, "fan") == 0 ||
         strcmp(channel, "heater") == 0) {
@@ -3018,6 +3028,7 @@ static cJSON *build_irr_state_snapshot(void) {
     cJSON_AddBoolToObject(snapshot, "valve_solution_fill", s_virtual_state.valve_solution_fill_on);
     cJSON_AddBoolToObject(snapshot, "valve_solution_supply", s_virtual_state.valve_solution_supply_on);
     cJSON_AddBoolToObject(snapshot, "valve_irrigation", s_virtual_state.valve_irrigation_on);
+    cJSON_AddBoolToObject(snapshot, "valve_drain", s_virtual_state.valve_drain_on);
     cJSON_AddBoolToObject(snapshot, "pump_main", s_virtual_state.main_pump_on);
     return snapshot;
 }
@@ -3473,6 +3484,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             current_state = s_virtual_state.valve_solution_supply_on;
         } else if (strcmp(job->channel, "valve_irrigation") == 0) {
             current_state = s_virtual_state.valve_irrigation_on;
+        } else if (strcmp(job->channel, "valve_drain") == 0) {
+            current_state = s_virtual_state.valve_drain_on;
         } else if (is_fill_channel(job->channel)) {
             current_state = s_virtual_state.tank_fill_on;
         } else if (is_drain_channel(job->channel)) {
@@ -3607,6 +3620,11 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
     } else if (strcmp(job->channel, "valve_irrigation") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.valve_irrigation_on = job->relay_state;
+            handled = true;
+        }
+    } else if (strcmp(job->channel, "valve_drain") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_drain_on = job->relay_state;
             handled = true;
         }
     } else if (is_fill_channel(job->channel)) {

@@ -346,10 +346,11 @@ async def test_publish_command_mqtt_waits_for_puback():
     mock_mqtt.is_connected.return_value = True
     mock_result = MagicMock()
     mock_result.rc = 0
-    mock_result.wait_for_publish.return_value = True
+    mock_result.is_published.return_value = True
     mock_mqtt._client._client.publish.return_value = mock_result
 
-    with patch("command_service.get_settings") as mock_settings:
+    with patch("command_service.get_settings") as mock_settings, \
+         patch("command_service._wait_mqtt_message_puback", return_value=True) as mock_wait:
         mock_settings.return_value.mqtt_publish_ack_timeout_sec = 5.0
         await publish_command_mqtt(
             mock_mqtt,
@@ -361,7 +362,7 @@ async def test_publish_command_mqtt_waits_for_puback():
             zone_uid="zn-1",
         )
 
-    mock_result.wait_for_publish.assert_called_once_with(timeout=5.0)
+    mock_wait.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -373,12 +374,12 @@ async def test_publish_command_mqtt_puback_timeout_raises():
     mock_mqtt.is_connected.return_value = True
     mock_result = MagicMock()
     mock_result.rc = 0
-    mock_result.wait_for_publish.return_value = False
     mock_mqtt._client._client.publish.return_value = mock_result
 
     before = COMMANDS_PUBLISH_UNCONFIRMED._value.get()
 
-    with patch("command_service.get_settings") as mock_settings:
+    with patch("command_service.get_settings") as mock_settings, \
+         patch("command_service._wait_mqtt_message_puback", return_value=False):
         mock_settings.return_value.mqtt_publish_ack_timeout_sec = 1.0
         with pytest.raises(RuntimeError, match="PUBACK"):
             await publish_command_mqtt(

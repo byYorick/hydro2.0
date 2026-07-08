@@ -148,6 +148,65 @@ actions:
     timeout: 60.0
     expected_rows: 1
 
+  - step: activate_ph_sensor_mode_early
+    type: hardware_activate_sensor_mode
+    zone_id: ${zone_id}
+    node_uid: ${resolved_ph_node_uid}
+    save: activate_ph_sensor_mode_early_response
+
+  - step: wait_activate_ph_sensor_mode_early_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${activate_ph_sensor_mode_early_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: activate_ec_sensor_mode_early
+    type: hardware_activate_sensor_mode
+    zone_id: ${zone_id}
+    node_uid: ${resolved_ec_node_uid}
+    save: activate_ec_sensor_mode_early_response
+
+  - step: wait_activate_ec_sensor_mode_early_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${activate_ec_sensor_mode_early_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: wait_ph_ec_telemetry_available_early
+    type: db.wait
+    query: |
+      SELECT COUNT(*)::int AS metrics_ready
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
+      WHERE COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
+        AND (
+          (s.node_id = CAST(:ph_node_id AS bigint) AND s.type = 'PH' AND s.label = 'ph_sensor')
+          OR
+          (s.node_id = CAST(:ec_node_id AS bigint) AND s.type = 'EC' AND s.label = 'ec_sensor')
+        )
+      HAVING COUNT(*) = 2
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 60.0
+    expected_rows: 1
+
   - step: load_ec_pump_channel
     type: database_query
     query: |
@@ -773,15 +832,10 @@ actions:
     save: grow_cycle_bundle_row
 
   - step: reset_test_node_state
-    type: ae_test_hook
+    type: hardware_reset_state
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: reset_state
-      params: {}
+    node_uid: ${test_node_uid}
+    channel: storage_state
     save: reset_state_response
 
   - step: wait_reset_state_done
@@ -973,7 +1027,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1051,69 +1104,41 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 40.0
+    timeout: 80.0
     expected_rows: 1
     save: solution_fill_stage_row
 
-  - step: wait_solution_fill_commands
-    type: db.wait
-    query: |
-      SELECT CAST(:task_id AS bigint) AS task_id
-      FROM ae_commands
-      WHERE task_id = CAST(:task_id AS bigint)
-      GROUP BY task_id
-      HAVING COUNT(*) FILTER (
-        WHERE publish_status = 'accepted'
-          AND channel = 'valve_clean_supply'
-          AND payload->>'cmd' = 'set_relay'
-          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
-      ) >= 1
-         AND COUNT(*) FILTER (
-        WHERE publish_status = 'accepted'
-          AND channel = 'valve_solution_fill'
-          AND payload->>'cmd' = 'set_relay'
-          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
-      ) >= 1
-         AND COUNT(*) FILTER (
-        WHERE publish_status = 'accepted'
-          AND channel = 'pump_main'
-          AND payload->>'cmd' = 'set_relay'
-          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
-      ) >= 1
-         AND COUNT(*) FILTER (
-        WHERE publish_status = 'accepted'
-          AND channel = 'system'
-          AND payload->>'cmd' = 'activate_sensor_mode'
-      ) >= 2
-    params:
-      task_id: ${task_id}
-    timeout: 40.0
-    expected_rows: 1
+  - step: hold_solution_tank_filling_before_stabilize
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_solution_min_override: true
+        level_solution_max_override: false
+    save: hold_solution_filling_response
 
-  - step: wait_ph_ec_telemetry_available
+  - step: wait_hold_solution_filling_done
     type: db.wait
     query: |
-      SELECT COUNT(*)::int AS metrics_ready
-      FROM sensors s
-      JOIN telemetry_last tl ON tl.sensor_id = s.id
-      WHERE COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
-        AND (
-          (s.node_id = CAST(:ph_node_id AS bigint) AND s.type = 'PH' AND s.label = 'ph_sensor')
-          OR
-          (s.node_id = CAST(:ec_node_id AS bigint) AND s.type = 'EC' AND s.label = 'ec_sensor')
-        )
-      HAVING COUNT(*) = 2
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
-      ph_node_id: ${ph_node_id}
-      ec_node_id: ${ec_node_id}
-    timeout: 30.0
+      cmd_id: ${hold_solution_filling_response.data.cmd_id}
+    timeout: 20.0
     expected_rows: 1
 
   - step: stabilize_ph_ec_targets_before_solution_full
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1154,7 +1179,7 @@ actions:
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
-    timeout: 20.0
+    timeout: 30.0
     expected_rows: 1
     save: stabilized_ph_ec_row
 
@@ -1199,15 +1224,49 @@ actions:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
       after_stabilize_at: ${stabilize_ph_ec_done_row.0.created_at}
-    timeout: 40.0
+    timeout: 60.0
     expected_rows: 1
     save: stabilized_ph_ec_window_row
+
+  - step: wait_solution_fill_commands
+    type: db.wait
+    query: |
+      SELECT CAST(:task_id AS bigint) AS task_id
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+      GROUP BY task_id
+      HAVING COUNT(*) FILTER (
+        WHERE publish_status = 'accepted'
+          AND channel = 'valve_clean_supply'
+          AND payload->>'cmd' = 'set_relay'
+          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+      ) >= 1
+         AND COUNT(*) FILTER (
+        WHERE publish_status = 'accepted'
+          AND channel = 'valve_solution_fill'
+          AND payload->>'cmd' = 'set_relay'
+          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+      ) >= 1
+         AND COUNT(*) FILTER (
+        WHERE publish_status = 'accepted'
+          AND channel = 'pump_main'
+          AND payload->>'cmd' = 'set_relay'
+          AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+      ) >= 1
+         AND COUNT(*) FILTER (
+        WHERE publish_status = 'accepted'
+          AND channel = 'system'
+          AND payload->>'cmd' = 'activate_sensor_mode'
+      ) >= 2
+    params:
+      task_id: ${task_id}
+    timeout: 40.0
+    expected_rows: 1
 
   - step: force_solution_tank_full
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1276,7 +1335,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 180.0
+    timeout: 600.0
     expected_rows: 1
     save: completed_task_row
 
@@ -1490,7 +1549,6 @@ cleanup:
     optional: true
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state

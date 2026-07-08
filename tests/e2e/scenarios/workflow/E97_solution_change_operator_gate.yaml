@@ -8,7 +8,6 @@
 # - manual step solution_drain_confirm переводит stage в solution_drain_start
 
 name: E97_solution_change_operator_gate
-auth_role: operator
 description: |
   Проверяет полуавтоматическую подмену раствора (solution_change v1, этап D.1):
   1) зона two-tank в ready с включённой подсистемой solution_change,
@@ -108,17 +107,53 @@ actions:
     params:
       zone_id: ${zone_id}
 
-  - step: cleanup_zone_automation_artifacts
+  - step: cleanup_zone_ae_commands
     type: database_execute
     query: |
       DELETE FROM ae_commands
       WHERE task_id IN (SELECT id FROM ae_tasks WHERE zone_id = :zone_id);
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_stage_transitions
+    type: database_execute
+    query: |
       DELETE FROM ae_stage_transitions
       WHERE task_id IN (SELECT id FROM ae_tasks WHERE zone_id = :zone_id);
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_ae_tasks
+    type: database_execute
+    query: |
       DELETE FROM ae_tasks WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_leases
+    type: database_execute
+    query: |
       DELETE FROM ae_zone_leases WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_intents
+    type: database_execute
+    query: |
       DELETE FROM zone_automation_intents WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_cycles
+    type: database_execute
+    query: |
       DELETE FROM grow_cycles WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_workflow_state
+    type: database_execute
+    query: |
       DELETE FROM zone_workflow_state WHERE zone_id = :zone_id;
     params:
       zone_id: ${zone_id}
@@ -176,7 +211,7 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: cycle_response
 
   - step: set_cycle_id
@@ -202,11 +237,56 @@ actions:
                     - irrig
                   startup:
                     level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
                     solution_change_enabled: true
                     solution_change_operator_confirm_timeout_sec: 3600
                     solution_drain_timeout_sec: 900
                     telemetry_max_age_sec: 120
+                    irr_state_max_age_sec: 120
+                  target_ph: 5.8
+                  target_ec: 1.4
+                  prepare_tolerance:
+                    ph_pct: 15
+                    ec_pct: 25
                   two_tank_commands:
+                    clean_fill_start:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                    clean_fill_stop:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                    solution_fill_start:
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_fill_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: false
                     solution_drain_start:
                       - channel: valve_drain
                         cmd: set_relay
@@ -217,16 +297,32 @@ actions:
                         cmd: set_relay
                         params:
                           state: false
-                    clean_fill_start:
-                      - channel: valve_clean_fill
+                    prepare_recirculation_start:
+                      - channel: valve_solution_supply
                         cmd: set_relay
                         params:
                           state: true
-                    solution_fill_start:
                       - channel: valve_solution_fill
                         cmd: set_relay
                         params:
                           state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    prepare_recirculation_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: false
               solution_change:
                 enabled: true
 
@@ -366,12 +462,28 @@ cleanup:
       task_id: ${task_id}
     optional: true
 
-  - step: delete_test_ae_artifacts
+  - step: delete_test_ae_commands
     type: database_execute
     condition: ${task_id is not None and task_id != ''}
     query: |
       DELETE FROM ae_commands WHERE task_id = CAST(:task_id AS bigint);
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: delete_test_ae_stage_transitions
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
       DELETE FROM ae_stage_transitions WHERE task_id = CAST(:task_id AS bigint);
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: delete_test_ae_task
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
       DELETE FROM ae_tasks WHERE id = CAST(:task_id AS bigint);
     params:
       task_id: ${task_id}

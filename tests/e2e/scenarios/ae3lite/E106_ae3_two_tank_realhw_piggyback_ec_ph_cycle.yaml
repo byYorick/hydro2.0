@@ -958,15 +958,10 @@ actions:
     save: grow_cycle_bundle_row
 
   - step: reset_test_node_state
-    type: ae_test_hook
+    type: hardware_reset_state
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: reset_state
-      params: {}
+    node_uid: ${test_node_uid}
+    channel: storage_state
     save: reset_state_response
 
   - step: wait_reset_state_done
@@ -985,15 +980,10 @@ actions:
     optional: true
 
   - step: reset_test_node_state_confirm
-    type: ae_test_hook
+    type: hardware_reset_state
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: reset_state
-      params: {}
+    node_uid: ${test_node_uid}
+    channel: storage_state
     save: reset_state_response_confirm
 
   - step: wait_reset_state_done_confirm
@@ -1185,7 +1175,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1358,7 +1347,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1388,7 +1376,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1448,7 +1435,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1529,7 +1515,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1739,7 +1724,6 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
@@ -1963,7 +1947,6 @@ cleanup:
     optional: true
     zone_id: ${zone_id}
     action: publish_command
-    history_logger_url: http://history-logger:9300
     command:
       node_uid: ${test_node_uid}
       channel: storage_state
