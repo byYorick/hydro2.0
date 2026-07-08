@@ -779,13 +779,15 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             claimed_stale_after_sec=runtime_config.start_cycle_claim_stale_sec,
             running_stale_after_sec=runtime_config.start_cycle_running_stale_sec,
         ),
-        create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now, allow_create=True: bundle.create_task_from_intent_use_case.run(
+        create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now, allow_create=True, lighting_desired_state=None, lighting_brightness_pct=None: bundle.create_task_from_intent_use_case.run(
             zone_id=zone_id,
             source=source,
             idempotency_key=idempotency_key,
             intent_row=intent_row,
             now=now,
             allow_create=allow_create,
+            lighting_desired_state=lighting_desired_state,
+            lighting_brightness_pct=lighting_brightness_pct,
         ),
         kick_worker_fn=bundle.worker.kick,
         build_start_cycle_response_fn=build_start_cycle_response,

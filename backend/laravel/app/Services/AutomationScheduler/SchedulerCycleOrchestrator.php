@@ -557,9 +557,13 @@ class SchedulerCycleOrchestrator
                     $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
                     if ($desiredNow !== $desiredLast) {
                         if (ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)) {
+                            $desiredState = $desiredNow ? 'on' : 'off';
+                            $transitionPayload = array_merge($schedule->payload, [
+                                'desired_state' => $desiredState,
+                            ]);
                             $batchDispatchJobs[] = [
                                 'zoneId' => $zoneId,
-                                'schedule' => $schedule,
+                                'schedule' => $schedule->withPayload($transitionPayload),
                                 'triggerTime' => $now,
                                 'scheduleKey' => $scheduleKey,
                                 'taskType' => $taskType,

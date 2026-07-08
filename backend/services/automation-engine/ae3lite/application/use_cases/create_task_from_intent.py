@@ -47,6 +47,8 @@ class CreateTaskFromIntentUseCase:
         intent_row: Mapping[str, Any],
         now: datetime,
         allow_create: bool = True,
+        lighting_desired_state: str | None = None,
+        lighting_brightness_pct: int | None = None,
     ) -> TaskCreationResult:
         normalized_key = str(idempotency_key or "").strip()
         if normalized_key == "":
@@ -129,6 +131,12 @@ class CreateTaskFromIntentUseCase:
                     intent_row=intent_row,
                 )
                 intent_meta = dict(meta.intent_meta) if isinstance(meta.intent_meta, Mapping) else {}
+                if str(meta.task_type or "").strip().lower() == "lighting_tick":
+                    intent_meta = self._merge_lighting_tick_intent_payload(
+                        intent_meta=intent_meta,
+                        lighting_desired_state=lighting_desired_state,
+                        lighting_brightness_pct=lighting_brightness_pct,
+                    )
                 trace_id = str(get_trace_id() or "").strip()
                 if trace_id:
                     intent_meta["trace_id"] = trace_id
@@ -374,3 +382,24 @@ class CreateTaskFromIntentUseCase:
         if value.tzinfo is None:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    def _merge_lighting_tick_intent_payload(
+        self,
+        *,
+        intent_meta: dict[str, Any],
+        lighting_desired_state: str | None,
+        lighting_brightness_pct: int | None,
+    ) -> dict[str, Any]:
+        merged = dict(intent_meta)
+        payload = dict(merged.get("intent_payload") or {}) if isinstance(merged.get("intent_payload"), Mapping) else {}
+        if lighting_desired_state is not None:
+            normalized_state = str(lighting_desired_state).strip().lower()
+            if normalized_state in {"on", "off"}:
+                payload["desired_state"] = normalized_state
+        if lighting_brightness_pct is not None:
+            try:
+                payload["brightness_pct"] = max(0, min(100, int(lighting_brightness_pct)))
+            except (TypeError, ValueError):
+                pass
+        merged["intent_payload"] = payload
+        return merged

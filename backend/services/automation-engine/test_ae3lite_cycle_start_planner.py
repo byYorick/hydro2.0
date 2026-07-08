@@ -920,6 +920,38 @@ def test_cycle_start_planner_fails_closed_on_ambiguous_actuator_resolution() -> 
         planner.build(task=_task(now), snapshot=ambiguous_snapshot)
 
 
+def _lighting_task(*, intent_meta: dict | None = None) -> AutomationTask:
+    now = datetime.now(timezone.utc)
+    return AutomationTask.from_row({
+        "id": 81,
+        "zone_id": 9,
+        "task_type": "lighting_tick",
+        "status": "claimed",
+        "idempotency_key": "lt-test",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": "w",
+        "claimed_at": now,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "lighting_tick",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "lighting_tick",
+        "intent_id": 1,
+        "intent_meta": intent_meta or {},
+        "current_stage": "apply",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+
+
 def test_planner_builds_lighting_tick_single_pwm_command() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()
@@ -974,3 +1006,133 @@ def test_planner_builds_lighting_tick_single_pwm_command() -> None:
     assert plan.steps[0].channel == "light_main"
     assert plan.steps[0].payload["cmd"] == "set_pwm"
     assert plan.steps[0].payload["params"]["duty"] == 73
+
+
+def test_planner_lighting_tick_off_pwm_sets_duty_zero() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 80}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "off"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["cmd"] == "set_pwm"
+    assert plan.steps[0].payload["params"]["duty"] == 0
+
+
+def test_planner_lighting_tick_off_relay_sets_state_false() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 80}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-relay",
+                    node_type="relay",
+                    channel="relay_light",
+                    node_channel_id=502,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "off"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["cmd"] == "set_relay"
+    assert plan.steps[0].payload["params"]["state"] is False
+
+
+def test_planner_lighting_tick_on_uses_day_brightness_from_targets() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 64, "brightness_night": 12}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "on"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 64
+
+
+def test_planner_lighting_tick_on_explicit_brightness_pct_overrides_targets() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"brightness": 64, "brightness_night": 12}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(
+        intent_meta={"intent_payload": {"desired_state": "on", "brightness_pct": 41}},
+    )
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 41
+
+
+def test_planner_lighting_tick_on_uses_night_brightness_when_not_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ae3lite.application.handlers.base import BaseStageHandler
+
+    monkeypatch.setattr(BaseStageHandler, "_is_day_now", staticmethod(lambda _cfg: False))
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "phase_targets": {
+                "day_night_enabled": True,
+                "extensions": {
+                    "day_night": {
+                        "lighting": {"day_start_time": "06:00", "day_hours": 12.0},
+                    },
+                },
+            },
+            "targets": {"lighting": {"brightness": 80, "brightness_night": 15}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "on"}})
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.steps[0].payload["params"]["duty"] == 15

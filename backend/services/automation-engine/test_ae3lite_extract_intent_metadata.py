@@ -100,6 +100,18 @@ class TestLightingTick:
         assert meta.irrigation_mode is None
         assert meta.irrigation_requested_duration_sec is None
 
+    def test_lighting_tick_reads_desired_state_from_intent_payload(self, repo: PgZoneIntentRepository) -> None:
+        row = {
+            **_BASE_ROW,
+            "task_type": "lighting_tick",
+            "intent_type": "lighting_tick",
+            "topology": "lighting_tick",
+            "payload": {"desired_state": "off", "brightness_pct": 33},
+        }
+        meta = repo.extract_intent_metadata(source="laravel_scheduler", intent_row=row)
+        assert meta.intent_meta["intent_payload"]["desired_state"] == "off"
+        assert meta.intent_meta["intent_payload"]["brightness_pct"] == 33
+
 
 class TestEdgeCases:
     def test_topology_missing_raises_task_create_error(self, repo: PgZoneIntentRepository) -> None:

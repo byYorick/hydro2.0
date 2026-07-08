@@ -602,6 +602,8 @@ def bind_start_lighting_tick_route(
                 intent_row=intent_row,
                 now=now,
                 allow_create=decision != "terminal",
+                lighting_desired_state=req.desired_state,
+                lighting_brightness_pct=req.brightness_pct,
             )
         except Exception as exc:
             raw_code = str(getattr(exc, "code", "ae3_task_create_failed")).strip() or "ae3_task_create_failed"

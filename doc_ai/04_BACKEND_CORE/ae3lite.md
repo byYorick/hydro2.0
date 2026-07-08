@@ -2,7 +2,7 @@
 
 **Версия:** 3.8-canonical
 **Дата:** 2026-05-28
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope)
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — этап A doc-first 2026-07-08)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -636,7 +636,25 @@ runtime = plan.runtime
 8. при `mode=force` bypass-ит decision-controller, но не bypass-ит canonical task/runtime path
 9. при active task или active lease возвращает controlled error
 
-### 7.2.1 `POST /greenhouses/{id}/start-climate-tick`
+### 7.2.1 `POST /zones/{id}/start-lighting-tick`
+
+Обязательный внешний ingress для scheduler-driven освещения (`task_type='lighting_tick'`, C1 + этап A day/night).
+
+Требования:
+1. принимает `source`, `idempotency_key` (как у `start-irrigation`)
+2. принимает опционально `desired_state: on|off` (default `on`) — целевое состояние для одного tick; `"off"` обязателен на границе выхода из фотопериода (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7)
+3. принимает опционально `brightness_pct: 0..100` — явная яркость для ON-tick; при OFF игнорируется
+4. создаёт canonical task `task_type='lighting_tick'` с одношаговым workflow
+5. `CycleStartPlanner._build_lighting_tick_plan` строит команду по типу actuator-канала:
+   - `desired_state=on` → `set_pwm {duty}` или `set_relay {state:true}`; duty из `brightness_pct`, затем `targets.lighting.brightness`, fallback `100`
+   - `desired_state=off` → `set_pwm {duty:0}` или `set_relay {state:false}`
+6. при active task или active lease возвращает controlled error (`409 start_lighting_tick_zone_busy`)
+
+Контракт Pydantic: `ae3lite/api/contracts.py` → `StartLightingTickRequest`.
+
+**Baseline до этапа A (текущий код):** request содержит только `source` + `idempotency_key`; planner всегда ON с duty из `targets.lighting.brightness`/`pwm_duty` (fallback `100`). Поля `desired_state` / `brightness_pct` — целевое расширение §A.3 `AGRO_AUTONOMY_MASTER_PLAN.md`.
+
+### 7.2.2 `POST /greenhouses/{id}/start-climate-tick`
 
 Ingress для **greenhouse-level** rule-based климата крыши (две roof-форточки, `set_position`), не смешивается с `ae_tasks` зоны.
 

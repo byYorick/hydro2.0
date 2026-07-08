@@ -277,6 +277,20 @@ class PgZoneIntentRepository:
             except (TypeError, ValueError):
                 irrig_dur = None
 
+        intent_payload: dict[str, Any] = {}
+        if is_lighting_tick:
+            payload_raw = intent_row.get("payload")
+            if isinstance(payload_raw, Mapping):
+                desired_state = str(payload_raw.get("desired_state") or "").strip().lower()
+                if desired_state in {"on", "off"}:
+                    intent_payload["desired_state"] = desired_state
+                brightness_pct = payload_raw.get("brightness_pct")
+                if brightness_pct is not None:
+                    try:
+                        intent_payload["brightness_pct"] = max(0, min(100, int(brightness_pct)))
+                    except (TypeError, ValueError):
+                        pass
+
         return IntentMetadata(
             task_type=task_type,
             current_stage=current_stage,
@@ -289,7 +303,7 @@ class PgZoneIntentRepository:
                 "intent_type": intent_type,
                 "intent_retry_count": int(intent_row.get("retry_count") or 0),
                 "intent_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
-                "intent_payload": {},
+                "intent_payload": intent_payload,
             },
             irrigation_mode=irrig_mode if is_irrigation else None,
             irrigation_requested_duration_sec=irrig_dur if is_irrigation else None,

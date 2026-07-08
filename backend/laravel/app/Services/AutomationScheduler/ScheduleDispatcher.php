@@ -335,6 +335,16 @@ class ScheduleDispatcher
                 : null;
         } elseif ($taskType === 'lighting') {
             $endpoint = '/start-lighting-tick';
+            $desiredState = strtolower(trim((string) ($payload['desired_state'] ?? 'on')));
+            if (! in_array($desiredState, ['on', 'off'], true)) {
+                $desiredState = 'on';
+            }
+            $requestPayload['desired_state'] = $desiredState;
+
+            $brightness = $this->resolveLightingBrightnessPct($payload, $desiredState);
+            if ($brightness !== null) {
+                $requestPayload['brightness'] = $brightness;
+            }
         }
 
         return [
@@ -954,6 +964,20 @@ class ScheduleDispatcher
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function resolveLightingBrightnessPct(array $payload, string $desiredState): ?int
+    {
+        $brightnessKey = $desiredState === 'off' ? 'brightness_night' : 'brightness';
+        $candidate = $payload[$brightnessKey] ?? ($desiredState === 'on' ? ($payload['brightness'] ?? null) : null);
+        if (! is_numeric($candidate)) {
+            return null;
+        }
+
+        return max(0, min(100, (int) $candidate));
     }
 
     private function recordRetryableDispatchFailure(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -28,6 +30,8 @@ class StartLightingTickRequest(BaseModel):
 
     source: str = Field(default="laravel_scheduler", min_length=1, max_length=64)
     idempotency_key: str = Field(..., min_length=8, max_length=160)
+    desired_state: Literal["on", "off"] = "on"
+    brightness_pct: int | None = Field(default=None, ge=0, le=100)
 
 
 __all__ = ["StartCycleRequest", "StartIrrigationRequest", "StartLightingTickRequest"]

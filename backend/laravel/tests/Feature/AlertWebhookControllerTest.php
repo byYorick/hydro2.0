@@ -69,6 +69,14 @@ class AlertWebhookControllerTest extends TestCase
             ->assertStatus(401);
     }
 
+    public function test_webhook_accepts_bearer_token(): void
+    {
+        $this->withHeaders(['Authorization' => 'Bearer '.self::WEBHOOK_SECRET])
+            ->postJson('/api/alerts/webhook', ['alerts' => []])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+    }
+
     public function test_webhook_resolves_alert_on_resolved(): void
     {
         $zone = Zone::factory()->create();

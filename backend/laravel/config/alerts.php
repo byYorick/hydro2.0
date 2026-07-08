@@ -22,4 +22,20 @@ return [
             'infra_network_failure',
         ]),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Telegram external alerting (этап E / AGRO_AUTONOMY_MASTER_PLAN)
+    |--------------------------------------------------------------------------
+    |
+    | Критичные бизнес- и инфраструктурные алерты доставляются в Telegram Bot API.
+    | Дедупликация по code+zone_id предотвращает спам при повторных срабатываниях.
+    |
+    */
+
+    'telegram' => [
+        'enabled' => env('ALERTS_TELEGRAM_ENABLED', true),
+        'dedup_ttl_seconds' => (int) env('ALERTS_TELEGRAM_DEDUP_TTL_SECONDS', 60),
+        'severities' => ['critical', 'error'],
+    ],
 ];

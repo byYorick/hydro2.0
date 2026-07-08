@@ -19,6 +19,11 @@
 - при `day_night_enabled=true` на phase snapshot AE3 применяет late-binding override pH/EC по локальному времени — см. §11;
 - compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
 
+Актуализация освещения day/night + гарантированный OFF (2026-07-08, этап A `AGRO_AUTONOMY_MASTER_PLAN.md` §A.1):
+- в `targets.lighting` для режима `SCHEDULE` канонические поля фотопериода: `on_time`, `off_time`, `brightness` (день), `brightness_night` (ночь, default `0`);
+- вне окна `[on_time, off_time)` целевая яркость = `brightness_night` (обычно `0` — гарантированное выключение);
+- scheduler-dispatch `lighting_tick` передаёт в AE3 `desired_state` (`on`|`off`) и опционально `brightness_pct` — см. §4.4.1 и `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
+
 **Связанные документы:**
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон
@@ -97,7 +102,8 @@ Breaking-change: обратная совместимость со старыми
         "mode": "SCHEDULE",
         "on_time": "06:00",
         "off_time": "22:00",
-        "brightness": 80
+        "brightness": 80,
+        "brightness_night": 0
       },
       "climate": {
         "temp_air": {"target": 24.0, "min": 22.0, "max": 26.0},
@@ -316,14 +322,16 @@ interface IrrigationTarget {
 interface LightingTarget {
   mode: "SCHEDULE" | "MANUAL" | "PHOTOPERIOD";
 
-  // Для режима SCHEDULE
-  on_time?: string;           // Время включения (HH:MM, например "06:00")
-  off_time?: string;          // Время выключения (HH:MM, например "22:00")
-  brightness?: number;        // Яркость 0-100%
+  // Для режима SCHEDULE (канон фотопериода, этап A)
+  on_time?: string;            // Время начала светового дня (HH:MM, например "06:00")
+  off_time?: string;           // Время конца светового дня (HH:MM, например "22:00")
+  brightness?: number;         // Целевая яркость внутри окна [on_time, off_time), % (0–100)
+  brightness_night?: number;   // Целевая яркость вне окна; default 0 (выключено)
 
-  // Для режима PHOTOPERIOD
-  photoperiod_hours?: number; // Длительность светового дня (часы)
-  sunrise_time?: string;      // Время "восхода" (HH:MM)
+  // Для режима PHOTOPERIOD (legacy / альтернативное задание окна)
+  photoperiod_hours?: number;  // Длительность светового дня (часы)
+  sunrise_time?: string;       // Время "восхода" (HH:MM)
+  start_time?: string;         // Алиас on_time (используется Laravel scheduler / LightingScheduleParser)
 
   // Дополнительные параметры
   dimming?: {
@@ -334,7 +342,50 @@ interface LightingTarget {
 }
 ```
 
-**Пример:**
+#### 4.4.1. Окно фотопериода и целевая яркость
+
+Для `mode="SCHEDULE"` effective targets задают **полусуточное окно** фотопериода:
+
+| Поле | Семантика |
+|------|-----------|
+| `on_time` | Начало светового дня (включительно), формат `HH:MM` или `HH:MM:SS`, локальное время теплицы |
+| `off_time` | Конец светового дня (исключительно), тот же формат |
+| `brightness` | PWM/relay duty внутри окна `[on_time, off_time)`, диапазон `0..100` |
+| `brightness_night` | PWM/relay duty **вне** окна; если не задан — **`0`** (свет выключен) |
+
+**Правило разрешения яркости** (локальное время зоны / теплицы):
+
+```
+если now ∈ [on_time, off_time):
+    target_brightness = brightness ?? 100
+иначе:
+    target_brightness = brightness_night ?? 0
+```
+
+Интервал `[on_time, off_time)` — полуоткрытый: в момент `on_time` свет **включается**, в момент `off_time` — **выключается** (целевая яркость переходит на `brightness_night`).
+
+**Совместимость с существующим scheduler:**
+
+- `LightingScheduleParser` может строить окно из `start_time` + `photoperiod_hours` или из строки `lighting_schedule` (`"06:00-22:00"`); при сборке effective targets Laravel **нормализует** их в канонические `on_time` / `off_time`.
+- Поля `pwm_duty` / `brightness_pct` в snapshot — runtime-алиасы для AE3 planner; источник истины для scheduler-dispatch — `brightness` / `brightness_night` из effective targets.
+
+#### 4.4.2. `lighting_tick`: desired_state ON/OFF
+
+Задача AE3 `lighting_tick` (ingress `POST /zones/{id}/start-lighting-tick`) исполняет **один** переход состояния освещения, инициированный Laravel scheduler на **границе** окна фотопериода (`SchedulerCycleOrchestrator`: сравнение «внутри окна» между текущим и предыдущим cursor-tick).
+
+| `desired_state` | Когда dispatch | Команда AE3 (целевое поведение, этап A) |
+|-----------------|----------------|----------------------------------------|
+| `"on"` | Вход в окно `[on_time, off_time)` (включая переход `off → on` в `on_time`) | `set_pwm {duty: brightness_pct}` или `set_relay {state: true}` |
+| `"off"` | Выход из окна (переход `on → off` в `off_time`) | `set_pwm {duty: 0}` или `set_relay {state: false}` |
+
+Поля dispatch-payload (см. `StartLightingTickRequest`, `ScheduleDispatcher.php`):
+
+- `desired_state`: `"on"` \| `"off"`, default `"on"` (backward-compat для interval/time-spec без окна).
+- `brightness_pct`: опционально `0..100`; при `desired_state="on"` — явная яркость тика; если не передано, AE3 резолвит из effective targets / day-night config; fallback `100`.
+
+**Идемпотентность:** повторный tick с тем же `desired_state` и той же фактической яркостью на узле — no-op (`NO_EFFECT` допустим); граница окна dispatch'ится один раз на переход состояния.
+
+**Пример (SCHEDULE + day/night):**
 ```json
 {
   "lighting": {
@@ -342,6 +393,7 @@ interface LightingTarget {
     "on_time": "06:00",
     "off_time": "22:00",
     "brightness": 80,
+    "brightness_night": 0,
     "dimming": {
       "enabled": true,
       "sunrise_duration_min": 30,
@@ -821,7 +873,7 @@ Python сервисы должны регулярно обновлять targets
 
 3. **Логическая корректность:**
    - Для `irrigation.schedule` — времена в хронологическом порядке
-   - Для `lighting` — `on_time` < `off_time`
+   - Для `lighting` (режим `SCHEDULE`) — `on_time` < `off_time`; `brightness` и `brightness_night` ∈ `[0, 100]`
    - Для `controller.ratio_a_b` — не равно 0
 
 ### 7.2. Default значения
@@ -843,7 +895,7 @@ Python сервисы должны регулярно обновлять targets
   "ph": {"target": 6.0, "min": 5.5, "max": 6.5},
   "ec": {"target": 1.4, "min": 1.2, "max": 1.6},
   "irrigation": {"mode": "MANUAL"},
-  "lighting": {"mode": "MANUAL", "brightness": 100},
+  "lighting": {"mode": "MANUAL", "brightness": 100, "brightness_night": 0},
   "climate": {
     "temp_air": {"target": 23.0, "min": 20.0, "max": 28.0},
     "humidity_air": {"target": 60.0, "min": 50.0, "max": 70.0}

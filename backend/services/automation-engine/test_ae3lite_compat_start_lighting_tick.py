@@ -93,10 +93,17 @@ async def test_compat_start_lighting_tick_routes_to_canonical_task_creation() ->
     response = await endpoint(
         zone_id=7,
         request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-lighting"}),
-        req=StartLightingTickRequest(source="laravel_scheduler", idempotency_key="sch:z7:lighting"),
+        req=StartLightingTickRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z7:lighting",
+            desired_state="off",
+            brightness_pct=25,
+        ),
     )
     assert response["status"] == "ok"
     assert int(captured["worker_kicked"]) == 1
     ck = captured["create_kwargs"]
     assert ck["zone_id"] == 7
     assert ck["source"] == "laravel_scheduler"
+    assert ck["lighting_desired_state"] == "off"
+    assert ck["lighting_brightness_pct"] == 25

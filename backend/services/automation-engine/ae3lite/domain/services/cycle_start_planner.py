@@ -7,9 +7,10 @@ import time
 from typing import Any, Callable, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
+from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.config.errors import ConfigValidationError
 from ae3lite.config.loader import load_zone_correction
-from ae3lite.config.runtime_plan_builder import resolve_two_tank_runtime
+from ae3lite.config.runtime_plan_builder import _build_day_night_config, resolve_two_tank_runtime
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
@@ -372,8 +373,20 @@ class CycleStartPlanner:
 
         targets = snapshot.targets if isinstance(snapshot.targets, Mapping) else {}
         lighting_targets = targets.get("lighting") if isinstance(targets.get("lighting"), Mapping) else {}
-        duty = self._resolve_lighting_pwm_duty(lighting_targets)
-        cmd, params = self._lighting_cmd_for_channel(channel=str(ref.channel or "").strip().lower(), duty=duty)
+        payload = self._lighting_tick_intent_payload(task)
+        desired_state = str(payload.get("desired_state") or "on").strip().lower()
+        if desired_state not in {"on", "off"}:
+            desired_state = "on"
+        channel = str(ref.channel or "").strip().lower()
+        if desired_state == "off":
+            cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=0, desired_on=False)
+        else:
+            duty = self._resolve_lighting_on_duty(
+                task=task,
+                snapshot=snapshot,
+                lighting_targets=lighting_targets,
+            )
+            cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=duty, desired_on=True)
         planned = PlannedCommand(
             step_no=1,
             node_uid=ref.node_uid,
@@ -407,8 +420,64 @@ class CycleStartPlanner:
                 return a
         return None
 
+    def _lighting_tick_intent_payload(self, task: AutomationTask) -> Mapping[str, Any]:
+        intent_meta = getattr(task, "intent_meta", None)
+        if not isinstance(intent_meta, Mapping):
+            return {}
+        payload = intent_meta.get("intent_payload")
+        return dict(payload) if isinstance(payload, Mapping) else {}
+
+    def _clamp_brightness_pct(self, raw: Any, *, default: int = 100) -> int:
+        try:
+            return max(0, min(100, int(float(raw))))
+        except (TypeError, ValueError):
+            return default
+
+    def _pick_target_brightness(self, lighting_targets: Mapping[str, Any], *, day: bool) -> int | None:
+        keys = ("brightness", "brightness_pct", "pwm_duty") if day else ("brightness_night",)
+        for key in keys:
+            raw = lighting_targets.get(key)
+            if raw is None:
+                continue
+            try:
+                return max(0, min(100, int(float(raw))))
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _resolve_lighting_on_duty(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+        lighting_targets: Mapping[str, Any],
+    ) -> int:
+        payload = self._lighting_tick_intent_payload(task)
+        if payload.get("brightness_pct") is not None:
+            return self._clamp_brightness_pct(payload["brightness_pct"])
+
+        day_duty = self._pick_target_brightness(lighting_targets, day=True)
+        night_duty = self._pick_target_brightness(lighting_targets, day=False)
+        if day_duty is not None or night_duty is not None:
+            day_night_cfg = _build_day_night_config(snapshot)
+            is_day = (
+                BaseStageHandler._is_day_now(day_night_cfg)
+                if bool(day_night_cfg.get("enabled"))
+                else True
+            )
+            chosen = day_duty if is_day else night_duty
+            if chosen is not None:
+                return chosen
+            fallback = night_duty if is_day else day_duty
+            if fallback is not None:
+                return fallback
+
+        return self._resolve_lighting_pwm_duty(lighting_targets)
+
     def _resolve_lighting_pwm_duty(self, lighting_targets: Mapping[str, Any]) -> int:
         raw = lighting_targets.get("pwm_duty") if isinstance(lighting_targets, Mapping) else None
+        if raw is None:
+            raw = lighting_targets.get("brightness") if isinstance(lighting_targets, Mapping) else None
         if raw is None:
             raw = lighting_targets.get("brightness_pct") if isinstance(lighting_targets, Mapping) else None
         try:
@@ -417,8 +486,19 @@ class CycleStartPlanner:
             return 100
         return max(0, min(100, v))
 
-    def _lighting_cmd_for_channel(self, *, channel: str, duty: int) -> tuple[str, dict[str, Any]]:
-        if "pwm" in channel or channel in {"light_main", "main_light"}:
+    def _lighting_cmd_for_channel(
+        self,
+        *,
+        channel: str,
+        duty: int,
+        desired_on: bool = True,
+    ) -> tuple[str, dict[str, Any]]:
+        is_pwm_channel = "pwm" in channel or channel in {"light_main", "main_light"}
+        if not desired_on:
+            if is_pwm_channel:
+                return "set_pwm", {"duty": 0}
+            return "set_relay", {"state": False}
+        if is_pwm_channel:
             return "set_pwm", {"duty": duty}
         return "set_relay", {"state": True}
 
