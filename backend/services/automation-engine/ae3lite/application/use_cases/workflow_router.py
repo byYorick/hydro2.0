@@ -18,6 +18,7 @@ from ae3lite.application.handlers.flow_path_guard import (
     decode_manual_hold_operator_step,
     encode_manual_hold_return_stage,
 )
+from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.application.handlers.await_ready import AwaitReadyHandler
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.application.handlers.command import CommandHandler
