@@ -1400,9 +1400,41 @@ async def test_corr_check_window_not_ready_logs_event(monkeypatch: pytest.Monkey
     assert payload["retry_after_sec"] == 2.0
 
 
-async def test_corr_check_zero_sample_window_reactivates_stage_owned_sensor_mode() -> None:
+async def test_corr_check_zero_sample_window_does_not_reactivate_solution_fill_stage() -> None:
+    """solution_fill_check keeps sensors hot — empty window must not loop reactivation."""
     corr = _base_corr(corr_step="corr_check", attempt=1, activated_here=False, stabilization_sec=45)
     task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph_samples=[], ec_samples=[])
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway, pid_repo=_MockPidStateRepository())
+
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.activated_here is False
+    # May probe irr_state, but must not dispatch activate_sensor_mode.
+    activate_cmds = [
+        cmd
+        for call in gateway.calls
+        for cmd in call.get("commands", ())
+        if (cmd.payload or {}).get("cmd") == "activate_sensor_mode"
+    ]
+    assert activate_cmds == []
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"
+
+
+async def test_corr_check_zero_sample_window_reactivates_non_persistent_stage() -> None:
+    """Stages outside persistent sensor-mode set still re-activate on empty window."""
+    corr = _base_corr(corr_step="corr_check", attempt=1, activated_here=False, stabilization_sec=45)
+    task = _make_task(corr=corr, current_stage="manual_correction_check", workflow_phase="tank_filling")
     monitor = _MockRuntimeMonitor(ph_samples=[], ec_samples=[])
     gateway = _MockGateway()
     handler = _make_handler(monitor=monitor, gateway=gateway, pid_repo=_MockPidStateRepository())
@@ -1419,10 +1451,13 @@ async def test_corr_check_zero_sample_window_reactivates_stage_owned_sensor_mode
     assert outcome.correction.corr_step == "corr_wait_stable"
     assert outcome.correction.activated_here is False
     assert outcome.due_delay_sec == 45
-    assert len(gateway.calls) == 2
-    commands = gateway.calls[1]["commands"]
-    assert len(commands) == 1
-    assert commands[0].payload["cmd"] == "activate_sensor_mode"
+    activate_cmds = [
+        cmd
+        for call in gateway.calls
+        for cmd in call.get("commands", ())
+        if (cmd.payload or {}).get("cmd") == "activate_sensor_mode"
+    ]
+    assert len(activate_cmds) == 1
     assert create_event.await_args.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
 
 

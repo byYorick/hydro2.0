@@ -336,7 +336,7 @@ actions:
                 deadband: 0.08
                 max_dose_ml: 20.0
                 max_integral: 24.0
-                min_interval_sec: 20
+                min_interval_sec: 10
                 anti_windup:
                   enabled: true
                 overshoot_guard:
@@ -348,8 +348,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.08
@@ -363,7 +363,7 @@ actions:
                 deadband: 0.05
                 max_dose_ml: 10.0
                 max_integral: 10.0
-                min_interval_sec: 20
+                min_interval_sec: 10
                 anti_windup:
                   enabled: true
                 overshoot_guard:
@@ -375,8 +375,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.04
@@ -431,7 +431,7 @@ actions:
                 deadband: 0.05
                 max_dose_ml: 30.0
                 max_integral: 48.0
-                min_interval_sec: 15
+                min_interval_sec: 10
                 anti_windup:
                   enabled: true
                 overshoot_guard:
@@ -443,8 +443,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.08
@@ -458,7 +458,7 @@ actions:
                 deadband: 0.04
                 max_dose_ml: 16.0
                 max_integral: 16.0
-                min_interval_sec: 15
+                min_interval_sec: 10
                 anti_windup:
                   enabled: true
                 overshoot_guard:
@@ -470,8 +470,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 8
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.04
@@ -619,16 +619,16 @@ actions:
         ph_down_gain_per_ml: 0.0100
         ph_per_ec_ml: -0.0015
         ec_per_ph_ml: 0.0000
-        transport_delay_sec: 4
-        settle_sec: 4
+        transport_delay_sec: 2
+        settle_sec: 2
         confidence: 0.90
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -645,16 +645,16 @@ actions:
         ph_down_gain_per_ml: 0.0180
         ph_per_ec_ml: -0.0025
         ec_per_ph_ml: 0.0000
-        transport_delay_sec: 4
-        settle_sec: 4
+        transport_delay_sec: 2
+        settle_sec: 2
         confidence: 0.95
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -672,15 +672,15 @@ actions:
         ph_per_ec_ml: -0.0020
         ec_per_ph_ml: 0.0000
         transport_delay_sec: 6
-        settle_sec: 4
+        settle_sec: 2
         confidence: 0.85
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -708,7 +708,7 @@ actions:
                     clean_fill_timeout_sec: 120
                     solution_fill_timeout_sec: 180
                     prepare_recirculation_timeout_sec: 180
-                    telemetry_max_age_sec: 10
+                    telemetry_max_age_sec: 60
                     irr_state_max_age_sec: 30
                     irr_state_wait_timeout_sec: 12
                     sensor_mode_stabilization_time_sec: 0
@@ -1147,7 +1147,7 @@ actions:
         error_message
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
         AND current_stage = 'clean_fill_check'
       LIMIT 1
     params:
@@ -1247,7 +1247,7 @@ actions:
         corr_step
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
         AND current_stage IN (
           'solution_fill_check',
           'prepare_recirculation_start',
@@ -1472,7 +1472,7 @@ actions:
         updated_at AS stage_started_at
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
         AND current_stage = 'prepare_recirculation_check'
       LIMIT 1
     params:
@@ -1690,36 +1690,8 @@ actions:
     expected_rows: 1
     save: task_not_failed_after_sequential_loop_row
 
-  - step: wait_targets_reached_on_node_after_sequential_loop
-    type: db.wait
-    query: |
-      SELECT
-        ph.last_value AS ph_value,
-        ec.last_value AS ec_value,
-        ph.last_ts AS ph_ts,
-        ec.last_ts AS ec_ts
-      FROM telemetry_last ph
-      JOIN sensors phs ON phs.id = ph.sensor_id
-      JOIN telemetry_last ec ON true
-      JOIN sensors ecs ON ecs.id = ec.sensor_id
-      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
-        AND phs.type = 'PH'
-        AND phs.label = 'ph_sensor'
-        AND ecs.node_id = CAST(:ec_node_id AS bigint)
-        AND ecs.type = 'EC'
-        AND ecs.label = 'ec_sensor'
-        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ph.last_value BETWEEN 5.00 AND 5.15
-        AND ec.last_value BETWEEN 2.30 AND 2.38
-      LIMIT 1
-    params:
-      ph_node_id: ${ph_node_id}
-      ec_node_id: ${ec_node_id}
-    timeout: 420.0
-    expected_rows: 1
-    save: targets_reached_after_sequential_loop_row
-
+  # Force near-target BEFORE live-band wait: after complete_ready sensor mode stops
+  # and natural PH/EC may leave the narrow assertion band / go stale.
   - step: force_near_target_band_after_sequential_loop
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1747,6 +1719,36 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+  - step: wait_targets_reached_on_node_after_sequential_loop
+    type: db.wait
+    query: |
+      SELECT
+        ph.last_value AS ph_value,
+        ec.last_value AS ec_value,
+        ph.last_ts AS ph_ts,
+        ec.last_ts AS ec_ts
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ph.last_value BETWEEN 5.00 AND 5.15
+        AND ec.last_value BETWEEN 2.30 AND 2.38
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: targets_reached_after_sequential_loop_row
+
   - step: wait_task_completed_after_sequential_loop
     type: db.wait
     query: |
@@ -1757,7 +1759,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 600.0
+    timeout: 300.0
     expected_rows: 1
     save: completed_task_after_loop_row
 

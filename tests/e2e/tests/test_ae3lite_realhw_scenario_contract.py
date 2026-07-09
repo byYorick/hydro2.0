@@ -511,8 +511,8 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
                 .get("observe", {})
             )
             self.assertEqual(observe.get("telemetry_period_sec"), 2)
-            self.assertEqual(observe.get("window_min_samples"), 3)
-            self.assertEqual(observe.get("decision_window_sec"), 6)
+            self.assertEqual(observe.get("window_min_samples"), 2)
+            self.assertEqual(observe.get("decision_window_sec"), 4)
 
     def test_ready_targets_wait_uses_phase_windows(self) -> None:
         step = self._find_step("actions", "wait_targets_reached_on_node")
@@ -556,7 +556,7 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
 
         completed_query = str(completed_step.get("query") or "")
         self.assertIn("status = 'completed'", completed_query)
-        self.assertEqual(float(completed_step.get("timeout", 0.0)), 1020.0)
+        self.assertEqual(float(completed_step.get("timeout", 0.0)), 420.0)
 
         workflow_ready_query = str(workflow_ready_step.get("query") or "")
         self.assertIn("workflow_phase = 'ready'", workflow_ready_query)
@@ -659,8 +659,8 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         self.assertEqual(((solution_fill.get("controllers") or {}).get("ph") or {}).get("max_dose_ml"), 10.0)
         self.assertEqual(((solution_fill.get("dosing") or {}).get("max_ec_dose_ml")), 20.0)
         self.assertEqual(((solution_fill.get("dosing") or {}).get("max_ph_dose_ml")), 10.0)
-        self.assertEqual(((tank_recirc.get("controllers") or {}).get("ec") or {}).get("min_interval_sec"), 15)
-        self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("min_interval_sec"), 15)
+        self.assertEqual(((tank_recirc.get("controllers") or {}).get("ec") or {}).get("min_interval_sec"), 10)
+        self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("min_interval_sec"), 10)
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ec") or {}).get("max_dose_ml"), 30.0)
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("max_dose_ml"), 16.0)
 
@@ -804,7 +804,9 @@ class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
         self.assertIn("wait_main_pump_snapshot_before_ec_dose", text)
         self.assertIn("type = 'IRR_STATE_SNAPSHOT'", text)
         self.assertIn("COALESCE(snap.details, snap.payload_json)", text)
-        self.assertIn("snapshot'->>'pump_main", text)
+        # Timed run_pump: prove irrigation via open valves + prior pump_main start cmd.
+        self.assertIn("valve_irrigation", text)
+        self.assertIn("run_pump", text)
         self.assertIn("snap.id = CAST(:snapshot_event_id AS bigint)", text)
 
     def test_inline_irrigation_scenario_asserts_ec_first_for_dual_gap(self) -> None:

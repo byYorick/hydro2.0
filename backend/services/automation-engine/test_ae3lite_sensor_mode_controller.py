@@ -306,7 +306,7 @@ async def test_reactivate_skipped_when_windows_are_just_unstable() -> None:
 async def test_reactivate_dispatches_on_empty_ph_window() -> None:
     ctrl, gateway, sink = _make_controller()
     outcome = await ctrl.maybe_reactivate_after_empty_window(
-        task=_task(),
+        task=_task(current_stage="clean_fill_check"),
         plan=_plan(),
         corr=_corr(stabilization_sec=60),
         now=NOW,
@@ -323,10 +323,25 @@ async def test_reactivate_dispatches_on_empty_ph_window() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reactivate_skipped_when_solution_fill_keeps_sensors_active() -> None:
+    ctrl, gateway, _ = _make_controller()
+    outcome = await ctrl.maybe_reactivate_after_empty_window(
+        task=_task(current_stage="solution_fill_check"),
+        plan=_plan(),
+        corr=_corr(stabilization_sec=60),
+        now=NOW,
+        ph=_empty_window(),
+        ec=_ready_window(),
+    )
+    assert outcome is None
+    assert gateway.calls == []
+
+
+@pytest.mark.asyncio
 async def test_reactivate_returns_none_when_plan_has_no_templates() -> None:
     ctrl, gateway, _ = _make_controller()
     outcome = await ctrl.maybe_reactivate_after_empty_window(
-        task=_task(),
+        task=_task(current_stage="clean_fill_check"),
         plan=_plan(with_activate=False),
         corr=_corr(),
         now=NOW,
@@ -353,8 +368,18 @@ def test_stage_keeps_active_for_irrigation_recovery_check() -> None:
     )
 
 
-def test_stage_keeps_active_false_for_solution_fill() -> None:
-    assert SensorModeController.stage_keeps_active(task=_task()) is False
+def test_stage_keeps_active_for_solution_fill_check() -> None:
+    assert SensorModeController.stage_keeps_active(task=_task(current_stage="solution_fill_check")) is True
+
+
+def test_stage_keeps_active_for_prepare_recirculation_check() -> None:
+    assert SensorModeController.stage_keeps_active(
+        task=_task(current_stage="prepare_recirculation_check")
+    ) is True
+
+
+def test_stage_keeps_active_false_for_clean_fill() -> None:
+    assert SensorModeController.stage_keeps_active(task=_task(current_stage="clean_fill_check")) is False
 
 
 def test_window_empty_false_when_ready() -> None:

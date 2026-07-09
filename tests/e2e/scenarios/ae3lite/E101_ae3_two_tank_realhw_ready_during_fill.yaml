@@ -360,7 +360,19 @@ actions:
       payload:
         preset_id: ${test_node_correction_preset_row.0.id}
         base_config: {}
-        phase_overrides: {}
+        phase_overrides:
+          solution_fill:
+            controllers:
+              ec:
+                min_interval_sec: 10
+              ph:
+                min_interval_sec: 10
+          tank_recirc:
+            controllers:
+              ec:
+                min_interval_sec: 10
+              ph:
+                min_interval_sec: 10
     save: correction_config_update_response
 
   - step: cleanup_existing_correction_bindings
@@ -484,16 +496,16 @@ actions:
         ph_down_gain_per_ml: 0.0100
         ph_per_ec_ml: -0.0015
         ec_per_ph_ml: 0.0000
-        transport_delay_sec: 4
-        settle_sec: 4
+        transport_delay_sec: 2
+        settle_sec: 2
         confidence: 0.90
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -510,16 +522,16 @@ actions:
         ph_down_gain_per_ml: 0.0180
         ph_per_ec_ml: -0.0025
         ec_per_ph_ml: 0.0000
-        transport_delay_sec: 4
-        settle_sec: 4
+        transport_delay_sec: 2
+        settle_sec: 2
         confidence: 0.95
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -537,15 +549,15 @@ actions:
         ph_per_ec_ml: -0.0020
         ec_per_ph_ml: 0.0000
         transport_delay_sec: 6
-        settle_sec: 4
+        settle_sec: 2
         confidence: 0.85
         source: e2e_realhw_process_observe
         is_active: true
         meta:
           observe:
             telemetry_period_sec: 2
-            window_min_samples: 3
-            decision_window_sec: 6
+            window_min_samples: 2
+            decision_window_sec: 4
             observe_poll_sec: 2
             min_effect_fraction: 0.20
             stability_max_slope: 0.08
@@ -573,7 +585,7 @@ actions:
                     clean_fill_timeout_sec: 120
                     solution_fill_timeout_sec: 240
                     prepare_recirculation_timeout_sec: 240
-                    telemetry_max_age_sec: 10
+                    telemetry_max_age_sec: 60
                     irr_state_max_age_sec: 30
                     sensor_mode_stabilization_time_sec: 0
                   target_ph: 6.9
@@ -999,7 +1011,7 @@ actions:
         error_message
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
         AND current_stage = 'clean_fill_check'
       LIMIT 1
     params:
@@ -1099,7 +1111,7 @@ actions:
         corr_step
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'pending'
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
         AND current_stage = 'solution_fill_check'
       LIMIT 1
     params:
@@ -1335,7 +1347,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 600.0
+    timeout: 300.0
     expected_rows: 1
     save: completed_task_row
 

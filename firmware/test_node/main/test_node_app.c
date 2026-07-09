@@ -57,7 +57,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_MQTT_REANNOUNCE 6144
 #define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 5632
 #define CLEAN_FILL_DELAY_SEC 12
-#define SOLUTION_FILL_DELAY_SEC 180
+#define SOLUTION_FILL_DELAY_SEC 45
 #define STATE_QUERY_BARRIER_QUIET_MS 1500
 #define STATE_QUERY_BARRIER_POLL_MS 50
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
@@ -94,7 +94,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TELEMETRY_DRIFT_WAVE_AMPLITUDE 0.0009f
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
-#define CORRECTION_FLOW_DRIFT_HOLD_SEC 120
+#define CORRECTION_FLOW_DRIFT_HOLD_SEC 30
 #define CORRECTION_IDLE_DRIFT_HOLD_SEC 24
 /** Удержание pH/EC после set_fault_mode (E2E force near-target) без passive drift. */
 #define CORRECTION_FORCED_METRIC_HOLD_SEC 90
@@ -2232,10 +2232,12 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
     }
 
     if (has_sensor_mode_flags) {
+        /* PH/EC всегда non-stub: AE decision window и post-complete assertions
+         * (force near-target после complete_ready) отбрасывают stub samples. */
         len = snprintf(
             payload,
             sizeof(payload),
-            "{\"metric_type\":\"%s\",\"value\":%s,\"ts\":%lld,\"stub\":true,"
+            "{\"metric_type\":\"%s\",\"value\":%s,\"ts\":%lld,\"stub\":false,"
             "\"flow_active\":%s,\"stable\":%s,\"corrections_allowed\":%s}",
             metric_type,
             value_buf,
@@ -3724,6 +3726,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
     } else if (is_storage_system_channel(job->channel)) {
         if (strcmp(job->cmd, "reset_state") == 0) {
             reset_virtual_state_runtime();
+            publish_current_virtual_sensor_snapshot(true, true, true, true);
             cJSON_AddStringToObject(details, "note", "virtual_state_reset");
             handled = true;
         } else if (strcmp(job->cmd, "emit_event") == 0) {

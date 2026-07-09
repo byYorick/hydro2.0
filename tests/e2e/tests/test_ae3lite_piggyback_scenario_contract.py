@@ -65,6 +65,7 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
 
     def test_post_piggyback_checks_require_live_targets_not_just_status(self) -> None:
         task_step = self._find_step("actions", "wait_task_not_failed_after_sequential_loop")
+        force_step = self._find_step("actions", "force_near_target_band_after_sequential_loop")
         targets_step = self._find_step("actions", "wait_targets_reached_on_node_after_sequential_loop")
         internal_assert = self._find_assertion("internal_task_not_failed")
         targets_assert = self._find_assertion("targets_reached_after_sequential_loop")
@@ -73,11 +74,22 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertIn("status IN ('pending', 'completed')", task_query)
         self.assertNotIn("current_stage = 'prepare_recirculation_check'", task_query)
 
+        # Force near-target must run before the live-band wait (post complete_ready).
+        action_names = [item.get("step") for item in self.scenario.get("actions", [])]
+        self.assertLess(
+            action_names.index("force_near_target_band_after_sequential_loop"),
+            action_names.index("wait_targets_reached_on_node_after_sequential_loop"),
+        )
+        force_params = ((force_step.get("command") or {}).get("params") or {})
+        self.assertEqual(force_params.get("ph_value"), 5.10)
+        self.assertEqual(force_params.get("ec_value"), 2.33)
+
         targets_query = str(targets_step.get("query") or "")
         self.assertIn("ph.last_value BETWEEN 5.00 AND 5.15", targets_query)
         self.assertIn("ec.last_value BETWEEN 2.30 AND 2.38", targets_query)
         self.assertIn("ph.last_ts >= NOW() - INTERVAL '30 seconds'", targets_query)
         self.assertNotIn("OR EXISTS", targets_query)
+        self.assertLessEqual(float(targets_step.get("timeout") or 999), 90.0)
 
         condition = str(internal_assert.get("condition") or "")
         self.assertIn("in ('pending', 'completed')", condition)

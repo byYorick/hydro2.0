@@ -477,6 +477,21 @@ def offline_failure_for_command_transport(
                 last_seen_age_sec = None
             break
 
+    # Transport/probe races with a freshly-online node are usually stage timing
+    # (short fill timeout, concurrent cleanup, delayed irr snapshot), not true offline.
+    # Keep the original error so probe-backoff / stage handlers can retry.
+    _fresh_online_skip_codes = frozenset({
+        "ae3_command_poll_deadline_exceeded",
+        "irr_state_unavailable",
+        "irr_state_stale",
+    })
+    if (
+        normalized in _fresh_online_skip_codes
+        and node_status == "online"
+        and (last_seen_age_sec is None or last_seen_age_sec < 60)
+    ):
+        return None
+
     offline_node = {
         "uid": uid,
         "type": node_type,

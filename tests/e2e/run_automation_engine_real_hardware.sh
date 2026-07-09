@@ -1918,7 +1918,54 @@ echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID wo
 FAILED_SCENARIOS=()
 CONTINUE_ON_FAILURE="${E2E_CONTINUE_ON_FAILURE:-0}"
 
+force_cleanup_zone_ae_runtime() {
+  local zone_uid="${TEST_NODE_ZONE_UID:-zn-test-1}"
+  echo "🧹 Between-scenario AE runtime cleanup for zone_uid=$zone_uid"
+  if ! db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    ),
+    tasks AS (
+      SELECT t.id FROM ae_tasks t JOIN z ON z.id = t.zone_id
+    )
+    DELETE FROM ae_commands WHERE task_id IN (SELECT id FROM tasks);
+  " >/dev/null; then
+    echo "⚠️ Between-scenario cleanup skipped/failed (non-fatal)"
+    return 0
+  fi
+  db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    ),
+    tasks AS (
+      SELECT t.id FROM ae_tasks t JOIN z ON z.id = t.zone_id
+    )
+    DELETE FROM ae_stage_transitions WHERE task_id IN (SELECT id FROM tasks);
+  " >/dev/null || true
+  db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    )
+    DELETE FROM ae_tasks WHERE zone_id IN (SELECT id FROM z);
+  " >/dev/null || true
+  db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    )
+    DELETE FROM ae_zone_leases WHERE zone_id IN (SELECT id FROM z);
+  " >/dev/null || true
+  db_query_line "
+    WITH z AS (
+      SELECT id FROM zones WHERE uid = '${zone_uid}' LIMIT 1
+    )
+    DELETE FROM zone_automation_intents
+    WHERE zone_id IN (SELECT id FROM z)
+      AND status IN ('pending', 'claimed', 'running');
+  " >/dev/null || true
+}
+
 for scenario in "${SCENARIOS[@]}"; do
+  force_cleanup_zone_ae_runtime
   echo "\n=== $scenario ==="
   started_at="$(date +%s)"
   scenario_log_tmp="$(mktemp /tmp/e2e_realhw_scenario.XXXXXX.log)"

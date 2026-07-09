@@ -361,6 +361,50 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: force_cleanup_ae_commands_before_topup
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id FROM ae_tasks WHERE zone_id = :zone_id
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_ae_tasks_before_topup
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_ae_leases_before_topup
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_intents_before_topup
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running')
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_grow_cycle_running
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET status = 'RUNNING',
+          updated_at = NOW()
+      WHERE id = CAST(:cycle_id AS bigint)
+        AND status IN ('PLANNED', 'PAUSED', 'RUNNING')
+    params:
+      cycle_id: ${cycle_id}
+
   - step: seed_level_telemetry_full_tank
     type: database_execute
     query: |

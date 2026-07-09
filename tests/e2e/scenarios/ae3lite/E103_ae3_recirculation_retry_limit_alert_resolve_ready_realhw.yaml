@@ -288,7 +288,7 @@ actions:
               deadband: 0.08
               max_dose_ml: 20.0
               max_integral: 24.0
-              min_interval_sec: 20
+              min_interval_sec: 10
               anti_windup:
                 enabled: true
               overshoot_guard:
@@ -300,8 +300,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.08
@@ -315,7 +315,7 @@ actions:
               deadband: 0.05
               max_dose_ml: 8.0
               max_integral: 10.0
-              min_interval_sec: 20
+              min_interval_sec: 10
               anti_windup:
                 enabled: true
               overshoot_guard:
@@ -327,8 +327,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.04
@@ -395,7 +395,7 @@ actions:
               # deadline on the trailing storage_state poll.
               max_dose_ml: 10.0
               max_integral: 48.0
-              min_interval_sec: 15
+              min_interval_sec: 10
               anti_windup:
                 enabled: true
               overshoot_guard:
@@ -407,8 +407,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.08
@@ -422,7 +422,7 @@ actions:
               deadband: 0.04
               max_dose_ml: 4.0
               max_integral: 16.0
-              min_interval_sec: 15
+              min_interval_sec: 10
               anti_windup:
                 enabled: true
               overshoot_guard:
@@ -434,8 +434,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.04
@@ -534,16 +534,16 @@ actions:
       ph_down_gain_per_ml: 0.0100
       ph_per_ec_ml: -0.0015
       ec_per_ph_ml: 0.0000
-      transport_delay_sec: 4
-      settle_sec: 4
+      transport_delay_sec: 2
+      settle_sec: 2
       confidence: 0.90
       source: e2e_realhw_process_observe
       is_active: true
       meta:
         observe:
           telemetry_period_sec: 2
-          window_min_samples: 3
-          decision_window_sec: 6
+          window_min_samples: 2
+          decision_window_sec: 4
           observe_poll_sec: 2
           min_effect_fraction: 0.20
           stability_max_slope: 0.08
@@ -559,8 +559,8 @@ actions:
       ph_down_gain_per_ml: 0.0180
       ph_per_ec_ml: -0.0025
       ec_per_ph_ml: 0.0000
-      transport_delay_sec: 4
-      settle_sec: 4
+      transport_delay_sec: 2
+      settle_sec: 2
       confidence: 0.95
       source: e2e_realhw_process_observe
       is_active: true
@@ -585,7 +585,7 @@ actions:
       ph_per_ec_ml: -0.0020
       ec_per_ph_ml: 0.0000
       transport_delay_sec: 6
-      settle_sec: 4
+      settle_sec: 2
       confidence: 0.85
       source: e2e_realhw_process_observe
       is_active: true
@@ -620,7 +620,7 @@ actions:
                   clean_fill_timeout_sec: 120
                   solution_fill_timeout_sec: 240
                   prepare_recirculation_timeout_sec: 45
-                  telemetry_max_age_sec: 10
+                  telemetry_max_age_sec: 60
                   irr_state_max_age_sec: 30
                   irr_state_wait_timeout_sec: 12
                   sensor_mode_stabilization_time_sec: 0
@@ -989,7 +989,7 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  topology AS mode,\n  current_stage AS stage,\n\
     \  error_code,\n  error_message\nFROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n\
-    \  AND status = 'pending'\n  AND current_stage = 'clean_fill_check'\nLIMIT 1\n"
+    \  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n  AND current_stage = 'clean_fill_check'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 20.0
@@ -1050,7 +1050,7 @@ actions:
 - step: wait_solution_fill_stage
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
-    FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status = 'pending'\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n\
     \  AND current_stage IN (\n    'solution_fill_check',\n    'prepare_recirculation_start',\n\
     \    'prepare_recirculation_check'\n  )\nLIMIT 1\n"
   params:
@@ -1155,7 +1155,7 @@ actions:
 - step: wait_prepare_recirculation_stage
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
-    FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status = 'pending'\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n\
     \  AND current_stage = 'prepare_recirculation_check'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
@@ -1287,7 +1287,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.08
-              min_interval_sec: 20
+              min_interval_sec: 10
               max_dose_ml: 20.0
               max_integral: 24.0
               anti_windup:
@@ -1301,8 +1301,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.08
@@ -1314,7 +1314,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.05
-              min_interval_sec: 20
+              min_interval_sec: 10
               max_dose_ml: 10.0
               max_integral: 10.0
               anti_windup:
@@ -1328,8 +1328,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.04
@@ -1383,7 +1383,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.04
-              min_interval_sec: 15
+              min_interval_sec: 10
               max_dose_ml: 36.0
               max_integral: 56.0
               anti_windup:
@@ -1397,8 +1397,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.08
@@ -1410,7 +1410,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.04
-              min_interval_sec: 15
+              min_interval_sec: 10
               max_dose_ml: 16.0
               max_integral: 16.0
               anti_windup:
@@ -1424,8 +1424,8 @@ actions:
                 max_count: 2
               observe:
                 telemetry_period_sec: 2
-                window_min_samples: 3
-                decision_window_sec: 8
+                window_min_samples: 2
+                decision_window_sec: 4
                 observe_poll_sec: 2
                 min_effect_fraction: 0.15
                 stability_max_slope: 0.04
@@ -1828,7 +1828,7 @@ actions:
 - step: wait_prepare_recirculation_stage_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
-    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status = 'pending'\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n\
     \  AND current_stage = 'prepare_recirculation_check'\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
@@ -1901,7 +1901,7 @@ actions:
 - step: wait_recirculation_window_back_to_check_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
-    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status = 'pending'\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n\
     \  AND current_stage = 'prepare_recirculation_check'\n  AND corr_step = 'corr_check'\n\
     LIMIT 1\n"
   params:

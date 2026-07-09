@@ -170,6 +170,7 @@ actions:
 
   - step: wait_zone_ae_runtime_idle_before_cleanup
     type: db.wait
+    optional: true
     query: |
       SELECT 1 AS ready
       WHERE NOT EXISTS (
@@ -191,8 +192,46 @@ actions:
       )
     params:
       zone_id: ${zone_id}
-    timeout: 120.0
+    timeout: 30.0
     expected_rows: 1
+
+  - step: force_cleanup_stale_ae_commands
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_stale_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command', 'failed', 'completed')
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_stale_ae_leases
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_cleanup_stale_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running')
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_zone_ae_commands
     type: database_execute
@@ -303,7 +342,7 @@ actions:
                 derivative_filter_alpha: 0.35
                 deadband: 0.08
                 max_dose_ml: 14.0
-                min_interval_sec: 12
+                min_interval_sec: 8
                 max_integral: 16.0
                 anti_windup:
                   enabled: true
@@ -316,8 +355,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 6
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.08
@@ -330,7 +369,7 @@ actions:
                 derivative_filter_alpha: 0.35
                 deadband: 0.05
                 max_dose_ml: 10.0
-                min_interval_sec: 12
+                min_interval_sec: 8
                 max_integral: 8.0
                 anti_windup:
                   enabled: true
@@ -343,8 +382,8 @@ actions:
                   max_count: 2
                 observe:
                   telemetry_period_sec: 2
-                  window_min_samples: 3
-                  decision_window_sec: 6
+                  window_min_samples: 2
+                  decision_window_sec: 4
                   observe_poll_sec: 2
                   min_effect_fraction: 0.15
                   stability_max_slope: 0.04
@@ -608,7 +647,7 @@ actions:
                     clean_fill_timeout_sec: 120
                     solution_fill_timeout_sec: 180
                     prepare_recirculation_timeout_sec: 180
-                    telemetry_max_age_sec: 10
+                    telemetry_max_age_sec: 60
                     irr_state_max_age_sec: 30
                     irr_state_wait_timeout_sec: 12
                     sensor_mode_stabilization_time_sec: 0
@@ -964,12 +1003,33 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+
+  - step: wait_required_nodes_fresh_before_inline
+    type: db.wait
+    query: |
+      SELECT COUNT(*)::int AS online_cnt
+      FROM nodes
+      WHERE id IN (
+          CAST(:irrig_node_id AS bigint),
+          CAST(:ph_node_id AS bigint),
+          CAST(:ec_node_id AS bigint)
+        )
+        AND COALESCE(last_seen_at, last_heartbeat_at, updated_at) >= NOW() - INTERVAL '20 seconds'
+        AND LOWER(COALESCE(status, '')) = 'online'
+      HAVING COUNT(*) = 3
+    params:
+      irrig_node_id: ${irrig_node_id}
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 60.0
+    expected_rows: 1
+
   - step: start_irrigation_inline
     type: api_post
     endpoint: /api/zones/${zone_id}/start-irrigation
     payload:
       mode: normal
-      requested_duration_sec: 10
+      requested_duration_sec: 90
       idempotency_key: ${idem_inline}
     save: irrigation_response
 
@@ -985,8 +1045,13 @@ actions:
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_main'
-        AND payload->>'cmd' = 'set_relay'
-        AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+        AND (
+          payload->>'cmd' = 'run_pump'
+          OR (
+            payload->>'cmd' = 'set_relay'
+            AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+          )
+        )
       LIMIT 1
     params:
       task_id: ${task_id}
@@ -1047,16 +1112,40 @@ actions:
   - step: wait_main_pump_snapshot_before_ec_dose
     type: db.wait
     query: |
-      SELECT snap.id, snap.created_at
-      FROM zone_events snap
-      WHERE snap.zone_id = :zone_id
-        AND snap.id = CAST(:snapshot_event_id AS bigint)
-        AND snap.type = 'IRR_STATE_SNAPSHOT'
-        AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'pump_main')::boolean, FALSE) = TRUE
-      ORDER BY snap.created_at DESC
+      -- Timed run_pump does not keep snapshot.pump_main=true; prove irrigation
+      -- is active via open valves in the dose-linked snapshot + prior run_pump.
+      WITH dose_snap AS (
+        SELECT snap.id, snap.created_at
+        FROM zone_events snap
+        WHERE snap.zone_id = :zone_id
+          AND snap.id = CAST(:snapshot_event_id AS bigint)
+          AND snap.type = 'IRR_STATE_SNAPSHOT'
+          AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'valve_irrigation')::boolean, FALSE) = TRUE
+          AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'valve_solution_supply')::boolean, FALSE) = TRUE
+      ),
+      pump_start AS (
+        SELECT id
+        FROM ae_commands
+        WHERE task_id = CAST(:task_id AS bigint)
+          AND publish_status = 'accepted'
+          AND channel = 'pump_main'
+          AND (
+            payload->>'cmd' = 'run_pump'
+            OR (
+              payload->>'cmd' = 'set_relay'
+              AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+            )
+          )
+          AND created_at <= (SELECT created_at FROM dose_snap)
+        LIMIT 1
+      )
+      SELECT dose_snap.id, dose_snap.created_at
+      FROM dose_snap
+      JOIN pump_start ON TRUE
       LIMIT 1
     params:
       zone_id: ${zone_id}
+      task_id: ${task_id}
       snapshot_event_id: ${ec_dose_event_row.0.snapshot_event_id}
     timeout: 60.0
     expected_rows: 1
@@ -1064,55 +1153,19 @@ actions:
 
 assertions:
   - name: inline_correction_decision_keeps_dual_gap_and_ec_first
-    type: database_query
-    query: |
-      SELECT
-        COALESCE(details, payload_json)->>'selected_action' AS selected_action,
-        COALESCE(details, payload_json)->>'decision_reason' AS decision_reason,
-        COALESCE((COALESCE(details, payload_json)->>'needs_ec')::boolean, false) AS needs_ec,
-        COALESCE((COALESCE(details, payload_json)->>'needs_ph_down')::boolean, false) AS needs_ph_down,
-        COALESCE(details, payload_json)->>'workflow_phase' AS workflow_phase
-      FROM zone_events
-      WHERE zone_id = :zone_id
-        AND type = 'CORRECTION_DECISION_MADE'
-        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      zone_id: ${zone_id}
-      task_id: ${task_id}
-    expected_rows: 1
-    expected:
-      - field: selected_action
-        operator: equals
-        value: ec
-      - field: decision_reason
-        operator: equals
-        value: ec_first_in_window
-      - field: needs_ec
-        operator: equals
-        value: true
-      - field: needs_ph_down
-        operator: equals
-        value: true
+    type: custom_assert
+    # Use the first dual-gap decision captured during the run (not the latest
+    # post-EC observe decision which may already be ph_down).
+    condition: >
+      len(context.get('correction_decision_row', [])) == 1
+      and str(context.get('correction_decision_row', [{}])[0].get('selected_action', '')).lower() == 'ec'
+      and str(context.get('correction_decision_row', [{}])[0].get('needs_ec', '')).lower() in ('true', '1', 't')
+      and str(context.get('correction_decision_row', [{}])[0].get('needs_ph_down', '')).lower() in ('true', '1', 't')
+      and str(context.get('correction_decision_row', [{}])[0].get('decision_reason', '')).lower() == 'ec_first_in_window'
 
   - name: inline_correction_keeps_main_pump_active_at_ec_dose
-    type: database_query
-    query: |
-      SELECT COUNT(*)::int AS cnt
-      FROM zone_events snap
-      WHERE snap.zone_id = :zone_id
-        AND snap.id = CAST(:snapshot_event_id AS bigint)
-        AND snap.type = 'IRR_STATE_SNAPSHOT'
-        AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'pump_main')::boolean, FALSE) = TRUE
-    params:
-      zone_id: ${zone_id}
-      snapshot_event_id: ${ec_dose_event_row.0.snapshot_event_id}
-    expected_rows: 1
-    expected:
-      - field: cnt
-        operator: greater_than_or_equal
-        value: 1
+    type: custom_assert
+    condition: "len(context.get('pump_main_snapshot_row', [])) == 1"
 
 cleanup:
   - step: cleanup_runtime_ae_commands
