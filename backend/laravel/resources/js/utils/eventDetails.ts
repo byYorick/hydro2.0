@@ -427,6 +427,29 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     }
     if (limit !== null) rows.push(row('Лимит', String(limit)))
   }
+  else if (event.kind === 'EC_BATCH_PARTIAL_FAILURE') {
+    const failed = readString(payload, 'failed_component')
+    const status = readString(payload, 'status')
+    const mode = readString(payload, 'mode')
+    const currentEc = readNumber(payload, 'current_ec')
+    const targetEc = readNumber(payload, 'target_ec')
+    const errorCode = readString(payload, 'error_code')
+    const successful = payload['successful_components']
+    const remaining = payload['remaining_components']
+    appendCorrectionTrace(rows, payload)
+    if (status) rows.push(row('Статус', status, status === 'degraded' ? 'error' : 'default'))
+    if (failed) rows.push(row('Сбой компонента', failed, 'error'))
+    if (Array.isArray(successful) && successful.length > 0) {
+      rows.push(row('Успешные', successful.map(String).join(', ')))
+    }
+    if (Array.isArray(remaining) && remaining.length > 0) {
+      rows.push(row('Оставшиеся', remaining.map(String).join(', ')))
+    }
+    if (currentEc !== null) rows.push(row('Текущий EC', `${currentEc.toFixed(2)} мС/см`))
+    if (targetEc !== null) rows.push(row('Цель EC', `${targetEc.toFixed(2)} мС/см`))
+    if (mode) rows.push(row('Режим', mode))
+    if (errorCode) rows.push(row('Код ошибки', errorCode, 'error'))
+  }
   else if (event.kind === 'AE_TASK_STARTED' || event.kind === 'AE_TASK_COMPLETED') {
     const taskId = readNumber(payload, 'task_id')
     const topology = readString(payload, 'topology')

@@ -4,7 +4,7 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
-**Дата обновления:** 2026-07-09 (PR8+: observe-window bounds, E-STOP controlled exit, control_mode dose gate, `last_dose_at` anchor at DONE time)
+**Дата обновления:** 2026-07-09 (PR8+; §6.2 MVP: `EC_BATCH_PARTIAL_FAILURE` + fail window, без auto-recovery)
 **Статус:** Рабочий документ (требует валидации)
 
 ---
@@ -33,6 +33,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - если planner видит одновременно `EC` и `pH`, обе потребности остаются в одном correction-window и не требуют повторного входа parent-stage;
 - `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку correction window;
 - обычные correction attempts и `no-effect` attempts — независимые лимиты.
+
+Актуализация partial EC batch failure MVP (2026-07-09):
+- при ошибке компонента `N` после успешных `0..N-1` в `multi_sequential` / `multi_parallel` эмитится `EC_BATCH_PARTIAL_FAILURE` (`status=degraded`), correction window закрывается fail-closed;
+- метрика `ae3_correction_ec_batch_partial_failure_total{mode=...}`;
+- auto-enqueue `irrigation_recovery` и infra-alert компенсации — **не в MVP** (см. §6.2).
 
 ---
 
@@ -810,25 +815,25 @@ class CorrectionStateMachine:
         return success
 ```
 
-### 6.2. Политика partial EC batch failure (обновление 2026-02-16)
+### 6.2. Политика partial EC batch failure (обновление 2026-07-09)
 
-**Status: out-of-scope / not implemented in v1.** Текущий AE3 runtime (`correction_handler` + `multi_sequential` planner) при ошибке любого шага EC batch **fail-closed на первой ошибке**: batch прерывается, partial success не компенсируется автоматически, `EC_BATCH_PARTIAL_FAILURE` / enqueue `irrigation_recovery` из этого раздела **не реализованы**. Ниже — целевой контракт для v2+.
+**Status: MVP implemented (detect + event + fail window).** Полный компенсационный путь (enqueue `irrigation_recovery`) — **out-of-scope MVP / v2+**.
 
-Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro`), действует fail-safe правило:
+Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro` в `multi_sequential`, либо параллельный `multi_parallel`), действует fail-safe правило:
 
-1. Если компонент `N` завершился ошибкой после успешной дозировки предыдущих компонентов:
+1. Если компонент `N` завершился ошибкой после успешной дозировки предыдущих компонентов (`0..N-1`):
    - batch немедленно прерывается;
-   - результат маркируется как `degraded`;
+   - correction window закрывается как **fail** (`outcome_success=false`); EC-target **не** считается достигнутым;
    - фиксируется событие `EC_BATCH_PARTIAL_FAILURE` с деталями:
      - `successful_components`
      - `failed_component`
      - `remaining_components`
      - `target_ec` / `current_ec`
-     - `status=degraded`.
-2. Параллельно запускается компенсационный путь:
-   - enqueue diagnostics workflow (`irrigation_recovery`) для повторной оценки и выравнивания раствора;
-   - если enqueue недоступен — infra-alert `infra_ec_batch_partial_failure_compensation_enqueue_failed`.
-3. До завершения компенсационного пути запрещено трактовать partial batch как успешное достижение EC-target.
+     - `status=degraded`
+     - `mode` (`multi_sequential` | `multi_parallel`), `error_code`, `failed_index`;
+   - метрика: `ae3_correction_ec_batch_partial_failure_total{mode=...}`.
+2. **MVP не делает** auto-enqueue diagnostics workflow (`irrigation_recovery`) и не шлёт infra-alert `infra_ec_batch_partial_failure_compensation_enqueue_failed` — это целевой контракт v2+.
+3. Ошибка на **первом** компоненте batch (нет prior success) остаётся обычным fail-closed `TaskExecutionError` без события partial failure.
 
 ---
 

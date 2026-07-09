@@ -604,6 +604,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
       PH_CORRECTED: 'pH скорректирован',
       EC_CORRECTED: 'EC скорректирован',
       EC_DOSING: 'Дозирование EC',
+      EC_BATCH_PARTIAL_FAILURE: 'Частичный сбой EC batch',
       // Полив
       IRRIGATION_APPROVED: 'Полив разрешён',
       IRRIGATION_SKIPPED: 'Полив пропущен',

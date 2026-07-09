@@ -213,4 +213,34 @@ describe('eventDetails', () => {
       { label: 'Узел', value: 'online, но heartbeat устарел', variant: 'error' },
     ]))
   })
+
+  it('разворачивает EC_BATCH_PARTIAL_FAILURE', () => {
+    const rows = buildEventDetails({
+      id: 11,
+      kind: 'EC_BATCH_PARTIAL_FAILURE',
+      message: 'Partial EC batch failure',
+      occurred_at: '2026-07-09T12:00:00Z',
+      payload: {
+        status: 'degraded',
+        failed_component: 'magnesium',
+        successful_components: ['calcium'],
+        remaining_components: ['micro'],
+        current_ec: 1.2,
+        target_ec: 1.8,
+        mode: 'multi_sequential',
+        error_code: 'hw_error',
+      },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { label: 'Статус', value: 'degraded', variant: 'error' },
+      { label: 'Сбой компонента', value: 'magnesium', variant: 'error' },
+      { label: 'Успешные', value: 'calcium', variant: 'default' },
+      { label: 'Оставшиеся', value: 'micro', variant: 'default' },
+      { label: 'Текущий EC', value: '1.20 мС/см', variant: 'default' },
+      { label: 'Цель EC', value: '1.80 мС/см', variant: 'default' },
+      { label: 'Режим', value: 'multi_sequential', variant: 'default' },
+      { label: 'Код ошибки', value: 'hw_error', variant: 'error' },
+    ]))
+  })
 })

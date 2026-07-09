@@ -234,7 +234,7 @@ Correction runtime invariants:
     `no-effect` fail-closed или по stage timeout; текущая canonical fail-closed реализация для
     `no-effect` — переход в `solution_fill_timeout_stop` без повторного входа в correction.
 12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = `target ± prepare_tolerance`; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия.
-13. partial EC batch failure compensation (`EC_BATCH_PARTIAL_FAILURE`, enqueue recovery) — **not implemented in v1**; текущий runtime fail-closed на первой ошибке batch (см. `CORRECTION_CYCLE_SPEC.md` §6.2).
+13. partial EC batch failure MVP (`EC_BATCH_PARTIAL_FAILURE` + fail correction window + metric) — **implemented**; auto-enqueue `irrigation_recovery` / infra-alert компенсации — **not in MVP** (см. `CORRECTION_CYCLE_SPEC.md` §6.2).
 14. при `task_type=solution_change` completion `solution_fill` (включая interrupt из correction) обязан
     идти в `solution_fill_stop_to_refill_confirm` (operator gate G2), а не в `*_stop_to_ready/prepare`.
 

@@ -61,6 +61,7 @@ from ae3lite.infrastructure.metrics import (
     CORRECTION_CAP_IGNORED,
     CORRECTION_CONTROL_MODE_BLOCKED,
     CORRECTION_DOSE_CLAMPED,
+    CORRECTION_EC_BATCH_PARTIAL_FAILURE,
     CORRECTION_PUMP_CALIBRATION_MIRROR_MISMATCH,
     CORRECTION_ESTOP_INTERRUPT,
     CORRECTION_EXHAUSTED,
@@ -1439,10 +1440,53 @@ class CorrectionHandler(BaseStageHandler):
                         },
                     },
                 ))
-            result = await self._run_command_batch_checked(
-                task=current_task, commands=tuple(batch_cmds), now=now,
-            )
+            try:
+                await self._ensure_command_targets_online(task=current_task, commands=tuple(batch_cmds))
+                result = await self._command_gateway.run_batch(
+                    task=current_task,
+                    commands=tuple(batch_cmds),
+                    now=now,
+                )
+            except TaskExecutionError as exc:
+                partial = await self._maybe_fail_ec_batch_partial(
+                    task=current_task,
+                    plan=plan,
+                    corr=corr,
+                    seq=seq,
+                    mode="multi_parallel",
+                    failed_index=0,
+                    error_code=exc.code,
+                    error_message=str(exc),
+                    batch_result=None,
+                )
+                if partial is not None:
+                    return partial
+                raise
             current_task = result.get("task") or current_task
+            if not result.get("success"):
+                failed_index = self._ec_batch_first_failed_index(
+                    seq=seq,
+                    batch_result=result,
+                )
+                partial = await self._maybe_fail_ec_batch_partial(
+                    task=current_task,
+                    plan=plan,
+                    corr=corr,
+                    seq=seq,
+                    mode="multi_parallel",
+                    failed_index=failed_index,
+                    error_code=str(result.get("error_code") or "ec_batch_command_failed"),
+                    error_message=str(result.get("error_message") or "EC batch command failed"),
+                    batch_result=result,
+                )
+                if partial is not None:
+                    return partial
+                await self._raise_execution_error(
+                    task=current_task,
+                    error_code=str(result.get("error_code") or "ec_batch_command_failed"),
+                    error_message=str(result.get("error_message") or "EC batch command failed"),
+                    node_uid=self._first_command_node_uid(tuple(batch_cmds)),
+                )
             corr = replace(corr, ec_current_seq_index=len(seq))
         elif seq:
             # multi_sequential: отправляем по ОДНОМУ компоненту за вызов,
@@ -1470,10 +1514,49 @@ class CorrectionHandler(BaseStageHandler):
                         },
                     },
                 )
-                result = await self._run_command_batch_checked(
-                    task=current_task, commands=(cmd,), now=now,
-                )
+                try:
+                    await self._ensure_command_targets_online(task=current_task, commands=(cmd,))
+                    result = await self._command_gateway.run_batch(
+                        task=current_task,
+                        commands=(cmd,),
+                        now=now,
+                    )
+                except TaskExecutionError as exc:
+                    partial = await self._maybe_fail_ec_batch_partial(
+                        task=current_task,
+                        plan=plan,
+                        corr=corr,
+                        seq=seq,
+                        mode="multi_sequential",
+                        failed_index=start_idx,
+                        error_code=exc.code,
+                        error_message=str(exc),
+                        batch_result=None,
+                    )
+                    if partial is not None:
+                        return partial
+                    raise
                 current_task = result.get("task") or current_task
+                if not result.get("success"):
+                    partial = await self._maybe_fail_ec_batch_partial(
+                        task=current_task,
+                        plan=plan,
+                        corr=corr,
+                        seq=seq,
+                        mode="multi_sequential",
+                        failed_index=start_idx,
+                        error_code=str(result.get("error_code") or "ec_batch_command_failed"),
+                        error_message=str(result.get("error_message") or "EC batch command failed"),
+                        batch_result=result,
+                    )
+                    if partial is not None:
+                        return partial
+                    await self._raise_execution_error(
+                        task=current_task,
+                        error_code=str(result.get("error_code") or "ec_batch_command_failed"),
+                        error_message=str(result.get("error_message") or "EC batch command failed"),
+                        node_uid=str(item.get("node_uid") or "") or None,
+                    )
 
                 planned_ml = float(item.get("amount_ml") or 0.0)
                 planned_ms = int(item.get("duration_ms") or 0)
@@ -2115,6 +2198,153 @@ class CorrectionHandler(BaseStageHandler):
         return self._transition_policy.transition_to_deactivate_or_return(
             corr=corr, success=success,
         )
+
+    @staticmethod
+    def _ec_component_name(item: Mapping[str, Any] | None, *, index: int) -> str:
+        if not isinstance(item, Mapping):
+            return f"step_{index}"
+        name = str(item.get("component") or "").strip().lower()
+        if name:
+            return name
+        node = str(item.get("node_uid") or "").strip()
+        channel = str(item.get("channel") or "").strip()
+        if node and channel:
+            return f"{node}/{channel}"
+        return f"step_{index}"
+
+    @staticmethod
+    def _ec_batch_first_failed_index(
+        *,
+        seq: Sequence[Mapping[str, Any]],
+        batch_result: Mapping[str, Any] | None,
+    ) -> int:
+        """Best-effort index of the first failed command in a parallel batch."""
+        if not batch_result:
+            return 0
+        statuses = batch_result.get("command_statuses")
+        if not isinstance(statuses, list) or not statuses:
+            return 0
+        for idx, status in enumerate(statuses):
+            if not isinstance(status, Mapping):
+                continue
+            terminal = str(status.get("terminal_status") or "").strip().upper()
+            if terminal and terminal != "DONE":
+                return min(idx, max(0, len(seq) - 1))
+            if status.get("success") is False:
+                return min(idx, max(0, len(seq) - 1))
+        # Gateway stops on first failure; statuses length often equals failed index + 1.
+        if len(statuses) > 0:
+            return min(len(statuses) - 1, max(0, len(seq) - 1))
+        return 0
+
+    async def _maybe_fail_ec_batch_partial(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        seq: Sequence[Mapping[str, Any]],
+        mode: str,
+        failed_index: int,
+        error_code: str,
+        error_message: str,
+        batch_result: Mapping[str, Any] | None,
+    ) -> StageOutcome | None:
+        """CORRECTION_CYCLE_SPEC §6.2 MVP: detect partial EC batch failure.
+
+        When steps ``0..N-1`` already succeeded and step ``N`` fails, emit
+        ``EC_BATCH_PARTIAL_FAILURE``, mark the correction window failed, and
+        do **not** treat EC target as reached. Auto-enqueue of
+        ``irrigation_recovery`` is intentionally out of MVP scope.
+        """
+        if not seq:
+            return None
+        idx = int(failed_index)
+        if idx < 0:
+            idx = 0
+        if idx >= len(seq):
+            idx = len(seq) - 1
+
+        # Partial = at least one prior component already dosed successfully.
+        # For sequential: ec_current_seq_index / failed_index > 0.
+        # For parallel: gateway may have completed earlier commands in the same batch.
+        prior_success = idx > 0
+        if mode == "multi_parallel" and batch_result is not None:
+            statuses = batch_result.get("command_statuses")
+            if isinstance(statuses, list):
+                done_count = 0
+                for status in statuses:
+                    if not isinstance(status, Mapping):
+                        continue
+                    terminal = str(status.get("terminal_status") or "").strip().upper()
+                    if terminal == "DONE" or status.get("success") is True:
+                        done_count += 1
+                prior_success = done_count > 0 and idx > 0
+        if not prior_success:
+            return None
+
+        successful = [
+            self._ec_component_name(seq[i], index=i) for i in range(idx)
+        ]
+        failed_item = seq[idx] if isinstance(seq[idx], Mapping) else {}
+        failed_component = self._ec_component_name(failed_item, index=idx)
+        remaining = [
+            self._ec_component_name(seq[i], index=i) for i in range(idx + 1, len(seq))
+        ]
+
+        runtime = self._require_runtime_plan(plan=plan)
+        current_ec: Optional[float] = None
+        if self._pid_state_repository is not None:
+            try:
+                current_ec = await self._pid_state_repository.read_measured_value(
+                    zone_id=task.zone_id, pid_type="ec",
+                )
+            except Exception:
+                _logger.debug(
+                    "Не удалось прочитать EC pid_state для EC_BATCH_PARTIAL_FAILURE",
+                    exc_info=True,
+                )
+
+        payload = {
+            "successful_components": successful,
+            "failed_component": failed_component,
+            "remaining_components": remaining,
+            "failed_index": idx,
+            "mode": mode,
+            "status": "degraded",
+            "error_code": error_code,
+            "error_message": error_message,
+            "target_ec": self._effective_ec_target(task=task, runtime=runtime),
+            "current_ec": current_ec,
+            "node_uid": str(failed_item.get("node_uid") or "").strip() or None,
+            "channel": str(failed_item.get("channel") or "").strip() or None,
+            "ec_component": corr.ec_component,
+            "source": "correction_handler",
+        }
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="EC_BATCH_PARTIAL_FAILURE",
+            task=task,
+            corr=corr,
+            payload=payload,
+        )
+        CORRECTION_EC_BATCH_PARTIAL_FAILURE.labels(mode=mode).inc()
+        _logger.warning(
+            "EC batch partial failure zone=%s mode=%s failed=%s successful=%s remaining=%s code=%s",
+            getattr(task, "zone_id", None),
+            mode,
+            failed_component,
+            successful,
+            remaining,
+            error_code,
+        )
+        # Keep index at the failed step for observability; do not advance.
+        next_corr = replace(corr, ec_current_seq_index=idx)
+        outcome = self._transition_to_deactivate_or_return(corr=next_corr, success=False)
+        result_task = (batch_result or {}).get("task")
+        if result_task is not None and result_task is not task:
+            return replace(outcome, task_override=result_task)
+        return outcome
 
     async def _correction_exhausted(
         self,

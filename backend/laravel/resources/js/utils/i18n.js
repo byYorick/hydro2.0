@@ -99,7 +99,12 @@ export function classifyEventKind(kind) {
     kind === 'IRRIGATION_CORRECTION_STARTED'
   ) return 'ACTION'
 
-  if (kind === 'COMMAND_TIMEOUT' || kind === 'AE_TASK_FAILED' || kind === 'CORRECTION_EXHAUSTED') return 'WARNING'
+  if (
+    kind === 'COMMAND_TIMEOUT' ||
+    kind === 'AE_TASK_FAILED' ||
+    kind === 'CORRECTION_EXHAUSTED' ||
+    kind === 'EC_BATCH_PARTIAL_FAILURE'
+  ) return 'WARNING'
   if (kind === 'command_status' || kind === 'COMMAND_STATUS') return 'ACTION'
   if (kind === 'IRR_STATE_SNAPSHOT' || kind === 'PUMP_CALIBRATION_RUN_SKIPPED') return 'INFO'
 
@@ -167,6 +172,7 @@ export function translateEventKind(kind) {
     // Коррекция pH/EC
     'PH_CORRECTED': 'pH скорректирован',
     'EC_DOSING': 'EC: подача питания',
+    'EC_BATCH_PARTIAL_FAILURE': 'EC: частичный сбой batch',
     'PUMP_DOSE_SENT': 'Доза отправлена насосу',
     'PID_OUTPUT': 'PID: расчёт выхода',
     'PID_CONFIG_UPDATED': 'Конфиг PID обновлён',

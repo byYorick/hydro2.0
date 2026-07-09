@@ -1,6 +1,6 @@
 # AE3 Runtime Event Contract
 
-**Дата:** 2026-04-10  
+**Дата:** 2026-07-09  
 **Статус:** SOURCE OF TRUTH  
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
@@ -280,6 +280,35 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Обязательные поля: `task_id`, `stage`, `reason`, `commands[]` (+ диагностические поля ошибки).
 
 Метрика: `ae3_flow_stop_failed_total{stage}`; biz-alert `biz_flow_stop_failed_hardware_may_be_active` (critical).
+
+### 4.12 `EC_BATCH_PARTIAL_FAILURE` (CORRECTION_CYCLE_SPEC §6.2 MVP)
+
+Назначение:
+- зафиксировать частичный сбой multi-component EC dose batch (шаги `0..N-1` DONE, шаг `N` failed);
+- correction window закрывается как fail; EC-target **не** считается достигнутым.
+
+Обязательные поля:
+
+1. `successful_components` (list[str])
+2. `failed_component` (str)
+3. `remaining_components` (list[str])
+4. `status` (`degraded`)
+5. `mode` (`multi_sequential` | `multi_parallel`)
+6. `error_code`
+
+Условно обязательные / контекстные поля:
+
+1. `failed_index`
+2. `target_ec` / `current_ec`
+3. `node_uid` / `channel` failed step
+4. `error_message`
+5. `task_id` / `stage` / `workflow_phase` (через runtime event contract logger)
+6. `snapshot_event_id` / `caused_by_event_id` — если correction path в irrigating/irrig_recirc
+
+Метрика: `ae3_correction_ec_batch_partial_failure_total{mode=...}`.
+
+**Не в MVP:** auto-enqueue `irrigation_recovery`, infra-alert
+`infra_ec_batch_partial_failure_compensation_enqueue_failed`.
 
 ## 5. E2E / Read-Model Guidance
 

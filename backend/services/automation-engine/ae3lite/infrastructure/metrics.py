@@ -386,6 +386,12 @@ CORRECTION_NO_EFFECT = Counter(
     ["pid_type"],
 )
 
+CORRECTION_EC_BATCH_PARTIAL_FAILURE = Counter(
+    "ae3_correction_ec_batch_partial_failure_total",
+    "EC multi-component dose batches that failed after one or more successful components",
+    ["mode"],  # multi_sequential | multi_parallel
+)
+
 CORRECTION_ESTOP_INTERRUPT = Counter(
     "ae3_correction_estop_interrupt_total",
     "Correction windows interrupted by EMERGENCY_STOP_ACTIVATED",
