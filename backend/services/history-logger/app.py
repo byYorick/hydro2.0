@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Failed to reclaim telemetry processing list on startup", exc_info=True)
 
-    task = asyncio.create_task(process_telemetry_queue())
+    task = asyncio.create_task(process_telemetry_queue(), name="telemetry_queue_processor")
     state.background_tasks.append(task)
 
     realtime_task = asyncio.create_task(process_realtime_queue())
@@ -148,26 +148,72 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down History Logger service")
 
+    try:
+        final_drain = await drain_stale_queued_commands_once(
+            stale_after_seconds=0.0,
+            limit=s.command_status_repair_batch_size,
+        )
+        if final_drain.get("scanned", 0) > 0:
+            logger.info("Shutdown queued command drain: %s", final_drain)
+    except Exception:
+        logger.warning("Shutdown queued command drain failed", exc_info=True)
+
     state.shutdown_event.set()
 
-    if state.background_tasks:
-        tasks_to_wait = list(state.background_tasks)
+    telemetry_task = next(
+        (
+            task
+            for task in state.background_tasks
+            if task.get_name() == "telemetry_queue_processor"
+        ),
+        None,
+    )
+    other_tasks = [
+        task for task in state.background_tasks if task is not telemetry_task
+    ]
+
+    if telemetry_task and not telemetry_task.done():
+        drain_timeout = getattr(s, "telemetry_shutdown_drain_timeout_sec", 30.0)
         logger.info(
-            f"Waiting for {len(tasks_to_wait)} background tasks to complete..."
+            "Waiting for telemetry queue processor to drain (timeout=%ss)...",
+            drain_timeout,
         )
         try:
             await asyncio.wait_for(
-                asyncio.gather(*tasks_to_wait, return_exceptions=True),
+                telemetry_task,
+                timeout=drain_timeout + 5.0,
+            )
+            logger.info("Telemetry queue processor drained")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Telemetry queue drain timed out after %ss, cancelling processor",
+                drain_timeout,
+            )
+            telemetry_task.cancel()
+            try:
+                await telemetry_task
+            except asyncio.CancelledError:
+                pass
+
+    if other_tasks:
+        logger.info(
+            f"Waiting for {len(other_tasks)} background tasks to complete..."
+        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*other_tasks, return_exceptions=True),
                 timeout=s.shutdown_timeout_sec,
             )
             logger.info("All background tasks completed")
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for background tasks, forcing shutdown")
-            for task in tasks_to_wait:
+            for task in other_tasks:
                 if not task.done():
                     task.cancel()
         finally:
             state.background_tasks.clear()
+    else:
+        state.background_tasks.clear()
 
     await asyncio.sleep(s.shutdown_wait_sec)
 

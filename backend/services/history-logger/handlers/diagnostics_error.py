@@ -9,7 +9,7 @@ import logging
 from common.db import fetch, upsert_unassigned_node_error
 from common.error_handler import get_error_handler
 from common.trace_context import clear_trace_id
-from metrics import DIAGNOSTICS_RECEIVED, ERROR_RECEIVED
+from metrics import DIAGNOSTICS_RECEIVED, ERROR_RECEIVED, MQTT_HANDLER_ERROR
 from utils import _extract_gh_uid, _extract_node_uid, _extract_zone_uid, _parse_json
 
 from ._shared import apply_trace_context
@@ -41,6 +41,14 @@ async def handle_diagnostics(topic: str, payload: bytes) -> None:
         await error_handler.handle_diagnostics(node_uid, data)
 
         DIAGNOSTICS_RECEIVED.labels(node_uid=node_uid).inc()
+    except Exception as exc:
+        logger.error(
+            "[DIAGNOSTICS] Unexpected error processing diagnostics for topic %s: %s",
+            topic,
+            exc,
+            exc_info=True,
+        )
+        MQTT_HANDLER_ERROR.labels(handler="diagnostics").inc()
     finally:
         clear_trace_id()
 

@@ -205,6 +205,32 @@ end
 return count
 """
 
+_MOVE_PROCESSING_TO_QUEUE_SCRIPT = """
+local processing_key = KEYS[1]
+local queue_key = KEYS[2]
+local raw_item = ARGV[1]
+local wrapped_item = ARGV[2]
+local removed = redis.call('LREM', processing_key, 1, raw_item)
+if removed > 0 then
+  redis.call('LPUSH', queue_key, wrapped_item)
+  return 1
+end
+return 0
+"""
+
+_MOVE_PROCESSING_TO_DEAD_SCRIPT = """
+local processing_key = KEYS[1]
+local dead_key = KEYS[2]
+local raw_item = ARGV[1]
+local dead_payload = ARGV[2]
+local removed = redis.call('LREM', processing_key, 1, raw_item)
+if removed > 0 then
+  redis.call('RPUSH', dead_key, dead_payload)
+  return 1
+end
+return 0
+"""
+
 
 class TelemetryQueue:
     """Очередь телеметрии в Redis для буферизации перед записью в БД."""
@@ -219,6 +245,8 @@ class TelemetryQueue:
         self._client: Optional[redis_async.Redis] = None
         self._pop_script = None
         self._reclaim_script = None
+        self._move_processing_to_queue_script = None
+        self._move_processing_to_dead_script = None
 
     def _max_pg_retries(self) -> int:
         return max(1, int(get_settings().telemetry_max_pg_retries))
@@ -230,6 +258,14 @@ class TelemetryQueue:
             self._pop_script = self._client.register_script(_POP_BATCH_SCRIPT)
         if self._reclaim_script is None:
             self._reclaim_script = self._client.register_script(_RECLAIM_PROCESSING_SCRIPT)
+        if self._move_processing_to_queue_script is None:
+            self._move_processing_to_queue_script = self._client.register_script(
+                _MOVE_PROCESSING_TO_QUEUE_SCRIPT
+            )
+        if self._move_processing_to_dead_script is None:
+            self._move_processing_to_dead_script = self._client.register_script(
+                _MOVE_PROCESSING_TO_DEAD_SCRIPT
+            )
 
     async def push(self, item: TelemetryQueueItem) -> bool:
         try:
@@ -352,6 +388,17 @@ class TelemetryQueue:
             logger.error(f"Failed to ack telemetry batch: {e}", exc_info=True)
             return 0
 
+    async def _atomic_move_processing_to_queue(self, raw: bytes, wrapped: bytes) -> int:
+        await self._ensure_client()
+        moved = await self._move_processing_to_queue_script(
+            keys=[self.PROCESSING_KEY, self.QUEUE_KEY],
+            args=[raw, wrapped],
+        )
+        moved_count = int(moved or 0)
+        if moved_count == 0:
+            self._record_orphaned_processing_move()
+        return moved_count
+
     async def requeue_batch(self, entries: List[QueueEntry]) -> int:
         if not entries:
             return 0
@@ -368,9 +415,7 @@ class TelemetryQueue:
                     _unwrap_queue_bytes(entry.raw)[0],
                     next_retry,
                 )
-                await self._client.lrem(self.PROCESSING_KEY, 1, entry.raw)
-                await self._client.lpush(self.QUEUE_KEY, wrapped)
-                requeued += 1
+                requeued += await self._atomic_move_processing_to_queue(entry.raw, wrapped)
             return requeued
         except Exception as e:
             logger.error(f"Failed to requeue telemetry batch: {e}", exc_info=True)
@@ -397,6 +442,26 @@ class TelemetryQueue:
                 moved += 1
         return moved
 
+    @staticmethod
+    def _record_orphaned_processing_move() -> None:
+        try:
+            from metrics import TELEMETRY_QUEUE_ORPHANED
+
+            TELEMETRY_QUEUE_ORPHANED.inc()
+        except Exception:
+            pass
+
+    async def _atomic_move_processing_to_dead(self, raw: bytes, dead_payload: bytes) -> int:
+        await self._ensure_client()
+        moved = await self._move_processing_to_dead_script(
+            keys=[self.PROCESSING_KEY, self.DEAD_KEY],
+            args=[raw, dead_payload],
+        )
+        moved_count = int(moved or 0)
+        if moved_count == 0:
+            self._record_orphaned_processing_move()
+        return moved_count
+
     async def _move_raw_to_dead(self, raw: bytes, *, reason: str) -> bool:
         try:
             await self._ensure_client()
@@ -411,8 +476,9 @@ class TelemetryQueue:
                 },
                 separators=(",", ":"),
             ).encode("utf-8")
-            await self._client.lrem(self.PROCESSING_KEY, 1, raw)
-            await self._client.rpush(self.DEAD_KEY, dead_payload)
+            moved = await self._atomic_move_processing_to_dead(raw, dead_payload)
+            if moved <= 0:
+                return False
             try:
                 from metrics import TELEMETRY_DEAD_LIST_SIZE, TELEMETRY_DESERIALIZE_FAILED
 
@@ -444,6 +510,14 @@ class TelemetryQueue:
             return int(await self._client.llen(self.QUEUE_KEY) or 0)
         except Exception as e:
             logger.error(f"Failed to get queue size: {e}", exc_info=True)
+            return 0
+
+    async def processing_size(self) -> int:
+        try:
+            await self._ensure_client()
+            return int(await self._client.llen(self.PROCESSING_KEY) or 0)
+        except Exception as e:
+            logger.error(f"Failed to get telemetry processing list size: {e}", exc_info=True)
             return 0
 
     async def dead_list_size(self) -> int:

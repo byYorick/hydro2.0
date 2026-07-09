@@ -6,38 +6,65 @@ import logging
 from typing import Any
 
 from command_service import _create_command_payload, _get_gh_uid_from_zone_id, _get_zone_uid_from_id
+from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
-from common.db import fetch
+from common.db import get_pool
+from metrics import (
+    COMMAND_QUEUE_DRAIN_FAILED,
+    COMMAND_QUEUE_DRAIN_SCANNED,
+    COMMAND_QUEUE_DRAIN_SKIPPED,
+    COMMAND_QUEUE_DRAIN_SUCCEEDED,
+)
 
 logger = logging.getLogger(__name__)
 
+_SUSTAINED_FAIL_CYCLES_BEFORE_ALERT = 3
+_consecutive_fail_cycles = 0
 
-async def _fetch_stale_queued_command_rows(
+
+def _extract_signed_payload_fields(params: dict[str, Any]) -> tuple[dict[str, Any], int | None, str | None]:
+    """Preserve ``__hl_ts`` / ``__hl_sig`` metadata without leaking them to MQTT params."""
+    if not isinstance(params, dict):
+        return {}, None, None
+    clean_params = dict(params)
+    stored_ts = clean_params.pop("__hl_ts", None)
+    stored_sig = clean_params.pop("__hl_sig", None)
+    ts_value = int(stored_ts) if isinstance(stored_ts, (int, float)) else None
+    sig_value = str(stored_sig) if isinstance(stored_sig, str) and stored_sig else None
+    return clean_params, ts_value, sig_value
+
+
+async def _claim_stale_queued_command_rows(
     *,
     stale_after_seconds: float,
     limit: int,
 ) -> list[dict[str, Any]]:
-    rows = await fetch(
-        """
-        SELECT
-            c.cmd_id,
-            c.zone_id,
-            c.channel,
-            c.cmd,
-            c.params,
-            c.status,
-            n.uid AS node_uid
-        FROM commands c
-        INNER JOIN nodes n ON n.id = c.node_id
-        WHERE c.status IN ('QUEUED', 'SEND_FAILED')
-          AND c.created_at <= NOW() - ($1 * INTERVAL '1 second')
-        ORDER BY c.created_at ASC, c.id ASC
-        LIMIT $2
-        """,
-        stale_after_seconds,
-        limit,
-    )
-    return [dict(row) for row in rows]
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                c.cmd_id,
+                c.zone_id,
+                c.node_id,
+                c.channel,
+                c.cmd,
+                c.params,
+                c.status,
+                c.source,
+                n.uid AS node_uid
+            FROM commands c
+            INNER JOIN nodes n ON n.id = c.node_id
+            WHERE c.status IN ('QUEUED', 'SEND_FAILED')
+              AND c.created_at <= NOW() - ($1 * INTERVAL '1 second')
+            ORDER BY c.created_at ASC, c.id ASC
+            LIMIT $2
+            FOR UPDATE OF c SKIP LOCKED
+            """,
+            stale_after_seconds,
+            limit,
+        )
+        return [dict(row) for row in rows]
 
 
 async def drain_stale_queued_commands_once(
@@ -46,35 +73,65 @@ async def drain_stale_queued_commands_once(
     limit: int = 25,
 ) -> dict[str, int]:
     """Republish commands, застрявшие в QUEUED/SEND_FAILED после сбоя publish."""
-    candidates = await _fetch_stale_queued_command_rows(
+    candidates = await _claim_stale_queued_command_rows(
         stale_after_seconds=stale_after_seconds,
         limit=limit,
     )
     summary = {
         "scanned": len(candidates),
         "drained": 0,
+        "skipped": 0,
         "failed": 0,
     }
+
+    if summary["scanned"] > 0:
+        COMMAND_QUEUE_DRAIN_SCANNED.inc(summary["scanned"])
 
     for row in candidates:
         cmd_id = str(row.get("cmd_id") or "").strip()
         zone_id = int(row.get("zone_id") or 0)
+        node_id = int(row.get("node_id") or 0)
         node_uid = str(row.get("node_uid") or "").strip()
         channel = str(row.get("channel") or "").strip()
         cmd_name = str(row.get("cmd") or "").strip()
-        params = row.get("params") if isinstance(row.get("params"), dict) else {}
+        raw_params = row.get("params") if isinstance(row.get("params"), dict) else {}
+        command_source = str(row.get("source") or "api").strip() or "api"
 
-        if not cmd_id or zone_id <= 0 or not node_uid or not channel or not cmd_name:
+        if not cmd_id or zone_id <= 0 or node_id <= 0 or not node_uid or not channel or not cmd_name:
             summary["failed"] += 1
+            COMMAND_QUEUE_DRAIN_FAILED.inc()
             continue
 
         try:
+            skip_response = await ensure_command_for_publish(
+                cmd_id=cmd_id,
+                zone_id=zone_id,
+                node_id=node_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd_name=cmd_name,
+                params=raw_params,
+                command_source=command_source,
+            )
+            if skip_response:
+                summary["skipped"] += 1
+                COMMAND_QUEUE_DRAIN_SKIPPED.inc()
+                logger.info(
+                    "[QUEUED_DRAIN] skipped cmd_id=%s zone_id=%s reason=non_republishable",
+                    cmd_id,
+                    zone_id,
+                )
+                continue
+
             effective_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
             zone_uid = await _get_zone_uid_from_id(zone_id)
+            params, stored_ts, stored_sig = _extract_signed_payload_fields(raw_params)
             payload = _create_command_payload(
                 cmd_id=cmd_id,
                 params=params,
                 cmd=cmd_name,
+                ts=stored_ts,
+                sig=stored_sig,
             )
             await publish_command_with_retry(
                 payload=payload,
@@ -87,6 +144,7 @@ async def drain_stale_queued_commands_once(
                 zone_uid=zone_uid,
             )
             summary["drained"] += 1
+            COMMAND_QUEUE_DRAIN_SUCCEEDED.inc()
             logger.info(
                 "[QUEUED_DRAIN] republished cmd_id=%s zone_id=%s node_uid=%s",
                 cmd_id,
@@ -95,6 +153,7 @@ async def drain_stale_queued_commands_once(
             )
         except Exception:
             summary["failed"] += 1
+            COMMAND_QUEUE_DRAIN_FAILED.inc()
             logger.warning(
                 "[QUEUED_DRAIN] failed cmd_id=%s zone_id=%s node_uid=%s",
                 cmd_id,
@@ -104,6 +163,37 @@ async def drain_stale_queued_commands_once(
             )
 
     return summary
+
+
+async def _maybe_emit_sustained_drain_fail_alert(summary: dict[str, int]) -> None:
+    global _consecutive_fail_cycles
+
+    if (
+        summary.get("scanned", 0) > 0
+        and summary.get("drained", 0) == 0
+        and summary.get("failed", 0) > 0
+    ):
+        _consecutive_fail_cycles += 1
+    else:
+        _consecutive_fail_cycles = 0
+
+    if _consecutive_fail_cycles < _SUSTAINED_FAIL_CYCLES_BEFORE_ALERT:
+        return
+
+    try:
+        from commands.alerts import emit_command_queue_drain_sustained_fail_alert
+
+        await emit_command_queue_drain_sustained_fail_alert(
+            consecutive_cycles=_consecutive_fail_cycles,
+            last_summary=summary,
+        )
+        _consecutive_fail_cycles = 0
+    except Exception:
+        logger.warning(
+            "[QUEUED_DRAIN] failed to emit sustained-fail alert summary=%s",
+            summary,
+            exc_info=True,
+        )
 
 
 async def drain_worker(
@@ -129,7 +219,8 @@ async def drain_worker(
                 stale_after_seconds=stale_after_seconds,
                 limit=batch_size,
             )
-            if summary["drained"] > 0 or summary["failed"] > 0:
+            await _maybe_emit_sustained_drain_fail_alert(summary)
+            if summary["drained"] > 0 or summary["failed"] > 0 or summary["skipped"] > 0:
                 logger.info("[QUEUED_DRAIN] cycle summary=%s", summary)
         except Exception:
             logger.warning("[QUEUED_DRAIN] worker cycle failed", exc_info=True)

@@ -21,6 +21,16 @@ from .validation import normalize_command_status, normalize_params_for_idempoten
 logger = logging.getLogger(__name__)
 
 
+def _is_unpublished_device_ack_stub(existing: dict, cmd_status: str) -> bool:
+    """Device-origin ACK row without ``sent_at`` never reached MQTT — publish must proceed."""
+    if cmd_status != "ACK":
+        return False
+    if existing.get("sent_at") is not None:
+        return False
+    source = str(existing.get("source") or "").strip().lower()
+    return source == "device"
+
+
 async def ensure_post_publish_status_persisted(cmd_id: str) -> None:
     """Проверяет, что строка ``commands`` в post-publish валидном состоянии.
 
@@ -69,7 +79,7 @@ async def ensure_command_for_publish(
     """
     try:
         existing_rows = await fetch(
-            "SELECT status, source, zone_id, node_id, channel, cmd, params FROM commands WHERE cmd_id = $1",
+            "SELECT status, source, sent_at, zone_id, node_id, channel, cmd, params FROM commands WHERE cmd_id = $1",
             cmd_id,
         )
     except Exception as exc:
@@ -121,6 +131,13 @@ async def ensure_command_for_publish(
 
         cmd_status = normalize_command_status(existing.get("status"))
         if cmd_status in NON_REPUBLISHABLE_COMMAND_STATUSES:
+            if _is_unpublished_device_ack_stub(existing, cmd_status):
+                logger.info(
+                    "[IDEMPOTENCY] Command %s is device ACK stub without sent_at, allowing publish",
+                    cmd_id,
+                )
+                return None
+
             status_kind = "final" if cmd_status in FINAL_COMMAND_STATUSES else "in_progress"
             logger.info(
                 "[IDEMPOTENCY] Command %s already in non-republishable status '%s' (%s), skipping republish",

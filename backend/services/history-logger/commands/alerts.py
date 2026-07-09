@@ -41,6 +41,29 @@ async def emit_command_send_failed_alert(
     )
 
 
+async def emit_command_queue_drain_sustained_fail_alert(
+    *,
+    consecutive_cycles: int,
+    last_summary: dict[str, int],
+) -> None:
+    await send_infra_alert(
+        code="infra_command_queue_drain_sustained_fail",
+        alert_type="Command Queue Drain Sustained Fail",
+        message=(
+            "Queued command drain не смог republish команды "
+            f"{consecutive_cycles} циклов подряд"
+        ),
+        severity="critical",
+        service="history-logger",
+        component="command_queue_drain",
+        error_type="queue_drain_sustained_fail",
+        details={
+            "consecutive_fail_cycles": consecutive_cycles,
+            "last_summary": last_summary,
+        },
+    )
+
+
 async def emit_command_node_zone_mismatch_observability(
     *,
     zone_id: int,

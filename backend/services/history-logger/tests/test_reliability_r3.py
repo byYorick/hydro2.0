@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -63,6 +64,40 @@ async def test_pop_batch_deserialize_failure_moves_to_dead():
     assert len(result.entries) == 0
     queue._move_raw_to_dead.assert_called_once()
     assert queue._move_raw_to_dead.call_args.kwargs["reason"] == "deserialize_failed"
+
+
+@pytest.mark.asyncio
+async def test_requeue_batch_uses_atomic_move_script():
+    queue = TelemetryQueue()
+    raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
+    entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw), retry_count=1)
+    queue._client = AsyncMock()
+    queue._move_processing_to_queue_script = AsyncMock(return_value=1)
+
+    with patch.object(queue, "_max_pg_retries", return_value=3):
+        requeued = await queue.requeue_batch([entry])
+
+    assert requeued == 1
+    queue._move_processing_to_queue_script.assert_awaited_once()
+    queue._client.lrem.assert_not_called()
+    queue._client.lpush.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_move_raw_to_dead_uses_atomic_script():
+    queue = TelemetryQueue()
+    raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
+    queue._client = AsyncMock()
+    queue._move_processing_to_dead_script = AsyncMock(return_value=1)
+    queue.prune_expired_dead = AsyncMock(return_value=0)
+    queue._client.llen = AsyncMock(return_value=1)
+
+    moved = await queue._move_raw_to_dead(raw, reason="fk_violation")
+
+    assert moved is True
+    queue._move_processing_to_dead_script.assert_awaited_once()
+    queue._client.lrem.assert_not_called()
+    queue._client.rpush.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -241,16 +276,20 @@ async def test_process_telemetry_batch_requeues_on_non_transport_samples_failure
         )
     ]
 
+    async def execute_side_effect(query, *args):
+        if "telemetry_samples" in str(query):
+            raise RuntimeError("samples insert failed")
+        if "telemetry_last" in str(query):
+            return "INSERT 0 1"
+        return "INSERT 0 1"
+
     async def fetch_side_effect(query, *args):
+        if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+            raise RuntimeError("samples insert failed")
         normalized = " ".join(str(query).split()).lower()
         if "from sensors" in normalized and "any($1" in normalized:
             return [{"id": 501}]
         return []
-
-    async def execute_side_effect(query, *args):
-        if "telemetry_samples" in str(query):
-            raise RuntimeError("samples insert failed")
-        return "INSERT 0 1"
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
@@ -305,16 +344,20 @@ async def test_process_telemetry_batch_dead_lists_on_fk_samples_failure():
         '"telemetry_samples_sensor_id_foreign"'
     )
 
+    async def execute_side_effect(query, *args):
+        if "telemetry_samples" in str(query):
+            raise fk_error
+        if "telemetry_last" in str(query):
+            return "INSERT 0 1"
+        return "INSERT 0 1"
+
     async def fetch_side_effect(query, *args):
+        if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+            raise fk_error
         normalized = " ".join(str(query).split()).lower()
         if "from sensors" in normalized and "any($1" in normalized:
             return [{"id": 501}]
         return []
-
-    async def execute_side_effect(query, *args):
-        if "telemetry_samples" in str(query):
-            raise fk_error
-        return "INSERT 0 1"
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
@@ -416,6 +459,43 @@ async def test_shutdown_drain_processes_until_empty():
 
 
 @pytest.mark.asyncio
+async def test_shutdown_runs_final_queued_command_drain():
+    from app import lifespan
+    from fastapi import FastAPI
+
+    mock_app = FastAPI()
+
+    with patch("app.get_settings") as mock_settings, \
+         patch("app.get_mqtt_client", new_callable=AsyncMock), \
+         patch("app.process_telemetry_queue", new_callable=AsyncMock), \
+         patch("app.process_realtime_queue", new_callable=AsyncMock), \
+         patch("app.command_retry_worker", new_callable=AsyncMock), \
+         patch("app.command_status_repair_worker", new_callable=AsyncMock), \
+         patch("app.queued_command_drain_worker", new_callable=AsyncMock), \
+         patch("app.alert_retry_worker", new_callable=AsyncMock), \
+         patch("app.drain_stale_queued_commands_once", new_callable=AsyncMock) as mock_drain, \
+         patch("app.close_redis_client", new_callable=AsyncMock), \
+         patch("app.close_unified_http_client", new_callable=AsyncMock), \
+         patch("app.send_service_log"), \
+         patch("app.initialize_counter_series"):
+        mock_settings.return_value = SimpleNamespace(
+            command_status_repair_interval_sec=15.0,
+            command_status_repair_stale_after_sec=30.0,
+            command_status_repair_batch_size=25,
+            shutdown_timeout_sec=1.0,
+            shutdown_wait_sec=0.0,
+        )
+        mock_drain.return_value = {"scanned": 0, "drained": 0, "skipped": 0, "failed": 0}
+
+        async with lifespan(mock_app):
+            pass
+
+    assert mock_drain.await_count >= 2
+    final_call = mock_drain.await_args_list[-1]
+    assert final_call.kwargs.get("stale_after_seconds") == 0.0
+
+
+@pytest.mark.asyncio
 async def test_invalid_json_increments_telemetry_dropped():
     from telemetry.ingress import handle_telemetry
     from metrics import TELEMETRY_DROPPED
@@ -501,3 +581,59 @@ async def test_ingest_pg_down_requeue_then_recovery():
 
     mock_queue.ack_batch.assert_called_once_with([raw])
     mock_queue.requeue_batch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_join_mismatch_requeues_entry():
+    import telemetry_processing as tp
+    from models import TelemetrySampleModel
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._zone_greenhouse_cache.clear()
+    tp._sensor_cache.clear()
+    tp._cache_last_update = time.time()
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+    tp._zone_greenhouse_cache[1] = 1
+    tp._node_cache[("nd-1", "gh-1")] = (10, 1, None)
+    tp._sensor_cache[(1, 10, "PH", "ph_sensor")] = 501
+
+    raw = TelemetryQueueItem(
+        node_uid="nd-1",
+        zone_uid="zn-1",
+        gh_uid="gh-1",
+        metric_type="PH",
+        value=6.5,
+        channel="ph_sensor",
+    ).to_json()
+    entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw))
+    sample_ts = utcnow()
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="PH",
+            value=6.5,
+            channel="ph_sensor",
+            ts=sample_ts,
+        )
+    ]
+
+    async def fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors" in normalized and "any($1" in normalized:
+            return [{"id": 501}]
+        if "telemetry_samples" in normalized and "returning" in normalized:
+            return []
+        return []
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
+        mock_fetch.side_effect = fetch_side_effect
+        mock_execute.return_value = "INSERT 0 1"
+
+        batch_result = await process_telemetry_batch(samples, entries=[entry])
+
+    assert entry in batch_result.entries_to_requeue
+    mock_execute.assert_not_called()

@@ -486,3 +486,33 @@ async def test_handle_command_response_emits_infra_alert_on_dropped_delivery():
         assert mock_alert.await_args.kwargs["cmd_id"] == "cmd-delivery-drop-alert"
         assert mock_alert.await_args.kwargs["status_value"] == "DONE"
         assert mock_alert.await_args.kwargs["reason"] == "http_500"
+
+
+@pytest.mark.asyncio
+async def test_emit_status_delivery_dropped_critical_for_terminal_status():
+    from common.command_status_queue import emit_status_delivery_dropped_alert
+
+    with patch("common.command_status_queue.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await emit_status_delivery_dropped_alert(
+            cmd_id="cmd-terminal-drop",
+            status_value="DONE",
+            details={"zone_id": 12},
+            reason="http_500",
+        )
+
+    assert mock_alert.await_args.kwargs["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_emit_status_delivery_dropped_warning_for_ack_status():
+    from common.command_status_queue import emit_status_delivery_dropped_alert
+
+    with patch("common.command_status_queue.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await emit_status_delivery_dropped_alert(
+            cmd_id="cmd-ack-drop",
+            status_value="ACK",
+            details={"zone_id": 12},
+            reason="http_500",
+        )
+
+    assert mock_alert.await_args.kwargs["severity"] == "warning"

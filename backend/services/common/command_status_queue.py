@@ -209,6 +209,8 @@ _TERMINAL_COMMAND_STATUSES = frozenset({
     CommandStatus.SEND_FAILED.value,
 })
 
+_DELIVERY_DROPPED_CRITICAL_STATUSES = _TERMINAL_COMMAND_STATUSES
+
 
 @dataclass(frozen=True)
 class StatusDeliveryResult:
@@ -904,11 +906,17 @@ async def emit_status_delivery_dropped_alert(
     queue_metrics: Optional[Dict[str, Any]] = None,
 ) -> None:
     zone_id = _extract_zone_id_from_details(details)
+    normalized_status = str(status_value or "").strip().upper()
+    severity = (
+        "critical"
+        if normalized_status in _DELIVERY_DROPPED_CRITICAL_STATUSES
+        else "warning"
+    )
     await send_infra_alert(
         code="history_logger_command_status_delivery_dropped",
         alert_type="Command Status Delivery Dropped",
         message=f"Статус команды {cmd_id} не доставлен в Laravel: {reason}",
-        severity="warning",
+        severity=severity,
         zone_id=zone_id,
         service="history-logger",
         component="command_status_delivery",
@@ -922,6 +930,45 @@ async def emit_status_delivery_dropped_alert(
             "reason": reason,
             "http_status": http_status,
             "queue_error": queue_error,
+            "queue_size": (queue_metrics or {}).get("size"),
+            "queue_dlq_size": (queue_metrics or {}).get("dlq_size"),
+        },
+    )
+
+
+async def emit_status_dlq_moved_alert(
+    *,
+    cmd_id: str,
+    status_value: str,
+    details: Optional[Dict[str, Any]],
+    retry_count: int,
+    max_attempts: int,
+    last_error: str,
+    queue_metrics: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Critical paging path: terminal status update moved to DLQ after retries."""
+    zone_id = _extract_zone_id_from_details(details)
+    await send_infra_alert(
+        code="history_logger_command_status_dlq_moved",
+        alert_type="Command Status DLQ Moved",
+        message=(
+            f"Статус команды {cmd_id} ({status_value}) перемещён в DLQ "
+            f"после {retry_count}/{max_attempts} попыток"
+        ),
+        severity="critical",
+        zone_id=zone_id,
+        service="history-logger",
+        component="command_status_delivery",
+        node_uid=details.get("node_uid") if isinstance(details, dict) else None,
+        channel=details.get("channel") if isinstance(details, dict) else None,
+        cmd=details.get("command") if isinstance(details, dict) else None,
+        error_type="status_dlq_moved",
+        details={
+            "cmd_id": cmd_id,
+            "status": status_value,
+            "retry_count": retry_count,
+            "max_attempts": max_attempts,
+            "last_error": last_error,
             "queue_size": (queue_metrics or {}).get("size"),
             "queue_dlq_size": (queue_metrics or {}).get("dlq_size"),
         },
@@ -1597,6 +1644,30 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                                     outcome="dlq_moved",
                                     status=status.value,
                                 )
+                                queue_metrics = await _safe_get_queue_metrics(queue)
+                                try:
+                                    await emit_status_dlq_moved_alert(
+                                        cmd_id=cmd_id,
+                                        status_value=status.value,
+                                        details=details,
+                                        retry_count=new_retry_count,
+                                        max_attempts=max_attempts,
+                                        last_error="Max retries reached",
+                                        queue_metrics=queue_metrics,
+                                    )
+                                except Exception as alert_error:
+                                    logger.error(
+                                        "[RETRY_WORKER] Failed to emit DLQ-moved alert for cmd_id=%s: %s",
+                                        cmd_id,
+                                        alert_error,
+                                        exc_info=True,
+                                    )
+                                try:
+                                    from metrics import COMMAND_STATUS_DLQ_MOVED
+
+                                    COMMAND_STATUS_DLQ_MOVED.inc()
+                                except Exception:
+                                    pass
                             else:
                                 # Не удаляем pending-запись, если DLQ запись не сохранилась.
                                 # Иначе потеряем статус без следа.
@@ -1663,6 +1734,30 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                                 outcome="dlq_moved",
                                 status=status.value,
                             )
+                            queue_metrics = await _safe_get_queue_metrics(queue)
+                            try:
+                                await emit_status_dlq_moved_alert(
+                                    cmd_id=cmd_id,
+                                    status_value=status.value,
+                                    details=details,
+                                    retry_count=new_retry_count,
+                                    max_attempts=max_attempts,
+                                    last_error=error_msg,
+                                    queue_metrics=queue_metrics,
+                                )
+                            except Exception as alert_error:
+                                logger.error(
+                                    "[RETRY_WORKER] Failed to emit DLQ-moved alert for cmd_id=%s: %s",
+                                    cmd_id,
+                                    alert_error,
+                                    exc_info=True,
+                                )
+                            try:
+                                from metrics import COMMAND_STATUS_DLQ_MOVED
+
+                                COMMAND_STATUS_DLQ_MOVED.inc()
+                            except Exception:
+                                pass
                         else:
                             dlq_retry_at = utcnow() + timedelta(seconds=60)
                             await queue.mark_retry(

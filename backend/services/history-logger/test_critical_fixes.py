@@ -19,8 +19,20 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 services_dir = os.path.dirname(current_dir)
 sys.path.insert(0, services_dir)
 
-from common.redis_queue import TelemetryQueueItem
+from common.redis_queue import PopBatchResult, TelemetryQueueItem
 from utils import MAX_PAYLOAD_SIZE
+
+
+def _mock_telemetry_queue() -> AsyncMock:
+    mock_queue = AsyncMock()
+    mock_queue.size = AsyncMock(return_value=0)
+    mock_queue.processing_size = AsyncMock(return_value=0)
+    mock_queue.total_pending_size = AsyncMock(return_value=0)
+    mock_queue.dead_list_size = AsyncMock(return_value=0)
+    mock_queue.get_oldest_age_seconds = AsyncMock(return_value=None)
+    mock_queue.reclaim_processing = AsyncMock(return_value=0)
+    mock_queue.pop_batch = AsyncMock(return_value=PopBatchResult())
+    return mock_queue
 
 REDIS_PUSH_MAX_RETRIES = 3
 
@@ -424,22 +436,19 @@ class TestGracefulShutdown:
         background_tasks.clear()
         shutdown_event.clear()
         
-        # Мокируем зависимости
-        mock_queue = AsyncMock()
-        mock_queue.size = AsyncMock(return_value=0)
-        mock_queue.pop_batch = AsyncMock(return_value=[])
-        
+        mock_queue = _mock_telemetry_queue()
+
         mock_mqtt = AsyncMock()
         mock_mqtt.subscribe = AsyncMock()
-        
+
         app = FastAPI()
-        
+
         with patch('state.telemetry_queue', mock_queue), \
              patch('app.get_mqtt_client', new_callable=AsyncMock) as mock_get_mqtt, \
-             patch('app.close_redis_client', new_callable=AsyncMock):
+             patch('app.close_redis_client', new_callable=AsyncMock), \
+             patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock):
             mock_get_mqtt.return_value = mock_mqtt
-            
-            # Запускаем lifespan в контексте
+
             async with lifespan(app):
                 # Проверяем, что задачи добавлены
                 assert len(background_tasks) > 0
@@ -462,14 +471,11 @@ class TestGracefulShutdown:
         shutdown_event.clear()
         background_tasks.clear()
         
-        # Мокируем зависимости
-        mock_queue = AsyncMock()
-        mock_queue.size = AsyncMock(return_value=0)
-        mock_queue.pop_batch = AsyncMock(return_value=[])
-        
+        mock_queue = _mock_telemetry_queue()
+
         mock_mqtt = AsyncMock()
         mock_mqtt.subscribe = AsyncMock()
-        
+
         # Мокируем process_telemetry_queue чтобы он сразу завершался
         async def mock_process_telemetry_queue():
             while not shutdown_event.is_set():

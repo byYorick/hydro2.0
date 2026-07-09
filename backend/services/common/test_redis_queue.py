@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 from common.redis_queue import (
     PopBatchResult,
+    QueueEntry,
     TelemetryQueue,
     TelemetryQueueItem,
     get_redis_client,
@@ -305,6 +306,40 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
 
         assert len(result.entries) == 1
         assert result.entries[0].item.node_uid == "nd-ph-1"
+
+
+@pytest.mark.asyncio
+async def test_requeue_batch_uses_atomic_move_script():
+    queue = TelemetryQueue()
+    raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
+    entry = QueueEntry(raw=raw, item=TelemetryQueueItem.from_json(raw), retry_count=1)
+    queue._client = AsyncMock()
+    queue._move_processing_to_queue_script = AsyncMock(return_value=1)
+
+    with patch.object(queue, "_max_pg_retries", return_value=3):
+        requeued = await queue.requeue_batch([entry])
+
+    assert requeued == 1
+    queue._move_processing_to_queue_script.assert_awaited_once()
+    queue._client.lrem.assert_not_called()
+    queue._client.lpush.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_move_raw_to_dead_uses_atomic_script():
+    queue = TelemetryQueue()
+    raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
+    queue._client = AsyncMock()
+    queue._move_processing_to_dead_script = AsyncMock(return_value=1)
+    queue.prune_expired_dead = AsyncMock(return_value=0)
+    queue._client.llen = AsyncMock(return_value=1)
+
+    moved = await queue._move_raw_to_dead(raw, reason="fk_violation")
+
+    assert moved is True
+    queue._move_processing_to_dead_script.assert_awaited_once()
+    queue._client.lrem.assert_not_called()
+    queue._client.rpush.assert_not_called()
 
 
 @pytest.mark.asyncio

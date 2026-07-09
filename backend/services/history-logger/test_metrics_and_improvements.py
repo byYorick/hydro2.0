@@ -113,8 +113,12 @@ class TestMetrics:
         
         mock_queue = AsyncMock()
         mock_queue.size = AsyncMock(return_value=100)
+        mock_queue.processing_size = AsyncMock(return_value=0)
         mock_queue.pop_batch = AsyncMock(return_value=PopBatchResult())
         mock_queue.total_pending_size = AsyncMock(return_value=0)
+        mock_queue.get_oldest_age_seconds = AsyncMock(return_value=None)
+        mock_queue.dead_list_size = AsyncMock(return_value=0)
+        mock_queue.reclaim_processing = AsyncMock(return_value=0)
         
         # Создаем mock для shutdown_event
         mock_shutdown = AsyncMock()
@@ -365,13 +369,20 @@ class TestImprovedLogging:
             )
         ]
         
+        async def _fetch_side_effect(query, *args):
+            normalized = " ".join(str(query).split()).lower()
+            if "from sensors" in normalized and "any($1" in normalized:
+                return [{"id": 101}]
+            if "telemetry_samples" in normalized and "returning" in normalized:
+                raise Exception("Database error")
+            return [{"id": 1, "uid": "nd-ph-1"}]
+
         with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
              patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
              patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}), \
              patch('telemetry_processing.logger') as mock_logger:
-            mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
-            mock_execute.side_effect = Exception("Database error")
-            
+            mock_fetch.side_effect = _fetch_side_effect
+
             await process_telemetry_batch(samples)
             
             # Проверяем, что был вызван error с extra параметрами

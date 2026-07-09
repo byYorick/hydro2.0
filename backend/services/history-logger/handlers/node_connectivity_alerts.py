@@ -14,12 +14,15 @@ logger = logging.getLogger(__name__)
 _publisher = AlertPublisher()
 
 _LWT_REASON = "mqtt_lwt"
+_STATUS_OFFLINE_REASON = "mqtt_status_offline"
 _STALE_REASON = "heartbeat_timeout"
 
 
 def _offline_message(*, node_uid: str, reason: str) -> str:
     if reason == _LWT_REASON:
         return f"Узел {node_uid} потерял связь с MQTT-брокером (LWT offline)."
+    if reason == _STATUS_OFFLINE_REASON:
+        return f"Узел {node_uid} сообщил статус OFFLINE через MQTT."
     return f"Узел {node_uid} не отвечает дольше допустимого таймаута heartbeat."
 
 

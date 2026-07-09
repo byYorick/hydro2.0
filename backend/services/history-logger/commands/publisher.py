@@ -127,7 +127,9 @@ async def _on_publish_success(
     log_context: dict[str, Any] | None,
 ) -> dict:
     try:
-        await mark_command_sent(cmd_id, allow_resend=True)
+        marked = await mark_command_sent(cmd_id, allow_resend=True)
+        if not marked:
+            raise RuntimeError(f"mark_command_sent returned false for cmd_id={cmd_id}")
         await ensure_post_publish_status_persisted(cmd_id)
         logger.info(f"Command {cmd_id} status updated to SENT")
     except Exception as e:

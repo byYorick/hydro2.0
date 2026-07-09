@@ -32,7 +32,12 @@ from metrics import (
     TELEMETRY_DEAD_LIST_SIZE,
     TELEMETRY_PG_WRITE_FAILED,
     TELEMETRY_PROCESSING_DURATION,
+    TELEMETRY_PROCESSING_RECLAIMED,
+    TELEMETRY_PROCESSING_SIZE,
+    TELEMETRY_PROCESSING_STUCK,
     TELEMETRY_QUEUE_AGE,
+    TELEMETRY_REQUEUE_DUPLICATE_RISK,
+    TELEMETRY_SAMPLES_JOIN_MISMATCH,
 )
 from models import TelemetryPayloadModel, TelemetrySampleModel
 from telemetry.anomaly_alerts import (
@@ -777,6 +782,8 @@ async def _upsert_telemetry_last_for_sensor(
     update_data: dict,
     items: list[dict],
     result: TelemetryBatchResult,
+    *,
+    samples_committed: bool = False,
 ) -> bool:
     try:
         await execute(
@@ -802,25 +809,172 @@ async def _upsert_telemetry_last_for_sensor(
     except Exception as e:
         TELEMETRY_PG_WRITE_FAILED.labels(stage="last").inc()
         if _is_pg_transport_error(e):
+            if samples_committed:
+                logger.error(
+                    "telemetry_last upsert failed after samples commit; not requeueing",
+                    extra={"sensor_id": sensor_id, "error": str(e)},
+                    exc_info=True,
+                )
+                return False
             raise PgTransportError(str(e)) from e
         affected_items = _items_for_sensor(items, sensor_id)
         if _is_sensor_fk_error(e):
             _sensor_cache.clear()
-            for affected in affected_items:
-                _append_dead_entry(result, affected.get("entry"))
+            if not samples_committed:
+                for affected in affected_items:
+                    _append_dead_entry(result, affected.get("entry"))
             logger.warning(
-                "Per-item telemetry_last FK violation, moving queue entries to dead-list",
+                "Per-item telemetry_last FK violation",
                 extra={"sensor_id": sensor_id, "error": str(e)},
             )
             return False
-        for affected in affected_items:
-            _append_requeue_entry(result, affected.get("entry"))
+        if not samples_committed:
+            for affected in affected_items:
+                _append_requeue_entry(result, affected.get("entry"))
         logger.error(
-            "Per-item telemetry_last upsert failed, scheduling requeue",
-            extra={"sensor_id": sensor_id, "error": str(e)},
+            "Per-item telemetry_last upsert failed",
+            extra={"sensor_id": sensor_id, "error": str(e), "samples_committed": samples_committed},
             exc_info=True,
         )
         return False
+
+
+def _build_telemetry_last_updates(items: list[dict]) -> dict[int, dict]:
+    telemetry_last_updates: dict[int, dict] = {}
+    for item in items:
+        sample = item["sample"]
+        sensor_id = int(item["sensor_id"])
+        sample_ts = _normalize_ts_for_db(sample.ts)
+        existing_ts = telemetry_last_updates.get(sensor_id, {}).get("ts")
+        if existing_ts is None or sample_ts > existing_ts:
+            sample_quality = _persist_quality_for_sample(sample)
+            telemetry_last_updates[sensor_id] = {
+                "value": sample.value,
+                "ts": sample_ts,
+                "quality": sample_quality,
+                "updated_at": sample_ts,
+            }
+    return telemetry_last_updates
+
+
+async def _upsert_telemetry_last_batch(
+    telemetry_last_updates: dict[int, dict],
+    items: list[dict],
+    result: TelemetryBatchResult,
+    *,
+    samples_committed: bool,
+) -> None:
+    if not telemetry_last_updates:
+        return
+
+    sensor_ids: list[int] = []
+    last_values: list[float] = []
+    last_ts_values: list[datetime] = []
+    last_quality_values: list[str] = []
+    updated_at_values: list[datetime] = []
+    for sensor_id, update_data in telemetry_last_updates.items():
+        sensor_ids.append(sensor_id)
+        last_values.append(update_data["value"])
+        last_ts_values.append(update_data["ts"])
+        last_quality_values.append(update_data["quality"])
+        updated_at_values.append(update_data["updated_at"])
+
+    if not sensor_ids:
+        return
+
+    query = """
+        WITH incoming AS (
+            SELECT *
+            FROM UNNEST(
+                $1::bigint[],
+                $2::double precision[],
+                $3::timestamp[],
+                $4::text[],
+                $5::timestamp[]
+            ) AS t(sensor_id, last_value, last_ts, last_quality, updated_at)
+        ),
+        existing AS (
+            SELECT i.sensor_id, i.last_value, i.last_ts, i.last_quality, i.updated_at
+            FROM incoming i
+            JOIN sensors s ON s.id = i.sensor_id
+        )
+        INSERT INTO telemetry_last (
+            sensor_id, last_value, last_ts, last_quality, updated_at
+        )
+        SELECT sensor_id, last_value, last_ts, last_quality, updated_at
+        FROM existing
+        ON CONFLICT (sensor_id)
+        DO UPDATE SET
+            last_value = EXCLUDED.last_value,
+            last_ts = EXCLUDED.last_ts,
+            last_quality = EXCLUDED.last_quality,
+            updated_at = EXCLUDED.updated_at
+    """
+    try:
+        await execute(
+            query,
+            sensor_ids,
+            last_values,
+            last_ts_values,
+            last_quality_values,
+            updated_at_values,
+        )
+        logger.debug(
+            "Batch upserted %s telemetry_last records",
+            len(telemetry_last_updates),
+        )
+    except Exception as e:
+        if _is_pg_transport_error(e) and not samples_committed:
+            raise PgTransportError(str(e)) from e
+        TELEMETRY_PG_WRITE_FAILED.labels(stage="last").inc()
+        logger.error(
+            "Failed to batch upsert telemetry_last",
+            extra={"error": str(e), "samples_committed": samples_committed},
+            exc_info=True,
+        )
+        for sensor_id, update_data in telemetry_last_updates.items():
+            await _upsert_telemetry_last_for_sensor(
+                sensor_id,
+                update_data,
+                items,
+                result,
+                samples_committed=samples_committed,
+            )
+
+
+def _ts_key(ts_value: datetime) -> datetime:
+    return _normalize_ts_for_db(ts_value)
+
+
+def _handle_samples_join_mismatch(
+    writable_items: list[dict],
+    sensor_ids: list[int],
+    sample_ts_values: list[datetime],
+    returned_rows: list[dict],
+    result: TelemetryBatchResult,
+) -> list[dict]:
+    returned_keys = {
+        (int(row["sensor_id"]), _ts_key(row["ts"]))
+        for row in returned_rows
+        if row.get("sensor_id") is not None and row.get("ts") is not None
+    }
+    written_items: list[dict] = []
+    for idx, item in enumerate(writable_items):
+        expected_key = (int(sensor_ids[idx]), _ts_key(sample_ts_values[idx]))
+        if expected_key in returned_keys:
+            written_items.append(item)
+            continue
+        TELEMETRY_SAMPLES_JOIN_MISMATCH.inc()
+        _append_requeue_entry(result, item.get("entry"))
+        logger.warning(
+            "telemetry_samples JOIN mismatch, scheduling requeue",
+            extra={
+                "sensor_id": sensor_ids[idx],
+                "zone_id": item.get("zone_id"),
+                "metric_type": getattr(item.get("sample"), "metric_type", None),
+            },
+        )
+    return written_items
 
 
 async def process_telemetry_batch(
@@ -1643,88 +1797,7 @@ async def process_telemetry_batch(
         key = (item["zone_id"], sample.metric_type, item["node_id"], sample.channel)
         broadcast_groups.setdefault(key, []).append(item)
 
-    telemetry_last_updates: dict[int, dict] = {}
-    for item in resolved_with_sensor:
-        sample = item["sample"]
-        sensor_id = item["sensor_id"]
-        sample_ts = _normalize_ts_for_db(sample.ts)
-        existing_ts = telemetry_last_updates.get(sensor_id, {}).get("ts")
-        if existing_ts is None or sample_ts > existing_ts:
-            sample_quality = _persist_quality_for_sample(sample)
-            telemetry_last_updates[sensor_id] = {
-                "value": sample.value,
-                "ts": sample_ts,
-                "quality": sample_quality,
-                "updated_at": sample_ts,
-            }
-
-    if telemetry_last_updates:
-        try:
-            sensor_ids: list[int] = []
-            last_values: list[float] = []
-            last_ts_values: list[datetime] = []
-            last_quality_values: list[str] = []
-            updated_at_values: list[datetime] = []
-            for sensor_id, update_data in telemetry_last_updates.items():
-                sensor_ids.append(sensor_id)
-                last_values.append(update_data["value"])
-                last_ts_values.append(update_data["ts"])
-                last_quality_values.append(update_data["quality"])
-                updated_at_values.append(update_data["updated_at"])
-
-            if sensor_ids:
-                query = """
-                    WITH incoming AS (
-                        SELECT *
-                        FROM UNNEST(
-                            $1::bigint[],
-                            $2::double precision[],
-                            $3::timestamp[],
-                            $4::text[],
-                            $5::timestamp[]
-                        ) AS t(sensor_id, last_value, last_ts, last_quality, updated_at)
-                    ),
-                    existing AS (
-                        SELECT i.sensor_id, i.last_value, i.last_ts, i.last_quality, i.updated_at
-                        FROM incoming i
-                        JOIN sensors s ON s.id = i.sensor_id
-                    )
-                    INSERT INTO telemetry_last (
-                        sensor_id, last_value, last_ts, last_quality, updated_at
-                    )
-                    SELECT sensor_id, last_value, last_ts, last_quality, updated_at
-                    FROM existing
-                    ON CONFLICT (sensor_id)
-                    DO UPDATE SET
-                        last_value = EXCLUDED.last_value,
-                        last_ts = EXCLUDED.last_ts,
-                        last_quality = EXCLUDED.last_quality,
-                        updated_at = EXCLUDED.updated_at
-                """
-                await execute(
-                    query,
-                    sensor_ids,
-                    last_values,
-                    last_ts_values,
-                    last_quality_values,
-                    updated_at_values,
-                )
-                logger.debug(
-                    "Batch upserted %s telemetry_last records",
-                    len(telemetry_last_updates),
-                )
-        except Exception as e:
-            if _is_pg_transport_error(e):
-                raise PgTransportError(str(e)) from e
-            TELEMETRY_PG_WRITE_FAILED.labels(stage="last").inc()
-            logger.error(f"Failed to batch upsert telemetry_last: {e}", exc_info=True)
-            for sensor_id, update_data in telemetry_last_updates.items():
-                await _upsert_telemetry_last_for_sensor(
-                    sensor_id,
-                    update_data,
-                    resolved_with_sensor,
-                    result,
-                )
+    telemetry_last_updates = _build_telemetry_last_updates(resolved_with_sensor)
 
     tracked_ids = _tracked_entry_ids(result)
     writable_items = [
@@ -1732,6 +1805,7 @@ async def process_telemetry_batch(
     ]
 
     processed_count = 0
+    written_items: list[dict] = []
     sensor_ids: list[int] = []
     sample_ts_values: list[datetime] = []
     zone_ids: list[int | None] = []
@@ -1787,9 +1861,10 @@ async def process_telemetry_batch(
             JOIN sensors s
               ON s.id = incoming.sensor_id
              AND s.zone_id = incoming.zone_id
+            RETURNING sensor_id, ts
         """
         try:
-            execute_result = await execute(
+            returned_rows = await fetch(
                 query,
                 sensor_ids,
                 sample_ts_values,
@@ -1798,18 +1873,22 @@ async def process_telemetry_batch(
                 qualities,
                 metadata_values,
             )
-            try:
-                processed_count = int(str(execute_result).rsplit(" ", 1)[-1])
-            except Exception:
-                processed_count = len(writable_items)
+            written_items = _handle_samples_join_mismatch(
+                writable_items,
+                sensor_ids,
+                sample_ts_values,
+                returned_rows,
+                result,
+            )
+            processed_count = len(written_items)
             logger.info(
                 "[TELEMETRY] Written: count=%s, unique_sensors=%s",
                 processed_count,
-                len(telemetry_last_updates),
+                len({int(item["sensor_id"]) for item in written_items}),
             )
             if processed_count > 0 and SIMULATION_TELEMETRY_EVENTS_ENABLED:
                 zone_stats: Dict[int, Dict[str, object]] = {}
-                for item in writable_items:
+                for item in written_items:
                     zone_id = item.get("zone_id")
                     if zone_id is None:
                         continue
@@ -1856,12 +1935,30 @@ async def process_telemetry_batch(
                 _sensor_cache.clear()
             for item in writable_items:
                 if await _insert_telemetry_sample_item(item, result):
+                    written_items.append(item)
                     processed_count += 1
 
+    if written_items:
+        written_sensor_ids = {int(item["sensor_id"]) for item in written_items}
+        last_updates_for_written = {
+            sensor_id: update_data
+            for sensor_id, update_data in telemetry_last_updates.items()
+            if sensor_id in written_sensor_ids
+        }
+        await _upsert_telemetry_last_batch(
+            last_updates_for_written,
+            resolved_with_sensor,
+            result,
+            samples_committed=True,
+        )
+
     tracked_ids = _tracked_entry_ids(result)
+    written_item_ids = {id(item) for item in written_items}
     for (zone_id, metric_type, node_id, channel), group_items in broadcast_groups.items():
         writable_group_items = [
-            item for item in group_items if _item_is_writable(item, tracked_ids)
+            item
+            for item in group_items
+            if id(item) in written_item_ids and _item_is_writable(item, tracked_ids)
         ]
         if not writable_group_items:
             continue
@@ -1913,7 +2010,7 @@ async def process_telemetry_batch(
                 "value": getattr(item.get("sample"), "value", None),
                 "ts": _normalize_ts_for_db(item["sample"].ts),
             }
-            for item in writable_items
+            for item in written_items
             if item.get("zone_id") is not None
             and item.get("sample") is not None
             and is_solution_temp_channel(getattr(item["sample"], "channel", None))
@@ -1946,6 +2043,67 @@ def _queue_entries_to_samples(entries: List[QueueEntry]) -> List[TelemetrySample
     return samples
 
 
+async def _finalize_queue_batch(
+    queue,
+    pop: PopBatchResult,
+    batch_result: TelemetryBatchResult,
+) -> None:
+    if batch_result.processed_count > 0 and batch_result.entries_to_requeue:
+        TELEMETRY_REQUEUE_DUPLICATE_RISK.inc(
+            len(batch_result.entries_to_requeue)
+        )
+
+    if batch_result.entries_to_dead:
+        moved = await queue.move_entries_to_dead(
+            batch_result.entries_to_dead,
+            reason="fk_violation",
+        )
+        if moved != len(batch_result.entries_to_dead):
+            logger.warning(
+                "Incomplete dead-list move for telemetry batch",
+                extra={"expected": len(batch_result.entries_to_dead), "moved": moved},
+            )
+            TELEMETRY_PROCESSING_STUCK.inc()
+
+    if batch_result.entries_to_requeue:
+        requeued = await queue.requeue_batch(batch_result.entries_to_requeue)
+        if requeued != len(batch_result.entries_to_requeue):
+            logger.warning(
+                "Incomplete telemetry requeue; retrying once",
+                extra={
+                    "expected": len(batch_result.entries_to_requeue),
+                    "requeued": requeued,
+                },
+            )
+            requeued = await queue.requeue_batch(batch_result.entries_to_requeue)
+            if requeued != len(batch_result.entries_to_requeue):
+                TELEMETRY_PROCESSING_STUCK.inc()
+                logger.error(
+                    "Telemetry requeue still incomplete after retry",
+                    extra={
+                        "expected": len(batch_result.entries_to_requeue),
+                        "requeued": requeued,
+                    },
+                )
+
+    entries_to_ack = batch_result.entries_to_ack(pop.entries)
+    if entries_to_ack:
+        raw_items = [entry.raw for entry in entries_to_ack]
+        removed = await queue.ack_batch(raw_items)
+        if removed != len(entries_to_ack):
+            logger.warning(
+                "Incomplete telemetry ack; retrying once",
+                extra={"expected": len(entries_to_ack), "removed": removed},
+            )
+            removed = await queue.ack_batch(raw_items)
+            if removed != len(entries_to_ack):
+                TELEMETRY_PROCESSING_STUCK.inc()
+                logger.error(
+                    "Telemetry ack still incomplete after retry",
+                    extra={"expected": len(entries_to_ack), "removed": removed},
+                )
+
+
 async def _handle_pop_batch(pop: PopBatchResult) -> None:
     if not pop.entries:
         return
@@ -1958,21 +2116,11 @@ async def _handle_pop_batch(pop: PopBatchResult) -> None:
     try:
         batch_result = await process_telemetry_batch(samples, entries=pop.entries)
     except PgTransportError:
-        await queue.requeue_batch(pop.entries)
+        if await queue.requeue_batch(pop.entries) != len(pop.entries):
+            TELEMETRY_PROCESSING_STUCK.inc()
         return
 
-    if batch_result.entries_to_dead:
-        await queue.move_entries_to_dead(
-            batch_result.entries_to_dead,
-            reason="fk_violation",
-        )
-
-    if batch_result.entries_to_requeue:
-        await queue.requeue_batch(batch_result.entries_to_requeue)
-
-    entries_to_ack = batch_result.entries_to_ack(pop.entries)
-    if entries_to_ack:
-        await queue.ack_batch([entry.raw for entry in entries_to_ack])
+    await _finalize_queue_batch(queue, pop, batch_result)
 
 
 async def _drain_telemetry_queue_on_shutdown() -> None:
@@ -2002,18 +2150,38 @@ async def process_telemetry_queue() -> None:
     """
     s = get_settings()
     last_flush = utcnow()
+    last_reclaim_at = time.monotonic()
+    reclaim_interval_sec = float(
+        os.getenv("TELEMETRY_PROCESSING_RECLAIM_INTERVAL_SEC", "60")
+    )
 
     logger.info("Starting telemetry queue processor")
 
     while not _shutdown_event().is_set():
         try:
+            queue = _get_telemetry_queue()
             queue_start_time = time.time()
-            queue_size = await _get_telemetry_queue().size()
+            queue_size = await queue.size()
+            processing_size = await queue.processing_size()
+            TELEMETRY_PROCESSING_SIZE.set(processing_size)
             queue_duration = time.time() - queue_start_time
             REDIS_OPERATION_DURATION.observe(queue_duration)
 
+            if (
+                processing_size > 0
+                and (time.monotonic() - last_reclaim_at) >= reclaim_interval_sec
+            ):
+                reclaimed = await queue.reclaim_processing()
+                last_reclaim_at = time.monotonic()
+                if reclaimed:
+                    TELEMETRY_PROCESSING_RECLAIMED.inc(reclaimed)
+                    logger.warning(
+                        "Reclaimed %s stale telemetry item(s) from processing list",
+                        reclaimed,
+                    )
+
             queue_age_start_time = time.time()
-            queue_age = await _get_telemetry_queue().get_oldest_age_seconds()
+            queue_age = await queue.get_oldest_age_seconds()
             queue_age_duration = time.time() - queue_age_start_time
             REDIS_OPERATION_DURATION.observe(queue_age_duration)
 
@@ -2022,7 +2190,7 @@ async def process_telemetry_queue() -> None:
             else:
                 TELEMETRY_QUEUE_AGE.set(0.0)
 
-            dead_list_size = await _get_telemetry_queue().dead_list_size()
+            dead_list_size = await queue.dead_list_size()
             TELEMETRY_DEAD_LIST_SIZE.set(dead_list_size)
 
             time_since_flush = (utcnow() - last_flush).total_seconds() * 1000
@@ -2033,7 +2201,7 @@ async def process_telemetry_queue() -> None:
 
             if should_flush:
                 batch_size = min(s.telemetry_batch_size, queue_size)
-                pop = await _get_telemetry_queue().pop_batch(batch_size)
+                pop = await queue.pop_batch(batch_size)
 
                 if pop.entries:
                     await _handle_pop_batch(pop)

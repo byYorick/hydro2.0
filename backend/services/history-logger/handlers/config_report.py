@@ -11,7 +11,14 @@ from common.db import execute, fetch
 from common.env import get_settings
 from common.trace_context import clear_trace_id, inject_trace_id_header
 from common.utils.time import utcnow
-from metrics import CONFIG_REPORT_ERROR, CONFIG_REPORT_PROCESSED, CONFIG_REPORT_RECEIVED
+from metrics import (
+    CONFIG_REPORT_ACK_FAILED,
+    CONFIG_REPORT_CHANNEL_SYNC_FAILED,
+    CONFIG_REPORT_ERROR,
+    CONFIG_REPORT_PROCESSED,
+    CONFIG_REPORT_RECEIVED,
+    MQTT_HANDLER_ERROR,
+)
 from utils import _extract_gh_uid, _extract_node_uid, _extract_zone_uid, _parse_json
 
 from ._shared import (
@@ -113,6 +120,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             )
 
         channels_payload = data.get("channels")
+        channel_sync_ok = True
         if channels_payload is not None:
             try:
                 allow_prune = CONFIG_REPORT_DEFAULT_ALLOW_PRUNE
@@ -125,6 +133,8 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     node_id, node_uid, channels_payload, allow_prune=allow_prune
                 )
             except Exception as sync_err:
+                channel_sync_ok = False
+                CONFIG_REPORT_CHANNEL_SYNC_FAILED.labels(node_uid=node_uid).inc()
                 logger.warning(
                     "[CONFIG_REPORT] Failed to sync channels for node %s: %s",
                     node_uid,
@@ -132,7 +142,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     exc_info=True,
                 )
 
-        await _complete_binding_after_config_report(
+        binding_ok = await _complete_binding_after_config_report(
             node,
             node_uid,
             is_temp_topic=is_temp_topic,
@@ -140,24 +150,37 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             topic_zone_uid=zone_uid,
         )
 
-        try:
-            await refresh_node_cache_for_uid(node_uid)
-        except Exception as cache_err:
-            logger.warning(
-                "Failed to refresh telemetry node cache after config_report: node_uid=%s error=%s",
-                node_uid,
-                cache_err,
-                exc_info=True,
-            )
+        if not binding_ok:
+            CONFIG_REPORT_ACK_FAILED.labels(node_uid=node_uid).inc()
 
-        CONFIG_REPORT_PROCESSED.inc()
-        logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
+        if channel_sync_ok and binding_ok:
+            try:
+                await refresh_node_cache_for_uid(node_uid)
+            except Exception as cache_err:
+                logger.warning(
+                    "Failed to refresh telemetry node cache after config_report: node_uid=%s error=%s",
+                    node_uid,
+                    cache_err,
+                    exc_info=True,
+                )
+
+            CONFIG_REPORT_PROCESSED.inc()
+            logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
+        else:
+            logger.warning(
+                "[CONFIG_REPORT] Config stored for node %s but not marked processed "
+                "(channel_sync_ok=%s binding_ok=%s)",
+                node_uid,
+                channel_sync_ok,
+                binding_ok,
+            )
     except Exception as e:
         logger.error(
             f"[CONFIG_REPORT] Unexpected error processing config_report: {e}",
             exc_info=True,
         )
         CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+        MQTT_HANDLER_ERROR.labels(handler="config_report").inc()
     finally:
         clear_trace_id()
 
@@ -365,15 +388,16 @@ async def _complete_binding_after_config_report(
     is_temp_topic: bool = False,
     topic_gh_uid: Optional[str] = None,
     topic_zone_uid: Optional[str] = None,
-) -> None:
+) -> bool:
+    """Notify Laravel about observed config_report. Returns True on success/skip."""
     node_id = node.get("id")
     if not node_id:
-        return
+        return True
 
     lock = await get_binding_completion_lock(int(node_id))
     async with lock:
         if is_temp_topic:
-            return
+            return True
 
         s = get_settings()
         laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
@@ -391,7 +415,7 @@ async def _complete_binding_after_config_report(
             logger.error(
                 "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
             )
-            return
+            return False
 
         headers = inject_trace_id_header(
             {
@@ -427,6 +451,8 @@ async def _complete_binding_after_config_report(
                         observe_response.status_code,
                         observe_response.text,
                     )
+                    return False
+                return True
         except Exception as e:
             logger.error(
                 "[CONFIG_REPORT] Error while notifying Laravel about config_report for node %s: %s",
@@ -434,6 +460,7 @@ async def _complete_binding_after_config_report(
                 e,
                 exc_info=True,
             )
+            return False
 
 
 __all__ = ["handle_config_report", "sync_node_channels_from_payload"]

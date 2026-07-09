@@ -80,7 +80,7 @@ def mock_command_routes_db():
          patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
         mock_fetch.side_effect = _mock_fetch
         mock_execute.return_value = "OK"
-        mock_mark_command_sent.return_value = None
+        mock_mark_command_sent.return_value = True
         mock_mark_command_send_failed.return_value = None
         mock_get_gh_uid.return_value = "gh-1"
         yield
@@ -204,6 +204,113 @@ async def test_ensure_command_for_publish_allows_empty_params_shape_compat():
         )
 
     assert response is None
+
+
+@pytest.mark.asyncio
+async def test_ensure_command_for_publish_allows_device_ack_stub_without_sent_at():
+    """C3: device ACK stub without sent_at must not block MQTT publish."""
+    from command_routes import _ensure_command_for_publish
+
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from commands where cmd_id = $1" in normalized:
+            return [{
+                "status": "ACK",
+                "source": "device",
+                "sent_at": None,
+                "zone_id": 1,
+                "node_id": 1,
+                "channel": "default",
+                "cmd": "run_pump",
+                "params": {"duration_ms": 1000},
+            }]
+        return []
+
+    with patch("command_routes.fetch", new=AsyncMock(side_effect=_fetch)), \
+         patch("command_routes.execute", new=AsyncMock(return_value="OK")):
+        response = await _ensure_command_for_publish(
+            cmd_id="cmd-ack-stub",
+            zone_id=1,
+            node_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd_name="run_pump",
+            params={"duration_ms": 1000},
+            command_source="automation",
+        )
+
+    assert response is None
+
+
+@pytest.mark.asyncio
+async def test_ensure_command_for_publish_skips_real_ack_with_sent_at():
+    from command_routes import _ensure_command_for_publish
+
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from commands where cmd_id = $1" in normalized:
+            return [{
+                "status": "ACK",
+                "source": "device",
+                "sent_at": "2026-01-01T00:00:00",
+                "zone_id": 1,
+                "node_id": 1,
+                "channel": "default",
+                "cmd": "run_pump",
+                "params": {"duration_ms": 1000},
+            }]
+        return []
+
+    with patch("command_routes.fetch", new=AsyncMock(side_effect=_fetch)), \
+         patch("command_routes.execute", new=AsyncMock(return_value="OK")):
+        response = await _ensure_command_for_publish(
+            cmd_id="cmd-real-ack",
+            zone_id=1,
+            node_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd_name="run_pump",
+            params={"duration_ms": 1000},
+            command_source="automation",
+        )
+
+    assert response is not None
+    assert response["data"]["skipped"] is True
+
+
+@pytest.mark.asyncio
+async def test_mark_command_sent_fail_closed_on_noop_update():
+    from common.commands import MarkCommandSentError, mark_command_sent
+
+    with patch("common.commands.execute", new=AsyncMock(return_value="UPDATE 0")), \
+         patch("common.commands.fetch", new=AsyncMock(return_value=[{"status": "ACK", "sent_at": "2026-01-01"}])):
+        with pytest.raises(MarkCommandSentError):
+            await mark_command_sent("cmd-fail")
+
+
+@pytest.mark.asyncio
+async def test_mark_command_sent_idempotent_when_already_sent():
+    from common.commands import mark_command_sent
+
+    with patch("common.commands.execute", new=AsyncMock(return_value="UPDATE 0")), \
+         patch(
+             "common.commands.fetch",
+             new=AsyncMock(return_value=[{"status": "SENT", "sent_at": "2026-01-01"}]),
+         ):
+        assert await mark_command_sent("cmd-sent") is True
+
+
+@pytest.mark.asyncio
+async def test_drain_preserves_signed_payload_metadata():
+    from commands.drain import _extract_signed_payload_fields
+
+    params, ts, sig = _extract_signed_payload_fields(
+        {"duration_ms": 1000, "__hl_ts": 1737979200, "__hl_sig": "abc123"}
+    )
+
+    assert params == {"duration_ms": 1000}
+    assert ts == 1737979200
+    assert sig == "abc123"
 
 
 @pytest.mark.asyncio

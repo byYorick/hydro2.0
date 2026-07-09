@@ -4,7 +4,11 @@
 Используют новые статусы: QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
 """
 import uuid
-from .db import execute
+from .db import execute, fetch
+
+
+class MarkCommandSentError(RuntimeError):
+    """``mark_command_sent`` не смог атомарно перевести команду в SENT."""
 
 
 def _affected_rows(command_tag: str) -> int:
@@ -14,83 +18,65 @@ def _affected_rows(command_tag: str) -> int:
         return 0
 
 
-async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
+async def mark_command_sent(cmd_id: str, allow_resend: bool = True) -> bool:
     """
     Помечает команду как отправленную (SENT).
-    
-    Защита от гонок: обновляет только если статус QUEUED (или SEND_FAILED при allow_resend=True).
-    Это предотвращает откат статуса назад, если команда уже перешла в ACK/DONE/ERROR.
-    
-    Args:
-        cmd_id: Идентификатор команды
-        allow_resend: Разрешить повторную отправку из SEND_FAILED (по умолчанию True)
+
+    Fail-closed: бросает ``MarkCommandSentError``, если UPDATE не затронул строку
+    и команда ещё не в идемпотентном SENT+sent_at.
+
+    Защита от гонок: обновляет только QUEUED/SEND_FAILED, либо device ACK-stub
+    без ``sent_at`` (ответ узла пришёл до INSERT/publish).
     """
     import logging
-    from .db import fetch
+
     logger = logging.getLogger(__name__)
-    
-    logger.info(f"[MARK_COMMAND_SENT] STEP 1: Starting mark_command_sent for cmd_id={cmd_id}, allow_resend={allow_resend}")
-    
-    # Проверяем текущий статус команды перед обновлением
-    logger.info(f"[MARK_COMMAND_SENT] STEP 2: Checking current status for cmd_id={cmd_id}")
-    try:
-        current_status = await fetch("SELECT status, sent_at, updated_at FROM commands WHERE cmd_id = $1", cmd_id)
-        if current_status:
-            status_val = current_status[0].get('status', 'NOT_FOUND')
-            sent_at_val = current_status[0].get('sent_at')
-            updated_at_val = current_status[0].get('updated_at')
-            logger.info(f"[MARK_COMMAND_SENT] STEP 2.1: Current status for cmd_id={cmd_id}: status={status_val}, sent_at={sent_at_val}, updated_at={updated_at_val}")
-        else:
-            logger.warning(f"[MARK_COMMAND_SENT] STEP 2.2: Command {cmd_id} NOT FOUND in database")
-    except Exception as e:
-        logger.error(f"[MARK_COMMAND_SENT] STEP 2.3: ERROR checking current status for cmd_id={cmd_id}: {e}", exc_info=True)
-    
+
     if allow_resend:
-        logger.info(f"[MARK_COMMAND_SENT] STEP 3: Executing UPDATE with allow_resend=True for cmd_id={cmd_id}")
-        # Разрешаем переход из QUEUED или SEND_FAILED (для повторной отправки)
         result = await execute(
             """
-            UPDATE commands 
-            SET status='SENT', sent_at=NOW(), updated_at=NOW() 
-            WHERE cmd_id=$1 AND status IN ('QUEUED', 'SEND_FAILED')
+            UPDATE commands
+            SET status='SENT', sent_at=NOW(), updated_at=NOW()
+            WHERE cmd_id=$1 AND (
+                status IN ('QUEUED', 'SEND_FAILED')
+                OR (status = 'ACK' AND sent_at IS NULL)
+            )
             """,
             cmd_id,
         )
-        logger.info(f"[MARK_COMMAND_SENT] STEP 3.1: UPDATE result for cmd_id={cmd_id}: '{result}' (allow_resend=True)")
-        # Проверяем, обновилась ли команда
-        if "UPDATE 0" in result:
-            logger.warning(f"[MARK_COMMAND_SENT] STEP 3.2: WARNING - No rows updated for cmd_id={cmd_id} - command may already be in SENT/ACK/DONE/NO_EFFECT/ERROR status")
-        else:
-            logger.info(f"[MARK_COMMAND_SENT] STEP 3.3: SUCCESS - Command {cmd_id} updated to SENT")
     else:
-        logger.info(f"[MARK_COMMAND_SENT] STEP 3: Executing UPDATE with allow_resend=False for cmd_id={cmd_id}")
-        # Только из QUEUED (без повторной отправки)
         result = await execute(
             """
-            UPDATE commands 
-            SET status='SENT', sent_at=NOW(), updated_at=NOW() 
+            UPDATE commands
+            SET status='SENT', sent_at=NOW(), updated_at=NOW()
             WHERE cmd_id=$1 AND status = 'QUEUED'
             """,
             cmd_id,
         )
-        logger.info(f"[MARK_COMMAND_SENT] STEP 3.1: UPDATE result for cmd_id={cmd_id}: '{result}' (allow_resend=False)")
-        if "UPDATE 0" in result:
-            logger.warning(f"[MARK_COMMAND_SENT] STEP 3.2: WARNING - No rows updated for cmd_id={cmd_id} - command may not be in QUEUED status")
-        else:
-            logger.info(f"[MARK_COMMAND_SENT] STEP 3.3: SUCCESS - Command {cmd_id} updated to SENT")
-    
-    # Проверяем статус команды после обновления
-    logger.info(f"[MARK_COMMAND_SENT] STEP 4: Verifying status after UPDATE for cmd_id={cmd_id}")
-    try:
-        verify_status = await fetch("SELECT status, sent_at, updated_at FROM commands WHERE cmd_id = $1", cmd_id)
-        if verify_status:
-            logger.info(f"[MARK_COMMAND_SENT] STEP 4.1: Verified status for cmd_id={cmd_id}: status={verify_status[0].get('status')}, sent_at={verify_status[0].get('sent_at')}, updated_at={verify_status[0].get('updated_at')}")
-        else:
-            logger.error(f"[MARK_COMMAND_SENT] STEP 4.2: ERROR - Command {cmd_id} NOT FOUND after UPDATE!")
-    except Exception as e:
-        logger.error(f"[MARK_COMMAND_SENT] STEP 4.3: ERROR verifying status after UPDATE: {e}", exc_info=True)
-    
-    logger.info(f"[MARK_COMMAND_SENT] STEP 5: Completed mark_command_sent for cmd_id={cmd_id}")
+
+    if _affected_rows(result) > 0:
+        logger.info("[MARK_COMMAND_SENT] Command %s updated to SENT", cmd_id)
+        return True
+
+    rows = await fetch(
+        "SELECT status, sent_at FROM commands WHERE cmd_id = $1",
+        cmd_id,
+    )
+    if rows:
+        status_val = str(rows[0].get("status") or "").strip().upper()
+        if status_val == "SENT" and rows[0].get("sent_at") is not None:
+            logger.info(
+                "[MARK_COMMAND_SENT] Command %s already SENT (idempotent)",
+                cmd_id,
+            )
+            return True
+
+    logger.error(
+        "[MARK_COMMAND_SENT] Failed to mark command as SENT: cmd_id=%s allow_resend=%s",
+        cmd_id,
+        allow_resend,
+    )
+    raise MarkCommandSentError(f"mark_command_sent_failed:cmd_id={cmd_id}")
 
 
 async def mark_command_ack(cmd_id: str):

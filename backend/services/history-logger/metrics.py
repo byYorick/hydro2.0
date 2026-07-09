@@ -74,6 +74,26 @@ CONFIG_REPORT_ERROR = Counter(
     "Total error config_report messages",
     ["node_uid"],
 )
+CONFIG_REPORT_ACK_FAILED = Counter(
+    "config_report_ack_failed_total",
+    "config_report stored locally but Laravel config-report-observed ACK failed",
+    ["node_uid"],
+)
+CONFIG_REPORT_CHANNEL_SYNC_FAILED = Counter(
+    "config_report_channel_sync_failed_total",
+    "config_report channel sync failed before marking processed",
+    ["node_uid"],
+)
+MQTT_HANDLER_ERROR = Counter(
+    "mqtt_handler_error_total",
+    "MQTT handler failures surfaced via done_callback or handler guard",
+    ["handler"],
+)
+NODE_UPDATE_ZERO_ROWS = Counter(
+    "node_update_zero_rows_total",
+    "Node UPDATE affected zero rows (unknown or stale node_uid)",
+    ["handler"],
+)
 CONFIG_REPORT_BUFFER_EXPIRED = Counter(
     "config_report_buffer_expired_total",
     "Buffered config_report entries dropped after TTL expiry",
@@ -108,6 +128,26 @@ COMMAND_STATUS_DELIVERY_DROPPED = Counter(
     "command_status_delivery_dropped_total",
     "Command status updates dropped after delivery retries exhausted",
 )
+COMMAND_STATUS_DLQ_MOVED = Counter(
+    "command_status_dlq_moved_total",
+    "Command status updates moved to DLQ after retry exhaustion",
+)
+COMMAND_QUEUE_DRAIN_SCANNED = Counter(
+    "command_queue_drain_scanned_total",
+    "Queued commands scanned by drain worker",
+)
+COMMAND_QUEUE_DRAIN_SUCCEEDED = Counter(
+    "command_queue_drain_succeeded_total",
+    "Queued commands successfully republished by drain worker",
+)
+COMMAND_QUEUE_DRAIN_SKIPPED = Counter(
+    "command_queue_drain_skipped_total",
+    "Queued commands skipped by drain worker (non-republishable)",
+)
+COMMAND_QUEUE_DRAIN_FAILED = Counter(
+    "command_queue_drain_failed_total",
+    "Queued command drain republish failures",
+)
 TELEMETRY_DESERIALIZE_FAILED = Counter(
     "telemetry_deserialize_failed_total",
     "Telemetry queue items moved to dead list after deserialize failure",
@@ -116,6 +156,30 @@ TELEMETRY_PG_WRITE_FAILED = Counter(
     "telemetry_pg_write_failed_total",
     "Failed PostgreSQL writes during telemetry batch processing",
     ["stage"],
+)
+TELEMETRY_QUEUE_ORPHANED = Counter(
+    "telemetry_queue_orphaned_total",
+    "Processing-list move failed because raw item was not found",
+)
+TELEMETRY_SAMPLES_JOIN_MISMATCH = Counter(
+    "telemetry_samples_join_mismatch_total",
+    "telemetry_samples batch insert dropped rows due to sensors JOIN mismatch",
+)
+TELEMETRY_PROCESSING_RECLAIMED = Counter(
+    "telemetry_processing_reclaimed_total",
+    "Telemetry items reclaimed from processing list back to queue",
+)
+TELEMETRY_PROCESSING_STUCK = Counter(
+    "telemetry_processing_stuck_total",
+    "Telemetry processing-list ack/requeue operations with incomplete removal",
+)
+TELEMETRY_PROCESSING_SIZE = Gauge(
+    "telemetry_processing_size",
+    "Current size of hydro:telemetry:processing Redis list",
+)
+TELEMETRY_REQUEUE_DUPLICATE_RISK = Counter(
+    "telemetry_requeue_duplicate_risk_total",
+    "telemetry_samples requeue after samples were already committed",
 )
 TELEMETRY_DEAD_LIST_SIZE = Gauge(
     "telemetry_dead_list_size",
@@ -251,3 +315,29 @@ def initialize_counter_series() -> None:
 
     for stage in ("last", "samples"):
         TELEMETRY_PG_WRITE_FAILED.labels(stage=stage)
+
+    for handler in (
+        "heartbeat",
+        "status",
+        "lwt",
+        "diagnostics",
+        "error",
+        "config_report",
+    ):
+        MQTT_HANDLER_ERROR.labels(handler=handler)
+
+
+def register_mqtt_async_handler_error_callback() -> None:
+    """Wire history-logger metrics into common MQTT async done_callback."""
+    try:
+        from common.mqtt import register_async_handler_error_callback
+    except ImportError:
+        return
+
+    def _on_async_handler_error(handler_name: str, topic: str, exc: BaseException) -> None:
+        MQTT_HANDLER_ERROR.labels(handler=handler_name).inc()
+
+    register_async_handler_error_callback(_on_async_handler_error)
+
+
+register_mqtt_async_handler_error_callback()

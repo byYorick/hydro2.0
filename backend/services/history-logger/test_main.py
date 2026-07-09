@@ -235,8 +235,8 @@ def test_error_delivery_latency_metrics_endpoint(client):
 
 def test_ingest_telemetry_endpoint(client):
     """Test telemetry ingestion endpoint."""
-    with patch("ingest_routes.process_telemetry_batch") as mock_process:
-        mock_process.return_value = None  # async function
+    with patch("ingest_routes._enqueue_http_samples", new_callable=AsyncMock) as mock_enqueue:
+        mock_enqueue.return_value = (1, 0)
         
         payload = {
             "samples": [
@@ -252,18 +252,17 @@ def test_ingest_telemetry_endpoint(client):
         
         response = client.post("/ingest/telemetry", json=payload)
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert data["status"] == "ok"
+        assert data["status"] == "accepted"
         assert data["count"] == 1
-        # Проверяем, что process_telemetry_batch был вызван
-        # Но поскольку это async, нужно проверить через mock
-        # Для синхронного теста нужно использовать AsyncMock правильно
+        mock_enqueue.assert_awaited_once()
 
 
 def test_ingest_telemetry_endpoint_multiple_samples(client):
     """Test telemetry ingestion with multiple samples."""
-    with patch("ingest_routes.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes._enqueue_http_samples", new_callable=AsyncMock) as mock_enqueue:
+        mock_enqueue.return_value = (2, 0)
         payload = {
             "samples": [
                 {
@@ -283,15 +282,16 @@ def test_ingest_telemetry_endpoint_multiple_samples(client):
         
         response = client.post("/ingest/telemetry", json=payload)
         
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert data["status"] == "ok"
+        assert data["status"] == "accepted"
         assert data["count"] == 2
 
 
 def test_ingest_telemetry_endpoint_with_ts_string(client):
     """Test telemetry ingestion with timestamp as ISO string."""
-    with patch("ingest_routes.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes._enqueue_http_samples", new_callable=AsyncMock) as mock_enqueue:
+        mock_enqueue.return_value = (1, 0)
         payload = {
             "samples": [
                 {
@@ -306,12 +306,13 @@ def test_ingest_telemetry_endpoint_with_ts_string(client):
         
         response = client.post("/ingest/telemetry", json=payload)
         
-        assert response.status_code == 200
+        assert response.status_code == 202
 
 
 def test_ingest_telemetry_endpoint_with_ts_numeric(client):
     """Test telemetry ingestion with ts as numeric (seconds from firmware)."""
-    with patch("ingest_routes.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes._enqueue_http_samples", new_callable=AsyncMock) as mock_enqueue:
+        mock_enqueue.return_value = (1, 0)
         payload = {
             "samples": [
                 {
@@ -326,7 +327,7 @@ def test_ingest_telemetry_endpoint_with_ts_numeric(client):
         
         response = client.post("/ingest/telemetry", json=payload)
         
-        assert response.status_code == 200
+        assert response.status_code == 202
 
 
 def test_ingest_telemetry_endpoint_invalid_payload(client):
@@ -344,7 +345,8 @@ def test_ingest_telemetry_endpoint_invalid_payload(client):
 
 def test_ingest_telemetry_endpoint_with_zone_uid(client):
     """Test telemetry ingestion with zone_uid."""
-    with patch("ingest_routes.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes._enqueue_http_samples", new_callable=AsyncMock) as mock_enqueue:
+        mock_enqueue.return_value = (1, 0)
         payload = {
             "samples": [
                 {
@@ -358,7 +360,7 @@ def test_ingest_telemetry_endpoint_with_zone_uid(client):
         
         response = client.post("/ingest/telemetry", json=payload)
         
-        assert response.status_code == 200
+        assert response.status_code == 202
 
 
 @pytest.mark.asyncio
@@ -377,67 +379,65 @@ async def test_process_telemetry_batch_includes_ts_parameter():
     _node_cache[("nd-ph-1", None)] = (1, 1)
     _zone_cache[("zn-1", None)] = 1
 
-    # Мокаем execute для проверки SQL запроса
-    with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
-        # Мокаем fetch для получения node_id
-        with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("telemetry_processing._sensor_cache", {
-                 (1, 1, "PH", "ph_sensor"): 101,
-             }):
-            mock_fetch.return_value = [
-                {"id": 1, "uid": "nd-ph-1"}
-            ]
+    # Мокаем execute/fetch для проверки SQL запроса
+    with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing._sensor_cache", {
+             (1, 1, "PH", "ph_sensor"): 101,
+         }):
 
-            # Создаём тестовые образцы
-            samples = [
-                TelemetrySampleModel(
-                    node_uid="nd-ph-1",
-                    zone_uid="zn-1",
-                    zone_id=1,
-                    metric_type="PH",
-                    value=6.5,
-                    ts=datetime(2025, 1, 27, 10, 0, 0),
-                    channel="ph_sensor"
-                ),
-                TelemetrySampleModel(
-                    node_uid="nd-ph-1",
-                    zone_uid="zn-1",
-                    zone_id=1,
-                    metric_type="PH",
-                    value=6.6,
-                    ts=datetime(2025, 1, 27, 10, 1, 0),
-                    channel="ph_sensor"
-                ),
-            ]
-            
-            # Запускаем функцию
-            await process_telemetry_batch(samples)
-            
-            # Проверяем, что execute был вызван
-            assert mock_execute.called
-            
-            # Получаем аргументы вызова для вставки telemetry_samples
-            call_args = next(
-                call for call in mock_execute.call_args_list
-                if "telemetry_samples" in str(call)
-            )
-            query = call_args[0][0]  # SQL запрос
-            params = call_args[0][1:]  # Параметры
+        async def _fetch_side_effect(query, *args):
+            if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+                return [
+                    {"sensor_id": args[0][0], "ts": args[1][0]},
+                    {"sensor_id": args[0][1], "ts": args[1][1]},
+                ]
+            return [{"id": 1, "uid": "nd-ph-1"}]
 
-            # Batch insert uses UNNEST($1::bigint[], $2::timestamp[], ...)
-            # so params are 6 arrays, not 6×N scalars.
-            assert "UNNEST" in query or "unnest" in query
-            assert "$6" in query
+        mock_fetch.side_effect = _fetch_side_effect
 
-            # 6 array params: sensor_ids, ts[], zone_ids, values, qualities, metadata
-            assert len(params) == 6
+        # Создаём тестовые образцы
+        samples = [
+            TelemetrySampleModel(
+                node_uid="nd-ph-1",
+                zone_uid="zn-1",
+                zone_id=1,
+                metric_type="PH",
+                value=6.5,
+                ts=datetime(2025, 1, 27, 10, 0, 0),
+                channel="ph_sensor"
+            ),
+            TelemetrySampleModel(
+                node_uid="nd-ph-1",
+                zone_uid="zn-1",
+                zone_id=1,
+                metric_type="PH",
+                value=6.6,
+                ts=datetime(2025, 1, 27, 10, 1, 0),
+                channel="ph_sensor"
+            ),
+        ]
 
-            # Each array should contain 2 elements (one per sample)
-            ts_array = params[1]
-            assert isinstance(ts_array, (list, tuple))
-            assert len(ts_array) == 2
-            assert isinstance(ts_array[0], datetime)
-            assert isinstance(ts_array[1], datetime)
+        await process_telemetry_batch(samples)
+
+        assert mock_fetch.called
+
+        call_args = next(
+            call for call in mock_fetch.call_args_list
+            if call.args and "telemetry_samples" in str(call.args[0])
+        )
+        query = call_args[0][0]
+        params = call_args[0][1:]
+
+        assert "UNNEST" in query or "unnest" in query
+        assert "$6" in query
+        assert len(params) == 6
+
+        ts_array = params[1]
+        assert isinstance(ts_array, (list, tuple))
+        assert len(ts_array) == 2
+        assert isinstance(ts_array[0], datetime)
+        assert isinstance(ts_array[1], datetime)
 
 
 @pytest.mark.asyncio
@@ -506,17 +506,23 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
     with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
          patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}):
-        mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
+
+        async def _fetch_side_effect(query, *args):
+            if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+                return [{"sensor_id": args[0][0], "ts": args[1][0]}]
+            return [{"id": 1, "uid": "nd-ph-1"}]
+
+        mock_fetch.side_effect = _fetch_side_effect
         
         await process_telemetry_batch(samples)
         
-        # Проверяем, что execute был вызван
-        assert mock_execute.called
+        # Проверяем, что fetch был вызван для batch insert
+        assert mock_fetch.called
         
         # Batch UNNEST: params[2] is the zone_ids array, not a scalar
         call_args = next(
-            call for call in mock_execute.call_args_list
-            if "telemetry_samples" in str(call)
+            call for call in mock_fetch.call_args_list
+            if call.args and "telemetry_samples" in str(call.args[0])
         )
         params = call_args[0][1:]
         zone_ids_array = params[2]
@@ -856,6 +862,8 @@ async def test_process_telemetry_batch_refreshes_stale_node_cache_before_unassig
         # _filter_existing_sensor_ids: confirm cached sensor 501 exists
         if "from sensors" in normalized and "any($1" in normalized:
             return [{"id": 501}]
+        if "telemetry_samples" in normalized and "returning" in normalized:
+            return [{"sensor_id": 501, "ts": samples[0].ts}]
         return []
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
@@ -869,7 +877,7 @@ async def test_process_telemetry_batch_refreshes_stale_node_cache_before_unassig
     emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
     assert "infra_telemetry_node_unassigned" not in emitted_codes
     assert tp._node_cache[("nd-rebind-1", "gh-1")][1] == 1
-    assert mock_execute.await_count > 0
+    assert mock_fetch.await_count > 0
 
 
 @pytest.mark.asyncio
@@ -939,6 +947,11 @@ async def test_process_telemetry_batch_prewarms_stale_assignment_for_all_level_c
             return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
         if "from sensors" in normalized and "any($1" in normalized:
             return [{"id": sensor_id} for sensor_id in range(401, 405)]
+        if "telemetry_samples" in normalized and "returning" in normalized:
+            return [
+                {"sensor_id": args[0][index], "ts": args[1][index]}
+                for index in range(len(args[0]))
+            ]
         return []
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
@@ -952,7 +965,7 @@ async def test_process_telemetry_batch_prewarms_stale_assignment_for_all_level_c
     emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
     assert "infra_telemetry_node_unassigned" not in emitted_codes
     assert tp._node_cache[("nd-irrig-1", "gh-1")][1] == 1
-    assert mock_execute.await_count > 0
+    assert mock_fetch.await_count > 0
 
 
 @pytest.mark.asyncio

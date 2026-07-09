@@ -1,13 +1,61 @@
 import json
 import logging
 import threading
-from typing import Callable, Optional, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 
 from .env import get_settings
 
 logger = logging.getLogger(__name__)
+
+_async_handler_error_callbacks: list[Callable[[str, str, BaseException], None]] = []
+
+
+def register_async_handler_error_callback(
+    callback: Callable[[str, str, BaseException], None],
+) -> None:
+    """Register callback invoked when an async MQTT handler fails after scheduling."""
+    _async_handler_error_callbacks.append(callback)
+
+
+def _notify_async_handler_error(handler_name: str, topic: str, exc: BaseException) -> None:
+    for callback in _async_handler_error_callbacks:
+        try:
+            callback(handler_name, topic, exc)
+        except Exception:
+            logger.error(
+                "MQTT async handler error callback failed for handler=%s topic=%s",
+                handler_name,
+                topic,
+                exc_info=True,
+            )
+
+
+def _make_async_done_callback(handler: Callable, topic: str):
+    handler_name = getattr(handler, "__name__", "unknown")
+
+    def _on_done(future) -> None:
+        try:
+            exc = future.exception()
+            if exc is not None:
+                logger.error(
+                    "Async MQTT handler %s failed for topic %s: %s",
+                    handler_name,
+                    topic,
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+                _notify_async_handler_error(handler_name, topic, exc)
+        except Exception as callback_error:
+            logger.error(
+                "Error in MQTT async handler done_callback for topic %s: %s",
+                topic,
+                callback_error,
+                exc_info=True,
+            )
+
+    return _on_done
 
 
 class MqttClient:
@@ -133,8 +181,11 @@ class MqttClient:
                         # Используем run_coroutine_threadsafe для безопасного вызова из MQTT thread
                         try:
                             future = asyncio.run_coroutine_threadsafe(
-                                handler(msg.topic, msg.payload), 
-                                current_loop
+                                handler(msg.topic, msg.payload),
+                                current_loop,
+                            )
+                            future.add_done_callback(
+                                _make_async_done_callback(handler, msg.topic)
                             )
                             # Детальное логирование всех MQTT сообщений для диагностики
                             logger.info(

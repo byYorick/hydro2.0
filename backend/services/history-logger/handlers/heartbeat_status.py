@@ -9,7 +9,12 @@ import state
 from common.db import execute, fetch
 from common.env import get_settings
 from common.trace_context import clear_trace_id
-from metrics import HEARTBEAT_RECEIVED, STATUS_RECEIVED
+from metrics import (
+    HEARTBEAT_RECEIVED,
+    MQTT_HANDLER_ERROR,
+    NODE_UPDATE_ZERO_ROWS,
+    STATUS_RECEIVED,
+)
 from utils import _extract_gh_uid, _extract_node_uid, _extract_zone_uid, _parse_json
 
 from ._shared import apply_trace_context
@@ -20,6 +25,38 @@ from .node_connectivity_alerts import (
 from telemetry_processing import refresh_node_cache_for_uid
 
 logger = logging.getLogger(__name__)
+
+
+def _rows_affected(result: str) -> int:
+    parts = str(result or "").strip().split()
+    if not parts:
+        return 0
+    try:
+        return int(parts[-1])
+    except ValueError:
+        return -1
+
+
+async def _update_node_status(
+    *,
+    node_uid: str,
+    query: str,
+    params: tuple,
+    handler: str,
+    success_log: str,
+) -> bool:
+    result = await execute(query, *params)
+    affected = _rows_affected(result)
+    if affected == 0:
+        logger.warning(
+            "[%s] UPDATE affected 0 rows for unknown node_uid=%s",
+            handler.upper(),
+            node_uid,
+        )
+        NODE_UPDATE_ZERO_ROWS.labels(handler=handler).inc()
+        return False
+    logger.info(success_log)
+    return True
 
 
 def _extract_fw_version(data: dict) -> str | None:
@@ -132,12 +169,27 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
 
         if len(updates) > 4:
             query = "UPDATE nodes SET " + ", ".join(updates) + " WHERE uid=$1"
-            await execute(query, *params)
-        else:
-            await execute(
-                "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), last_seen_at=NOW(), status='online' WHERE uid=$1",
-                node_uid,
+            updated = await _update_node_status(
+                node_uid=node_uid,
+                query=query,
+                params=tuple(params),
+                handler="heartbeat",
+                success_log=f"[HEARTBEAT] Node heartbeat processed successfully: node_uid={node_uid}",
             )
+        else:
+            updated = await _update_node_status(
+                node_uid=node_uid,
+                query=(
+                    "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), "
+                    "last_seen_at=NOW(), status='online' WHERE uid=$1"
+                ),
+                params=(node_uid,),
+                handler="heartbeat",
+                success_log=f"[HEARTBEAT] Node heartbeat processed successfully: node_uid={node_uid}",
+            )
+
+        if not updated:
+            return
 
         HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
 
@@ -149,7 +201,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 logged_uptime = uptime
 
         logger.info(
-            "[HEARTBEAT] Node heartbeat processed successfully: node_uid=%s, uptime_seconds=%s, free_heap=%s, rssi=%s",
+            "[HEARTBEAT] Node heartbeat details: node_uid=%s, uptime_seconds=%s, free_heap=%s, rssi=%s",
             node_uid,
             logged_uptime,
             free_heap,
@@ -165,6 +217,14 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
         await resolve_node_online_alert(node_uid=node_uid, reason="heartbeat")
+    except Exception as exc:
+        logger.error(
+            "[HEARTBEAT] Unexpected error processing heartbeat for topic %s: %s",
+            topic,
+            exc,
+            exc_info=True,
+        )
+        MQTT_HANDLER_ERROR.labels(handler="heartbeat").inc()
     finally:
         clear_trace_id()
 
@@ -194,17 +254,29 @@ async def handle_status(topic: str, payload: bytes) -> None:
 
         if status == "ONLINE":
             if fw_version is not None:
-                await execute(
-                    "UPDATE nodes SET status='online', fw_version=$2, last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-                    node_uid,
-                    fw_version,
+                updated = await _update_node_status(
+                    node_uid=node_uid,
+                    query=(
+                        "UPDATE nodes SET status='online', fw_version=$2, "
+                        "last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1"
+                    ),
+                    params=(node_uid, fw_version),
+                    handler="status",
+                    success_log=f"[STATUS] Node {node_uid} marked as ONLINE",
                 )
             else:
-                await execute(
-                    "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-                    node_uid,
+                updated = await _update_node_status(
+                    node_uid=node_uid,
+                    query=(
+                        "UPDATE nodes SET status='online', last_seen_at=NOW(), "
+                        "updated_at=NOW() WHERE uid=$1"
+                    ),
+                    params=(node_uid,),
+                    handler="status",
+                    success_log=f"[STATUS] Node {node_uid} marked as ONLINE",
                 )
-            logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
+            if not updated:
+                return
             try:
                 await refresh_node_cache_for_uid(node_uid)
             except Exception as cache_err:
@@ -216,15 +288,27 @@ async def handle_status(topic: str, payload: bytes) -> None:
                 )
             await resolve_node_online_alert(node_uid=node_uid, reason="status_online")
         elif status == "OFFLINE":
-            await execute(
-                "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
-                node_uid,
+            updated = await _update_node_status(
+                node_uid=node_uid,
+                query="UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+                params=(node_uid,),
+                handler="status",
+                success_log=f"[STATUS] Node {node_uid} marked as OFFLINE",
             )
-            logger.info(f"[STATUS] Node {node_uid} marked as OFFLINE")
+            if updated:
+                await raise_node_offline_alert(node_uid=node_uid, reason="mqtt_status_offline")
         else:
             logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
 
         STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+    except Exception as exc:
+        logger.error(
+            "[STATUS] Unexpected error processing status for topic %s: %s",
+            topic,
+            exc,
+            exc_info=True,
+        )
+        MQTT_HANDLER_ERROR.labels(handler="status").inc()
     finally:
         clear_trace_id()
 
@@ -252,21 +336,37 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
             status = "OFFLINE"
 
         if status == "ONLINE":
-            await execute(
-                "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-                node_uid,
+            updated = await _update_node_status(
+                node_uid=node_uid,
+                query=(
+                    "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1"
+                ),
+                params=(node_uid,),
+                handler="lwt",
+                success_log=f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)",
             )
-            logger.info(f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)")
-            await resolve_node_online_alert(node_uid=node_uid, reason="lwt_online")
+            if updated:
+                await resolve_node_online_alert(node_uid=node_uid, reason="lwt_online")
         else:
-            await execute(
-                "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
-                node_uid,
+            updated = await _update_node_status(
+                node_uid=node_uid,
+                query="UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+                params=(node_uid,),
+                handler="lwt",
+                success_log=f"[LWT] Node {node_uid} marked as OFFLINE",
             )
-            logger.info(f"[LWT] Node {node_uid} marked as OFFLINE")
-            await raise_node_offline_alert(node_uid=node_uid, reason="mqtt_lwt")
+            if updated:
+                await raise_node_offline_alert(node_uid=node_uid, reason="mqtt_lwt")
 
         STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+    except Exception as exc:
+        logger.error(
+            "[LWT] Unexpected error processing LWT for topic %s: %s",
+            topic,
+            exc,
+            exc_info=True,
+        )
+        MQTT_HANDLER_ERROR.labels(handler="lwt").inc()
     finally:
         clear_trace_id()
 

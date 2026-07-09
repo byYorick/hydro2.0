@@ -3,11 +3,14 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from auth import _check_rate_limit, _auth_ingest, INGEST_RATE_LIMIT_REQUESTS, INGEST_RATE_LIMIT_WINDOW_SEC
 from metrics import INGEST_RATE_LIMITED, INGEST_REQUESTS, TELEMETRY_DROPPED
 from models import TelemetryPayloadModel, TelemetrySampleModel
-from telemetry_processing import process_telemetry_batch
+from common.redis_queue import TelemetryQueueItem
+from telemetry.ingress import push_with_retry
+import state
 from utils import MAX_PAYLOAD_SIZE, _filter_raw_data
 from common.utils.time import utcnow
 
@@ -17,6 +20,33 @@ router = APIRouter()
 
 # Максимальное количество samples в HTTP ingest батче для защиты от DoS
 MAX_INGEST_SAMPLES = 1000
+
+
+async def _enqueue_http_samples(samples: list[TelemetrySampleModel]) -> tuple[int, int]:
+    """Поставить HTTP samples в Redis telemetry queue (как MQTT ingress)."""
+    if not state.telemetry_queue:
+        return 0, len(samples)
+
+    accepted = 0
+    failed = 0
+    for sample in samples:
+        queue_item = TelemetryQueueItem(
+            node_uid=sample.node_uid or "",
+            zone_uid=sample.zone_uid,
+            gh_uid=sample.gh_uid,
+            metric_type=sample.metric_type,
+            value=sample.value,
+            ts=sample.ts,
+            raw=sample.raw,
+            channel=sample.channel,
+            stub=bool(getattr(sample, "stub", False)),
+            enqueued_at=utcnow(),
+        )
+        if await push_with_retry(queue_item):
+            accepted += 1
+        else:
+            failed += 1
+    return accepted, failed
 
 
 @router.post("/ingest/telemetry")
@@ -215,13 +245,28 @@ async def ingest_telemetry(request: Request):
         samples.append(sample)
 
     if samples:
-        await process_telemetry_batch(samples)
+        accepted, failed = await _enqueue_http_samples(samples)
+        if failed > 0:
+            INGEST_REQUESTS.labels(status="queue_unavailable").inc()
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "error",
+                    "message": "Failed to enqueue telemetry samples",
+                    "accepted": accepted,
+                    "failed": failed,
+                    "total": len(samples),
+                },
+            )
 
-    INGEST_REQUESTS.labels(status="success").inc()
+    INGEST_REQUESTS.labels(status="accepted").inc()
 
-    return {
-        "status": "ok",
-        "count": len(samples),
-        "dropped": dropped_count,
-        "total": len(samples_data),
-    }
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "count": len(samples),
+            "dropped": dropped_count,
+            "total": len(samples_data),
+        },
+    )

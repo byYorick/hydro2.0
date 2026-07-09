@@ -66,9 +66,17 @@ async def test_telemetry_pg_write_failed_samples_stage():
             raise RuntimeError("samples insert failed")
         return "INSERT 0 1"
 
+    async def fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors" in normalized and "any($1" in normalized:
+            return [{"id": 501}]
+        if "telemetry_samples" in normalized and "returning" in normalized:
+            raise RuntimeError("samples insert failed")
+        return []
+
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
-        mock_fetch.side_effect = _fetch_side_effect
+        mock_fetch.side_effect = fetch_side_effect
         mock_execute.side_effect = execute_side_effect
 
         await process_telemetry_batch(samples)
@@ -98,16 +106,21 @@ async def test_telemetry_pg_write_failed_last_stage():
     ]
 
     async def execute_side_effect(query, *args):
-        query_text = str(query)
-        if "telemetry_last" in query_text:
+        if "telemetry_last" in str(query):
             raise RuntimeError("telemetry_last write failed")
-        if "telemetry_samples" in query_text:
-            return "INSERT 0 1"
         return "INSERT 0 1"
+
+    async def fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors" in normalized and "any($1" in normalized:
+            return [{"id": 501}]
+        if "telemetry_samples" in normalized and "returning" in normalized:
+            return [{"sensor_id": 501, "ts": args[1][0]}]
+        return []
 
     with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
-        mock_fetch.side_effect = _fetch_side_effect
+        mock_fetch.side_effect = fetch_side_effect
         mock_execute.side_effect = execute_side_effect
 
         await process_telemetry_batch(samples)
@@ -123,8 +136,8 @@ async def test_telemetry_dead_list_size_on_move_to_dead():
     queue = TelemetryQueue()
     raw = TelemetryQueueItem(node_uid="n1", metric_type="PH", value=1.0).to_json()
     queue._client = AsyncMock()
-    queue._client.lrem = AsyncMock(return_value=1)
-    queue._client.rpush = AsyncMock(return_value=1)
+    queue._move_processing_to_dead_script = AsyncMock(return_value=1)
+    queue.prune_expired_dead = AsyncMock(return_value=0)
     queue._client.llen = AsyncMock(return_value=3)
 
     before = TELEMETRY_DEAD_LIST_SIZE._value.get()

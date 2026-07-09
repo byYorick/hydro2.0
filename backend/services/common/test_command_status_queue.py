@@ -619,6 +619,47 @@ async def test_retry_worker_records_delivered_metric_and_scan_summary():
 
 
 @pytest.mark.asyncio
+async def test_retry_worker_emits_critical_alert_when_moved_to_dlq():
+    shutdown_event = asyncio.Event()
+    queue = AsyncMock()
+    pending_item = (
+        888,
+        "cmd-888",
+        CommandStatus.DONE,
+        {"zone_id": 4, "node_uid": "nd-1", "channel": "pump"},
+        2,
+        3,
+        "prev_error",
+    )
+    calls = {"count": 0}
+
+    async def _get_pending(limit=50):
+        if calls["count"] == 0:
+            calls["count"] += 1
+            return [pending_item]
+        shutdown_event.set()
+        return []
+
+    queue.get_pending = AsyncMock(side_effect=_get_pending)
+    queue.move_to_dlq = AsyncMock(return_value=True)
+    queue.mark_delivered = AsyncMock()
+    queue.get_queue_metrics = AsyncMock(return_value={"size": 0, "dlq_size": 1})
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.send_status_to_laravel", new=AsyncMock(return_value=False)), \
+         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1), \
+         patch("common.command_status_queue.emit_status_dlq_moved_alert", new=AsyncMock()) as mock_dlq_alert, \
+         patch("common.command_status_queue.record_command_status_retry"), \
+         patch("common.command_status_queue.update_command_status_retry_scan"):
+        await asyncio.wait_for(retry_worker(interval=0.01, shutdown_event=shutdown_event), timeout=1.0)
+
+    mock_dlq_alert.assert_awaited_once()
+    assert mock_dlq_alert.await_args.kwargs["cmd_id"] == "cmd-888"
+    assert mock_dlq_alert.await_args.kwargs["status_value"] == "DONE"
+    queue.mark_delivered.assert_awaited_once_with(888)
+
+
+@pytest.mark.asyncio
 async def test_repair_stuck_commands_once_replays_pending_terminal_status():
     queue = AsyncMock()
     queue.ensure_table = AsyncMock()

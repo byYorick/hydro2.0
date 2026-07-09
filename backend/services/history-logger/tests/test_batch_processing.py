@@ -5,7 +5,7 @@
 import time
 from datetime import datetime
 from common.utils.time import utcnow
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 import pytest
 import telemetry_processing as tp
@@ -79,12 +79,16 @@ async def test_cache_refresh():
 @pytest.mark.asyncio
 async def test_batch_upsert_telemetry_last():
     """Тест batch upsert для telemetry_last."""
-    with patch('telemetry_processing.fetch') as mock_fetch, \
-         patch('telemetry_processing.execute') as mock_execute:
+    with patch('telemetry_processing.fetch', new_callable=AsyncMock) as mock_fetch, \
+         patch('telemetry_processing.execute', new_callable=AsyncMock) as mock_execute:
 
-        mock_fetch.return_value = [
-            {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
-        ]
+        async def _fetch_side_effect(query, *args):
+            if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+                return [{"sensor_id": 101, "ts": args[1][0]}]
+            return [{'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'}]
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_execute.return_value = None
 
         _zone_cache.clear()
         _node_cache.clear()
@@ -117,12 +121,16 @@ async def test_batch_upsert_telemetry_last():
 @pytest.mark.asyncio
 async def test_batch_upsert_telemetry_last_joins_sensors_to_avoid_fk_errors():
     """Проверяем SQL-контракт: upsert telemetry_last фильтрует только существующие sensor_id."""
-    with patch('telemetry_processing.fetch') as mock_fetch, \
-         patch('telemetry_processing.execute') as mock_execute:
+    with patch('telemetry_processing.fetch', new_callable=AsyncMock) as mock_fetch, \
+         patch('telemetry_processing.execute', new_callable=AsyncMock) as mock_execute:
 
-        mock_fetch.return_value = [
-            {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
-        ]
+        async def _fetch_side_effect(query, *args):
+            if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+                return [{"sensor_id": 101, "ts": args[1][0]}]
+            return [{'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'}]
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_execute.return_value = None
 
         _zone_cache.clear()
         _node_cache.clear()
@@ -159,12 +167,16 @@ async def test_batch_upsert_telemetry_last_joins_sensors_to_avoid_fk_errors():
 
 @pytest.mark.asyncio
 async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors():
-    with patch('telemetry_processing.fetch') as mock_fetch, \
-         patch('telemetry_processing.execute') as mock_execute:
+    with patch('telemetry_processing.fetch', new_callable=AsyncMock) as mock_fetch, \
+         patch('telemetry_processing.execute', new_callable=AsyncMock) as mock_execute:
 
-        # return_value instead of side_effect — fetch may be called
-        # more than once (cache refresh, sensor filter, etc.)
-        mock_fetch.return_value = [{'id': 101}]
+        async def _fetch_side_effect(query, *args):
+            if "telemetry_samples" in str(query) and "RETURNING" in str(query):
+                return [{"sensor_id": 101, "ts": args[1][0]}]
+            return [{'id': 101}]
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_execute.return_value = "INSERT 0 1"
 
         _zone_cache.clear()
         _node_cache.clear()
@@ -191,7 +203,7 @@ async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors()
 
         telemetry_samples_queries = [
             call.args[0]
-            for call in mock_execute.call_args_list
+            for call in mock_fetch.call_args_list
             if call.args and 'telemetry_samples' in str(call.args[0])
         ]
         assert telemetry_samples_queries
