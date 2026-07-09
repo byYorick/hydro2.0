@@ -2396,6 +2396,10 @@ Frontend не должен получать эти данные через Inert
 - Runtime constraint:
   - `ml_per_sec` обязан попадать в диапазон `0.01 .. 100.0`;
   - значение вне диапазона считается невалидной runtime-calibration и блокируется DB CHECK constraint.
+- Ops sync с NodeConfig:
+  - firmware ph/ec node исполняет dose по actuator `ml_per_second`;
+  - при publish/apply NodeConfig Laravel зеркалит `ml_per_second` в активную `pump_calibrations` запись (или создаёт новую версию для dosing channel);
+  - AE3 runtime check сравнивает DB `ml_per_sec` и NodeConfig mirror по `system.pump_calibration_policy.ml_per_sec_mismatch_pct` (default `10.0`), режим `ml_per_sec_mismatch_fail_closed` (default `false` → zone_event + metric).
 
 ### 16.3.1. Zone process calibration authority
 

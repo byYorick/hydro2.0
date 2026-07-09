@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\NodeChannel;
+use App\Services\PumpCalibrationNodeConfigMirrorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -12,14 +13,19 @@ class NodeChannelController extends Controller
     /**
      * Сервисное обновление config канала (для history-logger/python-сервисов).
      */
-    public function serviceUpdateConfig(Request $request, NodeChannel $nodeChannel): JsonResponse
-    {
+    public function serviceUpdateConfig(
+        Request $request,
+        NodeChannel $nodeChannel,
+        PumpCalibrationNodeConfigMirrorService $pumpCalibrationMirrorService,
+    ): JsonResponse {
         $data = $request->validate([
             'config' => ['required', 'array'],
         ]);
 
         $nodeChannel->config = $this->mergeConfig($nodeChannel->config, $data['config']);
         $nodeChannel->save();
+
+        $pumpCalibrationMirrorService->syncActuatorChannel($nodeChannel->fresh(), 'node_channel_config_apply');
 
         return response()->json([
             'status' => 'ok',

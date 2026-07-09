@@ -22,7 +22,7 @@ import math
 import os
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
@@ -41,16 +41,33 @@ from ae3lite.application.services.sensor_mode_controller import SensorModeContro
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import ALERT_BLOCK_SNAPSHOT_CMD_PREFIX, CorrectionState
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, TaskExecutionError
-from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePlan
+from ae3lite.domain.services.correction_planner import (
+    CorrectionPlanner,
+    DosePlan,
+    resolve_dose_feedback_from_response,
+)
 from ae3lite.domain.services.correction_transition_policy import (
     CorrectionTransitionPolicy,
 )
-from ae3lite.domain.services.metric_window_validator import decision_window_bounds_reason
+from ae3lite.domain.services.metric_window_validator import (
+    SENSOR_OUT_OF_BOUNDS_REASON,
+    decision_window_bounds_reason,
+)
 from ae3lite.domain.services.observation_analyzer import ObservationAnalyzer
 from ae3lite.domain.services.pid_output_event import build_pid_output_detail
 from ae3lite.infrastructure.log_context import log_context_scope
-from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
-from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
+from ae3lite.infrastructure.metrics import (
+    CORRECTION_ATTEMPT,
+    CORRECTION_CAP_IGNORED,
+    CORRECTION_CONTROL_MODE_BLOCKED,
+    CORRECTION_DOSE_CLAMPED,
+    CORRECTION_PUMP_CALIBRATION_MIRROR_MISMATCH,
+    CORRECTION_ESTOP_INTERRUPT,
+    CORRECTION_EXHAUSTED,
+    CORRECTION_NO_EFFECT,
+    CORRECTION_OBSERVE_OUT_OF_BOUNDS,
+    IRRIGATION_EC_COMPONENT_DOSE,
+)
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
 from common.utils.time import utcnow_naive as _utcnow
@@ -205,7 +222,11 @@ class CorrectionHandler(BaseStageHandler):
             )
 
         window_id = CorrectionEventLogger.correction_window_id(task=task)
-        with log_context_scope(correction_window_id=window_id):
+        with log_context_scope(
+            zone_id=task.zone_id,
+            task_id=getattr(task, "id", None),
+            correction_window_id=window_id,
+        ):
             return await self._run_correction_stage(
                 task=task,
                 plan=plan,
@@ -388,7 +409,14 @@ class CorrectionHandler(BaseStageHandler):
             min_stale_error="two_tank_solution_min_level_stale",
         )
 
-        workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
+        readiness = await self._resolve_correction_readiness_flags(
+            task=task, plan=plan, now=now, runtime=runtime,
+        )
+        if readiness is None:
+            targets_in_tolerance = False
+            workflow_ready = False
+        else:
+            targets_in_tolerance, workflow_ready = readiness
         next_stage = self._solution_fill_completion_next_stage(
             task=task,
             workflow_ready=workflow_ready,
@@ -398,11 +426,12 @@ class CorrectionHandler(BaseStageHandler):
             event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
             task=task,
             corr=corr,
-            payload={
-                "next_stage": next_stage,
-                "targets_reached": workflow_ready,
-                "reason": "solution_tank_full",
-            },
+            payload=self._readiness_event_payload(
+                targets_in_tolerance=targets_in_tolerance,
+                workflow_ready=workflow_ready,
+                next_stage=next_stage,
+                reason="solution_tank_full",
+            ),
         )
         _logger.info(
             "zone %s: solution fill completed during correction; interrupting corr_step=%s -> %s",
@@ -426,7 +455,12 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState,
         now: datetime,
     ) -> StageOutcome:
-        workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
+        readiness = await self._resolve_correction_readiness_flags(task=task, plan=plan, now=now)
+        if readiness is None:
+            targets_in_tolerance = False
+            workflow_ready = False
+        else:
+            targets_in_tolerance, workflow_ready = readiness
         next_stage = self._solution_fill_completion_next_stage(
             task=task,
             workflow_ready=workflow_ready,
@@ -436,11 +470,12 @@ class CorrectionHandler(BaseStageHandler):
             event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
             task=task,
             corr=corr,
-            payload={
-                "next_stage": next_stage,
-                "targets_reached": workflow_ready,
-                "reason": "solution_tank_full",
-            },
+            payload=self._readiness_event_payload(
+                targets_in_tolerance=targets_in_tolerance,
+                workflow_ready=workflow_ready,
+                next_stage=next_stage,
+                reason="solution_tank_full",
+            ),
         )
         _logger.info(
             "zone %s: solution fill completed during correction; interrupting corr_step=%s -> %s",
@@ -612,6 +647,7 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ph_max": target_ph_max,
                     "target_ec_min": target_ec_min,
                     "target_ec_max": target_ec_max,
+                    "targets_in_tolerance": correction_targets_reached,
                     "workflow_ready": workflow_ready,
                 },
             )
@@ -833,6 +869,8 @@ class CorrectionHandler(BaseStageHandler):
             )
             if reactivation_outcome is not None:
                 return reactivation_outcome
+            if ph.reason == SENSOR_OUT_OF_BOUNDS_REASON or ec.reason == SENSOR_OUT_OF_BOUNDS_REASON:
+                CORRECTION_OBSERVE_OUT_OF_BOUNDS.inc()
             msg = self._decision_window_reader.format_error(ph=ph, ec=ec)
             retry_delay_sec = self._decision_window_reader.retry_delay_sec(
                 correction_cfg=correction_cfg,
@@ -1121,6 +1159,27 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ph_max": runtime.target_ph_max,
                     "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
                     "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                    **self._readiness_event_payload(
+                        targets_in_tolerance=self._planner.is_within_tolerance(
+                            current_ph=current_ph,
+                            current_ec=current_ec,
+                            target_ph=target_ph,
+                            target_ec=target_ec,
+                            ph_tolerance_pct=self._required_prepare_tolerance_pct(
+                                tolerance=self._prepare_tolerance_for_task(task=task, runtime=runtime),
+                                key="ph_pct",
+                            ),
+                            ec_tolerance_pct=self._required_prepare_tolerance_pct(
+                                tolerance=self._prepare_tolerance_for_task(task=task, runtime=runtime),
+                                key="ec_pct",
+                            ),
+                            ph_min=self._effective_ph_min(task=task, runtime=runtime),
+                            ph_max=self._effective_ph_max(task=task, runtime=runtime),
+                            ec_min=self._effective_ec_min(task=task, runtime=runtime),
+                            ec_max=self._effective_ec_max(task=task, runtime=runtime),
+                        ),
+                        workflow_ready=workflow_ready,
+                    ),
                 },
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
@@ -1148,6 +1207,13 @@ class CorrectionHandler(BaseStageHandler):
                     current_value=corr.ph_attempt,
                     limit_value=corr.ph_max_attempts,
                 )
+
+        self._record_dose_clamp_metrics(dose_plan)
+        await self._record_dual_calibration_mismatch_observability(
+            task=task,
+            corr=corr,
+            dose_plan=dose_plan,
+        )
 
         # Save dose plan into correction state.
         ec_dose_sequence_json: str | None = None
@@ -1351,6 +1417,8 @@ class CorrectionHandler(BaseStageHandler):
             retry_cmd="dose",
         )
         is_parallel = str(getattr(corr, "ec_component", "") or "").strip().lower() == "multi_parallel"
+        actuators = self._resolve_actuators(runtime=self._require_runtime_plan(plan=plan), task=task, plan=plan)
+        result: Mapping[str, Any] = {}
         if seq and is_parallel:
             # multi_parallel: отправляем ВСЕ dose-команды за один batch.
             # Все компоненты (Ca, Mg, Micro) дозируются одновременно.
@@ -1407,6 +1475,24 @@ class CorrectionHandler(BaseStageHandler):
                 )
                 current_task = result.get("task") or current_task
 
+                planned_ml = float(item.get("amount_ml") or 0.0)
+                planned_ms = int(item.get("duration_ms") or 0)
+                ml_per_sec = self._ml_per_sec_for_ec_item(actuators=actuators, item=item)
+                actual_ml, actual_ms, _ = self._resolve_dose_outcome(
+                    planned_ml=planned_ml,
+                    planned_duration_ms=planned_ms,
+                    ml_per_sec=ml_per_sec,
+                    batch_result=result,
+                )
+                corr = replace(
+                    corr,
+                    ec_amount_ml=round(max(0.0, float(corr.ec_amount_ml or 0.0) - planned_ml + actual_ml), 4),
+                    ec_duration_ms=max(
+                        0,
+                        int(corr.ec_duration_ms or 0) - planned_ms + actual_ms,
+                    ),
+                )
+
                 next_idx = start_idx + 1
                 if next_idx < len(seq):
                     # Persist progress and immediately continue with the next component.
@@ -1440,6 +1526,41 @@ class CorrectionHandler(BaseStageHandler):
             )
             current_task = result.get("task") or current_task
 
+        effective_ml = float(corr.ec_amount_ml or 0.0)
+        actual_duration_ms = int(corr.ec_duration_ms or 0)
+        if seq and is_parallel:
+            effective_ml = 0.0
+            actual_duration_ms = 0
+            for idx, item in enumerate(seq):
+                planned_ml = float(item.get("amount_ml") or 0.0)
+                planned_ms = int(item.get("duration_ms") or 0)
+                ml_per_sec = self._ml_per_sec_for_ec_item(actuators=actuators, item=item)
+                item_ml, item_ms, _ = self._resolve_dose_outcome(
+                    planned_ml=planned_ml,
+                    planned_duration_ms=planned_ms,
+                    ml_per_sec=ml_per_sec,
+                    batch_result=result,
+                    status_index=idx,
+                )
+                effective_ml += item_ml
+                actual_duration_ms = max(actual_duration_ms, item_ms)
+            effective_ml = round(effective_ml, 4)
+        elif not seq:
+            ml_per_sec = self._ml_per_sec_for_actuator(actuators.get("ec"))
+            effective_ml, actual_duration_ms, _ = self._resolve_dose_outcome(
+                planned_ml=effective_ml,
+                planned_duration_ms=actual_duration_ms,
+                ml_per_sec=ml_per_sec,
+                batch_result=result,
+            )
+        requested_ml = effective_ml
+        if ec_single_meta is not None:
+            requested_ml = float(ec_single_meta.get("requested_ml") or effective_ml)
+        elif seq:
+            requested_ml = round(
+                sum(float(item.get("requested_ml") or item.get("amount_ml") or 0.0) for item in seq),
+                4,
+            )
         runtime = self._require_runtime_plan(plan=plan)
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
         # to avoid using the stale plan.runtime pid_state snapshot.
@@ -1451,15 +1572,6 @@ class CorrectionHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.debug("Не удалось прочитать EC pid_state для логирования события", exc_info=True)
-        effective_ml = float(corr.ec_amount_ml or 0.0)
-        requested_ml = effective_ml
-        if ec_single_meta is not None:
-            requested_ml = float(ec_single_meta.get("requested_ml") or effective_ml)
-        elif seq:
-            requested_ml = round(
-                sum(float(item.get("requested_ml") or item.get("amount_ml") or 0.0) for item in seq),
-                4,
-            )
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="EC_DOSING",
@@ -1468,7 +1580,8 @@ class CorrectionHandler(BaseStageHandler):
             payload={
                 "node_uid": corr.ec_node_uid,
                 "channel": corr.ec_channel,
-                "duration_ms": corr.ec_duration_ms,
+                "duration_ms": actual_duration_ms,
+                "planned_duration_ms": corr.ec_duration_ms,
                 "amount_ml": effective_ml,
                 "effective_ml": effective_ml,
                 "requested_ml": requested_ml,
@@ -1515,7 +1628,7 @@ class CorrectionHandler(BaseStageHandler):
             updates={
                 "ec": {
                     "hold_until": wait_until,
-                    "last_output_ms": corr.ec_duration_ms,
+                    "last_output_ms": actual_duration_ms,
                     "last_correction_kind": "ec",
                     "last_dose_at": dose_completed_at,
                 },
@@ -1616,6 +1729,17 @@ class CorrectionHandler(BaseStageHandler):
         current_task = result.get("task") or current_task
 
         runtime = self._require_runtime_plan(plan=plan)
+        actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
+        ph_actuator = actuators.get("ph_up") if corr.needs_ph_up else actuators.get("ph_down")
+        ml_per_sec = self._ml_per_sec_for_actuator(ph_actuator)
+        planned_ml = float(corr.ph_amount_ml or 0.0)
+        planned_ms = int(corr.ph_duration_ms or 0)
+        effective_ml, actual_duration_ms, _ = self._resolve_dose_outcome(
+            planned_ml=planned_ml,
+            planned_duration_ms=planned_ms,
+            ml_per_sec=ml_per_sec,
+            batch_result=result,
+        )
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
         # to avoid using the stale plan.runtime pid_state snapshot.
         current_ph: Optional[float] = None
@@ -1627,7 +1751,6 @@ class CorrectionHandler(BaseStageHandler):
             except Exception:
                 _logger.debug("Не удалось прочитать PH pid_state для логирования события", exc_info=True)
         ph_direction = "up" if corr.needs_ph_up else "down"
-        effective_ml = float(corr.ph_amount_ml or 0.0)
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="PH_CORRECTED",
@@ -1636,7 +1759,8 @@ class CorrectionHandler(BaseStageHandler):
             payload={
                 "node_uid": corr.ph_node_uid,
                 "channel": corr.ph_channel,
-                "duration_ms": corr.ph_duration_ms,
+                "duration_ms": actual_duration_ms,
+                "planned_duration_ms": corr.ph_duration_ms,
                 "amount_ml": effective_ml,
                 "effective_ml": effective_ml,
                 "requested_ml": ph_requested_ml,
@@ -1672,7 +1796,7 @@ class CorrectionHandler(BaseStageHandler):
             updates={
                 "ph": {
                     "hold_until": wait_until,
-                    "last_output_ms": corr.ph_duration_ms,
+                    "last_output_ms": actual_duration_ms,
                     "last_correction_kind": "ph_up" if corr.needs_ph_up else "ph_down",
                     "feedforward_bias": 0.0,
                     "last_dose_at": dose_completed_at,
@@ -1765,6 +1889,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=corr,
             payload={"estop_event_id": estop_event_id},
         )
+        CORRECTION_ESTOP_INTERRUPT.inc()
         if estop_event_id > 0:
             self._reconciled_estop_event_ids.add(estop_event_id)
 
@@ -1778,12 +1903,132 @@ class CorrectionHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome | None:
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
-        return await self._handle_control_mode_flow_path_interrupt(
+        outcome = await self._handle_control_mode_flow_path_interrupt(
             task=task,
             plan=plan,
             now=now,
             control_mode=control_mode,
             reason="control_mode_manual",
+        )
+        if outcome is not None:
+            CORRECTION_CONTROL_MODE_BLOCKED.inc()
+        return outcome
+
+    @staticmethod
+    def _readiness_event_payload(
+        *,
+        targets_in_tolerance: bool,
+        workflow_ready: bool,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        return {
+            "targets_in_tolerance": targets_in_tolerance,
+            "workflow_ready": workflow_ready,
+            # Legacy alias: downstream routing for solution_fill used workflow_ready.
+            "targets_reached": workflow_ready,
+            **extra,
+        }
+
+    async def _resolve_correction_readiness_flags(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        runtime: Any = None,
+    ) -> tuple[bool, bool] | None:
+        if runtime is None:
+            runtime = self._require_runtime_plan(plan=plan)
+        max_age = int(runtime.telemetry_max_age_sec)
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ph = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="PH",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        ec = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        if not ph["ready"] or not ec["ready"]:
+            return None
+        current_ph = float(ph["value"])
+        current_ec = float(ec["value"])
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
+        target_ph = self._effective_ph_target(task=task, runtime=runtime)
+        target_ec = self._effective_ec_target(task=task, runtime=runtime)
+        targets_in_tolerance = self._planner.is_within_tolerance(
+            current_ph=current_ph,
+            current_ec=current_ec,
+            target_ph=target_ph,
+            target_ec=target_ec,
+            ph_tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
+            ec_tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
+            ph_min=self._effective_ph_min(task=task, runtime=runtime),
+            ph_max=self._effective_ph_max(task=task, runtime=runtime),
+            ec_min=self._effective_ec_min(task=task, runtime=runtime),
+            ec_max=self._effective_ec_max(task=task, runtime=runtime),
+        )
+        workflow_ready = self._workflow_ready_values_match(
+            task=task,
+            runtime=runtime,
+            current_ph=current_ph,
+            current_ec=current_ec,
+        )
+        return targets_in_tolerance, workflow_ready
+
+    @staticmethod
+    def _record_dose_clamp_metrics(dose_plan: DosePlan) -> None:
+        if dose_plan.needs_ec:
+            if dose_plan.ec_dose_sequence:
+                for step in dose_plan.ec_dose_sequence:
+                    requested = (
+                        float(step.requested_ml)
+                        if step.requested_ml is not None
+                        else float(step.amount_ml)
+                    )
+                    if requested > float(step.amount_ml) + 1e-9:
+                        CORRECTION_DOSE_CLAMPED.labels(pid_type="ec").inc()
+            elif dose_plan.ec_requested_ml > dose_plan.ec_amount_ml + 1e-9:
+                CORRECTION_DOSE_CLAMPED.labels(pid_type="ec").inc()
+        if (
+            (dose_plan.needs_ph_up or dose_plan.needs_ph_down)
+            and dose_plan.ph_requested_ml > dose_plan.ph_amount_ml + 1e-9
+        ):
+            CORRECTION_DOSE_CLAMPED.labels(pid_type="ph").inc()
+
+    async def _record_dual_calibration_mismatch_observability(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+        dose_plan: DosePlan,
+    ) -> None:
+        if not dose_plan.dual_calibration_mismatches:
+            return
+
+        payload_mismatches = []
+        for item in dose_plan.dual_calibration_mismatches:
+            field = str(item.get("field") or "unknown")
+            CORRECTION_PUMP_CALIBRATION_MIRROR_MISMATCH.labels(field=field).inc()
+            payload_mismatches.append(dict(item))
+
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="PUMP_CALIBRATION_MIRROR_MISMATCH",
+            task=task,
+            corr=corr,
+            payload={"mismatches": payload_mismatches},
         )
 
     @staticmethod
@@ -2244,10 +2489,13 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             _logger.warning(
-                "zone %s: телеметрия %s устарела или недоступна во время observation window; повтор через %.1f с",
+                "zone %s: телеметрия %s устарела или недоступна во время observation window; "
+                "повтор через %.1f с (task_id=%s correction_window_id=%s)",
                 task.zone_id,
                 sensor_type,
                 retry_delay_sec,
+                getattr(task, "id", None),
+                CorrectionEventLogger.correction_window_id(task=task),
             )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
@@ -2294,11 +2542,15 @@ class CorrectionHandler(BaseStageHandler):
         )
         if bounds_reason is not None:
             _logger.warning(
-                "zone %s: observe window value out of sanity bounds sensor_type=%s value=%s",
+                "zone %s: observe window value out of sanity bounds sensor_type=%s value=%s "
+                "(task_id=%s correction_window_id=%s)",
                 task.zone_id,
                 sensor_type,
                 summary["value"],
+                getattr(task, "id", None),
+                CorrectionEventLogger.correction_window_id(task=task),
             )
+            CORRECTION_OBSERVE_OUT_OF_BOUNDS.inc()
             await self._log_correction_event(
                 zone_id=task.zone_id,
                 event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
@@ -2551,6 +2803,7 @@ class CorrectionHandler(BaseStageHandler):
                 "no_effect_limit": no_effect_limit,
             },
         )
+        CORRECTION_NO_EFFECT.labels(pid_type=pid_type).inc()
         await self._alert_service.emit_no_effect(
             task=task,
             pid_type=pid_type,
@@ -2605,6 +2858,58 @@ class CorrectionHandler(BaseStageHandler):
             "ph_up": actuators.get("ph_up"),
             "ph_down": actuators.get("ph_down"),
         }
+
+    def _ml_per_sec_for_actuator(self, actuator: Any) -> float:
+        if not isinstance(actuator, Mapping):
+            return 0.0
+        calibration = actuator.get("calibration")
+        if not isinstance(calibration, Mapping):
+            return 0.0
+        try:
+            return max(0.0, float(calibration.get("ml_per_sec") or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _ml_per_sec_for_ec_item(self, *, actuators: Mapping[str, Any], item: Mapping[str, Any]) -> float:
+        component = str(item.get("component") or "").strip().lower()
+        ec_actuators = actuators.get("ec_actuators")
+        if component and isinstance(ec_actuators, Mapping):
+            actuator = ec_actuators.get(component) or ec_actuators.get(f"ec_{component}")
+            ml_per_sec = self._ml_per_sec_for_actuator(actuator)
+            if ml_per_sec > 0.0:
+                return ml_per_sec
+        return self._ml_per_sec_for_actuator(actuators.get("ec"))
+
+    def _response_details_from_batch(
+        self,
+        batch_result: Mapping[str, Any],
+        *,
+        status_index: int = 0,
+    ) -> Mapping[str, Any]:
+        statuses = batch_result.get("command_statuses")
+        if not isinstance(statuses, Sequence) or status_index < 0 or status_index >= len(statuses):
+            return {}
+        item = statuses[status_index]
+        if not isinstance(item, Mapping):
+            return {}
+        details = item.get("response_details")
+        return details if isinstance(details, Mapping) else {}
+
+    def _resolve_dose_outcome(
+        self,
+        *,
+        planned_ml: float,
+        planned_duration_ms: int,
+        ml_per_sec: float,
+        batch_result: Mapping[str, Any],
+        status_index: int = 0,
+    ) -> tuple[float, int, bool]:
+        return resolve_dose_feedback_from_response(
+            planned_ml=planned_ml,
+            planned_duration_ms=planned_duration_ms,
+            ml_per_sec=ml_per_sec,
+            response_details=self._response_details_from_batch(batch_result, status_index=status_index),
+        )
 
     async def _maybe_emit_pid_output_zone_event(
         self,

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\AutomationEffectiveBundle;
 use App\Models\DeviceNode;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class NodeConfigService
 {
@@ -98,8 +100,9 @@ class NodeConfigService
     private function buildChannelsFromNode(DeviceNode $node): array
     {
         $channels = $node->relationLoaded('channels') ? $node->channels : $node->channels()->get();
+        $calibrationByChannelId = $this->activePumpCalibrationsByChannelId($channels->pluck('id')->all());
 
-        return $channels->map(function ($channel) {
+        return $channels->map(function ($channel) use ($calibrationByChannelId) {
             $base = [
                 'name' => $channel->channel,
                 'channel' => $channel->channel,
@@ -109,9 +112,68 @@ class NodeConfigService
             ];
             $extra = is_array($channel->config) ? $channel->config : [];
             $merged = array_merge($extra, array_filter($base, static fn ($value) => $value !== null));
+            $merged = $this->injectPumpCalibrationFirmwareFields(
+                $merged,
+                $calibrationByChannelId[(int) $channel->id] ?? null
+            );
 
             return $this->normalizeChannelForFirmware($merged);
         })->values()->all();
+    }
+
+    /**
+     * @param  list<int>  $channelIds
+     * @return array<int, array{ml_per_sec: float, max_duration_ms: int|null}>
+     */
+    private function activePumpCalibrationsByChannelId(array $channelIds): array
+    {
+        if ($channelIds === [] || ! Schema::hasTable('pump_calibrations')) {
+            return [];
+        }
+
+        $rows = DB::table('pump_calibrations as pc')
+            ->whereIn('pc.node_channel_id', $channelIds)
+            ->where('pc.is_active', true)
+            ->where('pc.valid_from', '<=', now())
+            ->where(function ($query): void {
+                $query->whereNull('pc.valid_to')
+                    ->orWhere('pc.valid_to', '>', now());
+            })
+            ->orderByDesc('pc.valid_from')
+            ->orderByDesc('pc.id')
+            ->get(['pc.node_channel_id', 'pc.ml_per_sec']);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $channelId = (int) $row->node_channel_id;
+            if (array_key_exists($channelId, $result)) {
+                continue;
+            }
+            $result[$channelId] = [
+                'ml_per_sec' => (float) $row->ml_per_sec,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $channelConfig
+     * @param  array{ml_per_sec: float}|null  $activeCalibration
+     * @return array<string, mixed>
+     */
+    private function injectPumpCalibrationFirmwareFields(array $channelConfig, ?array $activeCalibration): array
+    {
+        if (strtoupper((string) ($channelConfig['type'] ?? '')) !== 'ACTUATOR') {
+            return $channelConfig;
+        }
+
+        $mlPerSecond = $channelConfig['ml_per_second'] ?? null;
+        if ((! is_numeric($mlPerSecond) || (float) $mlPerSecond <= 0) && $activeCalibration !== null) {
+            $channelConfig['ml_per_second'] = (float) $activeCalibration['ml_per_sec'];
+        }
+
+        return $channelConfig;
     }
 
     private function normalizeChannelForFirmware(array $config): array

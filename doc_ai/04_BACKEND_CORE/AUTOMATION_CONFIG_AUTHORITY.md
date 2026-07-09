@@ -346,6 +346,10 @@ Config modes (Phase 5):
 
 `quality_score_legacy` — активное поле в `system.pump_calibration_policy`, используется в frontend TypeScript (`SystemSettings.ts`, `usePumpCalibrationSettings.ts`) и тестах. Это **не deprecated поле**, несмотря на слово "legacy" в имени — это legacy-score для backfill логики.
 
+Дополнительные runtime-policy поля `system.pump_calibration_policy` (AE3 dual-calibration guard):
+- `ml_per_sec_mismatch_pct` (number, default `10.0`) — порог расхождения `pump_calibrations.ml_per_sec` vs NodeConfig `ml_per_second` / `max_dose_ms` vs `safe_limits.max_duration_ms`;
+- `ml_per_sec_mismatch_fail_closed` (boolean, default `false`) — при `true` AE3 `CorrectionPlanner` raise `PlannerConfigurationError(code=pump_calibration_dual_source_mismatch)`; иначе `PUMP_CALIBRATION_MIRROR_MISMATCH` zone_event + Prometheus metric.
+
 **Когда retirement:** retirement маппинга возможен когда генератор `tools/generate_zone_correction_catalog.py` будет расширен на system-namespaces и `SystemAutomationSettingsCatalog` будет полностью автогенерируемым. До тех пор маппинг — необходимый glue-layer.
 
 **Методы:**

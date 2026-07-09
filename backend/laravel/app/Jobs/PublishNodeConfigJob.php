@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Helpers\TransactionHelper;
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
+use App\Services\PumpCalibrationNodeConfigMirrorService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -43,7 +44,10 @@ class PublishNodeConfigJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(NodeConfigService $configService): void
+    public function handle(
+        NodeConfigService $configService,
+        PumpCalibrationNodeConfigMirrorService $pumpCalibrationMirrorService,
+    ): void
     {
         $publishId = (string) Str::uuid();
 
@@ -69,10 +73,10 @@ class PublishNodeConfigJob implements ShouldQueue
         try {
             // Используем TransactionHelper для SERIALIZABLE isolation, retry логики и advisory lock
             // Advisory lock должен быть внутри транзакции с SERIALIZABLE, поэтому сначала serializable retry
-            $result = TransactionHelper::withSerializableRetry(function () use ($configService, $publishId) {
+            $result = TransactionHelper::withSerializableRetry(function () use ($configService, $pumpCalibrationMirrorService, $publishId) {
                 $lockResult = TransactionHelper::withAdvisoryLock(
                     "publish_config:{$this->nodeId}",
-                    function () use ($configService, $publishId) {
+                    function () use ($configService, $pumpCalibrationMirrorService, $publishId) {
                         // Используем SELECT FOR UPDATE для защиты от конкурентных изменений
                         $node = DeviceNode::where('id', $this->nodeId)
                             ->lockForUpdate()
@@ -130,6 +134,18 @@ class PublishNodeConfigJob implements ShouldQueue
                         } else {
                             // Загружаем зону для генерации конфига
                             $node->load('zone.greenhouse');
+                        }
+
+                        $syncedChannelIds = $pumpCalibrationMirrorService->syncNodeActuatorChannels(
+                            $node,
+                            'node_config_publish'
+                        );
+                        if ($syncedChannelIds !== []) {
+                            Log::info('PublishNodeConfigJob: Mirrored actuator ml_per_second into pump_calibrations', [
+                                'publish_id' => $publishId,
+                                'node_id' => $node->id,
+                                'node_channel_ids' => $syncedChannelIds,
+                            ]);
                         }
 
                         // Генерируем конфиг с включением credentials для публикации через MQTT

@@ -210,6 +210,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - fallback на `prepare_tolerance` для `workflow_ready` допустим только если explicit ready band отсутствует;
 - `target_*_min/max` не считаются ранним success сами по себе внутри correction sub-machine:
   они используются только для финального решения о `workflow_ready`.
+- события `CORRECTION_COMPLETE`, `CORRECTION_INTERRUPTED_STAGE_COMPLETE` и успешный
+  `CORRECTION_SKIPPED_DEAD_ZONE` публикуют явные флаги `targets_in_tolerance` и `workflow_ready`
+  (legacy alias `targets_reached` = `workflow_ready` для solution_fill routing).
 - `no-effect` определяется по факту наблюдаемой реакции на дозу (`peak_effect` в observe-window),
   а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
 - learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются
@@ -355,8 +358,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 **Dual calibration (AE3 ↔ firmware) — ops checklist:**
 - AE3 планирует `params.ml` по DB `pump_calibrations.ml_per_sec`; ph_node/ec_node исполняют dose по NodeConfig `ml_per_second` и **игнорируют** `params.duration_ms` (если передан).
 - `ml_per_sec` в БД **должен совпадать** с `ml_per_second` в NodeConfig actuator channel; иначе фактический объём на ноде расходится с планом AE3.
+- Laravel `PublishNodeConfigJob` / apply channel config зеркалит `ml_per_second` → `pump_calibrations` (source `node_config_publish` / `node_channel_config_apply`).
+- AE3 runtime: при наличии обоих источников сравнивает значения по `system.pump_calibration_policy.ml_per_sec_mismatch_pct` (default 10%); warn → `PUMP_CALIBRATION_MIRROR_MISMATCH` + metric, fail-closed → `pump_calibration_dual_source_mismatch` (policy flag).
 - Per-pump cap: если в calibration actuator задан `max_duration_ms` (зеркало NodeConfig), AE3 берёт `min(zone.max_dose_ms, calibration.max_duration_ms)`.
 - Firmware при превышении cap публикует в ACK `details.duration_limited=true` и фактический `details.duration_ms`.
+- После terminal `DONE` correction handler читает `response_details` из batch result (`commands.duration_ms` + ACK-поля) и при `duration_limited` или `actual_duration_ms < planned` пересчитывает `effective_ml = ml_per_sec * actual_duration_ms / 1000` (DB calibration). Без details поведение прежнее: planned `effective_ml`.
+- В `EC_DOSING` / `PH_CORRECTED` и `pid_state.last_output_ms` пишутся фактические значения после node feedback.
 
 **Ops checklist (при смене калибровки или NodeConfig):**
 1. Обновить `pump_calibrations.ml_per_sec` в БД (Laravel calibrate-pump flow).

@@ -363,6 +363,39 @@ CORRECTION_CAP_IGNORED = Counter(
     ["topology", "stage", "cap_type"],
 )
 
+CORRECTION_DOSE_CLAMPED = Counter(
+    "ae3_correction_dose_clamped_total",
+    "Correction doses clamped to max_dose_ms (requested_ml > effective_ml)",
+    ["pid_type"],
+)
+
+CORRECTION_PUMP_CALIBRATION_MIRROR_MISMATCH = Counter(
+    "ae3_correction_pump_calibration_mirror_mismatch_total",
+    "Dual calibration mismatch between pump_calibrations and NodeConfig actuator mirror",
+    ["field"],
+)
+
+CORRECTION_OBSERVE_OUT_OF_BOUNDS = Counter(
+    "ae3_correction_observe_out_of_bounds_total",
+    "Correction observe/decision windows rejected with sensor_out_of_bounds",
+)
+
+CORRECTION_NO_EFFECT = Counter(
+    "ae3_correction_no_effect_total",
+    "Correction cycles that reached consecutive no-effect limit",
+    ["pid_type"],
+)
+
+CORRECTION_ESTOP_INTERRUPT = Counter(
+    "ae3_correction_estop_interrupt_total",
+    "Correction windows interrupted by EMERGENCY_STOP_ACTIVATED",
+)
+
+CORRECTION_CONTROL_MODE_BLOCKED = Counter(
+    "ae3_correction_control_mode_blocked_total",
+    "Correction dosing deferred because manual/semi control_mode stopped flow-path",
+)
+
 # ─── Startup recovery ────────────────────────────────────────────────
 
 STARTUP_RECOVERY_RUN = Counter(

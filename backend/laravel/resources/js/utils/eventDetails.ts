@@ -131,6 +131,15 @@ function appendCorrectionTrace(rows: DetailRow[], payload: Payload): void {
   if (schemaVersion !== null) rows.push(row('Schema version', String(schemaVersion)))
 }
 
+function appendCorrectionReadinessRows(rows: DetailRow[], payload: Payload): void {
+  if (payload.targets_in_tolerance === true || payload.targets_in_tolerance === false) {
+    rows.push(row('В допуске ±%', boolLabel(payload.targets_in_tolerance === true)))
+  }
+  if (payload.workflow_ready === true || payload.workflow_ready === false) {
+    rows.push(row('Ready band', boolLabel(payload.workflow_ready === true)))
+  }
+}
+
 function appendIrrigationDecisionConfigRows(rows: DetailRow[], payload: Payload): void {
   const config = toPayloadRecord(payload['config']) ?? toPayloadRecord(payload['decision_config'])
   if (!config) return
@@ -335,9 +344,18 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     const currentEc = readNumber(payload, 'current_ec')
     const attempt = readNumber(payload, 'attempt')
     appendCorrectionTrace(rows, payload)
+    appendCorrectionReadinessRows(rows, payload)
     if (currentPh !== null) rows.push(row('pH', currentPh.toFixed(2)))
     if (currentEc !== null) rows.push(row('EC', `${currentEc.toFixed(2)} мС/см`))
     if (attempt !== null) rows.push(row('Попытка', String(attempt)))
+  }
+  else if (event.kind === 'CORRECTION_INTERRUPTED_STAGE_COMPLETE') {
+    const nextStage = readString(payload, 'next_stage')
+    const reason = readString(payload, 'reason')
+    appendCorrectionTrace(rows, payload)
+    appendCorrectionReadinessRows(rows, payload)
+    if (nextStage) rows.push(row('Следующий этап', nextStage))
+    if (reason) rows.push(row('Причина', reason))
   }
   else if (event.kind === 'CORRECTION_EXHAUSTED') {
     const attempt = readNumber(payload, 'attempt')

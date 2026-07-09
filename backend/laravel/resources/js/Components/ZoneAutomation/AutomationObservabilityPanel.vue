@@ -42,6 +42,11 @@
         <dd class="font-mono text-[11px]">
           {{ correctionStep }}
         </dd>
+        <p class="mt-1 text-[10px] text-[color:var(--text-dim)] leading-relaxed">
+          Успех коррекции: <span class="font-medium">targets_in_tolerance</span> (±%);
+          переход <span class="font-mono">*_stop_to_ready</span>:
+          <span class="font-medium">workflow_ready</span> (explicit min/max).
+        </p>
       </div>
       <div
         v-if="topologyLabel"

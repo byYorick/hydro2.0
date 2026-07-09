@@ -336,7 +336,8 @@ class PgAeCommandRepository:
                     c.failed_at,
                     c.updated_at,
                     c.created_at,
-                    c.error_message
+                    c.error_message,
+                    c.duration_ms
                 FROM commands c
                 LEFT JOIN nodes n
                     ON n.id = c.node_id
@@ -369,7 +370,8 @@ class PgAeCommandRepository:
                     c.failed_at,
                     c.updated_at,
                     c.created_at,
-                    c.error_message
+                    c.error_message,
+                    c.duration_ms
                 FROM commands c
                 LEFT JOIN nodes n
                     ON n.id = c.node_id

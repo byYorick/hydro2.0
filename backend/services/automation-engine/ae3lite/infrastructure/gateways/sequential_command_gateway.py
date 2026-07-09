@@ -37,6 +37,51 @@ _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT",
 _PROTOCOL_VIOLATION_STATUSES = frozenset({"ACCEPTED"})
 
 
+def _response_details_from_legacy_row(legacy_row: Mapping[str, Any]) -> dict[str, Any]:
+    """Собрать dose feedback из legacy ``commands`` (duration_ms + params)."""
+    details: dict[str, Any] = {}
+    raw_duration = legacy_row.get("duration_ms")
+    if raw_duration is not None:
+        try:
+            actual_ms = max(0, int(raw_duration))
+        except (TypeError, ValueError):
+            actual_ms = 0
+        if actual_ms > 0:
+            details["duration_ms"] = actual_ms
+
+    params = legacy_row.get("params")
+    param_block: Mapping[str, Any] = {}
+    if isinstance(params, Mapping):
+        param_block = params
+        nested = params.get("params")
+        if isinstance(nested, Mapping):
+            param_block = nested
+
+    if param_block:
+        planned_ms = param_block.get("duration_ms")
+        if details.get("duration_ms") and planned_ms is not None:
+            try:
+                if int(planned_ms) > int(details["duration_ms"]):
+                    details["duration_limited"] = True
+            except (TypeError, ValueError):
+                pass
+        planned_ml = param_block.get("ml")
+        if planned_ml is not None:
+            try:
+                details["ml"] = float(planned_ml)
+            except (TypeError, ValueError):
+                pass
+        node_mps = param_block.get("ml_per_second")
+        if node_mps is None:
+            node_mps = param_block.get("ml_per_sec")
+        if node_mps is not None:
+            try:
+                details["ml_per_second"] = float(node_mps)
+            except (TypeError, ValueError):
+                pass
+    return details
+
+
 class SequentialCommandGateway:
     """Публикует разрешённые команды по одной и ждёт terminal-статус legacy-команды."""
 
@@ -347,6 +392,7 @@ class SequentialCommandGateway:
                     "external_id": result.get("external_id"),
                     "legacy_cmd_id": result.get("cmd_id"),
                     "terminal_status": result.get("legacy_status"),
+                    "response_details": result.get("response_details") or {},
                 }
                 if result["state"] == "done":
                     return {
@@ -553,7 +599,15 @@ class SequentialCommandGateway:
             now=now,
         )
         if terminal_status is None:
-            return {"state": "waiting_command", "task": task, "legacy_status": legacy_status, "external_id": external_id, "cmd_id": cmd_id}
+            return {
+                "state": "waiting_command",
+                "task": task,
+                "legacy_status": legacy_status,
+                "external_id": external_id,
+                "cmd_id": cmd_id,
+                "response_details": {},
+            }
+        response_details = _response_details_from_legacy_row(legacy_row)
         if terminal_status == "DONE":
             COMMAND_TERMINAL.labels(terminal_status="DONE").inc()
             resumed_task = await self._task_repository.resume_after_waiting_command(
@@ -571,6 +625,7 @@ class SequentialCommandGateway:
                         "legacy_status": terminal_status,
                         "external_id": external_id,
                         "cmd_id": cmd_id,
+                        "response_details": response_details,
                     }
                 if current_task is not None and current_status == "running":
                     return {
@@ -579,12 +634,13 @@ class SequentialCommandGateway:
                         "legacy_status": terminal_status,
                         "external_id": external_id,
                         "cmd_id": cmd_id,
+                        "response_details": response_details,
                     }
                 raise TaskExecutionError(
                     "ae3_waiting_command_transition_failed",
                     f"Не удалось перевести задачу {task.id} из waiting_command в running после DONE",
                 )
-            return {"state": "done", "task": resumed_task, "legacy_status": terminal_status, "external_id": external_id, "cmd_id": cmd_id}
+            return {"state": "done", "task": resumed_task, "legacy_status": terminal_status, "external_id": external_id, "cmd_id": cmd_id, "response_details": response_details}
 
         COMMAND_TERMINAL.labels(terminal_status=terminal_status).inc()
         failed_task = await self._task_repository.mark_failed(
@@ -604,6 +660,7 @@ class SequentialCommandGateway:
             "cmd_id": cmd_id,
             "error_code": failed_task.error_code,
             "error_message": failed_task.error_message,
+            "response_details": response_details,
         }
 
     async def _await_terminal_without_task_fsm(
@@ -713,6 +770,7 @@ class SequentialCommandGateway:
                 "external_id": str(legacy_row.get("id") or external_id or ""),
                 "legacy_cmd_id": cmd_id,
                 "terminal_status": legacy_status,
+                "response_details": _response_details_from_legacy_row(legacy_row),
             }
             if legacy_status == "DONE":
                 COMMAND_TERMINAL.labels(terminal_status="DONE").inc()

@@ -661,6 +661,7 @@ class ZoneService
             ]);
 
             $channel->config = $this->mergeNodeChannelConfig($channel->config, [
+                'ml_per_second' => $mlPerSec,
                 'pump_calibration' => $calibrationPayload,
             ]);
             $channel->save();

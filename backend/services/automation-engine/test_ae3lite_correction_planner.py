@@ -1922,6 +1922,91 @@ def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
     )
 
 
+def test_dose_ml_to_ms_warns_on_dual_calibration_mismatch(caplog) -> None:
+    import logging
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+
+    correction_config = _correction_config()
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_pct"] = 10.0
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_fail_closed"] = False
+
+    calibration = {
+        "ml_per_sec": 2.0,
+        "node_ml_per_second": 3.0,
+    }
+
+    with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
+        duration_ms, reason, details = _dose_ml_to_ms(
+            2.0,
+            calibration,
+            correction_config,
+        )
+
+    assert duration_ms > 0
+    assert reason == ""
+    assert "dual_calibration_mismatches" in details
+    assert details["dual_calibration_mismatches"][0]["field"] == "ml_per_sec"
+    assert any("Dual calibration mismatch" in record.message for record in caplog.records)
+
+
+def test_dose_ml_to_ms_fail_closed_on_dual_calibration_mismatch() -> None:
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+    from ae3lite.domain.errors import PlannerConfigurationError
+
+    correction_config = _correction_config()
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_pct"] = 5.0
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_fail_closed"] = True
+
+    with pytest.raises(PlannerConfigurationError, match="dual calibration"):
+        _dose_ml_to_ms(
+            2.0,
+            {"ml_per_sec": 2.0, "node_ml_per_second": 3.0},
+            correction_config,
+        )
+
+
+def test_resolve_dose_feedback_from_response_without_details_keeps_planned() -> None:
+    from ae3lite.domain.services.correction_planner import resolve_dose_feedback_from_response
+
+    effective_ml, duration_ms, adjusted = resolve_dose_feedback_from_response(
+        planned_ml=2.0,
+        planned_duration_ms=2000,
+        ml_per_sec=2.0,
+        response_details=None,
+    )
+    assert effective_ml == pytest.approx(2.0)
+    assert duration_ms == 2000
+    assert adjusted is False
+
+
+def test_resolve_dose_feedback_from_response_duration_limited_recalculates_ml() -> None:
+    from ae3lite.domain.services.correction_planner import resolve_dose_feedback_from_response
+
+    effective_ml, duration_ms, adjusted = resolve_dose_feedback_from_response(
+        planned_ml=5.0,
+        planned_duration_ms=5000,
+        ml_per_sec=1.0,
+        response_details={"duration_limited": True, "duration_ms": 2500},
+    )
+    assert effective_ml == pytest.approx(2.5)
+    assert duration_ms == 2500
+    assert adjusted is True
+
+
+def test_resolve_dose_feedback_infers_duration_limited_from_shorter_actual_ms() -> None:
+    from ae3lite.domain.services.correction_planner import resolve_dose_feedback_from_response
+
+    effective_ml, duration_ms, adjusted = resolve_dose_feedback_from_response(
+        planned_ml=3.0,
+        planned_duration_ms=3000,
+        ml_per_sec=1.0,
+        response_details={"duration_ms": 1000},
+    )
+    assert effective_ml == pytest.approx(1.0)
+    assert duration_ms == 1000
+    assert adjusted is True
+
+
 def test_build_dose_plan_exposes_dead_zone_details_and_discarded_payload() -> None:
     planner = CorrectionPlanner()
 

@@ -329,3 +329,75 @@ def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
     assert plan.needs_ec is True
     assert plan.ec_component == "multi_parallel"
     assert {step.component for step in plan.ec_dose_sequence} == {"npk", "calcium", "magnesium"}
+
+
+def test_multi_parallel_dose_steps_sync_ml_and_duration_after_clamp() -> None:
+    """D5: each parallel component carries ml+duration from the same _dose_ml_to_ms pass."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
+
+    max_dose_ms = 2_000
+    ml_per_sec = 1.0
+    correction_cfg = {
+        **_base_correction_cfg(),
+        "ec_dosing_mode": "multi_parallel",
+        "ec_component_ratios": {"calcium": 0.5, "magnesium": 0.5},
+        "pump_calibration": {
+            "min_dose_ms": 50,
+            "max_dose_ms": max_dose_ms,
+            "ml_per_sec_min": 0.1,
+            "ml_per_sec_max": 10.0,
+        },
+        "controllers": {
+            "ec": {"kp": 500.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+            "ph": {"kp": 0.0, "ki": 0.0, "kd": 0.0, "deadband": 999.0},
+        },
+        "actuators": {},
+    }
+    process_calibrations = {
+        "irrigation": {
+            "ec_gain_per_ml": 0.01,
+            "ec_component_gains": {
+                "calcium": {"ec_gain_per_ml": 0.01},
+                "magnesium": {"ec_gain_per_ml": 0.01},
+            },
+        }
+    }
+    ec_actuators = {
+        "calcium": {
+            "node_uid": "nd-ca",
+            "channel": "pump_b",
+            "calibration": {"ml_per_sec": ml_per_sec, "min_effective_ml": 0.1},
+        },
+        "magnesium": {
+            "node_uid": "nd-mg",
+            "channel": "pump_c",
+            "calibration": {"ml_per_sec": ml_per_sec, "min_effective_ml": 0.1},
+        },
+    }
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="irrigating",
+        process_calibrations=process_calibrations,
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators=ec_actuators,
+    )
+
+    assert plan.needs_ec is True
+    assert plan.ec_component == "multi_parallel"
+    assert len(plan.ec_dose_sequence) == 2
+    for step in plan.ec_dose_sequence:
+        assert step.duration_ms == max_dose_ms
+        assert step.amount_ml == pytest.approx(ml_per_sec * max_dose_ms / 1000.0)
+        assert step.requested_ml is not None
+        assert step.requested_ml > step.amount_ml

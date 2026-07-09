@@ -359,6 +359,11 @@ class PgZoneSnapshotReadModel:
         pid_state = self._build_pid_state(pid_state_rows)
         pid_configs = self._build_pid_configs(pid_config_rows)
         correction_config = self._build_correction_config(correction_config_row)
+        if isinstance(correction_config, Mapping):
+            correction_config = self._merge_pump_calibration_policy(
+                correction_config,
+                pump_calibration_policy,
+            )
         process_calibrations = self._build_process_calibrations(process_calibration_rows)
         actuators = tuple(
             ZoneActuatorRef(
@@ -850,7 +855,58 @@ class PgZoneSnapshotReadModel:
                 }
             )
 
+        channel_config = row.get("channel_config")
+        if isinstance(channel_config, str):
+            try:
+                channel_config = json.loads(channel_config)
+            except json.JSONDecodeError:
+                channel_config = None
+        if isinstance(channel_config, Mapping):
+            node_ml_per_second = self._to_float(channel_config.get("ml_per_second"))
+            if node_ml_per_second is not None and node_ml_per_second > 0:
+                result["node_ml_per_second"] = node_ml_per_second
+            safe_limits = channel_config.get("safe_limits")
+            if isinstance(safe_limits, Mapping):
+                node_max_duration_ms = self._to_int(safe_limits.get("max_duration_ms"))
+                if node_max_duration_ms is not None and node_max_duration_ms > 0:
+                    result["max_duration_ms"] = node_max_duration_ms
+                    result["node_max_dose_ms"] = node_max_duration_ms
+
         return result or None
+
+    def _merge_pump_calibration_policy(
+        self,
+        correction_config: Mapping[str, Any],
+        pump_calibration_policy: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        merged = dict(correction_config)
+        if not isinstance(pump_calibration_policy, Mapping):
+            return merged
+
+        pump_calibration = merged.get("pump_calibration")
+        pump_calibration_dict = (
+            dict(pump_calibration) if isinstance(pump_calibration, Mapping) else {}
+        )
+        for key in (
+            "min_dose_ms",
+            "max_dose_ms",
+            "ml_per_sec_min",
+            "ml_per_sec_max",
+            "ml_per_sec_mismatch_pct",
+            "ml_per_sec_mismatch_fail_closed",
+        ):
+            if key in pump_calibration_policy and pump_calibration_policy.get(key) is not None:
+                pump_calibration_dict[key] = pump_calibration_policy.get(key)
+        merged["pump_calibration"] = pump_calibration_dict
+        return merged
+
+    def _to_int(self, value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _apply_overrides(
         self,

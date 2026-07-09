@@ -416,6 +416,38 @@ def test_extract_pump_calibration_merges_policy_with_db_calibration() -> None:
     assert result["sample_count"] == 4
 
 
+def test_extract_pump_calibration_reads_node_config_mirror_fields() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._extract_pump_calibration(
+        {
+            "channel_config": {
+                "ml_per_second": 1.8,
+                "safe_limits": {"max_duration_ms": 45_000},
+            },
+            "calibration_ml_per_sec": 1.75,
+            "calibration_k_ms_per_ml_l": 12.5,
+            "calibration_component": "npk",
+            "calibration_source": "manual_calibration",
+            "calibration_quality_score": None,
+            "calibration_sample_count": 1,
+            "calibration_valid_from": None,
+        },
+        pump_calibration_policy={
+            "min_dose_ms": 50,
+            "ml_per_sec_min": 0.01,
+            "ml_per_sec_max": 20.0,
+            "ml_per_sec_mismatch_pct": 10.0,
+        },
+    )
+
+    assert result is not None
+    assert result["ml_per_sec"] == 1.75
+    assert result["node_ml_per_second"] == 1.8
+    assert result["max_duration_ms"] == 45_000
+    assert result["node_max_dose_ms"] == 45_000
+
+
 def test_extract_pump_calibration_ignores_legacy_node_channel_config() -> None:
     read_model = PgZoneSnapshotReadModel()
 
