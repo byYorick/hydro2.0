@@ -8,6 +8,13 @@ from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
+from ae3lite.application.services.foreign_lease_reconcile import (
+    ForeignLeaseAction,
+    ForeignLeaseContext,
+    escalate_foreign_lease_stale_task,
+    record_foreign_lease_skip,
+    resolve_foreign_active_lease,
+)
 from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
@@ -47,6 +54,7 @@ class StartupRecoveryUseCase:
         alert_repository: Any | None = None,
         use_startup_recovery_lock: bool = True,
         worker_owner: str | None = None,
+        foreign_lease_skip_escalate_sec: int = 300,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
@@ -56,6 +64,7 @@ class StartupRecoveryUseCase:
         self._alert_repository = alert_repository
         self._use_startup_recovery_lock = bool(use_startup_recovery_lock)
         self._worker_owner = str(worker_owner or "").strip() or None
+        self._foreign_lease_skip_escalate_sec = max(1, int(foreign_lease_skip_escalate_sec))
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
         STARTUP_RECOVERY_RUN.inc()
@@ -107,8 +116,13 @@ class StartupRecoveryUseCase:
         terminal_outcomes: list[StartupRecoveryTerminalOutcome] = []
 
         for task in tasks:
-            if await self._should_skip_foreign_owned_task(task=task, now=now):
+            foreign_action, foreign_ctx = await self._resolve_foreign_owned_task(
+                task=task,
+                now=now,
+            )
+            if foreign_action == ForeignLeaseAction.SKIP:
                 STARTUP_RECOVERY_SKIPPED.labels(reason="foreign_lease_task").inc()
+                record_foreign_lease_skip(recovery_source="startup_recovery")
                 logger.info(
                     "Startup recovery: skip foreign-lease task task_id=%s zone_id=%s claimed_by=%s worker=%s",
                     task.id,
@@ -116,6 +130,28 @@ class StartupRecoveryUseCase:
                     task.claimed_by,
                     self._worker_owner,
                 )
+                continue
+            if foreign_action == ForeignLeaseAction.ESCALATE:
+                failed = await escalate_foreign_lease_stale_task(
+                    task_repository=self._task_repository,
+                    alert_repository=self._alert_repository,
+                    task=task,
+                    now=now,
+                    recovery_source="startup_recovery",
+                    lease_context=foreign_ctx,
+                )
+                if failed is not None:
+                    failed_tasks += 1
+                    STARTUP_RECOVERY_TASK.labels(outcome="failed").inc()
+                    await self._record_startup_recovery_outcome(
+                        zone_id=int(failed.zone_id),
+                        task_id=int(failed.id),
+                        topology=str(failed.topology or ""),
+                        stage=str(failed.current_stage or ""),
+                        outcome="failed",
+                        terminal_outcome=None,
+                        recovery_source="startup_recovery",
+                    )
                 continue
 
             outcome, terminal_outcome, observability_task = await self._recover_task(task=task, now=now)
@@ -919,59 +955,28 @@ class StartupRecoveryUseCase:
                 exc_info=True,
             )
 
-    async def _should_skip_foreign_owned_task(
+    async def _resolve_foreign_owned_task(
         self,
         *,
         task: AutomationTask,
         now: datetime,
-    ) -> bool:
+    ) -> tuple[ForeignLeaseAction, ForeignLeaseContext | None]:
         worker_owner = self._worker_owner
         if not worker_owner:
-            return False
+            return ForeignLeaseAction.ALLOW, None
 
         task_owner = str(task.claimed_by or "").strip()
         if not task_owner or task_owner == worker_owner:
-            return False
+            return ForeignLeaseAction.ALLOW, None
 
-        return await self._foreign_lease_blocks_recovery(zone_id=int(task.zone_id), now=now)
-
-    async def _foreign_lease_blocks_recovery(
-        self,
-        *,
-        zone_id: int,
-        now: datetime,
-    ) -> bool:
-        worker_owner = self._worker_owner
-        if not worker_owner:
-            return False
-
-        get_lease = getattr(self._lease_repository, "get", None)
-        if not callable(get_lease):
-            return False
-
-        lease = await get_lease(zone_id=zone_id)
-        if lease is None:
-            return False
-
-        lease_owner = str(getattr(lease, "owner", "") or "").strip()
-        if lease_owner == "" or lease_owner == worker_owner:
-            return False
-
-        leased_until = getattr(lease, "leased_until", None)
-        if leased_until is None:
-            return True
-
-        normalized_now = (
-            now.astimezone(_tz.utc).replace(tzinfo=None)
-            if now.tzinfo is not None
-            else now.replace(microsecond=0)
+        return await resolve_foreign_active_lease(
+            lease_repository=self._lease_repository,
+            zone_id=int(task.zone_id),
+            worker_owner=worker_owner,
+            task=task,
+            now=now,
+            escalate_sec=self._foreign_lease_skip_escalate_sec,
         )
-        lease_until = (
-            leased_until.astimezone(_tz.utc).replace(tzinfo=None)
-            if getattr(leased_until, "tzinfo", None) is not None
-            else leased_until
-        )
-        return lease_until > normalized_now
 
     def _build_terminal_outcome(self, *, task: AutomationTask) -> StartupRecoveryTerminalOutcome | None:
         intent_id = task.intent_id or 0

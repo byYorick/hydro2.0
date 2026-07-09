@@ -68,6 +68,7 @@ def _build_stale_reconcile_use_case(
     *,
     alert_repository: _AlertRepositoryRecorder | None = None,
     startup_recovery_use_case: StartupRecoveryUseCase | None = None,
+    foreign_lease_skip_escalate_sec: int = 300,
 ) -> tuple[StaleTaskReconcileUseCase, PgAutomationTaskRepository, PgZoneLeaseRepository]:
     task_repo = PgAutomationTaskRepository()
     lease_repo = PgZoneLeaseRepository()
@@ -85,6 +86,7 @@ def _build_stale_reconcile_use_case(
         stale_running_ttl_sec=_STALE_RUNNING_TTL_SEC,
         stale_waiting_command_ttl_sec=_STALE_WAITING_COMMAND_TTL_SEC,
         stale_unconfirmed_command_ttl_sec=_STALE_UNCONFIRMED_TTL_SEC,
+        foreign_lease_skip_escalate_sec=foreign_lease_skip_escalate_sec,
         batch_limit=16,
     )
     return use_case, task_repo, lease_repo
@@ -260,6 +262,55 @@ async def test_stale_task_skipped_when_foreign_active_lease() -> None:
         assert updated.status == "claimed"
         events = await _fetch_reclaimed_events(zone_id=zone_id)
         assert events == []
+    finally:
+        await _cleanup(prefix)
+
+
+_FOREIGN_LEASE_ESCALATE_SEC = 60
+_STALE_ESCALATE_ANCHOR_SEC = _STALE_CLAIMED_TTL_SEC + 30
+
+
+@pytest.mark.asyncio
+async def test_stale_task_escalates_foreign_lease_when_task_age_exceeds_threshold() -> None:
+    prefix = f"ae3-stale-escalate-lease-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(seconds=_STALE_ESCALATE_ANCHOR_SEC)
+    alerts = _AlertRepositoryRecorder()
+    use_case, task_repo, lease_repo = _build_stale_reconcile_use_case(
+        alert_repository=alerts,
+        foreign_lease_skip_escalate_sec=_FOREIGN_LEASE_ESCALATE_SEC,
+    )
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="claimed",
+            now=stale_at,
+        )
+        await _backdate_task(task_id=task_id, claimed_at=stale_at, updated_at=stale_at)
+        await _insert_lease(
+            zone_id=zone_id,
+            owner="live-worker-b",
+            leased_until=now + timedelta(seconds=300),
+            updated_at=now,
+        )
+
+        result = await use_case.run(now=now, owner="janitor-a")
+
+        updated = await task_repo.get_by_id(task_id=task_id)
+        lease = await lease_repo.get(zone_id=zone_id)
+        assert result.skipped_lease_tasks == 0
+        assert result.failed_tasks == 1
+        assert updated is not None
+        assert updated.status == "failed"
+        assert updated.error_code == "ae3_foreign_lease_stale"
+        assert lease is not None
+        assert lease.owner == "live-worker-b"
+        assert len(alerts.calls) == 1
+        assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
     finally:
         await _cleanup(prefix)
 

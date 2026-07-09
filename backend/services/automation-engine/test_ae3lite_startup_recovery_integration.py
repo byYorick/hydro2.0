@@ -325,6 +325,7 @@ def _build_use_case(
     workflow_repository: PgZoneWorkflowRepository | None = None,
     use_startup_recovery_lock: bool = False,
     worker_owner: str | None = None,
+    foreign_lease_skip_escalate_sec: int = 300,
 ) -> tuple[
     StartupRecoveryUseCase,
     PgAutomationTaskRepository,
@@ -351,6 +352,7 @@ def _build_use_case(
         alert_repository=alert_repository,
         use_startup_recovery_lock=use_startup_recovery_lock,
         worker_owner=worker_owner,
+        foreign_lease_skip_escalate_sec=foreign_lease_skip_escalate_sec,
     )
     return recovery_use_case, task_repo, command_repo, lease_repo, alert_repository
 
@@ -680,7 +682,7 @@ async def test_startup_recovery_foreign_lease_owner_not_released_on_fail() -> No
         result = await recovery_use_case.run(now=now + timedelta(seconds=1))
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
-        assert result.scanned_tasks == baseline_scanned
+        assert result.scanned_tasks == baseline_scanned + 1
         assert result.failed_tasks == 0
         assert updated_task is not None
         assert updated_task.status == "claimed"
@@ -935,6 +937,7 @@ def _build_waiting_command_reconcile_use_case(
     *,
     alert_repository: _AlertRepositoryRecorder | None = None,
     use_startup_recovery_lock: bool = False,
+    foreign_lease_skip_escalate_sec: int = 300,
 ) -> tuple[
     WaitingCommandReconcileUseCase,
     StartupRecoveryUseCase,
@@ -965,6 +968,8 @@ def _build_waiting_command_reconcile_use_case(
         task_repository=task_repo,
         lease_repository=lease_repo,
         startup_recovery_use_case=recovery_use_case,
+        alert_repository=alert_repository,
+        foreign_lease_skip_escalate_sec=foreign_lease_skip_escalate_sec,
         batch_limit=16,
     )
     return reconcile_use_case, recovery_use_case, task_repo, command_repo, workflow_repo
@@ -1158,6 +1163,131 @@ async def test_waiting_command_reconcile_skips_foreign_active_lease() -> None:
         assert updated_task is not None
         assert updated_task.status == "waiting_command"
         assert updated_task.current_stage == "clean_fill_start"
+    finally:
+        await _cleanup(prefix)
+
+
+_FOREIGN_LEASE_ESCALATE_SEC = 60
+_FOREIGN_LEASE_ESCALATE_ANCHOR_SEC = 150
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_escalates_foreign_lease_when_task_age_exceeds_threshold() -> None:
+    prefix = f"ae3-recovery-escalate-foreign-lease-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(seconds=_FOREIGN_LEASE_ESCALATE_ANCHOR_SEC)
+    alerts = _AlertRepositoryRecorder()
+    recovery_use_case, task_repo, _command_repo, lease_repo, _ = _build_use_case(
+        worker_owner="worker-b",
+        alert_repository=alerts,
+        foreign_lease_skip_escalate_sec=_FOREIGN_LEASE_ESCALATE_SEC,
+    )
+    await recovery_use_case.run(now=now)
+    baseline_scanned = await _count_active_recovery_tasks()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(zone_id, prefix=prefix, task_status="claimed", now=stale_at)
+        from common.db import execute
+
+        await execute(
+            """
+            UPDATE ae_tasks
+            SET claimed_at = $2, updated_at = $2, claimed_by = 'worker-a'
+            WHERE id = $1
+            """,
+            task_id,
+            stale_at,
+        )
+        await _insert_lease(
+            zone_id=zone_id,
+            owner="other-worker",
+            leased_until=now + timedelta(minutes=10),
+            updated_at=now,
+        )
+
+        result = await recovery_use_case.run(now=now + timedelta(seconds=1))
+
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+        assert result.scanned_tasks == baseline_scanned + 1
+        assert result.failed_tasks == 1
+        assert updated_task is not None
+        assert updated_task.status == "failed"
+        assert updated_task.error_code == "ae3_foreign_lease_stale"
+        lease = await lease_repo.get(zone_id=zone_id)
+        assert lease is not None
+        assert lease.owner == "other-worker"
+        assert len(alerts.calls) == 1
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_waiting_command_reconcile_escalates_foreign_lease_when_stale() -> None:
+    prefix = f"ae3-wc-reconcile-escalate-foreign-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(seconds=_FOREIGN_LEASE_ESCALATE_ANCHOR_SEC)
+    alerts = _AlertRepositoryRecorder()
+    reconcile_use_case, _recovery, task_repo, _command_repo, _workflow_repo = (
+        _build_waiting_command_reconcile_use_case(
+            alert_repository=alerts,
+            foreign_lease_skip_escalate_sec=_FOREIGN_LEASE_ESCALATE_SEC,
+        )
+    )
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=stale_at,
+            topology="two_tank",
+            current_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+        )
+        from common.db import execute
+
+        await execute(
+            """
+            UPDATE ae_tasks
+            SET claimed_at = $2, updated_at = $2
+            WHERE id = $1
+            """,
+            task_id,
+            stale_at,
+        )
+        legacy_id = await _insert_legacy_command(
+            zone_id=zone_id,
+            cmd_id="ae3-wc-reconcile-escalate-foreign-1",
+            status="DONE",
+            ack_at=now + timedelta(seconds=2),
+            now=now + timedelta(seconds=2),
+        )
+        await _insert_ae_command(
+            task_id=task_id,
+            now=now,
+            cmd_id="ae3-wc-reconcile-escalate-foreign-1",
+            external_id=str(legacy_id),
+        )
+        await _insert_lease(
+            zone_id=zone_id,
+            owner="other-worker",
+            leased_until=now + timedelta(minutes=10),
+            updated_at=now,
+        )
+
+        result = await reconcile_use_case.run(now=now + timedelta(seconds=3), worker_owner="worker-a")
+
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+        assert result.skipped_lease_tasks == 0
+        assert result.failed_tasks == 1
+        assert updated_task is not None
+        assert updated_task.status == "failed"
+        assert updated_task.error_code == "ae3_foreign_lease_stale"
+        assert len(alerts.calls) == 1
     finally:
         await _cleanup(prefix)
 

@@ -8,6 +8,12 @@ from typing import Any
 
 from ae3lite.application.dto import StaleTaskReconcileResult
 from ae3lite.application.services.task_failed_alert import emit_task_failed_alert
+from ae3lite.application.services.foreign_lease_reconcile import (
+    ForeignLeaseAction,
+    escalate_foreign_lease_stale_task,
+    record_foreign_lease_skip,
+    resolve_foreign_active_lease,
+)
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.infrastructure.metrics import STALE_TASKS_RECLAIMED, inc_observability_write_failed
 from common.db import create_zone_event
@@ -33,6 +39,7 @@ class StaleTaskReconcileUseCase:
         stale_running_ttl_sec: int = 960,
         stale_waiting_command_ttl_sec: int = 210,
         stale_unconfirmed_command_ttl_sec: int = 120,
+        foreign_lease_skip_escalate_sec: int = 300,
         batch_limit: int = 16,
     ) -> None:
         self._task_repository = task_repository
@@ -43,6 +50,7 @@ class StaleTaskReconcileUseCase:
         self._stale_running_ttl_sec = max(1, int(stale_running_ttl_sec))
         self._stale_waiting_command_ttl_sec = max(1, int(stale_waiting_command_ttl_sec))
         self._stale_unconfirmed_command_ttl_sec = max(1, int(stale_unconfirmed_command_ttl_sec))
+        self._foreign_lease_skip_escalate_sec = max(1, int(foreign_lease_skip_escalate_sec))
         self._batch_limit = max(1, min(int(batch_limit), 16))
 
     async def run(
@@ -88,12 +96,33 @@ class StaleTaskReconcileUseCase:
         worker_owner = str(owner or "").strip()
 
         for task in tasks:
-            if await self._foreign_lease_blocks_reconcile(
+            foreign_action, foreign_ctx = await resolve_foreign_active_lease(
+                lease_repository=self._lease_repository,
                 zone_id=int(task.zone_id),
                 worker_owner=worker_owner,
+                task=task,
                 now=now,
-            ):
+                escalate_sec=self._foreign_lease_skip_escalate_sec,
+            )
+            if foreign_action == ForeignLeaseAction.SKIP:
                 skipped_lease_tasks += 1
+                record_foreign_lease_skip(recovery_source="stale_task_reconcile")
+                continue
+            if foreign_action == ForeignLeaseAction.ESCALATE:
+                failed = await escalate_foreign_lease_stale_task(
+                    task_repository=self._task_repository,
+                    alert_repository=self._alert_repository,
+                    task=task,
+                    now=now,
+                    recovery_source="stale_task_reconcile",
+                    lease_context=foreign_ctx,
+                )
+                if failed is not None:
+                    failed_tasks += 1
+                    STALE_TASKS_RECLAIMED.labels(
+                        from_status=str(task.status or "").strip().lower(),
+                        action="fail",
+                    ).inc()
                 continue
 
             from_status = str(task.status or "").strip().lower()
@@ -301,41 +330,6 @@ class StaleTaskReconcileUseCase:
         if not callable(has_unconfirmed):
             return False
         return bool(await has_unconfirmed(task_id=task_id))
-
-    async def _foreign_lease_blocks_reconcile(
-        self,
-        *,
-        zone_id: int,
-        worker_owner: str,
-        now: datetime,
-    ) -> bool:
-        get_lease = getattr(self._lease_repository, "get", None)
-        if not callable(get_lease):
-            return False
-
-        lease = await get_lease(zone_id=zone_id)
-        if lease is None:
-            return False
-
-        lease_owner = str(getattr(lease, "owner", "") or "").strip()
-        if lease_owner == "" or lease_owner == worker_owner:
-            return False
-
-        leased_until = getattr(lease, "leased_until", None)
-        if leased_until is None:
-            return True
-
-        normalized_now = (
-            now.astimezone(_tz.utc).replace(tzinfo=None)
-            if now.tzinfo is not None
-            else now.replace(microsecond=0)
-        )
-        lease_until = (
-            leased_until.astimezone(_tz.utc).replace(tzinfo=None)
-            if getattr(leased_until, "tzinfo", None) is not None
-            else leased_until
-        )
-        return lease_until > normalized_now
 
     async def _release_lease_after_action(
         self,

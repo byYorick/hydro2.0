@@ -222,14 +222,11 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState,
     ) -> StageOutcome:
         # Phase 5.5: live-mode hot-swap. If zone is in `live` and revision
-        # advanced, `_checkpoint` returns a fresh `RuntimePlan` (otherwise
-        # returns the existing one). We rebuild a new `CommandPlan` via
-        # `dataclasses.replace(plan, runtime=...)` so every `_run_*` step
-        # and every helper that reads `plan.runtime` transparently sees
-        # refreshed targets/config without changing their signatures.
-        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
-        if new_runtime is not plan.runtime:
-            plan = replace(plan, runtime=new_runtime)
+        # advanced, `_checkpoint` returns a fresh `CommandPlan` (otherwise
+        # returns the existing one). Every `_run_*` step and helper that reads
+        # `plan.runtime` or `plan.named_plans` transparently sees refreshed
+        # config without changing their signatures.
+        plan = await self._checkpoint(task=task, plan=plan, now=now)
 
         solution_fill_completion_outcome = await self._interrupt_for_solution_fill_completion(
             task=task,

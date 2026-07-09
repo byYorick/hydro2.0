@@ -201,42 +201,22 @@ class PgAutomationTaskRepository:
         worker_owner: str | None = None,
         now: datetime | None = None,
     ) -> list[AutomationTask]:
-        normalized_worker = str(worker_owner or "").strip()
-        if normalized_worker and now is not None:
-            normalized_now = self._normalize_timestamp(now)
-            rows = await self._fetch(
-                """
-                SELECT tasks.*
-                FROM ae_tasks AS tasks
-                WHERE tasks.status = ANY($1::text[])
-                  AND NOT (
-                    tasks.claimed_by IS NOT NULL
-                    AND tasks.claimed_by <> $2
-                    AND EXISTS (
-                        SELECT 1
-                        FROM ae_zone_leases AS leases
-                        WHERE leases.zone_id = tasks.zone_id
-                          AND leases.owner IS NOT NULL
-                          AND leases.owner <> $2
-                          AND leases.leased_until > $3
-                    )
-                  )
-                ORDER BY tasks.updated_at ASC, tasks.id ASC
-                """,
-                list(RUNNING_TASK_STATUSES),
-                normalized_worker,
-                normalized_now,
-            )
-        else:
-            rows = await self._fetch(
-                """
-                SELECT *
-                FROM ae_tasks
-                WHERE status = ANY($1::text[])
-                ORDER BY updated_at ASC, id ASC
-                """,
-                list(RUNNING_TASK_STATUSES),
-            )
+        """Возвращает in-flight задачи для startup recovery.
+
+        Чужой активный zone lease не фильтруется на уровне SQL — use case
+        решает skip vs bounded escalate (H6).
+        """
+        _ = worker_owner
+        _ = now
+        rows = await self._fetch(
+            """
+            SELECT *
+            FROM ae_tasks
+            WHERE status = ANY($1::text[])
+            ORDER BY updated_at ASC, id ASC
+            """,
+            list(RUNNING_TASK_STATUSES),
+        )
         return [AutomationTask.from_row(row) for row in rows]
 
     async def list_waiting_command_for_reconcile(self, *, limit: int = 32) -> list[AutomationTask]:

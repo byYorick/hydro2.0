@@ -46,7 +46,10 @@ class Ae3RuntimeConfig:
     stale_running_ttl_sec: int
     waiting_command_stale_ttl_sec: int
     unconfirmed_command_stale_ttl_sec: int
+    foreign_lease_skip_escalate_sec: int
     stale_task_reconcile_sec: float
+    orphan_intent_reconcile_sec: float
+    orphan_intent_reconcile_batch_limit: int
     shutdown_grace_sec: float
     command_poll_default_sec: float
     command_poll_margin_sec: float
@@ -58,6 +61,13 @@ class Ae3RuntimeConfig:
     def from_env(cls) -> "Ae3RuntimeConfig":
         app_env = str(os.getenv("APP_ENV", "local")).strip().lower() or "local"
         default_verbose = "1" if app_env in {"local", "dev", "development"} else "0"
+        lease_ttl_sec = max(30, min(3600, int(os.getenv("AE_LEASE_TTL_SEC", "300"))))
+        stale_claimed_ttl_sec = max(1, int(os.getenv("AE_STALE_CLAIMED_TTL_SEC", "120")))
+        foreign_lease_escalate_raw = os.getenv("AE_FOREIGN_LEASE_SKIP_ESCALATE_SEC")
+        if foreign_lease_escalate_raw is not None and str(foreign_lease_escalate_raw).strip() != "":
+            foreign_lease_skip_escalate_sec = max(1, int(foreign_lease_escalate_raw))
+        else:
+            foreign_lease_skip_escalate_sec = max(lease_ttl_sec * 2, stale_claimed_ttl_sec, 240)
         return cls(
             app_env=app_env,
             host=str(os.getenv("AE_HOST", "0.0.0.0")).strip() or "0.0.0.0",
@@ -84,7 +94,7 @@ class Ae3RuntimeConfig:
             ).strip(),
             scheduler_security_baseline_enforce=_env_true("AE_SCHEDULER_SECURITY_BASELINE_ENFORCE", "1"),
             scheduler_require_trace_id=_env_true("AE_SCHEDULER_REQUIRE_TRACE_ID", "1"),
-            lease_ttl_sec=max(30, min(3600, int(os.getenv("AE_LEASE_TTL_SEC", "300")))),
+            lease_ttl_sec=lease_ttl_sec,
             reconcile_poll_interval_sec=max(0.1, float(os.getenv("AE_RECONCILE_POLL_INTERVAL_SEC", "0.5"))),
             start_cycle_claim_stale_sec=max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE_SEC", "180"))),
             start_cycle_running_stale_sec=max(
@@ -132,7 +142,7 @@ class Ae3RuntimeConfig:
                 1,
                 min(200, int(os.getenv("AE_WAITING_COMMAND_RECONCILE_BATCH_LIMIT", "32"))),
             ),
-            stale_claimed_ttl_sec=max(1, int(os.getenv("AE_STALE_CLAIMED_TTL_SEC", "120"))),
+            stale_claimed_ttl_sec=stale_claimed_ttl_sec,
             stale_running_ttl_sec=max(
                 1,
                 int(
@@ -164,7 +174,16 @@ class Ae3RuntimeConfig:
                 1,
                 int(os.getenv("AE_UNCONFIRMED_COMMAND_STALE_TTL_SEC", "120")),
             ),
+            foreign_lease_skip_escalate_sec=foreign_lease_skip_escalate_sec,
             stale_task_reconcile_sec=max(1.0, float(os.getenv("AE_STALE_TASK_RECONCILE_SEC", "60"))),
+            orphan_intent_reconcile_sec=max(
+                1.0,
+                float(os.getenv("AE_ORPHAN_INTENT_RECONCILE_SEC", os.getenv("AE_STALE_TASK_RECONCILE_SEC", "60"))),
+            ),
+            orphan_intent_reconcile_batch_limit=max(
+                1,
+                min(32, int(os.getenv("AE_ORPHAN_INTENT_RECONCILE_BATCH_LIMIT", "16"))),
+            ),
             shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
             command_poll_default_sec=max(1.0, float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))),
             command_poll_margin_sec=max(0.0, float(os.getenv("AE_COMMAND_POLL_MARGIN_SEC", "30"))),
@@ -268,6 +287,11 @@ class Ae3RuntimeConfig:
                 "unconfirmed_command_stale_ttl_sec must be > 0. "
                 "Set AE_UNCONFIRMED_COMMAND_STALE_TTL_SEC to a positive integer."
             )
+        if int(self.foreign_lease_skip_escalate_sec) <= 0:
+            raise ValueError(
+                "foreign_lease_skip_escalate_sec must be > 0. "
+                "Set AE_FOREIGN_LEASE_SKIP_ESCALATE_SEC to a positive integer."
+            )
         if int(self.stale_running_ttl_sec) <= int(self.max_task_execution_sec):
             raise ValueError(
                 "stale_running_ttl_sec must be > max_task_execution_sec "
@@ -277,6 +301,15 @@ class Ae3RuntimeConfig:
         if float(self.stale_task_reconcile_sec) <= 0.0:
             raise ValueError(
                 "stale_task_reconcile_sec must be > 0. Set AE_STALE_TASK_RECONCILE_SEC to a positive number."
+            )
+        if float(self.orphan_intent_reconcile_sec) <= 0.0:
+            raise ValueError(
+                "orphan_intent_reconcile_sec must be > 0. Set AE_ORPHAN_INTENT_RECONCILE_SEC to a positive number."
+            )
+        if int(self.orphan_intent_reconcile_batch_limit) <= 0:
+            raise ValueError(
+                "orphan_intent_reconcile_batch_limit must be > 0. "
+                "Set AE_ORPHAN_INTENT_RECONCILE_BATCH_LIMIT to a positive integer."
             )
         if float(self.command_poll_default_sec) <= 0.0:
             raise ValueError(

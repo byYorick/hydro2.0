@@ -1,8 +1,8 @@
 """Unit tests for BaseStageHandler._checkpoint() hot-swap semantics (Phase 5.5).
 
 Verifies the return contract without touching the real DB snapshot pipeline:
-- live_reload_enabled=False → returns plan.runtime unchanged
-- zone_id=0 → returns plan.runtime, result='disabled'
+- live_reload_enabled=False → returns plan unchanged
+- zone_id=0 → returns plan, result='disabled'
 - DB-dependent paths → mocked at get_pool import boundary
 """
 
@@ -45,11 +45,11 @@ def _task(zone_id: int = 1):
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_disabled_returns_current_runtime() -> None:
+async def test_checkpoint_disabled_returns_current_plan() -> None:
     plan = _plan()
     handler = _handler(live_reload_enabled=False)
     result = await handler._checkpoint(task=_task(), plan=plan, now=NOW)
-    assert result is plan.runtime, "disabled checkpoint must return original runtime"
+    assert result is plan, "disabled checkpoint must return original plan"
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_checkpoint_zone_id_zero_returns_original_and_marks_disabled(monke
     before = _metrics.CONFIG_HOT_RELOAD.labels(result="disabled")._value.get()
     result = await handler._checkpoint(task=_task(zone_id=0), plan=plan, now=NOW)
     after = _metrics.CONFIG_HOT_RELOAD.labels(result="disabled")._value.get()
-    assert result is plan.runtime
+    assert result is plan
     assert after - before == 1
 
 
@@ -77,7 +77,7 @@ async def test_checkpoint_db_pool_failure_returns_original(monkeypatch) -> None:
     plan = _plan()
     handler = _handler(live_reload_enabled=True)
     result = await handler._checkpoint(task=_task(), plan=plan, now=NOW)
-    assert result is plan.runtime
+    assert result is plan
 
 
 class _FakePool:
@@ -119,7 +119,7 @@ async def test_checkpoint_locked_zone_no_swap(monkeypatch) -> None:
     plan = _plan()
     handler = _handler(live_reload_enabled=True)
     result = await handler._checkpoint(task=_task(), plan=plan, now=NOW)
-    assert result is plan.runtime, "locked zone must not hot-swap"
+    assert result is plan, "locked zone must not hot-swap"
 
 
 @pytest.mark.asyncio
@@ -140,4 +140,4 @@ async def test_checkpoint_revision_not_advanced_no_swap(monkeypatch) -> None:
     plan = _plan()
     handler = _handler(live_reload_enabled=True)
     result = await handler._checkpoint(task=_task(), plan=plan, now=NOW)
-    assert result is plan.runtime
+    assert result is plan

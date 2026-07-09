@@ -301,6 +301,12 @@ INTENT_SYNC_FAILED = Counter(
     ["operation"],
 )
 
+ORPHAN_INTENT_RECONCILED = Counter(
+    "ae3_orphan_intent_reconciled_total",
+    "Orphan intents reconciled from terminal ae_tasks by background janitor",
+    ["outcome"],
+)
+
 # ─── Stage deadline and correction exhaustion ────────────────────────
 
 STAGE_DEADLINE_EXCEEDED = Counter(
@@ -386,6 +392,12 @@ STALE_TASKS_RECLAIMED = Counter(
     "ae3_stale_tasks_reclaimed_total",
     "Stale claimed/running tasks reclaimed by background janitor",
     ["from_status", "action"],
+)
+
+RECONCILE_FOREIGN_LEASE = Counter(
+    "ae3_reconcile_foreign_lease_total",
+    "Foreign active lease reconcile decisions (bounded skip vs escalate)",
+    ["source", "outcome"],
 )
 
 # ─── Pending queue observability (PR4) ─────────────────────────────

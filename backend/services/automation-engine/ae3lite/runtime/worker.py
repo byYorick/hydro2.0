@@ -55,6 +55,8 @@ class Ae3RuntimeWorker:
         reconcile_poll_interval_sec: float | None = None,
         stale_task_reconcile_use_case: Any | None = None,
         stale_task_reconcile_interval_sec: float | None = None,
+        orphan_intent_reconcile_use_case: Any | None = None,
+        orphan_intent_reconcile_interval_sec: float | None = None,
         shutdown_grace_sec: float = 30.0,
         lease_heartbeat_max_failures: int = 3,
         lease_heartbeat_transient_retries: int = 1,
@@ -67,6 +69,7 @@ class Ae3RuntimeWorker:
         self._startup_recovery_use_case = startup_recovery_use_case
         self._waiting_command_reconcile_use_case = waiting_command_reconcile_use_case
         self._stale_task_reconcile_use_case = stale_task_reconcile_use_case
+        self._orphan_intent_reconcile_use_case = orphan_intent_reconcile_use_case
         self._task_repository = task_repository
         self._command_repository = command_repository
         self._zone_lease_repository = zone_lease_repository
@@ -90,6 +93,15 @@ class Ae3RuntimeWorker:
             ),
         )
         self._last_stale_task_reconcile_monotonic: float | None = None
+        self._orphan_intent_reconcile_interval_sec = max(
+            1.0,
+            float(
+                orphan_intent_reconcile_interval_sec
+                if orphan_intent_reconcile_interval_sec is not None
+                else self._stale_task_reconcile_interval_sec
+            ),
+        )
+        self._last_orphan_intent_reconcile_monotonic: float | None = None
         self._last_active_task_age_metrics_monotonic: float | None = None
         self._active_task_age_metrics_interval_sec = self._stale_task_reconcile_interval_sec
         self._drain_task: Optional[Any] = None
@@ -150,6 +162,7 @@ class Ae3RuntimeWorker:
                 success=bool(getattr(outcome, "success", False)),
                 error_code=getattr(outcome, "error_code", None),
                 error_message=getattr(outcome, "error_message", None),
+                task_id=int(getattr(outcome, "task_id", 0) or 0) or None,
             )
         self._ensure_waiting_command_reconcile_loop()
         return result
@@ -192,7 +205,11 @@ class Ae3RuntimeWorker:
     def _ensure_waiting_command_reconcile_loop(self) -> None:
         if self._shutting_down:
             return
-        if self._waiting_command_reconcile_use_case is None and self._stale_task_reconcile_use_case is None:
+        if (
+            self._waiting_command_reconcile_use_case is None
+            and self._stale_task_reconcile_use_case is None
+            and self._orphan_intent_reconcile_use_case is None
+        ):
             return
         if self._reconcile_loop_task is not None and not self._reconcile_loop_task.done():
             return
@@ -206,6 +223,7 @@ class Ae3RuntimeWorker:
             try:
                 await self._run_waiting_command_reconcile_once()
                 await self._maybe_run_stale_task_reconcile_once()
+                await self._maybe_run_orphan_intent_reconcile_once()
                 await self._maybe_refresh_active_task_age_metrics_once()
                 self._reconcile_consecutive_errors = 0
                 RECONCILE_CONSECUTIVE_ERRORS.set(0)
@@ -269,6 +287,7 @@ class Ae3RuntimeWorker:
                 success=bool(getattr(outcome, "success", False)),
                 error_code=getattr(outcome, "error_code", None),
                 error_message=getattr(outcome, "error_message", None),
+                task_id=int(getattr(outcome, "task_id", 0) or 0) or None,
             )
         if bool(getattr(result, "kick_needed", False)) and not self._shutting_down:
             self._pending_kicks += 1
@@ -298,6 +317,29 @@ class Ae3RuntimeWorker:
                 self._spawn_drain_task()
             else:
                 self._arm_respawn_on_done(drain)
+
+    async def _maybe_run_orphan_intent_reconcile_once(self) -> None:
+        if self._orphan_intent_reconcile_use_case is None:
+            return
+        now_mono = time.monotonic()
+        if self._last_orphan_intent_reconcile_monotonic is not None:
+            elapsed = now_mono - self._last_orphan_intent_reconcile_monotonic
+            if elapsed < self._orphan_intent_reconcile_interval_sec:
+                return
+        self._last_orphan_intent_reconcile_monotonic = now_mono
+        result = await self._orphan_intent_reconcile_use_case.run(
+            now=self._now_fn(),
+            sync_terminal_fn=self._sync_orphan_intent_terminal,
+        )
+        reconciled = int(getattr(result, "reconciled_intents", 0) or 0)
+        if reconciled > 0:
+            self._log_debug(
+                "AE3 orphan intent reconcile: reconciled=%s scanned=%s failed=%s owner=%s",
+                reconciled,
+                getattr(result, "scanned_intents", 0),
+                getattr(result, "failed_intents", 0),
+                self._owner,
+            )
 
     async def _maybe_refresh_active_task_age_metrics_once(self) -> None:
         if self._task_repository is None:
@@ -494,6 +536,8 @@ class Ae3RuntimeWorker:
                 success=False,
                 error_code="ae3_task_execution_crashed",
                 error_message=error_message,
+                task_id=task_id or None,
+                zone_id=zone_id or None,
             )
         if zone_id > 0:
             try:
@@ -536,7 +580,11 @@ class Ae3RuntimeWorker:
     async def _execute_claimed_task(self, *, task: Any) -> None:
         intent_id = int(task.intent_id or 0)
         if intent_id > 0:
-            if not await self._safe_mark_intent_running(intent_id=intent_id):
+            if not await self._safe_mark_intent_running(
+                intent_id=intent_id,
+                task_id=int(task.id),
+                zone_id=int(task.zone_id),
+            ):
                 await self._abort_task_after_intent_sync_failure(task=task, intent_id=intent_id)
                 return
 
@@ -679,6 +727,8 @@ class Ae3RuntimeWorker:
                         success=False,
                         error_code="task_execution_timeout",
                         error_message=f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с",
+                        task_id=int(task.id),
+                        zone_id=int(task.zone_id),
                     )
             self._log_debug("AE3 runtime продолжает drain после задачи с превышенным timeout: task_id=%s", task.id)
             return
@@ -694,6 +744,8 @@ class Ae3RuntimeWorker:
                         success=False,
                         error_code=TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
                         error_message="Во время выполнения задачи был потерян lease зоны",
+                        task_id=int(task.id),
+                        zone_id=int(task.zone_id),
                     )
             self._log_debug("AE3 runtime продолжает drain после потери lease: task_id=%s", task.id)
             return
@@ -880,6 +932,8 @@ class Ae3RuntimeWorker:
             success=False,
             error_code=error_code,
             error_message=error_message,
+            task_id=task_id or None,
+            zone_id=zone_id or None,
         )
         if zone_id > 0:
             try:
@@ -899,7 +953,88 @@ class Ae3RuntimeWorker:
                     exc_info=True,
                 )
 
-    async def _safe_mark_intent_running(self, *, intent_id: int) -> bool:
+    async def _notify_intent_sync_exhausted(
+        self,
+        *,
+        operation: str,
+        intent_id: int,
+        task_id: int | None = None,
+        zone_id: int | None = None,
+        success: bool | None = None,
+        error_code: Any = None,
+        error_message: Any = None,
+    ) -> None:
+        normalized_zone_id = int(zone_id or 0)
+        normalized_task_id = int(task_id or 0)
+        try:
+            await send_infra_alert(
+                code="ae3_intent_sync_failed",
+                alert_type="AE3 Intent Sync Failed",
+                message=(
+                    f"Не удалось синхронизировать intent ({operation}) после исчерпания retry."
+                ),
+                severity="error",
+                zone_id=normalized_zone_id if normalized_zone_id > 0 else None,
+                service="automation-engine",
+                component="worker:intent_sync",
+                intent_id=intent_id,
+                details={
+                    "operation": operation,
+                    "intent_id": intent_id,
+                    "task_id": normalized_task_id if normalized_task_id > 0 else None,
+                    "zone_id": normalized_zone_id if normalized_zone_id > 0 else None,
+                    "success": success,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "owner": self._owner,
+                    "message": (
+                        "Task и intent рассинхронизированы: ae_task terminal, intent остаётся active. "
+                        "Фоновый orphan-intent janitor продолжит retry."
+                    ),
+                },
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 не смог отправить alert intent_sync_failed intent_id=%s operation=%s",
+                intent_id,
+                operation,
+                exc_info=True,
+            )
+
+    async def _resolve_intent_sync_failed_alert(
+        self,
+        *,
+        intent_id: int,
+        task_id: int | None = None,
+        zone_id: int | None = None,
+    ) -> None:
+        normalized_zone_id = int(zone_id or 0)
+        normalized_task_id = int(task_id or 0)
+        try:
+            await send_infra_resolved_alert(
+                code="ae3_intent_sync_failed",
+                alert_type="AE3 Intent Sync Failed",
+                message="Intent успешно синхронизирован в terminal после retry/janitor.",
+                zone_id=normalized_zone_id if normalized_zone_id > 0 else None,
+                service="automation-engine",
+                component="worker:intent_sync",
+                intent_id=intent_id,
+                details={
+                    "intent_id": intent_id,
+                    "task_id": normalized_task_id if normalized_task_id > 0 else None,
+                    "zone_id": normalized_zone_id if normalized_zone_id > 0 else None,
+                    "owner": self._owner,
+                    "message": "Intent успешно синхронизирован в terminal после retry/janitor.",
+                },
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 не смог отправить alert intent_sync_resolved intent_id=%s",
+                intent_id,
+                exc_info=True,
+            )
+
+    async def _safe_mark_intent_running(self, *, intent_id: int, task_id: int | None = None, zone_id: int | None = None) -> bool:
         max_attempts = 1 + self._intent_sync_max_retries
         for attempt in range(max_attempts):
             try:
@@ -915,16 +1050,24 @@ class Ae3RuntimeWorker:
                         intent_id,
                         exc_info=True,
                     )
+                    await self._notify_intent_sync_exhausted(
+                        operation="mark_running",
+                        intent_id=intent_id,
+                        task_id=task_id,
+                        zone_id=zone_id,
+                    )
                     return False
         return False
 
-    async def _safe_mark_intent_terminal(self, *, task: Any, intent_id: int) -> None:
-        await self._safe_mark_intent_terminal_result(
+    async def _safe_mark_intent_terminal(self, *, task: Any, intent_id: int) -> bool:
+        return await self._safe_mark_intent_terminal_result(
             intent_id=intent_id,
             now=self._now_fn(),
             success=str(task.status).strip().lower() == "completed",
             error_code=task.error_code,
             error_message=task.error_message,
+            task_id=int(getattr(task, "id", 0) or 0) or None,
+            zone_id=int(getattr(task, "zone_id", 0) or 0) or None,
         )
 
     async def _safe_mark_intent_terminal_result(
@@ -935,7 +1078,9 @@ class Ae3RuntimeWorker:
         success: bool,
         error_code: Any,
         error_message: Any,
-    ) -> None:
+        task_id: int | None = None,
+        zone_id: int | None = None,
+    ) -> bool:
         max_attempts = 1 + self._intent_sync_max_retries
         for attempt in range(max_attempts):
             try:
@@ -946,18 +1091,40 @@ class Ae3RuntimeWorker:
                     error_code=error_code,
                     error_message=error_message,
                 )
-                return
+                return True
             except asyncio.CancelledError:
                 raise
             except Exception:
                 if attempt + 1 >= max_attempts:
                     INTENT_SYNC_FAILED.labels(operation="mark_terminal").inc()
                     self._logger.warning(
-                        "AE3 runtime не смог перевести intent в terminal: intent_id=%s",
+                        "AE3 runtime не смог перевести intent в terminal: intent_id=%s task_id=%s zone_id=%s",
                         intent_id,
+                        task_id,
+                        zone_id,
                         exc_info=True,
                     )
-                    return
+                    await self._notify_intent_sync_exhausted(
+                        operation="mark_terminal",
+                        intent_id=intent_id,
+                        task_id=task_id,
+                        zone_id=zone_id,
+                        success=success,
+                        error_code=error_code,
+                        error_message=error_message,
+                    )
+                    return False
+        return False
+
+    async def _sync_orphan_intent_terminal(self, **kwargs: Any) -> bool:
+        synced = await self._safe_mark_intent_terminal_result(**kwargs)
+        if synced:
+            await self._resolve_intent_sync_failed_alert(
+                intent_id=int(kwargs.get("intent_id") or 0),
+                task_id=kwargs.get("task_id"),
+                zone_id=kwargs.get("zone_id"),
+            )
+        return synced
 
     def _current_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         try:

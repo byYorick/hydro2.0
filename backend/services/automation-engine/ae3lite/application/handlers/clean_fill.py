@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -36,9 +35,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
-        if new_runtime is not plan.runtime:
-            plan = replace(plan, runtime=new_runtime)
+        plan = await self._checkpoint(task=task, plan=plan, now=now)
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")

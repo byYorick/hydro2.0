@@ -10,7 +10,9 @@ from ae3lite.infrastructure.metrics import inc_observability_write_failed
 
 logger = logging.getLogger(__name__)
 
-_RECOVERY_ALERT_DEDUPE_SOURCES = frozenset({"startup_recovery", "waiting_command_reconcile"})
+_RECOVERY_ALERT_DEDUPE_SOURCES = frozenset(
+    {"startup_recovery", "waiting_command_reconcile", "stale_task_reconcile"}
+)
 
 
 def recovery_task_failed_dedupe_key(

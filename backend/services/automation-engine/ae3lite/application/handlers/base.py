@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
@@ -195,26 +196,25 @@ class BaseStageHandler:
     async def _checkpoint(self, *, task: Any, plan: Any, now: datetime) -> Any:
         """Phase 5.5: live-mode config hot-swap.
 
-        Returns either ``plan.runtime`` unchanged (locked / no advance / TTL
-        expired) or a *new* ``RuntimePlan`` instance built from the current
-        zone snapshot. Handlers should assign the result back to their local
-        ``runtime`` variable:
+        Returns either the original ``plan`` unchanged (locked / no advance /
+        TTL expired) or a *new* ``CommandPlan`` rebuilt from the current zone
+        snapshot. Handlers should assign the result back to their local
+        ``plan`` variable:
 
-            runtime = await self._checkpoint(task=task, plan=plan, now=now)
+            plan = await self._checkpoint(task=task, plan=plan, now=now)
 
         Hot-swap is achieved by:
           1. Comparing `zones.config_revision` (DB) against
-             `plan.runtime.bundle_revision` (in-flight)
+             `plan.runtime.config_revision` (in-flight)
           2. On advance + LIVE mode: re-loading the zone snapshot
-             (`PgZoneSnapshotReadModel().load`) and re-resolving via
-             `resolve_two_tank_runtime_plan` — same code path as
-             cycle_start_planner, so the fresh plan is structurally
-             identical to one built on a fresh task claim.
-          3. Stamping the new revision onto `bundle_revision` so subsequent
-             checkpoints in the same `run()` don't re-trigger.
+             (`PgZoneSnapshotReadModel().load`) and rebuilding via
+             `CycleStartPlanner.build` — same code path as task claim, so
+             both `runtime` and `named_plans` stay aligned with config.
+          3. Stamping the new revision onto `runtime.config_revision` so
+             subsequent checkpoints in the same `run()` don't re-trigger.
 
         Emits `CONFIG_HOT_RELOADED` zone_event + `ae3_config_hot_reload_total`
-        metric on apply. Failures degrade gracefully: returns original runtime
+        metric on apply. Failures degrade gracefully: returns original plan
         with `result=error` metric label.
         """
         from ae3lite.infrastructure.metrics import (
@@ -225,7 +225,7 @@ class BaseStageHandler:
 
         runtime = plan.runtime
         if not self._live_reload_enabled:
-            return runtime
+            return plan
 
         # Phase 5: compare integer `zones.config_revision` (DB) vs the
         # monotonic counter snapshot read at plan-build time. Do NOT use
@@ -238,7 +238,7 @@ class BaseStageHandler:
         zone_id = int(getattr(task, "zone_id", 0) or 0)
         if zone_id <= 0:
             CONFIG_HOT_RELOAD.labels(result="disabled").inc()
-            return runtime
+            return plan
 
         try:
             from common.db import get_pool
@@ -246,7 +246,7 @@ class BaseStageHandler:
         except Exception:
             _logger.warning("checkpoint: DB pool unavailable, skipping live-reload", exc_info=True)
             CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return runtime
+            return plan
 
         # Cheap pre-check: read zone's mode/revision/TTL only.
         try:
@@ -258,13 +258,13 @@ class BaseStageHandler:
         except Exception:
             _logger.warning("checkpoint: zone read failed zone_id=%s", zone_id, exc_info=True)
             CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return runtime
+            return plan
 
         from ae3lite.config.modes import ConfigMode
 
         if zone_row is None:
             CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return runtime
+            return plan
         observed_mode = ConfigMode.parse(zone_row.get("config_mode"))
         # Phase 7 gauge: observer-style publish на каждом checkpoint. Дёшево
         # потому что уже читаем zone row ради revision сравнения.
@@ -276,7 +276,7 @@ class BaseStageHandler:
             pass
         if observed_mode is not ConfigMode.LIVE:
             CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return runtime
+            return plan
         live_until = zone_row.get("live_until")
         if isinstance(live_until, datetime):
             now_utc = datetime.now(timezone.utc)
@@ -284,36 +284,35 @@ class BaseStageHandler:
                 live_until = live_until.replace(tzinfo=timezone.utc)
             if live_until < now_utc:
                 CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-                return runtime
+                return plan
         new_revision = int(zone_row.get("config_revision") or 0)
         if new_revision <= current_revision:
             CONFIG_HOT_RELOAD.labels(result="no_change").inc()
-            return runtime
+            return plan
 
-        # Revision advanced — rebuild the full RuntimePlan via the canonical
-        # planner path so the result is structurally identical to a fresh
-        # task-claim plan.
+        # Revision advanced — rebuild the full CommandPlan via the canonical
+        # planner path so runtime *and* named_plans stay aligned with config.
         try:
             from ae3lite.infrastructure.read_models.zone_snapshot_read_model import (
                 PgZoneSnapshotReadModel,
             )
-            from ae3lite.config.runtime_plan_builder import (
-                resolve_two_tank_runtime_plan,
-            )
+            from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
 
             snapshot = await PgZoneSnapshotReadModel().load(zone_id=zone_id)
-            new_runtime = resolve_two_tank_runtime_plan(snapshot)
-            # Stamp the observed revision so subsequent checkpoints in this
-            # `run()` won't re-trigger. Keep the bundle_revision (content hash)
-            # whatever the resolver chose.
-            new_runtime = new_runtime.model_copy(update={"config_revision": int(new_revision)})
+            new_plan = CycleStartPlanner().build(task=task, snapshot=snapshot)
+            new_runtime = getattr(new_plan, "runtime", None)
+            if new_runtime is not None:
+                new_plan = replace(
+                    new_plan,
+                    runtime=new_runtime.model_copy(update={"config_revision": int(new_revision)}),
+                )
         except Exception:
             _logger.warning(
                 "checkpoint: snapshot rebuild failed zone_id=%s rev=%s",
                 zone_id, new_revision, exc_info=True,
             )
             CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return runtime
+            return plan
 
         try:
             await create_zone_event(
@@ -344,7 +343,7 @@ class BaseStageHandler:
             "config_hot_reload: applied zone_id=%s rev=%s→%s",
             zone_id, current_revision, new_revision,
         )
-        return new_runtime
+        return new_plan
 
     def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
         if deadline is None:

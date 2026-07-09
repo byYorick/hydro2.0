@@ -18,6 +18,7 @@ from ae3lite.application.use_cases import (
     RequestManualStepUseCase,
     SetControlModeUseCase,
     StartupRecoveryUseCase,
+    OrphanIntentReconcileUseCase,
     StaleTaskReconcileUseCase,
     TriggerSolutionTopupFromLevelEventUseCase,
     WaitingCommandReconcileUseCase,
@@ -120,11 +121,14 @@ def build_ae3_runtime_bundle(
         topology_registry=topology_registry,
         alert_repository=alert_repository,
         worker_owner=config.worker_owner,
+        foreign_lease_skip_escalate_sec=config.foreign_lease_skip_escalate_sec,
     )
     waiting_command_reconcile_use_case = WaitingCommandReconcileUseCase(
         task_repository=task_repository,
         lease_repository=zone_lease_repository,
         startup_recovery_use_case=startup_recovery_use_case,
+        alert_repository=alert_repository,
+        foreign_lease_skip_escalate_sec=config.foreign_lease_skip_escalate_sec,
         batch_limit=config.waiting_command_reconcile_batch_limit,
     )
     stale_task_reconcile_use_case = StaleTaskReconcileUseCase(
@@ -136,6 +140,11 @@ def build_ae3_runtime_bundle(
         stale_running_ttl_sec=config.stale_running_ttl_sec,
         stale_waiting_command_ttl_sec=config.waiting_command_stale_ttl_sec,
         stale_unconfirmed_command_ttl_sec=config.unconfirmed_command_stale_ttl_sec,
+        foreign_lease_skip_escalate_sec=config.foreign_lease_skip_escalate_sec,
+    )
+    orphan_intent_reconcile_use_case = OrphanIntentReconcileUseCase(
+        zone_intent_repository=zone_intent_repository,
+        batch_limit=config.orphan_intent_reconcile_batch_limit,
     )
     pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
@@ -175,6 +184,7 @@ def build_ae3_runtime_bundle(
         startup_recovery_use_case=startup_recovery_use_case,
         waiting_command_reconcile_use_case=waiting_command_reconcile_use_case,
         stale_task_reconcile_use_case=stale_task_reconcile_use_case,
+        orphan_intent_reconcile_use_case=orphan_intent_reconcile_use_case,
         task_repository=task_repository,
         command_repository=command_repository,
         zone_lease_repository=zone_lease_repository,
@@ -187,6 +197,7 @@ def build_ae3_runtime_bundle(
         max_parallel_tasks=config.max_parallel_tasks,
         reconcile_poll_interval_sec=config.reconcile_poll_interval_sec,
         stale_task_reconcile_interval_sec=config.stale_task_reconcile_sec,
+        orphan_intent_reconcile_interval_sec=config.orphan_intent_reconcile_sec,
         shutdown_grace_sec=config.shutdown_grace_sec,
         lease_heartbeat_max_failures=config.lease_heartbeat_max_failures,
         lease_heartbeat_transient_retries=config.lease_heartbeat_transient_retries,

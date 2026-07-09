@@ -55,9 +55,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        new_runtime = await self._checkpoint(task=task, plan=plan, now=now)
-        if new_runtime is not plan.runtime:
-            plan = replace(plan, runtime=new_runtime)
+        plan = await self._checkpoint(task=task, plan=plan, now=now)
         runtime = self._require_runtime_plan(plan=plan)
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")

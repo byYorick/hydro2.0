@@ -11,6 +11,7 @@ from .publish_planned_command import PublishPlannedCommandUseCase
 from .request_manual_step import RequestManualStepUseCase
 from .set_control_mode import SetControlModeUseCase
 from .startup_recovery import StartupRecoveryUseCase
+from .orphan_intent_reconcile import OrphanIntentReconcileUseCase
 from .stale_task_reconcile import StaleTaskReconcileUseCase
 from .trigger_solution_topup_from_level_event import TriggerSolutionTopupFromLevelEventUseCase
 from .waiting_command_reconcile import WaitingCommandReconcileUseCase
@@ -28,6 +29,7 @@ __all__ = [
     "RequestManualStepUseCase",
     "SetControlModeUseCase",
     "StartupRecoveryUseCase",
+    "OrphanIntentReconcileUseCase",
     "StaleTaskReconcileUseCase",
     "TriggerSolutionTopupFromLevelEventUseCase",
     "WaitingCommandReconcileUseCase",
