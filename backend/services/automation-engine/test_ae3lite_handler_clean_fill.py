@@ -119,16 +119,17 @@ class _Gateway:
 
 
 class _Plan:
-    runtime = make_runtime_plan(
-        clean_max_sensor_labels=["clean_max"],
-        clean_min_sensor_labels=["clean_min"],
-        clean_fill_retry_cycles=0,
-        level_poll_interval_sec=10,
-    )
-    named_plans = {
-        "clean_fill_stop": ("stop_cmd",),
-        "irr_state_probe": ("probe_cmd",),
-    }
+    def __init__(self, *, clean_fill_retry_cycles: int = 0) -> None:
+        self.runtime = make_runtime_plan(
+            clean_max_sensor_labels=["clean_max"],
+            clean_min_sensor_labels=["clean_min"],
+            clean_fill_retry_cycles=clean_fill_retry_cycles,
+            level_poll_interval_sec=10,
+        )
+        self.named_plans = {
+            "clean_fill_stop": ("stop_cmd",),
+            "irr_state_probe": ("probe_cmd",),
+        }
 
 
 def _handler() -> CleanFillCheckHandler:
@@ -228,9 +229,11 @@ async def test_clean_fill_recent_source_empty_retries_two_cycles_then_fail_close
     )
     handler = CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway())
 
-    first = await handler.run(task=_task(clean_fill_cycle=1), plan=_Plan(), stage_def=None, now=NOW)
-    second = await handler.run(task=_task(clean_fill_cycle=2), plan=_Plan(), stage_def=None, now=NOW)
-    third = await handler.run(task=_task(clean_fill_cycle=3), plan=_Plan(), stage_def=None, now=NOW)
+    plan = _Plan(clean_fill_retry_cycles=2)
+
+    first = await handler.run(task=_task(clean_fill_cycle=1), plan=plan, stage_def=None, now=NOW)
+    second = await handler.run(task=_task(clean_fill_cycle=2), plan=plan, stage_def=None, now=NOW)
+    third = await handler.run(task=_task(clean_fill_cycle=3), plan=plan, stage_def=None, now=NOW)
 
     assert first.kind == "transition"
     assert first.next_stage == "clean_fill_retry_stop"
@@ -240,6 +243,28 @@ async def test_clean_fill_recent_source_empty_retries_two_cycles_then_fail_close
     assert second.clean_fill_cycle == 3
     assert third.kind == "transition"
     assert third.next_stage == "clean_fill_source_empty_stop"
+
+
+@pytest.mark.asyncio
+async def test_clean_fill_recent_source_empty_uses_runtime_retry_limit() -> None:
+    monitor = _Monitor(
+        recent_storage_event={
+            "event_type": "CLEAN_FILL_SOURCE_EMPTY",
+            "event_id": 13,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        }
+    )
+
+    outcome = await CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway()).run(
+        task=_task(clean_fill_cycle=1),
+        plan=_Plan(clean_fill_retry_cycles=0),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "clean_fill_source_empty_stop"
 
 
 @pytest.mark.asyncio
@@ -271,7 +296,7 @@ async def test_clean_fill_recent_completed_event_finishes_without_clean_max_sens
 
     outcome = await CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway()).run(
         task=_task(),
-        plan=_Plan(),
+        plan=_Plan(clean_fill_retry_cycles=1),
         stage_def=None,
         now=NOW,
     )
@@ -294,7 +319,7 @@ async def test_manual_clean_fill_still_obeys_source_empty_event() -> None:
 
     outcome = await CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway()).run(
         task=_task(control_mode="manual"),
-        plan=_Plan(),
+        plan=_Plan(clean_fill_retry_cycles=1),
         stage_def=None,
         now=NOW,
     )

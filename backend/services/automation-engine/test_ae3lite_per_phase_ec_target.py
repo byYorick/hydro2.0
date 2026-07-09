@@ -116,6 +116,7 @@ def _minimal_zone_correction_config(
             "prepare_recirculation_max_attempts": 3,
             "prepare_recirculation_max_correction_attempts": 20,
             "prepare_recirculation_correction_slack_sec": 0,
+            "solution_fill_correction_slack_sec": 900,
             "telemetry_stale_retry_sec": 30,
             "decision_window_retry_sec": 30,
             "low_water_retry_sec": 60,

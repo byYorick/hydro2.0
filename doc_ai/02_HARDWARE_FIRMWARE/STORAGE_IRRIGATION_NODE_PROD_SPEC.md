@@ -94,10 +94,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - для `clean_fill` проверка `level_clean_min` по `clean_fill_min_check_delay_ms` **не применяется**:
   клапан остаётся открытым, пока уровень не достигнет `level_clean_max`; пустой источник определяется
   через AE3 timeout/retry;
-- через `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min`; если датчик `0`,
+- после `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min` на каждом fail-safe scan до terminal event; если датчик `0`,
   локально завершает `solution_fill`
   (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_source_empty`;
-- через `solution_fill_solution_min_check_delay_ms` нода проверяет `level_solution_min`; если датчик `0`,
+- после `solution_fill_solution_min_check_delay_ms` нода проверяет `level_solution_min` на каждом fail-safe scan до terminal event; если датчик `0`,
   локально завершает `solution_fill`
   (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_leak_detected`;
 - `level_solution_max` локально завершает `solution_fill`
@@ -108,8 +108,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - при включённом `irrigation_solution_min_guard_enabled` нода завершает `irrigation`
   по `level_solution_min=0` с событием `irrigation_solution_low`;
 - отдельная физическая кнопка `E-Stop` на `GPIO23` (active-low, pull-up) пока удерживается в нажатом состоянии
-  принудительно выключает все 6 актуаторов; на нажатие нода публикует `emergency_stop_activated`,
-  на отпускание локально восстанавливает предыдущий снимок actuator-состояний.
+  принудительно выключает все 6 актуаторов и отклоняет MQTT `set_relay {state:true}` с
+  `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
+  На нажатие нода публикует `emergency_stop_activated`, на отпускание локально восстанавливает
+  предыдущий снимок actuator-состояний.
+- firmware terminal stop path (`clean_fill_completed`, `solution_fill_*`, `prepare_recirculation`,
+  `irrigation`) снимает активный stage-timeout guard соответствующего stage, чтобы уже завершённый
+  stage не породил поздний ложный timeout-event;
 - каждый `level_*` канал дополнительно публикует `.../{channel}/event` с
   `event_code=level_switch_changed`, полями `channel`, `state`, `initial` и полным `snapshot`;
 - channel-level событие отправляется на оба фронта (`0 -> 1`, `1 -> 0`) после debounce-подтверждения;
@@ -201,6 +206,8 @@ Top-level секция `fail_safe_guards` допускается и исполь
 Mirror в NodeConfig:
 - `recirculation_stop_on_solution_min` -> `recirculation_solution_min_guard_enabled`
 - `irrigation_stop_on_solution_min` -> `irrigation_solution_min_guard_enabled`
+- `clean_fill_min_check_delay_ms` deprecated: поле сохраняется в mirror для совместимости, но
+  `clean_fill` min-guard в прошивке не применяется.
 
 ---
 

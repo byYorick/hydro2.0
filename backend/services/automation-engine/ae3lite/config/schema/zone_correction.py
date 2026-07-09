@@ -211,7 +211,17 @@ class Timing(_DictShim, BaseModel):
 class Dosing(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    solution_volume_l: Liters
+    solution_volume_l: Annotated[
+        float,
+        Field(
+            ge=1.0,
+            le=10_000.0,
+            description=(
+                "Объём растворного контура (л). Обязателен для полноты config/UI; "
+                "не входит в PID ml math в CorrectionPlanner."
+            ),
+        ),
+    ]
     dose_ec_channel: Annotated[str, Field(min_length=1, max_length=64)]
     dose_ph_up_channel: Annotated[str, Field(min_length=1, max_length=64)]
     dose_ph_down_channel: Annotated[str, Field(min_length=1, max_length=64)]
@@ -229,6 +239,7 @@ class Retry(_DictShim, BaseModel):
     max_ph_correction_attempts: PositiveCount
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
+    solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     prepare_recirculation_max_attempts: Annotated[int, Field(ge=1, le=10)]
     prepare_recirculation_max_correction_attempts: PositiveCount
     telemetry_stale_retry_sec: Annotated[int, Field(ge=1, le=3600)]

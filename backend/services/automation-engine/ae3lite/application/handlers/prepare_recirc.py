@@ -44,25 +44,25 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             _logger.info(
-                "prepare_recirculation_check: дедлайн превышен, окно исчерпывается zone_id=%s retry=%s",
-                task.zone_id, task.workflow.stage_retry_count + 1,
+                "prepare_recirculation_check: дедлайн превышен, окно исчерпывается zone_id=%s retry_count=%s",
+                task.zone_id, task.workflow.stage_retry_count,
             )
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
+                stage_retry_count=task.workflow.stage_retry_count,
             )
         if self._deadline_too_close_for_irr_probe(now=now, deadline=deadline, runtime=runtime):
             _logger.info(
                 "prepare_recirculation_check: оставшееся время stage меньше бюджета IRR probe, "
-                "окно исчерпывается zone_id=%s retry=%s",
+                "окно исчерпывается zone_id=%s retry_count=%s",
                 task.zone_id,
-                task.workflow.stage_retry_count + 1,
+                task.workflow.stage_retry_count,
             )
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
+                stage_retry_count=task.workflow.stage_retry_count,
             )
 
         recent_storage_event = await self._read_recent_storage_event(
@@ -102,7 +102,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             exhausted_outcome=StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
+                stage_retry_count=task.workflow.stage_retry_count,
             ),
         )
         if probe_outcome is not None:

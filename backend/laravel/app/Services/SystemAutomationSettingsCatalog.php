@@ -18,6 +18,7 @@ class SystemAutomationSettingsCatalog
                     ['path' => 'ml_per_sec_min', 'label' => 'Min ml/sec', 'description' => 'Минимальная допустимая скорость насоса.', 'type' => 'number', 'min' => 0.001, 'max' => 1.0, 'step' => 0.001],
                     ['path' => 'ml_per_sec_max', 'label' => 'Max ml/sec', 'description' => 'Максимальная допустимая скорость насоса.', 'type' => 'number', 'min' => 5.0, 'max' => 200.0, 'step' => 0.1],
                     ['path' => 'min_dose_ms', 'label' => 'Min dose ms', 'description' => 'Минимальный эффективный импульс дозирования.', 'type' => 'integer', 'min' => 10, 'max' => 500],
+                    ['path' => 'max_dose_ms', 'label' => 'Max dose ms', 'description' => 'Максимальная длительность одной дозы AE3 (должна совпадать с NodeConfig safe_limits.max_duration_ms на ноде).', 'type' => 'integer', 'min' => 1000, 'max' => 300000],
                     ['path' => 'calibration_duration_min_sec', 'label' => 'Calibration min sec', 'description' => 'Минимальная длительность pump run для калибровки.', 'type' => 'integer', 'min' => 1, 'max' => 10],
                     ['path' => 'calibration_duration_max_sec', 'label' => 'Calibration max sec', 'description' => 'Максимальная длительность pump run для калибровки.', 'type' => 'integer', 'min' => 30, 'max' => 600],
                     ['path' => 'quality_score_basic', 'label' => 'Quality basic', 'description' => 'Score для базовой калибровки без K.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
@@ -218,6 +219,7 @@ class SystemAutomationSettingsCatalog
                 'ml_per_sec_min' => 0.01,
                 'ml_per_sec_max' => 20.0,
                 'min_dose_ms' => 50,
+                'max_dose_ms' => 60_000,
                 'calibration_duration_min_sec' => 1,
                 'calibration_duration_max_sec' => 120,
                 'quality_score_basic' => 0.75,
@@ -539,6 +541,8 @@ class SystemAutomationSettingsCatalog
             $mlPerSecMax = (float) ($effectiveConfig['ml_per_sec_max'] ?? 0);
             $calibrationDurationMin = (int) ($effectiveConfig['calibration_duration_min_sec'] ?? 0);
             $calibrationDurationMax = (int) ($effectiveConfig['calibration_duration_max_sec'] ?? 0);
+            $minDoseMs = (int) ($effectiveConfig['min_dose_ms'] ?? 0);
+            $maxDoseMs = (int) ($effectiveConfig['max_dose_ms'] ?? 0);
             $ageWarningDays = (int) ($effectiveConfig['age_warning_days'] ?? 0);
             $ageCriticalDays = (int) ($effectiveConfig['age_critical_days'] ?? 0);
 
@@ -547,6 +551,9 @@ class SystemAutomationSettingsCatalog
             }
             if ($calibrationDurationMin > $calibrationDurationMax) {
                 throw new InvalidArgumentException('Field pump_calibration.calibration_duration_min_sec must be <= pump_calibration.calibration_duration_max_sec.');
+            }
+            if ($maxDoseMs > 0 && $minDoseMs > 0 && $maxDoseMs < $minDoseMs) {
+                throw new InvalidArgumentException('Field pump_calibration.max_dose_ms must be >= pump_calibration.min_dose_ms.');
             }
             if ($ageWarningDays > $ageCriticalDays) {
                 throw new InvalidArgumentException('Field pump_calibration.age_warning_days must be <= pump_calibration.age_critical_days.');

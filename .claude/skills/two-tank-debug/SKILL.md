@@ -1,13 +1,38 @@
 ---
 name: two-tank-debug
-description: Диагностика застрявшего two-tank startup workflow зоны. Используй когда зона не проходит startup → clean_fill → solution_fill → prepare_recirculation → READY → irrig_recirc, зависла в промежуточной фазе, или корректировки pH/EC не запускаются.
+description: Диагностика застрявшего two-tank startup workflow зоны. Используй когда зона не проходит idle/startup → tank_filling → tank_recirc → ready → irrigating/irrig_recirc, зависла в промежуточной фазе, или корректировки pH/EC не запускаются.
 ---
 
 # Two-Tank Startup Workflow — Диагностика
 
-Канонический порядок фаз: `startup → clean_fill → solution_fill → prepare_recirculation → READY → irrig_recirc`.
+Различай два уровня состояния:
 
-Корректировки pH/EC разрешены только в фазах из `WORKFLOW_CORRECTION_OPEN_PHASES` (см. [backend/services/automation-engine/services/zone_automation_constants.py](backend/services/automation-engine/services/zone_automation_constants.py)). `irrig_recirc` должен быть в списке — иначе корректировки не запустятся даже при правильной фазе.
+| Уровень | Где смотреть | Примеры |
+|---------|--------------|---------|
+| **`workflow_phase`** | `zone_workflow_state.workflow_phase` | `idle`, `tank_filling`, `tank_recirc`, `ready`, `irrigating`, `irrig_recirc` |
+| **`stage`** | `ae_tasks.current_stage` / `payload.ae3_cycle_start_stage` | `startup`, `clean_fill_check`, `solution_fill_check`, `prepare_recirculation_check`, `complete_ready` |
+
+Канонический happy-path stages (`cycle_start`):
+
+```
+startup (phase=idle)
+  → clean_fill_* (phase=tank_filling)
+  → solution_fill_* (phase=tank_filling)
+  → prepare_recirculation_* (phase=tank_recirc)
+  → complete_ready (phase=ready)
+```
+
+Полив — отдельный task `irrigation_start` (только при `workflow_phase=ready`):
+
+```
+await_ready → decision_gate → irrigation_* (phase=irrigating)
+  → irrigation_stop_to_ready | irrigation_stop_to_recovery (phase=irrig_recirc)
+```
+
+Коррекции pH/EC открываются **внутри check-stages** с `has_correction=True` в
+[`workflow_topology.py`](backend/services/automation-engine/ae3lite/application/services/workflow_topology.py):
+`solution_fill_check`, `prepare_recirculation_check`, `irrigation_check`, `irrigation_recovery_check`.
+Отдельного `WORKFLOW_CORRECTION_OPEN_PHASES` больше нет.
 
 ## Шаг 0 — Уточни zone_id
 
@@ -16,39 +41,43 @@ description: Диагностика застрявшего two-tank startup work
 ## Шаг 1 — Текущая фаза workflow
 
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT workflow_phase, payload->>'workflow', updated_at FROM zone_workflow_state WHERE zone_id=<ID>"
+psql -h localhost -U hydro -d hydro_dev -c "SELECT workflow_phase, payload->>'ae3_cycle_start_stage' AS stage, updated_at FROM zone_workflow_state WHERE zone_id=<ID>"
 ```
 
-Если пусто — зона не инициализирована для two-tank. Если фаза `startup/clean_fill/solution_fill/prepare_recirculation` и `updated_at` старше 10 мин — **вероятно stuck**.
+Если пусто — зона не инициализирована для two-tank. Если `workflow_phase` ∈ `{idle,tank_filling,tank_recirc}` и `updated_at` старше 10 мин при active task — **вероятно stuck**.
 
 ## Шаг 2 — Последние workflow-события
 
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT type, payload_json->>'phase', payload_json->>'reason', created_at FROM zone_events WHERE zone_id=<ID> AND type LIKE '%WORKFLOW%' OR type LIKE '%PHASE%' ORDER BY created_at DESC LIMIT 15"
+psql -h localhost -U hydro -d hydro_dev -c "SELECT type, payload_json->>'phase', payload_json->>'reason', created_at FROM zone_events WHERE zone_id=<ID> AND (type LIKE '%WORKFLOW%' OR type LIKE '%PHASE%' OR type LIKE '%FILL%' OR type LIKE '%RECIRC%' OR type LIKE '%CORRECTION%') ORDER BY created_at DESC LIMIT 15"
 ```
 
-Ищи: `*_PHASE_TRANSITION_FAILED`, `*_TIMEOUT`, `level_switch_changed`, `TWO_TANK_*`.
+Ищи: `*_TIMEOUT`, `LEVEL_SWITCH_CHANGED`, `CLEAN_FILL_*`, `SOLUTION_FILL_*`, `RECIRCULATION_*`, `TWO_TANK_*`, `CORRECTION_*`.
 
 ## Шаг 3 — Active task
 
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT id, status, workflow, details FROM zone_automation_tasks WHERE zone_id=<ID> AND status IN ('pending','claimed','running','waiting_command') ORDER BY created_at DESC"
+psql -h localhost -U hydro -d hydro_dev -c "SELECT id, task_type, status, current_stage, workflow_phase, details, updated_at FROM ae_tasks WHERE zone_id=<ID> AND status IN ('pending','claimed','running','waiting_command') ORDER BY created_at DESC"
 ```
 
+Если таблица/колонки отличаются в окружении — смотри `zone_automation_tasks` / JSON `workflow`.  
 Если `status='waiting_command'` и нет недавних command responses — команда потерялась. Если `status='running'` > 5 мин — probable hang.
 
 ## Шаг 4 — Water level sensors
 
-Критично для two-tank. После fill-а уровни должны быть `latched=1`.
+Критично для two-tank.
 
 ```
 psql -h localhost -U hydro -d hydro_dev -c "SELECT metric_type, value, ts FROM telemetry_last WHERE zone_id=<ID> AND metric_type IN ('LEVEL_CLEAN_MIN','LEVEL_CLEAN_MAX','LEVEL_SOLUTION_MIN','LEVEL_SOLUTION_MAX')"
 ```
 
-Если **все значения = 0** → `check_water_level()` вернёт False → корректировки заблокированы. Типовые причины:
-- Узел перезагружался и сбросил latch (нужен новый fill cycle).
-- Датчики не физически подключены / broken wire.
-- В dev-симуляторе — не отработали latch-delay-ы (10s/30s/60s в test_node).
+Интерпретация:
+- `LEVEL_CLEAN_MAX=0` на startup → ожидается `clean_fill` (клапан `valve_clean_fill` ON).
+- `LEVEL_CLEAN_MAX=1` → clean_fill пропускается / завершается.
+- `LEVEL_SOLUTION_MAX=1` → solution_fill complete.
+- Все `0` после fill → датчики не latched / узел перезагружался / broken wire / sim latch-delay.
+
+Production-нода **не** публикует `clean_fill_source_empty`; пустой источник clean → AE3 timeout/retry (`clean_fill_timeout_sec`, `clean_fill_retry_cycles`).
 
 ## Шаг 5 — Узлы зоны и их online-статус
 
@@ -56,7 +85,7 @@ psql -h localhost -U hydro -d hydro_dev -c "SELECT metric_type, value, ts FROM t
 psql -h localhost -U hydro -d hydro_dev -c "SELECT n.uid, n.type, n.status, n.last_seen_at FROM nodes n JOIN node_zones nz ON nz.node_id=n.id WHERE nz.zone_id=<ID>"
 ```
 
-Если насосный узел (`pump_node`) offline — fill-команды не дойдут → зависание в `clean_fill`/`solution_fill`.
+Если irrig/storage узел offline — fill-команды не дойдут → зависание в `clean_fill_*` / `solution_fill_*`.
 
 ## Шаг 6 — Последние команды fill/drain
 
@@ -65,19 +94,22 @@ psql -h localhost -U hydro -d hydro_dev -c "SELECT cmd, status, node_uid, channe
 ```
 
 Флаги для отчёта:
-- `status='INVALID'` → ошибка payload, смотри reason.
-- `status='ERROR'` → узел отверг (I2C fail, safe-limit, etc.).
+- `status='INVALID'` → ошибка payload.
+- `status='ERROR'` + `estop_active` → E-Stop удерживается (ON-команды отвергаются нодой).
+- `status='ERROR'` → узел отверг (interlock, cooldown, I2C, safe-limit).
 - `status='TIMEOUT'` → нет response от узла.
-- `status='NO_EFFECT'` → команда прошла но state не изменился (3 подряд для pid_type → alert + fail-closed).
+- `status='NO_EFFECT'` → 3 подряд для pid_type → alert + fail-closed.
 
-## Шаг 7 — Correction gate (`irrig_recirc` разрешён?)
+## Шаг 7 — Correction gate
 
-Grep в коде:
+Проверь, что active stage — один из correction-capable check-stages (см. выше).  
+В `ready` без активного check-stage коррекции не идут (кроме topup/irrigation path).
+
+Для `irrigation_recovery_check` (`workflow_phase=irrig_recirc`) коррекция должна быть доступна через topology `has_correction=True`.
+
 ```
-grep -n "WORKFLOW_CORRECTION_OPEN_PHASES" backend/services/automation-engine/services/zone_automation_constants.py
+rg -n "has_correction=True" backend/services/automation-engine/ae3lite/application/services/workflow_topology.py
 ```
-
-Убедись что `"irrig_recirc"` присутствует в списке. Если нет — это баг (memory хранит факт что он был добавлен в коммите, регресс = немедленный flag).
 
 ## Шаг 8 — AE3 runtime state
 
@@ -85,16 +117,17 @@ grep -n "WORKFLOW_CORRECTION_OPEN_PHASES" backend/services/automation-engine/ser
 curl -s http://localhost:9405/zones/<ID>/state | jq .
 ```
 
-Сверь `workflow_phase` с тем что в БД (шаг 1). Расхождение = проблема синхронизации read-model.
+Сверь `workflow_phase` / stage с БД (шаг 1). Расхождение = проблема синхронизации read-model.
 
 ## Итоговый отчёт
 
 Структурируй вывод по секциям Шагов. В **конце** — краткий вердикт:
-- **Где застряла:** фаза X, с момента Y
-- **Вероятная причина:** (A) команда не дошла / (B) level sensors не latched / (C) task hung / (D) узел offline / (E) gate blocks correction
+- **Где застряла:** `workflow_phase=X`, `stage=Y`, с момента Z
+- **Вероятная причина:** (A) команда не дошла / (B) level sensors / (C) task hung / (D) узел offline / (E) correction не открыт на этом stage / (F) E-Stop / (G) stage timeout
 - **Рекомендованное действие** (не выполняй без подтверждения пользователя):
-  - Если stuck и задача hung → предложить `/fix-stuck-zone <ID>` (разблокирует DELETE zone_workflow_state).
-  - Если level sensors = 0 → перезапустить fill workflow через `POST /zones/<ID>/start-cycle`.
+  - Если stuck и задача hung → предложить `/fix-stuck-zone <ID>`.
+  - Если levels = 0 после fill → перезапустить `POST /zones/<ID>/start-cycle`.
   - Если узел offline → проверить firmware/power.
+  - Если `estop_active` → снять E-Stop и проверить restore snapshot.
 
 **Ничего destructive не делай без явного "да" от пользователя.**

@@ -1024,6 +1024,28 @@ async def test_router_solution_fill_check_deadline_includes_correction_slack():
 
     await router.run(
         task=task,
+        plan=_MockPlan(
+            runtime={
+                "solution_fill_timeout_sec": 600,
+                "solution_fill_correction_slack_sec": 120,
+            }
+        ),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "solution_fill_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=600 + 120)
+
+
+async def test_router_solution_fill_check_deadline_falls_back_when_slack_missing():
+    outcome = StageOutcome(kind="transition", next_stage="solution_fill_check")
+    task = _make_task(stage="solution_fill_start", phase="tank_filling")
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
         plan=_MockPlan(runtime={"solution_fill_timeout_sec": 600}),
         now=NOW,
     )

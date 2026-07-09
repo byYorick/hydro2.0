@@ -1,7 +1,7 @@
 """Unit tests for PrepareRecircCheckHandler.
 
 Outcomes:
-1. Deadline exceeded → prepare_recirculation_window_exhausted (stage_retry_count++)
+1. Deadline exceeded → prepare_recirculation_window_exhausted (stage_retry_count preserved)
 2. Targets reached → prepare_recirculation_stop_to_ready
 3. Targets not reached → enter_correction (sensors_already_active=True)
 4. IRR state probe mismatch → TaskExecutionError (irr_state_mismatch)
@@ -274,25 +274,25 @@ def _make_handler(monitor: _Monitor | None = None, gateway: _MockGateway | None 
 
 @pytest.mark.asyncio
 async def test_deadline_exceeded_returns_window_exhausted() -> None:
-    """Deadline passed → prepare_recirculation_window_exhausted with retry_count+1."""
+    """Deadline passed → prepare_recirculation_window_exhausted without burning retry yet."""
     monitor = _Monitor()
     handler = _make_handler(monitor=monitor)
     task = _make_task(deadline=PAST, retry_count=2)
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.stage_retry_count == 2
     assert monitor.irr_reads == 0
 
 
 @pytest.mark.asyncio
-async def test_deadline_exceeded_increments_retry_count() -> None:
-    """Retry count increments correctly for any initial value."""
+async def test_deadline_exceeded_preserves_retry_count() -> None:
+    """Retry count is burned by window restart, not by the check stage."""
     handler = _make_handler()
     for initial_retry in (0, 1, 5):
         task = _make_task(deadline=PAST, retry_count=initial_retry)
         outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
-        assert outcome.stage_retry_count == initial_retry + 1
+        assert outcome.stage_retry_count == initial_retry
 
 
 @pytest.mark.asyncio
@@ -305,7 +305,7 @@ async def test_deadline_too_close_for_probe_exhausts_window_without_probe() -> N
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 2
+    assert outcome.stage_retry_count == 1
     assert monitor.irr_reads == 0
 
 
@@ -319,7 +319,7 @@ async def test_deadline_six_seconds_away_still_skips_probe_on_realhw_budget() ->
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.stage_retry_count == 2
     assert monitor.irr_reads == 0
 
 

@@ -123,9 +123,37 @@ bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char 
     return false;
 }
 
+bool storage_irrigation_node_complete_stage_guard_for_stage_locked(const char *stage, char *cmd_id_out, size_t cmd_id_out_size) {
+    if (cmd_id_out && cmd_id_out_size > 0) {
+        cmd_id_out[0] = '\0';
+    }
+    if (!stage || stage[0] == '\0') {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(g_stage_guards) / sizeof(g_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &g_stage_guards[i];
+        if (!guard->active || strcmp(guard->stage, stage) != 0) {
+            continue;
+        }
+        guard->active = false;
+        guard->timeout_pending = false;
+        xTimerStop(guard->timer, 0);
+        if (cmd_id_out && cmd_id_out_size > 0 && guard->cmd_id[0] != '\0') {
+            strncpy(cmd_id_out, guard->cmd_id, cmd_id_out_size - 1);
+            cmd_id_out[cmd_id_out_size - 1] = '\0';
+        }
+        guard->cmd_id[0] = '\0';
+        return true;
+    }
+    return false;
+}
+
 bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
     const char *channels[3] = {0};
     size_t count = 0;
+    if (!stage) {
+        return false;
+    }
     if (strcmp(stage, "solution_fill") == 0) {
         channels[0] = "pump_main";
         channels[1] = "valve_solution_fill";
@@ -153,6 +181,9 @@ bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
             ESP_LOGE(TAG, "Failed to stop %s on stage timeout %s: %s", channels[i], stage, esp_err_to_name(stop_err));
         }
     }
+    if (all_ok) {
+        (void)storage_irrigation_node_complete_stage_guard_for_stage_locked(stage, NULL, 0);
+    }
     return all_ok;
 }
 
@@ -166,6 +197,7 @@ bool storage_irrigation_node_stop_clean_fill_path_locked(void) {
         ESP_LOGE(TAG, "Failed to stop clean fill path: %s", esp_err_to_name(stop_err));
         return false;
     }
+    (void)storage_irrigation_node_complete_stage_guard_for_stage_locked("clean_fill", NULL, 0);
     return true;
 }
 
@@ -183,6 +215,9 @@ bool storage_irrigation_node_stop_irrigation_path_locked(void) {
             all_ok = false;
             ESP_LOGE(TAG, "Failed to stop irrigation path %s: %s", channels[i], esp_err_to_name(stop_err));
         }
+    }
+    if (all_ok) {
+        (void)storage_irrigation_node_complete_stage_guard_for_stage_locked("irrigation", NULL, 0);
     }
     return all_ok;
 }

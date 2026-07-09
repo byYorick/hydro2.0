@@ -4,6 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Enums\GrowCycleStatus;
 use App\Models\Alert;
+use App\Models\AutomationConfigDocument;
 use App\Models\AutomationConfigPreset;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\GrowCycle;
@@ -88,22 +89,30 @@ class AutomationConfigDocumentServiceTest extends TestCase
         $documents = app(AutomationConfigDocumentService::class);
         $zone = Zone::factory()->create();
 
-        $documents->upsertDocument(
-            AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
-            AutomationConfigRegistry::SCOPE_SYSTEM,
-            0,
+        // Simulate a legacy stored system policy that predates max_dose_ms.
+        // Bypass upsertDocument validation so we can persist the incomplete payload.
+        AutomationConfigDocument::query()->updateOrCreate(
             [
-                'ml_per_sec_min' => 0.02,
-                'ml_per_sec_max' => 12.5,
-                'min_dose_ms' => 125,
-                'calibration_duration_min_sec' => 2,
-                'calibration_duration_max_sec' => 90,
-                'quality_score_basic' => 0.70,
-                'quality_score_with_k' => 0.90,
-                'quality_score_legacy' => 0.50,
-                'age_warning_days' => 20,
-                'age_critical_days' => 60,
-                'default_run_duration_sec' => 15,
+                'namespace' => AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
+                'scope_type' => AutomationConfigRegistry::SCOPE_SYSTEM,
+                'scope_id' => 0,
+            ],
+            [
+                'payload' => [
+                    'ml_per_sec_min' => 0.02,
+                    'ml_per_sec_max' => 12.5,
+                    'min_dose_ms' => 125,
+                    'calibration_duration_min_sec' => 2,
+                    'calibration_duration_max_sec' => 90,
+                    'quality_score_basic' => 0.70,
+                    'quality_score_with_k' => 0.90,
+                    'quality_score_legacy' => 0.50,
+                    'age_warning_days' => 20,
+                    'age_critical_days' => 60,
+                    'default_run_duration_sec' => 15,
+                ],
+                'status' => 'active',
+                'schema_version' => 1,
             ]
         );
 
@@ -125,6 +134,7 @@ class AutomationConfigDocumentServiceTest extends TestCase
         );
 
         $this->assertSame(125, data_get($payload, 'resolved_config.pump_calibration.min_dose_ms'));
+        $this->assertSame(60_000, data_get($payload, 'resolved_config.pump_calibration.max_dose_ms'));
         $this->assertSame(0.02, data_get($payload, 'resolved_config.pump_calibration.ml_per_sec_min'));
         $this->assertSame(12.5, data_get($payload, 'resolved_config.pump_calibration.ml_per_sec_max'));
     }

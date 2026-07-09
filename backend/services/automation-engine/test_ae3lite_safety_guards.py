@@ -73,23 +73,42 @@ class TestDoseMlToMsMaxDoseClamp:
         with pytest.raises(PlannerConfigurationError, match="max_dose_ms"):
             _dose_ml_to_ms(1.0, {"ml_per_sec": 1.0}, cfg)
 
-    def test_default_max_dose_ms_5min_when_not_configured(self) -> None:
+    def test_default_max_dose_ms_firmware_aligned_when_not_configured(self) -> None:
         cfg = {
             "pump_calibration": {
                 "min_dose_ms": 100,
                 "ml_per_sec_min": 0.1,
                 "ml_per_sec_max": 10.0,
-                # max_dose_ms не указан → дефолт 300_000 (5 мин)
+                # max_dose_ms не указан → дефолт 60_000 (firmware ph/ec node)
             },
         }
-        # 10 min duration → clamp до 5 min
+        # 2 min duration @ 0.1 ml/s → clamp до 60 s
         dose_ms, reason, _ = _dose_ml_to_ms(
-            60.0,  # 60ml @ 0.1ml/s = 600_000 ms
+            12.0,  # 12ml @ 0.1ml/s = 120_000 ms
             {"ml_per_sec": 0.1},
             cfg,
         )
-        assert dose_ms == 300_000
+        assert dose_ms == 60_000
         assert reason == "clamped_to_max_dose_ms"
+
+    def test_per_pump_max_duration_ms_caps_below_zone(self) -> None:
+        cfg = {
+            "pump_calibration": {
+                "min_dose_ms": 100,
+                "max_dose_ms": 60_000,
+                "ml_per_sec_min": 0.1,
+                "ml_per_sec_max": 10.0,
+            },
+        }
+        dose_ms, reason, details = _dose_ml_to_ms(
+            10.0,
+            {"ml_per_sec": 0.1, "max_duration_ms": 30_000},
+            cfg,
+        )
+        assert dose_ms == 30_000
+        assert reason == "clamped_to_max_dose_ms"
+        assert details["node_max_dose_ms"] == 30_000
+        assert details["effective_ml"] == pytest.approx(3.0)
 
 
 # ── sensor sanity bounds ──────────────────────────────────────────────────────

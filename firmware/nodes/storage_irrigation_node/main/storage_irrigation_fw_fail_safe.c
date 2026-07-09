@@ -273,7 +273,7 @@ void storage_irrigation_node_log_fail_safe_trip(
 void storage_irrigation_node_log_fail_safe_config(void) {
     ESP_LOGI(
         TAG,
-        "fail-safe config: clean_fill_min_check_delay_ms=%lu "
+        "fail-safe config: clean_fill_min_check_delay_ms(deprecated)=%lu "
         "solution_fill_clean_min_check_delay_ms=%lu "
         "solution_fill_solution_min_check_delay_ms=%lu "
         "recirculation_solution_min_guard_enabled=%d "
@@ -319,6 +319,7 @@ void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
         if (item && cJSON_IsNumber(item)) {
             double value = cJSON_GetNumberValue(item);
             if (value >= 0.0 && value <= 3600000.0) {
+                /* Deprecated: loaded only for NodeConfig compatibility; clean_fill min guard is disabled by design. */
                 next.clean_fill_min_check_delay_ms = (uint32_t)value;
             }
         }
@@ -419,6 +420,10 @@ bool storage_irrigation_node_read_estop_pressed(void) {
     }
 
     return g_estop_debounce.pressed;
+}
+
+bool storage_irrigation_node_is_estop_active(void) {
+    return g_estop_active;
 }
 
 bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
@@ -576,61 +581,68 @@ void storage_irrigation_node_process_fail_safe_guards(void) {
     if (solution_fill_active && !g_solution_fill_guard.terminal_event_emitted) {
         if (!g_solution_fill_guard.clean_min_check_completed &&
             storage_irrigation_node_solution_fill_elapsed_ms() >= g_fail_safe_config.solution_fill_clean_min_check_delay_ms) {
-            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
             g_solution_fill_guard.clean_min_check_completed = true;
-            if (clean_level_min_ok && !clean_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
-                g_solution_fill_guard.terminal_event_emitted = true;
-                storage_irrigation_node_log_fail_safe_trip(
-                    "solution_fill_source_empty",
-                    "level_clean_min",
-                    &level_debug,
-                    elapsed_ms,
-                    g_fail_safe_config.solution_fill_clean_min_check_delay_ms
-                );
-                event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
-                    "solution_fill",
-                    "level_clean_min",
-                    &level_debug,
-                    elapsed_ms,
-                    g_fail_safe_config.solution_fill_clean_min_check_delay_ms,
-                    clean_fill_active,
-                    solution_fill_active,
-                    recirculation_active,
-                    irrigation_active
-                );
-                events[event_count++] = "solution_fill_source_empty";
-                solution_fill_active = false;
-            }
+        }
+        if (g_solution_fill_guard.clean_min_check_completed &&
+            clean_level_min_ok &&
+            !clean_level_min &&
+            storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
+            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
+            g_solution_fill_guard.terminal_event_emitted = true;
+            storage_irrigation_node_log_fail_safe_trip(
+                "solution_fill_source_empty",
+                "level_clean_min",
+                &level_debug,
+                elapsed_ms,
+                g_fail_safe_config.solution_fill_clean_min_check_delay_ms
+            );
+            event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                "solution_fill",
+                "level_clean_min",
+                &level_debug,
+                elapsed_ms,
+                g_fail_safe_config.solution_fill_clean_min_check_delay_ms,
+                clean_fill_active,
+                solution_fill_active,
+                recirculation_active,
+                irrigation_active
+            );
+            events[event_count++] = "solution_fill_source_empty";
+            solution_fill_active = false;
         }
 
         if (solution_fill_active &&
             !g_solution_fill_guard.solution_min_check_completed &&
             storage_irrigation_node_solution_fill_elapsed_ms() >= g_fail_safe_config.solution_fill_solution_min_check_delay_ms) {
-            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
             g_solution_fill_guard.solution_min_check_completed = true;
-            if (solution_level_min_ok && !solution_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
-                g_solution_fill_guard.terminal_event_emitted = true;
-                storage_irrigation_node_log_fail_safe_trip(
-                    "solution_fill_leak_detected",
-                    "level_solution_min",
-                    &level_debug,
-                    elapsed_ms,
-                    g_fail_safe_config.solution_fill_solution_min_check_delay_ms
-                );
-                event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
-                    "solution_fill",
-                    "level_solution_min",
-                    &level_debug,
-                    elapsed_ms,
-                    g_fail_safe_config.solution_fill_solution_min_check_delay_ms,
-                    clean_fill_active,
-                    solution_fill_active,
-                    recirculation_active,
-                    irrigation_active
-                );
-                events[event_count++] = "solution_fill_leak_detected";
-                solution_fill_active = false;
-            }
+        }
+        if (solution_fill_active &&
+            g_solution_fill_guard.solution_min_check_completed &&
+            solution_level_min_ok &&
+            !solution_level_min &&
+            storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
+            uint32_t elapsed_ms = storage_irrigation_node_solution_fill_elapsed_ms();
+            g_solution_fill_guard.terminal_event_emitted = true;
+            storage_irrigation_node_log_fail_safe_trip(
+                "solution_fill_leak_detected",
+                "level_solution_min",
+                &level_debug,
+                elapsed_ms,
+                g_fail_safe_config.solution_fill_solution_min_check_delay_ms
+            );
+            event_details[event_count] = storage_irrigation_node_build_fail_safe_details(
+                "solution_fill",
+                "level_solution_min",
+                &level_debug,
+                elapsed_ms,
+                g_fail_safe_config.solution_fill_solution_min_check_delay_ms,
+                clean_fill_active,
+                solution_fill_active,
+                recirculation_active,
+                irrigation_active
+            );
+            events[event_count++] = "solution_fill_leak_detected";
+            solution_fill_active = false;
         }
 
         if (solution_fill_active &&

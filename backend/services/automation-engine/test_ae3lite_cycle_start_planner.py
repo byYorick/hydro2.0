@@ -36,6 +36,7 @@ def _minimal_zone_correction_config() -> dict:
                 "max_ph_correction_attempts": 5,
                 "prepare_recirculation_timeout_sec": 1200,
                 "prepare_recirculation_correction_slack_sec": 0,
+                "solution_fill_correction_slack_sec": 900,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
                 "telemetry_stale_retry_sec": 15,

@@ -320,7 +320,8 @@ Backend → Node
 Правило:
 - `run_pump + duration_ms` используется для time-based actuator channels;
 - `dose + params.ml` используется для volume-based dosing channels;
-- для pH/EC correction effect source of truth — только `params.ml`.
+- для pH/EC correction effect source of truth на ноде — только `params.ml` (duration считается локально из `ml_per_second`);
+- DB `pump_calibrations.ml_per_sec` должен зеркалить NodeConfig `ml_per_second`; AE3 `pump_calibration.max_dose_ms` — NodeConfig `safe_limits.max_duration_ms` (default 60_000 ms).
 
 **Позиция привода (roof vent, greenhouse climate):**
 - `cmd`: `set_position`
@@ -459,27 +460,31 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 Для production `storage_irrigation_node` нода обязана публиковать события состояния по следующим правилам:
 
 1. `level_clean_max`:
-   - локально закрыть `valve_clean_fill`;
+   - локально закрыть `valve_clean_fill` и снять stage-guard;
    - опубликовать `clean_fill_completed` один раз на эпизод `clean_fill`.
 2. `level_solution_max`:
-   - локально выключить `pump_main/valve_solution_fill/valve_clean_supply`;
+   - локально выключить `pump_main/valve_solution_fill/valve_clean_supply` и снять stage-guard;
    - опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`.
-3. Для `clean_fill` через `clean_fill_min_check_delay_ms` нода обязана проверить `level_clean_min`;
-    если датчик остаётся `0`, локально закрыть `valve_clean_fill` и опубликовать `clean_fill_source_empty`.
-4. Для `solution_fill` через `solution_fill_clean_min_check_delay_ms` нода обязана проверить `level_clean_min`;
-    если датчик `0`, локально выключить `pump_main/valve_solution_fill/valve_clean_supply`
-    и опубликовать `solution_fill_source_empty`.
-5. Для `solution_fill` через `solution_fill_solution_min_check_delay_ms` нода обязана проверить `level_solution_min`;
-    если датчик `0`, локально выключить `pump_main/valve_solution_fill/valve_clean_supply`
-    и опубликовать `solution_fill_leak_detected`.
+3. Для `clean_fill` проверка `level_clean_min` / `clean_fill_source_empty` **не применяется**
+   (`clean_fill_min_check_delay_ms` deprecated, mirror-only). Пустой источник — AE3
+   `clean_fill_timeout_sec` + `clean_fill_retry_cycles`.
+4. Для `solution_fill` после `solution_fill_clean_min_check_delay_ms` нода обязана **непрерывно**
+   проверять `level_clean_min` до terminal event; если датчик `0` — выключить
+   `pump_main/valve_solution_fill/valve_clean_supply`, снять stage-guard и опубликовать
+   `solution_fill_source_empty`.
+5. Для `solution_fill` после `solution_fill_solution_min_check_delay_ms` нода обязана **непрерывно**
+   проверять `level_solution_min` до terminal event; если датчик `0` — выключить
+   `pump_main/valve_solution_fill/valve_clean_supply`, снять stage-guard и опубликовать
+   `solution_fill_leak_detected`.
 6. Для `prepare_recirculation` при включённом `recirculation_solution_min_guard_enabled` нода обязана
-    остановить `pump_main/valve_solution_fill/valve_solution_supply` по `level_solution_min=0`
-    и опубликовать `recirculation_solution_low`.
+    остановить `pump_main/valve_solution_fill/valve_solution_supply` по `level_solution_min=0`,
+    снять stage-guard и опубликовать `recirculation_solution_low`.
 7. Для `irrigation` при включённом `irrigation_solution_min_guard_enabled` нода обязана
-    остановить `pump_main/valve_solution_supply/valve_irrigation` по `level_solution_min=0`
-    и опубликовать `irrigation_solution_low`.
+    остановить `pump_main/valve_solution_supply/valve_irrigation` по `level_solution_min=0`,
+    снять stage-guard и опубликовать `irrigation_solution_low`.
 8. Пока физическая кнопка `E-Stop` удерживается нажатой, нода обязана держать все 6 актуаторов в `OFF`;
-    на факт нажатия публикуется `emergency_stop_activated`.
+    на факт нажатия публикуется `emergency_stop_activated`. Новые `set_relay {state:true}`
+    отклоняются с `ERROR` / `error_code=estop_active`; OFF-команды разрешены.
 9. Для каждого подтверждённого изменения `level_clean_min|level_clean_max|level_solution_min|level_solution_max`
     нода обязана публиковать channel-level событие:
 
@@ -544,8 +549,8 @@ Payload:
 
 Для fail-safe и stage timeout нода публикует события из набора:
 
-- `clean_fill_source_empty`
-- `clean_fill_completed`
+- `clean_fill_completed` (production)
+- `clean_fill_source_empty` (**legacy/compat**; production `storage_irrigation_node` не публикует)
 - `solution_fill_source_empty`
 - `solution_fill_leak_detected`
 - `solution_fill_completed`

@@ -102,6 +102,7 @@ def _valid_payload() -> dict:
             "max_ph_correction_attempts": 8,
             "prepare_recirculation_timeout_sec": 900,
             "prepare_recirculation_correction_slack_sec": 0,
+            "solution_fill_correction_slack_sec": 900,
             "prepare_recirculation_max_attempts": 4,
             "prepare_recirculation_max_correction_attempts": 40,
             "telemetry_stale_retry_sec": 30,
@@ -126,6 +127,7 @@ def test_canonical_payload_is_accepted() -> None:
     assert model.controllers.ph.kp == pytest.approx(0.28)
     assert model.dosing.ec_dosing_mode == "single"
     assert model.retry.prepare_recirculation_correction_slack_sec == 0
+    assert model.retry.solution_fill_correction_slack_sec == 900
 
 
 def test_ec_dosing_mode_multi_parallel_accepted() -> None:

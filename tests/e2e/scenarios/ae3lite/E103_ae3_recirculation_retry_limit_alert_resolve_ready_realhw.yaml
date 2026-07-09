@@ -376,6 +376,7 @@ actions:
             # retry-limit, not by command-poll deadline jitter.
             prepare_recirculation_timeout_sec: 55
             prepare_recirculation_correction_slack_sec: 0
+            solution_fill_correction_slack_sec: 900
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30
@@ -1370,6 +1371,7 @@ actions:
             max_ph_correction_attempts: 10
             prepare_recirculation_timeout_sec: 360
             prepare_recirculation_correction_slack_sec: 0
+            solution_fill_correction_slack_sec: 900
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30

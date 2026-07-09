@@ -662,7 +662,8 @@ actions:
                     spread_alert_threshold_pct: 12.0
                 recovery:
                   max_continue_attempts: 2
-                  timeout_sec: 90
+                  # Inline correction + recovery needs headroom beyond irrig duration.
+                  timeout_sec: 420
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:

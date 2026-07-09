@@ -82,11 +82,18 @@ class CorrectionTransitionPolicy:
                 stage_retry_count=stage_retry_count + 1,
                 due_delay_sec=int(level_poll_interval_sec),
             )
+        if stage == "irrigation_recovery_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="irrigation_recovery_check",
+                stage_retry_count=stage_retry_count + 1,
+                due_delay_sec=int(level_poll_interval_sec),
+            )
         if stage == "prepare_recirculation_check":
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=stage_retry_count + 1,
+                stage_retry_count=stage_retry_count,
             )
         if stage == "solution_fill_check":
             return StageOutcome(
@@ -115,7 +122,7 @@ class CorrectionTransitionPolicy:
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=stage_retry_count + 1,
+                stage_retry_count=stage_retry_count,
             )
         if stage == "solution_fill_check":
             return StageOutcome(
@@ -151,7 +158,7 @@ class CorrectionTransitionPolicy:
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=stage_retry_count + 1,
+                stage_retry_count=stage_retry_count,
             )
         if stage == "solution_fill_check":
             return StageOutcome(
@@ -200,7 +207,7 @@ class CorrectionTransitionPolicy:
             kind="transition",
             next_stage=next_stage,
             stage_retry_count=(
-                stage_retry_count + 1
+                stage_retry_count
                 if stage == "prepare_recirculation_check"
                 else None
             ),
@@ -233,7 +240,7 @@ class CorrectionTransitionPolicy:
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=stage_retry_count + 1,
+                stage_retry_count=stage_retry_count,
                 task_override=task_override,
             )
         if stage == "solution_fill_check":

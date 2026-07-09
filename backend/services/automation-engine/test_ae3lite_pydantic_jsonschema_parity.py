@@ -137,6 +137,7 @@ EXPECTED_FIELDS: list[tuple[str, str]] = [
     ("retry.max_ph_correction_attempts", "integer"),
     ("retry.prepare_recirculation_timeout_sec", "integer"),
     ("retry.prepare_recirculation_correction_slack_sec", "integer"),
+    ("retry.solution_fill_correction_slack_sec", "integer"),
     ("retry.prepare_recirculation_max_attempts", "integer"),
     ("retry.telemetry_stale_retry_sec", "integer"),
     ("retry.decision_window_retry_sec", "integer"),

@@ -107,6 +107,7 @@ def make_runtime_plan_dict(**overrides: Any) -> dict:
         "solution_fill_timeout_sec": 900,
         "prepare_recirculation_timeout_sec": 900,
         "prepare_recirculation_correction_slack_sec": 0,
+        "solution_fill_correction_slack_sec": 900,
         "level_poll_interval_sec": 10,
         "clean_fill_retry_cycles": 1,
         "level_switch_on_threshold": 0.5,

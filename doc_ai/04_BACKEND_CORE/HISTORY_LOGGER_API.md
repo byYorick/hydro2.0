@@ -413,14 +413,24 @@ Laravel middleware: `VerifyHistoryLoggerWebhook` (alias `verify.history-logger.w
 | `FORCE_PUMP_OFF` | Выключить насос | - |
 | `PUMP_CALIBRATE` | Калибровка насоса | `expected_ml`, `duration_sec` |
 
-### 3.2. Команды управления дозированием
+### 3.2. Команды дозирования (AE3 → HL → MQTT)
 
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `DOSE_PH_UP` | Дозирование pH+ | `ml`, `duration_sec` (optional) |
-| `DOSE_PH_DOWN` | Дозирование pH- | `ml`, `duration_sec` (optional) |
-| `DOSE_EC_A` | Дозирование EC компонент A | `ml`, `duration_sec` (optional) |
-| `DOSE_EC_B` | Дозирование EC компонент B | `ml`, `duration_sec` (optional) |
+Канонический device-level контракт для pH/EC насосов — **`cmd: "dose"`** с обязательным **`params.ml`** (объём в миллилитрах). Прошивка ph_node/ec_node исполняет дозу по `ml`; `params.duration_ms` опционален (observability / audit в `commands.duration_ms`, firmware может игнорировать).
+
+| `cmd` | Канал | Обязательные `params` | Опциональные `params` |
+|-------|-------|----------------------|------------------------|
+| `dose` | actuator pump (pH+/pH-/EC) | `ml` (float, > 0) | `duration_ms` (int, > 0) |
+
+Transport-layer sanity bounds (`command_service._validate_command_params`):
+- `params.ml` ∈ `(0, 500]` — защита от интеграционных ошибок; доменные caps — `max_ec_dose_ml` / `max_ph_dose_ml` в AE3 CorrectionPlanner.
+- `params.duration_ms` ∈ `(0, 300_000]` — при наличии.
+
+**Deprecated (legacy high-level intent labels, не публиковать в MQTT):**
+
+| Legacy label | Замена |
+|--------------|--------|
+| `DOSE_PH_UP` / `DOSE_PH_DOWN` / `DOSE_EC_A` / `DOSE_EC_B` | `cmd: "dose"` + соответствующий actuator `channel` |
+| `duration_sec` в dose payload | не используется; AE3 передаёт `ml`, опционально `duration_ms` |
 
 ### 3.3. Команды управления освещением
 
@@ -478,6 +488,7 @@ History-logger выполняет следующую валидацию пере
 
 3. **Проверка параметров:**
    - Наличие обязательных параметров для данного типа команды
+   - Для `cmd="dose"`: обязателен `params.ml` (> 0, ≤ 500 sanity ceiling); `params.duration_ms` опционален (> 0, ≤ 300_000)
    - Валидация диапазонов значений (например, `brightness: 0-100`)
    - Проверка типов параметров
 
@@ -626,9 +637,10 @@ command = {
     "zone_id": 1,
     "node_uid": "nd-ph-1",
     "channel": "pump_ph_up",
-    "cmd": "dose_ph_up",
+    "cmd": "dose",
     "params": {
-        "ml": 5.0
+        "ml": 5.0,
+        "duration_ms": 1200,
     },
     "source": "automation-engine"
 }

@@ -430,8 +430,7 @@ Transient-overlap правило для `pump_main`:
   для каждого подтверждённого изменения `level_clean_min`, `level_clean_max`,
   `level_solution_min`, `level_solution_max`, а также один раз после boot/MQTT reconnect
   c `initial=true`
-- `clean_fill_source_empty`
-- `clean_fill_completed`
+- `clean_fill_completed` (без `clean_fill_source_empty` — как production-нода)
 - `solution_fill_source_empty`
 - `solution_fill_leak_detected`
 - `solution_fill_completed`
@@ -446,21 +445,20 @@ Transient-overlap правило для `pump_main`:
 
 Fail-safe семантика `nd-test-irrig-1` выровнена с real `storage_irrigation_node`:
 
-- `clean_fill`: через `clean_fill_min_check_delay_ms` проверяется `level_clean_min`; если датчик не активен,
-  path останавливается и публикуется `clean_fill_source_empty`; при `level_clean_max=1`
-  path останавливается и публикуется `clean_fill_completed`.
-- `solution_fill`: через `solution_fill_clean_min_check_delay_ms` проверяется `level_clean_min`; если датчик не активен,
-  path останавливается и публикуется `solution_fill_source_empty`; через
-  `solution_fill_solution_min_check_delay_ms` проверяется `level_solution_min`; если датчик не активен,
-  path останавливается и публикуется `solution_fill_leak_detected`; при `level_solution_max=1`
-  path останавливается и публикуется `solution_fill_completed`.
+- `clean_fill`: проверка `level_clean_min` / `clean_fill_source_empty` **не применяется**
+  (как у production `storage_irrigation_node`); при `level_clean_max=1` path останавливается,
+  stage-guard снимается и публикуется `clean_fill_completed`. Пустой источник — AE3 timeout/retry.
+- `solution_fill`: после `solution_fill_clean_min_check_delay_ms` **непрерывно** проверяется
+  `level_clean_min` → `solution_fill_source_empty`; после `solution_fill_solution_min_check_delay_ms`
+  **непрерывно** проверяется `level_solution_min` → `solution_fill_leak_detected`; при
+  `level_solution_max=1` → `solution_fill_completed`. Terminal stop снимает stage-guard.
 - `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` и `level_solution_min=0`
-  path останавливается и публикуется `recirculation_solution_low`.
+  path останавливается, stage-guard снимается и публикуется `recirculation_solution_low`.
 - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` и `level_solution_min=0`
-  path останавливается и публикуется `irrigation_solution_low`.
+  path останавливается, stage-guard снимается и публикуется `irrigation_solution_low`.
 - виртуальный `E-Stop` управляется через `storage_state/set_fault_mode { estop_pressed: true|false }`;
   при нажатии все IRR-актуаторы немедленно выключаются и публикуется `emergency_stop_activated`,
-  при отпускании восстанавливается прерванный runtime-path.
+  ON-команды отклоняются с `estop_active`; при отпускании восстанавливается прерванный runtime-path.
 
 ## 6.3. Interlock для `pump_main`
 

@@ -131,6 +131,17 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
         );
         return ESP_ERR_NOT_FOUND;
     }
+    if (target_state && storage_irrigation_node_is_estop_active()) {
+        xSemaphoreGive(g_actuator_mutex);
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "estop_active",
+            "E-Stop is active; actuator ON commands are rejected",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
 
     bool previous_state = false;
     bool allow_pump_main_dry_run = storage_irrigation_node_is_pump_main_dry_run_allowed(

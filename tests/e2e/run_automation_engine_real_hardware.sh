@@ -715,24 +715,29 @@ with httpx.Client(timeout=15.0) as c:
     print(token)
 PY
     )"; then
-      printf '%s\n' "$token"
-      return 0
+      token="$(printf '%s' "$token" | tr -cd 'A-Za-z0-9|_.=+-')"
+      if [ -n "$token" ]; then
+        printf '%s\n' "$token"
+        return 0
+      fi
     fi
     local exit_code=$?
     if [ "$exit_code" -eq 2 ]; then
-      echo "⚠️ e2e auth token rate-limited (429), retry $attempt/5..."
+      echo "⚠️ e2e auth token rate-limited (429), retry $attempt/5..." >&2
       sleep $((attempt * 2))
       continue
     fi
     break
   done
 
-  echo "⚠️ API token недоступен, пробую artisan e2e:auth-bootstrap..."
+  echo "⚠️ API token недоступен, пробую artisan e2e:auth-bootstrap..." >&2
   token="$(
     "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T laravel \
       php artisan e2e:auth-bootstrap --email=e2e@test.local --role=agronomist --no-interaction 2>/dev/null \
       | tail -n1 | tr -d '\r' || true
   )"
+  # Keep only ASCII token body; artisan/docker noise must never leak into Authorization.
+  token="$(printf '%s' "$token" | tr -cd 'A-Za-z0-9|_.=+-')"
   if [ -n "$token" ]; then
     printf '%s\n' "$token"
     return 0
@@ -756,7 +761,10 @@ method, url, payload_raw, token, out_file = sys.argv[1:6]
 payload = json.loads(payload_raw) if payload_raw else {}
 headers = {"Content-Type": "application/json"}
 if token:
-    headers["Authorization"] = f"Bearer {token}"
+    # Guard against shell-captured stderr/noise with non-ASCII bytes.
+    token = "".join(ch for ch in token if 32 <= ord(ch) < 127).strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
 with httpx.Client(timeout=20.0) as c:
     resp = c.request(method=method.upper(), url=url, headers=headers, json=payload)

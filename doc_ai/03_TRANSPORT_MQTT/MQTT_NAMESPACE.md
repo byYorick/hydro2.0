@@ -149,7 +149,6 @@ production `storage_irrigation_node` публикует channel-level событ
 - `snapshot` — полный `IRR_STATE_SNAPSHOT` на момент события.
 
 Для aggregate-канала `storage_state/event` production `storage_irrigation_node` использует как минимум коды:
-- `clean_fill_source_empty`
 - `clean_fill_completed`
 - `solution_fill_source_empty`
 - `solution_fill_leak_detected`
@@ -159,6 +158,8 @@ production `storage_irrigation_node` публикует channel-level событ
 - `solution_fill_timeout`
 - `prepare_recirculation_timeout`
 - `emergency_stop_activated`
+
+`clean_fill_source_empty` — **legacy/compat** (AE3 timeout/retry path); production-нода не публикует.
 
 На стороне backend (`history-logger`) `event_code` нормализуется в `zone_events.type`:
 - `UPPERCASE`, замена не `[A-Z0-9]` на `_`, схлопывание повторов `_`;

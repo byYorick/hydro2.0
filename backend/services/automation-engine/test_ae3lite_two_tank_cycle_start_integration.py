@@ -272,6 +272,7 @@ async def _insert_correction_config(zone_id: int) -> None:
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
                 "prepare_recirculation_correction_slack_sec": 0,
+                "solution_fill_correction_slack_sec": 900,
                 "telemetry_stale_retry_sec": 15,
                 "decision_window_retry_sec": 20,
                 "low_water_retry_sec": 30,

@@ -151,6 +151,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     base_retry_cfg = _to_mapping(resolved_base_cfg.get("retry"))
     fill_runtime_cfg = _to_mapping(solution_fill_cfg.get("runtime"))
     fill_timing_cfg = _to_mapping(solution_fill_cfg.get("timing"))
+    fill_retry_cfg = _to_mapping(solution_fill_cfg.get("retry"))
     recirc_retry_cfg = _to_mapping(tank_recirc_cfg.get("retry"))
 
     correction_by_phase = {
@@ -217,6 +218,12 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_correction_slack_sec",
             minimum=0,
             maximum=7200,
+        ),
+        "solution_fill_correction_slack_sec": _resolve_bounded_int(
+            fill_retry_cfg.get("solution_fill_correction_slack_sec"),
+            900,
+            0,
+            7200,
         ),
         "level_poll_interval_sec": _require_int(
             fill_timing_cfg.get("level_poll_interval_sec"),
@@ -1019,6 +1026,8 @@ def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
 def _build_fail_safe_guards(execution: Mapping[str, Any]) -> dict[str, Any]:
     guards = _to_mapping(execution.get("fail_safe_guards"))
     return {
+        # Deprecated: clean_fill does not apply this min-level delay anymore;
+        # runtime keeps it only as a mirror for firmware/config compatibility.
         "clean_fill_min_check_delay_ms": _resolve_bounded_int(
             guards.get("clean_fill_min_check_delay_ms"),
             5000,

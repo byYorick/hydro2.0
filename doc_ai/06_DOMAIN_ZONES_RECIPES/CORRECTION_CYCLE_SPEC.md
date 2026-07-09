@@ -4,7 +4,7 @@
 Документ описывает state machine, режимы коррекции и логику управления измерением pH/EC с учетом необходимости наличия потока раствора.
 
 **Дата создания:** 2026-02-14
-**Дата обновления:** 2026-07-08 (этап D.1: §10 solution_change semi-auto v1; PR8: effective_ml/requested_ml при clamp, last_dose_at после DONE, fail-closed volume/PID zones, единый MetricWindowValidator)
+**Дата обновления:** 2026-07-09 (PR8+: observe-window bounds, E-STOP controlled exit, control_mode dose gate, `last_dose_at` anchor at DONE time)
 **Статус:** Рабочий документ (требует валидации)
 
 ---
@@ -204,8 +204,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не могут менять
   canonical `target_ph/target_ec` и их windows; runtime допускает из них только execution/config
   параметры, не chemical setpoints.
-- correction success должен стремиться к canonical `target_ph/target_ec` с phase `prepare_tolerance`;
-- `workflow_ready` для переходов в `READY` может быть строже correction-success:
+- correction success (`CorrectionPlanner.is_within_tolerance`, `_targets_reached`) = canonical `target_ph/target_ec` ± `prepare_tolerance`;
+- `workflow_ready` (`_workflow_ready_reached`, переходы `*_stop_to_ready`) может быть **строже** correction-success:
   если runtime уже имеет явные `target_*_min/max`, именно они используются как explicit ready band;
 - fallback на `prepare_tolerance` для `workflow_ready` допустим только если explicit ready band отсутствует;
 - `target_*_min/max` не считаются ранним success сами по себе внутри correction sub-machine:
@@ -233,9 +233,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    - исполняет дозы последовательно: сначала ближайший шаг correction sub-machine, затем `observe`, затем следующий химический шаг;
    - parent-stage не создаёт новое correction-window на каждом таком шаге: весь fill-stage работает в одном окне коррекции.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
-   - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
+   - wall-clock deadline = `solution_fill_timeout_sec + solution_fill_correction_slack_sec`
+     (оба поля из zone correction config; slack default `900`);
     - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
-      stage остаётся в одном correction window до `solution_fill_timeout_sec` либо до fail-closed по `no-effect`;
+      stage остаётся в одном correction window до этого deadline либо до fail-closed по `no-effect`;
     - fail-closed по `no-effect` в `solution_fill` реализуется как переход в `solution_fill_timeout_stop`,
       а не как silent poll без новой correction window.
 8. Когда `solution_max` сработал:
@@ -347,24 +348,35 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Контракт ограничений per dose реализован в `backend/services/automation-engine/ae3lite/domain/services/correction_planner.py::_dose_ml_to_ms` и `_resolve_dose_duration`.
 
-**Из `pump_calibration` (per pump):**
-- `pump_calibration.max_dose_ms` — **runaway guard**, hard cap длительности одной дозы. Default `300_000` ms (5 минут — совпадает с `_MAX_DURATION_MS_SANITY` в history-logger). Если расчётный `duration_ms` больше, длительность **clamps** до cap, а объём пересчитывается: `effective_ml = ml_per_sec * clamped_ms / 1000`. В MQTT-команде `params.ml` = `effective_ml`; в zone events `EC_DOSING` / `PH_CORRECTED` публикуются **оба** поля: `effective_ml` и `requested_ml` (исходный объём до clamp). PID/attempt-логика оперирует `effective_ml`.
+**Из `pump_calibration` (zone policy, `system.pump_calibration_policy`):**
+- `pump_calibration.max_dose_ms` — **runaway guard** и согласование с firmware: hard cap длительности одной дозы на стороне AE3. Default `60_000` ms (60 с — совпадает с `CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS` / `safe_limits.max_duration_ms` ph_node/ec_node). Если расчётный `duration_ms` больше, длительность **clamps** до cap, а объём пересчитывается: `effective_ml = ml_per_sec * clamped_ms / 1000`. В MQTT-команде `params.ml` = `effective_ml`; в zone events `EC_DOSING` / `PH_CORRECTED` публикуются **оба** поля: `effective_ml` и `requested_ml` (исходный объём до clamp). PID/attempt-логика оперирует `effective_ml`. Для зон с увеличенным NodeConfig cap задайте `max_dose_ms` явно (≤ `_MAX_DURATION_MS_SANITY` history-logger = 300_000).
 - `pump_calibration.min_dose_ms` — **нижний порог**. Если расчётный `duration_ms` ниже — доза **discarded** с reason `below_min_dose_ms` (без публикации команды). Это защита от микро-доз ниже физического разрешения насоса.
-- `pump_calibration.ml_per_sec` — калибровка потока, базовый коэффициент для расчёта `duration_ms = ml / ml_per_sec * 1000`.
+
+**Dual calibration (AE3 ↔ firmware) — ops checklist:**
+- AE3 планирует `params.ml` по DB `pump_calibrations.ml_per_sec`; ph_node/ec_node исполняют dose по NodeConfig `ml_per_second` и **игнорируют** `params.duration_ms` (если передан).
+- `ml_per_sec` в БД **должен совпадать** с `ml_per_second` в NodeConfig actuator channel; иначе фактический объём на ноде расходится с планом AE3.
+- Per-pump cap: если в calibration actuator задан `max_duration_ms` (зеркало NodeConfig), AE3 берёт `min(zone.max_dose_ms, calibration.max_duration_ms)`.
+- Firmware при превышении cap публикует в ACK `details.duration_limited=true` и фактический `details.duration_ms`.
+
+**Ops checklist (при смене калибровки или NodeConfig):**
+1. Обновить `pump_calibrations.ml_per_sec` в БД (Laravel calibrate-pump flow).
+2. Перепубликовать NodeConfig с тем же `ml_per_second` на соответствующем actuator channel.
+3. Сверить `pump_calibration.max_dose_ms` (zone policy) с `safe_limits.max_duration_ms` в NodeConfig.
+4. Smoke: одна тестовая `dose` с известным `ml`, сравнить фактический расход / ACK `details` с ожиданием.
 
 **Из `dosing` / `correction_config`:**
-- `solution_volume_l` — **обязателен** (fail-closed). Отсутствие или неположительное значение → `PlannerConfigurationError` на этапе build плана (fallback `100` л удалён).
+- `solution_volume_l` — **обязателен** (fail-closed) для полноты zone config и UI/metadata (объём бака/контура). Отсутствие или неположительное значение → `PlannerConfigurationError` на этапе build плана. **Не участвует** в PID ml math (`_compute_amount_ml`); доза считается по process gain + controller caps, не как доля от литража.
 
 **Из `controllers.{ec,ph}` (per controller):**
 - `controllers.{ec,ph}.max_dose_ml` — controller-level cap per dose в мл (применяется до перевода в ms).
 - `controllers.{ec,ph}.min_interval_sec` — минимальный интервал между дозами одного controller'а. Конфигурируемо per controller; типовые production-значения: pH 60–120 с, EC 60–120 с. Прежние комментарии «pH ≥ 20 с, EC ≥ 10 с» устарели — на них не опираться.
-- `last_dose_at` в `pid_state` пишется **только после terminal `DONE`** дозирующей команды в correction handler (не на этапе планирования). Это предотвращает фантомный cooldown при fail/TIMEOUT дозы.
+- `last_dose_at` в `pid_state` пишется **только после terminal `DONE`** дозирующей команды в correction handler (не на этапе планирования). Timestamp якорится на момент подтверждённого DONE (`utcnow` после успешного `run_batch`), а не на старт tick handler'а. Это предотвращает фантомный cooldown при fail/TIMEOUT дозы и ранний старт `min_interval_sec`.
 
 **Из `pid_configs.{ec,ph}`:**
 - `close_zone` / `far_zone` — зоны PID-коэффициентов. При `far_zone <= close_zone` → `PlannerConfigurationError` на этапе build плана.
 
 **Sanity bounds decision/observation windows (`metric_window_validator`):**
-- Единый валидатор: `ae3lite/domain/services/metric_window_validator.py` (используется в `DecisionWindowReader` и `BaseStageHandler._read_target_metric_window`).
+- Единый валидатор: `ae3lite/domain/services/metric_window_validator.py` (используется в `DecisionWindowReader`, `BaseStageHandler._read_target_metric_window` и observe finalize в `CorrectionHandler._read_observation_window_or_interrupt`).
 - pH ∈ `[0, 14]`, EC ∈ `[0, 20]` mS/cm.
 - Выход за пределы (error code типа `-1` / `999`, NaN, inf) → reason `sensor_out_of_bounds`, окно не ready, PID-state не обновляется, доза не публикуется.
 
@@ -793,6 +805,8 @@ class CorrectionStateMachine:
 
 ### 6.2. Политика partial EC batch failure (обновление 2026-02-16)
 
+**Status: out-of-scope / not implemented in v1.** Текущий AE3 runtime (`correction_handler` + `multi_sequential` planner) при ошибке любого шага EC batch **fail-closed на первой ошибке**: batch прерывается, partial success не компенсируется автоматически, `EC_BATCH_PARTIAL_FAILURE` / enqueue `irrigation_recovery` из этого раздела **не реализованы**. Ниже — целевой контракт для v2+.
+
 Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro`), действует fail-safe правило:
 
 1. Если компонент `N` завершился ошибкой после успешной дозировки предыдущих компонентов:
@@ -1197,6 +1211,9 @@ clean_fill_start → clean_fill_check
     ▼
 solution_fill_start → solution_fill_check
     │                      (+ штатная EC/pH correction, prepare-targets)
+    ▼
+solution_fill_stop_to_refill_confirm  ◄── stop + sensor_mode_deactivate
+    │                      (в т.ч. если solution_max сработал во время correction)
     ▼
 await_operator_refill_confirm         ◄── GATE 2 (UI confirm)
     │

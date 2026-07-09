@@ -91,6 +91,7 @@ def _valid_base_payload() -> dict:
             "max_ec_correction_attempts": 8, "max_ph_correction_attempts": 8,
             "prepare_recirculation_timeout_sec": 900,
             "prepare_recirculation_correction_slack_sec": 0,
+            "solution_fill_correction_slack_sec": 900,
             "prepare_recirculation_max_attempts": 4,
             "prepare_recirculation_max_correction_attempts": 40,
             "telemetry_stale_retry_sec": 30, "decision_window_retry_sec": 10,

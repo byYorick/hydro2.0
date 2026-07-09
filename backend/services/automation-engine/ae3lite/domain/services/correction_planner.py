@@ -21,6 +21,12 @@ _DEFAULT_MAX_EC_DOSE_ML: float = 50.0
 #: Жёсткий верхний предел для одной pH-дозы, если correction_config.max_ph_dose_ml отсутствует.
 _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 
+#: Дефолтный cap длительности одной дозы (мс). Совпадает с firmware
+#: `CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS` / NodeConfig `safe_limits.max_duration_ms`
+#: для ph_node/ec_node (60 с). AE3 обязан планировать `params.ml` так, чтобы
+#: `ml / ml_per_sec * 1000` не превышал согласованный cap до отправки команды.
+_DEFAULT_MAX_DOSE_MS: int = 60_000
+
 # ── Порядок fallback-выбора EC-компонентов (5.3) ──────────────────────────────
 
 #: Предпочтительный порядок EC-компонентов, когда ec_component_policy не настроен.
@@ -220,7 +226,7 @@ class CorrectionPlanner:
 
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
-        solution_volume_l = _require_solution_volume_l(correction_config)
+        _require_solution_volume_l(correction_config)
 
         ec_gap = max(0.0, target_ec - current_ec)
         ph_up_gap = max(0.0, target_ph - predicted_ph)
@@ -520,7 +526,6 @@ class CorrectionPlanner:
                         process_cfg=process_cfg,
                         phase_key=phase_key,
                         calibration=calibration,
-                        solution_volume_l=solution_volume_l,
                         pid_entry=_pid_entry(pid_state, "ec"),
                         now=now,
                     )
@@ -588,7 +593,6 @@ class CorrectionPlanner:
                     process_cfg=process_cfg,
                     phase_key=phase_key,
                     calibration=calibration,
-                    solution_volume_l=solution_volume_l,
                     pid_entry=_pid_entry(pid_state, "ph"),
                     now=now,
                 )
@@ -945,7 +949,6 @@ def _compute_amount_ml(
     process_cfg: Mapping[str, Any],
     phase_key: str,
     calibration: Mapping[str, Any],
-    solution_volume_l: float,
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> tuple[float, Mapping[str, Any], str, Mapping[str, Any]]:
@@ -1188,6 +1191,11 @@ def _reset_pid_state_if_ph_direction_switched(
 
 
 def _require_solution_volume_l(correction_config: Mapping[str, Any]) -> float:
+    """Validate ``solution_volume_l`` for config completeness (metadata/UI).
+
+    The value is required in zone correction config but does not participate
+    in PID dose ml calculations in ``_compute_amount_ml``.
+    """
     raw = correction_config.get("solution_volume_l")
     if raw is None:
         raise PlannerConfigurationError(
@@ -1244,13 +1252,12 @@ def _dose_ml_to_ms(
     ml_min = _positive_float(pump_calibration.get("ml_per_sec_min"), 0.0)
     ml_max = _positive_float(pump_calibration.get("ml_per_sec_max"), 0.0)
     # Hard-cap на максимальную длительность одной дозы. Защищает от runaway
-    # pump при ненормально медленной калибровке (ml_per_sec близко к нулю) или
-    # вне-граничных dose_ml. Источник cap: pump_calibration.max_dose_ms либо
-    # дефолт 300_000 мс (5 минут — соответствует sanity guard history-logger
-    # `_MAX_DURATION_MS_SANITY`). Для зон с медленными насосами/большими дозами
-    # (solution_fill, tank_recirc) можно задать явно больший cap в
-    # pump_calibration.max_dose_ms.
-    max_dose_ms = _positive_int(pump_calibration.get("max_dose_ms"), 300_000)
+    # pump и от рассинхрона с firmware: нода исполняет dose по NodeConfig
+    # `ml_per_second` и режет duration по `safe_limits.max_duration_ms`.
+    # Источники cap (берётся min):
+    # - zone: `pump_calibration.max_dose_ms` (default `_DEFAULT_MAX_DOSE_MS`)
+    # - per-pump: `calibration.max_duration_ms` / `calibration.node_max_dose_ms`
+    max_dose_ms = _resolve_max_dose_ms(pump_calibration, calibration)
     if min_dose_ms <= 0 or ml_min <= 0 or ml_max <= 0 or ml_max < ml_min:
         raise PlannerConfigurationError(
             "Некорректный pump_calibration; ожидаются min_dose_ms/ml_per_sec_min/ml_per_sec_max"
@@ -1337,19 +1344,39 @@ def _dose_ml_to_ms(
             ml_per_sec,
             log_suffix,
         )
+        clamp_details: dict[str, Any] = {
+            "computed_duration_ms": duration_ms,
+            "max_dose_ms": max_dose_ms,
+            "requested_ml": round(dose_ml, 4),
+            "effective_ml": round(effective_ml, 4),
+            "dose_ml": round(effective_ml, 4),
+            "ml_per_sec": ml_per_sec,
+        }
+        node_cap = _positive_int(calibration.get("max_duration_ms"), 0)
+        if node_cap <= 0:
+            node_cap = _positive_int(calibration.get("node_max_dose_ms"), 0)
+        if node_cap > 0:
+            clamp_details["node_max_dose_ms"] = node_cap
         return (
             clamped_ms,
             "clamped_to_max_dose_ms",
-            {
-                "computed_duration_ms": duration_ms,
-                "max_dose_ms": max_dose_ms,
-                "requested_ml": round(dose_ml, 4),
-                "effective_ml": round(effective_ml, 4),
-                "dose_ml": round(effective_ml, 4),
-                "ml_per_sec": ml_per_sec,
-            },
+            clamp_details,
         )
     return (duration_ms, "", {})
+
+
+def _resolve_max_dose_ms(
+    pump_calibration: Mapping[str, Any],
+    calibration: Mapping[str, Any],
+) -> int:
+    """Effective per-dose duration cap: min(zone policy, per-pump NodeConfig mirror)."""
+    zone_cap = _positive_int(pump_calibration.get("max_dose_ms"), _DEFAULT_MAX_DOSE_MS)
+    per_pump_cap = _positive_int(calibration.get("max_duration_ms"), 0)
+    if per_pump_cap <= 0:
+        per_pump_cap = _positive_int(calibration.get("node_max_dose_ms"), 0)
+    if per_pump_cap > 0:
+        return min(zone_cap, per_pump_cap)
+    return zone_cap
 
 
 def _strip_last_dose_at(pid_updates: dict[str, Any], key: str) -> None:

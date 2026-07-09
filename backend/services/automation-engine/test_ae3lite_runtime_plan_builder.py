@@ -44,6 +44,7 @@ def _minimal_zone_correction_config() -> dict[str, object]:
                 "max_ph_correction_attempts": 5,
                 "prepare_recirculation_timeout_sec": 1200,
                 "prepare_recirculation_correction_slack_sec": 0,
+                "solution_fill_correction_slack_sec": 900,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
                 "telemetry_stale_retry_sec": 30,
@@ -511,6 +512,23 @@ def test_resolve_two_tank_runtime_prepare_recirculation_slack_from_tank_recirc_r
     )
     runtime = resolve_two_tank_runtime(snap)
     assert runtime["prepare_recirculation_correction_slack_sec"] == 0
+
+
+def test_resolve_two_tank_runtime_solution_fill_slack_defaults_when_missing() -> None:
+    snap = _snapshot(correction={})
+    snap.correction_config["base"]["retry"].pop("solution_fill_correction_slack_sec", None)
+    runtime = resolve_two_tank_runtime(snap)
+    assert runtime["solution_fill_correction_slack_sec"] == 900
+
+
+def test_resolve_two_tank_runtime_solution_fill_slack_from_solution_fill_retry() -> None:
+    snap = _snapshot(correction={})
+    snap.correction_config = _merge_recursive(
+        _minimal_zone_correction_config(),
+        {"phases": {"solution_fill": {"retry": {"solution_fill_correction_slack_sec": 120}}}},
+    )
+    runtime = resolve_two_tank_runtime(snap)
+    assert runtime["solution_fill_correction_slack_sec"] == 120
 
 
 def test_resolve_two_tank_runtime_uses_default_when_startup_wait_timeout_missing() -> None:

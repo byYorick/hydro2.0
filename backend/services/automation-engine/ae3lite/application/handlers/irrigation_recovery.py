@@ -64,8 +64,17 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
                 error_message="Превышено время этапа восстановления после полива",
             )
 
-        if await self._targets_reached(task=task, plan=plan, now=now):
+        if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")
+
+        stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
+        if stage_retry_count > 0:
+            _logger.info(
+                "irrigation_recovery_check: correction уже исчерпана, poll без нового окна zone_id=%s retry_count=%s",
+                task.zone_id,
+                stage_retry_count,
+            )
+            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
 
         _logger.info("irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)

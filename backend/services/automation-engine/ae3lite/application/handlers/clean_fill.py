@@ -25,7 +25,6 @@ class CleanFillCheckHandler(BaseStageHandler):
     """
 
     _STALE_RECHECK_DELAY_SEC = 0.25
-    _SOURCE_EMPTY_RETRY_CYCLES = 2
 
     async def run(
         self,
@@ -54,13 +53,14 @@ class CleanFillCheckHandler(BaseStageHandler):
                 expected={"valve_clean_fill": True},
             )
         if recent_event_type == "CLEAN_FILL_SOURCE_EMPTY":
+            outcome = self._source_empty_outcome(task=task, runtime=runtime)
             self._observe_fail_safe_transition(
                 task=task,
                 reason="clean_fill_source_empty",
                 source="node_event",
-                next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",  # config-literal: allow two retries before fail-closed stop
+                next_stage=outcome.next_stage or "clean_fill_source_empty_stop",
             )
-            return self._source_empty_outcome(task=task)
+            return outcome
         if recent_event_type == "CLEAN_FILL_COMPLETED":
             await self._check_sensor_consistency(
                 task=task,
@@ -117,7 +117,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             cycle = max(1, task.workflow.clean_fill_cycle)
-            retry_limit = 1 + int(runtime.clean_fill_retry_cycles)
+            retry_limit = self._clean_fill_attempt_limit(runtime=runtime)
             if cycle < retry_limit:
                 # Повтор: увеличить цикл, новый дедлайн выставит WorkflowRouter
                 _logger.info(
@@ -172,9 +172,9 @@ class CleanFillCheckHandler(BaseStageHandler):
             due_delay_sec=int(runtime.level_poll_interval_sec),
         )
 
-    def _source_empty_outcome(self, *, task: Any) -> StageOutcome:
+    def _source_empty_outcome(self, *, task: Any, runtime: Any) -> StageOutcome:
         cycle = max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1))
-        retry_limit = 1 + self._SOURCE_EMPTY_RETRY_CYCLES
+        retry_limit = self._clean_fill_attempt_limit(runtime=runtime)
         if cycle < retry_limit:
             return StageOutcome(
                 kind="transition",
@@ -182,3 +182,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 clean_fill_cycle=cycle + 1,
             )
         return StageOutcome(kind="transition", next_stage="clean_fill_source_empty_stop")
+
+    @staticmethod
+    def _clean_fill_attempt_limit(*, runtime: Any) -> int:
+        return 1 + int(runtime.clean_fill_retry_cycles)

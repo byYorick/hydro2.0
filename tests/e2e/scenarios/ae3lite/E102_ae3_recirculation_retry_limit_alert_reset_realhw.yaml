@@ -370,6 +370,7 @@ actions:
             prepare_recirculation_timeout_sec: 45
             # Без нуля AE добавляет +900s к окну (workflow_router) — коррекция успевает достичь таргетов; retry-limit не срабатывает.
             prepare_recirculation_correction_slack_sec: 0
+            solution_fill_correction_slack_sec: 900
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30

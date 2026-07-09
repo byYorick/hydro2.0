@@ -90,6 +90,7 @@ class ZoneCorrectionResolvedConfigBuilder
      */
     private function systemPumpCalibrationDefaults(): array
     {
+        $catalogDefaults = SystemAutomationSettingsCatalog::defaults('pump_calibration');
         $document = AutomationConfigDocument::query()
             ->where('namespace', AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY)
             ->where('scope_type', AutomationConfigRegistry::SCOPE_SYSTEM)
@@ -97,9 +98,13 @@ class ZoneCorrectionResolvedConfigBuilder
             ->first();
         $payload = $document?->payload;
 
-        return is_array($payload) && ! array_is_list($payload)
-            ? $payload
-            : $this->registry->defaultPayload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY);
+        if (! is_array($payload) || array_is_list($payload)) {
+            return $catalogDefaults;
+        }
+
+        // Stored system policy may predate new required keys (e.g. max_dose_ms).
+        // Always fill gaps from catalog defaults before zone.correction validation.
+        return SystemAutomationSettingsCatalog::merge($catalogDefaults, $payload);
     }
 
     /**

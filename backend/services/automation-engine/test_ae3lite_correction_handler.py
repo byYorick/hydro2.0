@@ -128,9 +128,11 @@ def _make_task(
     workflow_phase: str = "tank_filling",
     stage_deadline_at: datetime | None = None,
     stage_retry_count: int = 0,
+    task_type: str = "cycle_start",
+    control_mode: str = "auto",
 ) -> AutomationTask:
     return AutomationTask.from_row({
-        "id": 6, "zone_id": 60, "task_type": "cycle_start", "status": "running",
+        "id": 6, "zone_id": 60, "task_type": task_type, "status": "running",
         "idempotency_key": "k6", "scheduled_for": NOW, "due_at": NOW,
         "claimed_by": "w1", "claimed_at": NOW, "error_code": None, "error_message": None,
         "created_at": NOW, "updated_at": NOW, "completed_at": None,
@@ -139,6 +141,7 @@ def _make_task(
         "current_stage": current_stage, "workflow_phase": workflow_phase,
         "stage_deadline_at": stage_deadline_at, "stage_retry_count": stage_retry_count,
         "stage_entered_at": None, "clean_fill_cycle": 1,
+        "control_mode_snapshot": control_mode,
         # Correction state fields
         "corr_step": corr.corr_step,
         "corr_attempt": corr.attempt,
@@ -289,6 +292,8 @@ class _MockPlan:
                     payload={"cmd": "state", "name": "irr_state_probe", "params": {}},
                 ),
             )
+            self.named_plans["solution_fill_stop"] = (_SENSOR_CMD,)
+            self.named_plans["sensor_mode_deactivate"] = (_SENSOR_CMD,)
         self.targets = {}
         self._ph = ph
         self._ec = ec
@@ -1218,6 +1223,43 @@ async def test_corr_wait_ec_interrupts_to_ready_when_solution_fill_completed_and
     assert payload["targets_reached"] is True
 
 
+async def test_corr_wait_ec_solution_change_interrupts_to_refill_confirm(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="solution_fill_check",
+        workflow_phase="tank_filling",
+        task_type="solution_change",
+    )
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=2.0,
+        solution_max_triggered=True,
+        solution_min_triggered=True,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=RUNTIME), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_refill_confirm"
+    payload = create_event.await_args.args[2]
+    assert payload["next_stage"] == "solution_fill_stop_to_refill_confirm"
+    assert payload["reason"] == "solution_tank_full"
+
+
 async def test_interrupt_for_solution_fill_completion_raises_when_level_unavailable(monkeypatch: pytest.MonkeyPatch):
     patch_fetch_zone_nodes_diagnostics(monkeypatch)
     corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
@@ -1838,7 +1880,7 @@ async def test_corr_check_prepare_recirc_retry_limit_transitions_window_exhauste
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.stage_retry_count == 2
 
 
 async def test_corr_prepare_recirc_deadline_preempts_active_correction_window():
@@ -1856,7 +1898,7 @@ async def test_corr_prepare_recirc_deadline_preempts_active_correction_window():
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 2
+    assert outcome.stage_retry_count == 1
 
 
 async def test_corr_prepare_recirc_imminent_deadline_skips_probe_and_exhausts_window():
@@ -1876,7 +1918,7 @@ async def test_corr_prepare_recirc_imminent_deadline_skips_probe_and_exhausts_wi
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 2
+    assert outcome.stage_retry_count == 1
     assert gateway.calls == []
     assert monitor.irr_reads == 0
 
@@ -1898,7 +1940,7 @@ async def test_corr_prepare_recirc_six_seconds_to_deadline_still_skips_probe():
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 2
+    assert outcome.stage_retry_count == 1
     assert gateway.calls == []
     assert monitor.irr_reads == 0
 
@@ -1932,7 +1974,7 @@ async def test_corr_prepare_recirc_late_cooldown_retry_exhausts_window_before_ne
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.stage_retry_count == 2
     assert gateway.calls == []
     assert monitor.irr_reads == 0
 
@@ -3042,26 +3084,25 @@ async def test_corr_check_translates_planner_config_error(monkeypatch) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-async def test_corr_check_raises_on_recent_emergency_stop(monkeypatch: pytest.MonkeyPatch):
-    """L1: если в zone_events есть свежий EMERGENCY_STOP_ACTIVATED,
-    correction прерывается с TaskExecutionError('emergency_stop_activated')."""
+async def test_corr_check_exits_on_recent_emergency_stop(monkeypatch: pytest.MonkeyPatch):
+    """L1: свежий EMERGENCY_STOP_ACTIVATED → controlled exit через corr_deactivate."""
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
-    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5, activated_here=True)
     task = _make_task(corr=corr)
     monitor = _MockRuntimeMonitor(ph=5.8, ec=1.85)
     handler = _make_handler(monitor=monitor)
 
-    # Мокаем _read_recent_storage_event чтобы вернуть свежий E-STOP event.
     async def _fake_read(*, task, event_types, max_age_sec):
         if "EMERGENCY_STOP_ACTIVATED" in event_types:
             return {"event_id": 12345, "type": "EMERGENCY_STOP_ACTIVATED"}
         return None
     monkeypatch.setattr(handler, "_read_recent_storage_event", _fake_read)
 
-    from ae3lite.domain.errors import TaskExecutionError
-    with pytest.raises(TaskExecutionError) as excinfo:
-        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
-    assert excinfo.value.code == "emergency_stop_activated"
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_deactivate"
+    assert outcome.correction.outcome_success is False
 
 
 async def test_corr_check_success_resets_no_effect_counts(monkeypatch: pytest.MonkeyPatch):
@@ -3193,6 +3234,10 @@ async def test_corr_check_alert_block_exhausted_raises_terminal_fail(monkeypatch
 
 async def test_corr_dose_ec_persists_last_dose_at_only_after_done(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction._utcnow",
+        lambda: NOW.replace(tzinfo=None),
+    )
     pid_repo = _MockPidStateRepository()
     corr = _base_corr(
         corr_step="corr_dose_ec",
@@ -3211,7 +3256,7 @@ async def test_corr_dose_ec_persists_last_dose_at_only_after_done(monkeypatch: p
     ec_update = next(
         item for item in pid_repo.upsert_calls[0]["updates"] if item.get("pid_type") == "ec"
     )
-    assert ec_update.get("last_dose_at") == NOW
+    assert ec_update.get("last_dose_at") == NOW.replace(tzinfo=None)
 
 
 async def test_corr_dose_ec_failure_does_not_persist_last_dose_at(monkeypatch: pytest.MonkeyPatch):
@@ -3232,3 +3277,81 @@ async def test_corr_dose_ec_failure_does_not_persist_last_dose_at(monkeypatch: p
         await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     assert pid_repo.upsert_calls == []
+
+
+async def test_corr_wait_ec_observe_out_of_bounds_retries_without_pid_update(monkeypatch: pytest.MonkeyPatch):
+    """Observe finalize: EC=999 → sensor_out_of_bounds, no PID/no-effect update."""
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=1,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 1,
+        }
+    }
+    task = _make_task(corr=corr)
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 999.0},
+        {"ts": NOW - timedelta(seconds=2), "value": 999.0},
+        {"ts": NOW, "value": 999.0},
+    ])
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_wait_ec"
+    assert pid_repo.upsert_calls == []
+    assert create_event.await_count == 1
+    assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"
+    assert create_event.await_args.args[2]["reason"] == "sensor_out_of_bounds"
+    assert create_event.await_args.args[2]["sensor_scope"] == "observe_window"
+
+
+async def test_corr_check_manual_control_mode_blocks_dose_routing(monkeypatch: pytest.MonkeyPatch):
+    """manual control_mode: corr_check не маршрутизирует в dose, уходит в manual_hold."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5)
+    task = _make_task(corr=corr, control_mode="manual")
+    gateway = _MockGateway()
+    monitor = _MockRuntimeMonitor(ph=5.0, ec=1.0)
+    handler = _make_handler(monitor=monitor, gateway=gateway)
+
+    off_snapshot = {
+        "valve_clean_supply": False,
+        "valve_solution_fill": False,
+        "pump_main": False,
+    }
+    original_probe = handler._probe_irr_state
+
+    async def _probe_irr_state(*, task, plan, now, expected):
+        if expected.get("pump_main") is False:
+            monitor._irr_snapshot = off_snapshot
+        return await original_probe(task=task, plan=plan, now=now, expected=expected)
+
+    monkeypatch.setattr(handler, "_probe_irr_state", _probe_irr_state)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "manual_hold"
+    assert outcome.flow_hold_return_stage == "solution_fill_check"
+    assert all(
+        str(cmd.payload.get("cmd") or "") != "dose"
+        for call in gateway.calls
+        for cmd in call["commands"]
+    )

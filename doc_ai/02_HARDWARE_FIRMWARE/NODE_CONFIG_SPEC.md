@@ -440,6 +440,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 Примечание для `irrig`:
 - `fail_safe_guards` не задаёт GPIO или channel map и не может переопределить firmware-locked каналы;
 - backend зеркалирует сюда значения из `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`;
+- `clean_fill_min_check_delay_ms` — **deprecated/mirror-only**: clean_fill min-guard не применяется
+  (см. `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT` §4.1); поле сохраняется для совместимости NodeConfig;
 - поля `recirculation_solution_min_guard_enabled` и `irrigation_solution_min_guard_enabled` являются firmware mirror
   для frontend/AE3-полей `recirculation_stop_on_solution_min` и `irrigation_stop_on_solution_min`;
 - `link_loss_timeout_sec` (top-level или в `fail_safe_guards`) — единая policy link-loss fail-safe: по истечении

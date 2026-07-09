@@ -831,6 +831,7 @@ class PgZoneSnapshotReadModel:
             result.update(
                 {
                     "min_dose_ms": pump_calibration_policy.get("min_dose_ms"),
+                    "max_dose_ms": pump_calibration_policy.get("max_dose_ms"),
                     "ml_per_sec_min": self._to_float(pump_calibration_policy.get("ml_per_sec_min")),
                     "ml_per_sec_max": self._to_float(pump_calibration_policy.get("ml_per_sec_max")),
                 }

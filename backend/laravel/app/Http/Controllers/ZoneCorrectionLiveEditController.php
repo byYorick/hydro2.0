@@ -50,6 +50,7 @@ class ZoneCorrectionLiveEditController extends Controller
         'retry.prepare_recirculation_max_correction_attempts',
         'retry.prepare_recirculation_timeout_sec',
         'retry.prepare_recirculation_correction_slack_sec',
+        'retry.solution_fill_correction_slack_sec',
         'retry.telemetry_stale_retry_sec',
         'retry.decision_window_retry_sec',
         'retry.low_water_retry_sec',

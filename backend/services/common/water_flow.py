@@ -24,6 +24,7 @@ _SYSTEM_AUTOMATION_CONFIG_FALLBACKS: Dict[str, Dict[str, Any]] = {
         "ml_per_sec_min": 0.01,
         "ml_per_sec_max": 20.0,
         "min_dose_ms": 50,
+        "max_dose_ms": 60000,
         "calibration_duration_min_sec": 1,
         "calibration_duration_max_sec": 120,
         "quality_score_basic": 0.75,

@@ -273,6 +273,12 @@ def test_build_dose_plan_keeps_tank_recirc_ec_gain_floor_at_authoritative_calibr
             },
             dosing_overrides={
                 "max_ec_dose_ml": 500.0,
+                "pump_calibration": {
+                    "min_dose_ms": 50,
+                    "max_dose_ms": 300_000,
+                    "ml_per_sec_min": 0.01,
+                    "ml_per_sec_max": 100.0,
+                },
             },
         ),
         workflow_phase="tank_recirc",

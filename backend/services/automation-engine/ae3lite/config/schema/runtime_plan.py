@@ -74,7 +74,8 @@ class FailSafeGuards(BaseModel):
 
     Note: keys differ from `recipe_phase.FailSafeGuards` — runtime spec
     flattens the recipe shape and adds `recirculation_stop_on_solution_min`
-    and `irrigation_stop_on_solution_min` booleans."""
+    and `irrigation_stop_on_solution_min` booleans. `clean_fill_min_check_delay_ms`
+    is deprecated: clean_fill does not consume it; the value remains mirror-only."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -263,6 +264,7 @@ class RuntimePlan(BaseModel):
     solution_fill_timeout_sec: Annotated[int, Field(ge=30, le=86400)]
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
+    solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     level_poll_interval_sec: Annotated[int, Field(ge=5, le=3600)]
     clean_fill_retry_cycles: Annotated[int, Field(ge=0, le=20)]
     level_switch_on_threshold: Annotated[float, Field(ge=0.0, le=1.0)]

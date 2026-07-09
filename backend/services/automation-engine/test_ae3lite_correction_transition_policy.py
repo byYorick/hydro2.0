@@ -109,6 +109,21 @@ def test_exhausted_irrigation_check_re_enters_same_stage(
     assert outcome.due_delay_sec == 10
 
 
+def test_exhausted_irrigation_recovery_re_enters_same_stage(
+    policy: CorrectionTransitionPolicy,
+) -> None:
+    outcome = policy.decide_exhausted_transition(
+        current_stage="irrigation_recovery_check",
+        stage_retry_count=1,
+        level_poll_interval_sec=8,
+    )
+    assert isinstance(outcome, StageOutcome)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_recovery_check"
+    assert outcome.stage_retry_count == 2
+    assert outcome.due_delay_sec == 8
+
+
 def test_exhausted_prepare_recirc_goes_to_window_exhausted(
     policy: CorrectionTransitionPolicy,
 ) -> None:
@@ -118,7 +133,7 @@ def test_exhausted_prepare_recirc_goes_to_window_exhausted(
         level_poll_interval_sec=10,
     )
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 1
+    assert outcome.stage_retry_count == 0
 
 
 def test_exhausted_solution_fill_check_reenters_same_stage(
@@ -156,7 +171,7 @@ def test_no_effect_prepare_recirc_goes_to_window_exhausted(
     )
     assert outcome is not None
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 4
+    assert outcome.stage_retry_count == 3
 
 
 def test_no_effect_solution_fill_goes_to_timeout_stop(
@@ -248,7 +263,7 @@ def test_stage_deadline_solution_fill_goes_to_timeout_stop(
     assert outcome.next_stage == "solution_fill_timeout_stop"
 
 
-def test_stage_deadline_prepare_recirc_increments_retry(
+def test_stage_deadline_prepare_recirc_preserves_retry(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     outcome = policy.decide_stage_deadline_transition(
@@ -259,7 +274,7 @@ def test_stage_deadline_prepare_recirc_increments_retry(
         targets_reached=None,
     )
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 5
+    assert outcome.stage_retry_count == 4
 
 
 # ── decide_imminent_flow_probe_transition ───────────────────────────
@@ -287,7 +302,7 @@ def test_imminent_probe_declines_when_deadline_not_close(
     ) is None
 
 
-def test_imminent_probe_prepare_recirc_increments_retry(
+def test_imminent_probe_prepare_recirc_preserves_retry(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     outcome = policy.decide_imminent_flow_probe_transition(
@@ -298,7 +313,7 @@ def test_imminent_probe_prepare_recirc_increments_retry(
     )
     assert outcome is not None
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 2
+    assert outcome.stage_retry_count == 1
 
 
 def test_imminent_probe_solution_fill_does_not_increment_retry(
@@ -355,7 +370,7 @@ def test_imminent_retry_declines_when_remaining_exceeds_budget(
     ) is None
 
 
-def test_imminent_retry_prepare_recirc_increments_retry(
+def test_imminent_retry_prepare_recirc_preserves_retry(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     outcome = policy.decide_imminent_retry_then_probe_transition(
@@ -367,7 +382,7 @@ def test_imminent_retry_prepare_recirc_increments_retry(
     )
     assert outcome is not None
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.stage_retry_count == 2
 
 
 def test_imminent_retry_solution_fill_does_not_increment_retry(

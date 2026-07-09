@@ -31,6 +31,7 @@ export interface PumpCalibrationSettings {
   ml_per_sec_min: number
   ml_per_sec_max: number
   min_dose_ms: number
+  max_dose_ms: number
   calibration_duration_min_sec: number
   calibration_duration_max_sec: number
   quality_score_basic: number

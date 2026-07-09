@@ -95,7 +95,7 @@ abs(now - ts) < 10 секунд
 ```
 1 <= duration_ms <= _MAX_DURATION_MS_SANITY (300_000)
 ```
-Hard cap = 5 минут на одну команду. Совпадает с дефолтом `pump_calibration.max_dose_ms`. Для timed-start IRR (`pump_main/set_relay {state,timeout_ms,stage}`) cap применяется к `timeout_ms`.
+Hard cap = 5 минут на одну команду в history-logger (`_MAX_DURATION_MS_SANITY`). AE3 planner для pH/EC dose использует согласованный default `pump_calibration.max_dose_ms=60_000` ms (firmware ph/ec node). Для timed-start IRR (`pump_main/set_relay {state,timeout_ms,stage}`) cap применяется к `timeout_ms`.
 
 ### Команда set_position (roof vent / greenhouse climate):
 ```
@@ -184,7 +184,7 @@ sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 | Команда | Sanity-проверка прошивки | Дополнительно из NodeConfig |
 |---------|--------------------------|------------------------------|
-| dose | `params.ml > 0`, тип number | `safe_limits.max_duration_ms` per pump channel |
+| dose | `params.ml > 0`, тип number | `safe_limits.max_duration_ms` per pump channel; нода считает duration из `ml_per_second`, при превышении cap — `details.duration_limited=true` |
 | run_pump | `params.duration_ms >= 1`, integer | `safe_limits.max_duration_ms`, `safe_limits.min_off_ms` |
 | set_relay | `params.state ∈ {true,false}`; для timed-start IRR ноды поддерживается `duration_ms`/`timeout_ms+stage` | interlock checks для `pump_main` |
 | set_pwm | `params.value` integer/number | per-channel range |
@@ -280,7 +280,7 @@ Sanity-runaway пределы и source of truth:
 | EC-pump dose min interval | AE3 `correction_planner.py` | `zone.correction.resolved_config.controllers.ec.min_interval_sec` (typical 60..120s) |
 | pH-pump max dose per shot | AE3 + sanity cap HL | `controllers.ph.max_dose_ml` + HL `_MAX_DOSE_ML_SANITY=500` |
 | EC-pump max dose per shot | AE3 + sanity cap HL | `controllers.ec.max_dose_ml` + HL `_MAX_DOSE_ML_SANITY=500` |
-| pump max duration per command | HL + firmware NodeConfig | HL `_MAX_DURATION_MS_SANITY=300_000`, NodeConfig `safe_limits.max_duration_ms` |
+| pump max duration per command | AE3 planner + HL + firmware NodeConfig | AE3 default `pump_calibration.max_dose_ms=60_000` (firmware ph/ec), HL `_MAX_DURATION_MS_SANITY=300_000`, NodeConfig `safe_limits.max_duration_ms` |
 | pump min off interval | firmware NodeConfig | `safe_limits.min_off_ms` |
 | irrigation: low water guard | AE3 + IRR-node level switches | `level_solution_min` + `irrigation_solution_min_guard_enabled` |
 | no-effect → fail-closed | AE3 `correction_planner` | 3 consecutive no-effect per pid_type → alert + fail-closed window |

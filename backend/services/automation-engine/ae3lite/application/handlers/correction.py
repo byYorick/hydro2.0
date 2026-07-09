@@ -45,13 +45,15 @@ from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePl
 from ae3lite.domain.services.correction_transition_policy import (
     CorrectionTransitionPolicy,
 )
+from ae3lite.domain.services.metric_window_validator import decision_window_bounds_reason
 from ae3lite.domain.services.observation_analyzer import ObservationAnalyzer
 from ae3lite.domain.services.pid_output_event import build_pid_output_detail
 from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
-from common.db import create_zone_event
 from common.biz_alerts import send_biz_alert
+from common.db import create_zone_event
+from common.utils.time import utcnow_naive as _utcnow
 
 _logger = logging.getLogger(__name__)
 
@@ -241,6 +243,15 @@ class CorrectionHandler(BaseStageHandler):
         if deadline_outcome is not None:
             return deadline_outcome
 
+        estop_outcome = await self._interrupt_for_emergency_stop(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+        )
+        if estop_outcome is not None:
+            return estop_outcome
+
         step = corr.corr_step
         if step not in {"corr_activate", "corr_wait_stable", "corr_deactivate", "corr_done"}:
             imminent_probe_outcome = self._interrupt_for_imminent_flow_probe_deadline(
@@ -378,7 +389,10 @@ class CorrectionHandler(BaseStageHandler):
         )
 
         workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
-        next_stage = "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"
+        next_stage = self._solution_fill_completion_next_stage(
+            task=task,
+            workflow_ready=workflow_ready,
+        )
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
@@ -398,6 +412,12 @@ class CorrectionHandler(BaseStageHandler):
         )
         return StageOutcome(kind="transition", next_stage=next_stage)
 
+    @staticmethod
+    def _solution_fill_completion_next_stage(*, task: Any, workflow_ready: bool) -> str:
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "solution_change":
+            return "solution_fill_stop_to_refill_confirm"
+        return "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"
+
     async def _solution_fill_completion_outcome(
         self,
         *,
@@ -407,7 +427,10 @@ class CorrectionHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
-        next_stage = "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"
+        next_stage = self._solution_fill_completion_next_stage(
+            task=task,
+            workflow_ready=workflow_ready,
+        )
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
@@ -468,29 +491,6 @@ class CorrectionHandler(BaseStageHandler):
         runtime = self._require_runtime_plan(plan=plan)
         max_age = int(runtime.telemetry_max_age_sec)
 
-        # E-STOP gate: если недавно был EMERGENCY_STOP_ACTIVATED в zone_events,
-        # прерываем correction. Reconcile ожидаемого состояния каналов делают
-        # parent-стадии (solution_fill, prepare_recirc, irrigation_check) —
-        # корректор не владеет состоянием pump/valve, только сенсоров/дозаторов.
-        estop_event = await self._read_recent_storage_event(
-            task=task,
-            event_types=("EMERGENCY_STOP_ACTIVATED",),
-            max_age_sec=86400,  # config-literal: one-day ESTOP replay window
-        )
-        if isinstance(estop_event, Mapping):
-            estop_event_id = int(estop_event.get("event_id") or 0)
-            if estop_event_id <= 0 or estop_event_id not in self._reconciled_estop_event_ids:
-                await self._log_correction_event(
-                    zone_id=task.zone_id,
-                    event_type="CORRECTION_SKIPPED_EMERGENCY_STOP",
-                    task=task,
-                    corr=corr,
-                    payload={"estop_event_id": estop_event_id},
-                )
-                raise TaskExecutionError(
-                    "emergency_stop_activated",
-                    "Correction прерван: обнаружен недавний EMERGENCY_STOP_ACTIVATED",
-                )
         target_ph = self._effective_ph_target(task=task, runtime=runtime)
         target_ec = self._effective_ec_target(task=task, runtime=runtime)
         target_ph_min = self._effective_ph_min(task=task, runtime=runtime)
@@ -630,6 +630,14 @@ class CorrectionHandler(BaseStageHandler):
                         exc_info=True,
                     )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
+
+        flow_hold = await self._interrupt_for_control_mode_dosing(
+            task=task,
+            plan=plan,
+            now=now,
+        )
+        if flow_hold is not None:
+            return flow_hold
 
         if enforce_attempt_caps and corr.attempt >= corr.max_attempts:
             return await self._correction_exhausted(task=task, plan=plan, corr=corr)
@@ -1012,6 +1020,15 @@ class CorrectionHandler(BaseStageHandler):
             zone_id=task.zone_id, updates=dose_plan.pid_state_updates, now=now,
         )
 
+        if dose_plan.needs_any:
+            flow_hold = await self._interrupt_for_control_mode_dosing(
+                task=task,
+                plan=plan,
+                now=now,
+            )
+            if flow_hold is not None:
+                return flow_hold
+
         if dose_plan.deferred_action:
             selected_action = "ec" if dose_plan.needs_ec else ("ph_up" if dose_plan.needs_ph_up else "ph_down")
             await self._log_correction_event(
@@ -1266,6 +1283,14 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_dose_ec(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
+        flow_hold = await self._interrupt_for_control_mode_dosing(
+            task=task,
+            plan=plan,
+            now=now,
+        )
+        if flow_hold is not None:
+            return flow_hold
+
         seq: list[dict[str, Any]] = []
         ec_single_meta: dict[str, Any] | None = None
         if corr.ec_dose_sequence_json:
@@ -1483,15 +1508,16 @@ class CorrectionHandler(BaseStageHandler):
             pid_entry=_pid_entry_or_none(runtime.pid_state, "ec"),
         )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
+        dose_completed_at = self._resolve_dose_completed_at()
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
-            now=now,
+            now=dose_completed_at,
             updates={
                 "ec": {
                     "hold_until": wait_until,
                     "last_output_ms": corr.ec_duration_ms,
                     "last_correction_kind": "ec",
-                    "last_dose_at": now,
+                    "last_dose_at": dose_completed_at,
                 },
                 "ph": {
                     "hold_until": wait_until,
@@ -1530,6 +1556,14 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_dose_ph(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
+        flow_hold = await self._interrupt_for_control_mode_dosing(
+            task=task,
+            plan=plan,
+            now=now,
+        )
+        if flow_hold is not None:
+            return flow_hold
+
         if (
             not corr.ph_node_uid
             or not corr.ph_channel
@@ -1626,6 +1660,7 @@ class CorrectionHandler(BaseStageHandler):
             pid_entry=_pid_entry_or_none(runtime.pid_state, "ph"),
         )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
+        dose_completed_at = self._resolve_dose_completed_at()
         # Audit B5 fix: explicitly zero out the cross-coupling feedforward_bias
         # the previous EC dose may have left in this pH row. Without this
         # reset the bias would linger until the next EC observation clears
@@ -1633,14 +1668,14 @@ class CorrectionHandler(BaseStageHandler):
         # incorrectly apply a stale EC→pH correction to the next pH tick.
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
-            now=now,
+            now=dose_completed_at,
             updates={
                 "ph": {
                     "hold_until": wait_until,
                     "last_output_ms": corr.ph_duration_ms,
                     "last_correction_kind": "ph_up" if corr.needs_ph_up else "ph_down",
                     "feedforward_bias": 0.0,
-                    "last_dose_at": now,
+                    "last_dose_at": dose_completed_at,
                 },
             },
         )
@@ -1694,6 +1729,70 @@ class CorrectionHandler(BaseStageHandler):
         success = corr.outcome_success if corr.outcome_success is not None else False
         next_stage = corr.return_stage_success if success else corr.return_stage_fail
         return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=corr)
+
+    async def _interrupt_for_emergency_stop(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome | None:
+        """Controlled correction exit on recent EMERGENCY_STOP_ACTIVATED.
+
+        Parent flow-path stages reconcile pump/valve state; correction only
+        deactivates sensors it activated and returns through corr_deactivate.
+        """
+        if corr.corr_step in {"corr_deactivate", "corr_done"}:
+            return None
+
+        estop_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("EMERGENCY_STOP_ACTIVATED",),
+            max_age_sec=86400,  # config-literal: one-day ESTOP replay window
+        )
+        if not isinstance(estop_event, Mapping):
+            return None
+
+        estop_event_id = int(estop_event.get("event_id") or 0)
+        if estop_event_id > 0 and estop_event_id in self._reconciled_estop_event_ids:
+            return None
+
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_SKIPPED_EMERGENCY_STOP",
+            task=task,
+            corr=corr,
+            payload={"estop_event_id": estop_event_id},
+        )
+        if estop_event_id > 0:
+            self._reconciled_estop_event_ids.add(estop_event_id)
+
+        return self._transition_to_deactivate_or_return(corr=corr, success=False)
+
+    async def _interrupt_for_control_mode_dosing(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+    ) -> StageOutcome | None:
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        return await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+            reason="control_mode_manual",
+        )
+
+    @staticmethod
+    def _resolve_dose_completed_at() -> datetime:
+        """Anchor ``last_dose_at`` at terminal DONE time, not tick start."""
+        completed = _utcnow().replace(microsecond=0)
+        if completed.tzinfo is not None:
+            completed = completed.astimezone(timezone.utc).replace(tzinfo=None)
+        return completed
 
     # ── Helpers ─────────────────────────────────────────────────────
 
@@ -2189,6 +2288,41 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=int(observe_cfg["observe_poll_sec"]),
             )
 
+        bounds_reason = decision_window_bounds_reason(
+            sensor_type=sensor_type,
+            value=summary["value"],
+        )
+        if bounds_reason is not None:
+            _logger.warning(
+                "zone %s: observe window value out of sanity bounds sensor_type=%s value=%s",
+                task.zone_id,
+                sensor_type,
+                summary["value"],
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
+                task=task,
+                corr=corr,
+                payload={
+                    "pid_type": pid_type,
+                    "sensor_type": sensor_type,
+                    "sensor_scope": "observe_window",
+                    "reason": bounds_reason,
+                    "observed_value": summary["value"],
+                    "retry_after_sec": int(observe_cfg["observe_poll_sec"]),
+                    "window_min_samples": int(observe_cfg["window_min_samples"]),
+                    "stability_max_slope": float(observe_cfg["stability_max_slope"]),
+                },
+            )
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
+                due_delay_sec=int(observe_cfg["observe_poll_sec"]),
+            )
+
         return _ObservationWindow(
             samples=window["samples"],
             summary_value=float(summary["value"]),
@@ -2321,6 +2455,7 @@ class CorrectionHandler(BaseStageHandler):
                 observed_value=observed_value,
                 expected_effect=expected_effect,
                 actual_effect=peak_effect,
+                threshold_effect=threshold_effect,
                 no_effect_limit=int(observe_cfg["no_effect_limit"]),
             )
 
@@ -2398,6 +2533,7 @@ class CorrectionHandler(BaseStageHandler):
         observed_value: float,
         expected_effect: float,
         actual_effect: float,
+        threshold_effect: float,
         no_effect_limit: int,
     ) -> StageOutcome:
         await self._log_correction_event(
@@ -2411,7 +2547,7 @@ class CorrectionHandler(BaseStageHandler):
                 "observed_value": observed_value,
                 "expected_effect": expected_effect,
                 "actual_effect": actual_effect,
-                "threshold_effect": expected_effect * 0.25,
+                "threshold_effect": threshold_effect,
                 "no_effect_limit": no_effect_limit,
             },
         )

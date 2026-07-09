@@ -11,7 +11,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Публикует телеметрию по level-switch каналам 2-бакового контура.
 - Публикует structured diagnostics snapshot `pump_health` в `hydro/{gh}/{zone}/{node}/diagnostics`.
 - Публикует `storage_state/event` со `snapshot` (и `state` alias) при событиях fail-safe и заполнения:
-  `clean_fill_source_empty`, `clean_fill_completed`, `solution_fill_source_empty`,
+  `clean_fill_completed`, `solution_fill_source_empty`,
   `solution_fill_leak_detected`, `solution_fill_completed`, `recirculation_solution_low`,
   `irrigation_solution_low`, `solution_fill_timeout`, `prepare_recirculation_timeout`,
   `emergency_stop_activated`.
@@ -30,11 +30,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
 - Встроенные fail-safe guards работают локально:
   - `clean_fill`: `valve_clean_fill` держится открытым до `level_clean_max=1` (событие `clean_fill_completed`); проверка `level_clean_min` по таймеру **не применяется** — при пустом баке min активируется только после подъёма уровня; пустой источник — через AE3 timeout/retry.
-  - `solution_fill`: через `solution_fill_clean_min_check_delay_ms` проверяется `level_clean_min`; при `0` нода выключает `pump_main + valve_clean_supply + valve_solution_fill` и публикует `solution_fill_source_empty`; через `solution_fill_solution_min_check_delay_ms` проверяется `level_solution_min`; при `0` нода выключает тот же path и публикует `solution_fill_leak_detected`; при `level_solution_max=1` нода выключает тот же path и публикует `solution_fill_completed`.
+  - `solution_fill`: после `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min` на каждом fail-safe scan до terminal event; при `0` выключает `pump_main + valve_clean_supply + valve_solution_fill`, снимает stage guard и публикует `solution_fill_source_empty`; после `solution_fill_solution_min_check_delay_ms` так же непрерывно проверяет `level_solution_min`; при `0` выключает тот же path, снимает stage guard и публикует `solution_fill_leak_detected`; при `level_solution_max=1` нода выключает тот же path, снимает stage guard и публикует `solution_fill_completed`.
   - `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_fill + valve_solution_supply` и публикует `recirculation_solution_low`.
   - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
 - Каждый `level_*` канал дополнительно публикует собственный MQTT event на оба перехода (`0 -> 1`, `1 -> 0`) после debounce; первая публикация после boot/reconnect помечается `initial=true`.
-- На `GPIO23` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы и публикует `emergency_stop_activated`; после отпускания нода восстанавливает снимок состояний, который был до нажатия.
+- На `GPIO23` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания нода восстанавливает снимок состояний, который был до нажатия.
 - Терминальные статусы: `DONE`/`ERROR`; timed-start использует `ACK -> DONE/ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
@@ -88,6 +88,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Эта секция является firmware mirror для frontend/AE3-настроек из
 `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`.
+Поле `clean_fill_min_check_delay_ms` deprecated: оно сохраняется в mirror для совместимости, но clean_fill min-guard в прошивке не применяется.
 
 ## Публикации MQTT
 

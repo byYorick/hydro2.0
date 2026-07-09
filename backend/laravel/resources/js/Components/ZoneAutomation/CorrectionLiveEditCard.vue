@@ -438,6 +438,7 @@ const LIVE_EDITABLE_CORRECTION_FIELDS = new Set<string>([
   'retry.prepare_recirculation_max_correction_attempts',
   'retry.prepare_recirculation_timeout_sec',
   'retry.prepare_recirculation_correction_slack_sec',
+  'retry.solution_fill_correction_slack_sec',
   'retry.telemetry_stale_retry_sec',
   'retry.decision_window_retry_sec',
   'retry.low_water_retry_sec',
@@ -535,6 +536,10 @@ const CORRECTION_FIELD_TEXTS: Record<string, LocalizedCorrectionText> = {
   'retry.prepare_recirculation_correction_slack_sec': {
     label: 'Запас времени на correction',
     description: 'Резерв секунд перед дедлайном prepare recirculation, после которого runtime уже не начинает новый correction-цикл.',
+  },
+  'retry.solution_fill_correction_slack_sec': {
+    label: 'Запас времени solution fill',
+    description: 'Дополнительные секунды к дедлайну solution_fill_check для inline pH/EC-коррекции.',
   },
   'retry.telemetry_stale_retry_sec': {
     label: 'Повтор после stale telemetry',
