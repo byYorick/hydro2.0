@@ -37,7 +37,7 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         http_client_read_timeout_sec=8.0,
         http_client_write_timeout_sec=5.0,
         http_client_pool_timeout_sec=2.0,
-        hl_max_retries=2,
+        hl_max_retries=1,
         hl_retry_backoff_sec=0.5,
         hl_breaker_fail_threshold=5,
         hl_breaker_open_sec=15.0,
@@ -47,6 +47,8 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         waiting_command_reconcile_batch_limit=32,
         stale_claimed_ttl_sec=120,
         stale_running_ttl_sec=960,
+        waiting_command_stale_ttl_sec=210,
+        unconfirmed_command_stale_ttl_sec=120,
         stale_task_reconcile_sec=60.0,
         shutdown_grace_sec=30.0,
         command_poll_default_sec=120.0,
@@ -142,6 +144,15 @@ class TestAe3RuntimeConfigValidate:
         cfg = _config(hl_retry_backoff_sec=-0.1)
         with pytest.raises(ValueError, match="hl_retry_backoff_sec"):
             cfg.validate()
+
+    def test_hl_max_retries_above_one_raises(self) -> None:
+        cfg = _config(hl_max_retries=2)
+        with pytest.raises(ValueError, match="hl_max_retries must be <= 1"):
+            cfg.validate()
+
+    def test_hl_max_retries_one_is_allowed(self) -> None:
+        cfg = _config(hl_max_retries=1)
+        cfg.validate()
 
     def test_hl_breaker_fail_threshold_non_positive_raises(self) -> None:
         cfg = _config(hl_breaker_fail_threshold=0)

@@ -23,6 +23,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from _test_support_runtime_plan import make_runtime_plan
+from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
@@ -1215,6 +1216,94 @@ async def test_corr_wait_ec_interrupts_to_ready_when_solution_fill_completed_and
     payload = create_event.await_args.args[2]
     assert payload["next_stage"] == "solution_fill_stop_to_ready"
     assert payload["targets_reached"] is True
+
+
+async def test_interrupt_for_solution_fill_completion_raises_when_level_unavailable(monkeypatch: pytest.MonkeyPatch):
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    monitor = _MockRuntimeMonitor(has_level=False)
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler._interrupt_for_solution_fill_completion(
+            task=task,
+            plan=_MockPlan(runtime=RUNTIME),
+            corr=corr,
+            now=NOW,
+        )
+
+    assert exc_info.value.code == "two_tank_solution_level_unavailable"
+
+
+async def test_interrupt_for_solution_fill_completion_raises_when_level_stale(monkeypatch: pytest.MonkeyPatch):
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    monitor = _MockRuntimeMonitor(solution_max_triggered=True, level_stale=True)
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler._interrupt_for_solution_fill_completion(
+            task=task,
+            plan=_MockPlan(runtime=RUNTIME),
+            corr=corr,
+            now=NOW,
+        )
+
+    assert exc_info.value.code == "two_tank_solution_level_stale"
+
+
+async def test_interrupt_for_solution_fill_completion_raises_when_min_level_unavailable(monkeypatch: pytest.MonkeyPatch):
+    patch_fetch_zone_nodes_diagnostics(monkeypatch)
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+
+    class _MaxOnlyMonitor(_MockRuntimeMonitor):
+        async def read_level_switch(self, *, zone_id, sensor_labels, threshold, telemetry_max_age_sec, allow_initial_event_fallback=False):
+            labels = [str(label) for label in sensor_labels]
+            if "level_solution_max" in labels:
+                return {
+                    "has_level": True,
+                    "is_stale": False,
+                    "is_triggered": True,
+                }
+            return {
+                "has_level": False,
+                "is_stale": False,
+                "is_triggered": False,
+            }
+
+    handler = _make_handler(monitor=_MaxOnlyMonitor(), pid_repo=_MockPidStateRepository())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler._interrupt_for_solution_fill_completion(
+            task=task,
+            plan=_MockPlan(runtime=RUNTIME),
+            corr=corr,
+            now=NOW,
+        )
+
+    assert exc_info.value.code == "two_tank_solution_min_level_unavailable"
+
+
+async def test_corr_wait_ec_continues_when_solution_max_not_triggered():
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=2)
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    monitor = _MockRuntimeMonitor(
+        solution_max_triggered=False,
+        solution_min_triggered=True,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler._interrupt_for_solution_fill_completion(
+        task=task,
+        plan=_MockPlan(runtime=RUNTIME),
+        corr=corr,
+        now=NOW,
+    )
+
+    assert outcome is None
 
 
 async def test_corr_wait_ec_stale_telemetry_retries_in_30s():
@@ -2497,12 +2586,15 @@ async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
 async def test_corr_check_uses_probe_snapshot_for_solution_min(monkeypatch):
     corr = _base_corr(corr_step="corr_check")
     task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    # max must be fresh+not-triggered so interrupt path returns None (fail-closed on stale);
+    # min comes from IRR probe snapshot while telemetry_last for min is stale/false.
     monitor = _MockRuntimeMonitor(
         ph=6.0,
         ec=2.0,
         solution_min_triggered=False,
+        solution_max_triggered=False,
         has_level=True,
-        level_stale=True,
+        level_stale=False,
         irr_snapshot={
             "valve_clean_supply": True,
             "valve_solution_fill": True,

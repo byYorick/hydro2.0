@@ -59,7 +59,37 @@ async def _insert_task(
 
 
 async def _cleanup(prefix: str) -> None:
+    await execute(
+        """
+        DELETE FROM ae_zone_leases
+        WHERE zone_id IN (SELECT id FROM zones WHERE name LIKE $1)
+        """,
+        f"{prefix}%",
+    )
+    await execute(
+        """
+        DELETE FROM ae_tasks
+        WHERE zone_id IN (SELECT id FROM zones WHERE name LIKE $1)
+        """,
+        f"{prefix}%",
+    )
     await execute("DELETE FROM zones WHERE name LIKE $1", f"{prefix}%")
+
+
+async def _isolate_claim_queue(*, now: datetime) -> None:
+    """Убирает чужие pending-задачи из очереди claim для детерминизма integration-тестов."""
+    await execute(
+        """
+        UPDATE ae_tasks
+        SET status = 'failed',
+            error_code = 'test_isolation',
+            error_message = 'cleared for claim_next_task integration test',
+            updated_at = $1
+        WHERE status = 'pending'
+          AND due_at <= $1
+        """,
+        now,
+    )
 
 
 @pytest.mark.asyncio
@@ -75,6 +105,7 @@ async def test_claim_next_task_claims_earliest_due_pending_task() -> None:
     )
 
     try:
+        await _isolate_claim_queue(now=now)
         zone_one = await _insert_zone(f"{prefix}-zone-1")
         zone_two = await _insert_zone(f"{prefix}-zone-2")
         older_task_id = await _insert_task(
@@ -114,6 +145,7 @@ async def test_claim_next_task_is_not_double_claimed_by_parallel_workers() -> No
     )
 
     try:
+        await _isolate_claim_queue(now=now)
         zone_id = await _insert_zone(f"{prefix}-zone")
         await _insert_task(
             zone_id=zone_id,
@@ -158,6 +190,7 @@ async def test_claim_next_task_reverts_claim_when_zone_lease_is_busy() -> None:
     )
 
     try:
+        await _isolate_claim_queue(now=now)
         zone_id = await _insert_zone(f"{prefix}-zone")
         task_id = await _insert_task(
             zone_id=zone_id,
@@ -208,6 +241,7 @@ async def test_update_stage_requeues_task_as_unclaimed_pending() -> None:
     )
 
     try:
+        await _isolate_claim_queue(now=now)
         zone_id = await _insert_zone(f"{prefix}-zone")
         task_id = await _insert_task(
             zone_id=zone_id,
@@ -274,6 +308,7 @@ async def test_zone_lease_can_be_reclaimed_after_expiry_or_release() -> None:
     lease_repo = PgZoneLeaseRepository()
 
     try:
+        await _isolate_claim_queue(now=now)
         zone_id = await _insert_zone(f"{prefix}-zone")
         await execute(
             """

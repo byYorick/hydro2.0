@@ -251,7 +251,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             return_stage_success=stage_def.on_corr_success or "solution_fill_check",
             return_stage_fail=stage_def.on_corr_fail or "solution_fill_check",
         )
-        return StageOutcome(kind="enter_correction", correction=corr)
+        return StageOutcome(kind="enter_correction", correction=corr, task_override=task)
 
     async def _should_finish_to_ready(
         self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,

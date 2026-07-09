@@ -672,6 +672,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             "valve_solution_fill",
             "valve_solution_supply",
             "valve_irrigation",
+            "valve_drain",
             "pump_main",
         ):
             rows = await fetch(

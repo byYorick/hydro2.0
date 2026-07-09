@@ -875,3 +875,37 @@ async def test_irrigation_check_recent_estop_reconcile_failure_raises_emergency_
         await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
 
     assert exc_info.value.code == "emergency_stop_activated"
+
+
+@pytest.mark.asyncio
+async def test_irrigation_check_missing_deadline_raises() -> None:
+    handler = IrrigationCheckHandler(
+        runtime_monitor=object(),
+        command_gateway=object(),
+        task_repository=_TaskRepoStub(),
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=now - timedelta(seconds=10),
+        ),
+    )
+    plan = _plan(
+        irrigation_execution={"duration_sec": 120, "correction_during_irrigation": False},
+        irrigation_safety={"stop_on_solution_min": False},
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+
+    assert exc_info.value.code == "irrigation_check_deadline_unconfigured"

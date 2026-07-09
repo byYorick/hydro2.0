@@ -106,6 +106,8 @@ class ErrorCodes:
     AE3_UNSUPPORTED_LEGACY_STATUS = "ae3_unsupported_legacy_status"
     AE3_WAITING_COMMAND_TRANSITION_FAILED = "ae3_waiting_command_transition_failed"
     AE3_RUNNING_TRANSITION_FAILED = "ae3_running_transition_failed"
+    AE3_RUNNING_TRANSITION_CAS_MISS = "ae3_running_transition_cas_miss"
+    AE3_STALE_WAITING_COMMAND = "ae3_stale_waiting_command"
     AE3_FAILED_TRANSITION_FAILED = "ae3_failed_transition_failed"
     AE3_COMPLETE_TRANSITION_FAILED = "ae3_complete_transition_failed"
     AE3_TASK_RUNNING_TRANSITION_FAILED = "ae3_task_running_transition_failed"

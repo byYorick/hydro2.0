@@ -162,7 +162,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             return_stage_success=stage_def.on_corr_success or "prepare_recirculation_stop_to_ready",
             return_stage_fail=stage_def.on_corr_fail or "prepare_recirculation_window_exhausted",
         )
-        return StageOutcome(kind="enter_correction", correction=corr)
+        return StageOutcome(kind="enter_correction", correction=corr, task_override=task)
 
     def _build_correction_state(
         self,

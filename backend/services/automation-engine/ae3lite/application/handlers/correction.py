@@ -355,32 +355,30 @@ class CorrectionHandler(BaseStageHandler):
             )
 
         runtime = self._require_runtime_plan(plan=plan)
-        try:
-            solution_max = await self._read_level(
-                task=task,
-                zone_id=task.zone_id,
-                labels=runtime.solution_max_sensor_labels,
-                threshold=runtime.level_switch_on_threshold,
-                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
-                unavailable_error="two_tank_solution_level_unavailable",
-                stale_error="two_tank_solution_level_stale",
-            )
-        except TaskExecutionError:
-            return None
+        # Fail-closed: unavailable/stale max-level must not silently continue dosing.
+        # Interrupt (exit correction) only when max is confirmed triggered + consistency OK.
+        solution_max = await self._read_level(
+            task=task,
+            zone_id=task.zone_id,
+            labels=runtime.solution_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
+            unavailable_error="two_tank_solution_level_unavailable",
+            stale_error="two_tank_solution_level_stale",
+            prefer_probe_snapshot=True,
+            allow_stale_if_untriggered=True,
+        )
 
         if not bool(solution_max.get("is_triggered")):
             return None
 
-        try:
-            await self._check_sensor_consistency(
-                task=task,
-                runtime=runtime,
-                min_labels_key="solution_min_sensor_labels",
-                min_unavailable_error="two_tank_solution_min_level_unavailable",
-                min_stale_error="two_tank_solution_min_level_stale",
-            )
-        except TaskExecutionError:
-            return None
+        await self._check_sensor_consistency(
+            task=task,
+            runtime=runtime,
+            min_labels_key="solution_min_sensor_labels",
+            min_unavailable_error="two_tank_solution_min_level_unavailable",
+            min_stale_error="two_tank_solution_min_level_stale",
+        )
 
         workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
         next_stage = "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"

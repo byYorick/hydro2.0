@@ -44,6 +44,8 @@ class Ae3RuntimeConfig:
     waiting_command_reconcile_batch_limit: int
     stale_claimed_ttl_sec: int
     stale_running_ttl_sec: int
+    waiting_command_stale_ttl_sec: int
+    unconfirmed_command_stale_ttl_sec: int
     stale_task_reconcile_sec: float
     shutdown_grace_sec: float
     command_poll_default_sec: float
@@ -140,6 +142,28 @@ class Ae3RuntimeConfig:
                     )
                 ),
             ),
+            waiting_command_stale_ttl_sec=max(
+                1,
+                int(
+                    os.getenv(
+                        "AE_WAITING_COMMAND_STALE_TTL_SEC",
+                        str(
+                            int(
+                                max(
+                                    1.0,
+                                    float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))
+                                    + float(os.getenv("AE_COMMAND_POLL_MARGIN_SEC", "30"))
+                                    + 60.0,
+                                )
+                            )
+                        ),
+                    )
+                ),
+            ),
+            unconfirmed_command_stale_ttl_sec=max(
+                1,
+                int(os.getenv("AE_UNCONFIRMED_COMMAND_STALE_TTL_SEC", "120")),
+            ),
             stale_task_reconcile_sec=max(1.0, float(os.getenv("AE_STALE_TASK_RECONCILE_SEC", "60"))),
             shutdown_grace_sec=max(0.0, float(os.getenv("AE_SHUTDOWN_GRACE_SEC", "30"))),
             command_poll_default_sec=max(1.0, float(os.getenv("AE_COMMAND_POLL_DEFAULT_SEC", "120"))),
@@ -213,6 +237,11 @@ class Ae3RuntimeConfig:
                 raise ValueError(f"{field_name} must be > 0.")
         if int(self.hl_max_retries) < 0:
             raise ValueError("hl_max_retries must be >= 0. Set AE_HL_MAX_RETRIES to a non-negative integer.")
+        if int(self.hl_max_retries) > 1:
+            raise ValueError(
+                "hl_max_retries must be <= 1. AE3 allows at most one transient retry to history-logger. "
+                "Set AE_HL_MAX_RETRIES to 0 or 1."
+            )
         if float(self.hl_retry_backoff_sec) < 0.0:
             raise ValueError("hl_retry_backoff_sec must be >= 0. Set AE_HL_RETRY_BACKOFF_SEC to a non-negative number.")
         if int(self.hl_breaker_fail_threshold) <= 0:
@@ -228,6 +257,16 @@ class Ae3RuntimeConfig:
         if int(self.stale_running_ttl_sec) <= 0:
             raise ValueError(
                 "stale_running_ttl_sec must be > 0. Set AE_STALE_RUNNING_TTL_SEC to a positive integer."
+            )
+        if int(self.waiting_command_stale_ttl_sec) <= 0:
+            raise ValueError(
+                "waiting_command_stale_ttl_sec must be > 0. "
+                "Set AE_WAITING_COMMAND_STALE_TTL_SEC to a positive integer."
+            )
+        if int(self.unconfirmed_command_stale_ttl_sec) <= 0:
+            raise ValueError(
+                "unconfirmed_command_stale_ttl_sec must be > 0. "
+                "Set AE_UNCONFIRMED_COMMAND_STALE_TTL_SEC to a positive integer."
             )
         if int(self.stale_running_ttl_sec) <= int(self.max_task_execution_sec):
             raise ValueError(

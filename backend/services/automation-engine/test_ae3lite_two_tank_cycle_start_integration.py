@@ -209,6 +209,7 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
         "valve_solution_supply",
         "pump_main",
         "valve_irrigation",
+        "valve_drain",
     ):
         rows = await fetch(
             """

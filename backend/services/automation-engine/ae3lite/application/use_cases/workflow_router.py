@@ -45,7 +45,7 @@ from ae3lite.application.services.workflow_topology import TopologyRegistry
 from ae3lite.config.schema import RuntimePlan
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from ae3lite.domain.services.zone_node_availability import resolve_task_error_with_node_offline
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import PlannerConfigurationError, TaskExecutionError
 from ae3lite.infrastructure.log_context import log_context_scope
 from ae3lite.infrastructure.metrics import (
     COMMAND_TERMINAL,
@@ -320,16 +320,49 @@ class WorkflowRouter:
             f"Неизвестный StageOutcome.kind={outcome.kind!r}",
         )
 
+    async def _resolve_stage_owner(self, *, task: Any) -> str:
+        """Возвращает актуальный claimed_by для CAS update_stage.
+
+        После command reconcile / janitor requeue in-memory task может держать
+        stale owner. Без reload CAS miss превращается в ae3_*_apply_failed.
+        """
+        owner = str(getattr(task, "claimed_by", None) or "").strip()
+        get_task_by_id = getattr(self._task_repo, "get_by_id", None)
+        if not callable(get_task_by_id):
+            return owner
+        try:
+            fresh = await get_task_by_id(task_id=int(task.id))
+        except Exception:
+            logger.warning(
+                "AE3 не смог перечитать claimed_by перед update_stage task_id=%s",
+                getattr(task, "id", None),
+                exc_info=True,
+            )
+            return owner
+        if fresh is None:
+            return owner
+        fresh_owner = str(getattr(fresh, "claimed_by", None) or "").strip()
+        if fresh_owner and fresh_owner != owner:
+            logger.info(
+                "AE3 owner reload before update_stage: task_id=%s stale=%s fresh=%s",
+                getattr(task, "id", None),
+                owner or "<empty>",
+                fresh_owner,
+            )
+            return fresh_owner
+        return fresh_owner or owner
+
     async def _apply_poll(
         self, *, task: Any, outcome: StageOutcome, now: datetime,
     ) -> Any:
         """Оставляет задачу в том же stage и ставит повторный запуск с задержкой."""
         workflow = task.workflow
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
+        owner = await self._resolve_stage_owner(task=task)
 
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
-            owner=str(task.claimed_by or ""),
+            owner=owner,
             workflow=workflow,
             correction=task.correction,
             due_at=due_at,
@@ -460,9 +493,10 @@ class WorkflowRouter:
         )
 
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
+        owner = await self._resolve_stage_owner(task=task)
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
-            owner=str(task.claimed_by or ""),
+            owner=owner,
             workflow=new_workflow,
             correction=None,  # Очистить correction state при переходе
             due_at=due_at,
@@ -516,9 +550,10 @@ class WorkflowRouter:
 
         workflow = task.workflow
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
+        owner = await self._resolve_stage_owner(task=task)
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
-            owner=str(task.claimed_by or ""),
+            owner=owner,
             workflow=workflow,
             correction=corr,
             due_at=due_at,
@@ -529,6 +564,7 @@ class WorkflowRouter:
             updated_task=updated_task,
             error_code="ae3_correction_apply_failed",
             error_message=f"Не удалось сохранить correction state для задачи {task.id}",
+            expected_corr_step=str(getattr(corr, "corr_step", "") or ""),
         )
         await self._safe_upsert_workflow_phase(
             task=resolved_task,
@@ -590,8 +626,9 @@ class WorkflowRouter:
 
     async def _complete_task(self, *, task: Any, now: datetime) -> Any:
         TASK_COMPLETED.labels(topology=task.topology).inc()
+        owner = await self._resolve_stage_owner(task=task)
         completed = await self._task_repo.mark_completed(
-            task_id=task.id, owner=str(task.claimed_by or ""), now=now,
+            task_id=task.id, owner=owner, now=now,
         )
         resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,
@@ -696,7 +733,12 @@ class WorkflowRouter:
                     return now + timedelta(seconds=max(1, int(explicit_timeout)))
                 except (TypeError, ValueError):
                     pass
-            return None
+            raise PlannerConfigurationError(
+                "irrigation_check deadline не задан: отсутствуют "
+                "irrigation_requested_duration_sec, irrigation_execution.duration_sec "
+                "и irrigation_execution.stage_timeout_sec.",
+                code="irrigation_check_deadline_unconfigured",
+            )
         if stage_def.name == "solution_fill_check":
             base_raw = runtime.solution_fill_timeout_sec
             if base_raw is None:
@@ -918,6 +960,7 @@ class WorkflowRouter:
         error_code: str,
         error_message: str,
         expected_stage: str | None = None,
+        expected_corr_step: str | None = None,
     ) -> Any:
         if updated_task is not None:
             return updated_task
@@ -927,14 +970,26 @@ class WorkflowRouter:
             if current_task is not None:
                 if not bool(getattr(current_task, "is_active", False)):
                     return current_task
+                status = str(getattr(current_task, "status", "") or "").strip().lower()
                 if expected_stage is not None:
                     current_stage = str(getattr(current_task, "current_stage", "") or "").strip()
-                    status = str(getattr(current_task, "status", "") or "").strip().lower()
                     if current_stage == expected_stage and status == "pending":
                         logger.info(
                             "AE3 stage apply idempotent: task_id=%s already pending at stage=%s",
                             task_id,
                             expected_stage,
+                        )
+                        return current_task
+                if expected_corr_step is not None:
+                    current_corr = getattr(current_task, "correction", None)
+                    current_corr_step = str(
+                        getattr(current_corr, "corr_step", "") or ""
+                    ).strip()
+                    if current_corr_step == expected_corr_step and status == "pending":
+                        logger.info(
+                            "AE3 correction apply idempotent: task_id=%s already pending with corr_step=%s",
+                            task_id,
+                            expected_corr_step,
                         )
                         return current_task
         raise TaskExecutionError(error_code, error_message)

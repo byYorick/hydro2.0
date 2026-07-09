@@ -197,6 +197,31 @@ class StartupRecoveryUseCase:
         )
         return outcome, terminal_outcome, observability_task
 
+    async def reconcile_command_task(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+        recovery_source: str = "stale_task_reconcile",
+    ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
+        """Reconcile command state для active задачи (running/claimed/waiting_command)."""
+        outcome, terminal_outcome, observability_task = await self._reconcile_command_task(
+            task=task,
+            now=now,
+            recovery_source=recovery_source,
+        )
+        report_task = observability_task or task
+        await self._record_startup_recovery_outcome(
+            zone_id=int(report_task.zone_id),
+            task_id=int(report_task.id),
+            topology=str(report_task.topology or ""),
+            stage=str(report_task.current_stage or ""),
+            outcome=outcome,
+            terminal_outcome=terminal_outcome,
+            recovery_source=recovery_source,
+        )
+        return outcome, terminal_outcome, observability_task
+
     async def _reconcile_pending_vs_terminal_idle_workflow(
         self,
         *,

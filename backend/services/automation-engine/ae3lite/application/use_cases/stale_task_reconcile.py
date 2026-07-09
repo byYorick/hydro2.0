@@ -1,4 +1,4 @@
-"""Периодический healing застрявших claimed/running задач (TaskJanitor)."""
+"""Периодический healing застрявших claimed/running/waiting_command задач (TaskJanitor)."""
 
 from __future__ import annotations
 
@@ -15,10 +15,12 @@ from common.db import create_zone_event
 logger = logging.getLogger(__name__)
 
 _STALE_TASK_RECLAIMED_EVENT = "AE_TASK_RECLAIMED"
+_PROGRESS_OUTCOMES = frozenset({"recovered_waiting_command", "completed"})
+_STALE_WAITING_COMMAND_ERROR = "ae3_stale_waiting_command"
 
 
 class StaleTaskReconcileUseCase:
-    """Освобождает просроченные lease и переводит stale claimed/running задачи."""
+    """Освобождает просроченные lease и переводит stale active задачи в безопасное состояние."""
 
     def __init__(
         self,
@@ -26,15 +28,21 @@ class StaleTaskReconcileUseCase:
         task_repository: Any,
         lease_repository: Any,
         alert_repository: Any | None = None,
+        startup_recovery_use_case: Any | None = None,
         stale_claimed_ttl_sec: int = 120,
         stale_running_ttl_sec: int = 960,
+        stale_waiting_command_ttl_sec: int = 210,
+        stale_unconfirmed_command_ttl_sec: int = 120,
         batch_limit: int = 16,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
         self._alert_repository = alert_repository
+        self._startup_recovery_use_case = startup_recovery_use_case
         self._stale_claimed_ttl_sec = max(1, int(stale_claimed_ttl_sec))
         self._stale_running_ttl_sec = max(1, int(stale_running_ttl_sec))
+        self._stale_waiting_command_ttl_sec = max(1, int(stale_waiting_command_ttl_sec))
+        self._stale_unconfirmed_command_ttl_sec = max(1, int(stale_unconfirmed_command_ttl_sec))
         self._batch_limit = max(1, min(int(batch_limit), 16))
 
     async def run(
@@ -69,6 +77,8 @@ class StaleTaskReconcileUseCase:
             now=now,
             stale_claimed_before=self._stale_before(now, self._stale_claimed_ttl_sec),
             stale_running_before=self._stale_before(now, self._stale_running_ttl_sec),
+            stale_waiting_command_before=self._stale_before(now, self._stale_waiting_command_ttl_sec),
+            stale_unconfirmed_before=self._stale_before(now, self._stale_unconfirmed_command_ttl_sec),
             limit=self._batch_limit,
         )
 
@@ -89,7 +99,42 @@ class StaleTaskReconcileUseCase:
             from_status = str(task.status or "").strip().lower()
             age_sec = self._task_age_sec(task=task, now=now)
 
+            reconcile_action = await self._try_command_reconcile(task=task, now=now)
+            if reconcile_action == "progressed":
+                requeued_tasks += 1
+                await self._release_lease_after_action(task=task, now=now)
+                STALE_TASKS_RECLAIMED.labels(from_status=from_status, action="reconcile").inc()
+                await self._record_task_reclaimed_event(
+                    zone_id=int(task.zone_id),
+                    task_id=int(task.id),
+                    from_status=from_status,
+                    action="reconcile",
+                    age_sec=age_sec,
+                )
+                logger.info(
+                    "Stale task reconcile: command reconcile progressed task_id=%s zone_id=%s from_status=%s age_sec=%s owner=%s",
+                    task.id,
+                    task.zone_id,
+                    from_status,
+                    age_sec,
+                    worker_owner,
+                )
+                continue
+            if reconcile_action == "failed":
+                failed_tasks += 1
+                await self._release_lease_after_action(task=task, now=now)
+                STALE_TASKS_RECLAIMED.labels(from_status=from_status, action="fail").inc()
+                await self._record_task_reclaimed_event(
+                    zone_id=int(task.zone_id),
+                    task_id=int(task.id),
+                    from_status=from_status,
+                    action="fail",
+                    age_sec=age_sec,
+                )
+                continue
+
             has_commands = await self._task_has_ae_commands(task_id=int(task.id))
+            stale_waiting_command = from_status == "waiting_command"
             if not has_commands:
                 requeued = await self._requeue_stale_task(task=task, now=now)
                 if requeued is None:
@@ -104,12 +149,20 @@ class StaleTaskReconcileUseCase:
                 requeued_tasks += 1
                 await self._release_lease_after_action(task=task, now=now)
             else:
+                error_code = (
+                    _STALE_WAITING_COMMAND_ERROR
+                    if stale_waiting_command
+                    else "ae3_stale_task_reclaimed"
+                )
+                error_message = (
+                    f"Задача {task.id} застряла в waiting_command и переведена в failed janitor'ом"
+                    if stale_waiting_command
+                    else f"Задача {task.id} застряла в {from_status} и переведена в failed janitor'ом"
+                )
                 failed = await self._task_repository.fail_for_recovery(
                     task_id=int(task.id),
-                    error_code="ae3_stale_task_reclaimed",
-                    error_message=(
-                        f"Задача {task.id} застряла в {from_status} и переведена в failed janitor'ом"
-                    ),
+                    error_code=error_code,
+                    error_message=error_message,
                     now=now,
                 )
                 if failed is None:
@@ -125,7 +178,7 @@ class StaleTaskReconcileUseCase:
                 await emit_task_failed_alert(
                     alert_repository=self._alert_repository,
                     task=failed,
-                    error_code="ae3_stale_task_reclaimed",
+                    error_code=error_code,
                     error_message=str(failed.error_message or ""),
                     now=now,
                     extra_details={"recovery_source": "stale_task_reconcile"},
@@ -158,6 +211,67 @@ class StaleTaskReconcileUseCase:
             skipped_lease_tasks=skipped_lease_tasks,
         )
 
+    async def _try_command_reconcile(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> str | None:
+        """Пробует reconcile command path; возвращает progressed/failed/unchanged/None."""
+        if self._startup_recovery_use_case is None:
+            return None
+
+        from_status = str(task.status or "").strip().lower()
+        needs_reconcile = from_status == "waiting_command" or await self._task_has_unconfirmed_commands(
+            task_id=int(task.id),
+        )
+        if not needs_reconcile:
+            return None
+
+        reconcile_command_task = getattr(
+            self._startup_recovery_use_case,
+            "reconcile_command_task",
+            None,
+        )
+        if not callable(reconcile_command_task):
+            if from_status != "waiting_command":
+                return None
+            reconcile_command_task = getattr(
+                self._startup_recovery_use_case,
+                "reconcile_waiting_command_task",
+                None,
+            )
+            if not callable(reconcile_command_task):
+                return None
+
+        try:
+            outcome, _terminal_outcome, _observability_task = await reconcile_command_task(
+                task=task,
+                now=now,
+                recovery_source="stale_task_reconcile",
+            )
+        except Exception:
+            logger.warning(
+                "Stale task reconcile: command reconcile failed task_id=%s zone_id=%s from_status=%s",
+                task.id,
+                task.zone_id,
+                from_status,
+                exc_info=True,
+            )
+            return None
+
+        if outcome in _PROGRESS_OUTCOMES:
+            return "progressed"
+        if outcome == "failed":
+            return "failed"
+        if outcome == "waiting_command":
+            if from_status == "waiting_command":
+                return "unchanged"
+            return "progressed"
+        if outcome in {"skipped"}:
+            return "unchanged"
+        return None
+
     async def _requeue_stale_task(
         self,
         *,
@@ -181,6 +295,12 @@ class StaleTaskReconcileUseCase:
         if not callable(has_commands):
             return True
         return bool(await has_commands(task_id=task_id))
+
+    async def _task_has_unconfirmed_commands(self, *, task_id: int) -> bool:
+        has_unconfirmed = getattr(self._task_repository, "task_has_unconfirmed_ae_commands", None)
+        if not callable(has_unconfirmed):
+            return False
+        return bool(await has_unconfirmed(task_id=task_id))
 
     async def _foreign_lease_blocks_reconcile(
         self,

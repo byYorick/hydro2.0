@@ -104,16 +104,23 @@ class ExecuteTaskUseCase:
 
         running_task = await self._task_repository.mark_running(task_id=task.id, owner=owner, now=now)
         if running_task is None:
-            # CAS-miss: другой worker или recovery уже изменил строку; задача остаётся claimed —
-            # startup recovery / janitor подберут её позже.
             logger.warning(
-                "AE3 mark_running CAS miss: task remains claimed for startup recovery: zone_id=%s task_id=%s owner=%s",
+                "AE3 mark_running CAS miss: fail-closed zone_id=%s task_id=%s owner=%s",
                 task.zone_id,
                 task.id,
                 owner,
             )
             TASK_RUNNING_TRANSITION_MISSED.inc()
-            return task
+            return await self._fail_closed(
+                task=task,
+                owner=owner,
+                error_code="ae3_running_transition_cas_miss",
+                error_message=(
+                    f"mark_running CAS miss для задачи {task.id} (owner={owner}); "
+                    "статус задачи изменился до перехода в running"
+                ),
+                now=now,
+            )
 
         await self._preflight_required_nodes_online(task=running_task)
 

@@ -28,6 +28,7 @@ class FakeHistoryLoggerClient:
         params: dict[str, object],
         cmd_id: str | None = None,
     ) -> str:
+        resolved_cmd_id = str(cmd_id or self._cmd_id)
         self.calls.append(
             {
                 "greenhouse_uid": greenhouse_uid,
@@ -36,7 +37,7 @@ class FakeHistoryLoggerClient:
                 "channel": channel,
                 "cmd": cmd,
                 "params": params,
-                "cmd_id": cmd_id,
+                "cmd_id": resolved_cmd_id,
             }
         )
         if self._insert_legacy_command:
@@ -59,9 +60,9 @@ class FakeHistoryLoggerClient:
                 channel,
                 cmd,
                 params,
-                self._cmd_id,
+                resolved_cmd_id,
             )
-        return self._cmd_id
+        return resolved_cmd_id
 
 
 async def _insert_greenhouse(prefix: str) -> tuple[int, str]:
@@ -172,7 +173,57 @@ async def test_publish_planned_command_persists_external_id_from_legacy_commands
 
         command_rows = await fetch("SELECT id, cmd_id FROM commands WHERE id = $1", int(published.external_id))
         assert len(command_rows) == 1
-        assert command_rows[0]["cmd_id"] == "cmd-ae3-success-1"
+        assert command_rows[0]["cmd_id"] == f"ae3-t{task.id}-z{task.zone_id}-s1"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_publish_planned_command_reuse_published_unconfirmed_skips_second_hl_publish() -> None:
+    prefix = f"ae3-publish-reuse-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task_repository = PgAutomationTaskRepository()
+    repository = PgAeCommandRepository()
+    history_client = FakeHistoryLoggerClient(cmd_id="cmd-ae3-reuse-1", insert_legacy_command=True)
+    use_case = PublishPlannedCommandUseCase(
+        task_repository=task_repository,
+        command_repository=repository,
+        history_logger_client=history_client,
+    )
+
+    try:
+        greenhouse_id, _ = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task = await _insert_task(zone_id, prefix=prefix, now=now)
+        command = PlannedCommand(
+            step_no=1,
+            node_uid="nd-irrig-1",
+            channel="pump_main",
+            payload={"cmd": "set_relay", "params": {"state": True}},
+            planner_step="startup:reuse-test",
+        )
+
+        first = await use_case.run(task=task, command=command, now=now)
+        assert len(history_client.calls) == 1
+
+        await execute(
+            """
+            UPDATE ae_commands
+            SET publish_status = 'published_unconfirmed',
+                external_id = NULL
+            WHERE task_id = $1 AND step_no = 1
+            """,
+            task.id,
+        )
+
+        second = await use_case.run(task=task, command=command, now=now)
+
+        assert len(history_client.calls) == 1
+        assert first.payload["cmd_id"] == second.payload["cmd_id"]
+        row = await repository.get_by_task_step(task_id=task.id, step_no=1)
+        assert row is not None
+        assert row["publish_status"] == "accepted"
+        assert row["external_id"] is not None
     finally:
         await _cleanup(prefix)
 

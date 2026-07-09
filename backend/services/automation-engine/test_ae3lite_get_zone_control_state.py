@@ -50,7 +50,7 @@ async def test_control_state_returns_generic_manual_steps_for_solution_fill() ->
 
     assert result["control_mode"] == "manual"
     assert result["available_modes"] == ["auto", "semi", "manual"]
-    assert result["allowed_manual_steps"] == ["solution_fill_stop"]
+    assert result["allowed_manual_steps"] == ["solution_fill_stop", "solution_change_abort"]
     assert result["pending_manual_step"] == "solution_fill_stop"
 
 
@@ -77,7 +77,7 @@ async def test_control_state_returns_return_stage_manual_steps_in_manual_hold() 
     ).run(zone_id=7)
 
     assert result["current_stage"] == "manual_hold"
-    assert result["allowed_manual_steps"] == ["solution_fill_stop"]
+    assert result["allowed_manual_steps"] == ["solution_fill_stop", "solution_change_abort"]
     assert result["pending_manual_step"] == "__mh_return:solution_fill_check"
 
 
@@ -155,7 +155,7 @@ async def test_control_state_returns_clean_fill_stop_during_clean_fill_start_com
         fetch_fn=fetch_fn,
     ).run(zone_id=7)
 
-    assert result["allowed_manual_steps"] == ["clean_fill_stop"]
+    assert result["allowed_manual_steps"] == ["clean_fill_stop", "solution_change_abort"]
 
 
 async def test_control_state_falls_back_to_zone_workflow_state_when_no_active_task() -> None:

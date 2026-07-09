@@ -11,7 +11,7 @@ Outcomes:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -47,6 +47,7 @@ def _make_task(
     *,
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
+    stage_entered_at: datetime | None = None,
 ) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 3, "zone_id": 30, "task_type": "cycle_start", "status": "running",
@@ -58,7 +59,7 @@ def _make_task(
         "intent_id": None, "intent_meta": {},
         "current_stage": "startup", "workflow_phase": "startup",
         "stage_deadline_at": None, "stage_retry_count": 0,
-        "stage_entered_at": NOW, "clean_fill_cycle": 0,
+        "stage_entered_at": stage_entered_at or NOW, "clean_fill_cycle": 0,
         "control_mode_snapshot": control_mode,
         "pending_manual_step": pending_manual_step,
         "corr_step": None,
@@ -202,6 +203,37 @@ async def test_semi_startup_does_not_accept_force_solution_fill_start() -> None:
     m = _Monitor(clean_max_triggered=False)
     outcome = await _handler(m).run(
         task=_make_task(control_mode="semi", pending_manual_step="force_solution_fill_start"),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+
+
+@pytest.mark.asyncio
+async def test_manual_startup_poll_fails_when_hold_deadline_exceeded() -> None:
+    m = _Monitor(clean_max_triggered=False)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(
+            task=_make_task(
+                control_mode="manual",
+                stage_entered_at=NOW - timedelta(seconds=4000),
+            ),
+            plan=_Plan(),
+            stage_def=None,
+            now=NOW,
+        )
+    assert exc_info.value.code == "startup_manual_hold_timeout"
+
+
+@pytest.mark.asyncio
+async def test_manual_startup_poll_within_hold_deadline_succeeds() -> None:
+    m = _Monitor(clean_max_triggered=False)
+    outcome = await _handler(m).run(
+        task=_make_task(
+            control_mode="manual",
+            stage_entered_at=NOW - timedelta(seconds=60),
+        ),
         plan=_Plan(),
         stage_def=None,
         now=NOW,

@@ -104,7 +104,7 @@ class CommandPublishPipeline:
         command_payload: Mapping[str, Any],
         now: datetime,
         planner_step: str | None,
-    ) -> tuple[int, int, str, bool] | None:
+    ) -> tuple[int, int, str, bool, str] | None:
         allocate = getattr(self._command_repository, "allocate_and_create_pending", None)
         stage_name = str(getattr(task, "current_stage", "") or "") or None
         if callable(allocate):
@@ -120,15 +120,19 @@ class CommandPublishPipeline:
             )
             if allocated is None:
                 return None
-            if len(allocated) == 3:
+            if len(allocated) >= 4:
+                ae_command_id, step_no, reused, publish_status = allocated
+            elif len(allocated) == 3:
                 ae_command_id, step_no, reused = allocated
+                publish_status = "pending"
             else:
                 ae_command_id, step_no = allocated
                 reused = False
+                publish_status = "pending"
             if reused:
                 COMMAND_CMD_ID_REUSED.labels(stage=stage_name or "unknown").inc()
             cmd_id = build_cmd_id(task_id=int(task.id), zone_id=int(task.zone_id), step_no=int(step_no))
-            return int(ae_command_id), int(step_no), cmd_id, bool(reused)
+            return int(ae_command_id), int(step_no), cmd_id, bool(reused), str(publish_status or "pending")
 
         step_no = await self._command_repository.get_next_step_no(task_id=task.id)
         cmd_id = build_cmd_id(task_id=int(task.id), zone_id=int(task.zone_id), step_no=int(step_no))
@@ -145,7 +149,7 @@ class CommandPublishPipeline:
         )
         if ae_command_id is None:
             return None
-        return int(ae_command_id), int(step_no), cmd_id, False
+        return int(ae_command_id), int(step_no), cmd_id, False, "pending"
 
     async def publish(
         self,
@@ -173,26 +177,30 @@ class CommandPublishPipeline:
             raise CommandPublishError(
                 f"Задача {task.id} исчезла во время вставки в ae_commands (вероятен конкурентный cleanup)",
             )
-        ae_command_id, step_no, cmd_id, cmd_id_reused = allocated
+        ae_command_id, step_no, cmd_id, cmd_id_reused, publish_status = allocated
         command_payload["cmd_id"] = cmd_id
 
-        try:
-            greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
-            if not greenhouse_uid:
-                raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
+        skip_hl_publish = cmd_id_reused and publish_status in {"published_unconfirmed", "accepted"}
+        published_cmd_id = cmd_id
 
-            _dispatch_start = time.monotonic()
-            published_cmd_id = await self._history_logger_client.publish(
-                greenhouse_uid=greenhouse_uid,
-                zone_id=task.zone_id,
-                node_uid=command.node_uid,
-                channel=command.channel,
-                cmd=cmd_name,
-                params=params,
-                cmd_id=cmd_id,
-            )
-            COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
-            COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
+        try:
+            if not skip_hl_publish:
+                greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
+                if not greenhouse_uid:
+                    raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
+
+                _dispatch_start = time.monotonic()
+                published_cmd_id = await self._history_logger_client.publish(
+                    greenhouse_uid=greenhouse_uid,
+                    zone_id=task.zone_id,
+                    node_uid=command.node_uid,
+                    channel=command.channel,
+                    cmd=cmd_name,
+                    params=params,
+                    cmd_id=cmd_id,
+                )
+                COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
+                COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
         except Exception as exc:
             normalized_error = str(exc).strip() or type(exc).__name__
             try:
@@ -212,7 +220,7 @@ class CommandPublishPipeline:
             raise CommandPublishError(normalized_error) from exc
 
         mark_unconfirmed = getattr(self._command_repository, "mark_publish_published_unconfirmed", None)
-        if callable(mark_unconfirmed):
+        if callable(mark_unconfirmed) and not skip_hl_publish:
             await mark_unconfirmed(ae_command_id=ae_command_id, now=now)
 
         legacy_command_id = await self._resolve_legacy_command_id_with_retry(

@@ -1342,6 +1342,7 @@ class BaseStageHandler:
         stale_error: str,
         stale_recheck_delay_sec: float | None = None,
         prefer_probe_snapshot: bool = False,
+        allow_stale_if_untriggered: bool = False,
     ) -> Mapping[str, Any]:
         level = await self._runtime_monitor.read_level_switch(
             zone_id=zone_id,
@@ -1377,6 +1378,16 @@ class BaseStageHandler:
                 error_message=f"Недоступен датчик уровня: {labels}",
             )
         if level["is_stale"]:
+            if allow_stale_if_untriggered and not bool(level.get("is_triggered")):
+                self._log_level_state(
+                    task=task,
+                    labels=labels,
+                    level=level,
+                    telemetry_max_age_sec=telemetry_max_age_sec,
+                    reason="stale_untriggered_allowed",
+                    log_method=_logger.info,
+                )
+                return level
             self._log_level_state(
                 task=task,
                 labels=labels,

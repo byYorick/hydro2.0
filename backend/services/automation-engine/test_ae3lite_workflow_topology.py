@@ -80,8 +80,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 35, (
-            f"Expected 35 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 52, (
+            f"Expected 52 stages, got {len(TWO_TANK)}"
         )
 
 
@@ -127,7 +127,7 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 35
+        assert len(stages) == 52
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages

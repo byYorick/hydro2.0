@@ -106,7 +106,7 @@ class _FakeCommandRepo:
         self.step_no += 1
         ae_id = 100 + self.step_no
         self.created_ids.append(ae_id)
-        return ae_id, self.step_no, False
+        return ae_id, self.step_no, False, "pending"
 
     async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now, stage_name=None):
         if self._create_pending_returns_none:
@@ -239,13 +239,14 @@ def _make_task(zone_id=1, task_id=1):
     return m
 
 
-def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_interval=0.01, command_poll_default_sec=3600.0):
+def _make_gw(*, command_repo=None, task_repo=None, history_logger=None, poll_interval=0.01, command_poll_default_sec=3600.0, command_poll_margin_sec=30.0):
     return SequentialCommandGateway(
         task_repository=task_repo or _FakeTaskRepo(),
         command_repository=command_repo or _FakeCommandRepo(),
         history_logger_client=history_logger or _FakeHistoryLogger(),
         poll_interval_sec=poll_interval,
         command_poll_default_sec=command_poll_default_sec,
+        command_poll_margin_sec=command_poll_margin_sec,
     )
 
 
@@ -273,15 +274,24 @@ async def test_run_batch_multiple_commands_all_done():
 
 
 @pytest.mark.asyncio
-async def test_run_batch_complete_on_ack_resumes_task_without_terminal_wait() -> None:
-    cmd_repo = _SequencedLegacyCommandRepo(legacy_rows=[{**_DONE_ROW, "status": "ACK"}])
+async def test_run_batch_complete_on_ack_waits_for_done_not_terminal_on_ack() -> None:
+    cmd_repo = _SequencedLegacyCommandRepo(
+        legacy_rows=[
+            {**_DONE_ROW, "status": "ACK"},
+            _DONE_ROW,
+        ]
+    )
     task_repo = _FakeTaskRepo()
-    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
+    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo, poll_interval=0.01)
     task = _make_task()
     command = PlannedCommand(
         node_uid="nd-1",
         channel="pump_main",
-        payload={"cmd": "set_relay", "params": {"state": True, "timeout_ms": 45000, "stage": "solution_fill"}, "complete_on_ack": True},
+        payload={
+            "cmd": "set_relay",
+            "params": {"state": True, "timeout_ms": 45000, "stage": "solution_fill"},
+            "complete_on_ack": True,
+        },
         step_no=1,
     )
 
@@ -289,7 +299,7 @@ async def test_run_batch_complete_on_ack_resumes_task_without_terminal_wait() ->
 
     assert result["success"] is True
     assert result["commands_total"] == 1
-    assert result["command_statuses"][0]["terminal_status"] == "ACK"
+    assert result["command_statuses"][0]["terminal_status"] == "DONE"
 
 
 @pytest.mark.asyncio
@@ -813,15 +823,33 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
 
 
 @pytest.mark.asyncio
-async def test_run_batch_publish_only_skips_waiting_command_tracking():
-    command_repo = _FakeCommandRepo(legacy_row=_PENDING_ROW)
+async def test_recover_waiting_command_done_resume_cas_miss_raises() -> None:
+    cmd_repo = _FakeCommandRepo(legacy_row=_DONE_ROW)
+    waiting_task = _mock_task(status="waiting_command")
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=_FakeTaskRepo(resumed_task=None, current_task=waiting_task),
+    )
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await gw.recover_waiting_command(task=_make_task(), now=NOW)
+    assert exc_info.value.code == "ae3_waiting_command_transition_failed"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_publish_only_waits_for_done_without_task_fsm(monkeypatch: pytest.MonkeyPatch):
+    command_repo = _SequencedLegacyCommandRepo(legacy_rows=[_PENDING_ROW, _DONE_ROW])
     task_repo = _FakeTaskRepo()
 
     async def _boom(**_kwargs):
         raise AssertionError("mark_waiting_command must not be called for publish-only batch")
 
     task_repo.mark_waiting_command = _boom
-    gw = _make_gw(command_repo=command_repo, task_repo=task_repo)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    gw = _make_gw(command_repo=command_repo, task_repo=task_repo, poll_interval=0.01)
 
     result = await gw.run_batch(
         task=_make_task(),
@@ -832,7 +860,40 @@ async def test_run_batch_publish_only_skips_waiting_command_tracking():
 
     assert result["success"] is True
     assert result["commands_total"] == 1
-    assert result["command_statuses"][0]["legacy_cmd_id"] == "hl-ae3-t1-z1-s1"
-    assert result["command_statuses"][0]["terminal_status"] is None
+    assert result["command_statuses"][0]["terminal_status"] == "DONE"
     assert len(command_repo.publish_accepted_calls) == 1
     assert command_repo.publish_failed_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_batch_publish_only_fails_without_terminal_done(monkeypatch: pytest.MonkeyPatch):
+    command_repo = _SequencedLegacyCommandRepo(legacy_rows=[_PENDING_ROW, _PENDING_ROW])
+    task_repo = _FakeTaskRepo()
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    poll_times = iter([NOW, NOW + timedelta(seconds=2)])
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        sequential_command_gateway_module,
+        "_utcnow",
+        lambda: next(poll_times, NOW + timedelta(seconds=5)),
+    )
+    gw = _make_gw(
+        command_repo=command_repo,
+        task_repo=task_repo,
+        poll_interval=0.01,
+        command_poll_default_sec=1.0,
+        command_poll_margin_sec=0.0,
+    )
+
+    result = await gw.run_batch(
+        task=_make_task(),
+        commands=[_planned(channel="valve_clean_fill")],
+        now=NOW,
+        track_task_state=False,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "ae3_command_poll_deadline_exceeded"

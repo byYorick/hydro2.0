@@ -30,7 +30,6 @@ _logger = logging.getLogger(__name__)
 
 # Sanity clamp for requested irrigation duration (protects against corrupt read-model).
 _IRRIGATION_DURATION_MAX_SEC = 3600
-_IRRIGATION_DURATION_FALLBACK_SEC = 120
 
 
 class IrrigationCheckHandler(BaseStageHandler):
@@ -64,6 +63,12 @@ class IrrigationCheckHandler(BaseStageHandler):
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
         topology = str(getattr(task, "topology", "") or "")
         deadline = task.workflow.stage_deadline_at
+        if deadline is None:
+            raise TaskExecutionError(
+                "irrigation_check_deadline_unconfigured",
+                "Отсутствует stage_deadline_at для irrigation_check; "
+                "задайте duration_sec или stage_timeout_sec в irrigation_execution.",
+            )
         recovery = runtime.irrigation_recovery
         solution_min_guard_enabled = bool(runtime.irrigation_safety.stop_on_solution_min)
         expected_irrigation_state = self._resolve_expected_irrigation_state(
@@ -260,7 +265,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                         int(getattr(task, "id", 0) or 0),
                         exc_info=True,
                     )
-                return StageOutcome(kind="enter_correction", correction=corr)
+                return StageOutcome(kind="enter_correction", correction=corr, task_override=task)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
 
@@ -435,15 +440,29 @@ class IrrigationCheckHandler(BaseStageHandler):
         if raw is None:
             execution = getattr(runtime, "irrigation_execution", None)
             raw = getattr(execution, "duration_sec", None) if execution is not None else None
-        try:
-            return max(1, min(_IRRIGATION_DURATION_MAX_SEC, int(raw)))
-        except (TypeError, ValueError):
-            execution = getattr(runtime, "irrigation_execution", None)
-            fallback = getattr(execution, "duration_sec", None) if execution is not None else None
+        if raw is not None:
             try:
-                return max(1, min(_IRRIGATION_DURATION_MAX_SEC, int(fallback)))
-            except (TypeError, ValueError):
-                return _IRRIGATION_DURATION_FALLBACK_SEC
+                return max(1, min(_IRRIGATION_DURATION_MAX_SEC, int(raw)))
+            except (TypeError, ValueError) as exc:
+                raise TaskExecutionError(
+                    "irrigation_duration_unconfigured",
+                    "Не задана длительность полива "
+                    "(irrigation_requested_duration_sec или irrigation_execution.duration_sec).",
+                ) from exc
+
+        workflow = getattr(task, "workflow", None)
+        deadline = getattr(workflow, "stage_deadline_at", None) if workflow is not None else None
+        entered = getattr(workflow, "stage_entered_at", None) if workflow is not None else None
+        if isinstance(deadline, datetime) and isinstance(entered, datetime):
+            derived_sec = int((_utc_naive_dt(deadline) - _utc_naive_dt(entered)).total_seconds())
+            if derived_sec >= 1:
+                return min(_IRRIGATION_DURATION_MAX_SEC, derived_sec)
+
+        raise TaskExecutionError(
+            "irrigation_duration_unconfigured",
+            "Не задана длительность полива "
+            "(irrigation_requested_duration_sec или irrigation_execution.duration_sec).",
+        )
 
     def _resolve_irrigation_pump_stop_at(
         self,

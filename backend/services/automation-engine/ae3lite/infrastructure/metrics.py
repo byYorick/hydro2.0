@@ -468,7 +468,7 @@ CLAIM_ROLLBACK_FAILED = Counter(
 
 TASK_RUNNING_TRANSITION_MISSED = Counter(
     "ae3_task_running_transition_missed_total",
-    "Total mark_running CAS misses; task remains claimed for startup recovery",
+    "Total mark_running CAS misses handled fail-closed",
 )
 
 # ─── Greenhouse climate ─────────────────────────────────────────────

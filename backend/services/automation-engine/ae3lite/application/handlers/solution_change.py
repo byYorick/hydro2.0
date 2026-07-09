@@ -8,6 +8,7 @@ from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
@@ -111,8 +112,26 @@ class SolutionDrainCheckHandler(BaseStageHandler):
                 now=now,
                 expected={"valve_drain": True},
             )
-        except Exception:
-            pass
+        except TaskExecutionError as exc:
+            if exc.code == "irr_state_mismatch":
+                solution_min = await self._read_level(
+                    task=task,
+                    zone_id=task.zone_id,
+                    labels=runtime.solution_min_sensor_labels,
+                    threshold=runtime.level_switch_on_threshold,
+                    telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
+                    unavailable_error="two_tank_solution_min_level_unavailable",
+                    stale_error="two_tank_solution_min_level_stale",
+                    stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+                    prefer_probe_snapshot=True,
+                )
+                if not solution_min["is_triggered"]:
+                    _logger.info(
+                        "solution_drain_check: probe mismatch, но бак раствора уже опустошён; переход к clean_fill zone_id=%s",
+                        task.zone_id,
+                    )
+                    return StageOutcome(kind="transition", next_stage="solution_drain_stop_to_clean_fill")
+            raise
 
         solution_min = await self._read_level(
             task=task,

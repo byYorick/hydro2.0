@@ -131,8 +131,11 @@ def build_ae3_runtime_bundle(
         task_repository=task_repository,
         lease_repository=zone_lease_repository,
         alert_repository=alert_repository,
+        startup_recovery_use_case=startup_recovery_use_case,
         stale_claimed_ttl_sec=config.stale_claimed_ttl_sec,
         stale_running_ttl_sec=config.stale_running_ttl_sec,
+        stale_waiting_command_ttl_sec=config.waiting_command_stale_ttl_sec,
+        stale_unconfirmed_command_ttl_sec=config.unconfirmed_command_stale_ttl_sec,
     )
     pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()

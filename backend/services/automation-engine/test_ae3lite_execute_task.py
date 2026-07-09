@@ -277,6 +277,7 @@ class _SnapshotWithIrrActuators:
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=13, role="valve_solution_fill"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=14, role="valve_solution_supply"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=15, role="valve_irrigation"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_drain", node_channel_id=19, role="valve_drain"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=16, role="pump_main"),
         ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=17, role="pump_base"),
         ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=18, role="pump_a"),
@@ -2014,12 +2015,13 @@ async def test_execute_task_non_two_tank_topology_skips_required_node_check() ->
 
 
 @pytest.mark.asyncio
-async def test_execute_task_mark_running_cas_miss_returns_claimed_task_without_fail() -> None:
+async def test_execute_task_mark_running_cas_miss_fails_closed() -> None:
     from ae3lite.infrastructure.metrics import TASK_RUNNING_TRANSITION_MISSED
 
     claimed_task = replace(_make_task(stage="startup", topology="two_tank"), status="claimed")
     task_repo = _TaskRepoRunning(running_task=claimed_task)
     task_repo.mark_running = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    task_repo.get_by_id = AsyncMock(return_value=claimed_task)  # type: ignore[method-assign]
 
     finalize = _FinalizeTaskUseCase()
     use_case = ExecuteTaskUseCase(
@@ -2034,6 +2036,7 @@ async def test_execute_task_mark_running_cas_miss_returns_claimed_task_without_f
     before = TASK_RUNNING_TRANSITION_MISSED._value.get()
     result = await use_case.run(task=claimed_task, now=NOW)
 
-    assert result.status == "claimed"
-    assert finalize.calls == []
+    assert len(finalize.calls) == 1
+    assert finalize.calls[0]["error_code"] == "ae3_running_transition_cas_miss"
+    assert result is claimed_task
     assert TASK_RUNNING_TRANSITION_MISSED._value.get() == before + 1

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -101,17 +101,21 @@ async def _create_claimed_irrigation_task(
     )
     assert created_task is not None
 
+    deadline_at = now + timedelta(seconds=180)
     await execute(
         """
         UPDATE ae_tasks
         SET status = 'claimed',
             claimed_by = 'worker-irrigation',
             claimed_at = $2,
+            stage_entered_at = $2,
+            stage_deadline_at = $3,
             updated_at = $2
         WHERE id = $1
         """,
         int(created_task.id),
         now,
+        deadline_at,
     )
 
     return zone_id, task_repository

@@ -25,7 +25,7 @@ from ae3lite.application.use_cases.workflow_router import WorkflowRouter
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
-from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.errors import PlannerConfigurationError, TaskExecutionError
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
@@ -339,6 +339,73 @@ async def test_router_enter_correction_uses_task_override_owner_from_command_rec
 
     assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
     assert tr.update_stage_calls[0]["correction"].corr_step == "corr_wait_stable"
+
+
+async def test_router_enter_correction_reloads_owner_from_db_when_stale():
+    """CAS path: in-memory claimed_by stale → reload owner before update_stage."""
+    corr = CorrectionState(
+        corr_step="corr_check", attempt=1, max_attempts=5,
+        ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
+        activated_here=False, stabilization_sec=60,
+        return_stage_success="solution_fill_stop_to_ready",
+        return_stage_fail="solution_fill_stop_to_prepare",
+        outcome_success=None, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    base_row = _make_task_row(stage="solution_fill_check")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+    })
+    db_fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-fresh",
+    })
+    outcome = StageOutcome(kind="enter_correction", correction=corr)
+    tr = _MockTaskRepo(return_task=task, current_task=db_fresh)
+    router, _, _ = _make_router(task_repo=tr, return_task=task)
+    router._handlers["solution_fill"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.update_stage_calls[0]["owner"] == "w-fresh"
+
+
+async def test_router_enter_correction_idempotent_when_correction_already_persisted():
+    """Duplicate enter_correction after successful requeue → pending with same corr_step."""
+    corr = CorrectionState(
+        corr_step="corr_check", attempt=1, max_attempts=5,
+        ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
+        activated_here=False, stabilization_sec=60,
+        return_stage_success="solution_fill_stop_to_ready",
+        return_stage_fail="solution_fill_stop_to_prepare",
+        outcome_success=None, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    # In-memory task still without correction → solution_fill handler emits enter_correction.
+    base_row = _make_task_row(stage="solution_fill_check")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w1",
+        "status": "running",
+    })
+    already_pending = AutomationTask.from_row({
+        **_make_task_row(stage="solution_fill_check", correction=corr),
+        "claimed_by": None,
+        "status": "pending",
+        "corr_step": "corr_check",
+    })
+    outcome = StageOutcome(kind="enter_correction", correction=corr)
+    tr = _MockTaskRepo(return_task=None, current_task=already_pending)
+    router, _, _ = _make_router(task_repo=tr, return_task=None)
+    router._handlers["solution_fill"] = _StubHandler(outcome)
+
+    result = await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert result is already_pending
+    assert tr.update_stage_calls[0]["correction"].corr_step == "corr_check"
 
 
 async def test_router_exit_correction_uses_task_override_owner_from_command_reconcile():
@@ -852,6 +919,57 @@ async def test_router_irrigation_check_deadline_prefers_requested_duration_over_
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.stage_deadline_at == NOW + timedelta(seconds=8)
+
+
+async def test_router_irrigation_check_raises_when_deadline_unconfigured():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    with pytest.raises(PlannerConfigurationError, match="irrigation_check deadline не задан"):
+        await router.run(
+            task=task,
+            plan=_MockPlan(),
+            now=NOW,
+        )
+
+    assert tr.update_stage_calls == []
+
+
+async def test_router_irrigation_check_uses_stage_timeout_when_duration_missing():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(
+            runtime={
+                "irrigation_execution": {
+                    "duration_sec": None,
+                    "interval_sec": None,
+                    "correction_during_irrigation": True,
+                    "correction_slack_sec": 0,
+                    "stage_timeout_sec": 2400,
+                },
+            },
+        ),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=2400)
 
 
 async def test_router_prepare_recirculation_check_deadline_includes_correction_slack():

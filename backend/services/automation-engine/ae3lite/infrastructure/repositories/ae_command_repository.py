@@ -77,11 +77,13 @@ class PgAeCommandRepository:
         now: datetime,
         stage_name: Optional[str] = None,
         planner_step: Optional[str] = None,
-    ) -> Optional[tuple[int, int, bool]]:
+    ) -> Optional[tuple[int, int, bool, str]]:
         """Атомарно выделяет step_no и создаёт строку `ae_commands` под advisory lock task_id.
 
         При заданном `planner_step` переиспользует непубликованную строку (pending/published_unconfirmed)
         с тем же ключом — стабильный cmd_id для retry.
+
+        Возвращает ``(ae_command_id, step_no, reused, publish_status)``.
         """
         pool = await get_pool()
         normalized_now = self._normalize_timestamp(now)
@@ -93,7 +95,7 @@ class PgAeCommandRepository:
                     if normalized_planner_step:
                         existing = await conn.fetchrow(
                             """
-                            SELECT id, step_no
+                            SELECT id, step_no, publish_status
                             FROM ae_commands
                             WHERE task_id = $1
                               AND planner_step = $2
@@ -107,6 +109,7 @@ class PgAeCommandRepository:
                         if existing is not None:
                             step_no = int(existing["step_no"])
                             ae_command_id = int(existing["id"])
+                            existing_publish_status = str(existing["publish_status"] or "pending").strip()
                             stored_payload = dict(payload)
                             stored_payload["cmd_id"] = f"ae3-t{task_id}-z{zone_id}-s{step_no}"
                             await conn.execute(
@@ -126,7 +129,7 @@ class PgAeCommandRepository:
                                 stage_name or None,
                                 normalized_now,
                             )
-                            return ae_command_id, step_no, True
+                            return ae_command_id, step_no, True, existing_publish_status
 
                     next_row = await conn.fetchrow(
                         """
@@ -169,7 +172,7 @@ class PgAeCommandRepository:
             return None
         if row is None:
             return None
-        return int(row["id"]), step_no, False
+        return int(row["id"]), step_no, False, "pending"
 
     async def mark_publish_published_unconfirmed(self, *, ae_command_id: int, now: datetime) -> bool:
         pool = await get_pool()

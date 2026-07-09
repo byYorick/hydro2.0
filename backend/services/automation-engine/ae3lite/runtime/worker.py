@@ -406,11 +406,13 @@ class Ae3RuntimeWorker:
     async def _claim_next_task_safe(self) -> tuple[Any, Any] | None:
         try:
             return await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
-        except TaskClaimRollbackError:
+        except TaskClaimRollbackError as exc:
             CLAIM_ROLLBACK_FAILED.inc()
-            self._logger.warning(
-                "AE3 claim rollback failed after zone lease conflict: owner=%s",
+            self._logger.error(
+                "AE3 claim rollback failed after zone lease conflict; "
+                "task escalated via fail_for_recovery when possible: owner=%s error=%s",
                 self._owner,
+                exc,
             )
             return None
 
@@ -752,6 +754,47 @@ class Ae3RuntimeWorker:
             return False
         return False
 
+    async def _signal_lease_lost_from_heartbeat(
+        self,
+        *,
+        zone_id: int,
+        lease_lost_event: asyncio.Event,
+        consecutive_failures: int,
+    ) -> None:
+        self._logger.error(
+            "AE3 lease heartbeat: failed to extend lease for zone_id=%s owner=%s after %s attempts — "
+            "signaling lease_lost; in-flight task execution will be cancelled",
+            zone_id,
+            self._owner,
+            consecutive_failures,
+        )
+        ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
+        lease_lost_event.set()
+        try:
+            await send_infra_alert(
+                code="ae3_zone_lease_lost",
+                alert_type="AE3 Zone Lease Lost",
+                message=(
+                    "Heartbeat zone lease не смог продлить lease; worker помечает lease_lost "
+                    "и отменяет выполняющуюся задачу для этой зоны."
+                ),
+                severity="critical",
+                zone_id=int(zone_id),
+                service="automation-engine",
+                component="worker:heartbeat",
+                details={
+                    "owner": self._owner,
+                    "consecutive_failures": consecutive_failures,
+                    "message": "Heartbeat zone lease не смог продлить lease: зона могла быть перехвачена или зависнуть.",
+                },
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 не смог отправить alert lease_lost zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
+
     async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
         """Периодически продлевает zone lease во время выполнения задачи.
 
@@ -775,39 +818,11 @@ class Ae3RuntimeWorker:
                 if consecutive_failures < self._lease_heartbeat_max_failures:
                     continue
 
-                self._logger.error(
-                    "AE3 lease heartbeat: failed to extend lease for zone_id=%s owner=%s after %s attempts — "
-                    "signaling lease_lost; in-flight task execution will be cancelled",
-                    zone_id,
-                    self._owner,
-                    consecutive_failures,
+                await self._signal_lease_lost_from_heartbeat(
+                    zone_id=zone_id,
+                    lease_lost_event=lease_lost_event,
+                    consecutive_failures=consecutive_failures,
                 )
-                ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
-                lease_lost_event.set()
-                try:
-                    await send_infra_alert(
-                        code="ae3_zone_lease_lost",
-                        alert_type="AE3 Zone Lease Lost",
-                        message=(
-                            "Heartbeat zone lease не смог продлить lease; worker помечает lease_lost "
-                            "и отменяет выполняющуюся задачу для этой зоны."
-                        ),
-                        severity="critical",
-                        zone_id=int(zone_id),
-                        service="automation-engine",
-                        component="worker:heartbeat",
-                        details={
-                            "owner": self._owner,
-                            "consecutive_failures": consecutive_failures,
-                            "message": "Heartbeat zone lease не смог продлить lease: зона могла быть перехвачена или зависнуть.",
-                        },
-                    )
-                except Exception:
-                    self._logger.warning(
-                        "AE3 не смог отправить alert lease_lost zone_id=%s",
-                        zone_id,
-                        exc_info=True,
-                    )
                 break
             except asyncio.CancelledError:
                 break
@@ -819,6 +834,17 @@ class Ae3RuntimeWorker:
                     type(exc).__name__,
                     exc_info=True,
                 )
+                consecutive_failures += 1
+                LEASE_HEARTBEAT_FAILED.labels(zone_id=str(zone_id)).inc()
+                if consecutive_failures < self._lease_heartbeat_max_failures:
+                    continue
+
+                await self._signal_lease_lost_from_heartbeat(
+                    zone_id=zone_id,
+                    lease_lost_event=lease_lost_event,
+                    consecutive_failures=consecutive_failures,
+                )
+                break
 
     async def _abort_task_after_intent_sync_failure(self, *, task: Any, intent_id: int) -> None:
         error_code = "ae3_intent_sync_failed"

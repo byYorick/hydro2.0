@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
-from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.handlers.base import BaseStageHandler, _utc_naive_dt
 from ae3lite.domain.errors import TaskExecutionError
 
 logger = logging.getLogger(__name__)
+
+_STARTUP_MANUAL_HOLD_TIMEOUT_DEFAULT_SEC = 3600
 
 class StartupHandler(BaseStageHandler):
     """Обрабатывает stage ``startup``: probe, проверка уровня и условная маршрутизация."""
@@ -52,6 +55,7 @@ class StartupHandler(BaseStageHandler):
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
 
         if control_mode in ("manual", "semi"):
+            self._enforce_startup_manual_hold_deadline(task=task, runtime=runtime, now=now)
             if clean_max["is_triggered"] and pending_manual_step == "solution_fill_start":
                 await self._check_sensor_consistency(
                     task=task,
@@ -99,6 +103,44 @@ class StartupHandler(BaseStageHandler):
             next_stage="clean_fill_start",
             clean_fill_cycle=1,
         )
+
+    def _resolve_startup_manual_hold_timeout_sec(self, *, runtime: Any) -> int:
+        raw = getattr(runtime, "startup_manual_hold_timeout_sec", None)
+        if raw is None:
+            raw = os.getenv(
+                "AE_STARTUP_MANUAL_HOLD_TIMEOUT_SEC",
+                str(_STARTUP_MANUAL_HOLD_TIMEOUT_DEFAULT_SEC),
+            )
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError) as exc:
+            raise TaskExecutionError(
+                "startup_manual_hold_timeout_invalid",
+                "Некорректное значение startup manual hold timeout.",
+            ) from exc
+
+    def _enforce_startup_manual_hold_deadline(self, *, task: Any, runtime: Any, now: datetime) -> None:
+        deadline = getattr(task.workflow, "stage_deadline_at", None)
+        if isinstance(deadline, datetime) and self._deadline_reached(now=now, deadline=deadline):
+            raise TaskExecutionError(
+                "startup_manual_hold_timeout",
+                "Превышено время ожидания оператора на этапе startup.",
+            )
+
+        entered = getattr(task.workflow, "stage_entered_at", None)
+        if not isinstance(entered, datetime):
+            raise TaskExecutionError(
+                "startup_manual_hold_deadline_missing",
+                "Отсутствует stage_entered_at для manual/semi startup hold.",
+            )
+
+        timeout_sec = self._resolve_startup_manual_hold_timeout_sec(runtime=runtime)
+        elapsed = (_utc_naive_dt(now) - _utc_naive_dt(entered)).total_seconds()
+        if elapsed >= timeout_sec:
+            raise TaskExecutionError(
+                "startup_manual_hold_timeout",
+                "Превышено время ожидания оператора на этапе startup.",
+            )
 
     async def _run_startup_safety_stop(self, *, task: Any, plan: Any, now: datetime) -> None:
         safety_plan = tuple(plan.named_plans.get("solution_fill_stop", ()))

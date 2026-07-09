@@ -52,7 +52,7 @@ async def test_allocate_and_create_pending_assigns_monotonic_steps_under_concurr
         results = await asyncio.gather(_allocate(1), _allocate(2), _allocate(3))
         assert all(result is not None for result in results)
         step_numbers = sorted(
-            step_no for result in results if result is not None for (_, step_no, _) in (result,)
+            step_no for result in results if result is not None for (_, step_no, _, _) in (result,)
         )
         assert step_numbers == [1, 2, 3]
 

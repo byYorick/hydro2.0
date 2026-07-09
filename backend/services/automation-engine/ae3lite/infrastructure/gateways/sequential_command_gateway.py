@@ -177,7 +177,8 @@ class SequentialCommandGateway:
         track_task_state: bool,
         seq_index: int = 0,
     ) -> Mapping[str, Any]:
-        complete_on_ack = self._complete_on_ack(command)
+        # complete_on_ack устарел для mutating-команд: terminal success только по DONE (протокол 2.0).
+        _ = self._complete_on_ack(command)
         planned = command
         planner_step = planner_step_for_command(task=task, command=command, seq_index=seq_index)
         ae_command_id: int | None = None
@@ -245,11 +246,13 @@ class SequentialCommandGateway:
             }
 
             if not track_task_state:
-                return {
-                    "success": True,
-                    "task": task,
-                    "command_statuses": [status_entry],
-                }
+                return await self._await_terminal_without_task_fsm(
+                    task=task,
+                    published=published,
+                    planned=planned,
+                    status_entry=status_entry,
+                    now=now,
+                )
 
             waiting_task = task
             if task.status != "waiting_command":
@@ -304,23 +307,6 @@ class SequentialCommandGateway:
                 result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
                 poll_iterations += 1
                 if result["state"] == "waiting_command":
-                    if complete_on_ack and str(result.get("legacy_status") or "").strip().upper() == "ACK":
-                        resumed_task = await self._task_repository.resume_after_waiting_command(
-                            task_id=task.id,
-                            owner=str(task.claimed_by or ""),
-                            now=reconcile_now,
-                        )
-                        self._observe_roundtrip_metrics(
-                            channel=planned.channel,
-                            terminal_status="ACK",
-                            roundtrip_started_at=roundtrip_started_at,
-                            poll_iterations=poll_iterations,
-                        )
-                        return {
-                            "success": True,
-                            "task": resumed_task or task,
-                            "command_statuses": [{**status_entry, "terminal_status": "ACK"}],
-                        }
                     if reconcile_now > effective_deadline:
                         await self._emit_poll_deadline_exceeded_event(
                             task=task,
@@ -577,13 +563,27 @@ class SequentialCommandGateway:
             )
             if resumed_task is None:
                 current_task = await self._task_repository.get_by_id(task_id=task.id)
-                return {
-                    "state": "done",
-                    "task": current_task or task,
-                    "legacy_status": terminal_status,
-                    "external_id": external_id,
-                    "cmd_id": cmd_id,
-                }
+                current_status = str(getattr(current_task, "status", "") or "").strip().lower()
+                if current_task is not None and current_status in {"cancelled", "completed", "failed"}:
+                    return {
+                        "state": "done",
+                        "task": current_task,
+                        "legacy_status": terminal_status,
+                        "external_id": external_id,
+                        "cmd_id": cmd_id,
+                    }
+                if current_task is not None and current_status == "running":
+                    return {
+                        "state": "done",
+                        "task": current_task,
+                        "legacy_status": terminal_status,
+                        "external_id": external_id,
+                        "cmd_id": cmd_id,
+                    }
+                raise TaskExecutionError(
+                    "ae3_waiting_command_transition_failed",
+                    f"Не удалось перевести задачу {task.id} из waiting_command в running после DONE",
+                )
             return {"state": "done", "task": resumed_task, "legacy_status": terminal_status, "external_id": external_id, "cmd_id": cmd_id}
 
         COMMAND_TERMINAL.labels(terminal_status=terminal_status).inc()
@@ -605,6 +605,131 @@ class SequentialCommandGateway:
             "error_code": failed_task.error_code,
             "error_message": failed_task.error_message,
         }
+
+    async def _await_terminal_without_task_fsm(
+        self,
+        *,
+        task: Any,
+        published: Any,
+        planned: PlannedCommand,
+        status_entry: dict[str, Any],
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        """Ожидает terminal DONE без перехода задачи в waiting_command (fail-safe и publish-only)."""
+        ae_command = {
+            "id": int(published.ae_command_id),
+            "external_id": published.external_id,
+            "payload": planned.payload,
+        }
+        poll_timeout_sec = compute_poll_timeout_sec(
+            params=published.params,
+            default_sec=self._command_poll_default_sec,
+            margin_sec=self._command_poll_margin_sec,
+        )
+        poll_started_at = _utcnow().replace(microsecond=0)
+        poll_deadline = poll_started_at + timedelta(seconds=poll_timeout_sec)
+        roundtrip_started_at = time.monotonic()
+        poll_interval_sec = self._poll_interval_sec
+        poll_iterations = 0
+
+        while True:
+            await asyncio.sleep(poll_interval_sec)
+            reconcile_now = _utcnow().replace(microsecond=0)
+            poll_iterations += 1
+            legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
+            if legacy_row is None:
+                if reconcile_now > poll_deadline:
+                    return {
+                        "success": False,
+                        "task": task,
+                        "command_statuses": [status_entry],
+                        "error_code": "ae3_command_poll_deadline_exceeded",
+                        "error_message": (
+                            f"Опрос команды превысил дедлайн для задачи {task.id} "
+                            f"(publish-only, stage={getattr(task, 'current_stage', None)})"
+                        ),
+                    }
+                poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
+                continue
+
+            legacy_status = str(legacy_row.get("status") or "").strip().upper()
+            if legacy_status in _PROTOCOL_VIOLATION_STATUSES:
+                return {
+                    "success": False,
+                    "task": task,
+                    "command_statuses": [{**status_entry, "terminal_status": legacy_status}],
+                    "error_code": "command_protocol_violation",
+                    "error_message": f"Legacy status {legacy_status} не является terminal outcome протокола 2.0",
+                }
+            if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
+                return {
+                    "success": False,
+                    "task": task,
+                    "command_statuses": [status_entry],
+                    "error_code": "ae3_unsupported_legacy_status",
+                    "error_message": f"Неподдерживаемый legacy status={legacy_status or 'empty'}",
+                }
+
+            await self._command_repository.update_from_legacy(
+                ae_command_id=int(ae_command["id"]),
+                external_id=str(legacy_row.get("id") or external_id or ""),
+                ack_received_at=legacy_row.get("ack_at"),
+                terminal_status=legacy_status if legacy_status in _TERMINAL_STATUSES else None,
+                terminal_at=(
+                    legacy_row.get("failed_at")
+                    or legacy_row.get("ack_at")
+                    or legacy_row.get("updated_at")
+                    or legacy_row.get("sent_at")
+                    or legacy_row.get("created_at")
+                ),
+                last_error=None if legacy_status in {None, "DONE"} else str(legacy_row.get("error_message") or legacy_status),
+                now=reconcile_now,
+            )
+            ae_command["external_id"] = str(legacy_row.get("id") or external_id or "")
+
+            if legacy_status in _NON_TERMINAL_STATUSES:
+                if reconcile_now > poll_deadline:
+                    return {
+                        "success": False,
+                        "task": task,
+                        "command_statuses": [{**status_entry, "terminal_status": None}],
+                        "error_code": "ae3_command_poll_deadline_exceeded",
+                        "error_message": (
+                            f"Опрос команды превысил дедлайн для задачи {task.id} "
+                            f"(publish-only, stage={getattr(task, 'current_stage', None)})"
+                        ),
+                    }
+                poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
+                continue
+
+            self._observe_roundtrip_metrics(
+                channel=planned.channel,
+                terminal_status=legacy_status,
+                roundtrip_started_at=roundtrip_started_at,
+                poll_iterations=poll_iterations,
+            )
+            terminal_entry = {
+                **status_entry,
+                "external_id": str(legacy_row.get("id") or external_id or ""),
+                "legacy_cmd_id": cmd_id,
+                "terminal_status": legacy_status,
+            }
+            if legacy_status == "DONE":
+                COMMAND_TERMINAL.labels(terminal_status="DONE").inc()
+                return {
+                    "success": True,
+                    "task": task,
+                    "command_statuses": [terminal_entry],
+                }
+
+            COMMAND_TERMINAL.labels(terminal_status=legacy_status).inc()
+            return {
+                "success": False,
+                "task": task,
+                "command_statuses": [terminal_entry],
+                "error_code": f"command_{legacy_status.strip().lower()}",
+                "error_message": str(legacy_row.get("error_message") or f"Команда завершилась с терминальным статусом {legacy_status}"),
+            }
 
     async def _maybe_raise_offline_instead_of_command_error(
         self,

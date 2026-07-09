@@ -56,7 +56,11 @@ class StageDef:
 
 TWO_TANK: Mapping[str, StageDef] = {
     # === Startup ===
-    "startup": StageDef("startup", "startup"),
+    "startup": StageDef(
+        "startup",
+        "startup",
+        timeout_key="startup_manual_hold_timeout_sec",
+    ),
 
     # === Solution change path (semi-auto v1) ===
     "await_operator_drain_confirm": StageDef(

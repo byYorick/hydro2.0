@@ -33,7 +33,7 @@ async def test_command_publish_pipeline_observes_dispatch_duration(monkeypatch: 
     command_repo = MagicMock()
     command_repo.resolve_greenhouse_uid = AsyncMock(return_value="gh-1")
     command_repo.get_next_step_no = AsyncMock(return_value=1)
-    command_repo.allocate_and_create_pending = AsyncMock(return_value=(9, 1, False))
+    command_repo.allocate_and_create_pending = AsyncMock(return_value=(9, 1, False, "pending"))
     command_repo.mark_publish_published_unconfirmed = AsyncMock()
     command_repo.mark_publish_accepted = AsyncMock(return_value=True)
     command_repo.resolve_legacy_command_id = AsyncMock(return_value=1001)

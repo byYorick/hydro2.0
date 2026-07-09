@@ -73,3 +73,37 @@ async def test_extend_lease_with_transient_retry_recovers_from_db_error() -> Non
 
     assert extended is True
     assert lease_repo.extend.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_lease_heartbeat_signals_lost_after_consecutive_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lease_repo = AsyncMock()
+    worker = _build_worker(lease_repo=lease_repo)
+    lease_lost = asyncio.Event()
+    alerts: list[dict] = []
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    async def fake_extend(*_args, **_kwargs) -> bool:
+        raise RuntimeError("heartbeat boom")
+
+    async def fake_alert(**kwargs) -> None:
+        alerts.append(kwargs)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(worker, "_extend_lease_with_transient_retry", fake_extend)
+    monkeypatch.setattr("ae3lite.runtime.worker.send_infra_alert", fake_alert)
+
+    before_lost = ZONE_LEASE_LOST.labels(zone_id="9")._value.get()
+    before_hb_failed = LEASE_HEARTBEAT_FAILED.labels(zone_id="9")._value.get()
+
+    await worker._lease_heartbeat(zone_id=9, lease_lost_event=lease_lost)
+
+    assert lease_lost.is_set()
+    assert ZONE_LEASE_LOST.labels(zone_id="9")._value.get() == before_lost + 1
+    assert LEASE_HEARTBEAT_FAILED.labels(zone_id="9")._value.get() == before_hb_failed + 3
+    assert len(alerts) == 1
+    assert alerts[0]["code"] == "ae3_zone_lease_lost"

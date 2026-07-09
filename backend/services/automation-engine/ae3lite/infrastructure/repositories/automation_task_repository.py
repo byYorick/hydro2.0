@@ -260,11 +260,19 @@ class PgAutomationTaskRepository:
         now: datetime,
         stale_claimed_before: datetime,
         stale_running_before: datetime,
+        stale_waiting_command_before: datetime | None = None,
+        stale_unconfirmed_before: datetime | None = None,
         limit: int = 16,
     ) -> list[AutomationTask]:
-        """Stale claimed/running задачи для janitor (FOR UPDATE SKIP LOCKED, batch ≤16)."""
+        """Stale claimed/running/waiting_command и running+unconfirmed для janitor."""
         normalized_claimed_before = self._normalize_timestamp(stale_claimed_before)
         normalized_running_before = self._normalize_timestamp(stale_running_before)
+        normalized_waiting_before = self._normalize_timestamp(
+            stale_waiting_command_before or stale_running_before
+        )
+        normalized_unconfirmed_before = self._normalize_timestamp(
+            stale_unconfirmed_before or stale_claimed_before
+        )
         bounded_limit = max(1, min(int(limit), 16))
         async with self._connection() as conn:
             async with conn.transaction():
@@ -272,18 +280,30 @@ class PgAutomationTaskRepository:
                     """
                     WITH stale AS (
                         SELECT id
-                        FROM ae_tasks
+                        FROM ae_tasks AS tasks
                         WHERE (
-                            status = 'claimed'
-                            AND claimed_at IS NOT NULL
-                            AND claimed_at < $1
+                            tasks.status = 'claimed'
+                            AND tasks.claimed_at IS NOT NULL
+                            AND tasks.claimed_at < $1
                         ) OR (
-                            status = 'running'
-                            AND updated_at < $2
+                            tasks.status = 'running'
+                            AND tasks.updated_at < $2
+                        ) OR (
+                            tasks.status = 'waiting_command'
+                            AND tasks.updated_at < $3
+                        ) OR (
+                            tasks.status IN ('claimed', 'running')
+                            AND EXISTS (
+                                SELECT 1
+                                FROM ae_commands AS commands
+                                WHERE commands.task_id = tasks.id
+                                  AND commands.publish_status IN ('pending', 'published_unconfirmed')
+                                  AND commands.updated_at < $4
+                            )
                         )
-                        ORDER BY updated_at ASC, id ASC
+                        ORDER BY tasks.updated_at ASC, tasks.id ASC
                         FOR UPDATE SKIP LOCKED
-                        LIMIT $3
+                        LIMIT $5
                     )
                     SELECT tasks.*
                     FROM ae_tasks AS tasks
@@ -292,9 +312,25 @@ class PgAutomationTaskRepository:
                     """,
                     normalized_claimed_before,
                     normalized_running_before,
+                    normalized_waiting_before,
+                    normalized_unconfirmed_before,
                     bounded_limit,
                 )
         return [AutomationTask.from_row(row) for row in rows]
+
+    async def task_has_unconfirmed_ae_commands(self, *, task_id: int) -> bool:
+        row = await self._fetchrow(
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM ae_commands
+                WHERE task_id = $1
+                  AND publish_status IN ('pending', 'published_unconfirmed')
+            ) AS has_unconfirmed
+            """,
+            task_id,
+        )
+        return bool(row["has_unconfirmed"]) if row is not None else False
 
     async def task_has_ae_commands(self, *, task_id: int) -> bool:
         row = await self._fetchrow(
