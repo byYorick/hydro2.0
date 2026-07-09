@@ -842,6 +842,7 @@ PK (zone_id, pid_type)
 ```
 
 Runtime-семантика AE3-Lite:
+- `last_dose_at` — время последней **успешной** (`DONE`) дозы; якорь `min_interval_sec` и observe-window; при fail/TIMEOUT не обновляется;
 - `last_measured_value` хранит baseline/последнее подтверждённое измерение controller-а;
 - `hold_until` блокирует раннее повторное решение до окончания process observation window;
 - `feedforward_bias` используется для cross-coupled correction после `EC`-дозы;

@@ -229,7 +229,7 @@ Pipeline:
 Для `nd-test-irrig-1` входящий `.../config` payload может содержать top-level объект `fail_safe_guards`.
 Он применяется только для виртуальной IRR-ноды и затем отражается в её `config_report` и `storage_state/state`:
 
-- `clean_fill_min_check_delay_ms`
+- `clean_fill_min_check_delay_ms` (**deprecated/mirror-only**; clean_fill min-guard не применяется)
 - `solution_fill_clean_min_check_delay_ms`
 - `solution_fill_solution_min_check_delay_ms`
 - `recirculation_solution_min_guard_enabled`
@@ -415,9 +415,9 @@ Transient-overlap правило для `pump_main`:
 
 `clean_fill`:
 
-- `level_clean_min=1` сразу при активном пути наполнения чистым (`valve_clean_fill` / `tank_fill`) или при
-  активном `solution_fill` (подача из чистого контура), чтобы совпасть с AE3 при `clean_fill_min_check_delay_ms=0`
-- `level_clean_max=1` через 30s (latch)
+- `level_clean_min` в начале fill может быть `0` (production-совместимо); AE3 не применяет
+  clean_fill min-guard (`clean_fill_min_check_delay_ms` deprecated)
+- `level_clean_max=1` через 30s (latch) → `clean_fill_completed`
 
 `solution_fill`:
 

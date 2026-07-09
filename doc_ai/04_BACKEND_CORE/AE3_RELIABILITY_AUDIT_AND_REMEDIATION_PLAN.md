@@ -1,9 +1,15 @@
 # AE3-Lite: аудит надёжности и план доработки
 
-**Дата:** 2026-07-02
-**Версия:** 1.0
-**Статус:** План доработки (по результатам полного аудита кода)
+**Дата:** 2026-07-02  
+**Обновление статуса:** 2026-07-09  
+**Версия:** 1.1  
+**Статус:** План доработки (исторический аудит + статусы закрытия)  
 **Область:** `backend/services/automation-engine/ae3lite/*`, supervisor/compose, метрики/алерты
+
+> **Закрыто 2026-07-09 (коммит two-tank/correction audit):** D4 (clamp → `effective_ml`), D6 (`last_dose_at` только после DONE),
+> observe-window bounds, AE3 `max_dose_ms` default 60_000, control_mode/E-STOP gates в correction,
+> two-tank fail-safe firmware/docs. Остальные пункты таблицы ниже — снимок аудита 2026-07-02;
+> перед работой сверяй с актуальным кодом.
 
 ---
 
@@ -19,7 +25,7 @@
 |----------|--------|---------------|
 | **Critical** | 8 | Мёртвый drain loop без respawn; нет periodic healing застрявших task; pool exhaustion → бесконечный `acquire()`; неатомарный publish pipeline; неаутентифицированный `/zones/{id}/state`; listeners не стартуют в dev (нет `AE_DB_DSN`); swallow stop-команд prepare_recirc; manual mode на активном flow-path |
 | **High** | ~20 | Duplicate dose при retry (новый `cmd_id`); sanity bounds не применяются в correction decision window; clamp дозы без пересчёта ml; supervisor `stopwaitsecs` < shutdown grace; intent sync swallowed; NOTIFY gap без catch-up; утечка internal messages в 503; нет JSON-логов; trace_id не доходит до worker |
-| **Medium** | ~40 | Phantom `last_dose_at`; retry без cap; TOCTOU claim/lease; hot-reload races; error catalog drift; пробелы access-логов |
+| **Medium** | ~40 | ~~Phantom `last_dose_at`~~ (**закрыто 2026-07-09**); retry без cap; TOCTOU claim/lease; hot-reload races; error catalog drift; пробелы access-логов |
 | **Low** | ~17 | Мёртвый legacy-код; расхождения doc/code; мелкие валидации |
 
 **Что уже сделано хорошо (не трогаем):** task FSM с CAS + `FOR UPDATE SKIP LOCKED`; lease heartbeat +
@@ -67,9 +73,9 @@ path; idempotency `cmd_id` на стороне history-logger; fail-closed confi
 | D1 | `handlers/clean_fill.py:84`, `solution_fill.py:119`, `prepare_recirc.py:119`, `irrigation_check.py:173`, `startup.py:80` | Переключение `control_mode=manual/semi` во время активного flow-path stage → бесконечный `poll`: AE перестаёт оркестрировать, **насос/клапаны остаются в состоянии предыдущего stage** до task timeout (900 с) и далее. Главный fail-open. | **critical** |
 | D2 | `handlers/prepare_recirc_window.py:54-74` | При исчерпании retry stop-команды (`prepare_recirculation_stop`, `sensor_mode_deactivate`) `TaskExecutionError` **проглатывается**: task fail, hardware может остаться ON. Нет zone_event о риске. | **critical** |
 | D3 | `application/services/decision_window_reader.py:79-129` | Correction decision window не применяет `_sensor_value_in_bounds` (pH∈[0,14], EC∈[0,20]) в отличие от `base._read_target_metric_window`. Error codes датчика (-1, 999) проходят фильтр стабильности → неверные решения/бесконечные retry. | **high** |
-| D4 | `domain/services/correction_planner.py:1245-1268` | Clamp дозы до `max_dose_ms` режет duration, но **не пересчитывает `dose_ml`** в команде: систематический under-dose, PID считает иначе. | **high** |
-| D5 | `handlers/correction.py:1218-1234` | `multi_parallel` batch dose по ml без синхронизации с duration planner; в связке с I4 — риск дубликатов. | **high** |
-| D6 | `correction_planner.py:991`, `correction.py:931` | `last_dose_at=now` персистится **до** подтверждения команды: при fail — фантомный cooldown блокирует следующий цикл. | **medium** |
+| D4 | `domain/services/correction_planner.py` `_dose_ml_to_ms` | ~~Clamp без пересчёта ml~~ → **закрыто 2026-07-09**: clamp пересчитывает `effective_ml`; default `max_dose_ms=60_000`. | **closed** |
+| D5 | `handlers/correction.py` multi_parallel | `multi_parallel` batch dose по ml без синхронизации с duration planner; в связке с I4 — риск дубликатов. | **high** |
+| D6 | `correction.py` dose persist | ~~`last_dose_at` до DONE~~ → **закрыто 2026-07-09**: пишется только после terminal DONE (`_resolve_dose_completed_at`). | **closed** |
 | D7 | `correction.py:487` | `CORRECTION_SKIPPED_BY_ALERT_BLOCK` → retry каждые 60 с без верхнего предела попыток. | **medium** |
 | D8 | `correction_planner.py:223` | Fallback `solution_volume_l=100` при отсутствии в конфиге — нарушение fail-closed политики (неверные process gains). | **medium** |
 | D9 | `greenhouse_climate/run_tick.py:881-926` | Vent-команды: `cmd_id=uuid4()` (не идемпотентен при retry); частичный успех пары (одна сторона DONE, другая fail) не откатывается. | **medium** |
@@ -141,9 +147,9 @@ path; idempotency `cmd_id` на стороне history-logger; fail-closed confi
 2. **Stop-команды prepare_recirc не глотать** (D2): при провале stop — zone_event `PREPARE_RECIRC_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE` + biz-alert + повторный stop через recovery.
 3. **Идемпотентность команд** (I4, D9): стабильный `cmd_id` per (task, stage, corr_step, seq_index) при retry; deterministic cmd_id для climate vents.
 4. **Sanity bounds в `DecisionWindowReader`** (D3): общий валидатор с `base._read_target_metric_window`.
-5. **Clamp дозы: пересчёт ml ↔ ms** (D4) + логирование `effective_ml`; согласовать `multi_parallel` (D5).
-6. **`last_dose_at` только после DONE** (D6).
-7. Fail-closed для `solution_volume_l` (D8); валидация `far_zone > close_zone` (D11); cap на retry alert-block (D7).
+5. ~~**Clamp дозы: пересчёт ml ↔ ms** (D4)~~ — **done 2026-07-09**; согласовать `multi_parallel` (D5) остаётся.
+6. ~~**`last_dose_at` только после DONE** (D6)~~ — **done 2026-07-09**.
+7. Fail-closed для `solution_volume_l` (D8 — частично: required + metadata, не PID math); валидация `far_zone > close_zone` (D11); cap на retry alert-block (D7).
 8. Probe актуатора + алерт при recovery прерванной коррекции (D10).
 
 Обновить: `CORRECTION_CYCLE_SPEC.md`, `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` (семантика stop при manual, идемпотентность cmd_id).

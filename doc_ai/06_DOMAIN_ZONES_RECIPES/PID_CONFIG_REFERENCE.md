@@ -148,6 +148,10 @@ integral).
 **Тип:** int (секунды)
 **Хранится в:** `pid_state.last_dose_at` (datetime в БД).
 
+Пишется **только после terminal `DONE`** дозирующей команды в correction handler
+(не на этапе планирования / не при TIMEOUT/ERROR). Это якорь для `min_interval_sec` cooldown
+и observe-window (`last_dose_at + transport_delay_sec`).
+
 Проверяется через `_retry_after()` — если `now - last_dose_at < min_interval_sec`,
 planner возвращает `retry_after_sec` и доза не выдаётся.
 
@@ -322,7 +326,7 @@ learned `pid_state.stats.adaptive.gains.ec_gain_per_ml.ema` может
 | `integral` | float | Накопленный интеграл (`gap * dt`) |
 | `prev_error` | float | Предыдущий gap (для деривативы) |
 | `prev_derivative` | float | Сглаженная производная |
-| `last_dose_at` | timestamp | Время последней дозы (для min_interval_sec) |
+| `last_dose_at` | timestamp | Время последней **успешной** дозы (`DONE`; для min_interval_sec и observe anchor) |
 | `last_measurement_at` | timestamp | Время последнего измерения (для dt) |
 | `last_measured_value` | float | Последнее измеренное значение |
 | `feedforward_bias` | float | Смещение pH после EC-дозы |

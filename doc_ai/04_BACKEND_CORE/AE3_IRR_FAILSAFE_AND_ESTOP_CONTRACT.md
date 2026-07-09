@@ -218,8 +218,8 @@ AE3 обязан знать те же guard-конфиги (кроме `clean_fi
 - `irrigation_stop_on_solution_min`
 
 AE3 обязан применять те же бизнес-решения:
-- `clean_fill_source_empty`
-- `clean_fill_completed`
+- `clean_fill_completed` (production)
+- `clean_fill_source_empty` (**legacy/compat**; production-нода обычно не публикует — AE3 timeout/retry)
 - `solution_fill_source_empty`
 - `solution_fill_leak_detected`
 - `solution_fill_completed`

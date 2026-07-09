@@ -600,9 +600,10 @@ Payload:
 
 Ограничение кардинальности метрик backend:
 - `history-logger` инкрементирует `node_event_received_total{event_code=...}` только для
-  разрешённого набора кодов, включая `level_switch_changed`, `clean_fill_source_empty`,
-  `solution_fill_source_empty`, `solution_fill_leak_detected`, `recirculation_solution_low`,
-  `irrigation_solution_low`, `emergency_stop_activated`, `link_loss_failsafe`;
+  разрешённого набора кодов, включая `level_switch_changed`, `clean_fill_completed`,
+  `clean_fill_source_empty` (legacy/compat), `solution_fill_source_empty`,
+  `solution_fill_leak_detected`, `recirculation_solution_low`, `irrigation_solution_low`,
+  `emergency_stop_activated`, `link_loss_failsafe`;
 - неизвестные/кастомные коды агрегируются в `event_code="OTHER"`.
 
 Backend обязан:
