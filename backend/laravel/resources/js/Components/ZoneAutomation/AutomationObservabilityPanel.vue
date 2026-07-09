@@ -69,6 +69,71 @@
     </dl>
 
     <div
+      v-if="correctionDosing"
+      class="rounded-lg border px-3 py-2.5 text-xs space-y-1.5"
+      :class="correctionDosingClass"
+      data-testid="automation-correction-dosing"
+    >
+      <p class="font-semibold text-sm">
+        Коррекция / дозирование
+      </p>
+      <p
+        v-if="correctionDosing.reason"
+        class="leading-relaxed"
+      >
+        {{ correctionDosing.reason }}
+      </p>
+      <p
+        v-if="correctionDosing.detail"
+        class="text-[10px] opacity-85 leading-relaxed"
+      >
+        {{ correctionDosing.detail }}
+      </p>
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+        <div v-if="correctionDosing.corrStepLabel">
+          <dt class="uppercase tracking-wide opacity-70">
+            Шаг AE3
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            {{ correctionDosing.corrStepLabel }}
+          </dd>
+        </div>
+        <div v-if="correctionDosing.lastDoseSummary">
+          <dt class="uppercase tracking-wide opacity-70">
+            Последняя доза
+          </dt>
+          <dd class="mt-0.5">
+            {{ correctionDosing.lastDoseSummary }}
+          </dd>
+        </div>
+        <div v-if="correctionDosing.cooldownLabel">
+          <dt class="uppercase tracking-wide opacity-70">
+            Кулдаун / повтор
+          </dt>
+          <dd class="mt-0.5">
+            через {{ correctionDosing.cooldownLabel }}
+          </dd>
+        </div>
+        <div v-if="correctionDosing.targetsInTolerance !== null || correctionDosing.workflowReady !== null">
+          <dt class="uppercase tracking-wide opacity-70">
+            Готовность
+          </dt>
+          <dd class="mt-0.5">
+            <span v-if="correctionDosing.targetsInTolerance !== null">
+              ±%: {{ readinessBoolLabel(correctionDosing.targetsInTolerance) }}
+            </span>
+            <span
+              v-if="correctionDosing.workflowReady !== null"
+              :class="correctionDosing.targetsInTolerance !== null ? 'ml-2' : ''"
+            >
+              ready: {{ readinessBoolLabel(correctionDosing.workflowReady) }}
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div
       v-if="failureDiagnostics"
       class="rounded-lg border px-3 py-2.5 text-xs space-y-2"
       :class="failureDiagnostics.isActiveFailure
@@ -237,6 +302,7 @@ import type { AutomationObservability, AutomationState } from '@/types/Automatio
 import {
   formatObservabilityDuration,
   observabilityHealthLabel,
+  resolveCorrectionDosingDiagnostics,
   resolveObservability,
   stageDiagnosticLabel,
 } from '@/utils/automationObservability'
@@ -257,6 +323,25 @@ const failureDiagnostics = computed(() => resolveAutomationFailureDiagnostics(
 ))
 
 const hangHints = computed(() => observability.value?.hang_hints ?? [])
+
+const correctionDosing = computed(() => resolveCorrectionDosingDiagnostics(
+  props.automationState,
+  observability.value,
+))
+
+const correctionDosingClass = computed(() => {
+  const severity = correctionDosing.value?.severity ?? 'neutral'
+  if (severity === 'danger') {
+    return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
+  }
+  if (severity === 'warning') {
+    return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'
+  }
+  if (severity === 'info') {
+    return 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+  }
+  return 'border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)]/55 text-[color:var(--text-primary)]'
+})
 
 const healthLabel = computed(() => {
   if (failureDiagnostics.value) {
@@ -399,6 +484,10 @@ const schedulerSummary = computed(() => {
 
 function formatFailureTimestamp(value: string): string {
   return formatDateTime(value)
+}
+
+function readinessBoolLabel(value: boolean): string {
+  return value ? 'да' : 'нет'
 }
 
 function hintClass(severity: string): string {

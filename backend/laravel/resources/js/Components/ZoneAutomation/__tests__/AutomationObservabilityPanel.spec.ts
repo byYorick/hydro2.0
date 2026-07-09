@@ -213,6 +213,42 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('00:57')
   })
 
+  it('renders correction dosing block for cooldown skip', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          workflow_phase: 'irrigating',
+          observability: {
+            overall_health: 'active',
+            runtime: {
+              task_is_active: true,
+              task_status: 'running',
+              workflow_phase: 'irrigating',
+              correction_step: 'corr_check',
+            },
+            hang_hints: [],
+            correction: {
+              latest_skip: {
+                event_type: 'CORRECTION_SKIPPED_COOLDOWN',
+                payload: { retry_after_sec: 90 },
+              },
+              readiness: {
+                targets_in_tolerance: false,
+                workflow_ready: true,
+              },
+            },
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.find('[data-testid="automation-correction-dosing"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Коррекция / дозирование')
+    expect(wrapper.text()).toContain('Коррекция: кулдаун PID')
+    expect(wrapper.text()).toContain('±%: нет')
+    expect(wrapper.text()).toContain('ready: да')
+  })
+
   it('renders detailed failure block for historical terminal failure', () => {
     const wrapper = mount(AutomationObservabilityPanel, {
       props: {

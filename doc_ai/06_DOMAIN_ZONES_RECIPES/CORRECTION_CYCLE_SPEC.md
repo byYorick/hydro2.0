@@ -39,6 +39,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - метрика `ae3_correction_ec_batch_partial_failure_total{mode=...}`;
 - auto-enqueue `irrigation_recovery` и infra-alert компенсации — **не в MVP** (см. §6.2).
 
+Observability (UI/Grafana, 2026-07-09):
+- панель «Коррекция / дозирование» в AutomationObservabilityPanel показывает причину пропуска дозы, шаг `corr_step`, последнюю дозу и `targets_in_tolerance` / `workflow_ready`;
+- `latest_skip` / readiness фильтруются по `task_id` активной задачи и TTL (~30 мин); карточка не открывается на idle только из‑за старых событий;
+- приоритет причины: hard-fail skip → активное дозирование → `control_mode` → soft skip;
+- Grafana dashboard `automation-engine` — rate/sum для `dose_clamped`, `observe_out_of_bounds`, `no_effect`, `estop_interrupt`, `control_mode_blocked`, `ec_batch_partial_failure`.
+
 ---
 
 ## 1. Проблема и решение
@@ -834,6 +840,15 @@ class CorrectionStateMachine:
    - метрика: `ae3_correction_ec_batch_partial_failure_total{mode=...}`.
 2. **MVP не делает** auto-enqueue diagnostics workflow (`irrigation_recovery`) и не шлёт infra-alert `infra_ec_batch_partial_failure_compensation_enqueue_failed` — это целевой контракт v2+.
 3. Ошибка на **первом** компоненте batch (нет prior success) остаётся обычным fail-closed `TaskExecutionError` без события partial failure.
+
+**Тестовое покрытие MVP (§6.2):**
+
+| Уровень | Файл | Кейсы |
+|---------|------|-------|
+| Unit (`_run_dose_ec`) | `backend/services/automation-engine/test_ae3lite_correction_handler_multi_dose.py` | `test_corr_dose_ec_dispatches_sequence_ca_mg_micro`, `test_corr_dose_ec_partial_failure_emits_event_and_fails_window`, `test_corr_dose_ec_first_component_failure_raises` |
+| Integration (`CorrectionHandler.run` + `CorrectionEventLogger` + gateway `command_statuses`) | `backend/services/automation-engine/test_ae3lite_correction_handler_multi_dose_integration.py` | happy path sequential; sequential/parallel partial (`status=degraded`, enrichment, metric, `current_ec`); first-fail sequential + parallel без partial event |
+
+YAML E2E сценарий для partial failure **не добавлен**: полный two-tank/irrigation прогон хрупкий без node_sim; pytest AE3 даёт воспроизводимое покрытие без железа.
 
 ---
 

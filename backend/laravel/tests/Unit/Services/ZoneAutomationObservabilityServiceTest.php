@@ -340,4 +340,105 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
         $codes = collect($payload['observability']['hang_hints'])->pluck('code')->all();
         $this->assertNotContains('scheduler_intent_task_drift', $codes);
     }
+
+    public function test_enrich_payload_adds_correction_context_from_zone_events_and_pid_state(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-09 12:00:00'));
+
+        $zone = Zone::factory()->create();
+
+        DB::table('pid_state')->insert([
+            'zone_id' => $zone->id,
+            'pid_type' => 'ec',
+            'last_dose_at' => now()->subMinutes(2),
+            'no_effect_count' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'CORRECTION_SKIPPED_COOLDOWN',
+            'payload_json' => json_encode([
+                'retry_after_sec' => 60,
+                'reason' => 'min_interval',
+                'task_id' => 42,
+            ]),
+            'created_at' => now()->subSeconds(15),
+        ]);
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'CORRECTION_COMPLETE',
+            'payload_json' => json_encode([
+                'targets_in_tolerance' => true,
+                'workflow_ready' => false,
+                'task_id' => 42,
+            ]),
+            'created_at' => now()->subSeconds(5),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'observability' => [
+                'runtime' => [
+                    'task_is_active' => true,
+                    'task_id' => 42,
+                    'correction_step' => 'corr_check',
+                ],
+                'hang_hints' => [],
+                'overall_health' => 'active',
+            ],
+        ]);
+
+        $correction = $payload['observability']['correction'] ?? null;
+        $this->assertIsArray($correction);
+        $this->assertSame('CORRECTION_SKIPPED_COOLDOWN', $correction['latest_skip']['event_type'] ?? null);
+        $this->assertSame(60, $correction['latest_skip']['payload']['retry_after_sec'] ?? null);
+        $this->assertSame(42, $correction['latest_skip']['payload']['task_id'] ?? null);
+        $this->assertTrue($correction['readiness']['targets_in_tolerance'] ?? false);
+        $this->assertFalse($correction['readiness']['workflow_ready'] ?? true);
+        $this->assertArrayHasKey('ec', $correction['last_dose'] ?? []);
+    }
+
+    public function test_correction_skip_prefers_active_task_and_ignores_stale(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-09 12:00:00'));
+
+        $zone = Zone::factory()->create();
+
+        // Stale event from another task (older than max age window would be filtered;
+        // here: different task_id should lose to active task).
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'CORRECTION_SKIPPED_COOLDOWN',
+            'payload_json' => json_encode(['retry_after_sec' => 30, 'task_id' => 7]),
+            'created_at' => now()->subSeconds(20),
+        ]);
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'EC_BATCH_PARTIAL_FAILURE',
+            'payload_json' => json_encode([
+                'status' => 'degraded',
+                'failed_component' => 'magnesium',
+                'task_id' => 99,
+            ]),
+            'created_at' => now()->subSeconds(10),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'observability' => [
+                'runtime' => ['task_is_active' => true, 'task_id' => 99],
+                'hang_hints' => [],
+                'overall_health' => 'active',
+            ],
+        ]);
+
+        $skip = $payload['observability']['correction']['latest_skip'] ?? null;
+        $this->assertIsArray($skip);
+        $this->assertSame('EC_BATCH_PARTIAL_FAILURE', $skip['event_type'] ?? null);
+        $this->assertSame('magnesium', $skip['payload']['failed_component'] ?? null);
+    }
 }

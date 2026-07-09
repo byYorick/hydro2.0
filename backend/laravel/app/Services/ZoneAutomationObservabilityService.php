@@ -9,6 +9,33 @@ class ZoneAutomationObservabilityService
 {
     private const ACTIVE_TASK_STATUSES = ['pending', 'claimed', 'running', 'waiting_command'];
 
+    /** @var list<string> */
+    private const CORRECTION_SKIP_EVENT_TYPES = [
+        'CORRECTION_SKIPPED_COOLDOWN',
+        'CORRECTION_SKIPPED_DOSE_DISCARDED',
+        'CORRECTION_SKIPPED_FRESHNESS',
+        'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+        'CORRECTION_SKIPPED_WATER_LEVEL',
+        'CORRECTION_SKIPPED_DEAD_ZONE',
+        'CORRECTION_SKIPPED_EMERGENCY_STOP',
+        'CORRECTION_SKIPPED_BY_ALERT_BLOCK',
+        'CORRECTION_ACTION_DEFERRED',
+        'CORRECTION_NO_EFFECT',
+        'CORRECTION_PLANNER_CONFIG_INVALID',
+        'EC_BATCH_PARTIAL_FAILURE',
+        'CORRECTION_EXHAUSTED',
+        'PUMP_CALIBRATION_MIRROR_MISMATCH',
+    ];
+
+    /** Skip/readiness older than this are ignored for the dosing card (seconds). */
+    private const CORRECTION_EVENT_MAX_AGE_SEC = 1800;
+
+    /** @var list<string> */
+    private const CORRECTION_READINESS_EVENT_TYPES = [
+        'CORRECTION_COMPLETE',
+        'CORRECTION_INTERRUPTED_STAGE_COMPLETE',
+    ];
+
     public function __construct(
         private readonly ObservabilityThresholdRegistry $thresholds,
     ) {}
@@ -69,6 +96,14 @@ class ZoneAutomationObservabilityService
             $observability['hang_hints'],
             is_array($observability['runtime'] ?? null) ? $observability['runtime'] : [],
         );
+        $runtimeTaskId = null;
+        if (is_array($observability['runtime'] ?? null) && isset($observability['runtime']['task_id'])) {
+            $runtimeTaskId = (int) $observability['runtime']['task_id'];
+            if ($runtimeTaskId <= 0) {
+                $runtimeTaskId = null;
+            }
+        }
+        $observability['correction'] = $this->buildCorrectionContext($zoneId, $runtimeTaskId);
 
         $payload['observability'] = $observability;
 
@@ -644,5 +679,241 @@ class ZoneAutomationObservabilityService
         }
 
         return 'idle';
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function buildCorrectionContext(int $zoneId, ?int $activeTaskId = null): array
+    {
+        return [
+            'last_dose' => $this->fetchPidStateLastDoses($zoneId),
+            'latest_skip' => $this->fetchLatestCorrectionSkipEvent($zoneId, $activeTaskId),
+            'readiness' => $this->fetchLatestCorrectionReadiness($zoneId, $activeTaskId),
+        ];
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    private function fetchPidStateLastDoses(int $zoneId): array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('pid_state')) {
+            return [];
+        }
+
+        $rows = DB::table('pid_state')
+            ->where('zone_id', $zoneId)
+            ->whereIn('pid_type', ['ec', 'ph'])
+            ->get(['pid_type', 'last_dose_at', 'no_effect_count']);
+
+        $result = [];
+        $now = Carbon::now();
+
+        foreach ($rows as $row) {
+            $pidType = strtolower((string) ($row->pid_type ?? ''));
+            if (! in_array($pidType, ['ec', 'ph'], true)) {
+                continue;
+            }
+
+            $lastDoseAt = $row->last_dose_at ?? null;
+            $ageSec = null;
+            if ($lastDoseAt !== null) {
+                $ageSec = max(0, Carbon::parse((string) $lastDoseAt)->diffInSeconds($now));
+            }
+
+            $result[$pidType] = [
+                'last_dose_at' => $lastDoseAt !== null
+                    ? Carbon::parse((string) $lastDoseAt)->toIso8601String()
+                    : null,
+                'last_dose_age_sec' => $ageSec,
+                'no_effect_count' => isset($row->no_effect_count) ? (int) $row->no_effect_count : 0,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchLatestCorrectionSkipEvent(int $zoneId, ?int $activeTaskId = null): ?array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('zone_events')) {
+            return null;
+        }
+
+        $placeholders = implode(',', array_fill(0, count(self::CORRECTION_SKIP_EVENT_TYPES), '?'));
+        $minCreatedAt = Carbon::now()->subSeconds(self::CORRECTION_EVENT_MAX_AGE_SEC);
+
+        $bindings = array_merge([$zoneId], self::CORRECTION_SKIP_EVENT_TYPES, [$minCreatedAt]);
+        $taskFilter = '';
+        if ($activeTaskId !== null) {
+            // Prefer events of the active task; allow legacy rows without task_id.
+            $taskFilter = " AND (
+                (payload_json->>'task_id')::bigint = ?
+                OR payload_json->>'task_id' IS NULL
+            )";
+            $bindings[] = $activeTaskId;
+        }
+
+        $row = DB::selectOne(
+            "SELECT id, type, payload_json, created_at
+             FROM zone_events
+             WHERE zone_id = ?
+               AND type IN ({$placeholders})
+               AND created_at >= ?
+               {$taskFilter}
+             ORDER BY
+               CASE
+                 WHEN payload_json->>'task_id' IS NOT NULL THEN 0
+                 ELSE 1
+               END,
+               id DESC
+             LIMIT 1",
+            $bindings,
+        );
+
+        if ($row === null) {
+            return null;
+        }
+
+        $payload = $this->decodeZoneEventPayload($row->payload_json ?? null);
+        $createdAt = $row->created_at ?? null;
+        $ageSec = $createdAt !== null
+            ? max(0, Carbon::parse((string) $createdAt)->diffInSeconds(now()))
+            : null;
+
+        $summary = $this->summarizeCorrectionSkipPayload($payload);
+        if (isset($payload['task_id'])) {
+            $summary['task_id'] = (int) $payload['task_id'];
+        }
+
+        return [
+            'event_id' => isset($row->id) ? (int) $row->id : null,
+            'event_type' => is_string($row->type ?? null) ? (string) $row->type : null,
+            'occurred_at' => $createdAt !== null
+                ? Carbon::parse((string) $createdAt)->toIso8601String()
+                : null,
+            'age_sec' => $ageSec,
+            'payload' => $summary,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchLatestCorrectionReadiness(int $zoneId, ?int $activeTaskId = null): ?array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('zone_events')) {
+            return null;
+        }
+
+        $placeholders = implode(',', array_fill(0, count(self::CORRECTION_READINESS_EVENT_TYPES), '?'));
+        $minCreatedAt = Carbon::now()->subSeconds(self::CORRECTION_EVENT_MAX_AGE_SEC);
+
+        $bindings = array_merge([$zoneId], self::CORRECTION_READINESS_EVENT_TYPES, [$minCreatedAt]);
+        $taskFilter = '';
+        if ($activeTaskId !== null) {
+            $taskFilter = " AND (
+                (payload_json->>'task_id')::bigint = ?
+                OR payload_json->>'task_id' IS NULL
+            )";
+            $bindings[] = $activeTaskId;
+        }
+
+        $row = DB::selectOne(
+            "SELECT id, type, payload_json, created_at
+             FROM zone_events
+             WHERE zone_id = ?
+               AND type IN ({$placeholders})
+               AND created_at >= ?
+               {$taskFilter}
+             ORDER BY
+               CASE
+                 WHEN payload_json->>'task_id' IS NOT NULL THEN 0
+                 ELSE 1
+               END,
+               id DESC
+             LIMIT 1",
+            $bindings,
+        );
+
+        if ($row === null) {
+            return null;
+        }
+
+        $payload = $this->decodeZoneEventPayload($row->payload_json ?? null);
+
+        return [
+            'event_id' => isset($row->id) ? (int) $row->id : null,
+            'event_type' => is_string($row->type ?? null) ? (string) $row->type : null,
+            'occurred_at' => ($row->created_at ?? null) !== null
+                ? Carbon::parse((string) $row->created_at)->toIso8601String()
+                : null,
+            'targets_in_tolerance' => array_key_exists('targets_in_tolerance', $payload)
+                ? (bool) $payload['targets_in_tolerance']
+                : null,
+            'workflow_ready' => array_key_exists('workflow_ready', $payload)
+                ? (bool) $payload['workflow_ready']
+                : null,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function decodeZoneEventPayload(mixed $raw): array
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function summarizeCorrectionSkipPayload(array $payload): array
+    {
+        $keys = [
+            'reason',
+            'retry_after_sec',
+            'sensor_scope',
+            'sensor_type',
+            'deferred_action',
+            'selected_action',
+            'control_mode',
+            'failed_component',
+            'status',
+            'mode',
+            'error_code',
+            'ph_reason',
+            'ec_reason',
+            'estop_event_id',
+            'pid_type',
+            'alert_block_retry',
+            'alert_block_max_retries',
+            'retry_count',
+            'task_id',
+        ];
+
+        $summary = [];
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $payload)) {
+                continue;
+            }
+            $summary[$key] = $payload[$key];
+        }
+
+        return $summary;
     }
 }

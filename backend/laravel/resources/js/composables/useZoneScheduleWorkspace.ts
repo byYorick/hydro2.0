@@ -591,8 +591,9 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
       CORRECTION_INTERRUPTED_STAGE_COMPLETE: 'Коррекция прервана',
       CORRECTION_LIMIT_POLICY_APPLIED: 'Лимит коррекций',
       CORRECTION_ATTEMPT_CAP_IGNORED: 'Лимит попыток',
-      CORRECTION_PLANNER_CONFIG_INVALID: 'Ошибка конфигурации',
-      // Коррекция (пропуски)
+      CORRECTION_PLANNER_CONFIG_INVALID: 'Ошибка конфигурации planner',
+      CORRECTION_SKIPPED_EMERGENCY_STOP: 'Пропуск: E-STOP',
+      CORRECTION_SKIPPED_BY_ALERT_BLOCK: 'Пропуск: alert block',
       CORRECTION_SKIPPED: 'Коррекция пропущена',
       CORRECTION_SKIPPED_COOLDOWN: 'Пропуск: откат',
       CORRECTION_SKIPPED_DEAD_ZONE: 'Пропуск: мёртвая зона',
@@ -605,6 +606,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
       EC_CORRECTED: 'EC скорректирован',
       EC_DOSING: 'Дозирование EC',
       EC_BATCH_PARTIAL_FAILURE: 'Частичный сбой EC batch',
+      PUMP_CALIBRATION_MIRROR_MISMATCH: 'Расхождение калибровки насоса',
       // Полив
       IRRIGATION_APPROVED: 'Полив разрешён',
       IRRIGATION_SKIPPED: 'Полив пропущен',

@@ -81,6 +81,10 @@ export function classifyEventKind(kind) {
     kind === 'EQUIPMENT_ANOMALY_BLOCKED' ||
     kind === 'EQUIPMENT_ANOMALY_RELEASED' ||
     kind === 'CORRECTION_NO_EFFECT' ||
+    kind === 'CORRECTION_ACTION_DEFERRED' ||
+    kind === 'CORRECTION_SKIPPED_EMERGENCY_STOP' ||
+    kind === 'CORRECTION_SKIPPED_BY_ALERT_BLOCK' ||
+    kind === 'PUMP_CALIBRATION_MIRROR_MISMATCH' ||
     kind === 'PUMP_CALIBRATION_STALE' ||
     kind === 'RELAY_AUTOTUNE_TIMEOUT' ||
     kind.endsWith('_DOSING_BLOCKED_ANOMALY') ||
@@ -197,7 +201,12 @@ export function translateEventKind(kind) {
     'CORRECTION_SKIPPED_FRESHNESS': 'Коррекция: устаревшие данные',
     'CORRECTION_SKIPPED_WINDOW_NOT_READY': 'Коррекция: окно наблюдения не готово',
     'CORRECTION_SKIPPED_ANOMALY_BLOCK': 'Коррекция: аномалия оборудования',
+    'CORRECTION_PLANNER_CONFIG_INVALID': 'Коррекция: ошибка конфигурации planner',
+    'CORRECTION_SKIPPED_EMERGENCY_STOP': 'Коррекция: E-STOP',
+    'CORRECTION_SKIPPED_BY_ALERT_BLOCK': 'Коррекция: блок alert',
+    'CORRECTION_ACTION_DEFERRED': 'Коррекция: действие отложено',
     'CORRECTION_NO_EFFECT': 'Коррекция: нет наблюдаемого эффекта',
+    'PUMP_CALIBRATION_MIRROR_MISMATCH': 'Коррекция: расхождение калибровки насоса',
     'PH_CORRECTION_SKIPPED': 'Коррекция pH: пропуск',
     'EC_CORRECTION_SKIPPED': 'Коррекция EC: пропуск',
     'PH_CORRECTION_SKIPPED_STALE_DATA': 'Коррекция pH: устаревшие данные',

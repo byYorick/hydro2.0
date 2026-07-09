@@ -140,6 +140,15 @@ function appendCorrectionReadinessRows(rows: DetailRow[], payload: Payload): voi
   }
 }
 
+function appendDoseClampRows(rows: DetailRow[], payload: Payload): void {
+  const requestedMl = readNumber(payload, 'requested_ml')
+  const effectiveMl = readNumber(payload, 'effective_ml') ?? readNumber(payload, 'amount_ml')
+  if (requestedMl !== null && effectiveMl !== null && requestedMl > effectiveMl + 1e-6) {
+    rows.push(row('Запрошено', `${requestedMl.toFixed(4)} мл`))
+    rows.push(row('Фактически', `${effectiveMl.toFixed(4)} мл (clamp)`, 'error'))
+  }
+}
+
 function appendIrrigationDecisionConfigRows(rows: DetailRow[], payload: Payload): void {
   const config = toPayloadRecord(payload['config']) ?? toPayloadRecord(payload['decision_config'])
   if (!config) return
@@ -267,6 +276,7 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
       rows.push(row('Цель EC', `${targetEc.toFixed(2)} мС/см`))
     }
     if (amountMl !== null) rows.push(row('Доза', `${amountMl.toFixed(1)} мл`))
+    appendDoseClampRows(rows, payload)
     if (durationMs !== null) rows.push(row('Импульс насоса', `${durationMs} мс`))
     if (nodeUid) rows.push(row('Нода', nodeUid))
     if (channel) rows.push(row('Канал', channel))
@@ -293,6 +303,7 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
       rows.push(row('Цель pH', targetPh.toFixed(2)))
     }
     if (amountMl !== null) rows.push(row('Доза', `${amountMl.toFixed(1)} мл`))
+    appendDoseClampRows(rows, payload)
     if (durationMs !== null) rows.push(row('Импульс насоса', `${durationMs} мс`))
     if (nodeUid) rows.push(row('Нода', nodeUid))
     if (channel) rows.push(row('Канал', channel))
@@ -406,12 +417,18 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     const sensorScope = readString(payload, 'sensor_scope')
     const sensorType = readString(payload, 'sensor_type')
     const reason = readString(payload, 'reason')
+    const phReason = readString(payload, 'ph_reason')
+    const ecReason = readString(payload, 'ec_reason')
     const retrySec = readNumber(payload, 'retry_after_sec')
     const sampleCount = readNumber(payload, 'sample_count')
     const slope = readNumber(payload, 'slope')
     if (sensorScope) rows.push(row('Окно', sensorScope))
     if (sensorType) rows.push(row('Сенсор', sensorType))
-    if (reason) rows.push(row('Причина', reason))
+    if (phReason === 'sensor_out_of_bounds' || ecReason === 'sensor_out_of_bounds') {
+      rows.push(row('Причина', 'сенсор вне допустимых bounds', 'error'))
+    } else if (reason) {
+      rows.push(row('Причина', reason))
+    }
     if (sampleCount !== null) rows.push(row('Сэмплов', String(sampleCount)))
     if (slope !== null) rows.push(row('Slope', slope.toFixed(4)))
     if (retrySec !== null) rows.push(row('Повтор через', `${retrySec} с`))
@@ -426,6 +443,53 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
       rows.push(row('Эффект', `${actualEffect.toFixed(4)} < ${thresholdEffect.toFixed(4)}`))
     }
     if (limit !== null) rows.push(row('Лимит', String(limit)))
+  }
+  else if (event.kind === 'CORRECTION_SKIPPED_DEAD_ZONE') {
+    const currentPh = readNumber(payload, 'current_ph')
+    const currentEc = readNumber(payload, 'current_ec')
+    const retrySec = readNumber(payload, 'retry_after_sec')
+    if (currentPh !== null) rows.push(row('pH', currentPh.toFixed(2)))
+    if (currentEc !== null) rows.push(row('EC', `${currentEc.toFixed(2)} мС/см`))
+    if (retrySec !== null) rows.push(row('Повтор через', `${retrySec} с`))
+  }
+  else if (event.kind === 'CORRECTION_SKIPPED_EMERGENCY_STOP') {
+    const estopEventId = readNumber(payload, 'estop_event_id')
+    appendCorrectionTrace(rows, payload)
+    if (estopEventId !== null) rows.push(row('E-STOP event', String(estopEventId), 'error'))
+  }
+  else if (event.kind === 'CORRECTION_ACTION_DEFERRED') {
+    const selectedAction = readString(payload, 'selected_action')
+    const deferredAction = readString(payload, 'deferred_action')
+    const reason = readString(payload, 'reason')
+    appendCorrectionTrace(rows, payload)
+    if (selectedAction) rows.push(row('Выбранный контур', selectedAction))
+    if (deferredAction) rows.push(row('Отложено', deferredAction))
+    if (reason) rows.push(row('Причина', reason))
+  }
+  else if (event.kind === 'CORRECTION_SKIPPED_BY_ALERT_BLOCK') {
+    // AE3 writes alert_block_retry; retry_count kept as legacy alias.
+    const retryCount = readNumber(payload, 'alert_block_retry')
+      ?? readNumber(payload, 'retry_count')
+    const maxRetries = readNumber(payload, 'alert_block_max_retries')
+    appendCorrectionTrace(rows, payload)
+    if (retryCount !== null && maxRetries !== null) {
+      rows.push(row('Повторы', `${retryCount}/${maxRetries}`))
+    } else if (retryCount !== null) {
+      rows.push(row('Повтор', String(retryCount)))
+    }
+  }
+  else if (event.kind === 'PUMP_CALIBRATION_MIRROR_MISMATCH') {
+    const mismatches = payload.mismatches
+    appendCorrectionTrace(rows, payload)
+    if (Array.isArray(mismatches) && mismatches.length > 0) {
+      rows.push(row('Расхождения', mismatches.map((item) => {
+        if (item && typeof item === 'object') {
+          const field = readString(item as Payload, 'field')
+          return field ?? JSON.stringify(item)
+        }
+        return String(item)
+      }).join(', '), 'error'))
+    }
   }
   else if (event.kind === 'EC_BATCH_PARTIAL_FAILURE') {
     const failed = readString(payload, 'failed_component')

@@ -1220,6 +1220,202 @@
       }
     },
     {
+      "id": 106,
+      "title": "— Correction signals —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 64
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Correction signals (clamp / observe / blocks)"
+      }
+    },
+    {
+      "id": 107,
+      "title": "Correction signal rates",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 65
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_correction_dose_clamped_total[5m])",
+          "refId": "A",
+          "legendFormat": "dose_clamped {{pid_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_observe_out_of_bounds_total[5m])",
+          "refId": "B",
+          "legendFormat": "observe_oob",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_no_effect_total[5m])",
+          "refId": "C",
+          "legendFormat": "no_effect {{pid_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_estop_interrupt_total[5m])",
+          "refId": "D",
+          "legendFormat": "estop_interrupt",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_control_mode_blocked_total[5m])",
+          "refId": "E",
+          "legendFormat": "control_mode_blocked",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_ec_batch_partial_failure_total[5m])",
+          "refId": "F",
+          "legendFormat": "ec_batch_partial {{mode}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 108,
+      "title": "Correction signal totals",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 65
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(ae3_correction_dose_clamped_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": "Dose clamped",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_observe_out_of_bounds_total) or vector(0)",
+          "refId": "B",
+          "legendFormat": "Observe OOB",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_no_effect_total) or vector(0)",
+          "refId": "C",
+          "legendFormat": "No effect",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_estop_interrupt_total) or vector(0)",
+          "refId": "D",
+          "legendFormat": "E-STOP interrupt",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_control_mode_blocked_total) or vector(0)",
+          "refId": "E",
+          "legendFormat": "Control mode blocked",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_ec_batch_partial_failure_total) or vector(0)",
+          "refId": "F",
+          "legendFormat": "EC batch partial",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "orange"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "colorMode": "background"
+      }
+    },
+    {
       "id": 200,
       "title": "— Irrigation —",
       "type": "text",

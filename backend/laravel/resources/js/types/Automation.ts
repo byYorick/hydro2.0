@@ -170,6 +170,34 @@ export interface AutomationObservabilityScheduler {
   } | null
 }
 
+export interface AutomationObservabilityCorrectionDose {
+  last_dose_at?: string | null
+  last_dose_age_sec?: number | null
+  no_effect_count?: number
+}
+
+export interface AutomationObservabilityCorrectionSkip {
+  event_id?: number | null
+  event_type?: string | null
+  occurred_at?: string | null
+  age_sec?: number | null
+  payload?: Record<string, unknown>
+}
+
+export interface AutomationObservabilityCorrectionReadiness {
+  event_id?: number | null
+  event_type?: string | null
+  occurred_at?: string | null
+  targets_in_tolerance?: boolean | null
+  workflow_ready?: boolean | null
+}
+
+export interface AutomationObservabilityCorrection {
+  last_dose?: Record<string, AutomationObservabilityCorrectionDose>
+  latest_skip?: AutomationObservabilityCorrectionSkip | null
+  readiness?: AutomationObservabilityCorrectionReadiness | null
+}
+
 export interface AutomationObservability {
   runtime?: AutomationObservabilityRuntime
   nodes?: {
@@ -180,6 +208,23 @@ export interface AutomationObservability {
   scheduler?: AutomationObservabilityScheduler
   hang_hints?: AutomationHangHint[]
   overall_health?: AutomationObservabilityHealth
+  correction?: AutomationObservabilityCorrection
+}
+
+export type CorrectionDosingBlockSeverity = 'neutral' | 'info' | 'warning' | 'danger'
+
+export interface CorrectionDosingDiagnostics {
+  visible: boolean
+  corrStep: string | null
+  corrStepLabel: string | null
+  reason: string | null
+  detail: string | null
+  lastDoseSummary: string | null
+  cooldownLabel: string | null
+  targetsInTolerance: boolean | null
+  workflowReady: boolean | null
+  severity: CorrectionDosingBlockSeverity
+  isDosingActive: boolean
 }
 
 export interface HoveredElement {

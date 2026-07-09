@@ -214,6 +214,23 @@ describe('eventDetails', () => {
     ]))
   })
 
+  it('разворачивает CORRECTION_SKIPPED_BY_ALERT_BLOCK с alert_block_retry', () => {
+    const rows = buildEventDetails({
+      id: 12,
+      kind: 'CORRECTION_SKIPPED_BY_ALERT_BLOCK',
+      message: 'Alert block',
+      occurred_at: '2026-07-09T12:00:00Z',
+      payload: {
+        alert_block_retry: 3,
+        alert_block_max_retries: 10,
+      },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { label: 'Повторы', value: '3/10', variant: 'default' },
+    ]))
+  })
+
   it('разворачивает EC_BATCH_PARTIAL_FAILURE', () => {
     const rows = buildEventDetails({
       id: 11,
@@ -241,6 +258,59 @@ describe('eventDetails', () => {
       { label: 'Цель EC', value: '1.80 мС/см', variant: 'default' },
       { label: 'Режим', value: 'multi_sequential', variant: 'default' },
       { label: 'Код ошибки', value: 'hw_error', variant: 'error' },
+    ]))
+  })
+
+  it('разворачивает CORRECTION_SKIPPED_EMERGENCY_STOP и observe out-of-bounds', () => {
+    const estopRows = buildEventDetails({
+      id: 12,
+      kind: 'CORRECTION_SKIPPED_EMERGENCY_STOP',
+      message: 'E-STOP',
+      occurred_at: '2026-07-09T12:00:00Z',
+      payload: { estop_event_id: 77, task_id: 3 },
+    })
+
+    expect(estopRows).toEqual(expect.arrayContaining([
+      { label: 'E-STOP event', value: '77', variant: 'error' },
+      { label: 'Задача ID', value: '3', variant: 'default' },
+    ]))
+
+    const oobRows = buildEventDetails({
+      id: 13,
+      kind: 'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+      message: 'Window not ready',
+      occurred_at: '2026-07-09T12:00:00Z',
+      payload: {
+        sensor_scope: 'decision_window',
+        ph_reason: 'sensor_out_of_bounds',
+        retry_after_sec: 45,
+      },
+    })
+
+    expect(oobRows).toEqual(expect.arrayContaining([
+      { label: 'Окно', value: 'decision_window', variant: 'default' },
+      { label: 'Причина', value: 'сенсор вне допустимых bounds', variant: 'error' },
+      { label: 'Повтор через', value: '45 с', variant: 'default' },
+    ]))
+  })
+
+  it('показывает clamp requested/effective для EC_DOSING', () => {
+    const rows = buildEventDetails({
+      id: 14,
+      kind: 'EC_DOSING',
+      message: 'EC dose',
+      occurred_at: '2026-07-09T12:00:00Z',
+      payload: {
+        requested_ml: 2.5,
+        effective_ml: 1.2,
+        amount_ml: 1.2,
+        duration_ms: 60000,
+      },
+    })
+
+    expect(rows).toEqual(expect.arrayContaining([
+      { label: 'Запрошено', value: '2.5000 мл', variant: 'default' },
+      { label: 'Фактически', value: '1.2000 мл (clamp)', variant: 'error' },
     ]))
   })
 })

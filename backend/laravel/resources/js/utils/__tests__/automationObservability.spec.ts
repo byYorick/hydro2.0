@@ -3,6 +3,7 @@ import {
   formatObservabilityDuration,
   normalizeObservability,
   observabilityHealthLabel,
+  resolveCorrectionDosingDiagnostics,
   resolveObservability,
   stageDiagnosticLabel,
 } from '@/utils/automationObservability'
@@ -102,5 +103,164 @@ describe('automationObservability', () => {
 
     expect(result?.hang_hints?.some((hint) => hint.code === 'state_snapshot_stale')).toBe(true)
     expect(result?.overall_health).toBe('warning')
+  })
+
+  it('normalizes correction context from observability payload', () => {
+    const result = normalizeObservability({
+      overall_health: 'active',
+      correction: {
+        last_dose: {
+          ec: { last_dose_at: '2026-07-09T10:00:00Z', last_dose_age_sec: 120, no_effect_count: 1 },
+        },
+        latest_skip: {
+          event_type: 'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+          payload: { ph_reason: 'sensor_out_of_bounds', retry_after_sec: 30 },
+        },
+        readiness: {
+          targets_in_tolerance: true,
+          workflow_ready: false,
+        },
+      },
+    })
+
+    expect(result?.correction?.last_dose?.ec?.no_effect_count).toBe(1)
+    expect(result?.correction?.latest_skip?.event_type).toBe('CORRECTION_SKIPPED_WINDOW_NOT_READY')
+    expect(result?.correction?.readiness?.workflow_ready).toBe(false)
+  })
+
+  it('resolves correction dosing diagnostics from skip event and corr step', () => {
+    const diagnostics = resolveCorrectionDosingDiagnostics(
+      {
+        zone_id: 1,
+        state: 'IRRIGATING',
+        state_label: 'Полив',
+        workflow_phase: 'irrigating',
+        control_mode: 'auto',
+        state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
+        system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
+        current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
+        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        timeline: [],
+        next_state: null,
+        estimated_completion_sec: null,
+      },
+      {
+        runtime: {
+          task_is_active: true,
+          correction_step: 'corr_check',
+          workflow_phase: 'irrigating',
+        },
+        correction: {
+          latest_skip: {
+            event_type: 'EC_BATCH_PARTIAL_FAILURE',
+            age_sec: 30,
+            payload: { failed_component: 'magnesium', status: 'degraded' },
+          },
+        },
+      },
+    )
+
+    expect(diagnostics?.visible).toBe(true)
+    expect(diagnostics?.reason).toContain('частичный сбой')
+    expect(diagnostics?.severity).toBe('danger')
+    expect(diagnostics?.detail).toContain('magnesium')
+  })
+
+  it('prefers active dosing over stale soft skip', () => {
+    const diagnostics = resolveCorrectionDosingDiagnostics(
+      {
+        zone_id: 1,
+        state: 'IRRIGATING',
+        state_label: 'Полив',
+        workflow_phase: 'irrigating',
+        control_mode: 'auto',
+        state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
+        system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
+        current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
+        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        timeline: [],
+        next_state: null,
+        estimated_completion_sec: null,
+      },
+      {
+        runtime: {
+          task_is_active: true,
+          correction_step: 'corr_dose_ec',
+          workflow_phase: 'irrigating',
+        },
+        correction: {
+          latest_skip: {
+            event_type: 'CORRECTION_SKIPPED_COOLDOWN',
+            age_sec: 5,
+            payload: { retry_after_sec: 60 },
+          },
+        },
+      },
+    )
+
+    expect(diagnostics?.reason).toBe('Дозирование выполняется')
+    expect(diagnostics?.isDosingActive).toBe(true)
+    expect(diagnostics?.severity).toBe('info')
+  })
+
+  it('hides dosing card on idle even with stale skip/readiness', () => {
+    const diagnostics = resolveCorrectionDosingDiagnostics(
+      {
+        zone_id: 1,
+        state: 'IDLE',
+        state_label: 'Ожидание',
+        workflow_phase: 'idle',
+        control_mode: 'auto',
+        state_details: { started_at: null, elapsed_sec: 0, progress_percent: 0, failed: false },
+        system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
+        current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: null, ec: null },
+        active_processes: { pump_in: false, circulation_pump: false, ph_correction: false, ec_correction: false },
+        timeline: [],
+        next_state: null,
+        estimated_completion_sec: null,
+      },
+      {
+        runtime: { task_is_active: false, workflow_phase: 'idle' },
+        correction: {
+          latest_skip: {
+            event_type: 'CORRECTION_SKIPPED_COOLDOWN',
+            age_sec: 10,
+            payload: { retry_after_sec: 60 },
+          },
+          readiness: { targets_in_tolerance: true, workflow_ready: false },
+        },
+      },
+    )
+
+    expect(diagnostics).toBeNull()
+  })
+
+  it('shows manual control_mode block when correction is active', () => {
+    const diagnostics = resolveCorrectionDosingDiagnostics(
+      {
+        zone_id: 1,
+        state: 'IRRIGATING',
+        state_label: 'Полив',
+        workflow_phase: 'irrigating',
+        control_mode: 'manual',
+        state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
+        system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
+        current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
+        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        timeline: [],
+        next_state: null,
+        estimated_completion_sec: null,
+      },
+      {
+        runtime: {
+          task_is_active: true,
+          correction_step: 'corr_check',
+          workflow_phase: 'irrigating',
+        },
+      },
+    )
+
+    expect(diagnostics?.reason).toContain('Ручной режим')
+    expect(diagnostics?.severity).toBe('warning')
   })
 })
