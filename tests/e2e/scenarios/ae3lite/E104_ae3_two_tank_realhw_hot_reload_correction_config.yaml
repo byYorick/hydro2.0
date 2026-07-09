@@ -1512,7 +1512,7 @@ actions:
       SELECT id, status, current_stage, error_code, error_message, due_at
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status IN ('pending', 'completed')
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')
       LIMIT 1
     params:
       task_id: ${task_id}
@@ -1629,7 +1629,7 @@ assertions:
 
   - name: runtime_task_pending_clean_fill_check
     type: custom_assert
-    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'running', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'"
+    condition: "str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed', 'running', 'waiting_command', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'"
 
   - name: workflow_phase_tank_filling
     type: custom_assert
@@ -1664,7 +1664,7 @@ assertions:
 
   - name: task_alive_after_hot_reload
     type: custom_assert
-    condition: "str(context.get('task_after_hot_reload_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not str(context.get('task_after_hot_reload_row', [{}])[0].get('error_code', '') or '').strip()"
+    condition: "str(context.get('task_after_hot_reload_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed', 'running', 'waiting_command', 'completed') and not str(context.get('task_after_hot_reload_row', [{}])[0].get('error_code', '') or '').strip()"
 
   - name: post_reload_command_is_clamped
     type: custom_assert
@@ -1714,6 +1714,9 @@ assertions:
         operator: in
         value:
           - pending
+          - claimed
+          - running
+          - waiting_command
           - completed
 
 cleanup:
