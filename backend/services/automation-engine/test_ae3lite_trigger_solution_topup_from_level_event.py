@@ -105,7 +105,7 @@ async def test_trigger_starts_topup_when_preconditions_met(monkeypatch: pytest.M
     ])
     zone_intent_repository = AsyncMock()
     zone_intent_repository.upsert_solution_topup_intent = AsyncMock(return_value=91)
-    zone_intent_repository.claim_start_solution_topup = AsyncMock(return_value={
+    zone_intent_repository.claim_pending_intent_by_id = AsyncMock(return_value={
         "decision": "claimed",
         "intent": {
             "id": 91,
@@ -130,6 +130,7 @@ async def test_trigger_starts_topup_when_preconditions_met(monkeypatch: pytest.M
     assert result["triggered"] is True
     assert result["task_id"] == 501
     zone_intent_repository.upsert_solution_topup_intent.assert_awaited_once()
+    zone_intent_repository.claim_pending_intent_by_id.assert_awaited_once()
     create_task.run.assert_awaited_once()
     assert create_task.run.await_args.kwargs["solution_topup_trigger"] == "level_switch"
 
@@ -159,7 +160,7 @@ async def test_trigger_maps_task_create_precondition_failure(monkeypatch: pytest
     ])
     zone_intent_repository = AsyncMock()
     zone_intent_repository.upsert_solution_topup_intent = AsyncMock(return_value=91)
-    zone_intent_repository.claim_start_solution_topup = AsyncMock(return_value={
+    zone_intent_repository.claim_pending_intent_by_id = AsyncMock(return_value={
         "decision": "claimed",
         "intent": {
             "id": 91,

@@ -332,6 +332,20 @@ def _build_zone_event_listener_callback(
                         zone_id,
                         topup_result.get("task_id"),
                     )
+                else:
+                    skip_reason = str(topup_result.get("reason") or "")
+                    if skip_reason not in {
+                        "event_type_not_relevant",
+                        "channel_not_solution_max",
+                        "initial_event_skipped",
+                        "not_topup_start_edge",
+                    }:
+                        logger.info(
+                            "ZoneEventListener: reactive solution_topup skipped zone_id=%s channel=%s reason=%s",
+                            zone_id,
+                            channel or None,
+                            skip_reason or None,
+                        )
             except Exception as exc:
                 logger.warning(
                     "ZoneEventListener: reactive solution_topup failed zone_id=%s event_type=%s channel=%s error=%s",

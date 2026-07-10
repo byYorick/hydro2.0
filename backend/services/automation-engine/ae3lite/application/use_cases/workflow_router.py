@@ -367,6 +367,9 @@ class WorkflowRouter:
             correction=task.correction,
             due_at=due_at,
             now=now,
+            # Operator may inject pending_manual_step via POST /manual-step while
+            # this poll tick already holds a stale in-memory workflow snapshot.
+            preserve_pending_manual_step=True,
         )
         resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,

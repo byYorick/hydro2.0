@@ -813,8 +813,14 @@ class PgAutomationTaskRepository:
         correction: CorrectionState | None,
         due_at: datetime,
         now: datetime,
+        preserve_pending_manual_step: bool = False,
     ) -> AutomationTask | None:
-        """Atomically update workflow + correction state and re-enqueue as pending."""
+        """Atomically update workflow + correction state and re-enqueue as pending.
+
+        ``preserve_pending_manual_step=True`` keeps a concurrently injected
+        operator step (POST /manual-step) that may have landed in DB while this
+        tick was already in-flight with a stale in-memory workflow snapshot.
+        """
         normalized_due_at = self._normalize_timestamp(due_at)
         normalized_now = self._normalize_timestamp(now)
 
@@ -830,7 +836,10 @@ class PgAutomationTaskRepository:
                 stage_retry_count     = $6,
                 stage_entered_at      = $7,
                 clean_fill_cycle      = $8,
-                pending_manual_step   = $9,
+                pending_manual_step   = CASE
+                    WHEN $45::boolean THEN pending_manual_step
+                    ELSE $9
+                END,
                 control_mode_snapshot = $10,
                 corr_step                 = $11,
                 corr_attempt              = $12,
@@ -884,6 +893,7 @@ class PgAutomationTaskRepository:
             *self._correction_values(correction),
             normalized_due_at,
             normalized_now,
+            bool(preserve_pending_manual_step),
         )
         task = self._task_from_row(row)
         if task is not None:
@@ -940,6 +950,7 @@ class PgAutomationTaskRepository:
             """
             UPDATE ae_tasks
             SET pending_manual_step = $2,
+                due_at = $3,
                 updated_at = $3
             WHERE id = $1
               AND status = ANY($4::text[])

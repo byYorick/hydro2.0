@@ -115,6 +115,112 @@ class PgZoneIntentRepository:
             running_stale_after_sec=running_stale_after_sec,
         )
 
+    async def claim_pending_intent_by_id(
+        self,
+        *,
+        zone_id: int,
+        intent_id: int,
+        now: datetime,
+        claimed_stale_after_sec: int = 180,
+        running_stale_after_sec: int = 1800,
+    ) -> dict[str, Any]:
+        """Claim a just-upserted pending intent by primary key (no SKIP LOCKED races)."""
+        stale_claimed_before = now - timedelta(seconds=max(1, int(claimed_stale_after_sec)))
+        stale_running_before = now - timedelta(seconds=max(1, int(running_stale_after_sec)))
+        active_zone_rows = await fetch(
+            """
+            SELECT *
+            FROM zone_automation_intents
+            WHERE zone_id = $1
+              AND id <> $2
+              AND (
+                    (
+                        status = 'running'
+                        AND (updated_at IS NULL OR updated_at > $4)
+                    )
+                    OR (status = 'claimed' AND (claimed_at IS NULL OR claimed_at > $3))
+              )
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            intent_id,
+            stale_claimed_before,
+            stale_running_before,
+        )
+        if active_zone_rows:
+            requested_rows = await fetch(
+                """
+                SELECT *
+                FROM zone_automation_intents
+                WHERE id = $1
+                  AND zone_id = $2
+                LIMIT 1
+                """,
+                intent_id,
+                zone_id,
+            )
+            return {
+                "decision": "zone_busy",
+                "intent": dict(active_zone_rows[0]),
+                "requested_intent": dict(requested_rows[0]) if requested_rows else {},
+            }
+
+        # not_before is timestamp(0): PG rounds half-up to whole seconds, so a
+        # just-inserted row can have not_before = ceil(now) and fail `<= $3`.
+        # Allow 1s slack so reactive claim right after upsert never misses.
+        rows = await fetch(
+            """
+            UPDATE zone_automation_intents
+            SET status = 'claimed',
+                claimed_at = $3,
+                updated_at = $3
+            WHERE id = $1
+              AND zone_id = $2
+              AND status IN ('pending', 'failed')
+              AND (
+                    not_before IS NULL
+                    OR not_before <= ($3::timestamptz + interval '1 second')
+              )
+              AND (status <> 'failed' OR retry_count < max_retries)
+            RETURNING *
+            """,
+            intent_id,
+            zone_id,
+            now,
+        )
+        if rows:
+            intent = dict(rows[0])
+            INTENT_CLAIMED.labels(source_status="pending").inc()
+            return {"decision": "claimed", "intent": intent}
+
+        existing_rows = await fetch(
+            """
+            SELECT *
+            FROM zone_automation_intents
+            WHERE id = $1
+              AND zone_id = $2
+            LIMIT 1
+            """,
+            intent_id,
+            zone_id,
+        )
+        if not existing_rows:
+            return {"decision": "missing", "intent": {}}
+        existing = dict(existing_rows[0])
+        status = str(existing.get("status") or "").strip().lower()
+        if status in _ACTIVE_STATUSES:
+            return {"decision": "deduplicated", "intent": existing}
+        if status in _TERMINAL_STATUSES:
+            return {"decision": "terminal", "intent": existing}
+        if status in {"pending", "failed"}:
+            return {
+                "decision": "claim_race",
+                "intent": existing,
+                "requested_intent": existing,
+            }
+        return {"decision": "missing", "intent": existing}
+
     async def claim_start_solution_change(
         self,
         *,
@@ -175,7 +281,7 @@ class PgZoneIntentRepository:
             VALUES (
                 $1, 'SOLUTION_TOPUP', 'solution_topup', $2,
                 NULL, NULL, $3, $4, $5::jsonb,
-                'pending', $6, 0, 3, $6, $6
+                'pending', NULL, 0, 3, $6, $6
             )
             ON CONFLICT (zone_id, idempotency_key)
             DO UPDATE SET
@@ -183,7 +289,7 @@ class PgZoneIntentRepository:
                 topology = EXCLUDED.topology,
                 intent_source = EXCLUDED.intent_source,
                 payload = EXCLUDED.payload,
-                not_before = EXCLUDED.not_before,
+                not_before = NULL,
                 updated_at = EXCLUDED.updated_at
             WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
             RETURNING id
@@ -242,10 +348,13 @@ class PgZoneIntentRepository:
                         WHERE z.id = $1
                         FOR UPDATE
                   )
-                  AND (not_before IS NULL OR not_before <= $3)
+                  AND (
+                        not_before IS NULL
+                        OR not_before <= ($3::timestamptz + interval '1 second')
+                  )
                   AND (status <> 'failed' OR retry_count < max_retries)
                 ORDER BY id DESC
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE
                 LIMIT 1
             )
             UPDATE zone_automation_intents intents
@@ -337,6 +446,16 @@ class PgZoneIntentRepository:
 
         if stale_same_key_running_intent:
             return {"decision": "deduplicated", "intent": stale_same_key_running_intent}
+
+        # Pending/failed row exists for this key but the claim CTE could not lock it
+        # (concurrent SKIP LOCKED / transient active-intent race). Surface the row so
+        # callers can retry instead of treating it as a hard miss.
+        if requested_intent:
+            return {
+                "decision": "claim_race",
+                "intent": requested_intent,
+                "requested_intent": requested_intent,
+            }
 
         return {"decision": "missing", "intent": {}}
 

@@ -123,9 +123,13 @@ class _MockTaskRepo:
         self._return_task = return_task
         self._current_task = current_task
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
+    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
         self.update_stage_calls.append({
-            "task_id": task_id, "owner": owner, "workflow": workflow, "correction": correction,
+            "task_id": task_id,
+            "owner": owner,
+            "workflow": workflow,
+            "correction": correction,
+            "preserve_pending_manual_step": preserve_pending_manual_step,
         })
         return self._return_task
 
@@ -241,6 +245,8 @@ async def test_router_applies_poll_outcome():
     call = tr.update_stage_calls[0]
     # Stage unchanged
     assert call["workflow"].current_stage == "clean_fill_check"
+    # Poll must not wipe a concurrently injected POST /manual-step.
+    assert call["preserve_pending_manual_step"] is True
     # upsert_phase called
     assert len(wr.upsert_calls) == 1
 

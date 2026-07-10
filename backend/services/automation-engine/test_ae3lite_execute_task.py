@@ -134,7 +134,7 @@ class _TaskRepoRequeue(_TaskRepoRunning):
         super().__init__(running_task=running_task)
         self.update_stage_calls: list[dict[str, object]] = []
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
+    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
         self.update_stage_calls.append(
             {
                 "task_id": task_id,

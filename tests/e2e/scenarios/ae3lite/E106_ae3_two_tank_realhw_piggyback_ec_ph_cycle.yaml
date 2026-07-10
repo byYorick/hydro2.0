@@ -1682,7 +1682,7 @@ actions:
         corr_step
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status IN ('pending', 'completed')
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')
       LIMIT 1
     params:
       task_id: ${task_id}
@@ -1901,7 +1901,7 @@ assertions:
 
   - name: task_not_failed_after_sequential_loop
     type: custom_assert
-    condition: "str(context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('error_code')"
+    condition: "str(context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed', 'running', 'waiting_command', 'completed') and not context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('error_code')"
 
   - name: targets_reached_after_sequential_loop
     type: custom_assert

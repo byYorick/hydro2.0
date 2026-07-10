@@ -152,7 +152,7 @@ class _MockTaskRepo:
             now=now,
         )
 
-    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
+    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now, preserve_pending_manual_step=False):
         self.requeued.append({"task_id": task_id, "workflow": workflow})
         task = next((t for t in self._tasks if t.id == task_id), None)
         if task is None:

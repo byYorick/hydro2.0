@@ -191,7 +191,7 @@ class TriggerSolutionTopupFromLevelEventUseCase:
         now_utc = now.astimezone(timezone.utc).replace(tzinfo=None) if now.tzinfo else now
         idempotency_key = (
             f"level_event:z{zone_id}:solution_topup:"
-            f"{now_utc.strftime('%Y%m%d%H%M')}"
+            f"{now_utc.strftime('%Y%m%d%H%M%S')}"
         )
         intent_id = await self._zone_intent_repository.upsert_solution_topup_intent(
             zone_id=zone_id,
@@ -210,18 +210,26 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             mode="normal",
             trigger="level_switch",
         )
-        claim = await self._zone_intent_repository.claim_start_solution_topup(
-            zone_id=zone_id,
-            req=req,
-            now=now_utc,
-        )
-        decision = str(claim.get("decision") or "").strip().lower()
+        claim: dict[str, Any] = {}
+        decision = ""
+        for attempt in range(3):
+            claim = await self._zone_intent_repository.claim_pending_intent_by_id(
+                zone_id=zone_id,
+                intent_id=int(intent_id),
+                now=now_utc,
+            )
+            decision = str(claim.get("decision") or "").strip().lower()
+            if decision != "claim_race" or attempt >= 2:
+                break
+            await asyncio.sleep(0.05 * (attempt + 1))
         intent_row = dict(claim.get("intent") or {})
         if decision == "zone_busy":
             await self._mark_requested_intent_terminal_zone_busy(claim=claim, zone_id=zone_id, now=now_utc)
             return {"triggered": False, "reason": "intent_claim_zone_busy", "intent_id": intent_id}
         if decision == "missing":
             return {"triggered": False, "reason": "intent_claim_missing", "intent_id": intent_id}
+        if decision == "claim_race":
+            return {"triggered": False, "reason": "intent_claim_race", "intent_id": intent_id}
         if decision == "deduplicated":
             return {"triggered": False, "reason": "intent_deduplicated", "intent_id": intent_id}
         if decision == "terminal":
