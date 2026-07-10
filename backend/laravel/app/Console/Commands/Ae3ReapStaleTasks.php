@@ -25,7 +25,8 @@ class Ae3ReapStaleTasks extends Command
     protected $signature = 'ae3:reap-stale-tasks
         {--claim-stale-after=300 : Секунды с момента claim без прогресса}
         {--progress-stale-after=900 : Секунды без прогресса для running/waiting_command без deadline}
-        {--orphan-intent-after=900 : Секунды pending intent без ae_task}';
+        {--orphan-intent-after=900 : Секунды pending intent без ae_task}
+        {--deadline-grace-sec=30 : Grace после stage_deadline_at, чтобы AE успел самозавершить poll-deadline}';
 
     protected $description = 'Помечает зависшие AE3 tasks и orphan scheduler intents как failed';
 
@@ -41,37 +42,49 @@ class Ae3ReapStaleTasks extends Command
         $claimStaleThreshold = $now->copy()->subSeconds((int) $this->option('claim-stale-after'));
         $progressStaleThreshold = $now->copy()->subSeconds((int) $this->option('progress-stale-after'));
         $orphanIntentThreshold = $now->copy()->subSeconds((int) $this->option('orphan-intent-after'));
-
-        $activeStatuses = ['claimed', 'running', 'waiting_command'];
+        $deadlineGraceSec = max(0, (int) $this->option('deadline-grace-sec'));
+        $deadlineReapThreshold = $now->copy()->subSeconds($deadlineGraceSec);
 
         $reapedKeys = [];
 
-        // 1) Task пропустил stage_deadline_at
-        $deadlineRows = DB::table('ae_tasks')
-            ->whereIn('status', $activeStatuses)
-            ->whereNotNull('stage_deadline_at')
-            ->where('stage_deadline_at', '<', $now)
-            ->get(['zone_id', 'idempotency_key']);
+        // 1) Task пропустил stage_deadline_at (+ grace, чтобы AE успел записать poll-deadline).
+        // waiting_command past deadline → канонический ae3_command_poll_deadline_exceeded.
+        $deadlineReaped = 0;
+        foreach (['waiting_command', 'claimed', 'running'] as $status) {
+            $isWaitingCommand = $status === 'waiting_command';
+            $errorCode = $isWaitingCommand
+                ? 'ae3_command_poll_deadline_exceeded'
+                : 'stage_deadline_exceeded';
+            $errorMessage = $isWaitingCommand
+                ? 'Command poll exceeded stage deadline; reaped by watchdog'
+                : 'Task stage deadline exceeded; reaped by watchdog';
 
-        $deadlineReaped = DB::table('ae_tasks')
-            ->whereIn('status', $activeStatuses)
-            ->whereNotNull('stage_deadline_at')
-            ->where('stage_deadline_at', '<', $now)
-            ->update([
-                'status' => 'failed',
-                'completed_at' => $now,
-                'updated_at' => $now,
-                'error_code' => 'stage_deadline_exceeded',
-                'error_message' => 'Task stage deadline exceeded; reaped by watchdog',
-            ]);
+            $deadlineRows = DB::table('ae_tasks')
+                ->where('status', $status)
+                ->whereNotNull('stage_deadline_at')
+                ->where('stage_deadline_at', '<', $deadlineReapThreshold)
+                ->get(['zone_id', 'idempotency_key']);
 
-        foreach ($deadlineRows as $row) {
-            $reapedKeys[] = [
-                'zone_id' => (int) $row->zone_id,
-                'idempotency_key' => (string) $row->idempotency_key,
-                'error_code' => 'stage_deadline_exceeded',
-                'error_message' => 'Task stage deadline exceeded; reaped by watchdog',
-            ];
+            $deadlineReaped += DB::table('ae_tasks')
+                ->where('status', $status)
+                ->whereNotNull('stage_deadline_at')
+                ->where('stage_deadline_at', '<', $deadlineReapThreshold)
+                ->update([
+                    'status' => 'failed',
+                    'completed_at' => $now,
+                    'updated_at' => $now,
+                    'error_code' => $errorCode,
+                    'error_message' => $errorMessage,
+                ]);
+
+            foreach ($deadlineRows as $row) {
+                $reapedKeys[] = [
+                    'zone_id' => (int) $row->zone_id,
+                    'idempotency_key' => (string) $row->idempotency_key,
+                    'error_code' => $errorCode,
+                    'error_message' => $errorMessage,
+                ];
+            }
         }
 
         // 2) Claimed давно, deadline не установлен

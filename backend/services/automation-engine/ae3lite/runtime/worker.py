@@ -61,6 +61,7 @@ class Ae3RuntimeWorker:
         lease_heartbeat_max_failures: int = 3,
         lease_heartbeat_transient_retries: int = 1,
         intent_sync_max_retries: int = 2,
+        lease_release_resolve_ttl_sec: int = 600,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
@@ -122,6 +123,12 @@ class Ae3RuntimeWorker:
         self._inflight_automation_tasks: dict[asyncio.Task, Any] = {}
         self._reconcile_consecutive_errors = 0
         self._pending_health_cache: tuple[float, bool] | None = None
+        # Условный resolve lease_release_failed: без spam на каждый finish.
+        # known-fail → resolve сразу; иначе opportunistic после warm-up, не чаще TTL.
+        self._lease_release_fail_zones: set[int] = set()
+        self._lease_release_resolve_attempt_at: dict[int, datetime] = {}
+        self._lease_release_resolve_ttl_sec = max(0, int(lease_release_resolve_ttl_sec))
+        self._lease_release_resolve_started_monotonic = time.monotonic()
 
     def kick(self) -> Any:
         if self._shutting_down:
@@ -665,17 +672,20 @@ class Ae3RuntimeWorker:
                 await asyncio.sleep(0.05)
                 released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
             if released:
-                await self._resolve_zone_lease_release_alert(task=task)
+                await self._maybe_resolve_zone_lease_release_alert(task=task, reason="released")
             else:
                 lease_after_release = await self._zone_lease_repository.get(zone_id=task.zone_id)
                 if lease_after_release is None:
+                    # Lease уже снят — не ошибка; resolve только known-fail / TTL opportunistic.
                     self._log_debug(
                         "AE3 runtime lease already absent during release: zone_id=%s owner=%s task_id=%s",
                         task.zone_id,
                         self._owner,
                         task.id,
                     )
-                    await self._resolve_zone_lease_release_alert(task=task)
+                    await self._maybe_resolve_zone_lease_release_alert(
+                        task=task, reason="already_absent"
+                    )
                 elif lease_after_release.owner != self._owner:
                     self._log_debug(
                         "AE3 runtime lease owned by another worker after task finish: zone_id=%s owner=%s task_id=%s lease_owner=%s",
@@ -684,7 +694,9 @@ class Ae3RuntimeWorker:
                         task.id,
                         lease_after_release.owner,
                     )
-                    await self._resolve_zone_lease_release_alert(task=task)
+                    await self._maybe_resolve_zone_lease_release_alert(
+                        task=task, reason="foreign_owner"
+                    )
                 else:
                     self._logger.warning(
                         "AE3 runtime failed to release zone lease: zone_id=%s owner=%s task_id=%s",
@@ -694,7 +706,7 @@ class Ae3RuntimeWorker:
                     )
                     ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
                     try:
-                        await send_infra_alert(
+                        sent = await send_infra_alert(
                             code="ae3_zone_lease_release_failed",
                             alert_type="AE3 Zone Lease Release Failed",
                             message="Не удалось освободить lease зоны после завершения задачи.",
@@ -709,6 +721,8 @@ class Ae3RuntimeWorker:
                                 "message": "Не удалось освободить lease зоны после завершения задачи: зона могла остаться заблокированной.",
                             },
                         )
+                        if sent:
+                            self._lease_release_fail_zones.add(int(task.zone_id))
                     except Exception:
                         self._logger.warning(
                             "AE3 не смог отправить alert lease_release_failed zone_id=%s",
@@ -753,22 +767,58 @@ class Ae3RuntimeWorker:
         if intent_id > 0 and final_task is not None and not final_task.is_active:
             await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
 
-    async def _resolve_zone_lease_release_alert(self, *, task: Any) -> None:
+    def _should_resolve_zone_lease_release_alert(self, *, zone_id: int) -> bool:
+        """Resolve только при known-fail или редком TTL opportunistic (stuck после restart)."""
+        if zone_id in self._lease_release_fail_zones:
+            return True
+        ttl = self._lease_release_resolve_ttl_sec
+        if ttl <= 0:
+            return False
+        warm_up = time.monotonic() - self._lease_release_resolve_started_monotonic
+        if warm_up < float(ttl):
+            return False
+        last = self._lease_release_resolve_attempt_at.get(zone_id)
+        if last is None:
+            return True
+        try:
+            age_sec = (self._now_fn() - last).total_seconds()
+        except Exception:
+            return True
+        return age_sec >= float(ttl)
+
+    async def _maybe_resolve_zone_lease_release_alert(self, *, task: Any, reason: str) -> None:
+        zone_id = int(task.zone_id)
+        if not self._should_resolve_zone_lease_release_alert(zone_id=zone_id):
+            self._log_debug(
+                "AE3 skip lease_release resolve: zone_id=%s reason=%s known_fail=%s",
+                zone_id,
+                reason,
+                zone_id in self._lease_release_fail_zones,
+            )
+            return
+        await self._resolve_zone_lease_release_alert(task=task, reason=reason)
+
+    async def _resolve_zone_lease_release_alert(self, *, task: Any, reason: str = "released") -> None:
+        zone_id = int(task.zone_id)
+        now = self._now_fn()
         try:
             await send_infra_resolved_alert(
                 code="ae3_zone_lease_release_failed",
                 alert_type="AE3 Zone Lease Release Failed",
                 message="После завершения задачи lease зоны больше не присутствует.",
-                zone_id=int(task.zone_id),
+                zone_id=zone_id,
                 service="automation-engine",
                 component="worker:lease",
                 details={
                     "task_id": int(task.id),
                     "owner": self._owner,
                     "topology": str(getattr(task, "topology", "")),
+                    "reason": reason,
                     "message": "После завершения задачи lease зоны больше не присутствует.",
                 },
             )
+            self._lease_release_fail_zones.discard(zone_id)
+            self._lease_release_resolve_attempt_at[zone_id] = now
         except Exception:
             self._logger.warning(
                 "AE3 не смог отправить alert lease_release_resolved zone_id=%s",

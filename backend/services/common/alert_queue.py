@@ -727,7 +727,7 @@ async def send_alert_to_laravel(
         
         if resp.status_code == 200:
             logger.info(
-                f"[ALERT_DELIVERY] Alert '{code}' delivered to Laravel "
+                f"[ALERT_DELIVERY] Alert '{code}' status={delivery_status} delivered to Laravel "
                 f"for zone_id={zone_id}"
             )
             return True

@@ -1922,6 +1922,31 @@ def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
     )
 
 
+def test_dose_ml_to_ms_does_not_flag_max_dose_vs_node_max_duration_as_dual_mismatch() -> None:
+    """zone max_dose_ms vs node safe_limits.max_duration_ms — разные семантики, не dual-calib."""
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+
+    correction_config = _correction_config()
+    correction_config["pump_calibration"]["max_dose_ms"] = 60_000
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_pct"] = 10.0
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_fail_closed"] = False
+
+    duration_ms, reason, details = _dose_ml_to_ms(
+        2.0,
+        {
+            "ml_per_sec": 1.0,
+            "node_ml_per_second": 1.0,
+            "max_duration_ms": 3_600_000,
+            "node_max_dose_ms": 3_600_000,
+        },
+        correction_config,
+    )
+
+    assert duration_ms > 0
+    assert reason == ""
+    assert not details.get("dual_calibration_mismatches")
+
+
 def test_dose_ml_to_ms_warns_on_dual_calibration_mismatch(caplog) -> None:
     import logging
     from ae3lite.domain.services.correction_planner import _dose_ml_to_ms

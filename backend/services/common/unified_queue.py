@@ -571,7 +571,7 @@ async def send_alert_to_laravel_unified(payload: Dict[str, Any]) -> bool:
         
         if resp.status_code == 200:
             logger.debug(
-                f"[ALERT_DELIVERY] Alert '{payload.get('code')}' delivered to Laravel "
+                f"[ALERT_DELIVERY] Alert '{payload.get('code')}' status={payload.get('status')} delivered to Laravel "
                 f"for zone_id={payload.get('zone_id')}"
             )
             return True

@@ -1284,6 +1284,60 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
+    public function ae3_reap_stale_tasks_uses_poll_deadline_code_for_waiting_command(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'reap-waiting-command-poll-deadline';
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'waiting_command',
+            'idempotency_key' => $key,
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'stage_deadline_at' => now()->subMinutes(2),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+
+        $this->artisan('ae3:reap-stale-tasks')->assertSuccessful();
+
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => $key,
+            'status' => 'failed',
+            'error_code' => 'ae3_command_poll_deadline_exceeded',
+        ]);
+    }
+
+    #[Test]
+    public function ae3_reap_stale_tasks_respects_deadline_grace_period(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'reap-deadline-grace';
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'waiting_command',
+            'idempotency_key' => $key,
+            'scheduled_for' => now(),
+            'due_at' => now(),
+            'stage_deadline_at' => now()->subSeconds(5),
+            'created_at' => now()->subMinutes(2),
+            'updated_at' => now()->subSeconds(5),
+        ]);
+
+        $this->artisan('ae3:reap-stale-tasks', ['--deadline-grace-sec' => 30])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => $key,
+            'status' => 'waiting_command',
+        ]);
+    }
+
+    #[Test]
     public function ae3_reap_stale_tasks_marks_progress_stale_tasks_as_failed(): void
     {
         $zone = Zone::factory()->create();

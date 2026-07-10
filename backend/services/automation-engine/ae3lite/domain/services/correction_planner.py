@@ -1470,26 +1470,10 @@ def _collect_dual_calibration_mismatches(
                     }
                 )
 
-    zone_cap = _positive_int(pump_calibration.get("max_dose_ms"), 0)
-    node_cap = _positive_int(calibration.get("max_duration_ms"), 0)
-    if node_cap <= 0:
-        node_cap = _positive_int(calibration.get("node_max_dose_ms"), 0)
-    if zone_cap > 0 and node_cap > 0 and zone_cap != node_cap:
-        delta_pct = _relative_pct_delta(float(zone_cap), float(node_cap))
-        if delta_pct > threshold_pct:
-            mismatches.append(
-                {
-                    "field": "max_dose_ms",
-                    "db_value": zone_cap,
-                    "node_value": node_cap,
-                    "delta_pct": round(delta_pct, 4),
-                    "threshold_pct": threshold_pct,
-                    "message": (
-                        f"max_dose_ms={zone_cap} vs node max_duration_ms={node_cap} "
-                        f"(delta {delta_pct:.2f}% > {threshold_pct:.2f}%)"
-                    ),
-                }
-            )
+    # Не сравниваем zone max_dose_ms с node safe_limits.max_duration_ms:
+    # это разные семантики (policy cap vs hardware hard-limit). Enforcement
+    # через min(zone, node) в _resolve_max_dose_ms остаётся; dual-mirror
+    # mismatch только для сопоставимых калибровочных полей (ml_per_sec).
 
     return mismatches
 

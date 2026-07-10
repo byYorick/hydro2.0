@@ -1080,9 +1080,8 @@ async def test_runtime_worker_does_not_warn_when_lease_was_already_removed_durin
 
     assert warnings == []
     assert any("lease already absent during release" in str(args[0]) for args in debug_messages)
-    assert len(resolved_calls) == 1
-    assert resolved_calls[0]["code"] == "ae3_zone_lease_release_failed"
-    assert resolved_calls[0]["zone_id"] == 191
+    # already-absent — не ошибка и не RESOLVED spam на каждый finish
+    assert resolved_calls == []
 
 
 @pytest.mark.asyncio
@@ -1178,9 +1177,312 @@ async def test_runtime_worker_release_treats_foreign_owner_as_resolved() -> None
     assert warnings == []
     assert len(release_calls) >= 1
     assert any("owned by another worker" in str(args[0]) for args in debug_messages)
+    # foreign owner — не fail текущего worker и не RESOLVED spam
+    assert resolved_calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_resolves_lease_fail_alert_when_known_fail_and_already_absent() -> None:
+    """После реального fail resolve на already-absent закрывает ACTIVE без spam на каждый finish."""
+    resolved_calls: list[dict[str, object]] = []
+    alert_calls: list[dict[str, object]] = []
+
+    task = SimpleNamespace(
+        id=911,
+        zone_id=211,
+        topology="irrigation",
+        intent_id=0,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimTwice:
+        def __init__(self) -> None:
+            self._n = 0
+
+        async def run(self, **kwargs):
+            self._n += 1
+            if self._n > 2:
+                return None
+            return SimpleNamespace(
+                id=task.id + self._n - 1,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="claimed",
+                error_code=None,
+                error_message=None,
+                is_active=True,
+            ), None
+
+    class _ExecuteImmediateDone:
+        async def run(self, *, task, now):
+            return SimpleNamespace(
+                id=task.id,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="completed",
+                error_code=None,
+                error_message=None,
+                is_active=False,
+            )
+
+    class _ZoneLeaseRepo:
+        def __init__(self) -> None:
+            # Считаем get(), не release(): worker ретраит release до get.
+            self._get_n = 0
+
+        async def release(self, *, zone_id, owner):
+            return False
+
+        async def get(self, *, zone_id):
+            self._get_n += 1
+            # 1-й finish: lease stuck (наш owner) → fail alert
+            # 2-й finish: already absent → conditional resolve
+            if self._get_n == 1:
+                return SimpleNamespace(
+                    owner="worker-lease-known-fail-test",
+                    leased_until=datetime.now(timezone.utc).replace(tzinfo=None),
+                )
+            return None
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _record_alert(**kwargs):
+        alert_calls.append(kwargs)
+        return True
+
+    async def _record_resolved(**kwargs):
+        resolved_calls.append(kwargs)
+        return True
+
+    import ae3lite.runtime.worker as worker_module
+
+    original_alert = worker_module.send_infra_alert
+    original_resolved = worker_module.send_infra_resolved_alert
+    worker_module.send_infra_alert = _record_alert
+    worker_module.send_infra_resolved_alert = _record_resolved
+    try:
+        worker = Ae3RuntimeWorker(
+            owner="worker-lease-known-fail-test",
+            claim_next_task_use_case=_ClaimTwice(),
+            idle_poll_interval_sec=0.05,
+            execute_task_use_case=_ExecuteImmediateDone(),
+            startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+            zone_lease_repository=_ZoneLeaseRepo(),
+            zone_intent_repository=_MockIntentRepository(mark_terminal_calls=[]),
+            spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(
+                coro, name=str(kwargs.get("task_name") or "ae3-test")
+            ),
+            now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+            logger=type(
+                "Logger",
+                (),
+                {
+                    "debug": staticmethod(lambda *args, **kwargs: None),
+                    "warning": staticmethod(lambda *args, **kwargs: None),
+                    "error": staticmethod(lambda *args, **kwargs: None),
+                },
+            )(),
+            max_task_execution_sec=0.5,
+            lease_release_resolve_ttl_sec=600,
+        )
+
+        await worker._drain_pending_tasks()
+    finally:
+        worker_module.send_infra_alert = original_alert
+        worker_module.send_infra_resolved_alert = original_resolved
+
+    assert len(alert_calls) == 1
+    assert alert_calls[0]["code"] == "ae3_zone_lease_release_failed"
     assert len(resolved_calls) == 1
     assert resolved_calls[0]["code"] == "ae3_zone_lease_release_failed"
-    assert resolved_calls[0]["zone_id"] == 193
+    assert resolved_calls[0]["details"]["reason"] == "already_absent"
+    assert 211 not in worker._lease_release_fail_zones
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_opportunistic_lease_resolve_after_ttl_warmup() -> None:
+    """После warm-up TTL — один opportunistic resolve на already-absent (stuck после restart)."""
+    resolved_calls: list[dict[str, object]] = []
+
+    task = SimpleNamespace(
+        id=921,
+        zone_id=221,
+        topology="irrigation",
+        intent_id=0,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteImmediateDone:
+        async def run(self, *, task, now):
+            return SimpleNamespace(
+                id=task.id,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="completed",
+                error_code=None,
+                error_message=None,
+                is_active=False,
+            )
+
+    class _ZoneLeaseRepoMissing:
+        async def release(self, *, zone_id, owner):
+            return False
+
+        async def get(self, *, zone_id):
+            return None
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _record_resolved(**kwargs):
+        resolved_calls.append(kwargs)
+        return True
+
+    import ae3lite.runtime.worker as worker_module
+    import time as time_mod
+
+    original_resolved = worker_module.send_infra_resolved_alert
+    worker_module.send_infra_resolved_alert = _record_resolved
+    try:
+        worker = Ae3RuntimeWorker(
+            owner="worker-lease-ttl-resolve-test",
+            claim_next_task_use_case=_ClaimOnce(),
+            idle_poll_interval_sec=0.05,
+            execute_task_use_case=_ExecuteImmediateDone(),
+            startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+            zone_lease_repository=_ZoneLeaseRepoMissing(),
+            zone_intent_repository=_MockIntentRepository(mark_terminal_calls=[]),
+            spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(
+                coro, name=str(kwargs.get("task_name") or "ae3-test")
+            ),
+            now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+            logger=type(
+                "Logger",
+                (),
+                {
+                    "debug": staticmethod(lambda *args, **kwargs: None),
+                    "warning": staticmethod(lambda *args, **kwargs: None),
+                    "error": staticmethod(lambda *args, **kwargs: None),
+                },
+            )(),
+            max_task_execution_sec=0.5,
+            lease_release_resolve_ttl_sec=60,
+        )
+        # Симулируем, что worker уже прошёл warm-up TTL.
+        worker._lease_release_resolve_started_monotonic = time_mod.monotonic() - 120.0
+
+        await worker._drain_pending_tasks()
+    finally:
+        worker_module.send_infra_resolved_alert = original_resolved
+
+    assert len(resolved_calls) == 1
+    assert resolved_calls[0]["details"]["reason"] == "already_absent"
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_successful_release_skips_resolve_without_known_fail() -> None:
+    """Успешный release без prior fail — не шлёт RESOLVED (нет ACTIVE для закрытия)."""
+    resolved_calls: list[dict[str, object]] = []
+
+    task = SimpleNamespace(
+        id=931,
+        zone_id=231,
+        topology="irrigation",
+        intent_id=0,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteImmediateDone:
+        async def run(self, *, task, now):
+            return SimpleNamespace(
+                id=task.id,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="completed",
+                error_code=None,
+                error_message=None,
+                is_active=False,
+            )
+
+    async def _release(*, zone_id, owner):
+        return True
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _record_resolved(**kwargs):
+        resolved_calls.append(kwargs)
+        return True
+
+    import ae3lite.runtime.worker as worker_module
+
+    original_resolved = worker_module.send_infra_resolved_alert
+    worker_module.send_infra_resolved_alert = _record_resolved
+    try:
+        worker = Ae3RuntimeWorker(
+            owner="worker-lease-release-ok-test",
+            claim_next_task_use_case=_ClaimOnce(),
+            idle_poll_interval_sec=0.05,
+            execute_task_use_case=_ExecuteImmediateDone(),
+            startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+            zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+            zone_intent_repository=_MockIntentRepository(mark_terminal_calls=[]),
+            spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(
+                coro, name=str(kwargs.get("task_name") or "ae3-test")
+            ),
+            now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+            logger=type(
+                "Logger",
+                (),
+                {
+                    "debug": staticmethod(lambda *args, **kwargs: None),
+                    "warning": staticmethod(lambda *args, **kwargs: None),
+                    "error": staticmethod(lambda *args, **kwargs: None),
+                },
+            )(),
+            max_task_execution_sec=0.5,
+            lease_release_resolve_ttl_sec=600,
+        )
+
+        await worker._drain_pending_tasks()
+    finally:
+        worker_module.send_infra_resolved_alert = original_resolved
+
+    assert resolved_calls == []
 
 
 @pytest.mark.asyncio
