@@ -42,17 +42,33 @@
       </div>
 
       <div
-        v-else-if="useVirtual"
-        class="h-[calc(100vh-260px)]"
+        v-else
+        class="max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto pr-0.5"
       >
-        <VirtualList
-          :items="filteredAlerts"
-          :item-size="96"
-          class="h-full"
-          key-field="id"
+        <section
+          v-for="section in alertSections"
+          :key="section.id"
+          class="space-y-0.5"
+          :data-testid="section.testId"
         >
-          <template #default="{ item }">
+          <div class="flex flex-wrap items-center gap-1.5 px-1 py-1">
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--text-muted)]">
+              {{ section.title }}
+            </span>
+            <Badge
+              :variant="section.badgeVariant"
+              size="xs"
+            >
+              {{ section.items.length }}
+            </Badge>
+            <span class="text-[11px] text-[color:var(--text-dim)]">
+              {{ section.description }}
+            </span>
+          </div>
+          <div class="space-y-0.5">
             <button
+              v-for="item in section.items"
+              :key="item.id"
               type="button"
               class="w-full text-left rounded-xl px-3 py-2 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
               :data-testid="`zone-alert-row-${item.id}`"
@@ -60,24 +76,8 @@
             >
               <AlertRow :item="item" />
             </button>
-          </template>
-        </VirtualList>
-      </div>
-
-      <div
-        v-else
-        class="max-h-[calc(100vh-260px)] space-y-0.5 overflow-y-auto pr-0.5"
-      >
-        <button
-          v-for="item in filteredAlerts"
-          :key="item.id"
-          type="button"
-          class="w-full text-left rounded-xl px-3 py-2 border border-transparent hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-muted)]/30 transition-colors"
-          :data-testid="`zone-alert-row-${item.id}`"
-          @click="openDetails(item)"
-        >
-          <AlertRow :item="item" />
-        </button>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -94,7 +94,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
-import VirtualList from '@/Components/VirtualList.vue'
 import AlertRow from '@/Components/Alerts/AlertRow.vue'
 import AlertDetailModal from '@/Components/Alerts/AlertDetailModal.vue'
 import { api } from '@/services/api'
@@ -109,8 +108,13 @@ import {
   getAlertMessage,
   getAlertTitle,
   normalizeAlertStatus,
+  sortAlertsBySeverityAndCreatedAt,
 } from '@/utils/alertMeta'
-import { isAutomationBlockingCode } from '@/utils/automationBlock'
+import {
+  isAutomationBlockingCode,
+  isSafetyCriticalCode,
+  PROCESS_STOPPING_SECTION_TITLE,
+} from '@/utils/automationBlock'
 
 interface Props {
   alerts: Alert[]
@@ -131,7 +135,7 @@ const statusOptions: Array<{ value: 'ALL' | 'ACTIVE' | 'RESOLVED'; label: string
   { value: 'RESOLVED', label: 'Решённые' },
 ]
 
-const selectedStatus = ref<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL')
+const selectedStatus = ref<'ALL' | 'ACTIVE' | 'RESOLVED'>('ACTIVE')
 const query = ref('')
 const localAlerts = ref<Alert[]>(Array.isArray(props.alerts) ? [...props.alerts] : [])
 const selectedAlertId = ref<number | null>(null)
@@ -167,7 +171,84 @@ const filteredAlerts = computed(() => {
   })
 })
 
-const useVirtual = computed(() => filteredAlerts.value.length > 200)
+interface AlertSection {
+  id: 'automation_block' | 'safety' | 'other' | 'resolved'
+  title: string
+  description: string
+  badgeVariant: 'danger' | 'warning' | 'neutral' | 'success'
+  testId: string
+  items: Alert[]
+}
+
+const alertSections = computed<AlertSection[]>(() => {
+  const automationBlock: Alert[] = []
+  const safety: Alert[] = []
+  const other: Alert[] = []
+  const resolved: Alert[] = []
+
+  for (const alert of filteredAlerts.value) {
+    if (normalizeAlertStatus(alert.status) === 'RESOLVED') {
+      resolved.push(alert)
+      continue
+    }
+
+    if (isAutomationBlockingCode(alert.code)) {
+      automationBlock.push(alert)
+      continue
+    }
+
+    if (isSafetyCriticalCode(alert.code)) {
+      safety.push(alert)
+      continue
+    }
+
+    other.push(alert)
+  }
+
+  const sections: AlertSection[] = []
+  if (automationBlock.length) {
+    sections.push({
+      id: 'automation_block',
+      title: PROCESS_STOPPING_SECTION_TITLE.automation_block,
+      description: 'Policy-managed алерты, которые останавливают AE3 до ручного решения.',
+      badgeVariant: 'danger',
+      testId: 'zone-alert-section-automation-block',
+      items: sortAlertsBySeverityAndCreatedAt(automationBlock),
+    })
+  }
+  if (safety.length) {
+    sections.push({
+      id: 'safety',
+      title: PROCESS_STOPPING_SECTION_TITLE.safety,
+      description: 'Алерты железа и исполнительных каналов с safety-риском.',
+      badgeVariant: 'danger',
+      testId: 'zone-alert-section-safety',
+      items: sortAlertsBySeverityAndCreatedAt(safety),
+    })
+  }
+  if (other.length) {
+    sections.push({
+      id: 'other',
+      title: PROCESS_STOPPING_SECTION_TITLE.other,
+      description: 'Активные алерты без process-stopping признака.',
+      badgeVariant: 'neutral',
+      testId: 'zone-alert-section-other',
+      items: sortAlertsBySeverityAndCreatedAt(other),
+    })
+  }
+  if (resolved.length) {
+    sections.push({
+      id: 'resolved',
+      title: PROCESS_STOPPING_SECTION_TITLE.resolved,
+      description: 'Закрытые алерты по текущему фильтру.',
+      badgeVariant: 'success',
+      testId: 'zone-alert-section-resolved',
+      items: sortAlertsBySeverityAndCreatedAt(resolved),
+    })
+  }
+
+  return sections
+})
 
 const selectedAlert = computed<Alert | null>(() => {
   if (!selectedAlertId.value) return null

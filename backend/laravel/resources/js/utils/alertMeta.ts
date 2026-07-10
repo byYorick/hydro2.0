@@ -1,6 +1,13 @@
-import { resolveAlertCodeMeta } from '@/constants/alertErrorMap'
+import { resolveAlertCodeMeta, resolveAlertSeverity } from '@/constants/alertErrorMap'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { Alert } from '@/types/Alert'
+
+const SEVERITY_SORT_WEIGHT: Record<string, number> = {
+  critical: 4,
+  error: 3,
+  warning: 2,
+  info: 1,
+}
 
 export type NormalizedAlertStatus = 'ACTIVE' | 'RESOLVED' | 'OTHER'
 export type NormalizedAlertSeverity = 'critical' | 'error' | 'warning' | 'info' | 'other'
@@ -19,6 +26,28 @@ export function normalizeAlertSeverity(severity: Alert['severity'] | string | un
   if (normalized === 'warning') return 'warning'
   if (normalized === 'info') return 'info'
   return 'other'
+}
+
+export function resolveEffectiveAlertSeverity(alert: Alert): string {
+  return String(alert.severity || resolveAlertSeverity(alert.code, alert.details)).toLowerCase()
+}
+
+export function alertSeveritySortWeight(alert: Alert): number {
+  return SEVERITY_SORT_WEIGHT[resolveEffectiveAlertSeverity(alert)] ?? 0
+}
+
+export function alertCreatedAtSortValue(alert: Alert): number {
+  const created = new Date(alert.created_at).getTime()
+  return Number.isNaN(created) ? 0 : created
+}
+
+export function sortAlertsBySeverityAndCreatedAt<T extends Alert>(items: T[]): T[] {
+  return [...items].sort((left, right) => {
+    const severityDiff = alertSeveritySortWeight(right) - alertSeveritySortWeight(left)
+    if (severityDiff !== 0) return severityDiff
+
+    return alertCreatedAtSortValue(right) - alertCreatedAtSortValue(left)
+  })
 }
 
 export function detailsToString(details: Alert['details']): string {

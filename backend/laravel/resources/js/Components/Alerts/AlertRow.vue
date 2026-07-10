@@ -22,6 +22,17 @@
         >
           {{ item.code }}
         </span>
+        <Badge
+          v-if="processStoppingBadge"
+          :variant="processStoppingBadge.variant"
+          size="xs"
+          class="font-semibold uppercase tracking-wide"
+          data-testid="alert-process-stop-badge"
+          :data-process-stopping-kind="processStoppingBadge.kind"
+          :title="processStoppingBadge.title"
+        >
+          {{ processStoppingBadge.label }}
+        </Badge>
         <span class="ml-auto shrink-0 text-[11px] text-[color:var(--text-dim)]">
           {{ formatAlertDate(item.created_at) }}
         </span>
@@ -43,9 +54,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import { translateStatus } from '@/utils/i18n'
 import type { Alert } from '@/types/Alert'
+import {
+  alertProcessStoppingKind,
+  PROCESS_STOPPING_BADGE_LABEL,
+  type ProcessStoppingKind,
+} from '@/utils/automationBlock'
 import {
   alertBadgeVariant,
   formatAlertDate,
@@ -55,7 +72,36 @@ import {
   severityRailClass,
 } from '@/utils/alertMeta'
 
-defineProps<{
+const props = defineProps<{
   item: Alert
 }>()
+
+const processStoppingKind = computed(() => alertProcessStoppingKind(props.item.code))
+
+const processStoppingBadge = computed<{
+  kind: ProcessStoppingKind
+  label: string
+  title: string
+  variant: 'danger' | 'warning'
+} | null>(() => {
+  if (processStoppingKind.value === 'automation_block') {
+    return {
+      kind: 'automation_block',
+      label: PROCESS_STOPPING_BADGE_LABEL.automation_block,
+      title: 'Алерт блокирует автоматический процесс до ручного решения.',
+      variant: 'danger',
+    }
+  }
+
+  if (processStoppingKind.value === 'safety') {
+    return {
+      kind: 'safety',
+      label: PROCESS_STOPPING_BADGE_LABEL.safety,
+      title: 'Safety-critical алерт по железу или исполнительному каналу.',
+      variant: 'danger',
+    }
+  }
+
+  return null
+})
 </script>

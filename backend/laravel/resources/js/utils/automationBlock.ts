@@ -21,6 +21,31 @@ export const POLICY_MANAGED_CODES = [
   'biz_zone_recipe_phase_targets_missing',
 ] as const
 
+export const SAFETY_CRITICAL_CODES = [
+  'biz_no_flow',
+  'biz_overcurrent',
+  'biz_dry_run',
+  'biz_pump_stuck_on',
+  'biz_flow_stop_failed_hardware_may_be_active',
+] as const
+
+export type ProcessStoppingKind = 'automation_block' | 'safety'
+
+/** Заголовки секций группировки process-stopping алертов (Index / ZoneAlertsTab). */
+export const PROCESS_STOPPING_SECTION_TITLE = {
+  automation_block: 'Блокируют автоматику',
+  safety: 'Останавливают железо',
+  other_active: 'Остальные активные',
+  other: 'Остальные',
+  resolved: 'Решённые',
+} as const
+
+/** Короткие бейджи process-stopping (Index / AlertRow / ZoneAlertsTab). */
+export const PROCESS_STOPPING_BADGE_LABEL = {
+  automation_block: 'Автоматика',
+  safety: 'Железо',
+} as const
+
 export interface AutomationBlockPayload {
   blocked: boolean
   reason_code: string | null
@@ -80,20 +105,53 @@ const FALLBACK_META: ReasonMeta = {
   hint: 'Откройте вкладку «Алерты» зоны, чтобы увидеть подробности и подтвердить алерт.',
 }
 
+function normalizeAlertCode(code?: string | null): string | null {
+  const normalized = String(code ?? '').toLowerCase().trim()
+  return normalized || null
+}
+
 export function isAutomationBlockingCode(code?: string | null): boolean {
-  if (!code) return false
-  return (POLICY_MANAGED_CODES as readonly string[]).includes(String(code).toLowerCase().trim())
+  const normalized = normalizeAlertCode(code)
+  return Boolean(normalized && (POLICY_MANAGED_CODES as readonly string[]).includes(normalized))
+}
+
+export function isSafetyCriticalCode(code?: string | null): boolean {
+  const normalized = normalizeAlertCode(code)
+  return Boolean(normalized && (SAFETY_CRITICAL_CODES as readonly string[]).includes(normalized))
+}
+
+export function isProcessStoppingCode(code?: string | null): boolean {
+  return isAutomationBlockingCode(code) || isSafetyCriticalCode(code)
+}
+
+type AlertCodeInput = string | Pick<Alert, 'code'> | null | undefined
+
+function extractAlertCode(input?: AlertCodeInput): string | null {
+  if (typeof input === 'string' || input == null) {
+    return normalizeAlertCode(input)
+  }
+
+  return normalizeAlertCode(input.code)
+}
+
+export function alertProcessStoppingKind(input?: AlertCodeInput): ProcessStoppingKind | null {
+  const code = extractAlertCode(input)
+  if (isAutomationBlockingCode(code)) return 'automation_block'
+  if (isSafetyCriticalCode(code)) return 'safety'
+  return null
 }
 
 export function automationBlockLabel(code: string | null | undefined): string {
   if (!code) return FALLBACK_META.label
-  const normalized = code.toLowerCase().trim()
+  const normalized = normalizeAlertCode(code)
+  if (!normalized) return FALLBACK_META.label
   return REASON_META[normalized]?.label ?? FALLBACK_META.label
 }
 
 export function automationBlockHint(code: string | null | undefined): string {
   if (!code) return FALLBACK_META.hint
-  const normalized = code.toLowerCase().trim()
+  const normalized = normalizeAlertCode(code)
+  if (!normalized) return FALLBACK_META.hint
   return REASON_META[normalized]?.hint ?? FALLBACK_META.hint
 }
 

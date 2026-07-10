@@ -24,29 +24,65 @@
             <span class="text-[color:var(--text-primary)]">{{ alert.code }}</span>
           </template>
 
+          <template v-if="processStoppingKind">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">стоп</span>
+            <span
+              class="font-sans text-[color:var(--text-primary)]"
+              data-testid="alert-details-process-stop"
+            >
+              Стоп: {{ PROCESS_STOPPING_BADGE_LABEL[processStoppingKind] }}
+            </span>
+          </template>
+
           <template v-if="alert.source">
             <span class="text-[color:var(--text-dim)] whitespace-nowrap">источник</span>
             <span class="font-sans text-[color:var(--text-primary)]">{{ alert.source }}</span>
           </template>
 
           <template v-if="alert.severity">
-            <span class="text-[color:var(--text-dim)] whitespace-nowrap">severity</span>
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">критичность</span>
             <span class="text-[color:var(--text-primary)]">{{ alert.severity }}</span>
           </template>
 
           <template v-if="alert.node_uid">
-            <span class="text-[color:var(--text-dim)] whitespace-nowrap">node</span>
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">узел</span>
             <span class="text-[color:var(--text-primary)]">{{ alert.node_uid }}</span>
           </template>
 
           <template v-if="alert.hardware_id">
-            <span class="text-[color:var(--text-dim)] whitespace-nowrap">hw</span>
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">железо</span>
             <span class="text-[color:var(--text-primary)]">{{ alert.hardware_id }}</span>
           </template>
 
+          <template v-if="taskId">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">задача</span>
+            <span
+              class="text-[color:var(--text-primary)]"
+              data-testid="alert-details-task-id"
+            >{{ taskId }}</span>
+          </template>
+
+          <template v-if="correctionWindowId">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">окно коррекции</span>
+            <span
+              class="text-[color:var(--text-primary)]"
+              data-testid="alert-details-correction-window-id"
+            >{{ correctionWindowId }}</span>
+          </template>
+
+          <template v-if="detailsContextSummary">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">контекст</span>
+            <span class="font-sans text-[color:var(--text-primary)]">{{ detailsContextSummary }}</span>
+          </template>
+
           <template v-if="typeof alert.error_count === 'number'">
-            <span class="text-[color:var(--text-dim)] whitespace-nowrap">count</span>
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">счётчик</span>
             <span class="text-[color:var(--text-primary)]">{{ alert.error_count }}</span>
+          </template>
+
+          <template v-if="zoneName">
+            <span class="text-[color:var(--text-dim)] whitespace-nowrap">зона</span>
+            <span class="font-sans text-[color:var(--text-primary)]">{{ zoneName }}</span>
           </template>
 
           <span class="text-[color:var(--text-dim)] whitespace-nowrap">создан</span>
@@ -57,6 +93,19 @@
             <span class="font-sans text-[color:var(--text-primary)]">{{ formatAlertDate(alert.resolved_at) }}</span>
           </template>
         </div>
+      </div>
+
+      <div
+        v-if="zoneHref"
+        class="px-0.5"
+      >
+        <Link
+          class="inline-flex text-xs font-semibold text-[color:var(--accent-cyan)] hover:underline"
+          :href="zoneHref"
+          data-testid="alert-open-zone-btn"
+        >
+          Открыть зону
+        </Link>
       </div>
 
       <!-- Сообщение / описание / рекомендация -->
@@ -107,7 +156,7 @@
           @click="payloadExpanded = !payloadExpanded"
         >
           <span class="text-[11px] text-[color:var(--text-dim)]">{{ payloadExpanded ? '⌄' : '›' }}</span>
-          <span class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Payload</span>
+          <span class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">Данные</span>
           <div class="ml-auto flex items-center gap-1.5">
             <span
               v-if="copyState === 'copied'"
@@ -150,6 +199,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Link } from '@inertiajs/vue3'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
 import { translateStatus } from '@/utils/i18n'
@@ -163,6 +213,17 @@ import {
   getAlertTitle,
   normalizeAlertStatus,
 } from '@/utils/alertMeta'
+import {
+  alertProcessStoppingKind,
+  PROCESS_STOPPING_BADGE_LABEL,
+  type ProcessStoppingKind,
+} from '@/utils/automationBlock'
+import {
+  getAlertCorrectionWindowId,
+  getAlertDetailsContextSummary,
+  getAlertTaskId,
+  zoneAlertsTabUrl,
+} from '@/utils/alertContext'
 
 const props = defineProps<{
   open: boolean
@@ -176,9 +237,25 @@ defineEmits<{
 }>()
 
 const canResolve = computed(() => props.alert ? normalizeAlertStatus(props.alert.status) !== 'RESOLVED' : false)
+const processStoppingKind = computed<ProcessStoppingKind | null>(() => (
+  props.alert ? alertProcessStoppingKind(props.alert.code) : null
+))
+const taskId = computed(() => (props.alert ? getAlertTaskId(props.alert) : null))
+const correctionWindowId = computed(() => (props.alert ? getAlertCorrectionWindowId(props.alert) : null))
+const detailsContextSummary = computed(() => (props.alert ? getAlertDetailsContextSummary(props.alert) : null))
 const message = computed(() => (props.alert ? getAlertMessage(props.alert) : ''))
 const description = computed(() => (props.alert ? getAlertDescription(props.alert) : ''))
 const recommendation = computed(() => (props.alert ? getAlertRecommendation(props.alert) : ''))
+const zoneHref = computed(() => {
+  const zoneId = props.alert?.zone_id
+  return zoneId ? zoneAlertsTabUrl(zoneId) : null
+})
+const zoneName = computed(() => {
+  if (!props.alert) return null
+  if (props.alert.zone?.name) return props.alert.zone.name
+  if (props.alert.zone_id) return `Зона #${props.alert.zone_id}`
+  return null
+})
 
 const copyState = ref<'idle' | 'copying' | 'copied' | 'failed'>('idle')
 const payloadExpanded = ref(false)
@@ -227,4 +304,3 @@ async function copyPayload(): Promise<void> {
   }
 }
 </script>
-

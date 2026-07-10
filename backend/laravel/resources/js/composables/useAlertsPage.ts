@@ -10,6 +10,17 @@ import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type Al
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
+import {
+  isAutomationBlockingCode,
+  isProcessStoppingCode,
+  isSafetyCriticalCode,
+  PROCESS_STOPPING_SECTION_TITLE,
+  type ProcessStoppingKind,
+} from '@/utils/automationBlock'
+import {
+  alertCreatedAtSortValue,
+  alertSeveritySortWeight,
+} from '@/utils/alertMeta'
 import type { WsEventPayload } from '@/ws/subscriptionTypes'
 import type { Alert } from '@/types/Alert'
 
@@ -24,6 +35,31 @@ export interface AlertRecord extends Omit<Alert, 'zone'> {
   source?: string
   message?: string
   zone?: { id: number; name: string } | undefined
+}
+
+export type GroupedAlertSectionKey = 'automation_block' | 'safety' | 'other_active' | 'resolved'
+
+export interface GroupedAlertZoneGroup {
+  zoneId: number | null
+  zoneName: string
+  testIdSuffix: string
+  items: AlertRecord[]
+}
+
+export interface GroupedAlertSection {
+  key: GroupedAlertSectionKey
+  title: string
+  tone: ProcessStoppingKind | 'neutral' | 'resolved'
+  items: AlertRecord[]
+  zoneGroups?: GroupedAlertZoneGroup[]
+}
+
+export interface AlertSectionCounts {
+  automation_block: number
+  safety: number
+  other_active: number
+  resolved: number
+  activeTotal: number
 }
 
 interface PageProps {
@@ -117,6 +153,13 @@ export function useAlertsPage() {
 
   const alarmsOnly = useUrlState<boolean>({
     key: 'alarms',
+    defaultValue: false,
+    parse: (value) => value === '1',
+    serialize: (value) => (value ? '1' : null),
+  })
+
+  const processStoppingOnly = useUrlState<boolean>({
+    key: 'process_stopping',
     defaultValue: false,
     parse: (value) => value === '1',
     serialize: (value) => (value ? '1' : null),
@@ -263,6 +306,10 @@ export function useAlertsPage() {
     return alert.status === 'resolved' || alert.status === 'RESOLVED'
   }
 
+  const isActive = (alert: AlertRecord): boolean => {
+    return alert.status === 'active' || alert.status === 'ACTIVE'
+  }
+
   const isAlarm = (alert: AlertRecord): boolean => {
     const type = (alert.type || '').toUpperCase()
     const code = (alert.code || '').toUpperCase()
@@ -309,6 +356,8 @@ export function useAlertsPage() {
 
       if (alarmsOnly.value && !isAlarm(alert)) return false
 
+      if (processStoppingOnly.value && !isProcessStoppingCode(alert.code)) return false
+
       if (needle) {
         const detailsText = alert.details ? JSON.stringify(alert.details) : ''
         const searchStack = [
@@ -328,6 +377,164 @@ export function useAlertsPage() {
 
       return true
     })
+  })
+
+  const alertZoneSortValue = (alert: AlertRecord): string => {
+    const zoneName = String(alert.zone?.name || '').trim().toLowerCase()
+    const zoneId = Number(alert.zone_id || alert.zone?.id || 0)
+    return zoneName || (zoneId > 0 ? `zone #${zoneId}` : '')
+  }
+
+  const sortAlertGroup = (items: AlertRecord[]): AlertRecord[] => {
+    return [...items].sort((left, right) => {
+      const severityDiff = alertSeveritySortWeight(right) - alertSeveritySortWeight(left)
+      if (severityDiff !== 0) return severityDiff
+
+      const zoneCompare = alertZoneSortValue(left).localeCompare(alertZoneSortValue(right), 'ru')
+      if (zoneCompare !== 0) return zoneCompare
+
+      return alertCreatedAtSortValue(right) - alertCreatedAtSortValue(left)
+    })
+  }
+
+  const resolveZoneGroupMeta = (alert: AlertRecord): Pick<GroupedAlertZoneGroup, 'zoneId' | 'zoneName' | 'testIdSuffix'> => {
+    const rawZoneId = alert.zone_id ?? alert.zone?.id ?? null
+    const zoneId = Number(rawZoneId) > 0 ? Number(rawZoneId) : null
+
+    if (zoneId) {
+      const zoneName = String(alert.zone?.name || '').trim() || `Zone #${zoneId}`
+      return {
+        zoneId,
+        zoneName,
+        testIdSuffix: String(zoneId),
+      }
+    }
+
+    return {
+      zoneId: null,
+      zoneName: 'Без зоны',
+      testIdSuffix: 'none',
+    }
+  }
+
+  const groupAlertsByZone = (items: AlertRecord[]): GroupedAlertZoneGroup[] => {
+    const groups = new Map<string, GroupedAlertZoneGroup>()
+
+    items.forEach((alert) => {
+      const meta = resolveZoneGroupMeta(alert)
+      const existing = groups.get(meta.testIdSuffix)
+      if (existing) {
+        existing.items.push(alert)
+        return
+      }
+
+      groups.set(meta.testIdSuffix, {
+        zoneId: meta.zoneId,
+        zoneName: meta.zoneName,
+        testIdSuffix: meta.testIdSuffix,
+        items: [alert],
+      })
+    })
+
+    return Array.from(groups.values()).sort((left, right) => {
+      if (left.zoneId === null) return 1
+      if (right.zoneId === null) return -1
+      return left.zoneName.localeCompare(right.zoneName, 'ru')
+    })
+  }
+
+  const groupedAlertSections = computed<GroupedAlertSection[]>(() => {
+    const sections: GroupedAlertSection[] = [
+      {
+        key: 'automation_block',
+        title: PROCESS_STOPPING_SECTION_TITLE.automation_block,
+        tone: 'automation_block',
+        items: [],
+      },
+      {
+        key: 'safety',
+        title: PROCESS_STOPPING_SECTION_TITLE.safety,
+        tone: 'safety',
+        items: [],
+      },
+      {
+        key: 'other_active',
+        title: PROCESS_STOPPING_SECTION_TITLE.other_active,
+        tone: 'neutral',
+        items: [],
+      },
+      {
+        key: 'resolved',
+        title: PROCESS_STOPPING_SECTION_TITLE.resolved,
+        tone: 'resolved',
+        items: [],
+      },
+    ]
+
+    const sectionByKey = new Map(sections.map((section) => [section.key, section]))
+
+    filteredAlerts.value.forEach((alert) => {
+      if (isResolved(alert)) {
+        sectionByKey.get('resolved')?.items.push(alert)
+        return
+      }
+
+      if (!isActive(alert)) return
+
+      if (isAutomationBlockingCode(alert.code)) {
+        sectionByKey.get('automation_block')?.items.push(alert)
+        return
+      }
+
+      if (isSafetyCriticalCode(alert.code)) {
+        sectionByKey.get('safety')?.items.push(alert)
+        return
+      }
+
+      sectionByKey.get('other_active')?.items.push(alert)
+    })
+
+    return sections
+      .map((section) => {
+        const items = sortAlertGroup(section.items)
+        const nextSection: GroupedAlertSection = {
+          ...section,
+          items,
+        }
+
+        if (section.key !== 'resolved' && items.length > 0) {
+          nextSection.zoneGroups = groupAlertsByZone(items)
+        }
+
+        return nextSection
+      })
+      .filter((section) => section.items.length > 0)
+  })
+
+  const alertSectionCounts = computed<AlertSectionCounts>(() => {
+    const counts: AlertSectionCounts = {
+      automation_block: 0,
+      safety: 0,
+      other_active: 0,
+      resolved: 0,
+      activeTotal: 0,
+    }
+
+    groupedAlertSections.value.forEach((section) => {
+      if (section.key === 'automation_block') {
+        counts.automation_block = section.items.length
+      } else if (section.key === 'safety') {
+        counts.safety = section.items.length
+      } else if (section.key === 'other_active') {
+        counts.other_active = section.items.length
+      } else if (section.key === 'resolved') {
+        counts.resolved = section.items.length
+      }
+    })
+
+    counts.activeTotal = counts.automation_block + counts.safety + counts.other_active
+
+    return counts
   })
 
   // ── Selection ────────────────────────────────────────────────────────────
@@ -674,9 +881,12 @@ export function useAlertsPage() {
     searchQuery,
     recentOnly,
     alarmsOnly,
+    processStoppingOnly,
     // data
     alerts,
     filteredAlerts,
+    groupedAlertSections,
+    alertSectionCounts,
     zoneOptions,
     selectableAlerts,
     isRefreshing,
@@ -708,6 +918,7 @@ export function useAlertsPage() {
     isSyncingSuppressionPreference,
     // utility functions
     isResolved,
+    isActive,
     isAlarm,
     formatDate,
     getAlertMeta,
