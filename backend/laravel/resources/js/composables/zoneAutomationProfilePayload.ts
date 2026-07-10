@@ -332,6 +332,8 @@ export function buildGrowthCycleConfigPayload(
     30,
     86400
   )
+  const irrigationRecoveryEnabled =
+    waterForm.irrigationRecoveryEnabled ?? automationDefaults.water_irrigation_recovery_enabled ?? true
   const irrigationDecisionLookbackSec = clamp(
     Math.round(normalizeNumber(waterForm.irrigationDecisionLookbackSeconds, automationDefaults.water_irrigation_decision_lookback_sec)),
     60,
@@ -465,6 +467,7 @@ export function buildGrowthCycleConfigPayload(
       stabilization_sec: correctionStabilizationSec,
     }
     diagnosticsExecution.irrigation_recovery = {
+      enabled: Boolean(irrigationRecoveryEnabled),
       max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
       timeout_sec: irrigationRecoveryTimeoutSec,
       target_tolerance: {
@@ -546,6 +549,7 @@ export function buildGrowthCycleConfigPayload(
           },
         },
         recovery: {
+          enabled: Boolean(irrigationRecoveryEnabled),
           max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
           timeout_sec: irrigationRecoveryTimeoutSec,
           auto_replay_after_setup: Boolean(irrigationAutoReplayAfterSetup),

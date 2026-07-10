@@ -2209,6 +2209,7 @@ zone 1—1 ae_zone_leases
 - `subsystems.diagnostics.execution.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
 - `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
 - `subsystems.diagnostics.execution.topology` -> `targets.diagnostics.execution.topology`
+- `subsystems.irrigation.recovery.enabled` (default `true`; AE source of truth для post-irrigation recovery gate)
 - `subsystems.irrigation.recovery.max_continue_attempts` -> `targets.irrigation.execution.max_continue_attempts`
 - `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` -> `targets.irrigation.execution.degraded_tolerance.ec_pct`
 - `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`

@@ -225,6 +225,12 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             0,
             7200,
         ),
+        "irrigation_recovery_correction_slack_sec": _resolve_bounded_int(
+            _to_mapping(irrigation_cfg.get("retry")).get("irrigation_recovery_correction_slack_sec"),
+            900,
+            0,
+            7200,
+        ),
         "level_poll_interval_sec": _require_int(
             fill_timing_cfg.get("level_poll_interval_sec"),
             path="correction_config.base/phases.solution_fill.timing.level_poll_interval_sec",
@@ -1016,6 +1022,7 @@ def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
     subsystem = _irrigation_subsystem(snapshot)
     recovery = _to_mapping(subsystem.get("recovery"))
     return {
+        "enabled": bool(recovery.get("enabled", True)),
         "max_continue_attempts": _resolve_bounded_int(recovery.get("max_continue_attempts"), 5, 1, 30),
         "timeout_sec": _resolve_bounded_int(recovery.get("timeout_sec"), 600, 30, 86400),
         "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", True)),

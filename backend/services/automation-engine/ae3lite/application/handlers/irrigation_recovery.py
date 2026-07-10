@@ -67,16 +67,25 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
         if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")
 
+        recovery = runtime.irrigation_recovery
         stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
-        if stage_retry_count > 0:
+        max_continue_attempts = int(getattr(recovery, "max_continue_attempts", 5) or 5)
+        if max_continue_attempts < 1:
+            max_continue_attempts = 1
+        if stage_retry_count >= max_continue_attempts:
             _logger.info(
-                "irrigation_recovery_check: correction уже исчерпана, poll без нового окна zone_id=%s retry_count=%s",
+                "irrigation_recovery_check: исчерпан max_continue_attempts zone_id=%s retry_count=%s cap=%s",
                 task.zone_id,
                 stage_retry_count,
+                max_continue_attempts,
             )
-            return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
+            return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_failed")
 
-        _logger.info("irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
+        _logger.info(
+            "irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s retry_count=%s",
+            task.zone_id,
+            stage_retry_count,
+        )
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         ec_max_attempts = self._required_correction_int(
             correction_cfg=correction_cfg,

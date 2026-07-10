@@ -221,6 +221,10 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
                 irrigationRecovery.timeout_sec ?? diagnosticsRecovery.timeout_sec,
                 0,
             ),
+            irrigationRecoveryEnabled: asBool(
+                irrigationRecovery.enabled ?? diagnosticsRecovery.enabled,
+                true,
+            ),
             irrigationAutoReplayAfterSetup: asBool(irrigationRecovery.auto_replay_after_setup, false),
             irrigationMaxSetupReplays: asNumber(irrigationRecovery.max_setup_replays, 0),
             stopOnSolutionMin: asBool(
@@ -370,6 +374,7 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             irrigationDecisionSpreadAlertThresholdPct: asNumber(decision.spread_alert_threshold_pct, 0),
             irrigationRecoveryMaxContinueAttempts: asNumber(recovery.max_continue_attempts, 0),
             irrigationRecoveryTimeoutSeconds: asNumber(recovery.timeout_seconds, 0),
+            irrigationRecoveryEnabled: asBool(recovery.enabled, true),
             irrigationAutoReplayAfterSetup: asBool(recovery.auto_replay_after_setup, false),
             irrigationMaxSetupReplays: asNumber(recovery.max_setup_replays, 0),
             stopOnSolutionMin: asBool(water.stop_on_solution_min, fb.water_irrigation_stop_on_solution_min),

@@ -51,6 +51,7 @@ export const waterFormSchema = z.object({
     irrigationDecisionSpreadAlertThresholdPct: z.number().min(0).optional(),
     irrigationRecoveryMaxContinueAttempts: z.number().int().min(0).optional(),
     irrigationRecoveryTimeoutSeconds: z.number().int().min(0).optional(),
+    irrigationRecoveryEnabled: z.boolean().optional(),
     irrigationAutoReplayAfterSetup: z.boolean().optional(),
     irrigationMaxSetupReplays: z.number().int().min(0).optional(),
     stopOnSolutionMin: z.boolean().optional(),

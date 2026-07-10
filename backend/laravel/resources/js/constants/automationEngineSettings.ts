@@ -68,6 +68,12 @@ export const AUTOMATION_ENGINE_SETTING_DESCRIPTORS: AutomationEngineSettingDescr
     description: 'Количество разрешённых повторов clean_fill при неуспешном наборе.',
   },
   {
+    key: 'subsystems.diagnostics.execution.irrigation_recovery.enabled',
+    group: 'startup',
+    label: 'irrigation_recovery.enabled',
+    description: 'Включает post-irrigation recovery при недостигнутых targets pH/EC.',
+  },
+  {
     key: 'subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts',
     group: 'startup',
     label: 'irrigation_recovery.max_continue_attempts',

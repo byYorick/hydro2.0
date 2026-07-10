@@ -313,6 +313,12 @@ function sanitizeWaterForm(
       30,
       86400
     ),
+    irrigationRecoveryEnabled: toBoolean(
+      raw?.irrigationRecoveryEnabled,
+      typeof fallback.irrigationRecoveryEnabled === 'boolean'
+        ? fallback.irrigationRecoveryEnabled
+        : defaults.water_irrigation_recovery_enabled
+    ),
     irrigationAutoReplayAfterSetup: toBoolean(
       raw?.irrigationAutoReplayAfterSetup,
       typeof fallback.irrigationAutoReplayAfterSetup === 'boolean'

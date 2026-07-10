@@ -115,6 +115,9 @@ class IrrigationCheckHandler(BaseStageHandler):
             if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
                 _observe_duration("ready")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
+            if not bool(getattr(recovery, "enabled", True)):
+                _observe_duration("ready")
+                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
             _observe_duration("recovery")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
 
@@ -163,6 +166,11 @@ class IrrigationCheckHandler(BaseStageHandler):
             )
 
         if not probe_verified:
+            probe_exhausted_stage = (
+                "irrigation_stop_to_recovery"
+                if bool(getattr(recovery, "enabled", True))
+                else "irrigation_stop_to_ready"
+            )
             probe_outcome = await self._probe_irr_state_with_backoff(
                 task=task,
                 plan=plan,
@@ -171,7 +179,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 poll_delay_sec=int(runtime.level_poll_interval_sec),
                 exhausted_outcome=StageOutcome(
                     kind="transition",
-                    next_stage="irrigation_stop_to_recovery",
+                    next_stage=probe_exhausted_stage,
                 ),
             )
             if probe_outcome is not None:

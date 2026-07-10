@@ -217,12 +217,16 @@ class WorkflowRouter:
             # Терминальные ready-stage обрабатываются централизованно
             if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "") == "irrigation_start":
                 if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
-                    return await self._apply_transition(
-                        task=task,
-                        plan=plan,
-                        outcome=StageOutcome(kind="transition", next_stage="irrigation_start"),
-                        now=now,
-                    )
+                    runtime = getattr(plan, "runtime", None)
+                    recovery = getattr(runtime, "irrigation_recovery", None) if runtime is not None else None
+                    auto_replay = bool(getattr(recovery, "auto_replay_after_setup", True))
+                    if auto_replay:
+                        return await self._apply_transition(
+                            task=task,
+                            plan=plan,
+                            outcome=StageOutcome(kind="transition", next_stage="irrigation_start"),
+                            now=now,
+                        )
                 return await self._complete_task(task=task, now=now)
             if handler_key == "ready":
                 return await self._complete_task(task=task, now=now)
@@ -808,13 +812,28 @@ class WorkflowRouter:
             total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "irrigation_recovery_check":
+            # Базовое окно — irrigation_recovery.timeout_sec; inline EC/pH-коррекциям
+            # нужен correction slack (как у solution_fill / prepare_recirculation).
             recovery_runtime = runtime.irrigation_recovery
             timeout_sec = recovery_runtime.timeout_sec
             if timeout_sec is None and stage_def.timeout_key is not None:
                 timeout_sec = getattr(runtime, stage_def.timeout_key, None)
             if timeout_sec is None:
                 return None
-            return now + timedelta(seconds=int(timeout_sec))
+            try:
+                base_sec = max(1, int(timeout_sec))
+            except (TypeError, ValueError):
+                return None
+            slack_raw = getattr(runtime, "irrigation_recovery_correction_slack_sec", None)
+            if slack_raw is None:
+                slack = _DEFAULT_CORRECTION_SLACK_SEC
+            else:
+                try:
+                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
+                except (TypeError, ValueError):
+                    slack = _DEFAULT_CORRECTION_SLACK_SEC
+            total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
+            return now + timedelta(seconds=total_sec)
         if stage_def.timeout_key is None:
             return None
         timeout_sec = getattr(runtime, stage_def.timeout_key, None)

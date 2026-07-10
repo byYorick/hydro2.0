@@ -2377,10 +2377,15 @@ class CorrectionHandler(BaseStageHandler):
             await self._alert_service.emit_irrigation_correction_exhausted(
                 task=task, corr=corr,
             )
+        max_continue_attempts = None
+        if stage.strip().lower() == "irrigation_recovery_check":
+            recovery = getattr(runtime, "irrigation_recovery", None)
+            max_continue_attempts = int(getattr(recovery, "max_continue_attempts", 5) or 5)
         policy_outcome = self._transition_policy.decide_exhausted_transition(
             current_stage=stage,
             stage_retry_count=task.workflow.stage_retry_count,
             level_poll_interval_sec=int(runtime.level_poll_interval_sec),
+            max_continue_attempts=max_continue_attempts,
         )
         if policy_outcome is not None:
             return policy_outcome
@@ -2406,14 +2411,18 @@ class CorrectionHandler(BaseStageHandler):
         # policy consults it just for the irrigation branch and we want to avoid
         # an unnecessary telemetry round-trip otherwise.
         targets_reached: bool | None = None
+        recovery_enabled = True
         if current_stage == "irrigation_check":
             targets_reached = await self._targets_reached(task=task, plan=plan, now=now)
+            recovery = getattr(self._require_runtime_plan(plan=plan), "irrigation_recovery", None)
+            recovery_enabled = bool(getattr(recovery, "enabled", True))
         return self._transition_policy.decide_stage_deadline_transition(
             corr=corr,
             current_stage=current_stage,
             stage_retry_count=task.workflow.stage_retry_count,
             deadline_reached=True,
             targets_reached=targets_reached,
+            recovery_enabled=recovery_enabled,
         )
 
     def _interrupt_for_imminent_flow_probe_deadline(

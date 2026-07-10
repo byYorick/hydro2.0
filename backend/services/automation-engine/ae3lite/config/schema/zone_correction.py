@@ -240,6 +240,7 @@ class Retry(_DictShim, BaseModel):
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
+    irrigation_recovery_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)] = 900
     prepare_recirculation_max_attempts: Annotated[int, Field(ge=1, le=10)]
     prepare_recirculation_max_correction_attempts: PositiveCount
     telemetry_stale_retry_sec: Annotated[int, Field(ge=1, le=3600)]

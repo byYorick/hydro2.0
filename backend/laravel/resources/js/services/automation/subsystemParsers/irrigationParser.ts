@@ -244,6 +244,25 @@ function applyRecoveryAndSafety(
   irrigationSafety: Dictionary | null,
   waterForm: WaterFormState,
 ): void {
+  const irrigationRecoveryEnabled = readBoolean(irrigationRecoveryPolicy?.enabled)
+  if (irrigationRecoveryEnabled !== null) {
+    waterForm.irrigationRecoveryEnabled = irrigationRecoveryEnabled
+  }
+
+  const irrigationRecoveryMaxContinueAttempts = readNumber(irrigationRecoveryPolicy?.max_continue_attempts)
+  if (irrigationRecoveryMaxContinueAttempts !== null) {
+    waterForm.irrigationRecoveryMaxContinueAttempts = clamp(
+      Math.round(irrigationRecoveryMaxContinueAttempts),
+      1,
+      30,
+    )
+  }
+
+  const irrigationRecoveryTimeoutSec = readNumber(irrigationRecoveryPolicy?.timeout_sec)
+  if (irrigationRecoveryTimeoutSec !== null) {
+    waterForm.irrigationRecoveryTimeoutSeconds = clamp(Math.round(irrigationRecoveryTimeoutSec), 30, 86400)
+  }
+
   const irrigationAutoReplayAfterSetup = readBoolean(irrigationRecoveryPolicy?.auto_replay_after_setup)
   if (irrigationAutoReplayAfterSetup !== null) {
     waterForm.irrigationAutoReplayAfterSetup = irrigationAutoReplayAfterSetup

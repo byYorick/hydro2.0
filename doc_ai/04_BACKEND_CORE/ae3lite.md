@@ -213,10 +213,21 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
      (`correction_config...retry.solution_fill_correction_slack_sec`, default `900`);
    - `prepare_recirculation_check`: `prepare_recirculation_timeout_sec + prepare_recirculation_correction_slack_sec`
      (default `900`);
+   - `irrigation_recovery_check`: `irrigation_recovery.timeout_sec + irrigation_recovery_correction_slack_sec`
+     (`correction_config...retry.irrigation_recovery_correction_slack_sec`, default `900`);
    - верхняя граница slack `7200`, суммарный cap stage `86400`
-7. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает deadline;
+7. `subsystems.irrigation.recovery.enabled` (default `true`) гейтит post-irrigation recovery:
+   при `enabled=false` и недостигнутых targets `irrigation_check` / stage-deadline в correction
+   переходят в `irrigation_stop_to_ready`, а не в `irrigation_stop_to_recovery`
+8. `subsystems.irrigation.recovery.max_continue_attempts` (default `5`) — максимум окон
+   correction внутри `irrigation_recovery_check` (`stage_retry_count` = число исчерпанных окон);
+   при достижении лимита → `irrigation_recovery_stop_failed`
+9. `subsystems.irrigation.recovery.auto_replay_after_setup` (default `true`) — на
+   `complete_ready` для `irrigation_start` при `irrigation_replay_count > 0` разрешает
+   автоповтор `irrigation_start`; при `false` задача завершается без replay
+10. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает deadline;
    stage deadline сохраняется до terminal transition из stage
-8. runtime обязан передавать stage timeout в `pump_main/set_relay` start-команде как `params.timeout_ms` + `params.stage`; timed-start исполняется по `ACK -> DONE/ERROR`, при этом gateway резюмирует batch уже на `ACK`
+11. runtime обязан передавать stage timeout в `pump_main/set_relay` start-команде как `params.timeout_ms` + `params.stage`; timed-start исполняется по `ACK -> DONE/ERROR`, при этом gateway резюмирует batch уже на `ACK`
 
 Correction runtime invariants:
 1. для `EC` и `pH` используется только observation-driven модель `dose -> hold -> observe -> decide`;

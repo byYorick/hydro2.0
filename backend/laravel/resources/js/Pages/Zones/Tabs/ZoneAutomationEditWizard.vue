@@ -223,6 +223,9 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   if (form.irrigationRecoveryTimeoutSeconds === undefined || !Number.isFinite(Number(form.irrigationRecoveryTimeoutSeconds))) {
     form.irrigationRecoveryTimeoutSeconds = automationDefaults.value.water_irrigation_recovery_timeout_sec
   }
+  if (form.irrigationRecoveryEnabled === undefined) {
+    form.irrigationRecoveryEnabled = automationDefaults.value.water_irrigation_recovery_enabled
+  }
   if (form.irrigationAutoReplayAfterSetup === undefined) {
     form.irrigationAutoReplayAfterSetup = automationDefaults.value.water_irrigation_auto_replay_after_setup
   }

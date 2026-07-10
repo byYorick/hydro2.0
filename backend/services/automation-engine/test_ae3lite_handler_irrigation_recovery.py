@@ -68,7 +68,57 @@ async def test_recovery_enters_correction_when_targets_not_met(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_recovery_skips_correction_when_already_exhausted(monkeypatch) -> None:
+async def test_recovery_reopens_correction_within_max_continue_attempts(monkeypatch) -> None:
+    handler = IrrigationRecoveryCheckHandler(runtime_monitor=object(), command_gateway=object())
+
+    async def _probe(**_kwargs):
+        return None
+
+    async def _targets(**_kwargs):
+        return False
+
+    monkeypatch.setattr(handler, "_probe_irr_state_with_backoff", _probe)
+    monkeypatch.setattr(handler, "_targets_reached", _targets)
+    monkeypatch.setattr(
+        handler,
+        "_correction_config_for_task",
+        lambda **_kwargs: {
+            "max_ec_correction_attempts": 2,
+            "max_ph_correction_attempts": 3,
+            "stabilization_sec": 1,
+        },
+    )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        current_stage="irrigation_recovery_check",
+        topology="two_tank",
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=10),
+            stage_retry_count=1,
+        ),
+    )
+    plan = SimpleNamespace(
+        runtime=make_runtime_plan(
+            level_poll_interval_sec=5,
+            irrigation_recovery={"max_continue_attempts": 5},
+        )
+    )
+    out = await handler.run(
+        task=task,
+        plan=plan,
+        stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None),
+        now=now,
+    )
+    assert out.kind == "enter_correction"
+
+
+@pytest.mark.asyncio
+async def test_recovery_stops_failed_when_max_continue_attempts_exhausted(monkeypatch) -> None:
     handler = IrrigationRecoveryCheckHandler(runtime_monitor=object(), command_gateway=object())
 
     async def _probe(**_kwargs):
@@ -90,55 +140,23 @@ async def test_recovery_skips_correction_when_already_exhausted(monkeypatch) -> 
             control_mode="auto",
             pending_manual_step=None,
             stage_deadline_at=now + timedelta(seconds=10),
-            stage_retry_count=1,
+            stage_retry_count=5,
         ),
     )
-    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=5))
+    plan = SimpleNamespace(
+        runtime=make_runtime_plan(
+            level_poll_interval_sec=5,
+            irrigation_recovery={"max_continue_attempts": 5},
+        )
+    )
     out = await handler.run(
         task=task,
         plan=plan,
         stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None),
         now=now,
     )
-    assert out.kind == "poll"
-    assert out.due_delay_sec == 5
-
-
-@pytest.mark.asyncio
-async def test_recovery_skips_correction_when_already_exhausted(monkeypatch) -> None:
-    handler = IrrigationRecoveryCheckHandler(runtime_monitor=object(), command_gateway=object())
-
-    async def _probe(**_kwargs):
-        return None
-
-    async def _targets(**_kwargs):
-        return False
-
-    monkeypatch.setattr(handler, "_probe_irr_state", _probe)
-    monkeypatch.setattr(handler, "_targets_reached", _targets)
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    task = SimpleNamespace(
-        id=1,
-        zone_id=7,
-        current_stage="irrigation_recovery_check",
-        topology="two_tank",
-        workflow=SimpleNamespace(
-            control_mode="auto",
-            pending_manual_step=None,
-            stage_deadline_at=now + timedelta(seconds=10),
-            stage_retry_count=1,
-        ),
-    )
-    plan = SimpleNamespace(runtime=make_runtime_plan(level_poll_interval_sec=5))
-    out = await handler.run(
-        task=task,
-        plan=plan,
-        stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None),
-        now=now,
-    )
-    assert out.kind == "poll"
-    assert out.due_delay_sec == 5
+    assert out.kind == "transition"
+    assert out.next_stage == "irrigation_recovery_stop_failed"
 
 
 @pytest.mark.asyncio

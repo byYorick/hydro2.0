@@ -137,6 +137,7 @@ describe('zoneAutomationFormLogic', () => {
               },
             },
             recovery: {
+              enabled: false,
               auto_replay_after_setup: false,
               max_setup_replays: 4,
             },
@@ -219,6 +220,7 @@ describe('zoneAutomationFormLogic', () => {
                 clean_fill_retry_cycles: 2,
               },
               irrigation_recovery: {
+                enabled: false,
                 max_continue_attempts: 7,
                 timeout_sec: 800,
               },
@@ -287,6 +289,7 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.irrigationDecisionSpreadAlertThresholdPct).toBe(18)
     expect(forms.waterForm.irrigationRecoveryMaxContinueAttempts).toBe(7)
     expect(forms.waterForm.irrigationRecoveryTimeoutSeconds).toBe(800)
+    expect(forms.waterForm.irrigationRecoveryEnabled).toBe(false)
     expect(forms.waterForm.irrigationAutoReplayAfterSetup).toBe(false)
     expect(forms.waterForm.irrigationMaxSetupReplays).toBe(4)
     expect(forms.waterForm.stopOnSolutionMin).toBe(false)
@@ -324,6 +327,7 @@ describe('zoneAutomationFormLogic', () => {
     forms.waterForm.irrigationDecisionSpreadAlertThresholdPct = 16
     forms.waterForm.irrigationRecoveryMaxContinueAttempts = 9
     forms.waterForm.irrigationRecoveryTimeoutSeconds = 650
+    forms.waterForm.irrigationRecoveryEnabled = false
     forms.waterForm.irrigationAutoReplayAfterSetup = false
     forms.waterForm.irrigationMaxSetupReplays = 3
     forms.waterForm.stopOnSolutionMin = false
@@ -370,6 +374,8 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.irrigation.decision.config.spread_alert_threshold_pct).toBe(16)
     expect(payload.subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts).toBe(9)
     expect(payload.subsystems.diagnostics.execution.irrigation_recovery.timeout_sec).toBe(650)
+    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.enabled).toBe(false)
+    expect(payload.subsystems.irrigation.recovery.enabled).toBe(false)
     expect(payload.subsystems.irrigation.recovery.auto_replay_after_setup).toBe(false)
     expect(payload.subsystems.irrigation.recovery.max_setup_replays).toBe(3)
     expect(payload.subsystems.irrigation.safety.stop_on_solution_min).toBe(false)

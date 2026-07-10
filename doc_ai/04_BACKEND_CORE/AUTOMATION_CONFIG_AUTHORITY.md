@@ -425,6 +425,7 @@ Config modes (Phase 5):
 | `retry.prepare_recirculation_max_correction_attempts` | integer | minimum=1, maximum=500 | ✓ |
 | `retry.prepare_recirculation_timeout_sec` | integer | minimum=30, maximum=7200 | ✓ |
 | `retry.solution_fill_correction_slack_sec` | integer | minimum=0, maximum=7200 | ✓ |
+| `retry.irrigation_recovery_correction_slack_sec` | integer | minimum=0, maximum=7200 | ✓ |
 | `retry.telemetry_stale_retry_sec` | integer | minimum=1, maximum=3600 | ✓ |
 | `runtime` | object | — | ✓ |
 | `runtime.clean_fill_retry_cycles` | integer | minimum=0, maximum=20 | ✓ |

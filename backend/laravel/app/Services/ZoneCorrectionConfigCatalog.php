@@ -96,6 +96,7 @@ class ZoneCorrectionConfigCatalog
                 'prepare_recirculation_timeout_sec' => 900,
                 'prepare_recirculation_correction_slack_sec' => 0,
                 'solution_fill_correction_slack_sec' => 900,
+                'irrigation_recovery_correction_slack_sec' => 900,
                 'prepare_recirculation_max_attempts' => 4,
                 'prepare_recirculation_max_correction_attempts' => 40,
                 'telemetry_stale_retry_sec' => 30,
@@ -249,6 +250,13 @@ class ZoneCorrectionConfigCatalog
                         'retry.solution_fill_correction_slack_sec',
                         'Solution fill correction slack',
                         'Доп. секунды к дедлайну solution_fill_check для inline-коррекции (AE по умолчанию 900; 0 = жёстко по timeout).',
+                        'integer',
+                        ['min' => 0, 'max' => 7200, 'advanced_only' => true]
+                    ),
+                    self::field(
+                        'retry.irrigation_recovery_correction_slack_sec',
+                        'Irrigation recovery correction slack',
+                        'Доп. секунды к дедлайну irrigation_recovery_check для inline-коррекции (AE по умолчанию 900; 0 = жёстко по timeout).',
                         'integer',
                         ['min' => 0, 'max' => 7200, 'advanced_only' => true]
                     ),

@@ -116,12 +116,27 @@ def test_exhausted_irrigation_recovery_re_enters_same_stage(
         current_stage="irrigation_recovery_check",
         stage_retry_count=1,
         level_poll_interval_sec=8,
+        max_continue_attempts=5,
     )
     assert isinstance(outcome, StageOutcome)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "irrigation_recovery_check"
     assert outcome.stage_retry_count == 2
     assert outcome.due_delay_sec == 8
+
+
+def test_exhausted_irrigation_recovery_stops_failed_at_max_continue(
+    policy: CorrectionTransitionPolicy,
+) -> None:
+    outcome = policy.decide_exhausted_transition(
+        current_stage="irrigation_recovery_check",
+        stage_retry_count=4,
+        level_poll_interval_sec=8,
+        max_continue_attempts=5,
+    )
+    assert outcome is not None
+    assert outcome.next_stage == "irrigation_recovery_stop_failed"
+    assert outcome.stage_retry_count == 5
 
 
 def test_exhausted_prepare_recirc_goes_to_window_exhausted(
@@ -248,6 +263,21 @@ def test_stage_deadline_irrigation_targets_not_reached_goes_to_recovery(
     )
     assert outcome is not None
     assert outcome.next_stage == "irrigation_stop_to_recovery"
+
+
+def test_stage_deadline_irrigation_recovery_disabled_goes_to_ready(
+    policy: CorrectionTransitionPolicy,
+) -> None:
+    outcome = policy.decide_stage_deadline_transition(
+        corr=_corr(),
+        current_stage="irrigation_check",
+        stage_retry_count=0,
+        deadline_reached=True,
+        targets_reached=False,
+        recovery_enabled=False,
+    )
+    assert outcome is not None
+    assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
 def test_stage_deadline_solution_fill_goes_to_timeout_stop(

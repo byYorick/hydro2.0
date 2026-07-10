@@ -215,6 +215,11 @@ function applyIrrigationRecoverySection(
 ): void {
   const irrigationRecovery = asRecord(diagnosticsExecutionResolved?.irrigation_recovery)
 
+  const irrigationRecoveryEnabled = readBoolean(irrigationRecovery?.enabled)
+  if (irrigationRecoveryEnabled !== null) {
+    waterForm.irrigationRecoveryEnabled = irrigationRecoveryEnabled
+  }
+
   const irrigationRecoveryMaxContinueAttempts = readNumber(irrigationRecovery?.max_continue_attempts)
   if (irrigationRecoveryMaxContinueAttempts !== null) {
     waterForm.irrigationRecoveryMaxContinueAttempts = clamp(Math.round(irrigationRecoveryMaxContinueAttempts), 1, 30)

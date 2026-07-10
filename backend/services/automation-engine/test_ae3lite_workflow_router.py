@@ -47,6 +47,7 @@ def _make_task_row(
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
     irrigation_requested_duration_sec: int | None = None,
+    irrigation_replay_count: int = 0,
 ) -> dict:
     corr_row: dict = {}
     if correction:
@@ -89,6 +90,7 @@ def _make_task_row(
         "stage_entered_at": stage_entered_at or NOW, "clean_fill_cycle": clean_fill_cycle,
         "control_mode_snapshot": control_mode, "pending_manual_step": pending_manual_step,
         "irrigation_requested_duration_sec": irrigation_requested_duration_sec,
+        "irrigation_replay_count": irrigation_replay_count,
         **corr_row,
     }
 
@@ -705,6 +707,45 @@ async def test_router_complete_ready_completes_task():
     assert wr.upsert_calls[0]["phase"] == "ready"
 
 
+async def test_router_complete_ready_replays_irrigation_when_auto_replay_enabled():
+    task = _make_task(
+        stage="complete_ready",
+        phase="ready",
+        task_type="irrigation_start",
+        irrigation_replay_count=1,
+    )
+    router, tr, _ = _make_router(return_task=task)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_recovery": {"auto_replay_after_setup": True}}),
+        now=NOW,
+    )
+
+    assert len(tr.mark_completed_calls) == 0
+    assert len(tr.update_stage_calls) == 1
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "irrigation_start"
+
+
+async def test_router_complete_ready_skips_replay_when_auto_replay_disabled():
+    task = _make_task(
+        stage="complete_ready",
+        phase="ready",
+        task_type="irrigation_start",
+        irrigation_replay_count=1,
+    )
+    router, tr, _ = _make_router(return_task=task)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_recovery": {"auto_replay_after_setup": False}}),
+        now=NOW,
+    )
+
+    assert len(tr.mark_completed_calls) == 1
+    assert len(tr.update_stage_calls) == 0
+
+
 async def test_router_fail_outcome_raises():
     """fail outcome → raises TaskExecutionError with the given error_code."""
     fail_outcome = StageOutcome(kind="fail", error_code="sensor_unavailable",
@@ -1076,6 +1117,7 @@ async def test_router_transition_to_irrigation_recovery_check_uses_recovery_time
         plan=_MockPlan(runtime={
             "prepare_recirculation_timeout_sec": 600,
             "irrigation_recovery": {"timeout_sec": 90},
+            "irrigation_recovery_correction_slack_sec": 0,
         }),
         now=NOW,
     )
@@ -1083,6 +1125,53 @@ async def test_router_transition_to_irrigation_recovery_check_uses_recovery_time
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "irrigation_recovery_check"
     assert wf.stage_deadline_at == NOW + timedelta(seconds=90)
+
+
+async def test_router_irrigation_recovery_check_deadline_includes_correction_slack():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
+    task = _make_task(
+        stage="irrigation_recovery_start",
+        phase="irrig_recirc",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(
+            runtime={
+                "irrigation_recovery": {"timeout_sec": 30},
+                "irrigation_recovery_correction_slack_sec": 900,
+            }
+        ),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_recovery_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=30 + 900)
+
+
+async def test_router_irrigation_recovery_check_deadline_falls_back_when_slack_missing():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
+    task = _make_task(
+        stage="irrigation_recovery_start",
+        phase="irrig_recirc",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_recovery": {"timeout_sec": 30}}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_recovery_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=30 + 900)
 
 
 async def test_router_transition_upsert_payload_uses_next_stage_not_old():

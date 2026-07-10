@@ -248,6 +248,7 @@ Observability (UI/Grafana, 2026-07-09):
    - parent-stage не создаёт новое correction-window на каждом таком шаге: весь fill-stage работает в одном окне коррекции.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - wall-clock deadline = `solution_fill_timeout_sec + solution_fill_correction_slack_sec`
+     (аналогично `prepare_recirculation_*` и `irrigation_recovery.timeout_sec + irrigation_recovery_correction_slack_sec`)
      (оба поля из zone correction config; slack default `900`);
     - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
       stage остаётся в одном correction window до этого deadline либо до fail-closed по `no-effect`;

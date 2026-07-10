@@ -566,6 +566,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - `subsystems.diagnostics.execution.startup.level_poll_interval_sec` (default `60`)
 - `subsystems.diagnostics.execution.startup.clean_fill_retry_cycles` (default `1`)
 - `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"`
+- `subsystems.irrigation.recovery.enabled` (default `true`)
 - `subsystems.irrigation.recovery.max_continue_attempts`
 - `subsystems.irrigation.safety.stop_on_solution_min`
 - `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` (default `1200`)

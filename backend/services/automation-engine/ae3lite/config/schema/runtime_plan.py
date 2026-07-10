@@ -121,6 +121,7 @@ class IrrigationDecision(BaseModel):
 class IrrigationRecovery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    enabled: bool = True
     max_continue_attempts: Annotated[int, Field(ge=1, le=30)]
     timeout_sec: Annotated[int, Field(ge=30, le=86400)]
     auto_replay_after_setup: bool
@@ -265,6 +266,7 @@ class RuntimePlan(BaseModel):
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
+    irrigation_recovery_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)] = 900
     level_poll_interval_sec: Annotated[int, Field(ge=5, le=3600)]
     clean_fill_retry_cycles: Annotated[int, Field(ge=0, le=20)]
     level_switch_on_threshold: Annotated[float, Field(ge=0.0, le=1.0)]

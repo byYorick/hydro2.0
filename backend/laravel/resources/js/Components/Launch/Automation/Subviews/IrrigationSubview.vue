@@ -53,12 +53,6 @@
         :title="meta('correctionDuringIrrigation').details"
         @update:model-value="(v) => upd('correctionDuringIrrigation', v)"
       />
-      <ToggleField
-        :model-value="!!waterForm.irrigationAutoReplayAfterSetup"
-        :label="meta('irrigationAutoReplayAfterSetup').label"
-        :title="meta('irrigationAutoReplayAfterSetup').details"
-        @update:model-value="(v) => upd('irrigationAutoReplayAfterSetup', v)"
-      />
     </div>
 
     <template v-if="smart">
@@ -127,13 +121,20 @@
     <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
       Recovery / повторы
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
+      <ToggleField
+        :model-value="waterForm.irrigationRecoveryEnabled !== false"
+        :label="meta('irrigationRecoveryEnabled').label"
+        :title="meta('irrigationRecoveryEnabled').details"
+        @update:model-value="(v) => upd('irrigationRecoveryEnabled', v)"
+      />
       <Field
         :label="meta('irrigationRecoveryMaxContinueAttempts').label"
         :hint="meta('irrigationRecoveryMaxContinueAttempts').hint"
       >
         <input
           v-bind="numAttrs"
+          :disabled="waterForm.irrigationRecoveryEnabled === false"
           :title="meta('irrigationRecoveryMaxContinueAttempts').details"
           :value="waterForm.irrigationRecoveryMaxContinueAttempts ?? 0"
           @input="upd('irrigationRecoveryMaxContinueAttempts', toInt($event))"
@@ -145,6 +146,7 @@
       >
         <input
           v-bind="numAttrs"
+          :disabled="waterForm.irrigationRecoveryEnabled === false"
           :title="meta('irrigationRecoveryTimeoutSeconds').details"
           :value="waterForm.irrigationRecoveryTimeoutSeconds ?? 0"
           @input="upd('irrigationRecoveryTimeoutSeconds', toInt($event))"
@@ -156,11 +158,19 @@
       >
         <input
           v-bind="numAttrs"
+          :disabled="waterForm.irrigationRecoveryEnabled === false"
           :title="meta('irrigationMaxSetupReplays').details"
           :value="waterForm.irrigationMaxSetupReplays ?? 0"
           @input="upd('irrigationMaxSetupReplays', toInt($event))"
         />
       </Field>
+      <ToggleField
+        :model-value="!!waterForm.irrigationAutoReplayAfterSetup"
+        :label="meta('irrigationAutoReplayAfterSetup').label"
+        :title="meta('irrigationAutoReplayAfterSetup').details"
+        :disabled="waterForm.irrigationRecoveryEnabled === false"
+        @update:model-value="(v) => upd('irrigationAutoReplayAfterSetup', v)"
+      />
     </div>
 
     <Hint :show="showHints">
@@ -208,6 +218,11 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
     hint: 'Параллельная коррекция pH/EC',
     details: 'Если включено, корректировки pH/EC могут выполняться во время активного полива.',
   },
+  irrigationRecoveryEnabled: {
+    label: 'Post-irrigation recovery',
+    hint: 'Восстановление после полива',
+    details: 'Если цели pH/EC не достигнуты к концу полива, AE запускает irrigation_recovery (рециркуляция + коррекция). Выключите, чтобы сразу вернуться в ready.',
+  },
   irrigationAutoReplayAfterSetup: {
     label: 'Автоповтор полива после setup',
     hint: 'Автовосстановление цикла',
@@ -240,8 +255,8 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
   },
   irrigationRecoveryMaxContinueAttempts: {
     label: 'Макс. попыток recovery-continue',
-    hint: 'Лимит повторов восстановления',
-    details: 'Сколько раз runtime пробует продолжить полив после recovery before fail-closed.',
+    hint: 'Лимит окон коррекции в recovery',
+    details: 'Сколько окон коррекции pH/EC допускается в irrigation_recovery до fail-closed (irrigation_recovery_stop_failed).',
   },
   irrigationRecoveryTimeoutSeconds: {
     label: 'Таймаут recovery, сек',
