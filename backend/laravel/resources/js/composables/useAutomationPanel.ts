@@ -32,7 +32,7 @@ import {
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
 import { normalizeObservability } from '@/utils/automationObservability'
-import { automationHasTerminalFailure } from '@/utils/automationFailureState'
+import { automationIndicatesActiveFailure } from '@/utils/automationFailureState'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -695,7 +695,9 @@ export function useAutomationPanel(
     || isIrrigationActive.value,
   )
 
-  const hasFailedState = computed(() => automationHasTerminalFailure(automationState.value))
+  // Workflow «Ошибка» только при активном сбое. last_terminal_failure после ack алерта
+  // не должен красить текущий этап (READY и т.п.) как failed.
+  const hasFailedState = computed(() => automationIndicatesActiveFailure(automationState.value))
 
   const workflowStages = computed<WorkflowStageView[]>(() => {
     return deriveWorkflowStages(stateCode.value, hasFailedState.value)

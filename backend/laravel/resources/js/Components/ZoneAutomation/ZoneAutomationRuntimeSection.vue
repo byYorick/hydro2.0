@@ -61,11 +61,11 @@
       />
 
       <AutomationRuntimeAlerts
-        :failed="runtimeMeta.hasFailed.value"
+        :failed="runtimeMeta.hasActiveFailure.value"
         :active-failure="runtimeMeta.hasActiveFailure.value"
-        :historical-failure="runtimeMeta.hasHistoricalFailure.value"
-        :human-error-message="runtimeMeta.humanErrorMessage.value"
-        :error-code="runtimeMeta.errorCode.value"
+        :historical-failure="false"
+        :human-error-message="runtimeMeta.hasActiveFailure.value ? runtimeMeta.humanErrorMessage.value : null"
+        :error-code="runtimeMeta.hasActiveFailure.value ? runtimeMeta.errorCode.value : null"
         :error-message="errorMessage"
         :connectivity-warning="connectivityWarning"
         :is-stale="runtimeMeta.isStale.value"

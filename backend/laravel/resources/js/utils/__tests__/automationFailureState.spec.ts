@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   automationHasTerminalFailure,
+  automationIndicatesActiveFailure,
   automationIndicatesHistoricalFailure,
   timelineIndicatesTerminalFailure,
 } from '@/utils/automationFailureState'
@@ -53,6 +54,8 @@ describe('automationFailureState', () => {
 
     expect(automationIndicatesHistoricalFailure(state)).toBe(true)
     expect(automationHasTerminalFailure(state)).toBe(true)
+    // После ack алерта workflow/баннер процесса смотрят только active failure.
+    expect(automationIndicatesActiveFailure(state)).toBe(false)
   })
 
   it('определяет terminal failure по timeline', () => {
