@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
-from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.handlers.base import BaseStageHandler, _utc_naive_dt
 from ae3lite.application.level_monitor import (
     coarse_solution_tank_level_percent,
     solution_tank_has_solution,
@@ -2513,9 +2513,19 @@ class CorrectionHandler(BaseStageHandler):
         if corr.corr_step in {"corr_deactivate", "corr_done"}:
             return None
         deadline_kind = str(getattr(exc, "deadline_kind", "") or "").strip().lower()
+        stage_deadline = getattr(task.workflow, "stage_deadline_at", None)
+        tick_now = _utc_naive_dt(now)
+        # Prefer wall-clock when the tick ``now`` is still fresh: gateway poll can
+        # run past stage_deadline while CorrectionHandler keeps the claim-time
+        # ``now``. Skip wall clock when tests freeze ``now`` far in the past.
+        wall_now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if abs((wall_now - tick_now).total_seconds()) <= 3600:
+            check_now = wall_now if wall_now > tick_now else tick_now
+        else:
+            check_now = tick_now
         stage_bound = deadline_kind == "stage" or self._deadline_reached(
-            now=now,
-            deadline=getattr(task.workflow, "stage_deadline_at", None),
+            now=check_now,
+            deadline=stage_deadline,
         )
         if not stage_bound:
             return None
@@ -2523,7 +2533,7 @@ class CorrectionHandler(BaseStageHandler):
             task=task,
             plan=plan,
             corr=corr,
-            now=now,
+            now=check_now,
         )
         if outcome is None:
             return None

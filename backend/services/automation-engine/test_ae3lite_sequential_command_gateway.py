@@ -811,6 +811,7 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
 
     assert result["success"] is False
     assert result["error_code"] == "ae3_command_poll_deadline_exceeded"
+    assert result.get("deadline_kind") == "stage"
     assert len(captured_events) == 1
     assert captured_events[0]["zone_id"] == 1
     assert captured_events[0]["event_type"] == "AE_COMMAND_POLL_DEADLINE_EXCEEDED"
@@ -819,6 +820,7 @@ async def test_run_batch_fails_closed_when_waiting_command_exceeds_stage_deadlin
     assert details["workflow_phase"] == "tank_recirc"
     assert details["corr_step"] == "corr_dose_ph"
     assert details["channel"] == "pump_acid"
+    assert details["deadline_kind"] == "stage"
     assert details["stage_deadline_at"] == task.workflow.stage_deadline_at.isoformat()
 
 

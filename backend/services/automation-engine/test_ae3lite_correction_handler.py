@@ -2286,11 +2286,73 @@ async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_rec
     assert gateway.calls  # dose was attempted
 
 
+async def test_corr_irrigation_poll_deadline_without_deadline_kind_uses_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Regression: run_batch historically dropped deadline_kind; wall-clock stage
+    deadline must still trigger graceful interrupt (not terminal fail)."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    # Frozen tick ``now`` is still before deadline; wall clock (close to tick) is past it.
+    tick_now = NOW
+    deadline = NOW + timedelta(seconds=30)
+    wall_past = deadline + timedelta(seconds=1)
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: A003
+            if tz is not None:
+                return wall_past.replace(tzinfo=tz)
+            return wall_past
+
+    monkeypatch.setattr("ae3lite.application.handlers.correction.datetime", _FrozenDateTime)
+
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+        activated_here=True,
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=deadline,
+    )
+    gateway = _MockGateway(
+        success=False,
+        error_code="ae3_command_poll_deadline_exceeded",
+        error_message="Опрос команды превысил дедлайн",
+        # Intentionally omit deadline_kind (aggregated run_batch bug).
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2), gateway=gateway)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=tick_now)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_recovery"
+
+
 async def test_corr_dose_ec_poll_deadline_without_stage_binding_still_fails(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Чистый poll-timeout команды (узел завис) остаётся fail-closed."""
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    # Keep wall clock near tick now so defense-in-depth does not treat a
+    # historical NOW fixture as an already-expired stage deadline.
+    tick_now = NOW
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # noqa: A003
+            if tz is not None:
+                return tick_now.replace(tzinfo=tz)
+            return tick_now
+
+    monkeypatch.setattr("ae3lite.application.handlers.correction.datetime", _FrozenDateTime)
+
     corr = _base_corr(
         corr_step="corr_dose_ec",
         needs_ec=True,

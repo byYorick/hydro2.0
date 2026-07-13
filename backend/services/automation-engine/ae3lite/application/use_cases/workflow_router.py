@@ -269,7 +269,12 @@ class WorkflowRouter:
                     error_message=str(exc),
                     node_uid=self._extract_irrig_node_uid_from_plan(plan=plan),
                 )
-                raise TaskExecutionError(code, message) from exc
+                remapped = TaskExecutionError(code, message)
+                # Preserve attributes used by correction stage-deadline interrupt.
+                deadline_kind = getattr(exc, "deadline_kind", None)
+                if deadline_kind is not None:
+                    remapped.deadline_kind = str(deadline_kind)
+                raise remapped from exc
             return await self._apply_outcome(
                 task=task, plan=plan, outcome=outcome, now=now,
             )

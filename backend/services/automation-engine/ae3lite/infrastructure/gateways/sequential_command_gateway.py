@@ -148,7 +148,7 @@ class SequentialCommandGateway:
             combined_statuses.extend(result["command_statuses"])
             current_task = result["task"]
             if not result["success"]:
-                return {
+                failed: dict[str, Any] = {
                     "success": False,
                     "task": current_task,
                     "commands_total": len(combined_statuses),
@@ -157,6 +157,11 @@ class SequentialCommandGateway:
                     "error_code": result["error_code"],
                     "error_message": result["error_message"],
                 }
+                # Preserve stage vs poll binding so CorrectionHandler can
+                # graceful-interrupt instead of terminal-fail mid-dose.
+                if result.get("deadline_kind") is not None:
+                    failed["deadline_kind"] = result["deadline_kind"]
+                return failed
 
         return {
             "success": True,
