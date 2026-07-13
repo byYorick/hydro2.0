@@ -595,15 +595,17 @@ groups:
           description: "ae3_lease_heartbeat_failed_total increased during the last 10 minutes."
 
       - alert: LaravelSchedulerMissedWindows
-        expr: (sum(increase(laravel_scheduler_missed_windows_total[15m])) or vector(0)) > 0
+        # sum by (zone_id): метрика уже per-zone; без by webhook получает zone_id=null.
+        expr: sum by (zone_id) (increase(laravel_scheduler_missed_windows_total[15m])) > 0
         for: 0m
         labels:
           severity: warning
         annotations:
-          summary: "Laravel scheduler missed irrigation/light windows"
-          description: "laravel_scheduler_missed_windows_total increased during the last 15 minutes."
+          summary: "Laravel scheduler missed irrigation/light windows (zone {{ $labels.zone_id }})"
+          description: "laravel_scheduler_missed_windows_total increased for zone {{ $labels.zone_id }} during the last 15 minutes."
 
       - alert: LaravelSchedulerLockSkipped
+        # Глобальный счётчик без zone_id — оставляем cluster-level.
         expr: (sum(increase(laravel_scheduler_lock_skipped_total[15m])) or vector(0)) > 0
         for: 0m
         labels:
@@ -613,13 +615,13 @@ groups:
           description: "laravel_scheduler_lock_skipped_total increased during the last 15 minutes."
 
       - alert: LaravelZoneHangHintsActive
-        expr: (sum(laravel_zone_hang_hints_active) or vector(0)) > 0
+        expr: sum by (zone_id) (laravel_zone_hang_hints_active) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Active zone hang hints detected"
-          description: "laravel_zone_hang_hints_active > 0 for at least 5 minutes."
+          summary: "Active zone hang hints detected (zone {{ $labels.zone_id }})"
+          description: "laravel_zone_hang_hints_active > 0 for zone {{ $labels.zone_id }} for at least 5 minutes."
 
       - alert: NodeLastSeenStale
         expr: max(node_last_seen_age_seconds) > 120
