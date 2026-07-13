@@ -148,6 +148,12 @@ esp_err_t storage_irrigation_node_framework_init(void) {
         return err;
     }
 
+    err = node_command_handler_register("run_pump", handle_run_pump, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register run_pump handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
     err = node_command_handler_register("state", handle_storage_state, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register state handler: %s", esp_err_to_name(err));

@@ -1,8 +1,8 @@
 # TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md
 # Спецификация test_node для доведения реальных нод до боевого режима
 
-**Версия:** 1.0  
-**Дата обновления:** 2026-04-09
+**Версия:** 1.1  
+**Дата обновления:** 2026-07-13
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -468,6 +468,17 @@ Fail-safe семантика `nd-test-irrig-1` выровнена с real `stora
 - открыт хотя бы один target-клапан (`valve_solution_fill` или `valve_irrigation`)
 
 Иначе `ERROR` (`pump_interlock_blocked`).
+
+### Production parity (`storage_irrigation_node`)
+
+- Stage-arm `pump_main/set_relay {state:true, timeout_ms, stage}` на боевой ноде сразу
+  отвечает terminal `DONE` (как test_node, который игнорирует timeout/stage и тоже даёт DONE).
+  AE3 `complete_on_ack` deprecated — success только по `DONE`.
+- Fail-safe/timeout снимают stage-guard и публикуют `storage_state/event`; повторный
+  terminal по тому же `cmd_id` не отправляется.
+- `pump_main/run_pump {duration_ms}` поддержан на production (timed irrigation_start).
+- pH/EC telemetry на production публикует `flow_active`/`corrections_allowed`
+  (= sensor mode), продолжая мониторинговую публикацию и вне mode.
 
 ---
 

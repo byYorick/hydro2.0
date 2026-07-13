@@ -246,8 +246,11 @@ class SensorModeController:
             now=now,
         )
         if not result["success"]:
-            raise TaskExecutionError(
+            exc = TaskExecutionError(
                 str(result["error_code"]),
                 str(result["error_message"]),
             )
+            if result.get("deadline_kind") is not None:
+                exc.deadline_kind = str(result.get("deadline_kind"))
+            raise exc
         return result.get("task") or task

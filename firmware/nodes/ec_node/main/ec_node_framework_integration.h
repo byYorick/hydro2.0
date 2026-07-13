@@ -55,6 +55,9 @@ void ec_node_ec_poll_sensor_once(void);
 /** Результат trema_ec_probe_present() в последнем ec_node_ec_poll_sensor_once() (для OLED без второго probe). */
 bool ec_node_ec_last_poll_probe_present(void);
 
+/** Активен ли sensor mode (activate_sensor_mode на system). */
+bool ec_node_is_sensor_mode_active(void);
+
 #ifdef __cplusplus
 }
 #endif

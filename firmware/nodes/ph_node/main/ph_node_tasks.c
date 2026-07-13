@@ -425,14 +425,18 @@ void ph_node_publish_telemetry(void) {
     );
 
     // Публикация через node_telemetry_engine (унифицированный API)
-    esp_err_t err = node_telemetry_publish_sensor(
+    const bool mode_active = ph_node_is_sensor_mode_active();
+    const bool publish_stable = mode_active ? is_stable : false;
+    esp_err_t err = node_telemetry_publish_sensor_with_flow_flags(
         "ph_sensor",
         METRIC_TYPE_PH,
         ph_value,
         "pH",
         raw_value,
         using_stub,
-        is_stable
+        publish_stable,
+        mode_active,
+        mode_active
     );
     
     if (err != ESP_OK) {

@@ -43,6 +43,21 @@ esp_err_t node_telemetry_publish_sensor(
 );
 
 /**
+ * @brief Публикация телеметрии сенсора с flow/correction flags (pH/EC)
+ */
+esp_err_t node_telemetry_publish_sensor_with_flow_flags(
+    const char *channel,
+    metric_type_t metric_type,
+    float value,
+    const char *unit,
+    int32_t raw,
+    bool stub,
+    bool stable,
+    bool flow_active,
+    bool corrections_allowed
+);
+
+/**
  * @brief Публикация телеметрии актуатора
  * 
  * @param channel Имя канала

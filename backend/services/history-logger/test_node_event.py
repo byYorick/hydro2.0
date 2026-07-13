@@ -6,8 +6,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
-    """Event with zn-{id} zone uid should be persisted without DB zone lookup."""
+async def test_handle_node_event_stores_zone_event_from_zn_uid_db_lookup():
+    """Event with zn-* zone uid resolves zones.id via DB uid lookup (not numeric suffix)."""
     from mqtt_handlers import handle_node_event
 
     topic = "hydro/gh-1/zn-7/nd-irrig-1/storage_state/event"
@@ -22,9 +22,10 @@ async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 7
@@ -62,9 +63,10 @@ async def test_handle_node_event_storage_state_state_fallback_persists_irr_snaps
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         assert mock_create_zone_event.await_count == 2
 
         first_args = mock_create_zone_event.await_args_list[0].args
@@ -113,9 +115,10 @@ async def test_handle_node_event_storage_state_snapshot_persists_irr_snapshot_ev
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         assert mock_create_zone_event.await_count == 2
 
         first_args = mock_create_zone_event.await_args_list[0].args
@@ -156,9 +159,10 @@ async def test_handle_node_event_irrigation_solution_low_notifies_payload_for_ae
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         assert mock_create_zone_event.await_count == 2
         notify_kwargs = mock_notify_zone_event.await_args.kwargs
         assert notify_kwargs["zone_id"] == 7
@@ -255,9 +259,10 @@ async def test_handle_node_event_normalizes_event_type_symbols():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 5}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 5
@@ -280,9 +285,10 @@ async def test_handle_node_event_handler_exception_increments_metric():
          patch("mqtt_handlers.NODE_EVENT_ERROR") as mock_event_error:
         mock_create_zone_event.side_effect = RuntimeError("db write failed")
 
+        mock_fetch.return_value = [{"id": 9}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         mock_event_error.labels.assert_called_once_with(reason="handler_exception")
 
@@ -300,9 +306,10 @@ async def test_handle_node_event_unknown_metric_code_falls_back_to_other():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 8}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 8
@@ -324,9 +331,10 @@ async def test_handle_node_event_prepare_recirculation_timeout_uses_dedicated_me
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 8}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 8
@@ -348,9 +356,10 @@ async def test_handle_node_event_emergency_stop_uses_dedicated_metric_code():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 8}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 8
@@ -373,9 +382,10 @@ async def test_handle_node_event_truncates_long_event_type_with_hash_suffix():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 6}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         event_type = call_args[1]
@@ -414,9 +424,10 @@ async def test_handle_node_event_level_switch_changed_persists_normalized_payloa
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         call_args = mock_create_zone_event.await_args.args
         assert call_args[0] == 7
@@ -455,9 +466,10 @@ async def test_handle_node_event_skips_notify_when_deduped_insert_not_written():
          patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        mock_fetch.return_value = [{"id": 7}]
         await handle_node_event(topic, payload)
 
-        mock_fetch.assert_not_awaited()
+        assert mock_fetch.await_count >= 1
         mock_create_zone_event.assert_awaited_once()
         mock_notify_zone_event.assert_not_awaited()
         mock_event_received.labels.assert_called_once_with(event_code="LEVEL_SWITCH_CHANGED")

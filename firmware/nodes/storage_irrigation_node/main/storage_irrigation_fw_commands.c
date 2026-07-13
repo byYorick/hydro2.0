@@ -282,9 +282,11 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
             cJSON_AddStringToObject(extra, "stage", stage_name);
         }
     }
+    /* Stage-arm (timeout_ms/stage): terminal DONE сразу — AE3 ждёт DONE (complete_on_ack deprecated).
+     * Guard остаётся armed для fail-safe/timeout events. Transient duration_ms: ACK → DONE. */
     *response = node_command_handler_create_response(
         cmd_id,
-        (has_timeout || has_duration) ? "ACK" : "DONE",
+        has_duration ? "ACK" : "DONE",
         NULL,
         NULL,
         extra
@@ -300,6 +302,61 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
         (void)storage_irrigation_node_publish_terminal_response("pump_main", completed_stage_cmd_id, "DONE", NULL, NULL, done_details);
     }
     return ESP_OK;
+}
+
+esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {
+    (void)user_ctx;
+    if (!channel || !params || !response) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
+    if (!storage_irrigation_node_is_main_pump_channel(channel)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "INVALID",
+            "unsupported_channel_cmd",
+            "run_pump is supported only for pump_main",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const cJSON *duration_ms_item = cJSON_GetObjectItem((cJSON *)params, "duration_ms");
+    uint32_t duration_ms = 0;
+    if (!storage_irrigation_node_parse_duration_ms(duration_ms_item, &duration_ms)
+        || duration_ms > STORAGE_IRRIGATION_NODE_PUMP_MAIN_MAX_DURATION_MS) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "Missing or invalid duration_ms for run_pump",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *relay_params = cJSON_CreateObject();
+    if (!relay_params) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate run_pump params",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (cmd_id) {
+        cJSON_AddStringToObject(relay_params, "cmd_id", cmd_id);
+    }
+    cJSON_AddBoolToObject(relay_params, "state", true);
+    cJSON_AddNumberToObject(relay_params, "duration_ms", (double)duration_ms);
+
+    esp_err_t err = handle_set_relay(channel, relay_params, response, NULL);
+    cJSON_Delete(relay_params);
+    return err;
 }
 
 esp_err_t handle_storage_state(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {

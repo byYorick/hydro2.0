@@ -353,6 +353,11 @@ class SequentialCommandGateway:
                 poll_iterations += 1
                 if result["state"] == "waiting_command":
                     if reconcile_now > effective_deadline:
+                        deadline_kind = (
+                            "stage"
+                            if stage_deadline is not None and stage_deadline <= poll_deadline
+                            else "poll"
+                        )
                         await self._emit_poll_deadline_exceeded_event(
                             task=task,
                             command=planned,
@@ -361,6 +366,7 @@ class SequentialCommandGateway:
                             checked_at=reconcile_now,
                             deadline=effective_deadline,
                             poll_iterations=poll_iterations,
+                            deadline_kind=deadline_kind,
                         )
                         return {
                             "success": False,
@@ -371,6 +377,7 @@ class SequentialCommandGateway:
                                 f"Опрос команды превысил дедлайн для задачи {task.id} "
                                 f"stage={getattr(task, 'current_stage', None)}"
                             ),
+                            "deadline_kind": deadline_kind,
                         }
                     poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
                     continue
@@ -491,6 +498,7 @@ class SequentialCommandGateway:
         checked_at: datetime,
         deadline: datetime,
         poll_iterations: int,
+        deadline_kind: str = "poll",
     ) -> None:
         try:
             await create_zone_event(
@@ -509,6 +517,7 @@ class SequentialCommandGateway:
                     "poll_iterations": int(poll_iterations),
                     "checked_at": checked_at.isoformat(),
                     "stage_deadline_at": deadline.isoformat(),
+                    "deadline_kind": str(deadline_kind or "poll"),
                 },
             )
         except Exception:

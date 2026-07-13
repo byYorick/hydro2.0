@@ -8,7 +8,7 @@ PROD_SEEDER_CLASS ?= StartUsersSeeder
 PROD_SETUP_ARGS ?=
 MIGRATE_SEEDER_CLASS ?= DevBootstrapSeeder
 REFRESH_SEEDER_CLASS ?= StartUsersSeeder
-RESET_DB_SEEDER_CLASS ?= $(REFRESH_SEEDER_CLASS)
+RESET_DB_SEEDER_CLASS ?= ResetDbSeeder
 RESET_DB_APP_ENV ?= local
 RESET_DB_DATABASE ?= hydro_dev
 
@@ -27,7 +27,7 @@ help:
 	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
 	@echo "  refresh        - full clean dev refresh with only base users in DB"
 	@echo "  seed           - run Laravel seeders"
-	@echo "  reset-db       - reset dev DB and seed only base users"
+	@echo "  reset-db       - wipe hydro_dev (+ Redis/MQTT retained), seed base users, restart runtime"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
@@ -139,11 +139,12 @@ seed: up
 
 .PHONY: reset-db
 reset-db: up
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d $(RESET_DB_DATABASE) -c "CREATE EXTENSION IF NOT EXISTS pg_cron;" >/dev/null
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
-		-e APP_ENV=$(RESET_DB_APP_ENV) \
-		-e DB_DATABASE=$(RESET_DB_DATABASE) \
-		laravel php artisan migrate:fresh --seed --seeder=$(RESET_DB_SEEDER_CLASS)
+	@BACKEND_COMPOSE_FILE=$(BACKEND_COMPOSE_FILE) \
+		DOCKER_COMPOSE="$(DOCKER_COMPOSE)" \
+		RESET_DB_DATABASE=$(RESET_DB_DATABASE) \
+		RESET_DB_APP_ENV=$(RESET_DB_APP_ENV) \
+		RESET_DB_SEEDER_CLASS=$(RESET_DB_SEEDER_CLASS) \
+		bash backend/scripts/reset-db.sh
 
 .PHONY: test test-laravel
 test-laravel: test-db-init

@@ -29,6 +29,9 @@ void ph_node_ph_poll_sensor_once(void);
 /** Результат trema_ph_probe_chip_quick() в последнем ph_node_ph_poll_sensor_once() (OLED без полного discovery). */
 bool ph_node_ph_last_poll_chip_present(void);
 
+/** Активен ли sensor mode (activate_sensor_mode на system). */
+bool ph_node_is_sensor_mode_active(void);
+
 /**
  * @brief Регистрация MQTT обработчиков через node_framework
  */

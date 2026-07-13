@@ -397,9 +397,20 @@ class _MockRuntimeMonitor:
 
 
 class _MockGateway:
-    def __init__(self, *, success: bool = True, command_statuses: list[dict] | None = None):
+    def __init__(
+        self,
+        *,
+        success: bool = True,
+        command_statuses: list[dict] | None = None,
+        error_code: str = "hw_error",
+        error_message: str = "err",
+        deadline_kind: str | None = None,
+    ):
         self._success = success
         self._command_statuses = list(command_statuses or [])
+        self._error_code = error_code
+        self._error_message = error_message
+        self._deadline_kind = deadline_kind
         self.calls: list[dict] = []
 
     async def run_batch(self, *, task, commands, now, track_task_state: bool = True):
@@ -409,12 +420,15 @@ class _MockGateway:
             "now": now,
             "track_task_state": track_task_state,
         })
-        return {
+        result = {
             "success": self._success,
-            "error_code": "hw_error" if not self._success else None,
-            "error_message": "err" if not self._success else None,
+            "error_code": self._error_code if not self._success else None,
+            "error_message": self._error_message if not self._success else None,
             "command_statuses": self._command_statuses,
         }
+        if not self._success and self._deadline_kind is not None:
+            result["deadline_kind"] = self._deadline_kind
+        return result
 
 
 class _MockPidStateRepository:
@@ -2154,6 +2168,78 @@ async def test_corr_irrigation_deadline_preempts_to_recovery_when_targets_not_re
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "irrigation_stop_to_recovery"
+
+
+async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Budget полива истёк mid-command → graceful interrupt, не ae3 task fail."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+        # Avoid pre-dose sensor reactivation path (named_plans empty → no sensor cmds).
+        activated_here=True,
+    )
+    # Deadline still in the future at tick start, so we enter corr_dose_ec;
+    # gateway reports stage-bound poll timeout (as SequentialCommandGateway does).
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW + timedelta(seconds=30),
+    )
+    gateway = _MockGateway(
+        success=False,
+        error_code="ae3_command_poll_deadline_exceeded",
+        error_message="Опрос команды превысил дедлайн",
+        deadline_kind="stage",
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2), gateway=gateway)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_recovery"
+    assert gateway.calls  # dose was attempted
+
+
+async def test_corr_dose_ec_poll_deadline_without_stage_binding_still_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Чистый poll-timeout команды (узел завис) остаётся fail-closed."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+        activated_here=True,
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW + timedelta(seconds=600),
+    )
+    gateway = _MockGateway(
+        success=False,
+        error_code="ae3_command_poll_deadline_exceeded",
+        error_message="Опрос команды превысил дедлайн",
+        deadline_kind="poll",
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2), gateway=gateway)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert exc_info.value.code == "ae3_command_poll_deadline_exceeded"
 
 
 async def test_corr_deactivate_sets_done_and_exits():

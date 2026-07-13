@@ -296,24 +296,36 @@ class CorrectionHandler(BaseStageHandler):
                 if raced_completion_outcome is not None:
                     return raced_completion_outcome
                 raise
-        if step == "corr_activate":
-            return await self._run_activate(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_wait_stable":
-            return self._run_wait_stable(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_check":
-            return await self._run_check(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_dose_ec":
-            return await self._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_wait_ec":
-            return await self._run_wait_ec(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_dose_ph":
-            return await self._run_dose_ph(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_wait_ph":
-            return await self._run_wait_ph(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_deactivate":
-            return await self._run_deactivate(task=task, plan=plan, corr=corr, now=now)
-        if step == "corr_done":
-            return self._run_done(corr=corr)
+        try:
+            if step == "corr_activate":
+                return await self._run_activate(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_wait_stable":
+                return self._run_wait_stable(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_check":
+                return await self._run_check(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_dose_ec":
+                return await self._run_dose_ec(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_wait_ec":
+                return await self._run_wait_ec(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_dose_ph":
+                return await self._run_dose_ph(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_wait_ph":
+                return await self._run_wait_ph(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_deactivate":
+                return await self._run_deactivate(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_done":
+                return self._run_done(corr=corr)
+        except TaskExecutionError as exc:
+            deadline_outcome = await self._interrupt_after_command_poll_deadline(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
+                exc=exc,
+            )
+            if deadline_outcome is not None:
+                return deadline_outcome
+            raise
 
         raise TaskExecutionError(
             "ae3_unknown_corr_step", f"Неизвестный correction step={step!r}",
@@ -1486,6 +1498,11 @@ class CorrectionHandler(BaseStageHandler):
                     error_code=str(result.get("error_code") or "ec_batch_command_failed"),
                     error_message=str(result.get("error_message") or "EC batch command failed"),
                     node_uid=self._first_command_node_uid(tuple(batch_cmds)),
+                    deadline_kind=(
+                        str(result.get("deadline_kind"))
+                        if result.get("deadline_kind") is not None
+                        else None
+                    ),
                 )
             corr = replace(corr, ec_current_seq_index=len(seq))
         elif seq:
@@ -1556,6 +1573,11 @@ class CorrectionHandler(BaseStageHandler):
                         error_code=str(result.get("error_code") or "ec_batch_command_failed"),
                         error_message=str(result.get("error_message") or "EC batch command failed"),
                         node_uid=str(item.get("node_uid") or "") or None,
+                        deadline_kind=(
+                            str(result.get("deadline_kind"))
+                            if result.get("deadline_kind") is not None
+                            else None
+                        ),
                     )
 
                 planned_ml = float(item.get("amount_ml") or 0.0)
@@ -2257,6 +2279,10 @@ class CorrectionHandler(BaseStageHandler):
         do **not** treat EC target as reached. Auto-enqueue of
         ``irrigation_recovery`` is intentionally out of MVP scope.
         """
+        # Stage-bound poll deadline must escalate to stage interrupt, not
+        # partial-EC degrade (which would keep the correction window open).
+        if str(error_code or "").strip().lower() == "ae3_command_poll_deadline_exceeded":
+            return None
         if not seq:
             return None
         idx = int(failed_index)
@@ -2406,10 +2432,69 @@ class CorrectionHandler(BaseStageHandler):
         )
         if not deadline_reached:
             return None
+        return await self._stage_deadline_transition_outcome(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+        )
+
+    async def _interrupt_after_command_poll_deadline(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+        exc: TaskExecutionError,
+    ) -> StageOutcome | None:
+        """Convert stage-bound command poll timeout into graceful stage interrupt.
+
+        SequentialCommandGateway uses ``min(stage_deadline, poll_deadline)``.
+        When the stage budget expires mid-correction command (dose / sensor mode),
+        fail-closed task failure is wrong: policy already defines irrigation →
+        recovery/ready and fill/recirc → timeout/exhausted transitions.
+        """
+        if str(getattr(exc, "code", "") or "").strip().lower() != "ae3_command_poll_deadline_exceeded":
+            return None
+        if corr.corr_step in {"corr_deactivate", "corr_done"}:
+            return None
+        deadline_kind = str(getattr(exc, "deadline_kind", "") or "").strip().lower()
+        stage_bound = deadline_kind == "stage" or self._deadline_reached(
+            now=now,
+            deadline=getattr(task.workflow, "stage_deadline_at", None),
+        )
+        if not stage_bound:
+            return None
+        outcome = await self._stage_deadline_transition_outcome(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+        )
+        if outcome is None:
+            return None
+        _logger.info(
+            "AE3 correction: stage deadline during command poll → graceful interrupt "
+            "zone_id=%s task_id=%s stage=%s corr_step=%s next_stage=%s deadline_kind=%s",
+            getattr(task, "zone_id", None),
+            getattr(task, "id", None),
+            getattr(task, "current_stage", None),
+            corr.corr_step,
+            outcome.next_stage,
+            deadline_kind or "reached",
+        )
+        return outcome
+
+    async def _stage_deadline_transition_outcome(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome | None:
         current_stage = str(task.current_stage).strip().lower()
-        # Resolve targets_reached only when we actually need it (irrigation path):
-        # policy consults it just for the irrigation branch and we want to avoid
-        # an unnecessary telemetry round-trip otherwise.
         targets_reached: bool | None = None
         recovery_enabled = True
         if current_stage == "irrigation_check":

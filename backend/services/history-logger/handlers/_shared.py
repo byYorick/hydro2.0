@@ -363,31 +363,30 @@ def build_node_event_notify_payload(
 async def resolve_zone_id_for_node_event(
     zone_uid: Optional[str], node_uid: Optional[str]
 ) -> Optional[int]:
+    """Resolve zone PK for node events.
+
+    Order (fail-closed):
+    1) ``zones.uid`` lookup
+    2) ``nodes.uid`` → ``nodes.zone_id`` fallback
+
+    Numeric suffix of ``zn-<N>`` is **not** treated as ``zones.id`` — launch UIDs
+    like ``zn-1411`` are not equal to PK ``1``, and a transient DB miss must not
+    invent a non-existent FK target.
+    """
     if zone_uid:
         zone_uid_str = str(zone_uid).strip()
-
-        zone_rows = await fetch(
-            """
-            SELECT id
-            FROM zones
-            WHERE uid = $1
-            LIMIT 1
-            """,
-            zone_uid_str,
-        )
-        if zone_rows:
-            return zone_rows[0].get("id")
-
-        if zone_uid_str.startswith("zn-"):
-            try:
-                return int(zone_uid_str.split("-", 1)[1])
-            except (ValueError, IndexError):
-                pass
-        else:
-            try:
-                return int(zone_uid_str)
-            except ValueError:
-                pass
+        if zone_uid_str:
+            zone_rows = await fetch(
+                """
+                SELECT id
+                FROM zones
+                WHERE uid = $1
+                LIMIT 1
+                """,
+                zone_uid_str,
+            )
+            if zone_rows:
+                return zone_rows[0].get("id")
 
     if node_uid:
         node_rows = await fetch(

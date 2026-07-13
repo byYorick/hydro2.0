@@ -24,9 +24,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Канальный профиль: `6 actuator + 4 level-switch`.
 - Сервисный channel без GPIO: `storage_state`.
 - Основная команда актуатора: `set_relay` с `params.state`.
+- Timed irrigation: `pump_main/run_pump {duration_ms}` (alias поверх `set_relay` + `duration_ms`, cap `3600000`).
 - Сервисный канал two-tank: `storage_state/state` (возвращает `details.snapshot` + `details.state` + freshness-поля).
 - `set_relay {state:true}` на production IRR-ноде работает как latched `ON` и держит канал включенным до явного `set_relay {state:false}`.
-- `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation`, отвечает `ACK`, а terminal `DONE/ERROR` публикует позже по тому же `cmd_id`.
+- `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation` и сразу отвечает terminal `DONE` (AE3 ждёт DONE; `complete_on_ack` deprecated). Guard остаётся armed: fail-safe stop только снимает guard + публикует event; stage timeout публикует `storage_state/event` (`solution_fill_timeout` / `prepare_recirculation_timeout`) без второго terminal по тому же `cmd_id`.
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
 - Встроенные fail-safe guards работают локально:
   - `clean_fill`: `valve_clean_fill` держится открытым до `level_clean_max=1` (событие `clean_fill_completed`); проверка `level_clean_min` по таймеру **не применяется** — при пустом баке min активируется только после подъёма уровня; пустой источник — через AE3 timeout/retry.
@@ -35,7 +36,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
 - Каждый `level_*` канал дополнительно публикует собственный MQTT event на оба перехода (`0 -> 1`, `1 -> 0`) после debounce; первая публикация после boot/reconnect помечается `initial=true`.
 - На `GPIO23` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания нода восстанавливает снимок состояний, который был до нажатия.
-- Терминальные статусы: `DONE`/`ERROR`; timed-start использует `ACK -> DONE/ERROR`.
+- Терминальные статусы: latched `set_relay` / stage-arm → сразу `DONE`; transient `duration_ms` / `run_pump` → `ACK` → `DONE`/`ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
 ## GPIO

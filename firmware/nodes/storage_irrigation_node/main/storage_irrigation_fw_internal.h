@@ -253,6 +253,7 @@ void storage_irrigation_node_retry_timer_cb(TimerHandle_t timer);
 void storage_irrigation_node_done_timer_cb(TimerHandle_t timer);
 
 esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
+esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 esp_err_t handle_storage_state(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 esp_err_t handle_test_sensor(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 esp_err_t handle_probe_sensor(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);

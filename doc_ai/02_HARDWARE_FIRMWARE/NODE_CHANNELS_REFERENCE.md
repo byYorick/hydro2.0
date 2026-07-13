@@ -585,9 +585,11 @@ Runtime-оговорка:
 - `stable` (boolean)
 - `corrections_allowed` (boolean)
 
-**Текущий runtime `test_node`:**
+**Текущий runtime `test_node` и боевые `ph_node`/`ec_node`:**
 - для `ph_sensor`/`ec_sensor` эти флаги публикуются;
-- `stable` и `corrections_allowed` равны состоянию sensor mode (без промежуточного этапа стабилизации);
+- `flow_active` и `corrections_allowed` равны состоянию sensor mode (без промежуточного этапа стабилизации);
+- на real-нодах `stable` при активном mode берётся из драйвера сенсора; вне mode публикуется `stable=false`;
+- телеметрия на real-нодах продолжает публиковаться и вне sensor mode (для мониторинга), с `flow_active=false` / `corrections_allowed=false`;
 - `stabilization_progress_sec` сейчас не публикуется.
 
 Пример runtime-payload:

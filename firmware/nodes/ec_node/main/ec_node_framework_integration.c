@@ -229,6 +229,11 @@ bool ec_node_ec_last_poll_probe_present(void)
     return s_ec_last_poll_probe_present;
 }
 
+bool ec_node_is_sensor_mode_active(void)
+{
+    return s_sensor_mode_active;
+}
+
 // Параметры для отложенного ответа DONE после теста насоса
 #define EC_NODE_MAX_TEST_CHANNELS 8
 #define EC_NODE_MAX_CHANNEL_NAME_LEN 64
@@ -958,31 +963,37 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
     ESP_LOGD(TAG, "EC tx prep EC=%.3f TDS=%u st=%d stable=%d", (double)ec_value, (unsigned)tds_value, (int)using_stub, (int)is_stable);
 
     int32_t raw_value = (int32_t)(ec_value * 1000);
+    const bool mode_active = ec_node_is_sensor_mode_active();
+    const bool publish_stable = mode_active ? is_stable : false;
     esp_err_t err = ESP_OK;
     if (stale_age_sec > 0) {
-        char json_buf[256];
+        char json_buf[320];
         int len = snprintf(
             json_buf,
             sizeof(json_buf),
-            "{\"metric_type\":\"EC\",\"value\":%.3f,\"ts\":%llu,\"unit\":\"mS/cm\",\"raw\":%d,\"stub\":true,\"stable\":false,\"stale_age_sec\":%u}",
+            "{\"metric_type\":\"EC\",\"value\":%.3f,\"ts\":%llu,\"unit\":\"mS/cm\",\"raw\":%d,\"stub\":true,\"stable\":false,\"stale_age_sec\":%u,\"flow_active\":%s,\"corrections_allowed\":%s}",
             (double)ec_value,
             (unsigned long long)node_utils_get_timestamp_seconds(),
             (int)raw_value,
-            (unsigned)stale_age_sec);
+            (unsigned)stale_age_sec,
+            mode_active ? "true" : "false",
+            mode_active ? "true" : "false");
         if (len > 0 && (size_t)len < sizeof(json_buf)) {
             err = mqtt_manager_publish_telemetry("ec_sensor", json_buf);
         } else {
             err = ESP_ERR_INVALID_SIZE;
         }
     } else {
-        err = node_telemetry_publish_sensor(
+        err = node_telemetry_publish_sensor_with_flow_flags(
             "ec_sensor",
             METRIC_TYPE_EC,
             ec_value,
             "mS/cm",
             raw_value,
             using_stub,
-            is_stable
+            publish_stable,
+            mode_active,
+            mode_active
         );
     }
 

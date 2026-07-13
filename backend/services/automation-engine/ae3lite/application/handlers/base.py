@@ -119,6 +119,7 @@ class BaseStageHandler:
         error_message: str,
         node_uid: str | None = None,
         plan: Any = None,
+        deadline_kind: str | None = None,
     ) -> None:
         code, message = await self._remap_execution_error(
             task=task,
@@ -127,7 +128,10 @@ class BaseStageHandler:
             node_uid=node_uid,
             plan=plan,
         )
-        raise TaskExecutionError(code, message)
+        exc = TaskExecutionError(code, message)
+        if deadline_kind is not None:
+            exc.deadline_kind = str(deadline_kind)
+        raise exc
 
     async def _ensure_command_targets_online(
         self,
@@ -180,6 +184,11 @@ class BaseStageHandler:
                 error_code=str(result["error_code"]),
                 error_message=str(result["error_message"]),
                 node_uid=self._first_command_node_uid(commands),
+                deadline_kind=(
+                    str(result.get("deadline_kind"))
+                    if result.get("deadline_kind") is not None
+                    else None
+                ),
             )
         return result
 

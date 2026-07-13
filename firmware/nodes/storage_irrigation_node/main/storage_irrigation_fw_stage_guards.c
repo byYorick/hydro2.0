@@ -182,6 +182,8 @@ bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
         }
     }
     if (all_ok) {
+        /* Stage-arm уже ответил DONE при set_relay; здесь только снимаем guard.
+         * Дублирующий terminal для того же cmd_id не публикуем. */
         (void)storage_irrigation_node_complete_stage_guard_for_stage_locked(stage, NULL, 0);
     }
     return all_ok;
@@ -315,28 +317,19 @@ void storage_irrigation_node_process_stage_timeouts(void) {
         }
         storage_irrigation_node_update_oled_runtime();
 
+        /* Arm-команда уже получила terminal DONE; повторный ERROR по тому же cmd_id запрещён.
+         * AE3/оператор узнают о таймауте через storage_state/event. */
         const char *event_code = storage_irrigation_node_timeout_event_code_for_stage(stage_name);
-        cJSON *error_details = cJSON_CreateObject();
-        if (error_details) {
-            cJSON_AddStringToObject(error_details, "stage", stage_name);
-            cJSON_AddNumberToObject(error_details, "timeout_ms", (double)timeout_ms);
-            cJSON_AddStringToObject(error_details, "reason_code", "stage_timeout");
-        }
-        if (cmd_id[0] != '\0') {
-            (void)storage_irrigation_node_publish_terminal_response(
-                "pump_main",
-                cmd_id,
-                "ERROR",
-                "stage_timeout",
-                "Stage timeout reached; flow path stopped by node",
-                error_details
-            );
-        } else if (error_details) {
-            cJSON_Delete(error_details);
-        }
         if (event_code) {
-            (void)storage_irrigation_node_publish_storage_event(event_code, cmd_id);
+            (void)storage_irrigation_node_publish_storage_event(event_code, cmd_id[0] != '\0' ? cmd_id : NULL);
         }
+        ESP_LOGW(
+            TAG,
+            "Stage timeout: stage=%s timeout_ms=%lu cmd_id=%s",
+            stage_name,
+            (unsigned long)timeout_ms,
+            cmd_id[0] != '\0' ? cmd_id : "-"
+        );
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "stage_timeout", ESP_ERR_TIMEOUT, "Stage timeout reached; flow path stopped");
     }
 }

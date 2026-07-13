@@ -48,7 +48,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .name = "pump_main",
         .gpio = STORAGE_IRRIGATION_NODE_PUMP_MAIN_GPIO,
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
-        .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
+        .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAIN_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
         .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },

@@ -1,8 +1,8 @@
 # TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md
 # Матрица соответствия `firmware/test_node` и боевых прошивок нод
 
-**Версия:** 1.0  
-**Дата обновления:** 2026-03-02  
+**Версия:** 1.1  
+**Дата обновления:** 2026-07-13  
 **Статус:** Актуально (reference для migration от test-node к real-node)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -134,13 +134,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 |---|---|---|---|---|
 | `test_sensor` | Да | Да (`ph/ec/climate/light`) | `Direct` | Канальные проверки сенсоров в real-node есть. |
 | `probe_sensor` | Да | Да (`ph/ec` alias к `test_sensor`) | `Direct` | Для `ph/ec` добавлен compatibility alias. |
-| `state` | Да | Нет | `Missing` | Нужен отдельный built-in/handler в real-node. |
+| `state` | Да | Да (`storage_irrigation_node/storage_state`) | `Direct` | Quiet-window 1500 ms есть только у test_node; production отвечает сразу `DONE` + snapshot. |
 | `report_config` / `config_report` / `get_config` / `sync_config` | Да | Да (built-in alias) | `Direct` | В `node_command_handler` добавлены alias на публикацию config report. |
 | `restart` | Да | Да (built-in) | `Direct` | Built-in в `node_command_handler`. |
 | `reboot` | Да (alias к restart) | Да (built-in alias) | `Direct` | Alias зарегистрирован в `node_command_handler`. |
-| `set_relay` | Да | Да (`relay_node`, `climate_node`) | `Partial` | В `ph/ec/pump/light` как команда отсутствует. |
+| `set_relay` | Да | Да (`storage_irrigation_node`, `relay_node`, `climate_node`) | `Direct` | Stage-arm `pump_main` с `timeout_ms`/`stage` на production сразу terminal `DONE` (parity с test_node / AE3). |
 | `set_pwm` | Да | Да (`climate_node`) | `Partial` | Для `light_node` команда отсутствует. |
-| `run_pump` | Да | Да (`ph/ec/pump`) | `Direct` | Основная pump-команда для боевых нод. |
+| `run_pump` | Да | Да (`ph/ec/pump`, `storage_irrigation_node/pump_main`) | `Direct` | На IRR — только `pump_main` (timed irrigation). |
 | `dose` | Да | Да (`ph/ec`) | `Direct` | В `ph/ec` добавлена firmware-поддержка `dose` с преобразованием `ml -> duration_ms` по `ml_per_second`. |
 | `emit_event` | Да | Нет | `Missing` | Специфично для test-node. |
 | `set_fault_mode` | Да | Нет | `Missing` | Симуляционная команда test-node. |
@@ -177,11 +177,12 @@ Real-node (`node_command_handler`):
 
 ## 7. Обязательные шаги перед production rollout
 
-1. Нормализовать оставшиеся канальные имена между test и real (`air_temp_c->temperature`, `air_rh->humidity`, `light_level->light`).
-2. Зафиксировать оставшиеся adapter-команды только там, где ещё нет firmware parity.
-3. Определить источник и контракт для `level_*` и `storage_state` (отдельная real-node или расширение existing firmware).
-4. Проверить реальные e2e/HIL сценарии на `ph/ec/system` после добавления `activate_sensor_mode/deactivate_sensor_mode`.
-5. Для strict e2e на real hardware использовать HMAC-подписанные команды и синхронизацию времени до старта циклов.
+1. Нормализовать оставшиеся канальные имена между test и real (`air_temp_c->temperature`, `air_rh->humidity`, `light_level->light`) — вне scope IRR/pH/EC.
+2. Убедиться в time sync + HMAC на боевых нодах до старта циклов.
+3. NodeConfig pH/EC: `ml_per_second > 0`, `safe_limits.max_duration_ms` согласован с AE `max_dose_ms`.
+4. IRR stage-arm: production отвечает `DONE` сразу (как test_node); fail-safe/timeout идут через `storage_state/event`.
+5. pH/EC telemetry публикует `flow_active` / `corrections_allowed` (= sensor mode); мониторинг продолжает получать samples и вне mode.
+6. Не полагаться на `valve_drain`, пока канала нет на железе storage_irrigation_node.
 
 ---
 

@@ -176,19 +176,13 @@ async def monitor_offline_nodes() -> None:
 
 
 async def _resolve_zone_id_for_node_event_legacy(zone_uid, node_uid):
+    """Runtime override for node_event zone resolution (DB uid → node fallback).
+
+    Must stay aligned with ``handlers._shared.resolve_zone_id_for_node_event``:
+    never map ``zn-<N>`` numeric suffix to ``zones.id`` (FK-unsafe for launch UIDs).
+    """
     zone_uid_str = str(zone_uid or "").strip()
     if zone_uid_str:
-        if zone_uid_str.startswith("zn-"):
-            try:
-                return int(zone_uid_str.split("-", 1)[1])
-            except (ValueError, IndexError):
-                pass
-        else:
-            try:
-                return int(zone_uid_str)
-            except ValueError:
-                pass
-
         zone_rows = await fetch(
             """
             SELECT id

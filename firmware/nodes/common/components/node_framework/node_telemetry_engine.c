@@ -34,6 +34,9 @@ typedef struct {
     int32_t raw;
     bool stub;
     bool stable;
+    bool has_flow_flags;
+    bool flow_active;
+    bool corrections_allowed;
     uint64_t ts;
     char unit[16];  // Единица измерения (например, "mA", "pH", "°C")
 } telemetry_item_t;
@@ -182,7 +185,10 @@ static void fill_batch_item(
     int32_t raw,
     bool stub,
     bool stable,
-    const char *unit
+    const char *unit,
+    bool has_flow_flags,
+    bool flow_active,
+    bool corrections_allowed
 ) {
     strncpy(item->channel, channel, 63);
     item->channel[63] = '\0';
@@ -192,6 +198,9 @@ static void fill_batch_item(
     item->raw = raw;
     item->stub = stub;
     item->stable = stable;
+    item->has_flow_flags = has_flow_flags;
+    item->flow_active = flow_active;
+    item->corrections_allowed = corrections_allowed;
     item->ts = node_utils_get_timestamp_seconds();
 
     if (unit != NULL && strlen(unit) > 0) {
@@ -209,7 +218,10 @@ static void replace_oldest_batch_item(
     int32_t raw,
     bool stub,
     bool stable,
-    const char *unit
+    const char *unit,
+    bool has_flow_flags,
+    bool flow_active,
+    bool corrections_allowed
 ) {
     if (s_telemetry_engine.batch.count == 0) {
         return;
@@ -228,7 +240,10 @@ static void replace_oldest_batch_item(
         raw,
         stub,
         stable,
-        unit
+        unit,
+        has_flow_flags,
+        flow_active,
+        corrections_allowed
     );
 }
 
@@ -268,7 +283,7 @@ static esp_err_t flush_batch_internal(void) {
     // Публикуем каждое сообщение из батча
     for (size_t i = 0; i < count; i++) {
         telemetry_item_t *item = &s_telemetry_engine.batch.items[i];
-        char json_buf[256];
+        char json_buf[320];
         int len = snprintf(
             json_buf,
             sizeof(json_buf),
@@ -297,6 +312,15 @@ static esp_err_t flush_batch_internal(void) {
         if (!item->stable) {
             len += snprintf(json_buf + len, sizeof(json_buf) - (size_t)len,
                             ",\"stable\":false");
+        }
+        if (item->has_flow_flags) {
+            len += snprintf(
+                json_buf + len,
+                sizeof(json_buf) - (size_t)len,
+                ",\"flow_active\":%s,\"corrections_allowed\":%s",
+                item->flow_active ? "true" : "false",
+                item->corrections_allowed ? "true" : "false"
+            );
         }
         if (len < 0 || (size_t)len >= sizeof(json_buf)) {
             ESP_LOGW(TAG, "Telemetry JSON buffer overflow for channel %s", item->channel);
@@ -333,7 +357,10 @@ static esp_err_t add_to_batch(
     int32_t raw,
     bool stub,
     bool stable,
-    const char *unit
+    const char *unit,
+    bool has_flow_flags,
+    bool flow_active,
+    bool corrections_allowed
 ) {
     if (channel == NULL || metric_type_str == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -395,7 +422,10 @@ static esp_err_t add_to_batch(
                 raw,
                 stub,
                 stable,
-                unit
+                unit,
+                has_flow_flags,
+                flow_active,
+                corrections_allowed
             );
         } else if (s_telemetry_engine.batch.count < TELEMETRY_BATCH_MAX_SIZE) {
             fill_batch_item(
@@ -406,7 +436,10 @@ static esp_err_t add_to_batch(
                 raw,
                 stub,
                 stable,
-                unit
+                unit,
+                has_flow_flags,
+                flow_active,
+                corrections_allowed
             );
             s_telemetry_engine.batch.count++;
         } else if (existing_index >= 0) {
@@ -418,7 +451,10 @@ static esp_err_t add_to_batch(
                 raw,
                 stub,
                 stable,
-                unit
+                unit,
+                has_flow_flags,
+                flow_active,
+                corrections_allowed
             );
         } else if (!mqtt_connected) {
             replace_oldest_batch_item(
@@ -428,7 +464,10 @@ static esp_err_t add_to_batch(
                 raw,
                 stub,
                 stable,
-                unit
+                unit,
+                has_flow_flags,
+                flow_active,
+                corrections_allowed
             );
         } else {
             ESP_LOGW(TAG, "Telemetry batch is full, dropping message");
@@ -450,11 +489,36 @@ esp_err_t node_telemetry_publish_sensor(
     bool stub,
     bool stable
 ) {
-    // Используем маппинг канала → metric_type согласно каноническому формату
-    // metric_type enum используется как fallback, если канал не распознан
     char metric_buf[32];
     const char *metric_type_str = channel_to_metric_type(channel, metric_type, metric_buf, sizeof(metric_buf));
-    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, unit);
+    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, unit, false, false, false);
+}
+
+esp_err_t node_telemetry_publish_sensor_with_flow_flags(
+    const char *channel,
+    metric_type_t metric_type,
+    float value,
+    const char *unit,
+    int32_t raw,
+    bool stub,
+    bool stable,
+    bool flow_active,
+    bool corrections_allowed
+) {
+    char metric_buf[32];
+    const char *metric_type_str = channel_to_metric_type(channel, metric_type, metric_buf, sizeof(metric_buf));
+    return add_to_batch(
+        channel,
+        metric_type_str,
+        value,
+        raw,
+        stub,
+        stable,
+        unit,
+        true,
+        flow_active,
+        corrections_allowed
+    );
 }
 
 esp_err_t node_telemetry_publish_actuator(
@@ -463,11 +527,9 @@ esp_err_t node_telemetry_publish_actuator(
     const char *state,
     float value
 ) {
-    // Для актуаторов используем значение как состояние
-    // Используем маппинг канала → metric_type согласно каноническому формату
     char metric_buf[32];
     const char *metric_type_str = channel_to_metric_type(channel, metric_type, metric_buf, sizeof(metric_buf));
-    return add_to_batch(channel, metric_type_str, value, 0, false, true, NULL);
+    return add_to_batch(channel, metric_type_str, value, 0, false, true, NULL, false, false, false);
 }
 
 esp_err_t node_telemetry_publish_custom(
@@ -478,7 +540,7 @@ esp_err_t node_telemetry_publish_custom(
     bool stub,
     bool stable
 ) {
-    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, NULL);
+    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, NULL, false, false, false);
 }
 
 esp_err_t node_telemetry_flush(void) {

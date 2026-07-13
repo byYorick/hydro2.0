@@ -143,6 +143,11 @@ static esp_err_t ph_node_merge_ph_calibration_into_nvs(uint8_t stage, float know
 static bool s_ph_sensor_error_active = false;
 static bool s_sensor_mode_active = false;
 
+bool ph_node_is_sensor_mode_active(void)
+{
+    return s_sensor_mode_active;
+}
+
 // Параметры для отложенного ответа DONE после теста насоса
 #define PH_NODE_MAX_TEST_CHANNELS 8
 #define PH_NODE_MAX_CHANNEL_NAME_LEN 64
@@ -891,14 +896,18 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
     );
 
     // Публикация через node_telemetry_engine
-    esp_err_t err = node_telemetry_publish_sensor(
+    const bool mode_active = ph_node_is_sensor_mode_active();
+    const bool publish_stable = mode_active ? is_stable : false;
+    esp_err_t err = node_telemetry_publish_sensor_with_flow_flags(
         "ph_sensor",
         METRIC_TYPE_PH,
         ph_value,
         "pH",
         raw_value,
         using_stub,
-        is_stable
+        publish_stable,
+        mode_active,
+        mode_active
     );
 
     if (err != ESP_OK) {
