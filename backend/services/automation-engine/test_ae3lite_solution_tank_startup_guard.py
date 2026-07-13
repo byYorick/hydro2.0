@@ -83,10 +83,19 @@ async def test_guard_resets_ready_zone_to_startup_when_solution_min_is_not_trigg
     async def fetch_fn(_query, _zone_id):
         return []
 
+    class _PidRepo:
+        def __init__(self) -> None:
+            self.resets: list[int] = []
+
+        async def reset_no_effect_counts(self, *, zone_id: int) -> None:
+            self.resets.append(zone_id)
+
+    pid_repo = _PidRepo()
     use_case = GuardSolutionTankStartupResetUseCase(
         runtime_monitor=monitor,
         workflow_repository=repo,
         fetch_fn=fetch_fn,
+        pid_state_repository=pid_repo,
     )
 
     result = await use_case.run(zone_id=7, now=NOW.replace(tzinfo=None))
@@ -96,6 +105,7 @@ async def test_guard_resets_ready_zone_to_startup_when_solution_min_is_not_trigg
     assert repo.upsert_calls[0]["payload"]["ae3_cycle_start_stage"] == "startup"
     assert repo.upsert_calls[0]["payload"]["guard_reason"] == "solution_tank_depleted"
     assert monitor.calls[0]["allow_initial_event"] is True
+    assert pid_repo.resets == [7]
 
 
 async def test_guard_ignores_non_ready_zone():

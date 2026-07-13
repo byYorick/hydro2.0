@@ -553,6 +553,84 @@ async def test_corr_check_prepare_recirc_soft_tolerance_without_ready_band_keeps
     assert outcome.correction.corr_step == "corr_dose_ec"
 
 
+async def test_corr_check_prepare_recirc_irrigation_band_short_circuits_success(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """EC выше prepare-target, но в irrigation-band → CORRECTION_COMPLETE без EC dose-down."""
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(
+        corr_step="corr_check",
+        attempt=1,
+        max_attempts=5,
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    runtime = deepcopy(RUNTIME)
+    runtime["target_ec"] = 1.6
+    runtime["target_ec_prepare"] = 0.7
+    runtime["npk_ec_share"] = 0.4375
+    runtime["target_ph_min"] = 5.6
+    runtime["target_ph_max"] = 6.0
+    runtime["target_ec_prepare_min"] = 0.6
+    runtime["target_ec_prepare_max"] = 0.8
+    runtime["target_ec_min"] = 1.4
+    runtime["target_ec_max"] = 1.8
+    monitor = _MockRuntimeMonitor(ph=5.8, ec=1.5)
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "exit_correction"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert outcome.correction is not None
+    assert outcome.correction.outcome_success is True
+    complete_events = [call.args[1] for call in create_event.await_args_list if call.args]
+    assert "CORRECTION_COMPLETE" in complete_events
+
+
+async def test_corr_check_prepare_recirc_solution_low_goes_to_setup(monkeypatch: pytest.MonkeyPatch):
+    """Опустошение бака в prepare correction → setup path, сброс no-effect block."""
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(
+        corr_step="corr_check",
+        attempt=1,
+        max_attempts=5,
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    pid_repo = _MockPidStateRepository()
+    monitor = _MockRuntimeMonitor(
+        ph=5.8,
+        ec=1.0,
+        solution_min_triggered=False,
+        solution_max_triggered=False,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=dict(RUNTIME)), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+    assert pid_repo.no_effect_resets == [task.zone_id]
+    assert any(
+        call.args[1] == "CORRECTION_INTERRUPTED_SOLUTION_LOW"
+        for call in create_event.await_args_list
+        if call.args
+    )
+
+
 async def test_corr_check_inside_explicit_window_below_target_keeps_dosing(monkeypatch: pytest.MonkeyPatch):
     corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
     task = _make_task(corr=corr)

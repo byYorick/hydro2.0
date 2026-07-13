@@ -1578,6 +1578,22 @@ class BaseStageHandler:
         current_ph: float,
         current_ec: float,
     ) -> bool:
+        return self._phase_ready_values_match(
+            task=task,
+            runtime=runtime,
+            current_ph=current_ph,
+            current_ec=current_ec,
+        )
+
+    def _phase_ready_values_match(
+        self,
+        *,
+        task: Any,
+        runtime: Mapping[str, Any],
+        current_ph: float,
+        current_ec: float,
+    ) -> bool:
+        """Ready по phase-effective targets (prepare EC в solution_fill/tank_recirc)."""
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = self._effective_ph_target(task=task, runtime=runtime)
         ec_target = self._effective_ec_target(task=task, runtime=runtime)
@@ -1596,6 +1612,98 @@ class BaseStageHandler:
             explicit_max=self._effective_ec_max(task=task, runtime=runtime),
         )
         return ph_ok and ec_ok
+
+    def _irrigation_band_values_match(
+        self,
+        *,
+        task: Any,
+        runtime: Mapping[str, Any],
+        current_ph: float,
+        current_ec: float,
+    ) -> bool:
+        """Ready по полному irrigation EC/pH band (без prepare NPK-share)."""
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
+        ph_ok = self._value_matches_ready_band(
+            current=current_ph,
+            target=self._effective_ph_target(task=task, runtime=runtime),
+            tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ph_pct"),
+            explicit_min=self._effective_ph_min(task=task, runtime=runtime),
+            explicit_max=self._effective_ph_max(task=task, runtime=runtime),
+        )
+        ec_ok = self._value_matches_ready_band(
+            current=current_ec,
+            target=self._irrigation_ec_target(runtime=runtime),
+            tolerance_pct=self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct"),
+            explicit_min=self._irrigation_ec_min(runtime=runtime),
+            explicit_max=self._irrigation_ec_max(runtime=runtime),
+        )
+        return ph_ok and ec_ok
+
+    def _irrigation_ready_short_circuit(
+        self,
+        *,
+        task: Any,
+        runtime: Mapping[str, Any],
+        current_ph: float,
+        current_ec: float,
+    ) -> bool:
+        """Skip prepare when раствор уже в irrigation-band и EC выше prepare-target.
+
+        Post-irrigation / DIAGNOSTICS re-entry: prepare NPK-band уже пройден (EC
+        planner не дозирует вниз). Не срабатывает при EC ниже prepare — первый setup
+        по-прежнему идёт в prepare. Не подменяет ``workflow_ready`` phase-band.
+        """
+        phase = self._runtime_phase_key(task=task)
+        if phase not in {"solution_fill", "tank_recirc"}:
+            return False
+        if not self._irrigation_band_values_match(
+            task=task,
+            runtime=runtime,
+            current_ph=current_ph,
+            current_ec=current_ec,
+        ):
+            return False
+        prepare_ec = float(self._effective_ec_target(task=task, runtime=runtime))
+        return math.isfinite(prepare_ec) and current_ec > prepare_ec
+
+    async def _finish_ready_or_irrigation_short_circuit(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        """True если phase-ready **или** irrigation short-circuit (fresh telemetry)."""
+        if runtime is None:
+            runtime = self._require_runtime_plan(plan=plan)
+        max_age = int(runtime.telemetry_max_age_sec)
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ph = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="PH",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        ec = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        if not ph["ready"] or not ec["ready"]:
+            return False
+        current_ph = float(ph["value"])
+        current_ec = float(ec["value"])
+        if self._phase_ready_values_match(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec,
+        ):
+            return True
+        return self._irrigation_ready_short_circuit(
+            task=task, runtime=runtime, current_ph=current_ph, current_ec=current_ec,
+        )
 
     def _value_matches_ready_band(
         self,
@@ -2006,6 +2114,23 @@ class BaseStageHandler:
 
     # ── Per-phase EC target (NPK share для подготовки) ────────────
 
+    def _irrigation_ec_target(self, *, runtime: RuntimePlan) -> float:
+        """Полный irrigation EC target (day/night), без NPK prepare-share."""
+        base_full = float(runtime.target_ec)
+        return self._day_night_override(runtime, "ec", "target", default=base_full)
+
+    def _irrigation_ec_min(self, *, runtime: RuntimePlan) -> float | None:
+        base_val = self._coerce_float(runtime.target_ec_min)
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ec", "min", default=base_val)
+
+    def _irrigation_ec_max(self, *, runtime: RuntimePlan) -> float | None:
+        base_val = self._coerce_float(runtime.target_ec_max)
+        if base_val is None:
+            return None
+        return self._day_night_override(runtime, "ec", "max", default=base_val)
+
     def _effective_ec_target(self, *, task: Any, runtime: RuntimePlan) -> float:
         """EC target с учётом текущей фазы workflow и day/night overlay.
 
@@ -2018,7 +2143,7 @@ class BaseStageHandler:
         """
         phase = self._runtime_phase_key(task=task)
         base_full = float(runtime.target_ec)
-        full_target = self._day_night_override(runtime, "ec", "target", default=base_full)
+        full_target = self._irrigation_ec_target(runtime=runtime)
         if phase in ("solution_fill", "tank_recirc"):
             prepare = runtime.target_ec_prepare
             if prepare is not None:
@@ -2037,10 +2162,7 @@ class BaseStageHandler:
                     runtime, "ec", "min", default=float(base), phase_key="prepare",
                 )
                 return scaled if scaled is not None else float(base)
-        base_val = self._coerce_float(runtime.target_ec_min)
-        if base_val is None:
-            return None
-        return self._day_night_override(runtime, "ec", "min", default=base_val)
+        return self._irrigation_ec_min(runtime=runtime)
 
     def _effective_ec_max(self, *, task: Any, runtime: RuntimePlan) -> float | None:
         phase = self._runtime_phase_key(task=task)
@@ -2051,10 +2173,7 @@ class BaseStageHandler:
                     runtime, "ec", "max", default=float(base), phase_key="prepare",
                 )
                 return scaled if scaled is not None else float(base)
-        base_val = self._coerce_float(runtime.target_ec_max)
-        if base_val is None:
-            return None
-        return self._day_night_override(runtime, "ec", "max", default=base_val)
+        return self._irrigation_ec_max(runtime=runtime)
 
     def _effective_ph_target(self, *, task: Any, runtime: RuntimePlan) -> float:
         base = float(runtime.target_ph)

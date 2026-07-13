@@ -278,13 +278,38 @@ async def test_tank_full_targets_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tank_full_explicit_prepare_ready_band_routes_to_prepare() -> None:
+async def test_tank_full_outside_prepare_but_in_irrigation_band_skips_to_ready() -> None:
+    """После полива EC уже в irrigation-band; prepare NPK-band уже пройден → skip prepare."""
     runtime = dict(_RUNTIME)
+    runtime["target_ec"] = 1.6
+    runtime["target_ec_prepare"] = 0.7
+    runtime["npk_ec_share"] = 0.4375
     runtime["target_ph_min"] = 5.6
     runtime["target_ph_max"] = 6.0
-    runtime["target_ec_prepare_min"] = 1.2
-    runtime["target_ec_prepare_max"] = 1.45
+    runtime["target_ec_prepare_min"] = 0.6
+    runtime["target_ec_prepare_max"] = 0.8
+    runtime["target_ec_min"] = 1.4
+    runtime["target_ec_max"] = 1.8
     m = _Monitor(max_triggered=True, min_triggered=True, ph=5.8, ec=1.5)
+
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_tank_full_below_prepare_still_routes_to_prepare() -> None:
+    """Первый setup: низкий EC → prepare обязателен."""
+    runtime = dict(_RUNTIME)
+    runtime["target_ec"] = 1.6
+    runtime["target_ec_prepare"] = 0.7
+    runtime["npk_ec_share"] = 0.4375
+    runtime["target_ec_prepare_min"] = 0.6
+    runtime["target_ec_prepare_max"] = 0.8
+    runtime["target_ec_min"] = 1.4
+    runtime["target_ec_max"] = 1.8
+    m = _Monitor(max_triggered=True, min_triggered=True, ph=5.8, ec=0.3)
 
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
 

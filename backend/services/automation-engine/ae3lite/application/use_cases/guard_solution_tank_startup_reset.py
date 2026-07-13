@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.level_monitor import load_zone_level_monitor_config, solution_tank_is_depleted
+
+_logger = logging.getLogger(__name__)
 
 
 class GuardSolutionTankStartupResetUseCase:
@@ -14,6 +17,9 @@ class GuardSolutionTankStartupResetUseCase:
     В AE3-Lite «режим startup» кодируется так:
     - `zone_workflow_state.workflow_phase = 'idle'`
     - `zone_workflow_state.payload.ae3_cycle_start_stage = 'startup'`
+
+    Также снимает correction no-effect block, чтобы следующий cycle_start
+    мог выполнить обычную подготовку раствора.
     """
 
     def __init__(
@@ -22,10 +28,12 @@ class GuardSolutionTankStartupResetUseCase:
         runtime_monitor: Any,
         workflow_repository: Any,
         fetch_fn: Any,
+        pid_state_repository: Any = None,
     ) -> None:
         self._runtime_monitor = runtime_monitor
         self._workflow_repository = workflow_repository
         self._fetch_fn = fetch_fn
+        self._pid_state_repository = pid_state_repository
 
     async def run(self, *, zone_id: int, now: datetime) -> dict[str, Any]:
         workflow = await self._workflow_repository.get(zone_id=zone_id)
@@ -70,6 +78,7 @@ class GuardSolutionTankStartupResetUseCase:
             scheduler_task_id=workflow.scheduler_task_id,
             now=now,
         )
+        await self._clear_correction_blocks(zone_id=zone_id)
         return {
             "reset": True,
             "reason": "solution_tank_depleted",
@@ -77,6 +86,22 @@ class GuardSolutionTankStartupResetUseCase:
             "current_stage": "startup",
             "level": dict(level),
         }
+
+    async def _clear_correction_blocks(self, *, zone_id: int) -> None:
+        if self._pid_state_repository is None:
+            return
+        try:
+            await self._pid_state_repository.reset_no_effect_counts(zone_id=int(zone_id))
+            _logger.info(
+                "solution tank guard: сброшен no_effect block zone_id=%s reason=solution_tank_depleted",
+                zone_id,
+            )
+        except Exception:
+            _logger.warning(
+                "solution tank guard: не удалось сбросить no_effect_count zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
 
     async def _load_solution_min_sensor_cfg(self, *, zone_id: int) -> dict[str, Any]:
         level_cfg = await load_zone_level_monitor_config(zone_id=zone_id, fetch_fn=self._fetch_fn)

@@ -642,8 +642,20 @@ class CorrectionHandler(BaseStageHandler):
             ec_min=target_ec_min,
             ec_max=target_ec_max,
         )
+        # prepare: классика — оба условия (prepare-tolerance + phase-ready).
+        # Short-circuit: irrigation-band и EC уже выше prepare-target (нет dose-down).
+        irrigation_short_circuit = (
+            self._irrigation_ready_short_circuit(
+                task=task,
+                runtime=runtime,
+                current_ph=current_ph,
+                current_ec=current_ec,
+            )
+            if current_stage == "prepare_recirculation_check"
+            else False
+        )
         success_reached = (
-            correction_targets_reached and workflow_ready
+            irrigation_short_circuit or (correction_targets_reached and workflow_ready)
             if current_stage == "prepare_recirculation_check"
             else correction_targets_reached
         )
@@ -976,6 +988,40 @@ class CorrectionHandler(BaseStageHandler):
             prefer_probe_snapshot=True,
         )
         if not solution_tank_has_solution(solution_min):
+            current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+            # Во время prepare_recirc опустошение бака → setup (fill), не бесконечный corr retry.
+            if current_stage == "prepare_recirculation_check":
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="CORRECTION_INTERRUPTED_SOLUTION_LOW",
+                    task=task,
+                    corr=corr,
+                    payload={
+                        "reason": "recirculation_solution_low_to_setup",
+                        "next_stage": "prepare_recirculation_solution_low_stop",
+                        "current_ph": current_ph,
+                        "current_ec": current_ec,
+                    },
+                )
+                if self._pid_state_repository is not None:
+                    try:
+                        await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
+                    except Exception:
+                        _logger.warning(
+                            "Failed to reset no_effect_count on solution_low setup zone %s",
+                            task.zone_id,
+                            exc_info=True,
+                        )
+                self._observe_fail_safe_transition(
+                    task=task,
+                    reason="recirculation_solution_low",
+                    source="correction",
+                    next_stage="prepare_recirculation_solution_low_stop",
+                )
+                return StageOutcome(
+                    kind="transition",
+                    next_stage="prepare_recirculation_solution_low_stop",
+                )
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="low_water_retry_sec",
@@ -2090,6 +2136,13 @@ class CorrectionHandler(BaseStageHandler):
             current_ph=current_ph,
             current_ec=current_ec,
         )
+        if not workflow_ready and self._irrigation_ready_short_circuit(
+            task=task,
+            runtime=runtime,
+            current_ph=current_ph,
+            current_ec=current_ec,
+        ):
+            workflow_ready = True
         return targets_in_tolerance, workflow_ready
 
     @staticmethod

@@ -136,6 +136,8 @@ class TestSuite:
             str(base_path / "ae3lite" / "E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"),
             str(base_path / "ae3lite" / "E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"),
             str(base_path / "ae3lite" / "E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"),
+            str(base_path / "ae3lite" / "E112_ae3_per_phase_ec_target_realhw.yaml"),
+            str(base_path / "ae3lite" / "E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml"),
         ]
         ae3lite_testnode_realhw_irrigation = [
             str(base_path / "ae3lite" / "E107_ae3_irrigation_runtime_test_node.yaml"),

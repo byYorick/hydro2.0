@@ -186,6 +186,8 @@ class WorkflowRouter:
                 if correction_planner is not None:
                     kwargs["planner"] = correction_planner
                 kwargs["pid_state_repository"] = pid_state_repository
+            if key == "prepare_recirc":
+                kwargs["pid_state_repository"] = pid_state_repository
             if key == "prepare_recirc_window":
                 kwargs["alert_repository"] = alert_repository
             self._handlers[key] = cls(**kwargs)

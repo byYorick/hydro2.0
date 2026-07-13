@@ -137,6 +137,9 @@ class TestTopologyRegistryLookup:
         assert "solution_fill_leak_stop" in stages
         assert "prepare_recirculation_solution_low_stop" in stages
         assert "prepare_recirculation_timeout_stop" not in stages
+        low_stop = stages["prepare_recirculation_solution_low_stop"]
+        assert low_stop.terminal_error is None
+        assert low_stop.next_stage == "startup"
 
     def test_stages_unknown_topology_raises(self, registry: TopologyRegistry):
         with pytest.raises(KeyError, match="Неизвестная topology"):
@@ -267,8 +270,9 @@ class TestWorkflowPhases:
     def test_prepare_recirculation_stages_are_tank_recirc_or_ready(self):
         for name, sdef in TWO_TANK.items():
             if name.startswith("prepare_recirculation"):
-                assert sdef.workflow_phase in {"tank_recirc", "ready"}, (
-                    f"{name} should be tank_recirc"
+                # solution_low_stop → startup: phase tank_filling (как irrigation_stop_to_setup)
+                assert sdef.workflow_phase in {"tank_recirc", "ready", "tank_filling"}, (
+                    f"{name} should be tank_recirc/ready/tank_filling"
                 )
 
     def test_irrigation_stages_use_expected_transition_phases(self):

@@ -244,7 +244,7 @@ Correction runtime invariants:
     `solution_fill_timeout_sec + solution_fill_correction_slack_sec` и останавливает коррекцию только по
     `no-effect` fail-closed или по stage timeout; текущая canonical fail-closed реализация для
     `no-effect` — переход в `solution_fill_timeout_stop` без повторного входа в correction.
-12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = `target ± prepare_tolerance`; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия.
+12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = `target ± prepare_tolerance`; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия (prepare-tolerance **и** phase-ready), **кроме** irrigation short-circuit: pH/EC в полном irrigation-band **и** `current_ec > target_ec_prepare` → AE3 завершает prepare/solution_fill → ready (EC planner не дозирует вниз; иначе post-irrigation `DIAGNOSTICS_TICK` зависает в `prepare_recirculation_check`). Short-circuit не подменяет семантику `workflow_ready` phase-band. Stale/unavailable telemetry остаётся fail-closed.
 13. partial EC batch failure MVP (`EC_BATCH_PARTIAL_FAILURE` + fail correction window + metric) — **implemented**; auto-enqueue `irrigation_recovery` / infra-alert компенсации — **not in MVP** (см. `CORRECTION_CYCLE_SPEC.md` §6.2).
 14. при `task_type=solution_change` completion `solution_fill` (включая interrupt из correction) обязан
     идти в `solution_fill_stop_to_refill_confirm` (operator gate G2), а не в `*_stop_to_ready/prepare`.
@@ -377,8 +377,11 @@ Terminal:
    `clean_fill_source_empty` -> `clean_fill_retry_stop` до лимита `runtime.clean_fill_retry_cycles`, затем `clean_fill_source_empty_stop`;
    `solution_fill_source_empty` -> `solution_fill_source_empty_stop`;
    `solution_fill_leak_detected` -> `solution_fill_leak_stop`;
-   `recirculation_solution_low` -> `prepare_recirculation_solution_low_stop`;
-   `irrigation_solution_low` -> тот же replay/setup path, что и `solution_min=false` в `irrigation_check`.
+   `recirculation_solution_low` / `solution_min` depleted в `prepare_recirculation_check`
+   -> `prepare_recirculation_solution_low_stop` → `startup` (обычная подготовка раствора),
+   со сбросом no-effect correction block; **не** terminal fail;
+   `irrigation_solution_low` -> тот же replay/setup path, что и `solution_min=false` в `irrigation_check`
+   (`irrigation_stop_to_setup` → `startup`).
 7. `emergency_stop_activated` не завершает stage автоматически: AE3 обязан сначала попытаться перепроверить ожидаемый hardware snapshot через reconcile; continuation допустим только если актуаторы вернулись в ожидаемое состояние.
 8. Runtime обязан жёстко ограничивать tracked background tasks; переполнение registry не может игнорироваться и должно отклоняться fail-closed.
 9. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.

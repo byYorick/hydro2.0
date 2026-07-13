@@ -65,6 +65,10 @@ class TestSuiteCatalog(unittest.TestCase):
         self.assert_contains_scenario(contract, "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml")
         self.assert_contains_scenario(realhw_core, "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml")
         self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
+        )
+        self.assert_contains_scenario(
             realhw_irrigation,
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
         )

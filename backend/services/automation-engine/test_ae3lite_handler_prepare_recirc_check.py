@@ -344,13 +344,38 @@ async def test_targets_reached_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_targets_outside_explicit_prepare_ready_band_enter_correction() -> None:
+async def test_targets_outside_prepare_but_in_irrigation_band_skips_to_ready() -> None:
+    """DIAGNOSTICS/re-entry: EC уже в irrigation-band → stop_to_ready без correction."""
     runtime = dict(RUNTIME)
+    runtime["target_ec"] = 1.6
+    runtime["target_ec_prepare"] = 0.7
+    runtime["npk_ec_share"] = 0.4375
     runtime["target_ph_min"] = 5.6
     runtime["target_ph_max"] = 6.0
-    runtime["target_ec_prepare_min"] = 1.2
-    runtime["target_ec_prepare_max"] = 1.45
+    runtime["target_ec_prepare_min"] = 0.6
+    runtime["target_ec_prepare_max"] = 0.8
+    runtime["target_ec_min"] = 1.4
+    runtime["target_ec_max"] = 1.8
     handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.5))
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_targets_below_prepare_and_irrigation_enter_correction() -> None:
+    """Низкий EC: ни prepare, ни irrigation band → correction."""
+    runtime = dict(RUNTIME)
+    runtime["target_ec"] = 1.6
+    runtime["target_ec_prepare"] = 0.7
+    runtime["npk_ec_share"] = 0.4375
+    runtime["target_ec_prepare_min"] = 0.6
+    runtime["target_ec_prepare_max"] = 0.8
+    runtime["target_ec_min"] = 1.4
+    runtime["target_ec_max"] = 1.8
+    handler = _make_handler(monitor=_Monitor(ph=5.8, ec=0.3))
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
 
@@ -629,22 +654,33 @@ async def test_correction_uses_stage_def_on_corr_fail() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prepare_recirculation_recent_solution_low_event_transitions_to_terminal_stop() -> None:
-    handler = _make_handler(
-        monitor=_Monitor(
+async def test_prepare_recirculation_recent_solution_low_event_transitions_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.prepare_recirc.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+    pid_repo = AsyncMock()
+    pid_repo.reset_no_effect_counts = AsyncMock(return_value=None)
+    handler = PrepareRecircCheckHandler(
+        runtime_monitor=_Monitor(
             recent_storage_event={
                 "event_type": "RECIRCULATION_SOLUTION_LOW",
                 "event_id": 31,
                 "created_at": NOW,
                 "payload": {"channel": "storage_state"},
             }
-        )
+        ),
+        command_gateway=_MockGateway(),
+        pid_state_repository=pid_repo,
     )
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+    pid_repo.reset_no_effect_counts.assert_awaited_once_with(zone_id=50)
 
 
 @pytest.mark.asyncio
@@ -673,7 +709,14 @@ async def test_prepare_recirculation_ignores_solution_low_event_when_guard_disab
 
 
 @pytest.mark.asyncio
-async def test_prepare_recirculation_solution_min_sensor_fallback_transitions_to_terminal_stop() -> None:
+async def test_prepare_recirculation_solution_min_sensor_fallback_transitions_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.prepare_recirc.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
     class _LowLevelMonitor(_Monitor):
         async def read_level_switch(self, **_kw: Any) -> dict:
             return {
@@ -690,6 +733,74 @@ async def test_prepare_recirculation_solution_min_sensor_fallback_transitions_to
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_solution_min_before_irr_probe_avoids_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Если бак пуст, solution_min path должен сработать до IRR probe (клапана уже OFF)."""
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.prepare_recirc.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    class _LowLevelMismatchMonitor(_Monitor):
+        async def read_level_switch(self, **_kw: Any) -> dict:
+            return {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            }
+
+    monitor = _LowLevelMismatchMonitor(irr_state=dict(_IRR_MISMATCH))
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+    assert monitor.irr_reads == 0
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_irr_mismatch_during_probe_recovers_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Race: solution_min depleted mid-probe → mismatch → setup, не terminal fail."""
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.prepare_recirc.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    class _RaceMonitor(_Monitor):
+        def __init__(self) -> None:
+            super().__init__(irr_state=dict(_IRR_MISMATCH))
+            self._level_reads = 0
+
+        async def read_level_switch(self, **_kw: Any) -> dict:
+            self._level_reads += 1
+            # First check (pre-probe): tank still full; after mismatch: empty.
+            triggered = self._level_reads == 1
+            return {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": triggered,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            }
+
+    monitor = _RaceMonitor()
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+    assert monitor.irr_reads >= 1
+    assert monitor._level_reads >= 2
 
 
 @pytest.mark.asyncio

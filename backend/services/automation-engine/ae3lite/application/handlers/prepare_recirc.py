@@ -10,6 +10,8 @@ from typing import Any
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.domain.errors import TaskExecutionError
+from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
 
@@ -21,7 +23,25 @@ class PrepareRecircCheckHandler(BaseStageHandler):
     1. Target'ы достигнуты → ``prepare_recirculation_stop_to_ready``
     2. Target'ы не достигнуты → вход в цикл коррекции
     3. Дедлайн превышен → ``prepare_recirculation_window_exhausted``
+    4. Раствор закончился (solution_min) → ``prepare_recirculation_solution_low_stop`` → startup
     """
+
+    def __init__(
+        self,
+        *,
+        runtime_monitor: Any,
+        command_gateway: Any,
+        task_repository: Any = None,
+        pid_state_repository: Any = None,
+        live_reload_enabled: bool = False,
+    ) -> None:
+        super().__init__(
+            runtime_monitor=runtime_monitor,
+            command_gateway=command_gateway,
+            task_repository=task_repository,
+            live_reload_enabled=live_reload_enabled,
+        )
+        self._pid_state_repository = pid_state_repository
 
     async def run(
         self,
@@ -72,13 +92,10 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         )
         recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
         if recent_event_type == "RECIRCULATION_SOLUTION_LOW" and solution_min_guard_enabled:
-            self._observe_fail_safe_transition(
+            return await self._solution_low_to_setup_outcome(
                 task=task,
-                reason="recirculation_solution_low",
                 source="node_event",
-                next_stage="prepare_recirculation_solution_low_stop",
             )
-            return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
         if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
             await self._reconcile_recent_emergency_stop(
                 task=task,
@@ -91,20 +108,50 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 },
             )
 
-        probe_outcome = await self._probe_irr_state_with_backoff(
-            task=task, plan=plan, now=now,
-            expected={
-                "valve_solution_supply": True,
-                "valve_solution_fill": True,
-                "pump_main": True,
-            },
-            poll_delay_sec=int(runtime.level_poll_interval_sec),
-            exhausted_outcome=StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count,
-            ),
-        )
+        # solution_min ДО IRR probe: при depleted нода failsafe гасит клапаны,
+        # иначе probe падает irr_state_mismatch раньше path → startup.
+        if solution_min_guard_enabled:
+            solution_min = await self._read_solution_min_level(task=task, runtime=runtime)
+            if not solution_min["is_triggered"]:
+                return await self._solution_low_to_setup_outcome(
+                    task=task,
+                    source="sensor",
+                )
+
+        try:
+            probe_outcome = await self._probe_irr_state_with_backoff(
+                task=task, plan=plan, now=now,
+                expected={
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+                poll_delay_sec=int(runtime.level_poll_interval_sec),
+                exhausted_outcome=StageOutcome(
+                    kind="transition",
+                    next_stage="prepare_recirculation_window_exhausted",
+                    stage_retry_count=task.workflow.stage_retry_count,
+                ),
+            )
+        except TaskExecutionError as exc:
+            # Race: solution_min упал во время probe → клапана OFF → mismatch.
+            if (
+                solution_min_guard_enabled
+                and exc.code == "irr_state_mismatch"
+            ):
+                solution_min = await self._read_solution_min_level(task=task, runtime=runtime)
+                if not solution_min["is_triggered"]:
+                    _logger.info(
+                        "prepare_recirculation_check: irr_state_mismatch при depleted solution_min "
+                        "→ setup zone_id=%s task_id=%s",
+                        task.zone_id,
+                        getattr(task, "id", None),
+                    )
+                    return await self._solution_low_to_setup_outcome(
+                        task=task,
+                        source="sensor_after_irr_mismatch",
+                    )
+            raise
         if probe_outcome is not None:
             return probe_outcome
 
@@ -123,28 +170,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         if flow_hold is not None:
             return flow_hold
 
-        if solution_min_guard_enabled:
-            solution_min = await self._read_level(
-                task=task,
-                zone_id=task.zone_id,
-                labels=runtime.solution_min_sensor_labels,
-                threshold=runtime.level_switch_on_threshold,
-                telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
-                unavailable_error="two_tank_solution_min_level_unavailable",
-                stale_error="two_tank_solution_min_level_stale",
-                prefer_probe_snapshot=True,
+        if await self._finish_ready_or_irrigation_short_circuit(
+            task=task, plan=plan, now=now, runtime=runtime,
+        ):
+            _logger.info(
+                "prepare_recirculation_check: цели достигнуты (prepare-band или irrigation short-circuit) "
+                "zone_id=%s",
+                task.zone_id,
             )
-            if not solution_min["is_triggered"]:
-                self._observe_fail_safe_transition(
-                    task=task,
-                    reason="recirculation_solution_low",
-                    source="sensor",
-                    next_stage="prepare_recirculation_solution_low_stop",
-                )
-                return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
-
-        if await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime):
-            _logger.debug("prepare_recirculation_check: цели достигнуты zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_stop_to_ready",
@@ -161,6 +194,76 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             return_stage_fail=stage_def.on_corr_fail or "prepare_recirculation_window_exhausted",
         )
         return StageOutcome(kind="enter_correction", correction=corr, task_override=task)
+
+    async def _solution_low_to_setup_outcome(
+        self,
+        *,
+        task: Any,
+        source: str,
+    ) -> StageOutcome:
+        """Остановка recirc + сброс no-effect block → startup (обычная подготовка раствора)."""
+        self._observe_fail_safe_transition(
+            task=task,
+            reason="recirculation_solution_low",
+            source=source,
+            next_stage="prepare_recirculation_solution_low_stop",
+        )
+        await self._clear_correction_blocks(task=task, reason="recirculation_solution_low_to_setup")
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "RECIRCULATION_SOLUTION_LOW_TO_SETUP",
+                {
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": "prepare_recirculation_check",
+                    "source": source,
+                    "next_stage": "prepare_recirculation_solution_low_stop",
+                    "setup_stage": "startup",
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "prepare_recirculation_check: не удалось записать RECIRCULATION_SOLUTION_LOW_TO_SETUP "
+                "zone_id=%s task_id=%s",
+                getattr(task, "zone_id", None),
+                getattr(task, "id", None),
+                exc_info=True,
+            )
+        _logger.info(
+            "prepare_recirculation_check: раствор закончился (source=%s) → stop + startup setup zone_id=%s",
+            source,
+            task.zone_id,
+        )
+        return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
+
+    async def _read_solution_min_level(self, *, task: Any, runtime: Any) -> dict[str, Any]:
+        return await self._read_level(
+            task=task,
+            zone_id=task.zone_id,
+            labels=runtime.solution_min_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
+            unavailable_error="two_tank_solution_min_level_unavailable",
+            stale_error="two_tank_solution_min_level_stale",
+            prefer_probe_snapshot=False,
+        )
+
+    async def _clear_correction_blocks(self, *, task: Any, reason: str) -> None:
+        if self._pid_state_repository is None:
+            return
+        try:
+            await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
+            _logger.info(
+                "prepare_recirculation_check: сброшен no_effect block zone_id=%s reason=%s",
+                task.zone_id,
+                reason,
+            )
+        except Exception:
+            _logger.warning(
+                "prepare_recirculation_check: не удалось сбросить no_effect_count zone_id=%s",
+                getattr(task, "zone_id", None),
+                exc_info=True,
+            )
 
     def _build_correction_state(
         self,

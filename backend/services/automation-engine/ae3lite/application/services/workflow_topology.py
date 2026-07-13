@@ -250,12 +250,11 @@ TWO_TANK: Mapping[str, StageDef] = {
     ),
     "prepare_recirculation_solution_low_stop": StageDef(
         "prepare_recirculation_solution_low_stop", "command",
-        workflow_phase="tank_recirc",
+        workflow_phase="tank_filling",
         command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
-        terminal_error=(
-            "recirculation_solution_low",
-            "Подготовка рециркуляции остановлена: нижний уровень раствора указывает на недостаточный объём в баке.",
-        ),
+        # Раствор закончился → обычная подготовка (startup → clean/solution_fill → prepare),
+        # а не terminal fail. Зеркало irrigation_stop_to_setup.
+        next_stage="startup",
     ),
     # === Irrigation path ===
     "await_ready": StageDef("await_ready", "await_ready", workflow_phase="ready"),

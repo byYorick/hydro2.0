@@ -986,7 +986,7 @@ Python сервисы должны регулярно обновлять targets
 - `phase ∈ {solution_fill, tank_recirc}` → возвращается `target_ec_prepare*`;
 - `phase ∈ {irrigation, irrig_recirc}` или иное → полный `target_ec*`.
 
-`build_dose_plan` / `is_within_tolerance` / `_targets_reached` / `_workflow_ready_values_match` теперь все используют именно эти effective accessors, а не сырое `runtime["target_ec"]`.
+`build_dose_plan` / `is_within_tolerance` / `_targets_reached` / `_workflow_ready_values_match` используют phase-effective accessors. Дополнительно `_irrigation_ready_short_circuit` / `_finish_ready_or_irrigation_short_circuit`: в `solution_fill` / `tank_recirc` при pH/EC в полном irrigation-band **и** `current_ec > target_ec_prepare` → `solution_fill_stop_to_ready` / `prepare_recirculation_stop_to_ready` без зависания на prepare NPK-target. Первый setup с низким EC по-прежнему идёт в prepare.
 
 ### 9.4. Сохранение NPK-доли при day/night ночном override
 

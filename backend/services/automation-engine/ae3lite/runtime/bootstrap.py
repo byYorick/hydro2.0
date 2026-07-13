@@ -219,6 +219,7 @@ def build_ae3_runtime_bundle(
         runtime_monitor=runtime_monitor,
         workflow_repository=workflow_repository,
         fetch_fn=fetch,
+        pid_state_repository=pid_state_repository,
     )
     trigger_solution_topup_from_level_event_use_case = TriggerSolutionTopupFromLevelEventUseCase(
         zone_intent_repository=zone_intent_repository,

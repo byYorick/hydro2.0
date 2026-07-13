@@ -279,7 +279,9 @@ class SolutionFillCheckHandler(BaseStageHandler):
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
             prefer_probe_snapshot=True,
         )
-        return await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime)
+        return await self._finish_ready_or_irrigation_short_circuit(
+            task=task, plan=plan, now=now, runtime=runtime,
+        )
 
     async def _completed_outcome(
         self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
@@ -306,8 +308,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 next_stage="solution_fill_stop_to_refill_confirm",
             )
 
-        if await self._workflow_ready_reached(task=task, plan=plan, now=now, runtime=runtime):
-            _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
+        if await self._finish_ready_or_irrigation_short_circuit(
+            task=task, plan=plan, now=now, runtime=runtime,
+        ):
+            _logger.info(
+                "solution_fill_check: бак полон и раствор в prepare-band или irrigation short-circuit → ready "
+                "zone_id=%s",
+                task.zone_id,
+            )
             return StageOutcome(
                 kind="transition",
                 next_stage="solution_fill_stop_to_ready",
