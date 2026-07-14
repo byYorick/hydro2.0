@@ -1,9 +1,11 @@
 {
   "title": "Test Simple Queries",
-  "tags": ["test", "debug"],
+  "tags": [
+    "test",
+    "debug"
+  ],
   "timezone": "browser",
   "schemaVersion": 16,
-  "version": 1,
   "refresh": "30s",
   "panels": [
     {
@@ -72,6 +74,6 @@
         }
       ]
     }
-  ]
+  ],
+  "uid": "ffqp5fnaifhfkb"
 }
-

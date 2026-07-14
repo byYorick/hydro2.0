@@ -448,13 +448,16 @@ groups:
           description: "redis_exporter scrape target is unreachable for more than 2 minutes."
 
       - alert: PostgresUnavailable
-        expr: (pg_up or vector(0)) == 0
+        # IMPORTANT: never use `(pg_up or vector(0)) == 0`.
+        # `pg_up` has labels while `vector(0)` does not, so `or` keeps BOTH series
+        # and `== 0` permanently fires on the unlabeled vector(0) even when pg_up=1.
+        expr: (pg_up == 0) or absent(pg_up)
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "PostgreSQL reported down by exporter"
-          description: "postgres_exporter pg_up gauge is 0 for more than 2 minutes."
+          description: "postgres_exporter pg_up gauge is 0 (or missing) for more than 2 minutes."
 
   - name: reliability_observability_alerts
     interval: 30s

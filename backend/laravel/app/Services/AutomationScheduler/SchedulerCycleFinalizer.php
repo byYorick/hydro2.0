@@ -111,14 +111,19 @@ class SchedulerCycleFinalizer
             return 0;
         }
 
-        $missed = 0;
-        $nextTick = $lastCompletedAt->addSeconds($intervalSec);
-        while ($nextTick->lt($now)) {
-            $missed++;
-            $nextTick = $nextTick->addSeconds($intervalSec);
+        if ($now->lte($lastCompletedAt)) {
+            return 0;
         }
 
-        return $missed;
+        // Full intervals elapsed since last completion.
+        // The current due tick is executed by this cycle — only fully skipped
+        // intermediate ticks count as missed. Without `- 1`, a normal late-by-
+        // one-poll-cycle run (e.g. due 12:00, poll at 12:01) is counted as miss
+        // and trips LaravelSchedulerMissedWindows on every on-time schedule.
+        $elapsedSec = (int) $lastCompletedAt->diffInSeconds($now);
+        $intervalsPassed = intdiv($elapsedSec, $intervalSec);
+
+        return max(0, $intervalsPassed - 1);
     }
 
     public function isTimeInWindow(string $nowTime, string $startTime, string $endTime): bool
