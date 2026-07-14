@@ -149,16 +149,48 @@ class ZoneDataService
     }
 
     /**
-     * Получить события зоны
+     * Типы zone_events, скрываемые для audience=operator (инженерный шум).
+     *
+     * @return list<string>
+     */
+    public static function operatorExcludedEventTypes(): array
+    {
+        return [
+            'IRR_STATE_SNAPSHOT',
+            'PID_OUTPUT',
+            'command_status',
+            'COMMAND_STATUS',
+            'LEVEL_SWITCH_CHANGED',
+            'CORRECTION_SKIPPED_COOLDOWN',
+            'CORRECTION_SKIPPED_DOSE_DISCARDED',
+            'CORRECTION_SKIPPED_FRESHNESS',
+            'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+            'CORRECTION_SKIPPED_WATER_LEVEL',
+            'CORRECTION_SKIPPED_DEAD_ZONE',
+            'CORRECTION_OBSERVATION_EVALUATED',
+        ];
+    }
+
+    /**
+     * Получить события зоны.
+     *
+     * Query: limit, after_id, before_id, types, audience (all|operator|engineer), cycle_only.
      */
     public function getEvents(Zone $zone, Request $request): array
     {
         $afterId = $request->integer('after_id');
+        $beforeId = $request->integer('before_id');
         $limit = $request->integer('limit', 50);
         $limit = min(max($limit, 1), 200);
         $eventMessageFormatter = app(ZoneEventMessageFormatter::class);
 
         $cycleOnly = $request->boolean('cycle_only', false);
+        $audience = strtolower((string) $request->input('audience', 'all'));
+        if (! in_array($audience, ['all', 'operator', 'engineer'], true)) {
+            $audience = 'all';
+        }
+
+        $typeFilters = $this->parseEventTypeFilters($request);
 
         $query = DB::table('zone_events')
             ->where('zone_id', $zone->id);
@@ -201,11 +233,26 @@ class ZoneDataService
             ? 'payload_json'
             : 'details';
 
-        if ($afterId > 0) {
+        if ($typeFilters !== []) {
+            $query->whereIn('type', $typeFilters);
+        }
+
+        if ($audience === 'operator') {
+            $query->whereNotIn('type', self::operatorExcludedEventTypes());
+        }
+
+        // before_id и after_id взаимоисключающие: приоритет у before_id (история «старше»).
+        $useBeforeCursor = $beforeId > 0;
+        if ($useBeforeCursor) {
+            $query->where('id', '<', $beforeId);
+        } elseif ($afterId > 0) {
             $query->where('id', '>', $afterId);
         }
 
-        $events = $query->orderBy('id', 'asc')
+        $orderDesc = $useBeforeCursor || $request->input('order') === 'desc';
+
+        $events = $query
+            ->orderBy('id', $orderDesc ? 'desc' : 'asc')
             ->limit($limit)
             ->get([
                 'id as event_id',
@@ -242,23 +289,73 @@ class ZoneDataService
             })
             ->values();
 
-        $lastEventId = $events->isNotEmpty()
-            ? $events->last()->event_id
-            : ($afterId > 0 ? $afterId : null);
+        $ids = $events->pluck('event_id')->all();
+        $lastEventId = $ids !== [] ? max($ids) : ($afterId > 0 ? $afterId : null);
+        $oldestEventId = $ids !== [] ? min($ids) : ($beforeId > 0 ? $beforeId : null);
 
         $hasMore = false;
         if ($lastEventId) {
-            $hasMore = DB::table('zone_events')
-                ->where('zone_id', $zone->id)
-                ->where('id', '>', $lastEventId)
-                ->exists();
+            $hasMoreQuery = DB::table('zone_events')->where('zone_id', $zone->id)->where('id', '>', $lastEventId);
+            if ($typeFilters !== []) {
+                $hasMoreQuery->whereIn('type', $typeFilters);
+            }
+            if ($audience === 'operator') {
+                $hasMoreQuery->whereNotIn('type', self::operatorExcludedEventTypes());
+            }
+            $hasMore = $hasMoreQuery->exists();
+        }
+
+        $hasMoreBefore = false;
+        if ($oldestEventId) {
+            $hasMoreBeforeQuery = DB::table('zone_events')->where('zone_id', $zone->id)->where('id', '<', $oldestEventId);
+            if ($typeFilters !== []) {
+                $hasMoreBeforeQuery->whereIn('type', $typeFilters);
+            }
+            if ($audience === 'operator') {
+                $hasMoreBeforeQuery->whereNotIn('type', self::operatorExcludedEventTypes());
+            }
+            $hasMoreBefore = $hasMoreBeforeQuery->exists();
         }
 
         return [
             'data' => $events->all(),
             'last_event_id' => $lastEventId,
+            'oldest_event_id' => $oldestEventId,
             'has_more' => $hasMore,
+            'has_more_before' => $hasMoreBefore,
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parseEventTypeFilters(Request $request): array
+    {
+        $raw = $request->input('types');
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        $parts = [];
+        if (is_array($raw)) {
+            foreach ($raw as $item) {
+                if (is_string($item) || is_numeric($item)) {
+                    $parts[] = (string) $item;
+                }
+            }
+        } else {
+            $parts = preg_split('/\s*,\s*/', (string) $raw) ?: [];
+        }
+
+        $types = [];
+        foreach ($parts as $part) {
+            $value = trim((string) $part);
+            if ($value !== '' && strlen($value) <= 255) {
+                $types[] = $value;
+            }
+        }
+
+        return array_values(array_unique($types));
     }
 
     /**

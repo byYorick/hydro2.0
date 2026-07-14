@@ -13,7 +13,7 @@ import type {
   SensorCalibrationStartResult,
 } from '@/types/SensorCalibration'
 import type { ZoneManualSchedulePayload } from '@/composables/zoneScheduleWorkspaceTypes'
-import { apiGet, apiPost, apiPostVoid, apiPut, apiDelete } from './_client'
+import { apiClient, apiGet, apiPost, apiPostVoid, apiPut, apiDelete } from './_client'
 
 export interface ZoneCreatePayload {
   name: string
@@ -102,6 +102,38 @@ export const zonesApi = {
    */
   events(zoneId: number, params?: Record<string, unknown>): Promise<unknown> {
     return apiGet<unknown>(`/zones/${zoneId}/events`, { params })
+  },
+
+  /**
+   * Полный envelope событий зоны (data + курсоры pagination).
+   * Не через apiGet — иначе теряются last_event_id / has_more_before.
+   */
+  async eventsPage(
+    zoneId: number,
+    params?: Record<string, unknown>,
+  ): Promise<{
+    data: Array<Record<string, unknown>>
+    last_event_id: number | null
+    oldest_event_id: number | null
+    has_more: boolean
+    has_more_before: boolean
+  }> {
+    const response = await apiClient.get<{
+      status?: string
+      data?: Array<Record<string, unknown>>
+      last_event_id?: number | null
+      oldest_event_id?: number | null
+      has_more?: boolean
+      has_more_before?: boolean
+    }>(`/zones/${zoneId}/events`, { params })
+    const body = response.data ?? {}
+    return {
+      data: Array.isArray(body.data) ? body.data : [],
+      last_event_id: body.last_event_id ?? null,
+      oldest_event_id: body.oldest_event_id ?? null,
+      has_more: Boolean(body.has_more),
+      has_more_before: Boolean(body.has_more_before),
+    }
   },
 
   /**

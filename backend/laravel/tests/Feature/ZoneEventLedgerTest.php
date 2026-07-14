@@ -390,4 +390,81 @@ class ZoneEventLedgerTest extends TestCase
         sort($sortedIds);
         $this->assertEquals($sortedIds, $ids, 'События должны быть в строгом порядке');
     }
+
+    public function test_events_api_supports_before_id_and_types_filter(): void
+    {
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $token = $this->token();
+
+        $ids = [];
+        foreach (['ALERT_CREATED', 'IRR_STATE_SNAPSHOT', 'EC_DOSING', 'PID_OUTPUT', 'command_status'] as $i => $type) {
+            $ids[] = DB::table('zone_events')->insertGetId([
+                'zone_id' => $zone->id,
+                'type' => $type,
+                'entity_type' => 'test',
+                'entity_id' => $i + 1,
+                'payload_json' => json_encode(['n' => $i]),
+                'server_ts' => now()->timestamp * 1000,
+                'created_at' => now()->addSeconds($i),
+            ]);
+        }
+
+        $pivot = $ids[2]; // EC_DOSING
+
+        $older = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zone->id}/events?before_id={$pivot}&limit=10");
+
+        $older->assertStatus(200);
+        $older->assertJsonStructure([
+            'status',
+            'data',
+            'last_event_id',
+            'oldest_event_id',
+            'has_more',
+            'has_more_before',
+        ]);
+        $olderIds = array_column($older->json('data'), 'event_id');
+        foreach ($olderIds as $id) {
+            $this->assertLessThan($pivot, $id);
+        }
+
+        $typed = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zone->id}/events?types=EC_DOSING,ALERT_CREATED");
+
+        $typed->assertStatus(200);
+        $types = array_column($typed->json('data'), 'type');
+        sort($types);
+        $this->assertEquals(['ALERT_CREATED', 'EC_DOSING'], $types);
+    }
+
+    public function test_events_api_audience_operator_excludes_noisy_types(): void
+    {
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $token = $this->token();
+
+        foreach (['ALERT_CREATED', 'IRR_STATE_SNAPSHOT', 'command_status', 'EC_DOSING', 'PID_OUTPUT'] as $i => $type) {
+            DB::table('zone_events')->insert([
+                'zone_id' => $zone->id,
+                'type' => $type,
+                'entity_type' => 'test',
+                'entity_id' => $i + 1,
+                'payload_json' => json_encode([]),
+                'server_ts' => now()->timestamp * 1000,
+                'created_at' => now()->addSeconds($i),
+            ]);
+        }
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zone->id}/events?audience=operator");
+
+        $response->assertStatus(200);
+        $types = array_column($response->json('data'), 'type');
+        sort($types);
+        $this->assertEquals(['ALERT_CREATED', 'EC_DOSING'], $types);
+        $this->assertNotContains('IRR_STATE_SNAPSHOT', $types);
+        $this->assertNotContains('command_status', $types);
+        $this->assertNotContains('PID_OUTPUT', $types);
+    }
 }

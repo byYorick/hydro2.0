@@ -1,7 +1,21 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ZoneEventsTab from '../ZoneEventsTab.vue'
+
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      eventsPage: vi.fn().mockResolvedValue({
+        data: [],
+        last_event_id: null,
+        oldest_event_id: null,
+        has_more: false,
+        has_more_before: false,
+      }),
+    },
+  },
+}))
 
 function makeEvent(id: number, kind: string, message: string, payload: Record<string, unknown>) {
   return {
@@ -14,7 +28,42 @@ function makeEvent(id: number, kind: string, message: string, payload: Record<st
   }
 }
 
+async function expandEngineerEvent(wrapper: ReturnType<typeof mount>) {
+  const engineer = wrapper.get('[data-testid="zone-events-engineer"]')
+  const clickable = engineer.findAll('.cursor-pointer')
+  // [0] group header, [1] EventRow
+  await clickable[1].trigger('click')
+}
+
 describe('ZoneEventsTab.vue', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('рендерит dual-pane: оператор и инженер', () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(1, 'EC_DOSING', 'EC dosing', {
+            task_id: 28,
+            correction_window_id: 'task:28:irrigating:irrigation_check',
+            dose_ml: 12,
+            channel: 'A+B',
+          }),
+          makeEvent(2, 'IRR_STATE_SNAPSHOT', 'snapshot', { task_id: 28 }),
+          makeEvent(3, 'ALERT_CREATED', 'Alert', { severity: 'critical', code: 'pump fail' }),
+        ],
+      },
+    })
+
+    expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="zone-events-engineer"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="zone-events-operator"]').text()).not.toContain('IRR_STATE_SNAPSHOT')
+    expect(wrapper.get('[data-testid="zone-events-operator"]').text()).toContain('Тревога')
+    expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('AE задача #28')
+  })
+
   it('группирует связанные runtime events по задаче и correction window', () => {
     const wrapper = mount(ZoneEventsTab, {
       props: {
@@ -41,6 +90,8 @@ describe('ZoneEventsTab.vue', () => {
               correction_window_id: 'task:28:irrigating:irrigation_check',
               workflow_phase: 'irrigating',
               stage: 'irrigation_check',
+              selected_action: 'ec',
+              current_ec: 1.1,
             },
           ),
           makeEvent(
@@ -55,10 +106,10 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('AE задача #28 · Окно irrigation_check')
-    expect(wrapper.text()).toContain('irrigating / irrigation_check')
-    expect(wrapper.text()).toContain('2 события')
-    expect(wrapper.text()).toContain('Тревога создана')
+    expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('AE задача #28 · Окно irrigation_check')
+    expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('2 события')
+    expect(wrapper.get('[data-testid="zone-events-engineer"]').text()).toContain('Тревога создана')
+    expect(wrapper.get('[data-testid="zone-events-operator"]').text()).toContain('Коррекция EC')
   })
 
   it('показывает детали correction skipped dose discarded', async () => {
@@ -80,17 +131,9 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Причина:')
     expect(wrapper.text()).toContain('below_min_dose_ms')
@@ -119,17 +162,9 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Окно:')
     expect(wrapper.text()).toContain('observe_window')
@@ -161,20 +196,12 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
-    expect(wrapper.text()).toContain('Текущее → Цель')
-    expect(wrapper.text()).toContain('1.980')
+    expect(wrapper.text()).toContain('EC')
+    expect(wrapper.text()).toContain('1.98')
     expect(wrapper.text()).toContain('EC gap 0.0200 <= deadband 0.0500')
   })
 
@@ -196,17 +223,9 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Ошибка:')
     expect(wrapper.text()).toContain('Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
@@ -240,17 +259,9 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Окно коррекции:')
     expect(wrapper.text()).toContain('task:3:tank_filling:solution_fill_check')
@@ -288,7 +299,7 @@ describe('ZoneEventsTab.vue', () => {
       },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Snapshot event ID:')
     expect(wrapper.text()).toContain('1699')
@@ -329,17 +340,9 @@ describe('ZoneEventsTab.vue', () => {
           ),
         ],
       },
-      global: {
-        stubs: {
-          VirtualList: {
-            props: ['items'],
-            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
-          },
-        },
-      },
     })
 
-    await wrapper.findAll('.cursor-pointer')[1].trigger('click')
+    await expandEngineerEvent(wrapper)
 
     expect(wrapper.text()).toContain('Задача ID:')
     expect(wrapper.text()).toContain('77')
