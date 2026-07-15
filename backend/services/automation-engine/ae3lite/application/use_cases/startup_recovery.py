@@ -626,6 +626,7 @@ class StartupRecoveryUseCase:
                 raise StartupRecoveryError(
                     f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE",
                 )
+            await self._release_lease_after_recovery_success(task=requeued, now=now)
             return requeued
 
         # Single-command terminal success (e.g. generic_cycle_start startup):
@@ -657,6 +658,7 @@ class StartupRecoveryUseCase:
                 raise StartupRecoveryError(
                     f"Не удалось завершить task_id={task.id} после recovery DONE",
                 )
+            await self._release_lease_after_recovery_success(task=completed, now=now)
             return completed
 
         # Poll/handler stages (handler != "command" and != "ready") have no static
@@ -693,6 +695,7 @@ class StartupRecoveryUseCase:
                 raise StartupRecoveryError(
                     f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE на poll-stage",
                 )
+            await self._release_lease_after_recovery_success(task=requeued, now=now)
             return requeued
 
         # Terminal success stages (complete_ready, completed_run, completed_skip)
@@ -718,6 +721,7 @@ class StartupRecoveryUseCase:
             raise StartupRecoveryError(
                 f"Не удалось завершить task_id={task.id} после recovery DONE",
             )
+        await self._release_lease_after_recovery_success(task=completed, now=now)
         return completed
 
     async def _task_repo_update_stage(
@@ -789,6 +793,14 @@ class StartupRecoveryUseCase:
             now=now,
             recovery_source=recovery_source,
         )
+        await self._release_lease_after_recovery_fail(task=task, now=now)
+
+    async def _release_lease_after_recovery_success(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> None:
         await self._release_lease_after_recovery_fail(task=task, now=now)
 
     async def _release_lease_after_recovery_fail(

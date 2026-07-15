@@ -141,3 +141,34 @@ async def test_checkpoint_revision_not_advanced_no_swap(monkeypatch) -> None:
     handler = _handler(live_reload_enabled=True)
     result = await handler._checkpoint(task=_task(), plan=plan, now=NOW)
     assert result is plan
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_revision_advanced_rebuild_failed_raises(monkeypatch) -> None:
+    pool = _FakePool(zone_row={
+        "config_mode": "live",
+        "config_revision": 5,
+        "live_until": None,
+    })
+
+    async def _get_pool():
+        return pool
+
+    async def _raising_load(*, zone_id: int):
+        raise RuntimeError("snapshot unavailable")
+
+    import common.db
+    monkeypatch.setattr(common.db, "get_pool", _get_pool)
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.read_models.zone_snapshot_read_model.PgZoneSnapshotReadModel.load",
+        _raising_load,
+    )
+
+    from ae3lite.domain.errors import TaskExecutionError
+
+    plan = _plan()
+    plan.runtime = plan.runtime.model_copy(update={"config_revision": 1})
+    handler = _handler(live_reload_enabled=True)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler._checkpoint(task=_task(), plan=plan, now=NOW)
+    assert exc_info.value.code == "ae3_snapshot_build_failed"

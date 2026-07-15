@@ -23,6 +23,39 @@ logger = logging.getLogger(__name__)
 _LEGACY_RESOLVE_ATTEMPTS = 3
 _LEGACY_RESOLVE_DELAY_SEC = 0.05
 
+_DEFINITE_NOT_PUBLISHED_MARKERS = (
+    "hl_circuit_open",
+    "не удалось определить greenhouse_uid",
+    "plannedcommand должен содержать",
+    "исчезла во время вставки",
+)
+_AMBIGUOUS_PUBLISH_MARKERS = (
+    "timeout",
+    "readtimeout",
+    "connecttimeout",
+    "connection",
+    "transport",
+    "temporary_unavailable",
+    "http 5",
+    "published_but_status",
+    "некорректный json",
+    "не содержит data.command_id",
+)
+
+
+def is_publish_outcome_unknown(exc: Exception) -> bool:
+    """True when HL may have accepted the command despite the transport-layer error."""
+    message = str(exc).strip().lower() or type(exc).__name__.lower()
+    for marker in _DEFINITE_NOT_PUBLISHED_MARKERS:
+        if marker in message:
+            return False
+    for marker in _AMBIGUOUS_PUBLISH_MARKERS:
+        if marker in message:
+            return True
+    if isinstance(exc, CommandPublishError):
+        return True
+    return True
+
 
 def build_cmd_id(*, task_id: int, zone_id: int, step_no: int) -> str:
     return f"ae3-t{task_id}-z{zone_id}-s{step_no}"
@@ -180,7 +213,14 @@ class CommandPublishPipeline:
         ae_command_id, step_no, cmd_id, cmd_id_reused, publish_status = allocated
         command_payload["cmd_id"] = cmd_id
 
-        skip_hl_publish = cmd_id_reused and publish_status in {"published_unconfirmed", "accepted"}
+        prelinked_legacy_id: int | None = None
+        skip_hl_publish = cmd_id_reused and publish_status == "accepted"
+        if cmd_id_reused and publish_status == "published_unconfirmed":
+            prelinked_legacy_id = await self._resolve_legacy_command_id_with_retry(
+                zone_id=int(task.zone_id),
+                cmd_id=cmd_id,
+            )
+            skip_hl_publish = prelinked_legacy_id is not None
         published_cmd_id = cmd_id
 
         try:
@@ -203,18 +243,12 @@ class CommandPublishPipeline:
                 COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
         except Exception as exc:
             normalized_error = str(exc).strip() or type(exc).__name__
-            try:
-                await self._command_repository.mark_publish_failed(
-                    ae_command_id=ae_command_id,
-                    last_error=normalized_error,
-                    now=now,
-                )
-            except Exception:
-                logger.debug(
-                    "AE3 mark_publish_failed skipped ae_command_id=%s",
-                    ae_command_id,
-                    exc_info=True,
-                )
+            await self._record_publish_error(
+                ae_command_id=ae_command_id,
+                last_error=normalized_error,
+                now=now,
+                outcome_unknown=is_publish_outcome_unknown(exc),
+            )
             if isinstance(exc, CommandPublishError):
                 raise
             raise CommandPublishError(normalized_error) from exc
@@ -223,10 +257,12 @@ class CommandPublishPipeline:
         if callable(mark_unconfirmed) and not skip_hl_publish:
             await mark_unconfirmed(ae_command_id=ae_command_id, now=now)
 
-        legacy_command_id = await self._resolve_legacy_command_id_with_retry(
-            zone_id=int(task.zone_id),
-            cmd_id=published_cmd_id,
-        )
+        legacy_command_id = prelinked_legacy_id
+        if legacy_command_id is None:
+            legacy_command_id = await self._resolve_legacy_command_id_with_retry(
+                zone_id=int(task.zone_id),
+                cmd_id=published_cmd_id,
+            )
         redriven = False
         external_id: str | None = None
         if legacy_command_id is not None:
@@ -266,6 +302,144 @@ class CommandPublishPipeline:
             cmd_id_reused=cmd_id_reused,
             redriven=redriven,
         )
+
+    async def redrive_existing(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        command: PlannedCommand,
+        now: datetime,
+    ) -> CommandPublishResult:
+        """Повторно публикует уже существующую pending/published_unconfirmed строку без нового INSERT."""
+        publish_status = str(ae_command.get("publish_status") or "pending").strip().lower()
+        if publish_status not in {"pending", "published_unconfirmed"}:
+            raise CommandPublishError(
+                f"ae_command {ae_command.get('id')} не eligible для redrive: publish_status={publish_status}",
+            )
+        payload = ae_command.get("payload") if isinstance(ae_command.get("payload"), Mapping) else {}
+        cmd_id = str(payload.get("cmd_id") or "").strip()
+        if not cmd_id:
+            raise CommandPublishError(f"ae_command {ae_command.get('id')} не содержит payload.cmd_id для redrive")
+        try:
+            ae_command_id = int(ae_command["id"])
+            step_no = int(ae_command.get("step_no") or command.step_no or 1)
+        except (TypeError, ValueError, KeyError) as exc:
+            raise CommandPublishError(f"Некорректная ae_command строка для redrive: {ae_command.get('id')}") from exc
+
+        cmd_name, params = self._extract_publish_payload(command)
+        prelinked_legacy_id: int | None = None
+        skip_hl_publish = publish_status == "published_unconfirmed"
+        if skip_hl_publish:
+            prelinked_legacy_id = await self._resolve_legacy_command_id_with_retry(
+                zone_id=int(task.zone_id),
+                cmd_id=cmd_id,
+            )
+            skip_hl_publish = prelinked_legacy_id is not None
+        published_cmd_id = cmd_id
+
+        try:
+            if not skip_hl_publish:
+                greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
+                if not greenhouse_uid:
+                    raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
+
+                _dispatch_start = time.monotonic()
+                published_cmd_id = await self._history_logger_client.publish(
+                    greenhouse_uid=greenhouse_uid,
+                    zone_id=task.zone_id,
+                    node_uid=command.node_uid,
+                    channel=command.channel,
+                    cmd=cmd_name,
+                    params=params,
+                    cmd_id=cmd_id,
+                )
+                COMMAND_DISPATCHED.labels(stage=command.channel or "unknown").inc()
+                COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
+        except Exception as exc:
+            normalized_error = str(exc).strip() or type(exc).__name__
+            await self._record_publish_error(
+                ae_command_id=ae_command_id,
+                last_error=normalized_error,
+                now=now,
+                outcome_unknown=is_publish_outcome_unknown(exc),
+            )
+            if isinstance(exc, CommandPublishError):
+                raise
+            raise CommandPublishError(normalized_error) from exc
+
+        mark_unconfirmed = getattr(self._command_repository, "mark_publish_published_unconfirmed", None)
+        if callable(mark_unconfirmed) and not skip_hl_publish:
+            await mark_unconfirmed(ae_command_id=ae_command_id, now=now)
+
+        legacy_command_id = prelinked_legacy_id
+        if legacy_command_id is None:
+            legacy_command_id = await self._resolve_legacy_command_id_with_retry(
+                zone_id=int(task.zone_id),
+                cmd_id=published_cmd_id,
+            )
+        external_id: str | None = None
+        redriven = True
+        if legacy_command_id is not None:
+            accepted_ok = await self._command_repository.mark_publish_accepted(
+                ae_command_id=ae_command_id,
+                external_id=str(legacy_command_id),
+                now=now,
+            )
+            if accepted_ok:
+                external_id = str(legacy_command_id)
+            else:
+                COMMAND_PUBLISH_REDRIVEN.labels(reason="mark_accept_missed").inc()
+        else:
+            COMMAND_PUBLISH_REDRIVEN.labels(reason="legacy_not_found").inc()
+
+        return CommandPublishResult(
+            ae_command_id=ae_command_id,
+            step_no=step_no,
+            cmd_id=cmd_id,
+            published_cmd_id=str(published_cmd_id),
+            cmd_name=cmd_name,
+            params=params,
+            external_id=external_id,
+            cmd_id_reused=True,
+            redriven=redriven,
+        )
+
+    async def _record_publish_error(
+        self,
+        *,
+        ae_command_id: int,
+        last_error: str,
+        now: datetime,
+        outcome_unknown: bool,
+    ) -> None:
+        """Сохраняет retryable publish error без потери planner_step/cmd_id."""
+        try:
+            record_retryable = getattr(self._command_repository, "record_publish_retryable_error", None)
+            if callable(record_retryable):
+                await record_retryable(
+                    ae_command_id=ae_command_id,
+                    last_error=last_error,
+                    now=now,
+                    outcome_unknown=outcome_unknown,
+                )
+                return
+            if outcome_unknown:
+                mark_unconfirmed = getattr(self._command_repository, "mark_publish_published_unconfirmed", None)
+                if callable(mark_unconfirmed):
+                    await mark_unconfirmed(ae_command_id=ae_command_id, now=now)
+            else:
+                logger.debug(
+                    "AE3 publish error before HL call; keeping pending ae_command_id=%s error=%s",
+                    ae_command_id,
+                    last_error,
+                )
+        except Exception:
+            logger.debug(
+                "AE3 record_publish_retryable_error skipped ae_command_id=%s",
+                ae_command_id,
+                exc_info=True,
+            )
 
     async def _resolve_legacy_command_id_with_retry(self, *, zone_id: int, cmd_id: str) -> int | None:
         for attempt in range(_LEGACY_RESOLVE_ATTEMPTS):

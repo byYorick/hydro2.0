@@ -105,6 +105,16 @@ class SolutionDrainCheckHandler(BaseStageHandler):
         if abort is not None:
             return abort
 
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
+
         try:
             await self._probe_irr_state(
                 task=task,

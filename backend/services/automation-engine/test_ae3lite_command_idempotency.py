@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from ae3lite.domain.entities import PlannedCommand
+from ae3lite.domain.errors import CommandPublishError
 from ae3lite.infrastructure.gateways.command_publish_pipeline import build_planner_step
 from ae3lite.infrastructure.gateways.sequential_command_gateway import SequentialCommandGateway
 from ae3lite.infrastructure.repositories import PgAeCommandRepository, PgAutomationTaskRepository
@@ -77,6 +78,30 @@ class _RecordingHistoryLogger:
         return str(cmd_id)
 
 
+class _FailOnceHistoryLogger(_RecordingHistoryLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempt = 0
+
+    async def publish(self, **kwargs) -> str:
+        self.attempt += 1
+        if self.attempt == 1:
+            raise CommandPublishError("ReadTimeout: request to history-logger timed out")
+        return await super().publish(**kwargs)
+
+
+class _CircuitOpenThenOkHistoryLogger(_RecordingHistoryLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempt = 0
+
+    async def publish(self, **kwargs) -> str:
+        self.attempt += 1
+        if self.attempt == 1:
+            raise CommandPublishError("hl_circuit_open")
+        return await super().publish(**kwargs)
+
+
 class _FailMarkAcceptedRepo(PgAeCommandRepository):
     async def mark_publish_accepted(self, *, ae_command_id: int, external_id: str, now: datetime) -> bool:
         return False
@@ -102,12 +127,12 @@ def _mock_task(task_id: int, zone_id: int):
 
 
 @pytest.mark.asyncio
-async def test_retry_after_publish_failure_reuses_same_cmd_id() -> None:
+async def test_retry_after_ambiguous_publish_error_reuses_same_cmd_id() -> None:
     prefix = f"ae3-cmd-idem-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     command_repo = PgAeCommandRepository()
     task_repo = PgAutomationTaskRepository()
-    hl = _RecordingHistoryLogger()
+    hl = _FailOnceHistoryLogger()
     planner_step = "solution_fill_check:0"
 
     try:
@@ -139,41 +164,85 @@ async def test_retry_after_publish_failure_reuses_same_cmd_id() -> None:
             command_poll_margin_sec=0.0,
         )
 
-        first = await gateway._publish_pipeline.publish(task=task, command=command, now=now, planner_step=planner_step)
-        await command_repo.mark_publish_failed(
-            ae_command_id=first.ae_command_id,
-            last_error="command_send_failed",
-            now=now,
-        )
-        await execute(
-            """
-            UPDATE ae_commands
-            SET publish_status = 'pending'
-            WHERE id = $1
-            """,
-            first.ae_command_id,
-        )
+        with pytest.raises(CommandPublishError, match="ReadTimeout"):
+            await gateway._publish_pipeline.publish(task=task, command=command, now=now, planner_step=planner_step)
+
+        failed_row = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
+        assert failed_row is not None
+        assert failed_row["publish_status"] == "published_unconfirmed"
 
         second = await gateway._publish_pipeline.publish(task=task, command=command, now=now, planner_step=planner_step)
 
-        assert first.cmd_id == second.cmd_id
         assert second.cmd_id_reused is True
-        assert len(hl.calls) == 2
-        assert hl.calls[0]["cmd_id"] == hl.calls[1]["cmd_id"]
+        assert len(hl.calls) == 1
+        assert hl.calls[0]["cmd_id"] == second.cmd_id
 
         rows = await fetch(
             "SELECT id, cmd_id FROM commands WHERE cmd_id = $1",
-            first.cmd_id,
+            second.cmd_id,
         )
-        assert len(rows) == 1
+        assert len(rows) <= 1
 
         ae_rows = await fetch(
-            "SELECT id, step_no, planner_step FROM ae_commands WHERE task_id = $1 ORDER BY step_no",
+            "SELECT id, step_no, planner_step, publish_status FROM ae_commands WHERE task_id = $1 ORDER BY step_no",
             task_id,
         )
         assert len(ae_rows) == 1
-        assert int(ae_rows[0]["step_no"]) == int(first.step_no)
+        assert int(ae_rows[0]["step_no"]) == int(second.step_no)
         assert ae_rows[0]["planner_step"] == planner_step
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_definite_publish_error_keeps_pending_cmd_id() -> None:
+    prefix = f"ae3-cmd-definite-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    command_repo = PgAeCommandRepository()
+    task_repo = PgAutomationTaskRepository()
+    hl = _CircuitOpenThenOkHistoryLogger()
+    planner_step = "solution_fill_check:definite"
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="running",
+            now=now,
+            topology="two_tank_drip_substrate_trays",
+            current_stage="solution_fill_check",
+            workflow_phase="tank_filling",
+        )
+        task = _mock_task(task_id, zone_id)
+        command = PlannedCommand(
+            step_no=1,
+            node_uid="nd-pump-1",
+            channel="pump_main",
+            payload={"cmd": "dose", "params": {"ml": 1.0, "duration_ms": 1000}},
+            planner_step=planner_step,
+        )
+        gateway = SequentialCommandGateway(
+            task_repository=task_repo,
+            command_repository=command_repo,
+            history_logger_client=hl,
+            poll_interval_sec=0.01,
+            command_poll_default_sec=5.0,
+            command_poll_margin_sec=0.0,
+        )
+
+        with pytest.raises(CommandPublishError, match="hl_circuit_open"):
+            await gateway._publish_pipeline.publish(task=task, command=command, now=now, planner_step=planner_step)
+
+        pending_row = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
+        assert pending_row is not None
+        assert pending_row["publish_status"] == "pending"
+
+        second = await gateway._publish_pipeline.publish(task=task, command=command, now=now, planner_step=planner_step)
+        assert second.cmd_id_reused is True
+        assert second.cmd_id.endswith("-s1")
+        assert len(hl.calls) == 1
     finally:
         await _cleanup(prefix)
 

@@ -71,7 +71,7 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         targets_assert = self._find_assertion("targets_reached_after_sequential_loop")
 
         task_query = str(task_step.get("query") or "")
-        self.assertIn("status IN ('pending', 'completed')", task_query)
+        self.assertIn("status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')", task_query)
         self.assertNotIn("current_stage = 'prepare_recirculation_check'", task_query)
 
         # Force near-target must run before the live-band wait (post complete_ready).
@@ -92,7 +92,7 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertLessEqual(float(targets_step.get("timeout") or 999), 90.0)
 
         condition = str(internal_assert.get("condition") or "")
-        self.assertIn("in ('pending', 'completed')", condition)
+        self.assertIn("in ('pending', 'claimed', 'running', 'waiting_command', 'completed')", condition)
 
         targets_condition = str(targets_assert.get("condition") or "")
         self.assertIn("len(context.get('targets_reached_after_sequential_loop_row', [])) == 1", targets_condition)

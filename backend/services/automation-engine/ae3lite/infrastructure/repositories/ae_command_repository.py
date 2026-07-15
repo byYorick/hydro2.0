@@ -217,6 +217,39 @@ class PgAeCommandRepository:
             )
         return row is not None
 
+    async def record_publish_retryable_error(
+        self,
+        *,
+        ae_command_id: int,
+        last_error: str,
+        now: datetime,
+        outcome_unknown: bool,
+    ) -> bool:
+        """Записывает transient publish error, сохраняя строку для retry с тем же cmd_id."""
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        publish_status = "published_unconfirmed" if outcome_unknown else "pending"
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ae_commands
+                SET publish_status = CASE
+                        WHEN $4 = 'published_unconfirmed' THEN 'published_unconfirmed'
+                        ELSE publish_status
+                    END,
+                    last_error = $2,
+                    updated_at = $3
+                WHERE id = $1
+                  AND publish_status IN ('pending', 'published_unconfirmed')
+                RETURNING id
+                """,
+                ae_command_id,
+                last_error,
+                normalized_now,
+                publish_status,
+            )
+        return row is not None
+
     async def mark_publish_failed(self, *, ae_command_id: int, last_error: str, now: datetime) -> bool:
         pool = await get_pool()
         normalized_now = self._normalize_timestamp(now)

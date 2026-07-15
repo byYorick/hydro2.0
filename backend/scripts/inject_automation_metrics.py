@@ -10,10 +10,10 @@ sys.path.insert(0, '/app')
 # Импортируем метрики из automation-engine
 try:
     from services.zone_automation_service import ZONE_CHECKS, CHECK_LAT
-    from infrastructure.command_bus import COMMANDS_SENT
+    from infrastructure.automation_metrics import COMMANDS_SENT
     from main import CONFIG_FETCH_SUCCESS, CONFIG_FETCH_ERRORS, LOOP_ERRORS
     from error_handler import ERROR_COUNTER
-    from infrastructure.command_bus import MQTT_PUBLISH_ERRORS
+    from infrastructure.automation_metrics import MQTT_PUBLISH_ERRORS
 except ImportError as e:
     print(f"Ошибка импорта: {e}")
     print("Скрипт должен запускаться внутри контейнера automation-engine")

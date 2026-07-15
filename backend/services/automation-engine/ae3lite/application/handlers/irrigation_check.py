@@ -112,7 +112,7 @@ class IrrigationCheckHandler(BaseStageHandler):
             return duration_cap_outcome
 
         if self._deadline_reached(now=now, deadline=deadline):
-            if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
+            if await self._targets_reached_on_deadline(task=task, plan=plan, now=now, runtime=runtime):
                 _observe_duration("ready")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
             if not bool(getattr(recovery, "enabled", True)):

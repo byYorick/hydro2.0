@@ -201,6 +201,41 @@ async def test_sensor_snapshot_ignores_stale_values_and_reads_rain_label(monkeyp
     assert snap["outside_fresh"]["rain_detected"] is True
 
 
+@pytest.mark.asyncio
+async def test_sensor_snapshot_weather_fresh_when_core_outside_sensors_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+
+    async def fake_fetch(_sql, _gh_id):
+        return [
+            {
+                "scope": "outside",
+                "type": "TEMPERATURE",
+                "label": "outside_temp",
+                "last_value": 22.0,
+                "last_ts": now,
+                "last_quality": "GOOD",
+            },
+            {
+                "scope": "outside",
+                "type": "HUMIDITY",
+                "label": "outside_humidity",
+                "last_value": 55.0,
+                "last_ts": now,
+                "last_quality": "GOOD",
+            },
+        ]
+
+    monkeypatch.setattr(run_tick, "fetch", fake_fetch)
+
+    snap = await run_tick._sensor_snapshot(1, 1200)
+
+    assert snap["weather_fresh"] is True
+    assert snap["outside_fresh"]["outside_temp"] is True
+    assert snap["outside_fresh"]["rain_detected"] is False
+
+
 def test_spread_alert_thresholds_detect_high_inside_sensor_spread() -> None:
     snap = {
         "inside_temp_spread": 5.0,

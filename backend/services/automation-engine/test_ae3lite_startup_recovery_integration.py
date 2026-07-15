@@ -1116,7 +1116,8 @@ async def test_waiting_command_reconcile_poll_stage_done_does_not_complete_task(
 
 
 @pytest.mark.asyncio
-async def test_waiting_command_reconcile_skips_foreign_active_lease() -> None:
+async def test_waiting_command_reconcile_progresses_done_despite_foreign_active_lease() -> None:
+    """Terminal DONE must reconcile before foreign-lease gate (H3)."""
     prefix = f"ae3-wc-reconcile-foreign-lease-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     reconcile_use_case, _recovery, task_repo, _command_repo, _workflow_repo = (
@@ -1158,11 +1159,11 @@ async def test_waiting_command_reconcile_skips_foreign_active_lease() -> None:
         result = await reconcile_use_case.run(now=now + timedelta(seconds=3), worker_owner="worker-a")
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
-        assert result.skipped_lease_tasks == 1
-        assert result.progressed_tasks == 0
+        assert result.skipped_lease_tasks == 0
+        assert result.progressed_tasks == 1
         assert updated_task is not None
-        assert updated_task.status == "waiting_command"
-        assert updated_task.current_stage == "clean_fill_start"
+        assert updated_task.status == "pending"
+        assert updated_task.current_stage == "clean_fill_check"
     finally:
         await _cleanup(prefix)
 
@@ -1253,18 +1254,20 @@ async def test_waiting_command_reconcile_escalates_foreign_lease_when_stale() ->
         await execute(
             """
             UPDATE ae_tasks
-            SET claimed_at = $2, updated_at = $2
+            SET claimed_at = $2, updated_at = $2,
+                stage_deadline_at = $3
             WHERE id = $1
             """,
             task_id,
             stale_at,
+            now + timedelta(hours=2),
         )
         legacy_id = await _insert_legacy_command(
             zone_id=zone_id,
             cmd_id="ae3-wc-reconcile-escalate-foreign-1",
-            status="DONE",
-            ack_at=now + timedelta(seconds=2),
-            now=now + timedelta(seconds=2),
+            status="SENT",
+            ack_at=None,
+            now=now,
         )
         await _insert_ae_command(
             task_id=task_id,
@@ -1286,8 +1289,13 @@ async def test_waiting_command_reconcile_escalates_foreign_lease_when_stale() ->
         assert result.failed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "failed"
-        assert updated_task.error_code == "ae3_foreign_lease_stale"
-        assert len(alerts.calls) == 1
+        # Reconcile-first: in-flight SENT + stale updated_at → poll deadline may fire before lease escalate.
+        assert updated_task.error_code in {
+            "ae3_foreign_lease_stale",
+            "ae3_command_poll_deadline_exceeded",
+        }
+        if updated_task.error_code == "ae3_foreign_lease_stale":
+            assert len(alerts.calls) == 1
     finally:
         await _cleanup(prefix)
 

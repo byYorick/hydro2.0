@@ -136,6 +136,7 @@ def build_ae3_runtime_bundle(
         lease_repository=zone_lease_repository,
         alert_repository=alert_repository,
         startup_recovery_use_case=startup_recovery_use_case,
+        command_gateway=command_gateway,
         stale_claimed_ttl_sec=config.stale_claimed_ttl_sec,
         stale_running_ttl_sec=config.stale_running_ttl_sec,
         stale_waiting_command_ttl_sec=config.waiting_command_stale_ttl_sec,

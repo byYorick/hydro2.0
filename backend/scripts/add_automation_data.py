@@ -3,7 +3,7 @@ import sys
 sys.path.insert(0, '/app')
 
 from services.zone_automation_service import ZONE_CHECKS, CHECK_LAT
-from infrastructure.command_bus import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
+from infrastructure.automation_metrics import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
 from main import CONFIG_FETCH_SUCCESS, CONFIG_FETCH_ERRORS, LOOP_ERRORS
 import random
 

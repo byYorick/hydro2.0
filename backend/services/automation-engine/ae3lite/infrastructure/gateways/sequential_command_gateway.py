@@ -215,7 +215,16 @@ class SequentialCommandGateway:
             raise TaskExecutionError("ae3_missing_ae_command", f"У задачи {task.id} отсутствует ae_command для recovery")
         legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
         if legacy_row is None:
-            return {"state": "waiting_command", "task": task, "legacy_status": None, "external_id": external_id, "cmd_id": cmd_id}
+            await self._try_redrive_unpublished_ae_command(task=task, ae_command=ae_command, now=now)
+            legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
+            if legacy_row is None:
+                return {
+                    "state": "waiting_command",
+                    "task": task,
+                    "legacy_status": None,
+                    "external_id": external_id,
+                    "cmd_id": cmd_id,
+                }
         return await self._apply_legacy_outcome(task=task, ae_command=ae_command, legacy_row=legacy_row, now=now)
 
     async def _run_command(
@@ -551,6 +560,78 @@ class SequentialCommandGateway:
         COMMAND_POLL_ITERATIONS.labels(channel=channel_label, terminal_status=terminal_label).inc(
             max(0, poll_iterations)
         )
+
+    def _planned_command_from_ae_command(self, ae_command: Mapping[str, Any]) -> PlannedCommand | None:
+        node_uid = str(ae_command.get("node_uid") or "").strip()
+        channel = str(ae_command.get("channel") or "").strip()
+        if not node_uid or not channel:
+            return None
+        payload = ae_command.get("payload")
+        if not isinstance(payload, Mapping):
+            return None
+        cmd = str(payload.get("cmd") or "").strip()
+        if not cmd:
+            return None
+        try:
+            step_no = int(ae_command.get("step_no") or 1)
+        except (TypeError, ValueError):
+            step_no = 1
+        return PlannedCommand(
+            step_no=max(1, step_no),
+            node_uid=node_uid,
+            channel=channel,
+            payload=dict(payload),
+        )
+
+    async def _try_redrive_unpublished_ae_command(
+        self,
+        *,
+        task: Any,
+        ae_command: Mapping[str, Any],
+        now: datetime,
+    ) -> bool:
+        publish_status = str(ae_command.get("publish_status") or "pending").strip().lower()
+        external_id = str(ae_command.get("external_id") or "").strip()
+        if publish_status not in {"pending", "published_unconfirmed"} or external_id:
+            return False
+        planned = self._planned_command_from_ae_command(ae_command)
+        if planned is None:
+            logger.warning(
+                "AE3 recover_waiting_command: cannot rebuild PlannedCommand for redrive "
+                "task_id=%s ae_command_id=%s",
+                task.id,
+                ae_command.get("id"),
+            )
+            return False
+        try:
+            await self._publish_pipeline.redrive_existing(
+                task=task,
+                ae_command=ae_command,
+                command=planned,
+                now=now,
+            )
+            logger.info(
+                "AE3 recover_waiting_command: redrove unpublished ae_command task_id=%s ae_command_id=%s",
+                task.id,
+                ae_command.get("id"),
+            )
+            return True
+        except CommandPublishError as exc:
+            logger.warning(
+                "AE3 recover_waiting_command: publish redrive failed task_id=%s ae_command_id=%s error=%s",
+                task.id,
+                ae_command.get("id"),
+                exc,
+            )
+            return False
+        except Exception:
+            logger.warning(
+                "AE3 recover_waiting_command: unexpected publish redrive failure task_id=%s ae_command_id=%s",
+                task.id,
+                ae_command.get("id"),
+                exc_info=True,
+            )
+            return False
 
     async def _resolve_legacy_command(
         self,

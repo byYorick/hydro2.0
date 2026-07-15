@@ -931,6 +931,15 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         climate_tick_rate_limit_window_sec_fn=lambda: 10,
         climate_tick_rate_limit_max_requests_fn=lambda: 60,
         history_logger_client=bundle.history_logger_client,
+        spawn_background_task_fn=lambda coro, **kwargs: _spawn_background_task(
+            coro,
+            background_tasks=background_tasks,
+            task_name=str(kwargs.get("task_name") or "ae3-background-task"),
+            zone_id=kwargs.get("zone_id"),
+            task_id=kwargs.get("task_id"),
+            task_type=kwargs.get("task_type"),
+        ),
+        worker_owner=getattr(runtime_config, "worker_owner", None),
         logger=logger,
     )
 

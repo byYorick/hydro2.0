@@ -96,7 +96,7 @@ Stage re-enqueue (two-tank workflow): атомарный `update_stage` из `Pg
 ## 6. Definition of Done (Summary)
 
 Полный список — spec §13. Критичные критерии:
-- Все 320 Python тестов зелёные (`pytest -x -q` в контейнере).
+- Полный pytest suite automation-engine зелёный (`make test-ae PYTEST_ARGS="-q"`).
 - Laravel AE3 тесты зелёные (`php artisan test --filter="Ae3Lite"`).
 - E2E сценарии пройдены: `start-cycle→DONE→completed`, `TIMEOUT→failed`,
   `restart during waiting_command → recovered`, `runtime switch denied while busy`.

@@ -30,6 +30,7 @@ def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.gateways import sequential_command_gateway as sequential_command_gateway_module
+from ae3lite.infrastructure.gateways.command_publish_pipeline import CommandPublishPipeline
 from ae3lite.infrastructure.gateways.sequential_command_gateway import SequentialCommandGateway
 from ae3lite.infrastructure.metrics import COMMAND_POLL_ITERATIONS
 
@@ -84,6 +85,25 @@ class _FakeCommandRepo:
         self.updated: list[dict] = []
         self.publish_accepted_calls: list[dict] = []
         self.publish_failed_calls: list[dict] = []
+        self.publish_retryable_calls: list[dict] = []
+
+    async def record_publish_retryable_error(
+        self,
+        *,
+        ae_command_id,
+        last_error,
+        now,
+        outcome_unknown,
+    ):
+        self.publish_retryable_calls.append(
+            {
+                "ae_command_id": ae_command_id,
+                "last_error": last_error,
+                "now": now,
+                "outcome_unknown": outcome_unknown,
+            }
+        )
+        return True
 
     async def get_next_step_no(self, *, task_id):
         self.step_no += 1
@@ -435,7 +455,7 @@ async def test_run_batch_publish_exception_task_missing_returns_fail_closed():
     result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
     assert result["success"] is False
     assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
-    assert len(cmd_repo.publish_failed_calls) == 1
+    assert len(cmd_repo.publish_retryable_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -592,6 +612,34 @@ async def test_recover_waiting_command_pending_returns_waiting():
     result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
     assert result["state"] == "waiting_command"
     assert result["legacy_status"] == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_recover_waiting_command_redrives_pending_ae_command_without_legacy(monkeypatch):
+    ae_row = {
+        "id": 9,
+        "external_id": None,
+        "publish_status": "pending",
+        "node_uid": "nd-1",
+        "channel": "pump_main",
+        "step_no": 1,
+        "planner_step": "clean_fill_start:start",
+        "payload": {"cmd_id": "ae3-t1-z1-s1", "cmd": "set_relay", "params": {"state": True}},
+    }
+    cmd_repo = _FakeCommandRepo(legacy_row=None, ae_command_row=ae_row)
+    publish_calls = {"n": 0}
+    real_redrive = CommandPublishPipeline.redrive_existing
+
+    async def _track_redrive(self, **kwargs):
+        publish_calls["n"] += 1
+        return await real_redrive(self, **kwargs)
+
+    monkeypatch.setattr(CommandPublishPipeline, "redrive_existing", _track_redrive)
+    gw = _make_gw(command_repo=cmd_repo)
+    result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
+    assert publish_calls["n"] == 1
+    assert result["state"] == "waiting_command"
+    assert result["legacy_status"] is None
 
 
 @pytest.mark.asyncio

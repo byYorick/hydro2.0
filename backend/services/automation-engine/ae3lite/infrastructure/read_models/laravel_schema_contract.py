@@ -98,9 +98,15 @@ AE_TASKS = Table(
         _col("irrigation_replay_count", "integer"),
         _col("irrigation_wait_ready_deadline_at", "timestamp"),
         _col("irrigation_setup_deadline_at", "timestamp"),
+        _col("scheduled_for", "timestamp"),
+        _col("irrigation_decision_strategy", "text"),
+        _col("irrigation_decision_config", "jsonb"),
+        _col("irrigation_bundle_revision", "text"),
     ),
     enum_values={
-        "status": frozenset({"pending", "claimed", "running", "waiting_command", "completed", "failed"}),
+        "status": frozenset({
+            "pending", "claimed", "running", "waiting_command", "completed", "failed", "cancelled",
+        }),
         "task_type": frozenset({"cycle_start", "irrigation_start", "lighting_tick", "solution_topup", "solution_change"}),
     },
 )
@@ -231,6 +237,10 @@ ZONES = Table(
         _col("control_mode", "text"),
         _col("settings", "jsonb"),
         _col("updated_at", "timestamp"),
+        _col("config_mode", "text"),
+        _col("config_revision", "bigint"),
+        _col("live_until", "timestamp"),
+        _col("automation_runtime", "text"),
     ),
     enum_values={
         "control_mode": frozenset({"auto", "manual", "semi"}),
@@ -381,6 +391,7 @@ NODES = Table(
         _col("zone_id", "bigint"),
         _col("last_seen_at", "timestamp"),
         _col("last_heartbeat_at", "timestamp"),
+        _col("updated_at", "timestamp"),
     ),
 )
 

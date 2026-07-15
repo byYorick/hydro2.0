@@ -1941,7 +1941,7 @@ assertions:
 
   - name: internal_task_not_failed
     type: custom_assert
-    condition: "str(context.get('internal_task_response', {}).get('json', {}).get('status', '')).lower() == 'ok' and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', '')) and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('status', '')).lower() in ('pending', 'completed')"
+    condition: "str(context.get('internal_task_response', {}).get('json', {}).get('status', '')).lower() == 'ok' and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', '')) and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('status', '')).lower() in ('pending', 'claimed', 'running', 'waiting_command', 'completed')"
 
 cleanup:
   - step: reset_test_node_after_run

@@ -1093,7 +1093,7 @@ class ExecuteTaskUseCase:
         zone_id = int(getattr(task, "zone_id", 0) or 0)
         task_still_exists = await self._task_still_exists(task=task)
         if task_still_exists:
-            await self._sync_workflow_failure_state(task=task, now=now)
+            await self._sync_workflow_failure_state(task=task, now=now, fail_closed=True)
             await self._emit_task_failed_alert(
                 task=task,
                 error_code=error_code,
@@ -1164,12 +1164,22 @@ class ExecuteTaskUseCase:
             now=now,
         )
 
-    async def _sync_workflow_failure_state(self, *, task: Any, now: datetime) -> None:
+    async def _sync_workflow_failure_state(
+        self,
+        *,
+        task: Any,
+        now: datetime,
+        fail_closed: bool = False,
+    ) -> None:
         if self._workflow_repository is None:
             return
-        from ae3lite.domain.errors import Ae3LiteError
+        from ae3lite.domain.errors import ErrorCodes
         from ae3lite.domain.services.workflow_failure_rollback import (
             resolve_workflow_phase_after_task_failure,
+        )
+        from ae3lite.domain.services.workflow_state_sync import (
+            WorkflowStateSyncError,
+            upsert_workflow_phase_strict,
         )
 
         rollback_phase = resolve_workflow_phase_after_task_failure(task)
@@ -1183,34 +1193,45 @@ class ExecuteTaskUseCase:
             "ae3_failure_rollback": True,
             "ae3_failed_task_id": int(getattr(task, "id", 0) or 0) or None,
         }
-        for attempt in range(3):
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        task_id = int(getattr(task, "id", 0) or 0)
+        try:
+            await upsert_workflow_phase_strict(
+                self._workflow_repository,
+                zone_id=zone_id,
+                workflow_phase=rollback_phase,
+                payload=payload,
+                scheduler_task_id=scheduler_task_id,
+                now=now,
+            )
+        except WorkflowStateSyncError:
+            logger.error(
+                "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s phase=%s",
+                zone_id,
+                task_id,
+                rollback_phase,
+                exc_info=True,
+            )
             try:
-                await self._workflow_repository.upsert_phase(
-                    zone_id=int(getattr(task, "zone_id", 0) or 0),
-                    workflow_phase=rollback_phase,
-                    payload=payload,
-                    scheduler_task_id=scheduler_task_id,
-                    now=now,
+                await create_zone_event(
+                    zone_id,
+                    "AE_WORKFLOW_STATE_SYNC_FAILED",
+                    {
+                        "task_id": task_id,
+                        "workflow_phase": rollback_phase,
+                        "ae3_failure_rollback": True,
+                        "error_code": ErrorCodes.AE3_WORKFLOW_STATE_SYNC_FAILED,
+                    },
                 )
-                return
-            except Ae3LiteError as exc:
-                if "CAS conflict" in str(exc) and attempt < 2:
-                    continue
-                logger.warning(
-                    "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
-                    int(getattr(task, "zone_id", 0) or 0),
-                    int(getattr(task, "id", 0) or 0),
-                    exc_info=True,
-                )
-                return
             except Exception:
                 logger.warning(
-                    "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
-                    int(getattr(task, "zone_id", 0) or 0),
-                    int(getattr(task, "id", 0) or 0),
+                    "AE3 не смог записать AE_WORKFLOW_STATE_SYNC_FAILED zone_id=%s task_id=%s",
+                    zone_id,
+                    task_id,
                     exc_info=True,
                 )
-                return
+            if not fail_closed:
+                raise
 
     async def _task_still_exists(self, *, task: Any) -> bool:
         get_by_id = getattr(self._task_repository, "get_by_id", None)

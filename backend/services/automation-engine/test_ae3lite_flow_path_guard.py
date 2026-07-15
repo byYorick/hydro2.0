@@ -63,6 +63,12 @@ def test_decode_manual_hold_return_stage() -> None:
     assert decode_manual_hold_return_stage("solution_fill_stop") is None
 
 
+def test_solution_drain_check_is_flow_path_stage() -> None:
+    from ae3lite.application.handlers.flow_path_guard import is_flow_path_check_stage
+
+    assert is_flow_path_check_stage("solution_drain_check") is True
+
+
 class _HandlerStub:
     def __init__(self, *, probe_raises: bool = False, batch_raises: bool = False) -> None:
         self._probe_raises = probe_raises

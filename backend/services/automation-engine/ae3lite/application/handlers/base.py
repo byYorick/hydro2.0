@@ -223,8 +223,8 @@ class BaseStageHandler:
              subsequent checkpoints in the same `run()` don't re-trigger.
 
         Emits `CONFIG_HOT_RELOADED` zone_event + `ae3_config_hot_reload_total`
-        metric on apply. Failures degrade gracefully: returns original plan
-        with `result=error` metric label.
+        metric on apply. When revision advanced but rebuild fails, fail-closed
+        via ``TaskExecutionError`` — task must not continue on stale RuntimePlan.
         """
         from ae3lite.infrastructure.metrics import (
             CONFIG_HOT_RELOAD,
@@ -310,18 +310,28 @@ class BaseStageHandler:
             snapshot = await PgZoneSnapshotReadModel().load(zone_id=zone_id)
             new_plan = CycleStartPlanner().build(task=task, snapshot=snapshot)
             new_runtime = getattr(new_plan, "runtime", None)
-            if new_runtime is not None:
-                new_plan = replace(
-                    new_plan,
-                    runtime=new_runtime.model_copy(update={"config_revision": int(new_revision)}),
+            if new_runtime is None:
+                raise TaskExecutionError(
+                    ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
+                    f"config_revision advanced to {new_revision}, но rebuild не вернул RuntimePlan zone_id={zone_id}",
                 )
+            new_plan = replace(
+                new_plan,
+                runtime=new_runtime.model_copy(update={"config_revision": int(new_revision)}),
+            )
+        except TaskExecutionError:
+            CONFIG_HOT_RELOAD.labels(result="error").inc()
+            raise
         except Exception:
             _logger.warning(
                 "checkpoint: snapshot rebuild failed zone_id=%s rev=%s",
                 zone_id, new_revision, exc_info=True,
             )
             CONFIG_HOT_RELOAD.labels(result="error").inc()
-            return plan
+            raise TaskExecutionError(
+                ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
+                f"config_revision advanced to {new_revision}, но snapshot rebuild failed zone_id={zone_id}",
+            ) from None
 
         try:
             await create_zone_event(
@@ -1485,6 +1495,20 @@ class BaseStageHandler:
         )
 
     # ── PH/EC target evaluation ─────────────────────────────────────
+
+    async def _targets_reached_on_deadline(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        """Deadline-safe target check: stale/unavailable telemetry → not reached."""
+        try:
+            return await self._targets_reached(
+                task=task,
+                plan=plan,
+                now=now,
+                runtime=runtime,
+            )
+        except TaskExecutionError:
+            return False
 
     async def _targets_reached(
         self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,

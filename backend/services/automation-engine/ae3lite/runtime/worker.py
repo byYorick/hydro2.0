@@ -157,6 +157,9 @@ class Ae3RuntimeWorker:
 
     async def recover_on_startup(self) -> Any:
         now = self._now_fn()
+        from ae3lite.greenhouse_climate.recovery import recover_stale_greenhouse_automation
+
+        await recover_stale_greenhouse_automation(now=now)
         result = await self._startup_recovery_use_case.run(now=now)
         terminal_outcomes = getattr(result, "terminal_outcomes", ()) or ()
         for outcome in terminal_outcomes:
@@ -316,6 +319,11 @@ class Ae3RuntimeWorker:
         result = await self._stale_task_reconcile_use_case.run(
             now=self._now_fn(),
             owner=self._owner,
+            inflight_task_ids=frozenset(
+                int(getattr(task, "id", 0) or 0)
+                for task in self._inflight_automation_tasks.values()
+                if int(getattr(task, "id", 0) or 0) > 0
+            ),
         )
         if bool(getattr(result, "kick_needed", False)) and not self._shutting_down:
             self._pending_kicks += 1

@@ -95,6 +95,9 @@ _MAX_STAGE_TOTAL_SEC: int = 86400
 #: to the stage cap — anything larger is a bug, not a feature.
 _MAX_DUE_DELAY_SEC: int = _MAX_STAGE_TOTAL_SEC
 
+#: Bounded wait for flow-path manual_hold when prior stage left no deadline.
+_DEFAULT_MANUAL_HOLD_TIMEOUT_SEC: int = 86400
+
 
 def _clamp_due_delay_sec(raw: Any) -> int:
     """Clamp a handler-supplied ``due_delay_sec`` to ``[0, _MAX_DUE_DELAY_SEC]``.
@@ -468,6 +471,17 @@ class WorkflowRouter:
         if next_stage == MANUAL_HOLD_STAGE:
             workflow_phase = task.workflow.workflow_phase
             deadline = task.workflow.stage_deadline_at
+            if deadline is None or self._deadline_reached(now=now, deadline=deadline):
+                computed = self._compute_deadline(
+                    task=task,
+                    stage_def=next_def,
+                    runtime=runtime,
+                    now=now,
+                    plan=plan,
+                )
+                deadline = computed if computed is not None else now + timedelta(
+                    seconds=_DEFAULT_MANUAL_HOLD_TIMEOUT_SEC
+                )
         else:
             workflow_phase = next_def.workflow_phase
             deadline = (
@@ -508,6 +522,9 @@ class WorkflowRouter:
 
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
         owner = await self._resolve_stage_owner(task=task)
+        prior_workflow = task.workflow
+        prior_correction = task.correction
+        prior_due_at = task.due_at
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=owner,
@@ -535,8 +552,12 @@ class WorkflowRouter:
             from_stage=task.current_stage,
             to_stage=next_stage,
         )
-        await self._safe_upsert_workflow_phase(
+        await self._persist_workflow_phase_sync(
             task=resolved_task,
+            owner=owner,
+            rollback_workflow=prior_workflow,
+            rollback_correction=prior_correction,
+            rollback_due_at=prior_due_at,
             workflow_phase=next_def.workflow_phase,
             stage=next_stage,
             now=now,
@@ -565,6 +586,9 @@ class WorkflowRouter:
         workflow = task.workflow
         due_at = now + timedelta(seconds=_clamp_due_delay_sec(outcome.due_delay_sec))
         owner = await self._resolve_stage_owner(task=task)
+        prior_workflow = task.workflow
+        prior_correction = task.correction
+        prior_due_at = task.due_at
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=owner,
@@ -580,9 +604,14 @@ class WorkflowRouter:
             error_message=f"Не удалось сохранить correction state для задачи {task.id}",
             expected_corr_step=str(getattr(corr, "corr_step", "") or ""),
         )
-        await self._safe_upsert_workflow_phase(
+        await self._persist_workflow_phase_sync(
             task=resolved_task,
+            owner=owner,
+            rollback_workflow=prior_workflow,
+            rollback_correction=prior_correction,
+            rollback_due_at=prior_due_at,
             workflow_phase=workflow.workflow_phase,
+            stage=str(task.current_stage or ""),
             now=now,
         )
         return resolved_task
@@ -798,6 +827,8 @@ class WorkflowRouter:
             except (TypeError, ValueError):
                 return None
             return now + timedelta(seconds=min(base_sec, _MAX_STAGE_TOTAL_SEC))
+        if stage_def.name == MANUAL_HOLD_STAGE:
+            return now + timedelta(seconds=min(_DEFAULT_MANUAL_HOLD_TIMEOUT_SEC, _MAX_STAGE_TOTAL_SEC))
         if stage_def.name == "prepare_recirculation_check":
             # Базовое окно берётся из retry-конфига; inline EC/pH-коррекциям нужно
             # дополнительное wall time на реальном пути HL→MQTT→node.
@@ -871,6 +902,11 @@ class WorkflowRouter:
     def _normalize_utc_naive(self, value: datetime) -> datetime:
         return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
 
+    def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
+        if deadline is None:
+            return False
+        return self._normalize_utc_naive(now) >= self._normalize_utc_naive(deadline)
+
     async def _upsert_workflow_phase(
         self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
     ) -> None:
@@ -891,22 +927,60 @@ class WorkflowRouter:
     async def _safe_upsert_workflow_phase(
         self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
     ) -> None:
+        if self._workflow_repo is None:
+            return
+        from ae3lite.domain.services.workflow_state_sync import upsert_workflow_phase_task_error
+
+        payload = {
+            "ae3_cycle_start_stage": stage if stage is not None else str(getattr(task, "current_stage", "") or ""),
+        }
+        scheduler_task_id = str(getattr(task, "id", "") or "") or None
+        await upsert_workflow_phase_task_error(
+            self._workflow_repo,
+            zone_id=int(getattr(task, "zone_id", 0) or 0),
+            workflow_phase=workflow_phase,
+            payload=payload,
+            scheduler_task_id=scheduler_task_id,
+            now=now,
+        )
+
+    async def _persist_workflow_phase_sync(
+        self,
+        *,
+        task: Any,
+        owner: str,
+        rollback_workflow: Any,
+        rollback_correction: Any,
+        rollback_due_at: datetime,
+        workflow_phase: str,
+        stage: str | None,
+        now: datetime,
+    ) -> None:
+        """Sync zone_workflow_state; rollback ae_tasks stage if sync fail-closed."""
         try:
-            await self._upsert_workflow_phase(
+            await self._safe_upsert_workflow_phase(
                 task=task,
                 workflow_phase=workflow_phase,
                 stage=stage,
                 now=now,
             )
-        except Exception:
-            logger.warning(
-                "AE3 не смог синхронизировать zone_workflow_state zone_id=%s task_id=%s phase=%s stage=%s",
-                int(getattr(task, "zone_id", 0) or 0),
-                int(getattr(task, "id", 0) or 0),
-                workflow_phase,
-                stage if stage is not None else str(getattr(task, "current_stage", "") or ""),
-                exc_info=True,
+        except TaskExecutionError:
+            rolled_back = await self._task_repo.update_stage(
+                task_id=task.id,
+                owner=owner,
+                workflow=rollback_workflow,
+                correction=rollback_correction,
+                due_at=rollback_due_at,
+                now=now,
             )
+            if rolled_back is None:
+                logger.error(
+                    "AE3 не смог откатить ae_tasks после сбоя sync zone_workflow_state "
+                    "task_id=%s zone_id=%s",
+                    getattr(task, "id", None),
+                    getattr(task, "zone_id", None),
+                )
+            raise
 
     async def _safe_record_transition(
         self,

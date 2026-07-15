@@ -35,6 +35,7 @@ class StaleTaskReconcileUseCase:
         lease_repository: Any,
         alert_repository: Any | None = None,
         startup_recovery_use_case: Any | None = None,
+        command_gateway: Any | None = None,
         stale_claimed_ttl_sec: int = 120,
         stale_running_ttl_sec: int = 960,
         stale_waiting_command_ttl_sec: int = 210,
@@ -46,6 +47,7 @@ class StaleTaskReconcileUseCase:
         self._lease_repository = lease_repository
         self._alert_repository = alert_repository
         self._startup_recovery_use_case = startup_recovery_use_case
+        self._command_gateway = command_gateway
         self._stale_claimed_ttl_sec = max(1, int(stale_claimed_ttl_sec))
         self._stale_running_ttl_sec = max(1, int(stale_running_ttl_sec))
         self._stale_waiting_command_ttl_sec = max(1, int(stale_waiting_command_ttl_sec))
@@ -58,6 +60,7 @@ class StaleTaskReconcileUseCase:
         *,
         now: datetime,
         owner: str,
+        inflight_task_ids: frozenset[int] | None = None,
     ) -> StaleTaskReconcileResult:
         released_expired_leases = await self._lease_repository.release_expired(now=now)
 
@@ -93,9 +96,20 @@ class StaleTaskReconcileUseCase:
         requeued_tasks = 0
         failed_tasks = 0
         skipped_lease_tasks = 0
+        skipped_inflight_tasks = 0
         worker_owner = str(owner or "").strip()
+        inflight_ids = inflight_task_ids or frozenset()
 
         for task in tasks:
+            if int(task.id) in inflight_ids:
+                skipped_inflight_tasks += 1
+                logger.debug(
+                    "Stale task reconcile: skip inflight task_id=%s zone_id=%s status=%s",
+                    task.id,
+                    task.zone_id,
+                    task.status,
+                )
+                continue
             foreign_action, foreign_ctx = await resolve_foreign_active_lease(
                 lease_repository=self._lease_repository,
                 zone_id=int(task.zone_id),
@@ -178,6 +192,16 @@ class StaleTaskReconcileUseCase:
                 requeued_tasks += 1
                 await self._release_lease_after_action(task=task, now=now)
             else:
+                if stale_waiting_command and not await self._waiting_command_poll_deadline_exceeded(
+                    task=task,
+                    now=now,
+                ):
+                    logger.debug(
+                        "Stale task reconcile: skip waiting_command before poll deadline task_id=%s zone_id=%s",
+                        task.id,
+                        task.zone_id,
+                    )
+                    continue
                 error_code = (
                     _STALE_WAITING_COMMAND_ERROR
                     if stale_waiting_command
@@ -300,6 +324,21 @@ class StaleTaskReconcileUseCase:
         if outcome in {"skipped"}:
             return "unchanged"
         return None
+
+    async def _waiting_command_poll_deadline_exceeded(self, *, task: AutomationTask, now: datetime) -> bool:
+        checker = getattr(self._command_gateway, "waiting_command_poll_deadline_exceeded", None)
+        if not callable(checker):
+            return True
+        try:
+            return bool(await checker(task=task, now=now))
+        except Exception:
+            logger.warning(
+                "Stale task reconcile: poll deadline check failed task_id=%s zone_id=%s",
+                task.id,
+                task.zone_id,
+                exc_info=True,
+            )
+            return True
 
     async def _requeue_stale_task(
         self,

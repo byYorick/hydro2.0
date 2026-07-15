@@ -195,6 +195,11 @@ class CorrectionTransitionPolicy:
                 kind="transition",
                 next_stage="irrigation_stop_to_recovery",
             )
+        if stage == "irrigation_recovery_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="irrigation_recovery_stop_failed",
+            )
         return None
 
     # ── Imminent-probe-deadline interrupts (flow-path protection) ────

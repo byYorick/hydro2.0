@@ -2561,7 +2561,9 @@ class CorrectionHandler(BaseStageHandler):
         targets_reached: bool | None = None
         recovery_enabled = True
         if current_stage == "irrigation_check":
-            targets_reached = await self._targets_reached(task=task, plan=plan, now=now)
+            targets_reached = await self._targets_reached_on_deadline(
+                task=task, plan=plan, now=now,
+            )
             recovery = getattr(self._require_runtime_plan(plan=plan), "irrigation_recovery", None)
             recovery_enabled = bool(getattr(recovery, "enabled", True))
         return self._transition_policy.decide_stage_deadline_transition(

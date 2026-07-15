@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, '/app')
 
-from infrastructure.command_bus import COMMANDS_SENT
+from infrastructure.automation_metrics import COMMANDS_SENT
 from prometheus_client import generate_latest
 import random
 import httpx

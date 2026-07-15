@@ -356,7 +356,17 @@ class _MockRuntimeMonitor:
     async def read_metric_window(self, *, zone_id, sensor_type, since_ts, telemetry_max_age_sec, limit=64):
         samples = self._ph_samples if sensor_type == "PH" else self._ec_samples
         is_stale = self._ph_stale if sensor_type == "PH" else self._ec_stale
-        filtered = tuple(sample for sample in samples if sample["ts"] >= since_ts)
+        normalized_since = since_ts
+        if isinstance(since_ts, datetime) and since_ts.tzinfo is not None:
+            normalized_since = since_ts.astimezone(timezone.utc).replace(tzinfo=None)
+
+        def _sample_ts(sample: dict) -> datetime:
+            ts = sample["ts"]
+            if isinstance(ts, datetime) and ts.tzinfo is not None:
+                return ts.astimezone(timezone.utc).replace(tzinfo=None)
+            return ts
+
+        filtered = tuple(sample for sample in samples if _sample_ts(sample) >= normalized_since)
         return {
             "has_sensor": True,
             "has_samples": bool(filtered),

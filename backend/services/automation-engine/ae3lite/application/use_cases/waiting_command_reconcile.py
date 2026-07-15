@@ -70,6 +70,34 @@ class WaitingCommandReconcileUseCase:
                 WAITING_COMMAND_RECONCILE.labels(outcome="skipped_inflight").inc()
                 continue
 
+            try:
+                outcome, terminal_outcome, _observability_task = (
+                    await self._startup_recovery.reconcile_waiting_command_task(
+                        task=task,
+                        now=now,
+                        recovery_source="waiting_command_reconcile",
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "Waiting command reconcile: unexpected failure task_id=%s zone_id=%s",
+                    task.id,
+                    task.zone_id,
+                    exc_info=True,
+                )
+                WAITING_COMMAND_RECONCILE.labels(outcome="error").inc()
+                continue
+
+            if outcome in {"recovered_waiting_command", "completed", "failed"}:
+                WAITING_COMMAND_RECONCILE.labels(outcome=outcome).inc()
+                if terminal_outcome is not None:
+                    terminal_outcomes.append(terminal_outcome)
+                if outcome in {"recovered_waiting_command", "completed"}:
+                    progressed_tasks += 1
+                elif outcome == "failed":
+                    failed_tasks += 1
+                continue
+
             foreign_action, foreign_ctx = await resolve_foreign_active_lease(
                 lease_repository=self._lease_repository,
                 zone_id=int(task.zone_id),
@@ -97,32 +125,10 @@ class WaitingCommandReconcileUseCase:
                     WAITING_COMMAND_RECONCILE.labels(outcome="failed").inc()
                 continue
 
-            try:
-                outcome, terminal_outcome, _observability_task = (
-                    await self._startup_recovery.reconcile_waiting_command_task(
-                        task=task,
-                        now=now,
-                        recovery_source="waiting_command_reconcile",
-                    )
-                )
-            except Exception:
-                logger.warning(
-                    "Waiting command reconcile: unexpected failure task_id=%s zone_id=%s",
-                    task.id,
-                    task.zone_id,
-                    exc_info=True,
-                )
-                WAITING_COMMAND_RECONCILE.labels(outcome="error").inc()
-                continue
-
             WAITING_COMMAND_RECONCILE.labels(outcome=outcome).inc()
             if terminal_outcome is not None:
                 terminal_outcomes.append(terminal_outcome)
-            if outcome in {"recovered_waiting_command", "completed"}:
-                progressed_tasks += 1
-            elif outcome == "failed":
-                failed_tasks += 1
-            elif outcome == "waiting_command":
+            if outcome == "waiting_command":
                 unchanged_tasks += 1
 
         return WaitingCommandReconcileResult(

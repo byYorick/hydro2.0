@@ -61,6 +61,7 @@ def compute_climate_decision(
     current_right_pct: int,
     now_ts: float,
     last_command_ts: float | None,
+    outside_light_fresh: bool = False,
 ) -> ClimateDecision:
     """Возвращает целевые проценты открытия левой/правой форточки (0..100)."""
     ex = dict(execution)
@@ -143,7 +144,9 @@ def compute_climate_decision(
         )
 
     daylight = bool(schedule_day) or (
-        outside_light_lux is not None and outside_light_lux >= daylight_lux and weather_fresh
+        outside_light_lux is not None
+        and outside_light_lux >= daylight_lux
+        and (outside_light_fresh or weather_fresh)
     )
     if daylight:
         min_open, max_open = day_min, day_max

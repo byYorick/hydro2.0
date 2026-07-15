@@ -77,11 +77,13 @@ def _build_stale_reconcile_use_case(
         lease_repo=lease_repo,
         alert_repository=alert_repository,
     )
+    command_gateway = getattr(recovery, "_command_gateway", None)
     use_case = StaleTaskReconcileUseCase(
         task_repository=task_repo,
         lease_repository=lease_repo,
         alert_repository=alert_repository,
         startup_recovery_use_case=recovery,
+        command_gateway=command_gateway,
         stale_claimed_ttl_sec=_STALE_CLAIMED_TTL_SEC,
         stale_running_ttl_sec=_STALE_RUNNING_TTL_SEC,
         stale_waiting_command_ttl_sec=_STALE_WAITING_COMMAND_TTL_SEC,
@@ -514,6 +516,99 @@ async def test_stale_running_unconfirmed_reconciles_to_waiting_command() -> None
 
         updated = await task_repo.get_by_id(task_id=task_id)
         assert result.requeued_tasks == 1
+        assert result.failed_tasks == 0
+        assert updated is not None
+        assert updated.status == "waiting_command"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_stale_waiting_command_skips_inflight_task() -> None:
+    prefix = f"ae3-stale-wc-inflight-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(seconds=_STALE_WAITING_COMMAND_TTL_SEC + 30)
+    use_case, task_repo, _lease_repo = _build_stale_reconcile_use_case()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=stale_at,
+            topology="two_tank",
+            current_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+        )
+        await _backdate_task(task_id=task_id, claimed_at=stale_at, updated_at=stale_at)
+        await _insert_ae_command(task_id=task_id, now=stale_at, cmd_id=f"{prefix}-cmd")
+
+        result = await use_case.run(now=now, owner="janitor-a", inflight_task_ids=frozenset({task_id}))
+
+        updated = await task_repo.get_by_id(task_id=task_id)
+        assert result.failed_tasks == 0
+        assert result.requeued_tasks == 0
+        assert updated is not None
+        assert updated.status == "waiting_command"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_stale_waiting_command_long_duration_not_failed_before_poll_deadline() -> None:
+    prefix = f"ae3-stale-wc-long-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    waiting_since = now - timedelta(seconds=120)
+    use_case, task_repo, _lease_repo = _build_stale_reconcile_use_case()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=waiting_since,
+            topology="two_tank",
+            current_stage="corr_dose_ec",
+            workflow_phase="tank_filling",
+        )
+        await _backdate_task(task_id=task_id, claimed_at=waiting_since, updated_at=waiting_since)
+        from common.db import execute
+
+        await execute(
+            """
+            INSERT INTO ae_commands (
+                task_id,
+                step_no,
+                node_uid,
+                channel,
+                payload,
+                publish_status,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                $1,
+                1,
+                'nd-ec-1',
+                'pump_nutrient_a',
+                $2::jsonb,
+                'accepted',
+                $3,
+                $3
+            )
+            """,
+            task_id,
+            {"cmd": "dose", "params": {"ml": 5.0, "duration_ms": 600_000}, "cmd_id": f"{prefix}-cmd"},
+            waiting_since,
+        )
+
+        result = await use_case.run(now=now, owner="janitor-a")
+
+        updated = await task_repo.get_by_id(task_id=task_id)
         assert result.failed_tasks == 0
         assert updated is not None
         assert updated.status == "waiting_command"

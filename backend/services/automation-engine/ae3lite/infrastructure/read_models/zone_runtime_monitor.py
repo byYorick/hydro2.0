@@ -459,7 +459,8 @@ class PgZoneRuntimeMonitor:
                 SELECT
                     s.id AS sensor_id,
                     s.label AS sensor_label,
-                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts,
+                    tl.last_quality AS last_quality
                 FROM sensors s
                 LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
                 WHERE s.zone_id = $1
@@ -474,14 +475,28 @@ class PgZoneRuntimeMonitor:
             sensor_windows: list[dict[str, Any]] = []
             latest_sample_ts: Optional[datetime] = None
             for sensor_row in sensor_rows:
+                if is_stub_telemetry(quality=sensor_row.get("last_quality")):
+                    sensor_windows.append(
+                        {
+                            "sensor_id": sensor_row.get("sensor_id"),
+                            "sensor_label": sensor_row.get("sensor_label"),
+                            "samples": (),
+                            "latest_sample_ts": sensor_row.get("sample_ts"),
+                            "sample_age_sec": self._age_sec(sensor_row.get("sample_ts")),
+                            "is_stale": True,
+                        }
+                    )
+                    continue
                 rows = await conn.fetch(
                     """
-                    SELECT ts, value
+                    SELECT ts, value, quality, metadata
                     FROM (
-                        SELECT ts, value, id
+                        SELECT ts, value, quality, metadata, id
                         FROM telemetry_samples
                         WHERE sensor_id = $1
                           AND ts >= $2
+                          AND COALESCE(quality, 'GOOD') <> 'STUB'
+                          AND COALESCE(metadata->>'stub', 'false') NOT IN ('true', '1')
                         ORDER BY ts DESC, id DESC
                         LIMIT $3
                     ) recent
@@ -494,6 +509,8 @@ class PgZoneRuntimeMonitor:
                 samples: list[dict[str, Any]] = []
                 sensor_latest_ts = sensor_row.get("sample_ts")
                 for row in rows:
+                    if is_stub_telemetry(quality=row.get("quality"), metadata=row.get("metadata")):
+                        continue
                     raw_value = row.get("value")
                     try:
                         value = float(raw_value) if raw_value is not None else None

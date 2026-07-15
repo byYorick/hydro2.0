@@ -19,6 +19,7 @@ use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
+use App\Services\SystemAutomationSettingsCatalog;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -603,7 +604,7 @@ class ZonesTest extends TestCase
             AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
             AutomationConfigRegistry::SCOPE_SYSTEM,
             0,
-            [
+            array_merge(SystemAutomationSettingsCatalog::allDefaults()['pump_calibration'], [
                 'ml_per_sec_min' => 0.001,
                 'ml_per_sec_max' => 200,
                 'min_dose_ms' => 10,
@@ -615,7 +616,7 @@ class ZonesTest extends TestCase
                 'age_warning_days' => 30,
                 'age_critical_days' => 60,
                 'default_run_duration_sec' => 20,
-            ],
+            ]),
             null,
             'test'
         );

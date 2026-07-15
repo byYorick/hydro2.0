@@ -307,6 +307,20 @@ def test_stage_deadline_prepare_recirc_preserves_retry(
     assert outcome.stage_retry_count == 4
 
 
+def test_stage_deadline_irrigation_recovery_check_goes_to_stop_failed(
+    policy: CorrectionTransitionPolicy,
+) -> None:
+    outcome = policy.decide_stage_deadline_transition(
+        corr=_corr(),
+        current_stage="irrigation_recovery_check",
+        stage_retry_count=1,
+        deadline_reached=True,
+        targets_reached=None,
+    )
+    assert outcome is not None
+    assert outcome.next_stage == "irrigation_recovery_stop_failed"
+
+
 # ── decide_imminent_flow_probe_transition ───────────────────────────
 
 

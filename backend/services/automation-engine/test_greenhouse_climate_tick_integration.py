@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 import pytest
@@ -464,5 +464,127 @@ async def test_greenhouse_climate_tick_intent_to_done_updates_state() -> None:
         for c in fake_hl.calls:
             rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1 LIMIT 1", c["cmd_id"])
             assert rows and str(rows[0]["status"]).upper() == "DONE"
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=greenhouse_id, zone_id=zone_id, sensor_ids=sensor_ids)
+
+
+@pytest.mark.asyncio
+async def test_greenhouse_climate_busy_lease_returns_intent_to_pending() -> None:
+    from ae3lite.greenhouse_climate.run_tick import resolve_greenhouse_lease_owner, run_greenhouse_climate_tick
+
+    prefix = f"gh-busy-{uuid.uuid4().hex[:12]}"
+    gh_uid = f"gh-{uuid.uuid4().hex[:20]}"
+    fake_hl = _FakeHistoryLoggerClient()
+    idem = f"busy-{uuid.uuid4().hex}"
+    owner_a = resolve_greenhouse_lease_owner(worker_owner="worker-a")
+    gh_rows = await fetch(
+        """
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
+        RETURNING id
+        """,
+        gh_uid,
+        prefix,
+        f"pt-{uuid.uuid4().hex[:24]}",
+    )
+    greenhouse_id = int(gh_rows[0]["id"])
+    zone_id = 0
+    sensor_ids: list[int] = []
+    try:
+        await execute(
+            """
+            INSERT INTO greenhouse_automation_intents (
+                greenhouse_id, intent_type, task_type, intent_source, idempotency_key, status, created_at, updated_at
+            )
+            VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2, 'pending', NOW(), NOW())
+            """,
+            greenhouse_id,
+            idem,
+        )
+        await execute(
+            """
+            INSERT INTO greenhouse_automation_leases (greenhouse_id, owner, leased_until, updated_at)
+            VALUES ($1, $2, NOW() + INTERVAL '5 minutes', NOW())
+            """,
+            greenhouse_id,
+            owner_a,
+        )
+
+        result = await run_greenhouse_climate_tick(
+            greenhouse_id=greenhouse_id,
+            idempotency_key=idem,
+            history_logger_client=fake_hl,
+            worker_owner="worker-b",
+        )
+        assert result["reason"] == "greenhouse_climate_busy"
+        rows = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE greenhouse_id = $1 AND idempotency_key = $2",
+            greenhouse_id,
+            idem,
+        )
+        assert rows and rows[0]["status"] == "pending"
+    finally:
+        await _cleanup_greenhouse(greenhouse_id=greenhouse_id, zone_id=zone_id, sensor_ids=sensor_ids)
+
+
+@pytest.mark.asyncio
+async def test_recover_stale_greenhouse_running_intent_requeues_pending() -> None:
+    from ae3lite.greenhouse_climate.recovery import recover_stale_greenhouse_automation
+
+    prefix = f"gh-stale-{uuid.uuid4().hex[:12]}"
+    gh_uid = f"gh-{uuid.uuid4().hex[:20]}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stale_at = now - timedelta(minutes=30)
+    idem = f"stale-{uuid.uuid4().hex}"
+    gh_rows = await fetch(
+        """
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
+        RETURNING id
+        """,
+        gh_uid,
+        prefix,
+        f"pt-{uuid.uuid4().hex[:24]}",
+    )
+    greenhouse_id = int(gh_rows[0]["id"])
+    zone_id = 0
+    sensor_ids: list[int] = []
+    try:
+        intent_rows = await fetch(
+            """
+            INSERT INTO greenhouse_automation_intents (
+                greenhouse_id, intent_type, task_type, intent_source, idempotency_key,
+                status, claimed_at, created_at, updated_at
+            )
+            VALUES ($1, 'GREENHOUSE_CLIMATE_TICK', 'greenhouse_climate_tick', 'pytest', $2,
+                    'running', $3, $3, $3)
+            RETURNING id
+            """,
+            greenhouse_id,
+            idem,
+            stale_at,
+        )
+        intent_id = int(intent_rows[0]["id"])
+        await execute(
+            """
+            INSERT INTO greenhouse_automation_tasks (
+                greenhouse_id, intent_id, task_type, status, idempotency_key, workflow_stage, created_at, updated_at
+            )
+            VALUES ($1, $2, 'greenhouse_climate_tick', 'running', $3, 'decision', $4, $4)
+            """,
+            greenhouse_id,
+            intent_id,
+            idem,
+            stale_at,
+        )
+
+        result = await recover_stale_greenhouse_automation(now=now, stale_running_ttl_sec=600)
+        assert result["requeued_intents"] == 1
+
+        rows = await fetch(
+            "SELECT status FROM greenhouse_automation_intents WHERE id = $1",
+            intent_id,
+        )
+        assert rows and rows[0]["status"] == "pending"
     finally:
         await _cleanup_greenhouse(greenhouse_id=greenhouse_id, zone_id=zone_id, sensor_ids=sensor_ids)

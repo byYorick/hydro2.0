@@ -10,6 +10,7 @@ from ae3lite.application.dto import TaskCreationResult
 from ae3lite.application.level_monitor import load_zone_level_monitor_config, solution_topup_need_active
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError, TaskCreateError
 from ae3lite.infrastructure.metrics import TASK_CREATED
+from ae3lite.infrastructure.read_models.active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
 from common.db import get_pool
 from common.trace_context import get_trace_id
 
@@ -315,21 +316,14 @@ class CreateTaskFromIntentUseCase:
             return {}
 
         grow_cycle_row = await conn.fetchrow(
-            """
+            f"""
             SELECT
                 gc.id AS grow_cycle_id,
                 gc.settings AS cycle_settings
             FROM grow_cycles gc
             WHERE gc.zone_id = $1
               AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
-            ORDER BY
-                CASE gc.status
-                    WHEN 'RUNNING' THEN 0
-                    WHEN 'PAUSED' THEN 1
-                    ELSE 2
-                END,
-                gc.updated_at DESC,
-                gc.id DESC
+            {SQL_ACTIVE_GROW_CYCLE_ORDER_BY.strip()}
             LIMIT 1
             """,
             zone_id,
@@ -359,7 +353,19 @@ class CreateTaskFromIntentUseCase:
 
         actual_bundle_revision = str(bundle_row.get("bundle_revision") or "").strip()
         if expected_bundle_revision and actual_bundle_revision and expected_bundle_revision != actual_bundle_revision:
-            return {}
+            raise TaskCreateError(
+                ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID,
+                (
+                    f"Несовпадение bundle_revision для grow_cycle_id={grow_cycle_id}: "
+                    f"expected={expected_bundle_revision} actual={actual_bundle_revision}"
+                ),
+                details={
+                    "zone_id": zone_id,
+                    "grow_cycle_id": grow_cycle_id,
+                    "expected_bundle_revision": expected_bundle_revision,
+                    "actual_bundle_revision": actual_bundle_revision,
+                },
+            )
 
         bundle_config = bundle_row.get("config")
         if not isinstance(bundle_config, Mapping):

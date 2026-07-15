@@ -69,6 +69,10 @@ _FLOW_PATH_STAGES: dict[str, FlowPathStageConfig] = {
             "pump_main": False,
         },
     ),
+    "solution_drain_check": FlowPathStageConfig(
+        stop_plan_names=("solution_drain_stop",),
+        off_expected={"valve_drain": False},
+    ),
 }
 
 

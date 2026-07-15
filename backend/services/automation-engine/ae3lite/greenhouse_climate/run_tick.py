@@ -8,6 +8,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from statistics import median
 from typing import Any, Mapping
@@ -28,7 +29,15 @@ from common.db import execute, fetch
 
 logger = logging.getLogger(__name__)
 
-_LEASE_OWNER = "ae3_greenhouse_climate"
+_LEASE_OWNER_PREFIX = "ae3_greenhouse_climate"
+_DEFAULT_LEASE_TTL_SEC = 300
+
+
+def resolve_greenhouse_lease_owner(*, worker_owner: str | None = None) -> str:
+    owner = str(worker_owner or "").strip()
+    if owner:
+        return f"{_LEASE_OWNER_PREFIX}:{owner}"[:128]
+    return _LEASE_OWNER_PREFIX
 _TERMINAL_STATUSES = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
 _SUCCESS_STATUS = "DONE"
 _ALERT_PUBLISHER = AlertPublisher(default_source="biz")
@@ -137,7 +146,12 @@ async def _restore_expired_manual_override(greenhouse_id: int, state: Mapping[st
     return return_mode
 
 
-async def _claim_greenhouse_lease(greenhouse_id: int, *, ttl_sec: int = 120) -> bool:
+async def _claim_greenhouse_lease(
+    greenhouse_id: int,
+    *,
+    owner: str,
+    ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
+) -> bool:
     now = datetime.now(timezone.utc)
     leased_until = now + timedelta(seconds=max(1, int(ttl_sec)))
     rows = await fetch(
@@ -153,21 +167,46 @@ async def _claim_greenhouse_lease(greenhouse_id: int, *, ttl_sec: int = 120) -> 
         RETURNING greenhouse_id
         """,
         greenhouse_id,
-        _LEASE_OWNER,
+        owner,
         leased_until,
         now,
     )
     return bool(rows)
 
 
-async def _release_greenhouse_lease(greenhouse_id: int) -> None:
+async def _renew_greenhouse_lease(
+    greenhouse_id: int,
+    *,
+    owner: str,
+    ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
+) -> bool:
+    now = datetime.now(timezone.utc)
+    leased_until = now + timedelta(seconds=max(1, int(ttl_sec)))
+    rows = await fetch(
+        """
+        UPDATE greenhouse_automation_leases
+        SET leased_until = $3,
+            updated_at = $4
+        WHERE greenhouse_id = $1
+          AND owner = $2
+        RETURNING greenhouse_id
+        """,
+        greenhouse_id,
+        owner,
+        leased_until,
+        now,
+    )
+    return bool(rows)
+
+
+async def _release_greenhouse_lease(greenhouse_id: int, *, owner: str) -> None:
     await execute(
         """
         DELETE FROM greenhouse_automation_leases
         WHERE greenhouse_id = $1 AND owner = $2
         """,
         greenhouse_id,
-        _LEASE_OWNER,
+        owner,
     )
 
 
@@ -270,6 +309,18 @@ def _spread_alerts(snapshot: Mapping[str, Any], execution: Mapping[str, Any]) ->
     if (temp_spread is not None and temp_spread > temp_threshold) or (rh_spread is not None and rh_spread > rh_threshold):
         return ["GREENHOUSE_CLIMATE_SENSOR_SPREAD_HIGH"]
     return []
+
+
+_CORE_OUTSIDE_WEATHER_KEYS = (
+    "outside_temp",
+    "outside_humidity",
+    "wind_speed",
+)
+
+
+def _weather_station_fresh(outside_fresh: Mapping[str, bool]) -> bool:
+    """Core outside weather sensors; rain/light are optional and must not stale the station."""
+    return any(bool(outside_fresh.get(key)) for key in _CORE_OUTSIDE_WEATHER_KEYS)
 
 
 async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, Any]:
@@ -383,7 +434,7 @@ async def _sensor_snapshot(greenhouse_id: int, freshness_sec: int) -> dict[str, 
         "wind_direction_deg": wind_dir,
         "rain_detected": rain,
         "outside_light_lux": outside_lux,
-        "weather_fresh": all(outside_fresh.values()),
+        "weather_fresh": _weather_station_fresh(outside_fresh),
         "outside_fresh": outside_fresh,
         "inside_fresh": inside_fresh,
     }
@@ -550,7 +601,7 @@ async def _resolve_target_policy(
     if policy == "active_zones_strictest":
         rows = await fetch(
             """
-            SELECT gcp.temp_air_target, gcp.humidity_target
+            SELECT gcp.temp_air_target, gcp.humidity_target, gcp.extensions
             FROM grow_cycles gc
             JOIN zones z ON z.id = gc.zone_id
             JOIN grow_cycle_phases gcp ON gcp.id = gc.current_phase_id
@@ -568,13 +619,32 @@ async def _resolve_target_policy(
             return resolved, alerts
         temp_max = min(float(row["temp_air_target"]) for row in rows)
         humidity_max = min(float(row["humidity_target"]) for row in rows)
-        if base_targets["temp_min_c"] > temp_max or base_targets["humidity_min_pct"] > humidity_max:
+        temp_mins: list[float] = [float(base_targets["temp_min_c"])]
+        humidity_mins: list[float] = [float(base_targets["humidity_min_pct"])]
+        for row in rows:
+            extensions = row.get("extensions")
+            if not isinstance(extensions, Mapping):
+                continue
+            climate = extensions.get("climate")
+            if not isinstance(climate, Mapping):
+                continue
+            zone_temp_min = _as_float(climate.get("temp_min_c") or climate.get("temp_air_min"))
+            zone_humidity_min = _as_float(climate.get("humidity_min_pct") or climate.get("humidity_min"))
+            if zone_temp_min is not None:
+                temp_mins.append(float(zone_temp_min))
+            if zone_humidity_min is not None:
+                humidity_mins.append(float(zone_humidity_min))
+        temp_min = max(temp_mins)
+        humidity_min = max(humidity_mins)
+        if temp_min > temp_max or humidity_min > humidity_max:
             alerts.append("GREENHOUSE_TARGET_CONFLICT")
             resolved["greenhouse_targets"] = base_targets
             return resolved, alerts
         resolved["greenhouse_targets"] = {
             **base_targets,
+            "temp_min_c": temp_min,
             "temp_max_c": temp_max,
+            "humidity_min_pct": humidity_min,
             "humidity_max_pct": humidity_max,
         }
         return resolved, alerts
@@ -584,9 +654,22 @@ async def _resolve_target_policy(
     return resolved, alerts
 
 
-async def _wait_command_terminal(cmd_id: str, *, timeout_sec: float, poll_sec: float = 1.0) -> str:
+async def _wait_command_terminal(
+    cmd_id: str,
+    *,
+    timeout_sec: float,
+    poll_sec: float = 1.0,
+    lease_renew: Any | None = None,
+) -> str:
     deadline = time.monotonic() + max(0.1, float(timeout_sec))
+    next_renew = time.monotonic()
     while True:
+        if lease_renew is not None and time.monotonic() >= next_renew:
+            try:
+                await lease_renew()
+            except Exception:
+                logger.debug("greenhouse_climate_tick lease renew failed cmd_id=%s", cmd_id, exc_info=True)
+            next_renew = time.monotonic() + max(10.0, float(poll_sec) * 5)
         rows = await fetch(
             "SELECT status FROM commands WHERE cmd_id = $1 LIMIT 1",
             cmd_id,
@@ -606,8 +689,11 @@ async def run_greenhouse_climate_tick(
     idempotency_key: str,
     history_logger_client: HistoryLoggerClient,
     alert_publisher: Any = _ALERT_PUBLISHER,
+    worker_owner: str | None = None,
+    lease_ttl_sec: int = _DEFAULT_LEASE_TTL_SEC,
 ) -> dict[str, Any]:
     tick_started = time.monotonic()
+    lease_owner = resolve_greenhouse_lease_owner(worker_owner=worker_owner)
     await _ensure_state_row(greenhouse_id)
 
     claimed = await fetch(
@@ -635,15 +721,22 @@ async def run_greenhouse_climate_tick(
         return {"status": "skipped", "reason": "no_pending_intent", "greenhouse_id": greenhouse_id}
 
     intent_id = int(claimed[0]["intent_id"])
-    lease_claimed = await _claim_greenhouse_lease(greenhouse_id)
+    lease_claimed = await _claim_greenhouse_lease(
+        greenhouse_id,
+        owner=lease_owner,
+        ttl_sec=lease_ttl_sec,
+    )
     if not lease_claimed:
         await execute(
             """
             UPDATE greenhouse_automation_intents
-            SET status = 'cancelled', completed_at = now(), updated_at = now(),
-                error_code = 'greenhouse_climate_busy',
-                error_message = 'Greenhouse climate writer lease is busy'
+            SET status = 'pending',
+                claimed_at = NULL,
+                updated_at = now(),
+                error_code = NULL,
+                error_message = NULL
             WHERE id = $1
+              AND status = 'running'
             """,
             intent_id,
         )
@@ -824,6 +917,7 @@ async def run_greenhouse_climate_tick(
             outside_light_lux=snap["outside_light_lux"],
             schedule_day=schedule_day,
             weather_fresh=bool(snap["weather_fresh"]),
+            outside_light_fresh=bool((snap.get("outside_fresh") or {}).get("outside_light", False)),
             inside_fresh=bool(snap["inside_fresh"]),
             current_left_pct=int(state.get("left_position_pct") or 0),
             current_right_pct=int(state.get("right_position_pct") or 0),
@@ -909,6 +1003,12 @@ async def run_greenhouse_climate_tick(
                     hl_id,
                     timeout_sec=float(execution.get("command_terminal_timeout_sec") or 120),
                     poll_sec=float(execution.get("command_poll_sec") or 1),
+                    lease_renew=partial(
+                        _renew_greenhouse_lease,
+                        greenhouse_id,
+                        owner=lease_owner,
+                        ttl_sec=lease_ttl_sec,
+                    ),
                 )
                 if terminal == _SUCCESS_STATUS:
                     if side == "left":
@@ -1070,7 +1170,7 @@ async def run_greenhouse_climate_tick(
         raise
     finally:
         if lease_claimed:
-            await _release_greenhouse_lease(greenhouse_id)
+            await _release_greenhouse_lease(greenhouse_id, owner=lease_owner)
 
 
 __all__ = ["run_greenhouse_climate_tick"]

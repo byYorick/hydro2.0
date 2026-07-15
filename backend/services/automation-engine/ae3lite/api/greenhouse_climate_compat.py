@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any, Awaitable, Callable
 
-from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Path, Request
+from fastapi import Body, FastAPI, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from ae3lite.api.http_errors import api_error_detail
@@ -13,6 +13,8 @@ from ae3lite.greenhouse_climate.run_tick import run_greenhouse_climate_tick
 from common.db import fetch
 
 logger = logging.getLogger(__name__)
+
+SpawnBackgroundTaskFn = Callable[..., Any]
 
 
 class StartClimateTickRequest(BaseModel):
@@ -31,6 +33,8 @@ def bind_greenhouse_climate_tick_route(
     climate_tick_rate_limit_window_sec_fn: Callable[[], int],
     climate_tick_rate_limit_max_requests_fn: Callable[[], int],
     history_logger_client: Any,
+    spawn_background_task_fn: SpawnBackgroundTaskFn,
+    worker_owner: str | None = None,
     logger: Any = logger,
 ) -> None:
     async def _validate_greenhouse(greenhouse_id: int) -> None:
@@ -45,7 +49,6 @@ def bind_greenhouse_climate_tick_route(
     async def greenhouse_start_climate_tick(
         greenhouse_id: Annotated[int, Path(..., gt=0)],
         request: Request,
-        background_tasks: BackgroundTasks,
         req: StartClimateTickRequest = Body(...),
     ) -> dict[str, Any]:
         await validate_scheduler_security_baseline_fn(request)
@@ -60,12 +63,24 @@ def bind_greenhouse_climate_tick_route(
                 window_sec=climate_tick_rate_limit_window_sec_fn(),
                 max_requests=climate_tick_rate_limit_max_requests_fn(),
             )
-        background_tasks.add_task(
-            run_greenhouse_climate_tick,
-            greenhouse_id=greenhouse_id,
-            idempotency_key=req.idempotency_key.strip(),
-            history_logger_client=history_logger_client,
-        )
+        try:
+            spawn_background_task_fn(
+                run_greenhouse_climate_tick(
+                    greenhouse_id=greenhouse_id,
+                    idempotency_key=req.idempotency_key.strip(),
+                    history_logger_client=history_logger_client,
+                    worker_owner=worker_owner,
+                ),
+                task_name="greenhouse_climate_tick",
+            )
+        except RuntimeError as exc:
+            if "ae3_background_task_limit_exceeded" in str(exc):
+                raise api_error_detail(
+                    "ae3_background_task_limit_exceeded",
+                    status_code=503,
+                    greenhouse_id=greenhouse_id,
+                ) from exc
+            raise
         return {
             "status": "accepted",
             "data": {

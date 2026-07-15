@@ -1210,7 +1210,7 @@ async def test_router_does_not_publish_workflow_phase_if_transition_persist_fail
     assert wr.upsert_calls == []
 
 
-async def test_router_tolerates_workflow_repo_failure_after_transition_persist():
+async def test_router_fails_closed_when_workflow_repo_sync_fails_after_transition():
     outcome = StageOutcome(kind="transition", next_stage="clean_fill_start")
     task = _make_task(stage="startup")
     wr = _MockWorkflowRepoRaises()
@@ -1220,10 +1220,13 @@ async def test_router_tolerates_workflow_repo_failure_after_transition_persist()
         workflow_repo=wr,
     )
 
-    result = await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
-    assert result is task
-    assert len(tr.update_stage_calls) == 1
+    assert exc_info.value.code == "ae3_workflow_state_sync_failed"
+    assert len(tr.update_stage_calls) == 2
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "clean_fill_start"
+    assert tr.update_stage_calls[1]["workflow"].current_stage == "startup"
     assert len(wr.upsert_calls) == 1
 
 
@@ -1272,6 +1275,8 @@ async def test_router_manual_hold_entry_sets_return_marker() -> None:
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "manual_hold"
     assert wf.pending_manual_step == "__mh_return:solution_fill_check"
+    assert wf.stage_deadline_at is not None
+    assert wf.stage_deadline_at > NOW
 
 
 async def test_router_manual_hold_exit_with_operator_step_sets_plain_pending() -> None:
