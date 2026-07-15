@@ -581,7 +581,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 | --------- | ---------- | -------------------- |
 | Поиск | `rg` (ripgrep), `fd`, `fzf`, `jq`, `yq` | поиск по коду, JSON/YAML из MQTT payload, docker-compose |
 | MQTT | `mosquitto_pub`, `mosquitto_sub` | отладка топиков `hydro/#` без захода в контейнер |
-| PostgreSQL | `psql`, `pgcli` | прямые запросы к `hydro_dev`/`hydro_test` (host=localhost:5432, user=hydro) |
+| PostgreSQL | `psql`, `pgcli` | прямые запросы к `hydro_dev`/`hydro_test` (host=localhost:5432, user=hydro; пароль через `~/.pgpass` или `PGPASSWORD=hydro`, флаг `-w`) |
 | HTTP | `http` (httpie) | тесты Laravel/AE/history-logger REST endpoints |
 | Git/GitHub | `gh`, `delta`, `tig` | PR/CI через CLI, красивые diff-ы |
 | Просмотр | `bat`, `tree` | подсветка, структура каталогов |
@@ -592,7 +592,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 **Следствия для AI-агента:**
 
-- Для чтения БД предпочитай `psql` на хосте, а не `docker exec laravel php artisan tinker`.
+- Для чтения БД предпочитай `psql` на хосте, а не `docker exec laravel php artisan tinker`. TCP-auth: `~/.pgpass` (`localhost:5432:*:hydro:hydro`, `chmod 600`) или `PGPASSWORD=hydro`; всегда `-w`, чтобы не зависать на password prompt.
 - Для отладки MQTT используй `mosquitto_sub -h localhost -t 'hydro/#' -v` без дополнительных контейнеров.
 - Для REST-проверок — `http` с URL из раздела "Доступ к dev сервисам".
 - Для установки Python-утилит используй `uv tool install <pkg>` (системный `pip` заблокирован PEP 668).

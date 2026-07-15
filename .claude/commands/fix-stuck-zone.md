@@ -11,16 +11,16 @@ allowed-tools: Bash(psql:*), Bash(curl:*), Bash(jq:*)
 Выполни параллельно и покажи результат:
 
 1. Текущий workflow_phase:
-   `psql -h localhost -U hydro -d hydro_dev -c "SELECT workflow_phase, payload->>'workflow', updated_at FROM zone_workflow_state WHERE zone_id=$ARGUMENTS"`
+   `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT workflow_phase, payload->>'workflow', updated_at FROM zone_workflow_state WHERE zone_id=$ARGUMENTS"`
 
 2. Active tasks:
-   `psql -h localhost -U hydro -d hydro_dev -c "SELECT id, status, zone_id FROM zone_automation_tasks WHERE zone_id=$ARGUMENTS AND status IN ('pending','claimed','running','waiting_command')"`
+   `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT id, status, zone_id FROM zone_automation_tasks WHERE zone_id=$ARGUMENTS AND status IN ('pending','claimed','running','waiting_command')"`
 
 3. Active lease:
-   `psql -h localhost -U hydro -d hydro_dev -c "SELECT * FROM zone_leases WHERE zone_id=$ARGUMENTS"`
+   `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT * FROM zone_leases WHERE zone_id=$ARGUMENTS"`
 
 4. Unacked alerts:
-   `psql -h localhost -U hydro -d hydro_dev -c "SELECT id, type, severity, created_at FROM alerts WHERE zone_id=$ARGUMENTS AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10"`
+   `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT id, type, severity, created_at FROM alerts WHERE zone_id=$ARGUMENTS AND acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 10"`
 
 ## Шаг 2 — Анализ и подтверждение
 
@@ -32,7 +32,7 @@ allowed-tools: Bash(psql:*), Bash(curl:*), Bash(jq:*)
 
 Если пользователь подтвердил:
 
-1. `psql -h localhost -U hydro -d hydro_dev -c "DELETE FROM zone_workflow_state WHERE zone_id=$ARGUMENTS"` — сбросит stuck workflow (irrig_recirc lock и т.д.)
+1. `PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "DELETE FROM zone_workflow_state WHERE zone_id=$ARGUMENTS"` — сбросит stuck workflow (irrig_recirc lock и т.д.)
 
 2. Ack всех unacked алертов через API (если есть):
    - Сначала залогиниться: `TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"password"}' | jq -r .token)`

@@ -10,12 +10,12 @@ allowed-tools: Bash(psql:*), Bash(curl:*), Bash(jq:*)
 
 ### 1. Базовая конфигурация зоны
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT id, uid, title, automation_runtime, logic_profile, ec_dosing_mode, active_recipe_id, active_cycle_id FROM zones WHERE id=$ARGUMENTS"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT id, uid, title, automation_runtime, logic_profile, ec_dosing_mode, active_recipe_id, active_cycle_id FROM zones WHERE id=$ARGUMENTS"
 ```
 
 ### 2. Correction config (PID params, limits)
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT correction_config FROM zones WHERE id=$ARGUMENTS" | cat
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT correction_config FROM zones WHERE id=$ARGUMENTS" | cat
 ```
 Распарси JSON через `jq` и покажи структурно: `controllers.ph`, `controllers.ec`, `pump_calibration` для каждого насоса.
 
@@ -27,29 +27,29 @@ curl -s http://localhost:9405/zones/$ARGUMENTS/effective-targets | jq .
 
 ### 4. PID state (актуальное состояние контроллеров)
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT pid_type, integral, last_measurement_at, last_dose_at, no_effect_count FROM pid_state WHERE zone_id=$ARGUMENTS"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT pid_type, integral, last_measurement_at, last_dose_at, no_effect_count FROM pid_state WHERE zone_id=$ARGUMENTS"
 ```
 Флаги: `no_effect_count >= 3` = fail-closed window; `last_measurement_at` старше 10 мин = stale.
 
 ### 5. Последняя телеметрия
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT metric_type, value, unit, ts, stable FROM telemetry_last WHERE zone_id=$ARGUMENTS ORDER BY metric_type"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT metric_type, value, unit, ts, stable FROM telemetry_last WHERE zone_id=$ARGUMENTS ORDER BY metric_type"
 ```
 Проверь sanity bounds: pH ∈ [0,14], EC ∈ [0,20] mS/cm. Выход = `sensor_out_of_bounds`.
 
 ### 6. Узлы зоны и их статус
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT n.uid, n.type, n.status, n.last_seen_at FROM nodes n JOIN node_zones nz ON nz.node_id=n.id WHERE nz.zone_id=$ARGUMENTS"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT n.uid, n.type, n.status, n.last_seen_at FROM nodes n JOIN node_zones nz ON nz.node_id=n.id WHERE nz.zone_id=$ARGUMENTS"
 ```
 
 ### 7. Последние команды (24ч) — успехи/провалы
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT status, COUNT(*) FROM commands WHERE zone_id=$ARGUMENTS AND created_at > now() - interval '24 hours' GROUP BY status ORDER BY 2 DESC"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT status, COUNT(*) FROM commands WHERE zone_id=$ARGUMENTS AND created_at > now() - interval '24 hours' GROUP BY status ORDER BY 2 DESC"
 ```
 
 ### 8. Active alerts
 ```
-psql -h localhost -U hydro -d hydro_dev -c "SELECT type, severity, COUNT(*) FROM alerts WHERE zone_id=$ARGUMENTS AND acknowledged_at IS NULL GROUP BY type, severity"
+PGPASSWORD="${PGPASSWORD:-hydro}" psql -h localhost -U hydro -d hydro_dev -w -c "SELECT type, severity, COUNT(*) FROM alerts WHERE zone_id=$ARGUMENTS AND acknowledged_at IS NULL GROUP BY type, severity"
 ```
 
 ## Формат ответа
