@@ -80,6 +80,30 @@ vi.mock('@/Pages/Zones/Tabs/ZoneTelemetryTab.vue', () => ({
   },
 }))
 
+vi.mock('@/Pages/Zones/Tabs/ZoneAutomationTab.vue', () => ({
+  default: {
+    name: 'ZoneAutomationTab',
+    props: [
+      'zoneId',
+      'targets',
+      'telemetry',
+      'devices',
+      'zoneName',
+      'activeGrowCycle',
+      'currentRecipePhase',
+      'automationStateRefreshSeq',
+      'irrigationActionLoading',
+    ],
+    emits: ['start-irrigation', 'force-irrigation', 'refresh-automation-state'],
+    template: `
+      <div class="zone-automation-tab">
+        <button type="button">Запустить полив</button>
+        <button type="button">Принудительный полив</button>
+      </div>
+    `,
+  },
+}))
+
 vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
   name: 'MultiSeriesTelemetryChart',
   __isTeleport: false,
@@ -241,7 +265,11 @@ describe('Zones/Show.vue - Интеграционные тесты', () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
     
     const wrapper = mount(ZonesShow)
-    
+
+    const automationTab = wrapper.findAll('button').find((button) => button.text().includes('Автоматизация'))
+    expect(automationTab).toBeTruthy()
+    await automationTab!.trigger('click')
+    await wrapper.vm.$nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
 
     expect(wrapper.text()).toContain('Запустить полив')

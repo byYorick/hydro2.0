@@ -688,9 +688,17 @@ describe('Zones/Show.vue', () => {
     await alertsTabButton?.trigger('click')
     await nextTick()
 
+    // Дефолтный фильтр — ACTIVE: виден только активный алерт
     expect(wrapper.text()).toContain('pH выше нормы')
-    expect(wrapper.text()).toContain('EC восстановлен')
     expect(wrapper.text()).toContain('Активно')
+    expect(wrapper.text()).not.toContain('EC восстановлен')
+
+    const allFilter = wrapper.findAll('button').find((button) => button.text() === 'Все')
+    expect(allFilter).toBeTruthy()
+    await allFilter!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('EC восстановлен')
     expect(wrapper.text()).toContain('Решено')
   })
 

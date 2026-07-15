@@ -13,8 +13,11 @@ describe('zoneAutomationUtils manual steps', () => {
     ])
   })
 
-  it('возвращает stop на command-stage clean_fill_start', () => {
-    expect(allowedManualStepsForStage('clean_fill_start')).toEqual(['clean_fill_stop'])
+  it('возвращает stop и abort на command-stage clean_fill_start', () => {
+    expect(allowedManualStepsForStage('clean_fill_start')).toEqual([
+      'clean_fill_stop',
+      'solution_change_abort',
+    ])
   })
 
   it('derive из current_stage если API вернул пустой список в manual', () => {
