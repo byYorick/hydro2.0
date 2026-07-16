@@ -1,83 +1,57 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <header class="ui-hero p-5 space-y-4">
-        <div>
+      <header class="ui-hero p-4 space-y-3">
+        <div class="min-w-0">
           <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
             authority / system
           </p>
-          <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+          <h1 class="text-xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-0.5">
             Системные настройки автоматики
           </h1>
-          <p class="text-sm text-[color:var(--text-muted)] max-w-3xl mt-1">
+          <p class="text-sm text-[color:var(--text-muted)] max-w-3xl mt-0.5">
             Калибровки, дефолты, шаблоны relay-команд и пороги observability — единый source of truth для automation bundle.
           </p>
         </div>
-        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-3">
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Активный раздел
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ namespaceLabel(activeNamespace) }}
-            </div>
-            <div class="ui-kpi-hint">
-              Текущий authority namespace
-            </div>
+        <div
+          class="settings-kpi-strip settings-kpi-strip--3"
+          data-testid="system-settings-kpi-strip"
+        >
+          <div
+            class="settings-kpi-chip"
+            title="Текущий authority namespace"
+          >
+            <span class="settings-kpi-chip__label">Активный раздел</span>
+            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ namespaceLabel(activeNamespace) }}</span>
           </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Полей в разделе
-            </div>
-            <div class="ui-kpi-value">
-              {{ activeFields.length }}
-            </div>
-            <div class="ui-kpi-hint">
-              Редактируемых параметров
-            </div>
+          <div
+            class="settings-kpi-chip"
+            title="Редактируемых параметров"
+          >
+            <span class="settings-kpi-chip__label">Полей в разделе</span>
+            <span class="settings-kpi-chip__value">{{ activeFields.length }}</span>
           </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Статус
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ loading ? 'Сохранение...' : 'Готово' }}
-            </div>
-            <div class="ui-kpi-hint">
-              Локальный draft формы
-            </div>
+          <div
+            class="settings-kpi-chip"
+            title="Локальный draft формы"
+          >
+            <span class="settings-kpi-chip__label">Статус</span>
+            <span class="settings-kpi-chip__value">{{ loading ? 'Сохранение...' : 'Готово' }}</span>
           </div>
         </div>
       </header>
 
-      <div class="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
-        <nav
-          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-2 h-fit lg:sticky lg:top-4"
-          aria-label="Разделы системных настроек"
+      <div class="space-y-4">
+        <div
+          class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5"
+          data-testid="system-settings-section-nav"
         >
-          <button
-            v-for="namespace in namespaces"
-            :key="namespace"
-            type="button"
-            class="settings-nav-item"
-            :class="{ 'settings-nav-item--active': activeNamespace === namespace }"
-            :data-testid="`system-settings-tab-${namespace}`"
-            @click="activeNamespace = namespace"
-          >
-            <span
-              class="settings-nav-item__icon"
-              aria-hidden="true"
-            >{{ namespaceIcon(namespace) }}</span>
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-[color:var(--text-primary)]">
-                {{ namespaceLabel(namespace) }}
-              </span>
-              <span class="block text-xs text-[color:var(--text-dim)] mt-0.5">
-                {{ namespaceHint(namespace) }}
-              </span>
-            </span>
-          </button>
-        </nav>
+          <Tabs
+            v-model="activeNamespace"
+            :tabs="systemSettingsTabs"
+            aria-label="Разделы системных настроек"
+          />
+        </div>
 
         <SettingsSectionShell
           v-if="activePayload"
@@ -100,7 +74,7 @@
 
           <div
             v-else
-            class="grid gap-3 md:grid-cols-2"
+            class="settings-fields-stack"
           >
             <SettingsFieldCard
               v-for="field in activeFields"
@@ -110,7 +84,7 @@
               :help="field.help"
               :test-id="`system-settings-field-card-${field.path}`"
               :help-test-id="`system-settings-field-help-${field.path}`"
-              :show-description="field.type !== 'boolean'"
+              :show-description="false"
             >
               <label
                 v-if="field.type === 'boolean'"
@@ -169,6 +143,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import Tabs from '@/Components/Tabs.vue'
 import AuthorityFieldCatalogForm from '@/Components/Settings/AuthorityFieldCatalogForm.vue'
 import CommandTemplatesSettingsForm from '@/Components/Settings/CommandTemplatesSettingsForm.vue'
 import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
@@ -208,15 +183,6 @@ const NAMESPACE_LABELS: Record<string, string> = {
   observability_thresholds: 'Пороги observability',
 }
 
-const NAMESPACE_HINTS: Record<string, string> = {
-  automation_defaults: 'Климат, вода, свет',
-  automation_command_templates: 'Relay workflow',
-  process_calibration_defaults: 'Process UI',
-  pump_calibration: 'Насосы и дозы',
-  sensor_calibration: 'pH / EC эталоны',
-  observability_thresholds: 'Hints AE3 / Laravel',
-}
-
 const NAMESPACE_ICONS: Record<string, string> = {
   automation_defaults: '🌱',
   automation_command_templates: '🔀',
@@ -251,6 +217,13 @@ const draft = ref<SettingsDraft>({})
 const commandTemplatesDraft = ref<Record<string, AutomationCommandTemplateStep[]>>({})
 
 const namespaces = computed<string[]>(() => Object.keys(payloads.value))
+const systemSettingsTabs = computed(() =>
+  namespaces.value.map((namespace) => ({
+    id: namespace,
+    label: namespaceLabel(namespace),
+    testId: `system-settings-tab-${namespace}`,
+  })),
+)
 const activePayload = computed(() => payloads.value[activeNamespace.value] || null)
 const activeSections = computed<SystemSettingsSection[]>(() => activePayload.value?.meta.field_catalog ?? [])
 const activeFields = computed<SystemSettingsField[]>(() => activeSections.value.flatMap((section) => section.fields))
@@ -259,10 +232,6 @@ const usesCommandTemplatesForm = computed(() => activeNamespace.value === COMMAN
 
 function namespaceLabel(namespace: string): string {
   return NAMESPACE_LABELS[namespace] ?? namespace
-}
-
-function namespaceHint(namespace: string): string {
-  return NAMESPACE_HINTS[namespace] ?? 'Системный namespace'
 }
 
 function namespaceIcon(namespace: string): string {

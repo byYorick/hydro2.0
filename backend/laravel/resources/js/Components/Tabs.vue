@@ -13,6 +13,7 @@
       :aria-selected="tab.id === modelValue"
       :aria-disabled="tab.disabled || undefined"
       :tabindex="tab.id === modelValue ? 0 : -1"
+      :data-testid="tab.testId"
       :class="[
         baseClass,
         tab.id === modelValue ? activeClass : inactiveClass,
@@ -41,6 +42,7 @@ interface TabItem {
   label: string
   disabled?: boolean
   badge?: string | number
+  testId?: string
 }
 
 interface Props {

@@ -1,22 +1,22 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <header class="ui-hero p-5 space-y-4">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+      <header class="ui-hero p-4 space-y-3">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="min-w-0">
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
               аккаунт и платформа
             </p>
-            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+            <h1 class="text-xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-0.5">
               Настройки
             </h1>
-            <p class="text-sm text-[color:var(--text-muted)] max-w-2xl mt-1">
+            <p class="text-sm text-[color:var(--text-muted)] max-w-2xl mt-0.5">
               Профиль, уведомления, параметры automation-engine и управление пользователями.
             </p>
           </div>
-          <div class="flex items-center gap-3 rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]/80 px-4 py-3">
+          <div class="flex items-center gap-2.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]/80 px-3 py-2 shrink-0">
             <div
-              class="flex h-11 w-11 items-center justify-center rounded-full bg-[color:var(--accent-green)]/15 text-sm font-semibold text-[color:var(--accent-green)]"
+              class="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--accent-green)]/15 text-sm font-semibold text-[color:var(--accent-green)]"
               aria-hidden="true"
             >
               {{ profileInitial }}
@@ -35,89 +35,54 @@
           </div>
         </div>
 
-        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Роль
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ translateRole(currentUser?.role) }}
-            </div>
-            <div class="ui-kpi-hint">
-              Права в интерфейсе
-            </div>
+        <div
+          class="settings-kpi-strip"
+          data-testid="settings-kpi-strip"
+        >
+          <div
+            class="settings-kpi-chip"
+            title="Права в интерфейсе"
+          >
+            <span class="settings-kpi-chip__label">Роль</span>
+            <span class="settings-kpi-chip__value">{{ translateRole(currentUser?.role) }}</span>
           </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Подавление алертов
-            </div>
-            <div class="ui-kpi-value">
-              {{ notificationSettings.alertToastSuppressionSec }} с
-            </div>
-            <div class="ui-kpi-hint">
-              Личная настройка тостов
-            </div>
+          <div
+            class="settings-kpi-chip"
+            title="Личная настройка тостов"
+          >
+            <span class="settings-kpi-chip__label">Подавление алертов</span>
+            <span class="settings-kpi-chip__value">{{ notificationSettings.alertToastSuppressionSec }} с</span>
           </div>
           <div
             v-if="canEditAutomationEngineSettings"
-            class="ui-kpi-card"
+            class="settings-kpi-chip"
+            title="Снимок scheduler / engine"
           >
-            <div class="ui-kpi-label">
-              Runtime AE
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ automationEngineSettingsGeneratedAtLabel }}
-            </div>
-            <div class="ui-kpi-hint">
-              Снимок scheduler / engine
-            </div>
+            <span class="settings-kpi-chip__label">Runtime AE</span>
+            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ automationEngineSettingsGeneratedAtLabel }}</span>
           </div>
           <div
             v-if="canEditAutomationEngineSettings"
-            class="ui-kpi-card"
+            class="settings-kpi-chip"
+            title="Политика auto-resolve"
           >
-            <div class="ui-kpi-label">
-              AE3 alerts
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ alertPolicyModeLabel }}
-            </div>
-            <div class="ui-kpi-hint">
-              Политика auto-resolve
-            </div>
+            <span class="settings-kpi-chip__label">AE3 alerts</span>
+            <span class="settings-kpi-chip__value settings-kpi-chip__value--sm">{{ alertPolicyModeLabel }}</span>
           </div>
         </div>
       </header>
 
-      <div class="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
-        <nav
-          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-2 h-fit lg:sticky lg:top-4"
-          aria-label="Разделы настроек"
+      <div class="space-y-4">
+        <div
+          class="surface-card border border-[color:var(--border-muted)] rounded-xl p-1.5"
           data-testid="settings-section-nav"
         >
-          <button
-            v-for="section in visibleSections"
-            :key="section.id"
-            type="button"
-            class="settings-nav-item"
-            :class="{ 'settings-nav-item--active': activeSection === section.id }"
-            :data-testid="`settings-nav-${section.id}`"
-            @click="activeSection = section.id"
-          >
-            <span
-              class="settings-nav-item__icon"
-              aria-hidden="true"
-            >{{ section.icon }}</span>
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-[color:var(--text-primary)]">
-                {{ section.label }}
-              </span>
-              <span class="block text-xs text-[color:var(--text-dim)] mt-0.5">
-                {{ section.hint }}
-              </span>
-            </span>
-          </button>
-        </nav>
+          <Tabs
+            v-model="activeSection"
+            :tabs="settingsTabs"
+            aria-label="Разделы настроек"
+          />
+        </div>
 
         <div class="space-y-4 min-w-0">
           <SettingsSectionShell
@@ -263,13 +228,13 @@
                     </h3>
                   </div>
                   <div class="settings-group-card__body">
-                    <div class="grid gap-3 md:grid-cols-2">
+                    <div class="settings-fields-stack">
                       <SettingsFieldCard
                         v-for="item in section.items"
                         :key="`${section.key}-${item.key}`"
                         :label="item.label"
                         :description="item.description"
-                        :show-description="Boolean(item.description)"
+                        :show-description="false"
                         :test-id="`settings-automation-field-${item.key}`"
                       >
                         <template v-if="item.editable">
@@ -346,10 +311,11 @@
                 </span>
               </template>
 
-              <div class="max-w-2xl space-y-4">
+              <div class="max-w-2xl settings-fields-stack">
                 <SettingsFieldCard
                   label="Политика закрытия AE3 operational alerts"
                   description="Даже в режиме автозакрытия manual-only alerts остаются активными, пока для них нет формализованного recovery contract."
+                  :show-description="false"
                   test-id="settings-alert-policy-card"
                 >
                   <select
@@ -660,6 +626,7 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import SettingsSectionShell from '@/Components/Settings/SettingsSectionShell.vue'
 import SettingsFieldCard from '@/Components/Settings/SettingsFieldCard.vue'
+import Tabs from '@/Components/Tabs.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
@@ -712,6 +679,14 @@ const visibleSections = computed(() => sectionCatalog.filter((section) => {
   if (section.requiresAutomation && !canEditAutomationEngineSettings.value) return false
   return true
 }))
+
+/** Горизонтальные табы как на странице зоны (Components/Tabs). */
+const settingsTabs = computed(() =>
+  visibleSections.value.map((section) => ({
+    id: section.id,
+    label: section.label,
+  })),
+)
 
 const activeSection = ref('profile')
 

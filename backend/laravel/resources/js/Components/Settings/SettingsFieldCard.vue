@@ -3,7 +3,7 @@
     class="settings-field-card"
     :data-testid="testId"
   >
-    <header class="mb-3 flex items-start justify-between gap-2">
+    <header class="settings-field-card__header">
       <div class="min-w-0">
         <label
           v-if="fieldId"
@@ -53,7 +53,7 @@
 
     <div
       v-if="$slots.meta"
-      class="mt-2 text-[10px] uppercase tracking-wide text-[color:var(--text-muted)]"
+      class="settings-field-card__meta"
     >
       <slot name="meta" />
     </div>

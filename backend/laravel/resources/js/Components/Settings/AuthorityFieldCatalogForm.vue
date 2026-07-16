@@ -44,7 +44,7 @@
         v-if="openSections.has(section.key)"
         class="settings-group-card__body"
       >
-        <div class="grid gap-3 md:grid-cols-2">
+        <div class="settings-fields-stack">
           <SettingsFieldCard
             v-for="field in section.fields"
             :key="field.path"
@@ -55,7 +55,7 @@
             :field-id="fieldInputId(field.path)"
             :test-id="`authority-field-card-${field.path}`"
             :help-test-id="`authority-field-help-${field.path}`"
-            :show-description="field.type !== 'boolean'"
+            :show-description="false"
           >
             <label
               v-if="field.type === 'boolean'"
