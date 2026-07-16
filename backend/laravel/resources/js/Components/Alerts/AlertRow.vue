@@ -84,6 +84,11 @@ const processStoppingBadge = computed<{
   title: string
   variant: 'danger' | 'warning'
 } | null>(() => {
+  // Resolved alerts must not look like they still block the process.
+  if (normalizeAlertStatus(props.item.status) !== 'ACTIVE') {
+    return null
+  }
+
   if (processStoppingKind.value === 'automation_block') {
     return {
       kind: 'automation_block',

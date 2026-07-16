@@ -141,12 +141,30 @@ async function onAttach() {
 
   attaching.value = true
   bindError.value = null
+  const succeededIds: number[] = []
+  const failedIds: number[] = []
   const updatedDevices: Device[] = []
 
   try {
     for (const nodeId of selectedNodeIds.value) {
-      const updated = await api.nodes.update(nodeId, { zone_id: props.zoneId }, { skipErrorToast: true })
-      updatedDevices.push(updated)
+      try {
+        const updated = await api.nodes.update(nodeId, { zone_id: props.zoneId }, { skipErrorToast: true })
+        updatedDevices.push(updated)
+        succeededIds.push(nodeId)
+      } catch (error) {
+        failedIds.push(nodeId)
+        logger.error('Failed to attach node:', { nodeId, error })
+        if (failedIds.length === 1 && succeededIds.length === 0) {
+          bindError.value = extractHumanErrorMessage(
+            error,
+            'Не удалось привязать узел к зоне. Проверьте сообщение выше и отвяжите конфликтующее оборудование при необходимости.',
+          )
+        }
+      }
+    }
+
+    if (succeededIds.length === 0) {
+      return
     }
 
     try {
@@ -163,15 +181,22 @@ async function onAttach() {
       logger.warn('[AttachNodesModal] Failed to update devices store', { error: storeError })
     }
 
-    showToast(`Успешно привязано узлов: ${selectedNodeIds.value.length}`, 'success', TOAST_TIMEOUT.NORMAL)
-    emit('attached', selectedNodeIds.value)
+    const pendingHint = 'Ожидается config_report от узла — привязка завершится после ACK конфига.'
+    if (failedIds.length === 0) {
+      showToast(
+        `Запрошена привязка узлов: ${succeededIds.length}. ${pendingHint}`,
+        'info',
+        TOAST_TIMEOUT.NORMAL,
+      )
+    } else {
+      showToast(
+        `Привязка: успешно ${succeededIds.length}, ошибок ${failedIds.length}. ${pendingHint}`,
+        'warning',
+        TOAST_TIMEOUT.NORMAL,
+      )
+    }
+    emit('attached', succeededIds)
     emit('close')
-  } catch (error) {
-    bindError.value = extractHumanErrorMessage(
-      error,
-      'Не удалось привязать узел к зоне. Проверьте сообщение выше и отвяжите конфликтующее оборудование при необходимости.',
-    )
-    logger.error('Failed to attach nodes:', error)
   } finally {
     attaching.value = false
   }

@@ -213,7 +213,100 @@
     </div>
 
     <div
-      v-if="taskIdLabel && !failureDiagnostics"
+      v-if="decisionCard"
+      class="rounded-lg border border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)]/55 px-3 py-2.5 text-xs space-y-1.5"
+      data-testid="automation-decision-card"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="font-semibold text-sm text-[color:var(--text-primary)]">
+          Решение полива
+        </p>
+        <Badge
+          v-if="decisionCard.degraded"
+          variant="warning"
+        >
+          degraded
+        </Badge>
+      </div>
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+        <div v-if="decisionCard.outcome">
+          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
+            Outcome
+          </dt>
+          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)]">
+            {{ decisionCard.outcome }}
+          </dd>
+        </div>
+        <div v-if="decisionCard.strategy">
+          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
+            Strategy
+          </dt>
+          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)]">
+            {{ decisionCard.strategy }}
+          </dd>
+        </div>
+        <div
+          v-if="decisionCard.reasonCode"
+          class="sm:col-span-2"
+        >
+          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
+            Reason
+          </dt>
+          <dd class="mt-0.5 font-mono text-[color:var(--text-primary)] break-all">
+            {{ decisionCard.reasonCode }}
+          </dd>
+        </div>
+        <div
+          v-if="decisionCard.bundleRevision"
+          class="sm:col-span-2"
+        >
+          <dt class="uppercase tracking-wide text-[color:var(--text-dim)]">
+            Bundle
+          </dt>
+          <dd class="mt-0.5 font-mono text-[10px] text-[color:var(--text-muted)] break-all">
+            {{ decisionCard.bundleRevision }}
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div
+      v-if="causalStrip"
+      class="rounded-lg border border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)]/55 px-3 py-2.5 text-xs space-y-2"
+      data-testid="automation-causal-strip"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="font-semibold text-sm text-[color:var(--text-primary)]">
+          Цепочка процесса
+        </p>
+        <button
+          v-if="causalStrip.taskId != null && causalStrip.zoneId != null"
+          type="button"
+          class="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--accent-cyan)] hover:underline"
+          data-testid="automation-causal-events-link"
+          @click="openTaskEvents(causalStrip.zoneId, causalStrip.taskId)"
+        >
+          События задачи
+        </button>
+      </div>
+      <p class="font-mono text-[11px] text-[color:var(--text-primary)] leading-relaxed break-words">
+        {{ causalStrip.summary }}
+      </p>
+      <ul
+        v-if="causalStrip.details.length > 0"
+        class="space-y-0.5 font-mono text-[10px] text-[color:var(--text-dim)]"
+      >
+        <li
+          v-for="line in causalStrip.details"
+          :key="line"
+        >
+          {{ line }}
+        </li>
+      </ul>
+    </div>
+
+    <div
+      v-if="taskIdLabel && !failureDiagnostics && !causalStrip"
       class="diag-info-block"
     >
       <span class="font-medium text-[color:var(--text-primary)]">Task:</span>
@@ -295,13 +388,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { router } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
 import type { AutomationObservability, AutomationState } from '@/types/Automation'
 import {
   formatObservabilityDuration,
   observabilityHealthLabel,
+  isSkipStillBlocking,
   resolveCorrectionDosingDiagnostics,
   resolveObservability,
   stageDiagnosticLabel,
@@ -313,6 +408,28 @@ interface Props {
   automationState: AutomationState | null
 }
 
+const tickMs = ref(Date.now())
+let tickTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  tickTimer = setInterval(() => {
+    tickMs.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (tickTimer) {
+    clearInterval(tickTimer)
+    tickTimer = null
+  }
+})
+
+function parseIsoMs(value: string | null | undefined): number | null {
+  if (!value) return null
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? ms : null
+}
+
 const props = defineProps<Props>()
 
 const observability = computed<AutomationObservability | null>(() => resolveObservability(props.automationState))
@@ -321,6 +438,106 @@ const failureDiagnostics = computed(() => resolveAutomationFailureDiagnostics(
   props.automationState,
   observability.value,
 ))
+
+const decisionCard = computed(() => {
+  const decision = props.automationState?.decision
+  if (!decision || typeof decision !== 'object') {
+    return null
+  }
+  const outcome = typeof decision.outcome === 'string' && decision.outcome.trim() !== ''
+    ? decision.outcome.trim()
+    : null
+  const strategy = typeof decision.strategy === 'string' && decision.strategy.trim() !== ''
+    ? decision.strategy.trim()
+    : null
+  const reasonCode = typeof decision.reason_code === 'string' && decision.reason_code.trim() !== ''
+    ? decision.reason_code.trim()
+    : null
+  const bundleRevision = typeof decision.bundle_revision === 'string' && decision.bundle_revision.trim() !== ''
+    ? decision.bundle_revision.trim()
+    : null
+  const degraded = decision.degraded === true
+  if (!outcome && !strategy && !reasonCode && !bundleRevision && !degraded) {
+    return null
+  }
+  return { outcome, strategy, reasonCode, bundleRevision, degraded }
+})
+
+function toPositiveId(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+const causalStrip = computed(() => {
+  const runtime = observability.value?.runtime
+  const correction = observability.value?.correction
+  const zoneId = toPositiveId(props.automationState?.zone_id ?? runtime?.zone_id)
+  const normalizedTaskId = toPositiveId(
+    runtime?.task_id
+    ?? props.automationState?.state_details?.failed_task_id
+    ?? props.automationState?.last_terminal_failure?.task_id,
+  )
+  const correctionStep = typeof runtime?.correction_step === 'string' && runtime.correction_step.trim() !== ''
+    ? runtime.correction_step.trim()
+    : null
+  const skipRaw = correction?.latest_skip ?? null
+  const skip = isSkipStillBlocking(skipRaw) ? skipRaw : null
+  const skipType = typeof skip?.event_type === 'string' ? skip.event_type : null
+  const skipEventId = toPositiveId(skip?.event_id)
+  const phNoEffect = correction?.last_dose?.ph?.no_effect_count
+  const ecNoEffect = correction?.last_dose?.ec?.no_effect_count
+  const waiting = runtime?.waiting_command === true
+  const taskStatus = typeof runtime?.task_status === 'string' ? runtime.task_status : null
+
+  const hasSignal = normalizedTaskId != null
+    || correctionStep != null
+    || skipType != null
+    || (typeof phNoEffect === 'number' && Number.isFinite(phNoEffect) && phNoEffect > 0)
+    || (typeof ecNoEffect === 'number' && Number.isFinite(ecNoEffect) && ecNoEffect > 0)
+  if (!hasSignal) {
+    return null
+  }
+
+  const chain: string[] = []
+  if (normalizedTaskId != null) {
+    chain.push(`task #${normalizedTaskId}`)
+  }
+  if (taskStatus) {
+    const alreadyWaiting = taskStatus === 'waiting_command'
+    chain.push(waiting && !alreadyWaiting ? `${taskStatus}+wait` : taskStatus)
+  }
+  if (correctionStep) {
+    chain.push(correctionStep)
+  }
+  if (skipType) {
+    chain.push(skipType)
+  }
+
+  const details: string[] = []
+  if (skipEventId != null) {
+    details.push(`skip_event_id=${skipEventId}`)
+  }
+  if (skip?.age_sec != null) {
+    details.push(`skip_age=${formatObservabilityDuration(skip.age_sec)}`)
+  }
+  if (typeof phNoEffect === 'number') {
+    details.push(`ph_no_effect=${phNoEffect}`)
+  }
+  if (typeof ecNoEffect === 'number') {
+    details.push(`ec_no_effect=${ecNoEffect}`)
+  }
+
+  return {
+    zoneId,
+    taskId: normalizedTaskId,
+    summary: chain.length > 0 ? chain.join(' → ') : 'Контекст коррекции',
+    details,
+  }
+})
+
+function openTaskEvents(zoneId: number, taskId: number): void {
+  router.visit(`/zones/${zoneId}?tab=events&task_id=${taskId}`)
+}
 
 const hangHints = computed(() => observability.value?.hang_hints ?? [])
 
@@ -391,22 +608,37 @@ const taskStatusLabel = computed(() => {
 })
 
 const stageElapsedLabel = computed(() => {
+  void tickMs.value
   const runtime = observability.value?.runtime
   if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
     const elapsed = runtime?.stage_elapsed_sec
     return elapsed != null && elapsed > 0 ? formatObservabilityDuration(elapsed) : '—'
   }
+  const enteredMs = parseIsoMs(runtime?.stage_entered_at ?? null)
+  if (enteredMs != null) {
+    const liveElapsed = Math.max(0, Math.floor((tickMs.value - enteredMs) / 1000))
+    return formatObservabilityDuration(liveElapsed)
+  }
   return formatObservabilityDuration(runtime?.stage_elapsed_sec)
 })
 
 const deadlineLabel = computed(() => {
+  void tickMs.value
   const runtime = observability.value?.runtime
   if (runtime?.task_status === 'failed' || props.automationState?.state_details?.failed === true) {
     return '—'
   }
+  const deadlineMs = parseIsoMs(runtime?.stage_deadline_at ?? null)
+  if (deadlineMs != null) {
+    const remaining = Math.floor((deadlineMs - tickMs.value) / 1000)
+    if (remaining < 0) {
+      return `просрочен на ${formatObservabilityDuration(Math.abs(remaining))}`
+    }
+    return `осталось ${formatObservabilityDuration(remaining)}`
+  }
   const remaining = runtime?.stage_deadline_remaining_sec
   if (remaining === null || remaining === undefined) {
-    return runtime?.stage_deadline_at ? 'задан' : '—'
+    return '—'
   }
   if (remaining < 0) {
     return `просрочен на ${formatObservabilityDuration(Math.abs(remaining))}`

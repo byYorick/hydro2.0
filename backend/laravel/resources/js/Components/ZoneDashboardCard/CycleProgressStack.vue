@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="hasData"
+    v-if="hasCycle"
     class="space-y-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3"
   >
     <!-- Overall cycle -->
@@ -60,25 +60,31 @@ interface PhaseInfo {
 }
 
 interface Props {
+  /** true если zone.cycle существует — empty-state только при cycle == null */
+  hasCycle?: boolean
   /** 0..100, общий прогресс цикла */
   overallPct: number | null
-  /** Подпись дня цикла (например, "День 4/21"). Если не задана — скрывается. */
+  /** Подпись дня цикла (например, "День 4/21"). Если не задана — статус или «—». */
   overallDayLabel?: string | null
+  /** Короткий статус цикла, когда нет day-label */
+  statusLabel?: string | null
   /** Информация о текущей фазе (может отсутствовать) */
   phase?: PhaseInfo | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  hasCycle: false,
   overallDayLabel: null,
+  statusLabel: null,
   phase: null,
 })
-
-const hasData = computed(() => props.overallPct !== null || props.phase !== null)
 
 const overallPct = computed(() => {
   if (props.overallPct === null || Number.isNaN(props.overallPct)) return 0
   return Math.max(0, Math.min(100, Math.round(props.overallPct)))
 })
 
-const overallDayLabel = computed(() => props.overallDayLabel ?? '—')
+const overallDayLabel = computed(
+  () => props.overallDayLabel ?? props.statusLabel ?? '—',
+)
 </script>

@@ -64,7 +64,7 @@
           variant="primary"
           data-testid="pid-config-save"
           class="w-full sm:w-auto"
-          :disabled="loading || !phaseTargetAvailable"
+          :disabled="loading || disabled || !phaseTargetAvailable"
         >
           {{
             loading
@@ -491,8 +491,9 @@ const props = withDefaults(
   defineProps<{
     zoneId: number
     phaseTargets?: RecipePhasePidTargets | null
+    disabled?: boolean
   }>(),
-  { phaseTargets: null },
+  { phaseTargets: null, disabled: false },
 )
 
 const emit = defineEmits<{

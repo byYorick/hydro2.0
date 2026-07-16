@@ -38,10 +38,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { AlertPreviewSeverity } from './alertPreviewSeverity'
 
 export interface AlertPreviewItem {
   id: number
-  severity: 'alert' | 'warning' | 'info'
+  severity: AlertPreviewSeverity
   title: string
   reason?: string | null
   created_at: string
@@ -59,13 +60,14 @@ const props = withDefaults(defineProps<Props>(), {
 
 const displayedAlerts = computed(() =>
   [...props.alerts]
-    .filter((a) => a.severity === 'alert' || a.severity === 'warning')
+    .filter((a) => a.severity === 'critical' || a.severity === 'error' || a.severity === 'warning')
     .slice(0, props.limit)
 )
 
 function severityClass(sev: AlertPreviewItem['severity']): string {
   switch (sev) {
-    case 'alert':
+    case 'critical':
+    case 'error':
       return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
     case 'warning':
       return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]'
@@ -76,9 +78,13 @@ function severityClass(sev: AlertPreviewItem['severity']): string {
 
 function dotClass(sev: AlertPreviewItem['severity']): string {
   switch (sev) {
-    case 'alert': return 'bg-[color:var(--accent-red)]'
-    case 'warning': return 'bg-[color:var(--accent-amber)]'
-    default: return 'bg-[color:var(--text-dim)]'
+    case 'critical':
+    case 'error':
+      return 'bg-[color:var(--accent-red)]'
+    case 'warning':
+      return 'bg-[color:var(--accent-amber)]'
+    default:
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 

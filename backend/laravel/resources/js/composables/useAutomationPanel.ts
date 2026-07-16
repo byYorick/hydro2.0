@@ -193,6 +193,56 @@ function automationStateToWorkflowIndex(state: AutomationStateType): number {
   return order[state]
 }
 
+const WORKFLOW_PHASE_TO_MACRO: Record<string, AutomationStateType> = {
+  tank_filling: 'TANK_FILLING',
+  tank_recirc: 'TANK_RECIRC',
+  ready: 'READY',
+  irrigating: 'IRRIGATING',
+  irrig_recirc: 'IRRIG_RECIRC',
+}
+
+/** AE3 maps failed tasks to macro IDLE — recover bar index from phase/stage. */
+function resolveWorkflowBarState(state: AutomationState | null): AutomationStateType {
+  const macro = (state?.state ?? 'IDLE') as AutomationStateType
+  if (!automationIndicatesActiveFailure(state)) {
+    return macro
+  }
+
+  const phase = String(
+    state?.workflow_phase
+    ?? state?.observability?.runtime?.workflow_phase
+    ?? '',
+  ).trim().toLowerCase()
+  if (phase in WORKFLOW_PHASE_TO_MACRO) {
+    return WORKFLOW_PHASE_TO_MACRO[phase]
+  }
+
+  const stage = String(
+    state?.observability?.runtime?.failed_stage
+    ?? state?.current_stage
+    ?? '',
+  ).trim().toLowerCase()
+  if (stage.includes('irrigation_recovery') || stage.includes('irrig_recirc')) {
+    return 'IRRIG_RECIRC'
+  }
+  if (stage.startsWith('irrigation') || stage.includes('irrigat')) {
+    return 'IRRIGATING'
+  }
+  if (stage.includes('prepare') || stage.includes('recirc')) {
+    return 'TANK_RECIRC'
+  }
+  if (
+    stage.includes('fill')
+    || stage === 'startup'
+    || stage.includes('solution_')
+    || stage.includes('clean_')
+  ) {
+    return 'TANK_FILLING'
+  }
+
+  return macro
+}
+
 function deriveWorkflowStages(state: AutomationStateType, hasFailedState: boolean): WorkflowStageView[] {
   const currentStageIndex = automationStateToWorkflowIndex(state)
 
@@ -213,6 +263,13 @@ function deriveWorkflowStages(state: AutomationStateType, hasFailedState: boolea
       status,
     }
   })
+}
+
+function parseServedAtMs(state: AutomationState | null): number | null {
+  const raw = state?.state_meta?.served_at
+  if (!raw) return null
+  const ms = Date.parse(raw)
+  return Number.isFinite(ms) ? ms : null
 }
 
 function stagePrefixForEvent(eventCode: string, reasonCode: string | null): string | null {
@@ -285,6 +342,7 @@ export function useAutomationPanel(
 
   let fetchInFlight = false
   let fetchQueued = false
+  let hasAppliedLiveFetch = false
 
   // ─── Timer / channel vars ─────────────────────────────────────────────────
 
@@ -420,7 +478,29 @@ export function useAutomationPanel(
       return false
     }
 
-    automationState.value = normalizeState(raw)
+    const normalized = normalizeState(raw)
+    if (props.zoneId && normalized.zone_id > 0 && normalized.zone_id !== props.zoneId) {
+      return false
+    }
+
+    const current = automationState.value
+    if (current) {
+      const incomingServed = parseServedAtMs(normalized)
+      const currentServed = parseServedAtMs(current)
+      if (
+        incomingServed != null
+        && currentServed != null
+        && incomingServed < currentServed
+      ) {
+        return false
+      }
+      // Live API/WS snapshot without older deferred overwriting when deferred lacks served_at.
+      if (currentServed != null && incomingServed == null && hasAppliedLiveFetch) {
+        return false
+      }
+    }
+
+    automationState.value = normalized
     errorMessage.value = null
     connectivityWarning.value = null
     isAutomationStateLoading.value = false
@@ -480,7 +560,11 @@ export function useAutomationPanel(
       const response = await api.zones.getState<unknown>(requestedZoneId)
       if (props.zoneId !== requestedZoneId) return
       const normalized = normalizeState(response)
+      if (normalized.zone_id > 0 && normalized.zone_id !== requestedZoneId) {
+        return
+      }
       automationState.value = normalized
+      hasAppliedLiveFetch = true
       errorMessage.value = null
       connectivityWarning.value = null
     } catch (error) {
@@ -659,28 +743,59 @@ export function useAutomationPanel(
   const isEcCorrectionActive = computed(() => Boolean(automationState.value?.active_processes.ec_correction))
   const progressPercent = computed(() => clampPercent(automationState.value?.state_details.progress_percent ?? 0))
 
+  const currentStageKey = computed(() =>
+    String(automationState.value?.current_stage ?? '').trim().toLowerCase(),
+  )
+
+  const stageIncludes = (...needles: string[]): boolean => {
+    const stage = currentStageKey.value
+    if (!stage) return false
+    return needles.some((needle) => stage.includes(needle))
+  }
+
+  // Канон клапанов (AE3 / NODE_CHANNELS):
+  // V1 valve_clean_fill — вход в бак чистой воды
+  // V2 valve_clean_supply — сток из бака чистой воды
+  // V3 valve_solution_supply — сток из бака раствора
+  // V4 valve_solution_fill — возврат/набор в бак раствора (рецирк)
+  // V5 valve_irrigation — полив
   const isWaterInletActive = computed(() => {
     const fromIrr = irrNodeState.value?.valve_clean_fill
     if (fromIrr !== null && fromIrr !== undefined) return fromIrr
-    return stateCode.value === 'TANK_FILLING'
+    // Не весь TANK_FILLING: solution_fill тоже в этой макрофазе, но V1 там закрыт.
+    return stageIncludes('clean_fill')
   })
 
+  const isCleanSupplyActive = computed(() => {
+    const fromIrr = irrNodeState.value?.valve_clean_supply
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
+    // solution_fill: clean → pump → solution (V2 + V4 + pump)
+    return stageIncludes('solution_fill')
+  })
+
+  const isSolutionSupplyActive = computed(() => {
+    const fromIrr = irrNodeState.value?.valve_solution_supply
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
+    return stateCode.value === 'TANK_RECIRC'
+      || stateCode.value === 'IRRIGATING'
+      || stateCode.value === 'IRRIG_RECIRC'
+      || stageIncludes('prepare_recirc', 'correction')
+  })
+
+  /** V4 / возврат в бак раствора — только valve_solution_fill (не supply). */
   const isTankRefillActive = computed(() => {
-    const fromIrr = irrNodeState.value
-    if (fromIrr) {
-      const solutionFill = fromIrr.valve_solution_fill
-      const solutionSupply = fromIrr.valve_solution_supply
-      if (solutionFill !== null || solutionSupply !== null) {
-        return Boolean(solutionFill) || Boolean(solutionSupply)
-      }
-    }
-    return stateCode.value === 'TANK_FILLING' || stateCode.value === 'TANK_RECIRC'
+    const fromIrr = irrNodeState.value?.valve_solution_fill
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
+    return stageIncludes('solution_fill', 'prepare_recirc', 'correction')
+      || stateCode.value === 'TANK_RECIRC'
+      || stateCode.value === 'IRRIG_RECIRC'
   })
 
   const isIrrigationActive = computed(() => {
     const fromIrr = irrNodeState.value?.valve_irrigation
     if (fromIrr !== null && fromIrr !== undefined) return fromIrr
-    return stateCode.value === 'IRRIGATING' || stateCode.value === 'IRRIG_RECIRC'
+    // IRRIG_RECIRC — recovery без поливного клапана.
+    return stateCode.value === 'IRRIGATING' || stageIncludes('irrigation_check', 'irrigation_run')
   })
 
   // Любой сегмент трубопровода, по которому на схеме рисуется «движущаяся капля».
@@ -691,6 +806,8 @@ export function useAutomationPanel(
     || isPhCorrectionActive.value
     || isEcCorrectionActive.value
     || isWaterInletActive.value
+    || isCleanSupplyActive.value
+    || isSolutionSupplyActive.value
     || isTankRefillActive.value
     || isIrrigationActive.value,
   )
@@ -700,7 +817,8 @@ export function useAutomationPanel(
   const hasFailedState = computed(() => automationIndicatesActiveFailure(automationState.value))
 
   const workflowStages = computed<WorkflowStageView[]>(() => {
-    return deriveWorkflowStages(stateCode.value, hasFailedState.value)
+    const barState = resolveWorkflowBarState(automationState.value)
+    return deriveWorkflowStages(barState, hasFailedState.value)
   })
 
   const currentWorkflowStageLabel = computed(() => {
@@ -749,19 +867,31 @@ export function useAutomationPanel(
     if (!isTaskActive.value) {
       return null
     }
+    let remaining: number | null = null
     const fromDetails = automationState.value?.state_details.stage_deadline_remaining_sec
-    if (fromDetails != null && Number.isFinite(fromDetails) && fromDetails >= 0) {
-      return fromDetails
+    if (fromDetails != null && Number.isFinite(fromDetails)) {
+      remaining = fromDetails
+    } else {
+      const fromObservability = automationState.value?.observability?.runtime?.stage_deadline_remaining_sec
+      if (fromObservability != null && Number.isFinite(fromObservability)) {
+        remaining = fromObservability
+      } else {
+        const eta = automationState.value?.estimated_completion_sec
+        if (eta != null && eta > 0) {
+          remaining = eta
+        }
+      }
     }
-    const fromObservability = automationState.value?.observability?.runtime?.stage_deadline_remaining_sec
-    if (fromObservability != null && Number.isFinite(fromObservability) && fromObservability >= 0) {
-      return fromObservability
+    if (remaining == null) {
+      return null
     }
-    const eta = automationState.value?.estimated_completion_sec
-    if (eta != null && eta > 0) {
-      return eta
+    const servedMs = parseServedAtMs(automationState.value)
+    if (servedMs == null) {
+      return remaining
     }
-    return null
+    const elapsedSinceServe = Math.max(0, Math.floor((elapsedTickMs.value - servedMs) / 1000))
+    // Keep negative values so the header can show overdue countdown.
+    return remaining - elapsedSinceServe
   })
 
   const progressBasis = computed(() => automationState.value?.state_details.progress_basis ?? null)
@@ -837,19 +967,19 @@ export function useAutomationPanel(
     clearWsRefreshTimer()
     cleanupRealtimeChannels()
     stopFallbackPolling()
+    hasAppliedLiveFetch = false
+    automationState.value = null
+    errorMessage.value = null
+    connectivityWarning.value = null
 
     if (!newZoneId) {
-      automationState.value = null
-      errorMessage.value = null
-      connectivityWarning.value = null
       isAutomationStateLoading.value = false
       return
     }
 
     hydrateAutomationStateFromPageProps()
-    if (automationState.value === null) {
-      void fetchAutomationState()
-    }
+    // Always refetch for the new zone — bootstrap may be for another zone or empty.
+    void fetchAutomationState()
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
@@ -948,6 +1078,8 @@ export function useAutomationPanel(
     isPhCorrectionActive,
     isEcCorrectionActive,
     isWaterInletActive,
+    isCleanSupplyActive,
+    isSolutionSupplyActive,
     isTankRefillActive,
     isIrrigationActive,
     workflowStages,

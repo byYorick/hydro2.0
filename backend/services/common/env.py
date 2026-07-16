@@ -94,6 +94,8 @@ class Settings:
     
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
+    # Empty / unset = no auth (dev). Production compose sets REDIS_PASSWORD.
+    redis_password: str | None = os.getenv("REDIS_PASSWORD") or None
 
     mqtt_publish_ack_timeout_sec: float = float(os.getenv("MQTT_PUBLISH_ACK_TIMEOUT_SEC", "5.0"))
     telemetry_shutdown_drain_timeout_sec: float = float(

@@ -198,6 +198,13 @@ class AlertController extends Controller
             ], 403);
         }
 
+        if (! $user->canResolveAlerts()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Viewers cannot resolve alerts',
+            ], 403);
+        }
+
         try {
             $alert = $this->alertService->acknowledge($alert, [
                 'resolved_by' => 'user_ack_api',

@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useCycleCenterActions } from '@/composables/useCycleCenterActions'
@@ -7,6 +7,13 @@ import {
   type Greenhouse,
   type ZoneSummary,
 } from '@/composables/useCycleCenterView'
+import { useWebSocket } from '@/composables/useWebSocket'
+
+/** Throttle Inertia partial reload of dashboard zone cards (5–15s band). */
+export const DASHBOARD_ZONES_RELOAD_THROTTLE_MS = 10_000
+
+/** Sparkline series cache TTL — avoid forever-stale mini-charts on zone cards. */
+export const SPARKLINE_CACHE_TTL_MS = 90_000
 
 export interface ZoneTargetRange {
   min: number | null
@@ -47,6 +54,50 @@ export interface ZoneSparklineSeries {
 
 type ToastLike = Parameters<typeof useCycleCenterActions>[0]['showToast']
 
+export function isSparklineCacheFresh(
+  fetchedAt: number | undefined,
+  now: number,
+  ttlMs: number = SPARKLINE_CACHE_TTL_MS,
+): boolean {
+  return fetchedAt != null && now - fetchedAt < ttlMs
+}
+
+/**
+ * Leading + trailing coalesce: first call runs ASAP, further calls within the
+ * window schedule a single run at the end of the remaining throttle interval.
+ */
+export function createThrottledTask(
+  run: () => void | Promise<void>,
+  throttleMs: number,
+): { schedule: () => void; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let lastRunAt = 0
+
+  const schedule = (): void => {
+    if (timer != null) {
+      return
+    }
+
+    const elapsed = Date.now() - lastRunAt
+    const delay = lastRunAt === 0 || elapsed >= throttleMs ? 0 : throttleMs - elapsed
+
+    timer = setTimeout(() => {
+      timer = null
+      lastRunAt = Date.now()
+      void run()
+    }, delay)
+  }
+
+  const cancel = (): void => {
+    if (timer != null) {
+      clearTimeout(timer)
+      timer = null
+    }
+  }
+
+  return { schedule, cancel }
+}
+
 export function useUnifiedDashboard(options: {
   zones: Ref<UnifiedZone[]>
   showToast: ToastLike
@@ -56,11 +107,18 @@ export function useUnifiedDashboard(options: {
   reloadUnified: () => Promise<void>
 } {
   const { fetchHistory } = useTelemetry()
+  const { subscribeToGlobalEvents, subscribeToAlerts } = useWebSocket()
   const sparklines = ref<Record<number, ZoneSparklineSeries>>({})
+  const sparklineFetchedAt = ref<Record<number, number>>({})
 
   const zonesAsSummary = computed(() => options.zones.value as ZoneSummary[])
 
+  function invalidateSparklineCache(): void {
+    sparklineFetchedAt.value = {}
+  }
+
   async function reloadUnified(): Promise<void> {
+    invalidateSparklineCache()
     await router.reload({ only: ['summary', 'zones', 'greenhouses', 'latestAlerts'] })
   }
 
@@ -71,15 +129,16 @@ export function useUnifiedDashboard(options: {
   })
 
   function loadSparklinesForZones(zones: UnifiedZone[]): void {
+    const now = Date.now()
     zones.forEach((zone, i) => {
-      if (sparklines.value[zone.id]) {
+      if (isSparklineCacheFresh(sparklineFetchedAt.value[zone.id], now)) {
         return
       }
       setTimeout(async () => {
         try {
-          const now = new Date()
-          const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-          const range = { from: from.toISOString(), to: now.toISOString() }
+          const rangeNow = new Date()
+          const from = new Date(rangeNow.getTime() - 24 * 60 * 60 * 1000)
+          const range = { from: from.toISOString(), to: rangeNow.toISOString() }
           const [phHist, ecHist, tempHist] = await Promise.all([
             fetchHistory(zone.id, 'PH', range).catch(() => []),
             fetchHistory(zone.id, 'EC', range).catch(() => []),
@@ -92,6 +151,10 @@ export function useUnifiedDashboard(options: {
               ec: ecHist.length > 0 ? ecHist.map((p) => p.value) : null,
               temperature: tempHist.length > 0 ? tempHist.map((p) => p.value) : null,
             },
+          }
+          sparklineFetchedAt.value = {
+            ...sparklineFetchedAt.value,
+            [zone.id]: Date.now(),
           }
         } catch {
           /* non-critical */
@@ -117,6 +180,37 @@ export function useUnifiedDashboard(options: {
     }
     return 'var(--accent-cyan)'
   }
+
+  const { schedule: scheduleZonesReload, cancel: cancelZonesReload } = createThrottledTask(
+    reloadUnified,
+    DASHBOARD_ZONES_RELOAD_THROTTLE_MS,
+  )
+
+  let unsubscribeGlobalEvents: (() => void) | null = null
+  let unsubscribeAlerts: (() => void) | null = null
+
+  onMounted(() => {
+    // Global feed events (workflow / zone state / actions) + alerts channel.
+    // Live event sidebar stays in useDashboardRealtimeFeed; this only refreshes cards.
+    unsubscribeGlobalEvents = subscribeToGlobalEvents(() => {
+      scheduleZonesReload()
+    })
+    unsubscribeAlerts = subscribeToAlerts(() => {
+      scheduleZonesReload()
+    })
+  })
+
+  onUnmounted(() => {
+    cancelZonesReload()
+    if (unsubscribeGlobalEvents) {
+      unsubscribeGlobalEvents()
+      unsubscribeGlobalEvents = null
+    }
+    if (unsubscribeAlerts) {
+      unsubscribeAlerts()
+      unsubscribeAlerts = null
+    }
+  })
 
   return {
     ...view,

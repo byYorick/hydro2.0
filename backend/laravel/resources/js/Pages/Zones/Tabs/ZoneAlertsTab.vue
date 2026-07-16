@@ -4,7 +4,7 @@
     <div class="flex flex-wrap items-center gap-1.5 px-1">
       <span class="font-headline text-sm font-bold text-[color:var(--text-primary)]">Алерты</span>
       <Badge
-        variant="danger"
+        :variant="headerBadgeVariant"
         size="sm"
       >
         {{ filteredAlerts.length }}
@@ -140,6 +140,12 @@ const query = ref('')
 const localAlerts = ref<Alert[]>(Array.isArray(props.alerts) ? [...props.alerts] : [])
 const selectedAlertId = ref<number | null>(null)
 const resolveLoading = ref(false)
+
+const headerBadgeVariant = computed<'danger' | 'success' | 'neutral'>(() => {
+  if (filteredAlerts.value.length === 0) return 'neutral'
+  if (selectedStatus.value === 'RESOLVED') return 'success'
+  return 'danger'
+})
 
 watch(
   () => props.alerts,

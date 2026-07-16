@@ -153,7 +153,7 @@ class UnifiedDashboardService
 
         $alertsByZone = [];
         foreach ($alerts as $zoneId => $zoneAlerts) {
-            $alertsByZone[$zoneId] = $zoneAlerts->take(2)->values()->map(function ($alert) {
+            $alertsByZone[$zoneId] = $zoneAlerts->take(3)->values()->map(function ($alert) {
                 return [
                     'id' => $alert->id,
                     'type' => $alert->type,
@@ -426,9 +426,7 @@ class UnifiedDashboardService
                     $query
                         ->where('type', 'irrig')
                         ->orWhere('type', 'irrigation')
-                        ->orWhere('type', 'valve_irrigation')
-                        ->orWhere('type', 'pump')
-                        ->orWhere('type', 'pump_node');
+                        ->orWhere('type', 'valve_irrigation');
                 })
                 ->select(['zone_id', 'status', 'last_seen_at'])
                 ->get();
@@ -516,6 +514,9 @@ class UnifiedDashboardService
             'ready' => 'Готов',
             'preparing' => 'Подготовка',
             'startup' => 'Подготовка',
+            // Макрофазы AE3 (zone_workflow_state.workflow_phase)
+            'tank_filling' => 'Наполнение баков',
+            'tank_recirc' => 'Рециркуляция раствора',
             'clean_fill' => 'Набор чистой воды',
             'solution_fill' => 'Приготовление раствора',
             'prepare_recirculation' => 'Рециркуляция перед поливом',
@@ -536,9 +537,12 @@ class UnifiedDashboardService
     }
 
     /**
-     * Батчем читаем уровни баков (clean/solution) из `telemetry_last`
-     * по metric_type = WATER_LEVEL + `sensors.scope='tank'`.
-     * Возвращает проценты, если известна capacity, иначе null.
+     * Батчем читаем уровни баков (clean/solution/buffer) из `telemetry_last`
+     * по sensors.type = WATER_LEVEL.
+     *
+     * Для level-switch (label `*_max`/`*_min`, значения 0/1) — coarse % как в AE3:
+     * clean: max → 100/0; solution: max → 100, только min → 50, иначе 0.
+     * Для непрерывных датчиков 0..100 — среднее %.
      *
      * @param  array<int, int>  $zoneIds
      * @return array<int, array{clean_percent: float|null, solution_percent: float|null, buffer_percent: float|null, clean_offline: bool, solution_offline: bool, buffer_offline: bool, clean_present: bool, solution_present: bool, buffer_present: bool, topology_count: int|null}>
@@ -627,15 +631,16 @@ class UnifiedDashboardService
             $buckets[$zoneId][$target][] = [
                 'value' => $value,
                 'stale' => $isStale,
+                'channel' => $channel,
             ];
         }
 
         $result = [];
         foreach ($buckets as $zoneId => $tanks) {
             $result[$zoneId] = [
-                'clean_percent' => $this->aggregateTankPercent($tanks['clean']),
-                'solution_percent' => $this->aggregateTankPercent($tanks['solution']),
-                'buffer_percent' => $this->aggregateTankPercent($tanks['buffer']),
+                'clean_percent' => $this->aggregateTankPercent($tanks['clean'], 'clean'),
+                'solution_percent' => $this->aggregateTankPercent($tanks['solution'], 'solution'),
+                'buffer_percent' => $this->aggregateTankPercent($tanks['buffer'], 'buffer'),
                 'clean_offline' => $this->isTankOffline($tanks['clean']),
                 'solution_offline' => $this->isTankOffline($tanks['solution']),
                 'buffer_offline' => $this->isTankOffline($tanks['buffer']),
@@ -650,25 +655,91 @@ class UnifiedDashboardService
     }
 
     /**
-     * @param  array<int, array{value: float|null, stale: bool}>  $entries
+     * Coarse % для level-switch (AE3) или среднее для непрерывного WATER_LEVEL.
+     *
+     * @param  array<int, array{value: float|null, stale: bool, channel?: string}>  $entries
      */
-    private function aggregateTankPercent(array $entries): ?float
+    private function aggregateTankPercent(array $entries, string $tank): ?float
     {
-        $values = array_filter(
-            array_map(fn ($entry) => $entry['value'], $entries),
-            fn ($v) => $v !== null
-        );
-        if ($values === []) {
+        $fresh = array_values(array_filter(
+            $entries,
+            static fn (array $entry): bool => $entry['value'] !== null && ! ($entry['stale'] ?? false)
+        ));
+        if ($fresh === []) {
             return null;
         }
-        // WATER_LEVEL уже в % в telemetry_last — берём среднее, если несколько сенсоров.
-        $avg = array_sum($values) / count($values);
+
+        $maxSeen = false;
+        $minSeen = false;
+        $maxOn = false;
+        $minOn = false;
+        $continuous = [];
+
+        foreach ($fresh as $entry) {
+            $channel = strtolower((string) ($entry['channel'] ?? ''));
+            $value = (float) $entry['value'];
+            $isMax = str_contains($channel, '_max') || str_ends_with($channel, 'max');
+            $isMin = str_contains($channel, '_min') || str_ends_with($channel, 'min');
+
+            if ($isMax) {
+                $maxSeen = true;
+                if ($value >= 0.5) {
+                    $maxOn = true;
+                }
+            } elseif ($isMin) {
+                $minSeen = true;
+                if ($value >= 0.5) {
+                    $minOn = true;
+                }
+            } else {
+                $continuous[] = $value;
+            }
+        }
+
+        if ($maxSeen || $minSeen) {
+            if ($tank === 'clean') {
+                // Как AE3 coarse_clean_tank_level_percent: ориентир — max.
+                if ($maxSeen) {
+                    return $maxOn ? 100.0 : 0.0;
+                }
+
+                return $minOn ? 50.0 : 0.0;
+            }
+
+            // solution / buffer — как AE3 coarse_solution_tank_level_percent.
+            if ($maxOn) {
+                return 100.0;
+            }
+            if ($minOn) {
+                return 50.0;
+            }
+
+            return 0.0;
+        }
+
+        if ($continuous === []) {
+            return null;
+        }
+
+        // Безымянные 0/1 без _min/_max: любой triggered → 100, иначе 0 (не среднее = 1%).
+        $allBinary = true;
+        foreach ($continuous as $value) {
+            if ($value !== 0.0 && $value !== 1.0) {
+                $allBinary = false;
+                break;
+            }
+        }
+        if ($allBinary) {
+            return max($continuous) >= 0.5 ? 100.0 : 0.0;
+        }
+
+        $avg = array_sum($continuous) / count($continuous);
 
         return round(max(0.0, min(100.0, $avg)), 1);
     }
 
     /**
-     * @param  array<int, array{value: float|null, stale: bool}>  $entries
+     * @param  array<int, array{value: float|null, stale: bool, channel?: string}>  $entries
      */
     private function isTankOffline(array $entries): bool
     {
@@ -696,8 +767,11 @@ class UnifiedDashboardService
         if ($bufferPresent) {
             return 3;
         }
-        if ($cleanPresent || $solutionPresent) {
+        if ($cleanPresent && $solutionPresent) {
             return 2;
+        }
+        if ($cleanPresent || $solutionPresent) {
+            return 1;
         }
 
         return null;

@@ -741,6 +741,7 @@ async def get_redis_client():
         _redis_client = redis_async.Redis(
             host=s.redis_host if hasattr(s, "redis_host") else "redis",
             port=s.redis_port if hasattr(s, "redis_port") else 6379,
+            password=getattr(s, "redis_password", None) or None,
             db=0,
             decode_responses=False,
         )

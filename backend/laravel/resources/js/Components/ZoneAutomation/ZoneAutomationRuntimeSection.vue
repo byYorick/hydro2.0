@@ -85,6 +85,8 @@
             :is-ph-correction-active="isPhCorrectionActive"
             :is-ec-correction-active="isEcCorrectionActive"
             :is-water-inlet-active="isWaterInletActive"
+            :is-clean-supply-active="isCleanSupplyActive"
+            :is-solution-supply-active="isSolutionSupplyActive"
             :is-tank-refill-active="isTankRefillActive"
             :is-irrigation-active="isIrrigationActive"
             :is-process-active="isProcessActive"
@@ -171,6 +173,8 @@ const {
   isPhCorrectionActive,
   isEcCorrectionActive,
   isWaterInletActive,
+  isCleanSupplyActive,
+  isSolutionSupplyActive,
   isTankRefillActive,
   isIrrigationActive,
   workflowStages,
@@ -182,7 +186,10 @@ const {
 
 const runtimeMeta = useAutomationRuntimeMeta(automationState)
 
-const stateBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'success'>(() => {
+const stateBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'success' | 'danger'>(() => {
+  if (runtimeMeta.hasActiveFailure.value) {
+    return 'danger'
+  }
   const map: Record<AutomationStateType, 'neutral' | 'info' | 'warning' | 'success'> = {
     IDLE: 'neutral',
     TANK_FILLING: 'info',

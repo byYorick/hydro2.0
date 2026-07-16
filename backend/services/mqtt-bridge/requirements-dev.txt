@@ -1,0 +1,3 @@
+# Dev/test only — не ставить в production-образ
+# Дополнительно: services/requirements-test.txt (ставится Dockerfile при INSTALL_DEV_DEPS=true)
+-r requirements.txt

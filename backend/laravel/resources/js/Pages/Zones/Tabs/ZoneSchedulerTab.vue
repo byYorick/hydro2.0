@@ -56,7 +56,7 @@
           :selected-id="selectedExecution?.execution_id ?? null"
           :lane-label="laneLabel"
           :decision-label="decisionLabelForRun"
-          @select="fetchExecution"
+          @select="selectExecution"
         />
       </template>
 
@@ -156,6 +156,8 @@ const {
   fetchAutomationState,
   fetchExecution,
   fetchDiagnostics,
+  selectExecution,
+  clearSelectedExecution,
   setHorizon,
   clearDiagnostics,
   clearPollTimer,
@@ -250,20 +252,19 @@ function readRunDurationSec(run: ExecutionRun): number | null {
 }
 
 function deriveRunEndAt(run: ExecutionRun): Date | null {
-  const directDeadline = parseIso(run.due_at) ?? parseIso(run.expires_at)
-  if (directDeadline) return directDeadline
-
+  // due_at in AE3 is the next stage wake deadline, not end-of-run — prefer duration.
   const durationSec = readRunDurationSec(run)
-  if (durationSec === null) return null
-
   const startAt =
     parseIso(run.accepted_at) ??
     parseIso(run.scheduled_for) ??
     parseIso(run.created_at) ??
     parseIso(run.updated_at)
 
-  if (!startAt) return null
-  return new Date(startAt.getTime() + durationSec * 1000)
+  if (durationSec !== null && startAt) {
+    return new Date(startAt.getTime() + durationSec * 1000)
+  }
+
+  return parseIso(run.expires_at)
 }
 
 const activeEndAt = computed<string | null>(() => {
@@ -285,10 +286,9 @@ const etaHint = computed<string>(() => {
 
 const activeEtaEstimated = computed<boolean>(() => {
   const run = activeRun.value
-  if (!run) return false
-  const hasDirectDeadline = Boolean(parseIso(run.due_at) ?? parseIso(run.expires_at))
-  if (hasDirectDeadline) return false
-  return activeEndAt.value !== null
+  if (!run || !activeEndAt.value) return false
+  // Duration-based ETA is always estimated; expires_at is authoritative when used.
+  return readRunDurationSec(run) !== null
 })
 
 const selectedExecutionErrorMessage = computed<string | null>(() =>
@@ -305,17 +305,13 @@ function decisionLabelForRun(run: ExecutionRun): string {
   return outcome ? `${outcome}${reason}` : (run.status ?? 'UNKNOWN')
 }
 
-function clearSelectedExecution(): void {
-  selectedExecution.value = null
-}
-
 async function handleRetry(executionId: string): Promise<void> {
   try {
-    const response = await api.zones.retryExecution<{ data?: { intent_id?: number } }>(
+    const response = await api.zones.retryExecution<{ intent_id?: number; data?: { intent_id?: number } }>(
       Number(props.zoneId),
       executionId,
     )
-    const intentId = response?.data?.intent_id
+    const intentId = response?.intent_id ?? response?.data?.intent_id
     showToast(
       intentId
         ? `Повтор исполнения #${executionId} создан (intent #${intentId}).`
@@ -338,17 +334,29 @@ function handleOpenEvents(executionId: string): void {
   router.visit(`/zones/${props.zoneId}?tab=events&execution_id=${executionId}`)
 }
 
+function chainStepKey(step: ChainStep): string {
+  return `${step.step ?? ''}|${step.ref ?? ''}|${step.at ?? ''}`
+}
+
+function appendUniqueChainStep(chain: ChainStep[] | undefined, step: ChainStep): ChainStep[] {
+  const current = chain ?? []
+  const key = chainStepKey(step)
+  if (current.some((item) => chainStepKey(item) === key)) {
+    return current
+  }
+  return [...current, step]
+}
+
 function applyChainStep(executionId: string, step: ChainStep): void {
   if (selectedExecution.value?.execution_id === executionId) {
-    const current = selectedExecution.value.chain ?? []
     selectedExecution.value = {
       ...selectedExecution.value,
-      chain: [...current, step],
+      chain: appendUniqueChainStep(selectedExecution.value.chain, step),
     }
   }
-  if (activeRun.value?.execution_id === executionId) {
-    const current = activeRun.value.chain ?? []
-    activeRun.value.chain = [...current, step]
+  if (workspace.value?.execution?.active_run?.execution_id === executionId) {
+    const active = workspace.value.execution.active_run
+    active.chain = appendUniqueChainStep(active.chain, step)
   }
 }
 
@@ -370,7 +378,7 @@ function moveSelection(delta: 1 | -1): void {
 
   const next = runs[nextIndex]
   if (next) {
-    void fetchExecution(next.execution_id)
+    selectExecution(next.execution_id)
   }
 }
 
@@ -380,7 +388,7 @@ useSchedulerHotkeys({
   onOpen: () => {
     const first = selectedExecution.value ?? recentRuns.value[0]
     if (first) {
-      void fetchExecution(first.execution_id)
+      selectExecution(first.execution_id)
     }
   },
   onRefresh: () => {

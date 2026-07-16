@@ -23,6 +23,7 @@ interface UseZoneCycleActionsDeps {
   activeGrowCycle: GrowCycleRef
   zoneId: ZoneIdRef
   reloadZone: (zoneId: number | undefined, only?: string[]) => Promise<unknown> | void
+  reloadZonePageProps?: (only?: string[]) => void
   showToast: ToastHandler
   setLoading: SetLoadingHandler
   handleError: (error: unknown) => void
@@ -32,6 +33,7 @@ export function useZoneCycleActions({
   activeGrowCycle,
   zoneId,
   reloadZone,
+  reloadZonePageProps,
   showToast,
   setLoading,
   handleError,
@@ -94,6 +96,7 @@ export function useZoneCycleActions({
       await api.growCycles.advancePhase(activeGrowCycle.value.id)
       showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      reloadZonePageProps?.(['zone', 'active_grow_cycle', 'active_cycle', 'current_phase', 'targets'])
     } catch (err) {
       logger.error('Failed to change phase:', err)
       handleError(err)
@@ -112,6 +115,7 @@ export function useZoneCycleActions({
       await api.growCycles.pause(activeGrowCycle.value.id)
       showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      reloadZonePageProps?.(['zone', 'active_grow_cycle', 'active_cycle', 'current_phase', 'targets'])
     } catch (err) {
       logger.error('Failed to pause cycle:', err)
       handleError(err)
@@ -130,6 +134,7 @@ export function useZoneCycleActions({
       await api.growCycles.resume(activeGrowCycle.value.id)
       showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      reloadZonePageProps?.(['zone', 'active_grow_cycle', 'active_cycle', 'current_phase', 'targets'])
     } catch (err) {
       logger.error('Failed to resume cycle:', err)
       handleError(err)

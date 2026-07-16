@@ -471,6 +471,46 @@ async def test_state_includes_control_mode_from_zones_table() -> None:
     assert "clean_fill_start" in result["allowed_manual_steps"]
 
 
+async def test_state_exposes_solution_change_gate_steps_in_auto_mode() -> None:
+    task = SimpleNamespace(
+        id=41,
+        status="waiting_command",
+        task_type="solution_change",
+        created_at=NOW.replace(tzinfo=None),
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="await_operator_drain_confirm",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step="solution_drain_confirm",
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        if "control_mode FROM zones" in query:
+            return [{"control_mode": "auto"}]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["control_mode"] == "auto"
+    assert "solution_drain_confirm" in result["allowed_manual_steps"]
+    assert "solution_change_abort" in result["allowed_manual_steps"]
+    assert "clean_fill_start" not in result["allowed_manual_steps"]
+
+
 async def test_state_marks_ec_correction_active_during_solution_fill() -> None:
     task = SimpleNamespace(
         id=22,

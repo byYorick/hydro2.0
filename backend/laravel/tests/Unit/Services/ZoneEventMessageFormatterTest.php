@@ -201,6 +201,49 @@ class ZoneEventMessageFormatterTest extends TestCase
         );
     }
 
+    public function test_format_irrigation_cycle_lifecycle_uses_russian_labels(): void
+    {
+        $this->assertSame(
+            'Полив запущен',
+            $this->formatter->format('IRRIGATION_CYCLE_STARTED', ['label' => 'Полив запущен'])
+        );
+        $this->assertSame(
+            'Полив завершён',
+            $this->formatter->format('IRRIGATION_CYCLE_FINISHED', [])
+        );
+        $this->assertSame(
+            'Полив остановлен: низкий уровень раствора',
+            $this->formatter->format('IRRIGATION_CYCLE_STOPPED', [
+                'label' => 'Полив остановлен: низкий уровень раствора',
+            ])
+        );
+        $this->assertSame(
+            'Полив пропущен',
+            $this->formatter->format('IRRIGATION_CYCLE_SKIPPED', [])
+        );
+    }
+
+    public function test_format_unknown_known_runtime_events_use_russian_fallback(): void
+    {
+        $cases = [
+            'EMERGENCY_STOP_ACTIVATED' => 'Аварийный стоп активирован',
+            'CONTROL_MODE_CHANGED' => 'Режим управления изменён',
+            'SOLUTION_CHANGE_COMPLETED' => 'Смена раствора завершена',
+            'IRRIGATION_WAIT_READY_TIMEOUT' => 'Полив: таймаут ожидания готовности',
+            'CORRECTION_SENSOR_MODE_REACTIVATED' => 'Коррекция: датчик реактивирован',
+            'LEVEL_SWITCH_CHANGED' => 'Датчик уровня: изменение',
+        ];
+
+        foreach ($cases as $type => $expected) {
+            $this->assertSame($expected, $this->formatter->format($type, []), $type);
+        }
+
+        $this->assertSame(
+            'Чистая вода заполнена',
+            $this->formatter->format('CLEAN_FILL_COMPLETED', ['label' => 'Чистая вода заполнена'])
+        );
+    }
+
     public function test_format_self_task_dispatch_retry_scheduled_contains_retry_progress(): void
     {
         $message = $this->formatter->format('SELF_TASK_DISPATCH_RETRY_SCHEDULED', [

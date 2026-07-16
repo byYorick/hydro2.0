@@ -1,6 +1,18 @@
+# Production stack. Project name isolated from docker-compose.dev.yml (project "backend").
+name: hydro-prod
+
+# Named network for all services. Not `internal: true` so outbound
+# (image pulls, Grafana plugins, apt) still works. Host publish only for
+# laravel/mqtt/grafana — see ports: below.
+networks:
+  hydro_prod:
+    name: hydro_prod
+    driver: bridge
+
 services:
   mqtt:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.0.22
+    networks: [hydro_prod]
     ports:
       - "1883:1883"
     volumes:
@@ -17,7 +29,8 @@ services:
       start_period: 10s
     restart: unless-stopped
   db:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.28.2-pg16
+    networks: [hydro_prod]
     environment:
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -81,19 +94,37 @@ services:
       start_period: 20s
     restart: unless-stopped
   redis:
-    image: redis:7-alpine
-    command: >
-      redis-server
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-      --appendonly yes
-      --appendfsync everysec
-      --tcp-backlog 511
-      --timeout 0
-      --tcp-keepalive 300
+    image: redis:7.4.9-alpine
+    networks: [hydro_prod]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      - --save
+      - "60"
+      - "10000"
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --tcp-backlog
+      - "511"
+      - --timeout
+      - "0"
+      - --tcp-keepalive
+      - "300"
     volumes:
       - redis_data:/data
     deploy:
@@ -105,7 +136,7 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -114,9 +145,8 @@ services:
   laravel:
     build:
       context: ./laravel
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
       args:
-        INSTALL_DEV_DEPS: "false"
         VITE_REVERB_HOST: ${PUBLIC_HOST:?PUBLIC_HOST must be set}
         VITE_WS_HOST: ${PUBLIC_HOST:?PUBLIC_HOST must be set}
         VITE_REVERB_PORT: ${PUBLIC_WS_PORT:-6001}
@@ -127,6 +157,7 @@ services:
         VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
         VITE_PUSHER_APP_KEY: ${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
     working_dir: /app
+    networks: [hydro_prod]
     # Reverb запускается автоматически через supervisor (reverb-supervisor.conf)
     # Не запускаем через nohup, чтобы избежать двойного запуска и ошибки EADDRINUSE
     # command: оставлен по умолчанию (docker-entrypoint.sh запустит supervisord)
@@ -166,10 +197,11 @@ services:
       - DB_PORT=5432
       - DB_DATABASE=hydro
       - DB_USERNAME=hydro
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-change-me}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - TELEMETRY_RETENTION_DAYS=${TELEMETRY_RETENTION_DAYS:-30}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       - REVERB_APP_ID=${REVERB_APP_ID:-app}
       # ВАЖНО: Замените на уникальные ключи через переменные окружения
       - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
@@ -195,19 +227,17 @@ services:
       - SESSION_SECURE_COOKIE=${SESSION_SECURE_COOKIE:-true}
       # Vite/WebSocket для собранного фронта (PUBLIC_* задаются в backend/.env.prod)
       - VITE_ENABLE_WS=true
-      - VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
+      - VITE_REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
       - VITE_REVERB_HOST=${PUBLIC_HOST:?PUBLIC_HOST must be set}
       - VITE_REVERB_PORT=${PUBLIC_WS_PORT:-6001}
       - VITE_REVERB_SCHEME=${PUBLIC_SCHEME:-https}
-      - VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-change-me}
+      - VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
       - VITE_WS_HOST=${PUBLIC_HOST:?PUBLIC_HOST must be set}
       - VITE_WS_PORT=${PUBLIC_WS_PORT:-6001}
       - VITE_WS_TLS=${PUBLIC_WS_TLS:-true}
       # ВАЖНО: Токены для безопасности сервисов
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
-      - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
-      - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET must be set}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
@@ -239,6 +269,9 @@ services:
     build:
       context: ./services
       dockerfile: mqtt-bridge/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "false"
+    networks: [hydro_prod]
     environment:
       - APP_ENV=production
       - MQTT_HOST=mqtt
@@ -250,7 +283,7 @@ services:
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PG_PASS=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - LARAVEL_API_URL=http://laravel
       # ВАЖНО: Токены для безопасности сервисов
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
@@ -264,8 +297,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "9000:9000"
+    expose:
+      - "9000"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 30s
@@ -281,6 +314,9 @@ services:
     build:
       context: ./services
       dockerfile: automation-engine/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "false"
+    networks: [hydro_prod]
     environment:
       - APP_ENV=production
       - AUTOMATION_ENGINE_API_PORT=9405
@@ -293,8 +329,8 @@ services:
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
-      - AE_DB_DSN=postgresql://hydro:${POSTGRES_PASSWORD:-change-me}@db:5432/hydro
+      - PG_PASS=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      - AE_DB_DSN=postgresql://hydro:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/hydro
       - AE_WORKER_OWNER=ae3-${HOSTNAME:-prod}
       - PG_POOL_MAX_SIZE=${PG_POOL_MAX_SIZE:-10}
       - LARAVEL_API_URL=http://laravel
@@ -310,8 +346,8 @@ services:
         condition: service_healthy
       laravel:
         condition: service_healthy
-    ports:
-      - "9405:9405"
+    expose:
+      - "9405"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/ready', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s
@@ -323,6 +359,9 @@ services:
     build:
       context: ./services
       dockerfile: history-logger/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "false"
+    networks: [hydro_prod]
     environment:
       - APP_ENV=production
       - MQTT_HOST=mqtt
@@ -334,7 +373,7 @@ services:
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PG_PASS=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - LARAVEL_API_URL=http://laravel
       # ВАЖНО: Токены для безопасности сервисов
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
@@ -343,6 +382,7 @@ services:
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     depends_on:
       mqtt:
         condition: service_healthy
@@ -352,9 +392,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "9300:9300"
-      - "9301:9301"  # Prometheus metrics
+    expose:
+      - "9300"
+      - "9301"  # Prometheus metrics
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 30s
@@ -363,16 +403,18 @@ services:
       start_period: 30s
     restart: unless-stopped
   blackbox:
-    image: prom/blackbox-exporter:latest
-    container_name: blackbox
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: hydro-prod-blackbox
+    networks: [hydro_prod]
     command:
       - '--config.file=/etc/blackbox/blackbox.yml'
     volumes:
       - ./configs/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
     restart: unless-stopped
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    container_name: postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    container_name: hydro-prod-postgres-exporter
+    networks: [hydro_prod]
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-hydro}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-hydro}?sslmode=disable
     depends_on:
@@ -380,17 +422,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
   redis-exporter:
-    image: oliver006/redis_exporter:latest
-    container_name: redis-exporter
+    image: oliver006/redis_exporter:v1.87.0
+    container_name: hydro-prod-redis-exporter
+    networks: [hydro_prod]
     environment:
       REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
   prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
+    image: prom/prometheus:v3.13.1
+    container_name: hydro-prod-prometheus
+    networks: [hydro_prod]
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -401,8 +446,8 @@ services:
       - ./configs/prod/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./configs/prod/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     depends_on:
       automation-engine:
         condition: service_healthy
@@ -425,12 +470,13 @@ services:
     restart: unless-stopped
   grafana:
     image: grafana/grafana:11.5.2
-    container_name: grafana
+    container_name: hydro-prod-grafana
+    networks: [hydro_prod]
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      # Плагины не используются provisioned dashboards — не тянем лишнее при старте
       - GF_DEFAULT_LANGUAGE=ru
       - GF_USERS_DEFAULT_LANGUAGE=ru
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -454,8 +500,9 @@ services:
       start_period: 40s
     restart: unless-stopped
   alertmanager:
-    image: prom/alertmanager:latest
-    container_name: alertmanager
+    image: prom/alertmanager:v0.28.1
+    container_name: hydro-prod-alertmanager
+    networks: [hydro_prod]
     entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
     environment:
       - ALERTMANAGER_WEBHOOK_SECRET=${ALERTMANAGER_WEBHOOK_SECRET:?ALERTMANAGER_WEBHOOK_SECRET must be set}
@@ -466,8 +513,8 @@ services:
       - ./configs/prod/alertmanager/config.yml:/etc/alertmanager/config.yml:ro
       - ./scripts/alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
       - alertmanager_data:/alertmanager
-    ports:
-      - "9093:9093"
+    expose:
+      - "9093"
     depends_on:
       prometheus:
         condition: service_healthy
@@ -484,20 +531,23 @@ services:
     build:
       context: ./services
       dockerfile: digital-twin/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "false"
+    networks: [hydro_prod]
     environment:
       - APP_ENV=production
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro
       - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PG_PASS=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - PYTHONPATH=/app
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8003:8003"
-      - "9403:9403"  # Prometheus metrics
+    expose:
+      - "8003"
+      - "9403"  # Prometheus metrics
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 8003)); s.close()' || exit 1"]
       interval: 30s
@@ -505,40 +555,28 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
-  node-sim-manager:
-    build:
-      context: ./services
-      dockerfile: node-sim-manager/Dockerfile
-    environment:
-      - APP_ENV=production
-      - LOG_LEVEL=INFO
-      - NODE_SIM_ROOT=/node-sim
-    volumes:
-      - ../tests/node_sim:/node-sim:ro
-    depends_on:
-      mqtt:
-        condition: service_healthy
-    ports:
-      - "9100:9100"
-    restart: unless-stopped
+  # node-sim-manager — только для dev/e2e (симулятор узлов), в production не включается
   telemetry-aggregator:
     build:
       context: ./services
       dockerfile: telemetry-aggregator/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "false"
+    networks: [hydro_prod]
     environment:
       - APP_ENV=production
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro
       - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PG_PASS=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - RETENTION_SAMPLES_DAYS=${RETENTION_SAMPLES_DAYS:-30}
       - PYTHONPATH=/app
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "9404:9404"  # Prometheus metrics
+    expose:
+      - "9404"  # Prometheus metrics
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9404)); s.close()' || exit 1"]
       interval: 30s

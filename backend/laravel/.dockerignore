@@ -1,20 +1,72 @@
+# Dependencies / build artifacts (ставятся или собираются внутри Dockerfile)
 node_modules
 npm-debug.log
-.git
-.gitignore
-.env
-.env.backup
-.phpunit.result.cache
-storage
-bootstrap/cache
-*.log
-.DS_Store
-Thumbs.db
-.vscode
-.idea
-# Игнорируем большие директории для уменьшения контекста сборки
 vendor
 public/hot
 public/build
-tests
 
+# VCS / IDE
+.git
+.gitignore
+.vscode
+.idea
+.cursor
+.DS_Store
+Thumbs.db
+.editorconfig
+
+# Secrets — .env.example оставляем (entrypoint: cp .env.example → .env)
+.env
+.env.*
+!.env.example
+auth.json
+
+# Docs / misc
+*.md
+docs
+coverage
+.nyc_output
+Homestead.json
+Homestead.yaml
+erd.mmd
+erd.svg
+
+# Tests / QA tooling (не нужны в образе)
+tests
+phpunit.xml
+phpunit.dusk.xml
+phpunit*
+.phpunit.result.cache
+.phpunit.cache
+playwright
+playwright.config.*
+playwright-report
+test-results
+vitest.config.*
+puppeteer.json
+
+# Runtime cache / logs (пересоздаются в контейнере)
+storage/logs
+storage/logs/*
+storage/framework/cache
+storage/framework/cache/*
+storage/framework/sessions
+storage/framework/sessions/*
+storage/framework/views
+storage/framework/views/*
+storage/pail
+storage/debugbar
+bootstrap/cache/*.php
+*.log
+
+# Compose / alternate Dockerfiles (Dockerfile.prod НЕ игнорируем — иногда нужен в context)
+docker-compose*.yml
+Dockerfile.dev
+
+# Local DB dumps / scratch
+hydro_dev
+hydro_test
+output
+check_migration.sql
+check_zone6.php
+load_test.php

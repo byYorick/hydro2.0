@@ -202,7 +202,14 @@
             :x2="G.cleanCx"
             :y2="T.busY"
             class="pipe-line"
-            :class="{ 'pipe-line--active': isMainLineActive }"
+            :class="{ 'pipe-line--active': isCleanSupplyActive }"
+          />
+          <circle
+            v-if="isCleanSupplyActive"
+            class="flow-dot"
+            r="3.5"
+            :cx="G.cleanCx"
+            :cy="flow.cleanDrainFlowY.value"
           />
           <line
             :x1="G.solutionCx"
@@ -210,21 +217,44 @@
             :x2="G.solutionCx"
             :y2="T.busY"
             class="pipe-line"
-            :class="{ 'pipe-line--active': isMainLineActive }"
+            :class="{ 'pipe-line--active': isSolutionSupplyActive }"
           />
+          <circle
+            v-if="isSolutionSupplyActive"
+            class="flow-dot"
+            r="3.5"
+            :cx="G.solutionCx"
+            :cy="flow.solutionDrainFlowY.value"
+          />
+          <!-- Шина: clean→solution только при V2; solution→насос при V2 и/или V3 -->
           <line
             :x1="G.cleanCx"
+            :y1="T.busY"
+            :x2="G.solutionCx"
+            :y2="T.busY"
+            class="pipe-line"
+            :class="{ 'pipe-line--active': isCleanSupplyActive }"
+          />
+          <line
+            :x1="G.solutionCx"
             :y1="T.busY"
             :x2="G.pumpInletX"
             :y2="T.busY"
             class="pipe-line"
-            :class="{ 'pipe-line--active': isMainLineActive }"
+            :class="{ 'pipe-line--active': isPumpInletBusActive }"
           />
           <circle
-            v-if="isMainLineActive"
+            v-if="isCleanSupplyActive"
             class="flow-dot"
             r="3.5"
-            :cx="flow.busFlowX.value"
+            :cx="flow.cleanBusFlowX.value"
+            :cy="T.busY"
+          />
+          <circle
+            v-if="isSolutionSupplyActive && !isCleanSupplyActive"
+            class="flow-dot"
+            r="3.5"
+            :cx="flow.solutionBusFlowX.value"
             :cy="T.busY"
           />
           <circle
@@ -242,8 +272,8 @@
 
           <g
             class="valve-node"
-            @mouseenter="handleHover('valve_out', $event)"
-            @mousemove="handleMouseMove('valve_out', $event)"
+            @mouseenter="handleHover('valve_v2', $event)"
+            @mousemove="handleMouseMove('valve_v2', $event)"
             @mouseleave="handleLeave"
           >
             <rect
@@ -253,7 +283,7 @@
               height="13"
               rx="3"
               class="valve"
-              :class="{ 'valve--active': isMainLineActive }"
+              :class="{ 'valve--active': isCleanSupplyActive }"
             />
             <text
               :x="G.cleanCx - 16"
@@ -266,8 +296,8 @@
           </g>
           <g
             class="valve-node"
-            @mouseenter="handleHover('valve_out', $event)"
-            @mousemove="handleMouseMove('valve_out', $event)"
+            @mouseenter="handleHover('valve_v3', $event)"
+            @mousemove="handleMouseMove('valve_v3', $event)"
             @mouseleave="handleLeave"
           >
             <rect
@@ -277,7 +307,7 @@
               height="13"
               rx="3"
               class="valve"
-              :class="{ 'valve--active': isMainLineActive }"
+              :class="{ 'valve--active': isSolutionSupplyActive }"
             />
             <text
               :x="G.solutionCx + 16"
@@ -632,6 +662,8 @@ interface Props {
   isPhCorrectionActive: boolean
   isEcCorrectionActive: boolean
   isWaterInletActive: boolean
+  isCleanSupplyActive: boolean
+  isSolutionSupplyActive: boolean
   isTankRefillActive: boolean
   isIrrigationActive: boolean
   isProcessActive: boolean
@@ -649,16 +681,23 @@ const uid = Math.random().toString(36).slice(2, 8)
 
 const hoveredElement = ref<HoveredElement | null>(null)
 
+const isCleanSupplyActive = computed(() => props.isCleanSupplyActive)
+const isSolutionSupplyActive = computed(() => props.isSolutionSupplyActive)
+/** Участок шины solution → насос (общий для V2 и/или V3). */
+const isPumpInletBusActive = computed(() =>
+  props.isCleanSupplyActive || props.isSolutionSupplyActive,
+)
 const isMainLineActive = computed(() =>
   props.isPumpInActive
   || props.isCirculationActive
   || props.isPhCorrectionActive
-  || props.isEcCorrectionActive,
+  || props.isEcCorrectionActive
+  || isPumpInletBusActive.value,
 )
 const isCorrectionNodeActive = computed(() => props.isPhCorrectionActive || props.isEcCorrectionActive)
+/** V4 — только возврат в бак раствора (valve_solution_fill / circulation). */
 const isRecircActive = computed(() => props.isTankRefillActive || props.isCirculationActive)
 const isInletValveOpen = computed(() => props.isWaterInletActive)
-const isOutletValveOpen = computed(() => props.isProcessActive || isCorrectionNodeActive.value)
 
 const rotorPath = computed(() => {
   const { cx, r } = T.pump
@@ -687,8 +726,8 @@ const irrStateRows = computed(() => {
     { key: 'pump', label: 'P1', value: formatIrrStateValue(state.pump_main) },
     { key: 'v1', label: 'V1', value: formatIrrStateValue(state.valve_clean_fill) },
     { key: 'v2', label: 'V2', value: formatIrrStateValue(state.valve_clean_supply) },
-    { key: 'v3', label: 'V3', value: formatIrrStateValue(state.valve_solution_fill) },
-    { key: 'v4', label: 'V4', value: formatIrrStateValue(state.valve_solution_supply) },
+    { key: 'v3', label: 'V3', value: formatIrrStateValue(state.valve_solution_supply) },
+    { key: 'v4', label: 'V4', value: formatIrrStateValue(state.valve_solution_fill) },
     { key: 'v5', label: 'V5', value: formatIrrStateValue(state.valve_irrigation) },
     { key: 'clean_max', label: 'Чист. max', value: formatIrrStateValue(state.clean_level_max) },
     { key: 'sol_max', label: 'Раств. max', value: formatIrrStateValue(state.solution_level_max) },
@@ -720,15 +759,18 @@ function elementData(element: string): Record<string, string> {
   if (element === 'valve_in') {
     return { 'V1 (вход)': isInletValveOpen.value ? 'Открыт' : 'Закрыт' }
   }
-  if (element === 'valve_out') {
-    return { 'Отбор (V2/V3)': isOutletValveOpen.value ? 'Открыт' : 'Закрыт' }
+  if (element === 'valve_v2') {
+    return { 'V2 (сток чистой)': isCleanSupplyActive.value ? 'Открыт' : 'Закрыт' }
+  }
+  if (element === 'valve_v3') {
+    return { 'V3 (сток раствора)': isSolutionSupplyActive.value ? 'Открыт' : 'Закрыт' }
   }
   if (element === 'valve_irr') {
     return { 'V5 (полив)': props.isIrrigationActive ? 'Открыт' : 'Закрыт' }
   }
   if (element === 'pump') {
     return {
-      'Насос P1': isMainLineActive.value ? 'Включен' : 'Выключен',
+      'Насос P1': props.isPumpInActive || props.isCirculationActive ? 'Включен' : 'Выключен',
       'Режим': props.isPumpInActive ? 'Набор' : props.isCirculationActive ? 'Рециркуляция' : '—',
     }
   }

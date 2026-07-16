@@ -7,7 +7,8 @@ import { usePageProps } from '@/composables/usePageProps'
 import { logger } from '@/utils/logger'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
-import { calculateProgressBetween } from '@/utils/growCycleProgress'
+import { calculateProgressBetween, normalizeDurationHours } from '@/utils/growCycleProgress'
+import { useCycleTimer } from '@/composables/useCycleTimer'
 import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import { resolveCurrentRecipePhase, resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets'
 import { parseZoneUpdatePayload } from '@/ws/zoneUpdatePayload'
@@ -113,7 +114,9 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       : null
 
     const storeZone = zoneIdValue ? zonesStore.zoneById(zoneIdValue) : undefined
-    if (storeZone && propsZone?.id) return { ...storeZone, ...propsZone } as Zone
+    // Prefer store over Inertia props for overlapping keys: API actions (pause/resume)
+    // update Pinia immediately, while props may lag until reloadZonePageProps.
+    if (storeZone && propsZone?.id) return { ...propsZone, ...storeZone } as Zone
     if (propsZone?.id) return propsZone
     if (zoneIdValue && storeZone && storeZone.id) return storeZone
 
@@ -311,10 +314,18 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       return null
     }
 
+    const propsPhaseClean = phaseFromProps && typeof phaseFromProps === 'object'
+      ? { ...(phaseFromProps as Record<string, unknown>) }
+      : null
+    // Backend may omit duration; never let explicit 0 from normalized props wipe snapshot hours.
+    if (propsPhaseClean && Number(propsPhaseClean.duration_hours) === 0) {
+      delete propsPhaseClean.duration_hours
+    }
+
     const mergedPhase = {
       ...(recipePhase.value ?? {}),
       ...(phaseFromCycle && typeof phaseFromCycle === 'object' ? phaseFromCycle as Record<string, unknown> : {}),
-      ...(phaseFromProps && typeof phaseFromProps === 'object' ? phaseFromProps : {}),
+      ...(propsPhaseClean ?? {}),
     } as Record<string, unknown>
 
     const recipeTargets = resolveRecipePhaseTargets(phaseFromProps ?? phaseFromCycle ?? recipePhase.value)
@@ -365,13 +376,19 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
   const isAgronomist = computed(() => userRole.value === 'agronomist')
   const canOperateZone = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(userRole.value))
-  const canManageDevices = computed(() => ['admin', 'agronomist'].includes(userRole.value))
+  // Align with DeviceNodePolicy (operator/engineer/admin/agronomist).
+  const canManageDevices = computed(() =>
+    ['admin', 'agronomist', 'engineer', 'operator'].includes(userRole.value),
+  )
   const canManageRecipe = computed(() => isAgronomist.value || userRole.value === 'admin')
   const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(userRole.value))
 
   // ─── Phase / cycle computeds ──────────────────────────────────────────────
 
+  const { now: cycleNowMs } = useCycleTimer(30_000)
+
   const computedPhaseProgress = computed(() => {
+    void cycleNowMs.value
     const phase = currentPhase.value
     if (!phase) {
       logger.debug('[Zones/Show] computedPhaseProgress: phase is null')
@@ -384,7 +401,11 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       })
       return null
     }
-    const progress = calculateProgressBetween(phase.phase_started_at, phase.phase_ends_at)
+    const progress = calculateProgressBetween(
+      phase.phase_started_at,
+      phase.phase_ends_at,
+      new Date(cycleNowMs.value),
+    )
     if (progress === null) {
       logger.debug('[Zones/Show] computedPhaseProgress: unable to calculate', {
         phase_started_at: phase.phase_started_at,
@@ -395,9 +416,10 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   })
 
   const computedPhaseDaysElapsed = computed(() => {
+    void cycleNowMs.value
     const phase = currentPhase.value
     if (!phase || !phase.phase_started_at) return null
-    const now = new Date()
+    const now = new Date(cycleNowMs.value)
     const phaseStart = new Date(phase.phase_started_at)
     if (Number.isNaN(phaseStart.getTime())) return null
     const elapsedMs = now.getTime() - phaseStart.getTime()
@@ -407,8 +429,14 @@ export function useZonePageState(deps: ZonePageStateDeps) {
 
   const computedPhaseDaysTotal = computed(() => {
     const phase = currentPhase.value
-    if (!phase || !phase.duration_hours) return null
-    return Math.ceil(phase.duration_hours / 24)
+    const hours = normalizeDurationHours(
+      typeof phase?.duration_hours === 'number' ? phase.duration_hours : null,
+      typeof (phase as { duration_days?: number } | null)?.duration_days === 'number'
+        ? (phase as { duration_days?: number }).duration_days ?? null
+        : null,
+    )
+    if (hours == null) return null
+    return Math.ceil(hours / 24)
   })
 
   const cycleStatusLabel = computed(() => {
@@ -424,9 +452,10 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   })
 
   const phaseTimeLeftLabel = computed(() => {
+    void cycleNowMs.value
     const phase = currentPhase.value
     if (!phase || !phase.phase_ends_at) return ''
-    const now = new Date()
+    const now = new Date(cycleNowMs.value)
     const endsAt = new Date(phase.phase_ends_at)
     if (Number.isNaN(endsAt.getTime())) return ''
     const diffMs = endsAt.getTime() - now.getTime()
@@ -541,6 +570,18 @@ export function useZonePageState(deps: ZonePageStateDeps) {
             applyRealtimeZoneEvent(event)
             zonesStore.incrementEventSeq(targetZoneId)
           }
+        },
+        '.AlertCreated': () => {
+          reloadZonePageProps(['alerts'])
+        },
+        '.App\\Events\\AlertCreated': () => {
+          reloadZonePageProps(['alerts'])
+        },
+        '.AlertUpdated': () => {
+          reloadZonePageProps(['alerts'])
+        },
+        '.App\\Events\\AlertUpdated': () => {
+          reloadZonePageProps(['alerts'])
         },
       },
     })

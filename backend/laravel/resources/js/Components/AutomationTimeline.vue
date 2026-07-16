@@ -7,7 +7,7 @@
       v-if="events.length === 0"
       class="text-xs text-[color:var(--text-muted)] py-4 text-center"
     >
-      Событий workflow пока нет
+      Нет событий процесса за окно
     </p>
     <ul
       v-else

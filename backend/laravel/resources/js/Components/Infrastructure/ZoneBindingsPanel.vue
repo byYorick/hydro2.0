@@ -5,6 +5,7 @@
         Привязка устройств к ролям
       </h3>
       <Button
+        v-if="canManage"
         size="sm"
         variant="outline"
         :disabled="saving || loading"
@@ -47,8 +48,9 @@
         <select
           v-model="assignments[role.key]"
           class="input-select h-8 text-xs flex-1"
+          :disabled="!canManage"
         >
-          <option :value="null">
+          <option value="">
             — не назначено —
           </option>
           <option
@@ -85,9 +87,12 @@ import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number
+  canManage?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  canManage: true,
+})
 
 const ASSIGNMENT_ROLES = [
   { key: 'irrigation', label: 'Полив (ирригация)', nodeType: 'irrig', required: true },
@@ -128,7 +133,7 @@ const saveError = ref<string | null>(null)
 const saveSuccess = ref(false)
 
 const allNodes = ref<Node[]>([])
-const assignments = reactive<Record<AssignmentKey, number | null>>({
+const assignments = reactive<Record<AssignmentKey, number | null | ''>>({
   irrigation: null,
   ph_correction: null,
   ec_correction: null,
@@ -194,14 +199,22 @@ async function load() {
 }
 
 async function save() {
+  if (!props.canManage) return
   saveError.value = null
   saveSuccess.value = false
   saving.value = true
   try {
-    const selectedNodeIds = Object.values(assignments).filter((id): id is number => id !== null)
+    const normalizedAssignments = Object.fromEntries(
+      (Object.keys(assignments) as AssignmentKey[]).map((key) => {
+        const raw = assignments[key]
+        const value = raw === '' || raw == null ? null : Number(raw)
+        return [key, Number.isFinite(value as number) ? value : null]
+      }),
+    ) as Record<AssignmentKey, number | null>
+    const selectedNodeIds = Object.values(normalizedAssignments).filter((id): id is number => id !== null)
     await api.setupWizard.applyDeviceBindings({
       zone_id: props.zoneId,
-      assignments: { ...assignments },
+      assignments: normalizedAssignments,
       selected_node_ids: selectedNodeIds,
     })
     saveSuccess.value = true

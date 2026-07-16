@@ -62,12 +62,16 @@
             :data="chartDataPh"
             series-name="pH"
             :time-range="chartTimeRange"
+            :current-value="telemetry?.ph ?? null"
+            :target-range="resolveTargetRange('ph')"
           />
           <ZoneTelemetryChart
             title="EC"
             :data="chartDataEc"
             series-name="EC"
             :time-range="chartTimeRange"
+            :current-value="telemetry?.ec ?? null"
+            :target-range="resolveTargetRange('ec')"
           />
         </div>
       </div>
@@ -105,7 +109,13 @@
         </div>
       </div>
 
-      <div v-if="soilMoistureSeries.length > 0 && hasSoilMoistureData">
+      <div
+        v-if="loading"
+        class="space-y-2"
+      >
+        <div class="h-64 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] animate-pulse"></div>
+      </div>
+      <div v-else-if="soilMoistureSeries.length > 0 && hasSoilMoistureData">
         <MultiSeriesTelemetryChart
           title="Влажность почвы, %"
           :series="soilMoistureSeries"

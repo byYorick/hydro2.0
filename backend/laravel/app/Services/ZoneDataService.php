@@ -174,7 +174,7 @@ class ZoneDataService
     /**
      * Получить события зоны.
      *
-     * Query: limit, after_id, before_id, types, audience (all|operator|engineer), cycle_only.
+     * Query: limit, after_id, before_id, types, audience (all|operator|engineer), cycle_only, task_id.
      */
     public function getEvents(Zone $zone, Request $request): array
     {
@@ -194,6 +194,25 @@ class ZoneDataService
 
         $query = DB::table('zone_events')
             ->where('zone_id', $zone->id);
+
+        $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
+            ? 'payload_json'
+            : 'details';
+
+        $taskIdFilter = $request->integer('task_id');
+        if ($taskIdFilter <= 0) {
+            $taskIdRaw = $request->input('task_id');
+            if (is_string($taskIdRaw) && ctype_digit($taskIdRaw)) {
+                $taskIdFilter = (int) $taskIdRaw;
+            }
+        }
+        if ($taskIdFilter > 0) {
+            // AE3 events store causal id as payload.task_id (scheduler execution_id = ae_tasks.id).
+            $query->where(function ($q) use ($detailsColumn, $taskIdFilter) {
+                $q->whereRaw("({$detailsColumn}->>'task_id')::bigint = ?", [$taskIdFilter])
+                    ->orWhereRaw("({$detailsColumn}->>'execution_id')::bigint = ?", [$taskIdFilter]);
+            });
+        }
 
         if ($cycleOnly) {
             $cycleEventTypes = [
@@ -216,10 +235,6 @@ class ZoneDataService
                 'AE_TASK_FAILED',
             ];
 
-            $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
-                ? 'payload_json'
-                : 'details';
-
             $query->where(function ($q) use ($cycleEventTypes, $detailsColumn) {
                 $q->whereIn('type', $cycleEventTypes)
                     ->orWhere(function ($criticalAlerts) use ($detailsColumn) {
@@ -228,10 +243,6 @@ class ZoneDataService
                     });
             });
         }
-
-        $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
-            ? 'payload_json'
-            : 'details';
 
         if ($typeFilters !== []) {
             $query->whereIn('type', $typeFilters);

@@ -202,6 +202,7 @@ import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
+import { useRole } from '@/composables/useRole'
 import { translateStatus } from '@/utils/i18n'
 import type { Alert } from '@/types/Alert'
 import {
@@ -236,7 +237,12 @@ defineEmits<{
   resolve: []
 }>()
 
-const canResolve = computed(() => props.alert ? normalizeAlertStatus(props.alert.status) !== 'RESOLVED' : false)
+const { canResolveAlerts } = useRole()
+const canResolve = computed(() => (
+  Boolean(props.alert)
+  && normalizeAlertStatus(props.alert!.status) !== 'RESOLVED'
+  && canResolveAlerts.value
+))
 const processStoppingKind = computed<ProcessStoppingKind | null>(() => (
   props.alert ? alertProcessStoppingKind(props.alert.code) : null
 ))

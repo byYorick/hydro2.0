@@ -175,6 +175,7 @@ import ZoneDetailModals from "@/Pages/Zones/ZoneDetailModals.vue";
 import ZoneAutomationBlockBanner from "@/Components/ZoneAutomationBlockBanner.vue";
 import { useZoneShowPage } from "@/composables/useZoneShowPage";
 import { computeAutomationBlock } from "@/utils/automationBlock";
+import { normalizeDurationHours } from "@/utils/growCycleProgress";
 
 const {
     zoneTabs,
@@ -270,10 +271,9 @@ const phaseDurationComplete = computed<boolean>(() => {
     if (!phase || !phase.started_at) return false;
     const startedAt = new Date(phase.started_at).getTime();
     if (Number.isNaN(startedAt)) return false;
-    const durationMs =
-        (Number(phase.duration_hours ?? 0) * 3_600_000) +
-        (Number(phase.duration_days ?? 0) * 86_400_000);
-    if (durationMs <= 0) return false;
-    return Date.now() >= startedAt + durationMs;
+    // Match backend EffectiveTargetsService: hours OR days, never sum both.
+    const hours = normalizeDurationHours(phase.duration_hours ?? null, phase.duration_days ?? null);
+    if (hours == null || hours <= 0) return false;
+    return Date.now() >= startedAt + hours * 3_600_000;
 });
 </script>

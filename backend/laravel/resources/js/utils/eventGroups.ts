@@ -186,10 +186,10 @@ export function groupZoneEvents(events: ZoneEvent[]): ZoneEventGroup[] {
         return right.id - left.id
       })
       const isBucket = group.id.startsWith('bucket:')
-      const events = isBucket ? sorted.slice(0, 3) : sorted
-      const total = group.events.length
-      const badge = isBucket && total > 3
-        ? `последние 3 из ${total}`
+      // Keep full bucket history; noisy collapse is handled elsewhere via collapseNoisyEvents.
+      const events = sorted
+      const badge = isBucket && group.events.length > 3
+        ? `${group.events.length} событий`
         : formatGroupBadge(events.length)
       return { ...group, events, badge }
     })

@@ -124,7 +124,7 @@
 
     <footer class="mt-3 flex gap-1.5">
       <button
-        v-if="isFailed"
+        v-if="canRetry"
         type="button"
         class="flex-1 rounded-lg border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/10 px-2 py-1.5 text-[11px] font-semibold text-[color:var(--text-primary)] hover:bg-[color:var(--accent-red)]/15"
         data-testid="scheduler-chain-retry"
@@ -194,10 +194,19 @@ const steps = computed<ChainStep[]>(() => props.run.chain ?? [])
 
 const isFailed = computed(() => {
   const status = String(props.run.status ?? '').toLowerCase()
-  return status === 'failed' || status === 'fail' || Boolean(props.run.error_code)
+  return status === 'failed' || status === 'fail' || status === 'cancelled' || Boolean(props.run.error_code)
+})
+
+const isCancelled = computed(() => String(props.run.status ?? '').toLowerCase() === 'cancelled')
+
+const canRetry = computed(() => {
+  if (!isFailed.value && !isCancelled.value) return false
+  const taskType = String(props.run.schedule_task_type ?? props.run.task_type ?? '').toLowerCase()
+  return taskType === 'irrigation_start'
 })
 
 const headerBadgeLabel = computed<string>(() => {
+  if (isCancelled.value) return 'CANCELLED'
   if (isFailed.value) return 'FAIL'
   const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
   if (outcome === 'skip') return 'SKIP'
@@ -206,7 +215,7 @@ const headerBadgeLabel = computed<string>(() => {
 })
 
 const headerBadgeVariant = computed<'info' | 'success' | 'danger' | 'secondary'>(() => {
-  if (isFailed.value) return 'danger'
+  if (isFailed.value || isCancelled.value) return 'danger'
   if (props.run.is_active) return 'info'
   const outcome = String(props.run.decision_outcome ?? '').toLowerCase()
   if (outcome === 'skip') return 'secondary'

@@ -94,7 +94,9 @@ const axisBounds = computed(() => {
       max: props.targetMax + span * 1.5,
     }
   }
-  return { min: 0, max: 1 }
+  // Без targets и без явной оси — не схлопывать в 0…1 (маркер «упирается»).
+  // Для EC вызывающий код задаёт axis-min/max; здесь остаётся безопасный fallback.
+  return { min: 0, max: 5 }
 })
 
 function normalize(value: number): number {
@@ -112,7 +114,7 @@ const targetZoneStyle = computed(() => {
 })
 
 const markerStyle = computed(() => {
-  if (props.value === null || Number.isNaN(props.value)) return null
+  if (props.offline || props.value === null || Number.isNaN(props.value)) return null
   const pos = normalize(props.value) * 100
   return { left: `${pos}%` }
 })

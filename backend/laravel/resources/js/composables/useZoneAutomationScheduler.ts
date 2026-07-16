@@ -88,6 +88,8 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   })
 
   let refreshInFlight = false
+  let refreshQueued = false
+  let refreshGeneration = 0
   let unsubscribeZoneCommands: (() => void) | null = null
   let unsubscribeZoneEvents: (() => void) | null = null
 
@@ -112,11 +114,28 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     if (snapshot.current_stage !== undefined) {
       automationCurrentStage.value = snapshot.current_stage
     }
-    allowedManualSteps.value = resolveAllowedManualSteps(
+    const previousStage = automationCurrentStage.value
+    const resolvedSteps = resolveAllowedManualSteps(
       snapshot.control_mode,
       snapshot.current_stage,
       snapshot.allowed_manual_steps,
     )
+    // Preserve only when /state omitted allowed_manual_steps entirely (legacy).
+    // Explicit [] after solution_change must clear ghost gate buttons.
+    const stepsOmitted = snapshot.allowed_manual_steps === undefined
+    const stageChanged = previousStage !== undefined
+      && previousStage !== snapshot.current_stage
+    if (
+      stepsOmitted
+      && resolvedSteps.length === 0
+      && allowedManualSteps.value.length > 0
+      && snapshot.control_mode === 'auto'
+      && !stageChanged
+    ) {
+      // keep existing gate steps until control-mode/state catches up
+    } else {
+      allowedManualSteps.value = resolvedSteps
+    }
     if (snapshot.control_mode_available !== undefined && snapshot.control_mode_available.length > 0) {
       controlModeAvailable.value = snapshot.control_mode_available
     }
@@ -252,13 +271,27 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   }
 
   async function refreshRuntimeState(): Promise<void> {
-    if (!props.zoneId || refreshInFlight) return
+    if (!props.zoneId) return
+    if (refreshInFlight) {
+      refreshQueued = true
+      return
+    }
 
+    const generation = refreshGeneration
+    const requestedZoneId = props.zoneId
     refreshInFlight = true
     try {
       await fetchAutomationControlMode()
     } finally {
+      // Ignore stale finally after zone switch — do not clear a newer refresh.
+      if (generation !== refreshGeneration || props.zoneId !== requestedZoneId) {
+        return
+      }
       refreshInFlight = false
+      if (refreshQueued) {
+        refreshQueued = false
+        void refreshRuntimeState()
+      }
     }
   }
 
@@ -307,6 +340,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   }
 
   function resetForZoneChange(): void {
+    refreshGeneration += 1
     hydrateControlModeFromProp()
     if (!hasExplicitControlMode(props.zoneControlMode)) {
       automationControlMode.value = 'auto'
@@ -317,7 +351,9 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     automationControlModeLoading.value = false
     automationControlModeSaving.value = false
     refreshInFlight = false
+    refreshQueued = false
     diagnosticsLoading.value = false
+    solutionChangeLoading.value = false
     for (const step of Object.keys(manualStepLoading.value) as AutomationManualStep[]) {
       manualStepLoading.value[step] = false
     }

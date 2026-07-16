@@ -438,6 +438,49 @@ class ZoneEventLedgerTest extends TestCase
         $this->assertEquals(['ALERT_CREATED', 'EC_DOSING'], $types);
     }
 
+    public function test_events_api_supports_task_id_filter(): void
+    {
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $token = $this->token();
+
+        $matchId = DB::table('zone_events')->insertGetId([
+            'zone_id' => $zone->id,
+            'type' => 'IRRIGATION_CYCLE_STARTED',
+            'entity_type' => 'ae_task',
+            'entity_id' => 28,
+            'payload_json' => json_encode(['task_id' => 28]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now(),
+        ]);
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'IRRIGATION_CYCLE_STARTED',
+            'entity_type' => 'ae_task',
+            'entity_id' => 99,
+            'payload_json' => json_encode(['task_id' => 99]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now()->addSecond(),
+        ]);
+        $executionMatchId = DB::table('zone_events')->insertGetId([
+            'zone_id' => $zone->id,
+            'type' => 'AE_TASK_COMPLETED',
+            'entity_type' => 'ae_task',
+            'entity_id' => 28,
+            'payload_json' => json_encode(['execution_id' => 28]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now()->addSeconds(2),
+        ]);
+
+        $resp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zone->id}/events?task_id=28");
+
+        $resp->assertStatus(200);
+        $ids = array_column($resp->json('data'), 'event_id');
+        sort($ids);
+        $this->assertEquals([$matchId, $executionMatchId], $ids);
+    }
+
     public function test_events_api_audience_operator_excludes_noisy_types(): void
     {
         $greenhouse = Greenhouse::factory()->create();

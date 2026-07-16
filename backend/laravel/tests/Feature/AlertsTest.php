@@ -97,6 +97,22 @@ class AlertsTest extends TestCase
         ]);
     }
 
+    public function test_viewer_cannot_acknowledge_alert(): void
+    {
+        $token = $this->token('viewer');
+        $alert = Alert::factory()->create(['status' => 'active']);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/alerts/{$alert->id}/ack");
+
+        $resp->assertForbidden()
+            ->assertJsonPath('status', 'error');
+        $this->assertDatabaseHas('alerts', [
+            'id' => $alert->id,
+            'status' => 'active',
+        ]);
+    }
+
     public function test_acknowledge_global_alert(): void
     {
         $token = $this->token();

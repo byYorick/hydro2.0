@@ -20,6 +20,7 @@
       <div v-if="activeTab === 'settings'">
         <PidConfigForm
           :zone-id="zoneId"
+          :disabled="!canManage"
           @saved="onConfigSaved"
         />
       </div>
@@ -41,9 +42,12 @@ import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number
+  canManage?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  canManage: true,
+})
 
 const activeTab = ref<'settings' | 'logs'>('settings')
 

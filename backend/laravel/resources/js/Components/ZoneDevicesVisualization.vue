@@ -121,7 +121,7 @@
               stroke="currentColor"
               stroke-width="2"
               stroke-dasharray="6,4"
-              :class="device.status === 'online' ? 'text-[color:var(--accent-green)] opacity-60' : 'text-[color:var(--text-dim)] opacity-40'"
+              :class="resolveEffectiveDeviceStatus(device) === 'online' ? 'text-[color:var(--accent-green)] opacity-60' : 'text-[color:var(--text-dim)] opacity-40'"
             />
           </svg>
 
@@ -137,7 +137,7 @@
               <div class="absolute top-1 right-1 z-10">
                 <StatusIndicator
                   :status="getDeviceStatus(device)"
-                  :pulse="device.status === 'online'"
+                  :pulse="resolveEffectiveDeviceStatus(device) === 'online'"
                   size="small"
                 />
               </div>
@@ -196,11 +196,12 @@
             </div>
           </div>
           <Badge
-            :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'"
+            :variant="deviceStatusBadgeVariant(device)"
             size="sm"
             class="shrink-0"
+            :title="resolveEffectiveDeviceStatus(device) === 'pending' ? 'Ожидается config_report' : undefined"
           >
-            {{ device.status === 'online' ? '●' : device.status === 'offline' ? '○' : '◑' }}
+            {{ deviceStatusGlyph(device) }}
           </Badge>
         </Link>
 
@@ -302,7 +303,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  zoneStatus: 'RUNNING',
+  zoneStatus: 'IDLE',
   canManage: false
 })
 
@@ -383,24 +384,67 @@ function getDeviceShortName(device: Device): string {
   return name.length > 8 ? name.substring(0, 8) + '...' : name
 }
 
+const STALE_ONLINE_MS = 120_000
+
+function resolveEffectiveDeviceStatus(device: Device): 'online' | 'offline' | 'degraded' | 'pending' | 'unknown' {
+  if (!device.zone_id && device.pending_zone_id) {
+    return 'pending'
+  }
+  if (device.lifecycle_state === 'DEGRADED') {
+    return 'degraded'
+  }
+  if (device.status === 'degraded') {
+    return 'degraded'
+  }
+  if (device.status === 'offline') {
+    return 'offline'
+  }
+  if (device.status === 'online') {
+    if (device.last_seen_at) {
+      const ageMs = Date.now() - new Date(device.last_seen_at).getTime()
+      if (Number.isFinite(ageMs) && ageMs > STALE_ONLINE_MS) {
+        return 'offline'
+      }
+    }
+    return 'online'
+  }
+  return 'unknown'
+}
+
 function getDeviceCardClass(device: Device): string {
   const base = 'bg-[color:var(--bg-surface-strong)]'
-  if (device.status === 'online') {
+  const status = resolveEffectiveDeviceStatus(device)
+  if (status === 'online') {
     return `${base} border-[color:var(--badge-success-border)] hover:border-[color:var(--accent-green)]`
-  } else if (device.status === 'offline') {
+  } else if (status === 'offline') {
     return `${base} border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)]`
-  } else if (device.status === 'degraded') {
+  } else if (status === 'degraded' || status === 'pending') {
     return `${base} border-[color:var(--badge-warning-border)] hover:border-[color:var(--accent-amber)]`
   }
   return `${base} border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]`
 }
 
 function getDeviceStatus(device: Device): string {
-  // Преобразуем статус устройства в формат для StatusIndicator
-  if (device.status === 'online') return 'ONLINE'
-  if (device.status === 'offline') return 'OFFLINE'
-  if (device.status === 'degraded') return 'WARNING'
+  const status = resolveEffectiveDeviceStatus(device)
+  if (status === 'online') return 'ONLINE'
+  if (status === 'offline') return 'OFFLINE'
+  if (status === 'degraded' || status === 'pending') return 'WARNING'
   return 'NEUTRAL'
+}
+
+function deviceStatusBadgeVariant(device: Device): 'success' | 'danger' | 'warning' | 'neutral' {
+  const status = resolveEffectiveDeviceStatus(device)
+  if (status === 'online') return 'success'
+  if (status === 'offline') return 'danger'
+  if (status === 'degraded' || status === 'pending') return 'warning'
+  return 'neutral'
+}
+
+function deviceStatusGlyph(device: Device): string {
+  const status = resolveEffectiveDeviceStatus(device)
+  if (status === 'online') return '●'
+  if (status === 'offline') return '○'
+  return '◑'
 }
 
 function getDevicePosition(index: number, total: number): Record<string, string> {
@@ -453,11 +497,11 @@ function getConnectionY(index: number, total: number): string {
 }
 
 function getOnlineDevicesCount(): number {
-  return props.devices.filter(d => d.status === 'online').length
+  return props.devices.filter(d => resolveEffectiveDeviceStatus(d) === 'online').length
 }
 
 function getOfflineDevicesCount(): number {
-  return props.devices.filter(d => d.status === 'offline').length
+  return props.devices.filter(d => resolveEffectiveDeviceStatus(d) === 'offline').length
 }
 
 function formatLastSeen(timestamp: string | undefined): string {

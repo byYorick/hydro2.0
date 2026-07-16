@@ -1,13 +1,17 @@
 <template>
-  <Link
-    :href="`/zones/${zone.id}`"
-    class="zone-dashboard-card surface-card flex flex-col rounded-2xl border transition-all duration-150 no-underline"
+  <div
+    class="zone-dashboard-card surface-card flex flex-col rounded-2xl border transition-all duration-150 cursor-pointer"
     :class="[
       dense ? 'p-3 gap-3' : 'p-4 gap-4',
       cardBorderClass,
       'hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
     ]"
     data-testid="zone-dashboard-card"
+    role="link"
+    tabindex="0"
+    @click="goToZone"
+    @keydown.enter.prevent="goToZone"
+    @keydown.space.prevent="goToZone"
   >
     <!-- ── Header: зона, статусы, счётчик алертов ── -->
     <header class="flex items-start justify-between gap-3">
@@ -17,10 +21,26 @@
             class="w-2 h-2 rounded-full shrink-0"
             :class="dotClass"
           ></span>
-          <span class="text-lg font-semibold truncate text-[color:var(--text-primary)]">
+          <Link
+            :href="`/zones/${zone.id}`"
+            class="text-lg font-semibold truncate text-[color:var(--text-primary)] no-underline hover:underline"
+            @click.stop
+          >
             {{ zone.name }}
-          </span>
-          <Badge :variant="getZoneStatusVariant(zone.status)">
+          </Link>
+          <!-- Текущий операционный статус (workflow AE3), не lifecycle RUNNING -->
+          <Badge
+            v-if="currentZoneStatusLabel"
+            :variant="currentZoneStatusVariant"
+            data-testid="zone-card-current-status"
+            :title="currentZoneStatusTitle"
+          >
+            {{ currentZoneStatusLabel }}
+          </Badge>
+          <Badge
+            :variant="getZoneStatusVariant(zone.status)"
+            :title="'Статус зоны: ' + translateStatus(zone.status)"
+          >
             {{ translateStatus(zone.status) }}
           </Badge>
           <Badge
@@ -54,6 +74,34 @@
           class="status-chip status-chip--alarm shrink-0"
         >
           Алертов: {{ zone.alerts_count }}
+        </div>
+        <div
+          v-else-if="telemetryHealth === 'offline'"
+          class="status-chip status-chip--alarm shrink-0"
+          title="Телеметрия устарела — нет свежих данных"
+        >
+          НЕТ СВЯЗИ
+        </div>
+        <div
+          v-else-if="telemetryHealth === 'danger'"
+          class="status-chip status-chip--alarm shrink-0"
+          title="Метрика вне допустимого диапазона"
+        >
+          ВНЕ НОРМЫ
+        </div>
+        <div
+          v-else-if="telemetryHealth === 'warn'"
+          class="status-chip status-chip--warning shrink-0"
+          title="Метрика близко к границе диапазона"
+        >
+          ВНИМАНИЕ
+        </div>
+        <div
+          v-else-if="telemetryHealth === 'unknown'"
+          class="status-chip status-chip--paused shrink-0"
+          title="Нет данных телеметрии или targets для оценки"
+        >
+          НЕТ ДАННЫХ
         </div>
         <div
           v-else
@@ -93,8 +141,10 @@
          ═══════════════════════════════════════════════════════ -->
     <template v-if="dense">
       <CycleProgressStack
+        :has-cycle="Boolean(zone.cycle)"
         :overall-pct="cycleOverallPct"
         :overall-day-label="cycleOverallDayLabel"
+        :status-label="cycleStatusLabel"
         :phase="phaseStrip"
       />
       <div class="grid grid-cols-3 gap-3">
@@ -113,6 +163,8 @@
           :value="zone.telemetry.ec"
           :target-min="resolveTarget('ec', 'min')"
           :target-max="resolveTarget('ec', 'max')"
+          :axis-min="0"
+          :axis-max="5"
           unit="мСм"
           :decimals="2"
           :offline="telemetryOffline"
@@ -167,6 +219,8 @@
             :value="zone.telemetry.ec"
             :target-min="resolveTarget('ec', 'min')"
             :target-max="resolveTarget('ec', 'max')"
+            :axis-min="0"
+            :axis-max="5"
             unit="мСм"
             :decimals="2"
             :offline="telemetryOffline"
@@ -186,8 +240,10 @@
         <!-- Правый столбец: цикл + состояние системы -->
         <div class="flex flex-col gap-2.5">
           <CycleProgressStack
+            :has-cycle="Boolean(zone.cycle)"
             :overall-pct="cycleOverallPct"
             :overall-day-label="cycleOverallDayLabel"
+            :status-label="cycleStatusLabel"
             :phase="phaseStrip"
           />
           <SystemStatePanel
@@ -248,12 +304,12 @@
     >
       Обновление: {{ formatTime(zone.telemetry.updated_at) }}
     </div>
-  </Link>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Link } from '@inertiajs/vue3'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { Link, router } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import MetricPillBar from '@/Components/ZoneDashboardCard/MetricPillBar.vue'
 import CycleProgressStack from '@/Components/ZoneDashboardCard/CycleProgressStack.vue'
@@ -264,6 +320,7 @@ import CombinedTelemetrySparkline, {
 import AlertPreviewList, {
   type AlertPreviewItem,
 } from '@/Components/ZoneDashboardCard/AlertPreviewList.vue'
+import { resolveAlertPreviewSeverity } from '@/Components/ZoneDashboardCard/alertPreviewSeverity'
 import { translateStatus } from '@/utils/i18n'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import {
@@ -343,7 +400,41 @@ const telemetryOffline = computed(() => {
   return Date.now() - ts > 5 * 60 * 1000
 })
 
+/** Состояние метрик относительно targets — для чипа статуса (не путать с «нет алертов»). */
+function metricHealth(
+  value: number | null | undefined,
+  min: number | null,
+  max: number | null,
+): 'ok' | 'warn' | 'danger' | 'unknown' {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'unknown'
+  if (min === null || max === null) return 'unknown'
+  if (value >= min && value <= max) return 'ok'
+  const span = Math.max(0.1, max - min)
+  const tolerance = span * 0.25
+  if (value >= min - tolerance && value <= max + tolerance) return 'warn'
+  return 'danger'
+}
+
+const telemetryHealth = computed<'ok' | 'warn' | 'danger' | 'unknown' | 'offline'>(() => {
+  if (telemetryOffline.value) return 'offline'
+  const checks = ([
+    metricHealth(props.zone.telemetry?.ph, resolveTarget('ph', 'min'), resolveTarget('ph', 'max')),
+    metricHealth(props.zone.telemetry?.ec, resolveTarget('ec', 'min'), resolveTarget('ec', 'max')),
+    metricHealth(
+      props.zone.telemetry?.temperature,
+      resolveTarget('temperature', 'min'),
+      resolveTarget('temperature', 'max'),
+    ),
+  ] as const).filter((s) => s !== 'unknown')
+  if (checks.length === 0) return 'unknown'
+  if (checks.includes('danger')) return 'danger'
+  if (checks.includes('warn')) return 'warn'
+  return 'ok'
+})
+
 const systemStateOffline = computed(() => {
+  // Нет system_state + IRR online → не offline («Нет данных» в SystemStatePanel),
+  // а не штатный idle/ready. Offline только когда IRR тоже недоступна.
   if (!props.zone.system_state) {
     return !props.zone.irrig_node?.online
   }
@@ -368,6 +459,50 @@ const automationBlockHint = computed(() =>
   resolveAutomationBlockHint(automationBlock.value?.reason_code ?? null),
 )
 
+/** Текущий статус процесса зоны (workflow), приоритетнее lifecycle RUNNING. */
+const currentZoneStatusLabel = computed(() => {
+  if (automationBlock.value) {
+    return automationBlockLabelText.value || 'Автоматика остановлена'
+  }
+  const label = props.zone.system_state?.label?.trim()
+  if (label) return label
+  const phase = props.zone.system_state?.phase?.trim()
+  if (phase) return phase
+  return null
+})
+
+const currentZoneStatusTitle = computed(() => {
+  if (automationBlock.value) {
+    return automationBlockHint.value
+  }
+  const phase = props.zone.system_state?.phase
+  return phase ? `Фаза workflow: ${phase}` : 'Текущий статус зоны'
+})
+
+const currentZoneStatusVariant = computed<'success' | 'info' | 'warning' | 'danger' | 'neutral'>(() => {
+  if (automationBlock.value) return 'danger'
+  const phase = (props.zone.system_state?.phase ?? '').toLowerCase()
+  if (['error', 'failed', 'degraded'].includes(phase)) return 'danger'
+  if (['irrigating', 'irrigation', 'correction', 'irrigation_recovery'].includes(phase)) return 'info'
+  if ([
+    'tank_filling',
+    'tank_recirc',
+    'clean_fill',
+    'solution_fill',
+    'prepare_recirculation',
+    'preparing',
+    'startup',
+    'recirculation',
+    'irrig_recirc',
+  ].includes(phase)) {
+    return 'info'
+  }
+  if (phase === 'ready') return 'success'
+  if (['idle', 'waiting'].includes(phase)) return 'neutral'
+  if (props.zone.system_state?.stale) return 'warning'
+  return 'neutral'
+})
+
 const automationBlockMessageText = computed(() => {
   const msg = automationBlock.value?.message
   return typeof msg === 'string' && msg.trim() ? msg.trim() : null
@@ -375,32 +510,92 @@ const automationBlockMessageText = computed(() => {
 
 // ── Цикл / фаза ──────────────────────────────────────────────────────────────
 
+/** Тик раз в минуту — прогресс цикла растёт со временем без ожидания WS/reload. */
+const cycleNowMs = ref(Date.now())
+let cycleTickTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  cycleTickTimer = setInterval(() => {
+    cycleNowMs.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (cycleTickTimer !== null) {
+    clearInterval(cycleTickTimer)
+    cycleTickTimer = null
+  }
+})
+
+/** 1-based день: день посадки = День 1. */
+function cycleDayOneBased(fromMs: number, nowMs: number): number {
+  return Math.max(1, Math.floor((nowMs - fromMs) / (1000 * 60 * 60 * 24)) + 1)
+}
+
+function clampPct(value: number): number {
+  return Math.max(0, Math.min(100, value))
+}
+
+/** Прогресс 0..100 по двум ISO-датам (локальный пересчёт, не зависит от snapshot %). */
+function progressBetween(fromIso: string | null | undefined, toIso: string | null | undefined, nowMs: number): number | null {
+  if (!fromIso || !toIso) return null
+  const start = new Date(fromIso).getTime()
+  const end = new Date(toIso).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+  return clampPct(((nowMs - start) / (end - start)) * 100)
+}
+
 const phaseStrip = computed((): PhaseStripInfo | null => {
   const cycle = props.zone.cycle as GrowCycle | null
+  const nowMs = cycleNowMs.value
   if (!cycle?.stages?.length) return null
   const active = cycle.stages.find((s) => s.state === 'ACTIVE')
   if (!active?.from) return null
   const start = new Date(active.from)
   if (Number.isNaN(start.getTime())) return null
   const end = active.to ? new Date(active.to) : null
-  const daysElapsed = Math.max(0, Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24)))
-  let daysTotal = daysElapsed || 1
+  const daysElapsed = cycleDayOneBased(start.getTime(), nowMs)
+  let daysTotal = daysElapsed
   if (end && !Number.isNaN(end.getTime())) {
     daysTotal = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)))
   }
-  const progress = Math.min(100, Math.round((daysElapsed / daysTotal) * 100))
+  const livePct = progressBetween(active.from, active.to ?? null, nowMs)
+  const dtoPct = typeof active.pct === 'number'
+    ? active.pct
+    : (typeof cycle.progress?.stage_pct === 'number' ? cycle.progress.stage_pct : null)
+  // Локальный пересчёт приоритетнее snapshot DTO (DTO мог быть посчитан с багом / устареть).
+  const progress = livePct !== null
+    ? Math.round(livePct)
+    : dtoPct !== null
+      ? Math.round(clampPct(dtoPct))
+      : Math.min(100, Math.round((daysElapsed / daysTotal) * 100))
   const stageName = cycle.current_stage?.name ?? active.name ?? 'Фаза'
   return { name: stageName, dayElapsed: daysElapsed, dayTotal: daysTotal, progress }
 })
 
-const cycleOverallPct = computed(() => props.zone.cycle?.progress?.overall_pct ?? null)
+const cycleOverallPct = computed(() => {
+  const cycle = props.zone.cycle
+  if (!cycle) return null
+  const nowMs = cycleNowMs.value
+  const livePct = progressBetween(cycle.planting_at, cycle.expected_harvest_at ?? null, nowMs)
+  if (livePct !== null) return Math.round(livePct * 10) / 10
+  const dto = cycle.progress?.overall_pct
+  return typeof dto === 'number' ? dto : null
+})
+
+const cycleStatusLabel = computed(() => {
+  const cycle = props.zone.cycle
+  if (!cycle?.status) return null
+  return getCycleStatusLabel(cycle.status, 'short')
+})
 
 const cycleOverallDayLabel = computed(() => {
   const cycle = props.zone.cycle
   if (!cycle?.planting_at) return null
+  const nowMs = cycleNowMs.value
   const start = new Date(cycle.planting_at)
   if (Number.isNaN(start.getTime())) return null
-  const elapsed = Math.max(0, Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24)))
+  const elapsed = cycleDayOneBased(start.getTime(), nowMs)
   if (cycle.expected_harvest_at) {
     const end = new Date(cycle.expected_harvest_at)
     if (!Number.isNaN(end.getTime())) {
@@ -410,6 +605,10 @@ const cycleOverallDayLabel = computed(() => {
   }
   return `День ${elapsed}`
 })
+
+function goToZone(): void {
+  router.visit(`/zones/${props.zone.id}`)
+}
 
 // ── Sparklines ────────────────────────────────────────────────────────────────
 
@@ -433,23 +632,12 @@ const alertPreviewItems = computed<AlertPreviewItem[]>(() => {
   const preview = props.zone.alerts_preview ?? []
   return preview.map((alert) => ({
     id: alert.id,
-    severity: detectAlertSeverity(alert.type),
+    severity: resolveAlertPreviewSeverity(alert.severity, alert.type),
     title: shortenAlertTitle(alert.type),
     reason: extractAlertMessage(alert.details),
     created_at: alert.created_at,
   }))
 })
-
-function detectAlertSeverity(type: string): AlertPreviewItem['severity'] {
-  const lower = (type || '').toLowerCase()
-  if (lower.includes('critical') || lower.includes('alarm') || lower.includes('error') || lower.includes('fail')) {
-    return 'alert'
-  }
-  if (lower.includes('warn') || lower.includes('degraded') || lower.includes('stale')) {
-    return 'warning'
-  }
-  return 'warning'
-}
 
 function shortenAlertTitle(type: string): string {
   if (!type) return 'Алерт'
@@ -538,12 +726,9 @@ function formatTime(value: string | null | undefined): string {
 </script>
 
 <style scoped>
-.zone-dashboard-card {
-  color: inherit;
-  text-decoration: none;
-}
-.zone-dashboard-card:hover {
-  cursor: pointer;
+.zone-dashboard-card:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
 }
 
 .metric-tab {

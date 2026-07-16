@@ -646,7 +646,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                         $currentPhaseNormalized = [
                             'index' => $phase['id'] ?? 0,
                             'name' => $phase['name'] ?? 'Неизвестная фаза',
-                            'duration_hours' => 0, // Не доступно в новом API
+                            // duration comes from recipe/cycle snapshot — do not force 0 here
+                            // (0 would overwrite valid duration_hours in frontend merge).
                             'phase_started_at' => $phase['started_at'] ?? null,
                             'phase_ends_at' => $phase['due_at'] ?? null,
                             'targets' => $targets, // Используем уже загруженные targets
@@ -686,8 +687,25 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             }
 
             $devices = \App\Models\DeviceNode::query()
-                ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at', 'rssi', 'free_heap_bytes', 'uptime_seconds'])
-                ->where('zone_id', $zoneIdInt)
+                ->select([
+                    'id',
+                    'uid',
+                    'zone_id',
+                    'pending_zone_id',
+                    'name',
+                    'type',
+                    'status',
+                    'lifecycle_state',
+                    'fw_version',
+                    'last_seen_at',
+                    'rssi',
+                    'free_heap_bytes',
+                    'uptime_seconds',
+                ])
+                ->where(function ($query) use ($zoneIdInt) {
+                    $query->where('zone_id', $zoneIdInt)
+                        ->orWhere('pending_zone_id', $zoneIdInt);
+                })
                 ->with([
                     'zone:id,name',
                     'channels' => function ($query) {
@@ -817,7 +835,23 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     $alerts = \App\Models\Alert::query()
                         ->where('zone_id', $zoneIdInt)
                         ->latest('id')
-                        ->get(['id', 'type', 'source', 'code', 'status', 'severity', 'category', 'details', 'zone_id', 'created_at', 'resolved_at']);
+                        ->get([
+                            'id',
+                            'type',
+                            'source',
+                            'code',
+                            'status',
+                            'severity',
+                            'category',
+                            'details',
+                            'zone_id',
+                            'node_uid',
+                            'hardware_id',
+                            'error_count',
+                            'first_seen_at',
+                            'created_at',
+                            'resolved_at',
+                        ]);
                 } catch (\Exception $e) {
                     $alerts = collect([]);
                 }
@@ -1091,7 +1125,23 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 )
                 ->latest('id')
                 ->limit(100)
-                ->get(['id', 'type', 'source', 'code', 'status', 'severity', 'category', 'details', 'zone_id', 'created_at', 'resolved_at']);
+                ->get([
+                    'id',
+                    'type',
+                    'source',
+                    'code',
+                    'status',
+                    'severity',
+                    'category',
+                    'details',
+                    'zone_id',
+                    'node_uid',
+                    'hardware_id',
+                    'error_count',
+                    'first_seen_at',
+                    'created_at',
+                    'resolved_at',
+                ]);
         });
 
         $zones = \App\Models\Zone::query()

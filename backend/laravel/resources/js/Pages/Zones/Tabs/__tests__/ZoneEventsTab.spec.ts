@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ZoneEventsTab from '../ZoneEventsTab.vue'
 
+const pageState = vi.hoisted(() => ({
+  url: '/zones/42?tab=events',
+}))
+
+vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => pageState,
+}))
+
 vi.mock('@/services/api', () => ({
   api: {
     zones: {
@@ -38,6 +46,7 @@ async function expandEngineerEvent(wrapper: ReturnType<typeof mount>) {
 describe('ZoneEventsTab.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    pageState.url = '/zones/42?tab=events'
   })
 
   it('рендерит dual-pane: оператор и инженер', () => {
@@ -309,6 +318,58 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.text()).toContain('2')
     expect(wrapper.text()).toContain('Канал:')
     expect(wrapper.text()).toContain('pump_a')
+  })
+
+  it('сидит фильтр task_id из query и оставляет только события задачи', async () => {
+    pageState.url = '/zones/42?tab=events&task_id=28'
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(1, 'EC_DOSING', 'EC dosing task 28', {
+            task_id: 28,
+            correction_window_id: 'task:28:irrigating:irrigation_check',
+          }),
+          makeEvent(2, 'EC_DOSING', 'EC dosing task 99', {
+            task_id: 99,
+            correction_window_id: 'task:99:irrigating:irrigation_check',
+          }),
+          makeEvent(3, 'ALERT_CREATED', 'Alert without task', { severity: 'critical' }),
+        ],
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="zone-events-operator"]').exists()).toBe(false)
+    const engineer = wrapper.get('[data-testid="zone-events-engineer"]')
+    expect(engineer.text()).toContain('AE задача #28')
+    expect(engineer.text()).not.toContain('AE задача #99')
+    expect(engineer.text()).not.toContain('Alert without task')
+  })
+
+  it('фильтр task:2 не матчит task_id=28 (нет substring false positive)', async () => {
+    pageState.url = '/zones/42?tab=events&task_id=2'
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(1, 'EC_DOSING', 'contains task:28 in message', {
+            task_id: 28,
+            correction_window_id: 'task:28:irrigating:irrigation_check',
+          }),
+          makeEvent(2, 'EC_DOSING', 'exact task 2', {
+            task_id: 2,
+          }),
+        ],
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+
+    const engineer = wrapper.get('[data-testid="zone-events-engineer"]')
+    expect(engineer.text()).toContain('AE задача #2')
+    expect(engineer.text()).not.toContain('AE задача #28')
   })
 
   it('показывает детали события решения умного полива', async () => {

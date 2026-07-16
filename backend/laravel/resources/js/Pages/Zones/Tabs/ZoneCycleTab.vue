@@ -54,6 +54,7 @@
           <CycleActionsDropdown
             :cycle-status="activeGrowCycle?.status ?? null"
             :can-manage="canManageCycle"
+            :can-manage-recipe="canManageRecipe"
             :loading="actionsLoading"
             :control-mode="controlMode ?? null"
             :phase-duration-complete="phaseDurationComplete"
@@ -62,6 +63,7 @@
             @harvest="$emit('harvest')"
             @abort="$emit('abort')"
             @next-phase="$emit('next-phase')"
+            @change-recipe="$emit('change-recipe')"
           />
         </div>
       </section>
@@ -213,9 +215,7 @@ defineEmits<{
   'next-phase': []
 }>()
 
-const hasCycle = computed(() =>
-  Boolean(props.activeGrowCycle) || props.zone.status === 'RUNNING' || props.zone.status === 'PAUSED',
-)
+const hasCycle = computed(() => Boolean(props.activeGrowCycle))
 
 const recipeName = computed(() =>
   props.activeGrowCycle?.recipeRevision?.recipe?.name

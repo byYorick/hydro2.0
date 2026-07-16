@@ -35,6 +35,29 @@ describe('automationObservability', () => {
     expect(result?.hang_hints?.[0]?.code).toBe('waiting_command_stuck')
   })
 
+  it('drops non-finite task_id and event_id during normalization', () => {
+    const result = normalizeObservability({
+      overall_health: 'active',
+      runtime: {
+        zone_id: 1,
+        task_id: 'not-a-number',
+        task_status: 'running',
+      },
+      correction: {
+        latest_skip: {
+          event_id: 'bad',
+          event_type: 'CORRECTION_SKIPPED_COOLDOWN',
+          age_sec: 'x',
+        },
+      },
+      hang_hints: [],
+    })
+
+    expect(result?.runtime?.task_id).toBeNull()
+    expect(result?.correction?.latest_skip?.event_id).toBeNull()
+    expect(result?.correction?.latest_skip?.age_sec).toBeNull()
+  })
+
   it('preserves failed_stage in runtime normalization', () => {
     const result = normalizeObservability({
       overall_health: 'idle',

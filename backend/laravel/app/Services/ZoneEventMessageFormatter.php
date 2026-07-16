@@ -22,6 +22,8 @@ class ZoneEventMessageFormatter
             return $explicitMessage;
         }
 
+        $payloadLabel = $this->toStringOrNull($payload['label'] ?? null);
+
         if (str_starts_with($eventType, 'CYCLE_') && isset($payload['subsystems']) && is_array($payload['subsystems'])) {
             $subsystemsSummary = $this->formatSubsystemsSummary($payload['subsystems']);
             if ($subsystemsSummary !== null) {
@@ -79,10 +81,9 @@ class ZoneEventMessageFormatter
             'IRRIGATION_DECISION_EVALUATED' => $this->formatIrrigationDecisionEvaluated($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
             'COMMAND_STATUS' => $this->formatCommandStatus($payload),
-            'command_status' => $this->formatCommandStatus($payload),
             'AE_STARTUP_PROBE_TIMEOUT' => $this->formatAeStartupProbeTimeout($payload),
-            'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
-            'SOLUTION_FILL_COMPLETED' => 'Наполнение раствором завершено',
+            'CLEAN_FILL_COMPLETED' => $payloadLabel ?? 'Наполнение чистой водой завершено',
+            'SOLUTION_FILL_COMPLETED' => $payloadLabel ?? 'Наполнение раствором завершено',
             'AE_TASK_STARTED' => $this->formatAeTaskStarted($payload),
             'AE_TASK_COMPLETED' => $this->formatAeTaskCompleted($payload),
             'AE_TASK_FAILED' => $this->formatAeTaskFailed($payload),
@@ -96,6 +97,10 @@ class ZoneEventMessageFormatter
             'AUTOMATION_LOGIC_PROFILE_UPDATED' => 'Профиль автоматики обновлён',
             'IRRIGATION_START' => 'Полив запущен',
             'IRRIGATION_STOP' => 'Полив остановлен',
+            'IRRIGATION_CYCLE_STARTED' => $payloadLabel ?? 'Полив запущен',
+            'IRRIGATION_CYCLE_FINISHED' => $payloadLabel ?? 'Полив завершён',
+            'IRRIGATION_CYCLE_STOPPED' => $payloadLabel ?? 'Полив остановлен',
+            'IRRIGATION_CYCLE_SKIPPED' => $payloadLabel ?? 'Полив пропущен',
             'CALIBRATION_STARTED' => $this->formatCalibrationEvent($payload, 'Калибровка запущена'),
             'CALIBRATION_COMPLETED' => $this->formatCalibrationEvent($payload, 'Калибровка завершена'),
             'RECIPE_STARTED' => $this->formatRecipeEvent($payload, 'Рецепт запущен'),
@@ -103,8 +108,102 @@ class ZoneEventMessageFormatter
             'HARVEST_STARTED' => 'Сбор урожая начат',
             'HARVEST_COMPLETED' => 'Сбор урожая завершён',
             'PHASE_CHANGE' => $this->formatPhaseChange($payload),
-            default => $type ?: '',
+            default => $payloadLabel
+                ?? $this->russianEventTypeLabel($eventType)
+                ?? ($type ?: ''),
         };
+    }
+
+    /**
+     * Короткая русская подпись для типа события (бейдж/fallback message).
+     */
+    private function russianEventTypeLabel(string $eventType): ?string
+    {
+        /** @var array<string, string> $labels */
+        static $labels = [
+            'NO_FLOW' => 'Нет потока',
+            'CYCLE_RECIPE_REBASED' => 'Рецепт цикла обновлён',
+            'CORRECTION_DECISION_MADE' => 'Коррекция: выбран следующий шаг',
+            'CORRECTION_INTERRUPTED_STAGE_COMPLETE' => 'Коррекция: стадия завершилась во время окна',
+            'CORRECTION_INTERRUPTED_SOLUTION_LOW' => 'Коррекция прервана: низкий уровень раствора',
+            'CORRECTION_PLANNER_CONFIG_INVALID' => 'Коррекция: ошибка конфигурации planner',
+            'CORRECTION_SKIPPED_EMERGENCY_STOP' => 'Коррекция: E-STOP',
+            'CORRECTION_SKIPPED_BY_ALERT_BLOCK' => 'Коррекция: блок alert',
+            'CORRECTION_ACTION_DEFERRED' => 'Коррекция: действие отложено',
+            'CORRECTION_SENSOR_MODE_REACTIVATED' => 'Коррекция: датчик реактивирован',
+            'EC_BATCH_PARTIAL_FAILURE' => 'EC: частичный сбой batch',
+            'PUMP_CALIBRATION_MIRROR_MISMATCH' => 'Коррекция: расхождение калибровки насоса',
+            'PUMP_CALIBRATION_STARTED' => 'Калибровка насоса запущена',
+            'PUMP_STOPPED' => 'Насос остановлен',
+            'RELAY_AUTOTUNE_STARTED' => 'Relay-автотюнинг запущен',
+            'IRR_STATE_PROBE_DEFERRED' => 'Ирригация: опрос состояния отложен',
+            'IRR_STATE_PROBE_FAILED' => 'Ирригация: ошибка опроса состояния',
+            'IRR_STATE_PROBE_STREAK_EXHAUSTED' => 'Ирригация: опрос состояния исчерпан',
+            'IRRIGATION_CORRECTION_STARTED' => 'Полив: окно коррекции открыто',
+            'IRRIGATION_CORRECTION_COMPLETED' => 'Полив: коррекция завершена',
+            'IRRIGATION_EC_MULTI_DOSE' => 'Полив: многодозовая EC-коррекция',
+            'IRRIGATION_STARTED' => 'Полив запущен',
+            'IRRIGATION_FINISHED' => 'Полив завершён',
+            'IRRIGATION_STOPPED' => 'Полив остановлен',
+            'IRRIGATION_SKIPPED' => 'Полив пропущен',
+            'IRRIGATION_APPROVED' => 'Полив разрешён',
+            'IRRIGATION_READY' => 'Раствор готов к поливу',
+            'IRRIGATION_LOW_SOLUTION' => 'Полив остановлен: низкий уровень раствора',
+            'IRRIGATION_SOLUTION_LOW' => 'Полив: низкий уровень раствора',
+            'IRRIGATION_SOLUTION_MIN_DETECTED' => 'Полив: достигнут минимум раствора',
+            'IRRIGATION_WAIT_READY_TIMEOUT' => 'Полив: таймаут ожидания готовности',
+            'IRRIGATION_BLOCKED_SETUP_PENDING' => 'Полив заблокирован: нужна подготовка',
+            'IRRIGATION_RECOVERY_STARTED' => 'Recovery после полива запущен',
+            'IRRIGATION_RECOVERY_COMPLETED' => 'Recovery после полива завершён',
+            'CLEAN_FILL_STARTED' => 'Чистая вода: заполнение запущено',
+            'CLEAN_FILL_IN_PROGRESS' => 'Чистая вода: заполнение',
+            'CLEAN_FILL_SOURCE_EMPTY' => 'Чистая вода: источник пуст',
+            'SOLUTION_FILL_STARTED' => 'Раствор: заполнение запущено',
+            'SOLUTION_FILL_IN_PROGRESS' => 'Раствор: заполнение',
+            'SOLUTION_FILL_CORRECTION' => 'Раствор: коррекция при заполнении',
+            'SOLUTION_FILL_SOURCE_EMPTY' => 'Раствор: источник чистой воды пуст',
+            'SOLUTION_FILL_LEAK_DETECTED' => 'Раствор: провал нижнего уровня',
+            'SOLUTION_FILL_TIMEOUT' => 'Раствор: таймаут заполнения',
+            'SOLUTION_CHANGE_GATE_PASSED' => 'Смена раствора: проверка пройдена',
+            'SOLUTION_CHANGE_COMPLETED' => 'Смена раствора завершена',
+            'SOLUTION_CHANGE_ABORTED' => 'Смена раствора прервана',
+            'SOLUTION_TOPUP_DONE' => 'Долив раствора завершён',
+            'RECIRC_STARTED' => 'Рециркуляция запущена',
+            'RECIRC_IN_PROGRESS' => 'Рециркуляция',
+            'RECIRC_COMPLETED' => 'Рециркуляция завершена',
+            'RECIRCULATION_SOLUTION_LOW' => 'Рециркуляция: низкий уровень раствора',
+            'RECIRCULATION_SOLUTION_LOW_TO_SETUP' => 'Рециркуляция → подготовка раствора',
+            'RECIRCULATION_STATE_CHANGED' => 'Рециркуляция: изменение состояния',
+            'PREPARE_RECIRCULATION_TIMEOUT' => 'Таймаут подготовки рециркуляции',
+            'WATER_CHANGE_STARTED' => 'Смена воды запущена',
+            'WATER_CHANGE_COMPLETED' => 'Смена воды завершена',
+            'READY' => 'Готов к поливу',
+            'AE_COMMAND_POLL_DEADLINE_EXCEEDED' => 'AE: таймаут ожидания ответа команды',
+            'AE_COMMAND_SEND_RETRY_SCHEDULED' => 'AE: повтор отправки команды',
+            'AE_COMMAND_SEND_RETRY_EXHAUSTED' => 'AE: исчерпаны повторы отправки команды',
+            'AE_SNAPSHOT_RETRY_SCHEDULED' => 'AE: повтор опроса снимка состояния',
+            'AE_SNAPSHOT_RETRY_EXHAUSTED' => 'AE: исчерпаны повторы опроса снимка',
+            'AE_WORKFLOW_STATE_SYNC_FAILED' => 'AE: ошибка синхронизации workflow',
+            'CONTROL_MODE_CHANGED' => 'Режим управления изменён',
+            'CONTROL_MODE_FLOW_STOPPED' => 'Поток остановлен (control mode)',
+            'FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE' => 'Ошибка остановки потока: оборудование может быть активно',
+            'CONFIG_HOT_RELOADED' => 'Конфиг горячо перезагружен',
+            'CONFIG_MODE_AUTO_REVERTED' => 'Режим конфига автоматически откатан',
+            'COMMAND_ZONE_NODE_MISMATCH' => 'Команда: несовпадение зоны и узла',
+            'NODE_REBOOT_DETECTED' => 'Обнаружена перезагрузка узла',
+            'TELEMETRY_STALE' => 'Телеметрия устарела',
+            'EMERGENCY_STOP_ACTIVATED' => 'Аварийный стоп активирован',
+            'LEVEL_SWITCH_CHANGED' => 'Датчик уровня: изменение',
+            'WATER_LEVEL_SENSOR_CHANGED' => 'Датчик уровня воды: изменение',
+            'ZONE_AUTOMATION_STARTED' => 'Автоматизация зоны запущена',
+            'ZONE_AUTOMATION_STOPPED' => 'Автоматизация зоны остановлена',
+            'ZONE_WORKFLOW_STATE_RESET' => 'Состояние workflow сброшено',
+            'TWO_TANK_STARTUP_INITIATED' => 'Two-tank: запуск подготовки',
+            'SOLUTION_TANK_STARTUP_GUARD_TRIGGERED' => 'Защита бака: запуск заблокирован',
+            'SOLUTION_TANK_MIN_TRIGGERED' => 'Бак: уровень раствора критически низкий',
+        ];
+
+        return $labels[$eventType] ?? null;
     }
 
     /**

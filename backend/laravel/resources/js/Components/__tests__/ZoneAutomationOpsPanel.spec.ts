@@ -19,6 +19,9 @@ const baseProps = {
     prepare_recirculation_stop: false,
     irrigation_stop: false,
     irrigation_recovery_stop: false,
+    solution_drain_confirm: false,
+    solution_refill_confirm: false,
+    solution_change_abort: false,
   },
   pendingControlModeValue: null,
   automationStateMetaLabel: null,
@@ -135,17 +138,31 @@ describe('ZoneAutomationOpsPanel', () => {
     expect(wrapper.emitted('run-manual-step')?.[0]).toEqual(['clean_fill_start'])
   })
 
-  it('блокирует manual-step в режиме auto', () => {
+  it('разрешает gate-шаги solution_change в режиме auto', () => {
     const wrapper = mount(ZoneAutomationOpsPanel, {
       props: {
         ...baseProps,
         automationControlMode: 'auto',
-        allowedManualSteps: ['clean_fill_start'],
+        allowedManualSteps: ['solution_drain_confirm', 'solution_change_abort'],
       },
     })
 
-    const stepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
-    expect(stepButton).toBeDefined()
-    expect(stepButton?.attributes('disabled')).toBeDefined()
+    const confirmButton = wrapper.findAll('button').find((btn) => btn.text() === 'Подтвердить слив')
+    expect(confirmButton).toBeDefined()
+    expect(confirmButton?.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('gate-шаги solution_change доступны')
+  })
+
+  it('в auto без allowed_manual_steps показывает, что шаги недоступны', () => {
+    const wrapper = mount(ZoneAutomationOpsPanel, {
+      props: {
+        ...baseProps,
+        automationControlMode: 'auto',
+        allowedManualSteps: [],
+      },
+    })
+
+    expect(wrapper.text()).toContain('недоступны в режиме')
+    expect(wrapper.findAll('button').some((btn) => btn.text() === 'Набрать чистую воду')).toBe(false)
   })
 })

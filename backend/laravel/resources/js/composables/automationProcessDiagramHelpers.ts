@@ -58,12 +58,14 @@ const ELEMENT_TITLE_MAP: Record<string, string> = {
   pipes: 'Линии потока',
   correction: 'Контур коррекции',
   correction_node: 'Узел коррекции',
-  valve_in: 'Входной клапан',
+  valve_in: 'Входной клапан V1',
   valve_out: 'Отбор из баков',
-  valve_irr: 'Клапан полива',
+  valve_v2: 'Клапан V2 (сток чистой воды)',
+  valve_v3: 'Клапан V3 (сток раствора)',
+  valve_irr: 'Клапан полива V5',
   pump_in: 'Насос набора',
   pump: 'Главный насос',
-  circulation: 'Насос рециркуляции',
+  circulation: 'Клапан V4 (рециркуляция)',
   pump_correction: 'Насос дозирования',
 }
 

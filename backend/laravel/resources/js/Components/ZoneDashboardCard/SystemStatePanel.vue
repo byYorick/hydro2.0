@@ -117,17 +117,22 @@ const props = withDefaults(defineProps<Props>(), {
   automationBlockReason: null,
 })
 
+const hasPhaseData = computed(() => Boolean(props.phaseLabel || props.phaseCode))
+
 const phaseLabel = computed(() => {
   if (props.automationBlocked) {
     return props.automationBlockReason || 'Автоматика остановлена'
   }
   if (props.offline) return 'Нет связи'
+  // Нет workflow phase при online IRR — «нет данных», не штатный idle/«Ожидание».
+  if (!hasPhaseData.value) return 'Нет данных'
   return props.phaseLabel || 'Ожидание'
 })
 
 const phaseDotClass = computed(() => {
   if (props.automationBlocked) return 'bg-[color:var(--accent-red)] animate-pulse'
   if (props.offline) return 'bg-[color:var(--accent-red)]'
+  if (!hasPhaseData.value) return 'bg-[color:var(--text-dim)]'
   const code = (props.phaseCode ?? '').toLowerCase()
   // Активные фазы (running)
   if (['irrigating', 'irrig_recirc', 'recirculation', 'preparing', 'clean_fill', 'solution_fill'].includes(code)) {
@@ -263,11 +268,17 @@ const processStateLabel = computed(() => {
   if (props.offline) {
     return 'ошибка'
   }
+  if (!hasPhaseData.value) {
+    return 'нет данных'
+  }
   const code = (props.phaseCode ?? '').toLowerCase()
   if (['error', 'failed', 'degraded'].includes(code)) {
     return 'ошибка'
   }
-  if (['idle', 'waiting', 'ready'].includes(code)) {
+  if (code === 'ready') {
+    return 'готов'
+  }
+  if (['idle', 'waiting'].includes(code)) {
     return 'ожидание'
   }
 
@@ -278,7 +289,7 @@ const processStateClass = computed(() => {
   if (props.automationBlocked || processStateLabel.value === 'ошибка') {
     return 'text-[color:var(--accent-red)]'
   }
-  if (processStateLabel.value === 'ожидание') {
+  if (processStateLabel.value === 'ожидание' || processStateLabel.value === 'нет данных') {
     return 'text-[color:var(--text-dim)]'
   }
 

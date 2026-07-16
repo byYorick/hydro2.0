@@ -75,8 +75,11 @@ function normalizeRuntime(raw: unknown): AutomationObservability['runtime'] {
   }
   const source = raw as Record<string, unknown>
   return {
-    zone_id: Number(source.zone_id ?? 0),
-    task_id: source.task_id != null ? Number(source.task_id) : null,
+    zone_id: (() => {
+      const parsed = Number(source.zone_id ?? 0)
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+    })(),
+    task_id: normalizePositiveId(source.task_id),
     task_status: typeof source.task_status === 'string' ? source.task_status : null,
     task_is_active: Boolean(source.task_is_active),
     current_stage: typeof source.current_stage === 'string' ? source.current_stage : null,
@@ -207,12 +210,20 @@ function normalizeCorrection(raw: unknown): AutomationObservabilityCorrection | 
   }
 }
 
+function normalizePositiveId(value: unknown): number | null {
+  if (value == null) {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 function normalizeCorrectionSkip(raw: Record<string, unknown>): AutomationObservabilityCorrection['latest_skip'] {
   return {
-    event_id: raw.event_id != null ? Number(raw.event_id) : null,
+    event_id: normalizePositiveId(raw.event_id),
     event_type: typeof raw.event_type === 'string' ? raw.event_type : null,
     occurred_at: typeof raw.occurred_at === 'string' ? raw.occurred_at : null,
-    age_sec: raw.age_sec != null ? Number(raw.age_sec) : null,
+    age_sec: raw.age_sec != null && Number.isFinite(Number(raw.age_sec)) ? Number(raw.age_sec) : null,
     payload: raw.payload && typeof raw.payload === 'object'
       ? raw.payload as Record<string, unknown>
       : undefined,
@@ -221,7 +232,7 @@ function normalizeCorrectionSkip(raw: Record<string, unknown>): AutomationObserv
 
 function normalizeCorrectionReadiness(raw: Record<string, unknown>): AutomationObservabilityCorrection['readiness'] {
   return {
-    event_id: raw.event_id != null ? Number(raw.event_id) : null,
+    event_id: normalizePositiveId(raw.event_id),
     event_type: typeof raw.event_type === 'string' ? raw.event_type : null,
     occurred_at: typeof raw.occurred_at === 'string' ? raw.occurred_at : null,
     targets_in_tolerance: typeof raw.targets_in_tolerance === 'boolean' ? raw.targets_in_tolerance : null,
@@ -280,7 +291,8 @@ function isFreshSkip(
   return true
 }
 
-function isSkipStillBlocking(
+/** True when latest skip should still influence operator causal/dosing UI. */
+export function isSkipStillBlocking(
   skip: AutomationObservabilityCorrectionSkip | null | undefined,
 ): boolean {
   if (!isFreshSkip(skip)) {
@@ -430,9 +442,16 @@ export function resolveCorrectionDosingDiagnostics(
     severity = 'neutral'
   }
 
-  const cooldownLabel = latestSkip?.payload?.retry_after_sec != null
-    ? formatObservabilityDuration(Number(latestSkip.payload.retry_after_sec))
-    : null
+  const cooldownLabel = (() => {
+    const retrySec = latestSkip?.payload?.retry_after_sec
+    if (retrySec == null || !Number.isFinite(Number(retrySec))) {
+      return null
+    }
+    const ageSec = latestSkip?.age_sec != null && Number.isFinite(Number(latestSkip.age_sec))
+      ? Number(latestSkip.age_sec)
+      : 0
+    return formatObservabilityDuration(Math.max(0, Number(retrySec) - ageSec))
+  })()
 
   return {
     visible: true,

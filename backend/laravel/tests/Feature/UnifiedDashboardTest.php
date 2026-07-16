@@ -307,4 +307,253 @@ class UnifiedDashboardTest extends TestCase
                 });
         });
     }
+
+    public function test_dashboard_maps_binary_level_switches_to_coarse_tank_percent(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $switches = [
+            'level_clean_max' => 1.0,
+            'level_clean_min' => 1.0,
+            'level_solution_max' => 1.0,
+            'level_solution_min' => 1.0,
+        ];
+
+        foreach ($switches as $label => $value) {
+            $sensor = Sensor::factory()->create([
+                'greenhouse_id' => $zone->greenhouse_id,
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'type' => 'WATER_LEVEL',
+                'label' => $label,
+                'is_active' => true,
+            ]);
+
+            TelemetryLast::query()->create([
+                'sensor_id' => $sensor->id,
+                'last_value' => $value,
+                'last_ts' => now()->subMinute(),
+                'last_quality' => 'GOOD',
+            ]);
+        }
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    // Раньше (1+1)/2 = 1% — полный бак ошибочно выглядел пустым.
+                    return is_array($zonePayload)
+                        && (float) data_get($zonePayload, 'tank_levels.clean_percent') === 100.0
+                        && (float) data_get($zonePayload, 'tank_levels.solution_percent') === 100.0
+                        && (int) data_get($zonePayload, 'tank_levels.topology_count') === 2;
+                });
+        });
+    }
+
+    public function test_dashboard_topology_count_one_for_clean_only(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $sensor = Sensor::factory()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'type' => 'WATER_LEVEL',
+            'label' => 'level_clean_max',
+            'is_active' => true,
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $sensor->id,
+            'last_value' => 1.0,
+            'last_ts' => now()->subMinute(),
+            'last_quality' => 'GOOD',
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && (int) data_get($zonePayload, 'tank_levels.topology_count') === 1
+                        && data_get($zonePayload, 'tank_levels.clean_present') === true
+                        && data_get($zonePayload, 'tank_levels.solution_present') === false;
+                });
+        });
+    }
+
+    public function test_dashboard_topology_count_two_for_clean_and_solution(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        foreach (['level_clean_max', 'level_solution_min'] as $label) {
+            $sensor = Sensor::factory()->create([
+                'greenhouse_id' => $zone->greenhouse_id,
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'type' => 'WATER_LEVEL',
+                'label' => $label,
+                'is_active' => true,
+            ]);
+
+            TelemetryLast::query()->create([
+                'sensor_id' => $sensor->id,
+                'last_value' => 1.0,
+                'last_ts' => now()->subMinute(),
+                'last_quality' => 'GOOD',
+            ]);
+        }
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && (int) data_get($zonePayload, 'tank_levels.topology_count') === 2;
+                });
+        });
+    }
+
+    public function test_dashboard_ignores_stale_tank_telemetry_for_percent(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $sensor = Sensor::factory()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'type' => 'WATER_LEVEL',
+            'label' => 'level_clean_max',
+            'is_active' => true,
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $sensor->id,
+            'last_value' => 1.0,
+            'last_ts' => now()->subMinutes(10),
+            'last_quality' => 'GOOD',
+        ]);
+
+        // stale-порог в сервисе — 5 минут; форсим updated_at.
+        \Illuminate\Support\Facades\DB::table('telemetry_last')
+            ->where('sensor_id', $sensor->id)
+            ->update(['updated_at' => now()->subMinutes(10)]);
+
+        Cache::flush();
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && data_get($zonePayload, 'tank_levels.clean_percent') === null
+                        && data_get($zonePayload, 'tank_levels.clean_offline') === true;
+                });
+        });
+    }
+
+    public function test_dashboard_irrig_online_comes_from_irrig_node_not_other_types(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+
+        // recirculation online не должен считаться IRR-статусом карточки.
+        DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'recirculation',
+            'status' => 'online',
+            'last_seen_at' => now()->subSeconds(30),
+        ]);
+
+        DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'irrig',
+            'status' => 'offline',
+            'last_seen_at' => now()->subHour(),
+        ]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && data_get($zonePayload, 'irrig_node.online') === false;
+                });
+        });
+    }
+
+    public function test_dashboard_maps_solution_min_only_to_fifty_percent(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+
+        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        foreach ([
+            'level_solution_max' => 0.0,
+            'level_solution_min' => 1.0,
+        ] as $label => $value) {
+            $sensor = Sensor::factory()->create([
+                'greenhouse_id' => $zone->greenhouse_id,
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'type' => 'WATER_LEVEL',
+                'label' => $label,
+                'is_active' => true,
+            ]);
+
+            TelemetryLast::query()->create([
+                'sensor_id' => $sensor->id,
+                'last_value' => $value,
+                'last_ts' => now()->subMinute(),
+                'last_quality' => 'GOOD',
+            ]);
+        }
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertOk();
+        $response->assertInertia(function (AssertableInertia $page) use ($zone): void {
+            $page->component('Dashboard/Index')
+                ->where('zones', function ($zones) use ($zone): bool {
+                    $zonePayload = collect($zones)->firstWhere('id', $zone->id);
+
+                    return is_array($zonePayload)
+                        && (float) data_get($zonePayload, 'tank_levels.solution_percent') === 50.0;
+                });
+        });
+    }
 }

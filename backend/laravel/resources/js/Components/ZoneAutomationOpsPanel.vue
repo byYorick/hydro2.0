@@ -94,9 +94,13 @@
         <p class="text-xs text-[color:var(--text-muted)]">
           Ручные шаги workflow:
           <span
-            v-if="automationControlMode === 'auto'"
+            v-if="automationControlMode === 'auto' && visibleManualSteps.length === 0"
             class="text-[color:var(--text-dim)]"
-          >недоступны в режиме <code>auto</code></span>
+          >недоступны в режиме <code>auto</code> (кроме gate solution_change)</span>
+          <span
+            v-else-if="automationControlMode === 'auto'"
+            class="text-emerald-500 dark:text-emerald-400"
+          >gate-шаги solution_change доступны в <code>auto</code></span>
           <span
             v-else
             class="text-emerald-500 dark:text-emerald-400"
@@ -111,7 +115,7 @@
             :key="step.code"
             size="sm"
             :variant="step.variant"
-            :disabled="!canOperateAutomation || automationControlMode === 'auto' || manualStepLoading[step.code]"
+            :disabled="!canOperateAutomation || manualStepLoading[step.code]"
             @click="$emit('run-manual-step', step.code)"
           >
             {{ manualStepLoading[step.code] ? 'Отправка...' : step.label }}

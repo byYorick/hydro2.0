@@ -17,7 +17,7 @@ from ae3lite.domain.services.workflow_failure_rollback import resolve_diagnostic
 from common.observability_thresholds import load_system_observability_thresholds
 from ae3lite.application.use_cases.manual_control_contract import (
     AVAILABLE_CONTROL_MODES,
-    allowed_manual_steps_for_stage,
+    allowed_manual_steps_for_task,
     normalize_control_mode,
 )
 from ae3lite.domain.services.zone_node_availability import ZONE_NODES_DIAG_SQL
@@ -730,6 +730,8 @@ class GetZoneAutomationStateUseCase:
         *,
         zone_id: int,
         current_stage: str | None,
+        task_type: str | None = None,
+        pending_manual_step: str | None = None,
     ) -> dict[str, Any]:
         """control_mode из zones — тот же source of truth, что и GET /control-mode."""
         control_mode = "auto"
@@ -756,8 +758,15 @@ class GetZoneAutomationStateUseCase:
 
         stage_key = str(current_stage or "").strip()
         allowed_manual_steps: list[str] = []
-        if control_mode in ("manual", "semi") and stage_key:
-            allowed_manual_steps = allowed_manual_steps_for_stage(stage_key)
+        if stage_key:
+            # solution_change gate steps must be exposed even in control_mode=auto
+            # (same contract as GetZoneControlStateUseCase / allowed_manual_steps_for_task).
+            allowed_manual_steps = allowed_manual_steps_for_task(
+                task_type=task_type or "",
+                control_mode=control_mode,
+                current_stage=stage_key,
+                pending_manual_step=pending_manual_step,
+            )
 
         return {
             "control_mode": control_mode,
@@ -812,9 +821,16 @@ class GetZoneAutomationStateUseCase:
             is_active=is_active,
             correction=getattr(task, "correction", None),
         )
+        pending_manual_step = None
+        if wf is not None:
+            raw_pending = getattr(wf, "pending_manual_step", None)
+            if raw_pending is not None and str(raw_pending).strip() != "":
+                pending_manual_step = str(raw_pending).strip()
         control_ctx = await self._control_mode_context(
             zone_id=zone_id,
             current_stage=str(current_stage) if current_stage is not None else None,
+            task_type=str(getattr(task, "task_type", "") or ""),
+            pending_manual_step=pending_manual_step,
         )
 
         state_details = self._build_state_details(
@@ -928,9 +944,18 @@ class GetZoneAutomationStateUseCase:
             transitions=[],
             since_ts=self._timeline_since_workflow(workflow_state=workflow_state),
         )
+        pending_manual_step = None
+        raw_pending = normalized_payload.get("pending_manual_step")
+        if raw_pending is not None and str(raw_pending).strip() != "":
+            pending_manual_step = str(raw_pending).strip()
+        else:
+            wf_pending = getattr(workflow_state, "pending_manual_step", None)
+            if wf_pending is not None and str(wf_pending).strip() != "":
+                pending_manual_step = str(wf_pending).strip()
         control_ctx = await self._control_mode_context(
             zone_id=zone_id,
             current_stage=current_stage,
+            pending_manual_step=pending_manual_step,
         )
 
         return self._attach_observability(

@@ -95,6 +95,15 @@ class User extends Authenticatable
         return in_array((string) ($this->role ?? 'viewer'), ['admin', 'operator', 'engineer', 'agronomist'], true);
     }
 
+    /**
+     * Роли, которым разрешено решать (ack/resolve) алерты.
+     * Согласовано с frontend useRole().canResolveAlerts (viewer исключён).
+     */
+    public function canResolveAlerts(): bool
+    {
+        return in_array((string) ($this->role ?? 'viewer'), ['admin', 'operator', 'engineer', 'agronomist'], true);
+    }
+
     public function zones(): BelongsToMany
     {
         return $this->belongsToMany(Zone::class, 'user_zones')

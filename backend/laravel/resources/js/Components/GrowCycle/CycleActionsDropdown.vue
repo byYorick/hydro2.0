@@ -1,5 +1,6 @@
 <template>
   <Dropdown
+    v-if="canManage || canManageRecipe"
     align="right"
     width="48"
   >
@@ -43,6 +44,15 @@
         @click="$emit('resume')"
       >
         Продолжить
+      </button>
+      <button
+        v-if="canManage && cycleStatus === 'PLANNED'"
+        type="button"
+        :disabled="loading.cycleAbort"
+        class="dropdown-action text-[color:var(--accent-red)]"
+        @click="$emit('abort')"
+      >
+        Отменить запланированный
       </button>
       <button
         v-if="canManage && isActive"
@@ -89,6 +99,19 @@
       >
         Прервать цикл
       </button>
+      <div
+        v-if="canManageRecipe && isActive"
+        class="my-1 border-t border-[color:var(--border-muted)]"
+      ></div>
+      <button
+        v-if="canManageRecipe && isActive"
+        type="button"
+        class="dropdown-action"
+        data-testid="cycle-change-recipe"
+        @click="$emit('change-recipe')"
+      >
+        Сменить рецепт
+      </button>
     </template>
   </Dropdown>
 </template>
@@ -107,13 +130,16 @@ interface CycleLoadingState {
   nextPhase: boolean
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   cycleStatus: GrowCycleStatus | null
   canManage: boolean
+  canManageRecipe?: boolean
   loading: CycleLoadingState
   controlMode?: AutomationControlMode | null
   phaseDurationComplete?: boolean
-}>()
+}>(), {
+  canManageRecipe: false,
+})
 
 const nextPhaseDisabled = computed<boolean>(() => props.controlMode === 'auto')
 const nextPhaseHint = computed<string | null>(() => {
@@ -135,6 +161,7 @@ defineEmits<{
   'harvest': []
   'abort': []
   'next-phase': []
+  'change-recipe': []
 }>()
 
 const isActive = computed(() =>

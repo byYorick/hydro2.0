@@ -20,11 +20,16 @@ describe('automationDiagramLayout', () => {
     const flow = createDiagramFlow(flowOffset)
 
     expect(flow.waterInletFlowY.value).toBe(DIAGRAM_LAYOUT.inlet.top)
-    expect(flow.busFlowX.value).toBe(DIAGRAM_GEO.cleanCx)
+    expect(flow.cleanDrainFlowY.value).toBe(DIAGRAM_GEO.tankBottom)
+    expect(flow.cleanBusFlowX.value).toBe(DIAGRAM_GEO.cleanCx)
+    expect(flow.solutionBusFlowX.value).toBe(DIAGRAM_GEO.solutionCx)
 
     flowOffset.value = 1
     expect(flow.waterInletFlowY.value).toBe(DIAGRAM_LAYOUT.tank.top)
-    expect(flow.busFlowX.value).toBe(DIAGRAM_GEO.pumpInletX)
+    expect(flow.cleanDrainFlowY.value).toBe(DIAGRAM_LAYOUT.busY)
+    expect(flow.solutionDrainFlowY.value).toBe(DIAGRAM_LAYOUT.busY)
+    expect(flow.cleanBusFlowX.value).toBe(DIAGRAM_GEO.pumpInletX)
+    expect(flow.solutionBusFlowX.value).toBe(DIAGRAM_GEO.pumpInletX)
   })
 
   it('двигает каплю полива от тройника к выходу', () => {

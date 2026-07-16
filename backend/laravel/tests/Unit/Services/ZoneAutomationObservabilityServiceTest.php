@@ -103,6 +103,45 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
         $this->assertNotContains('stage_elapsed_long', $codes);
     }
 
+    public function test_build_runtime_from_database_deadline_remaining_sign_matches_ae3(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));
+
+        $zone = Zone::factory()->create();
+        $now = now();
+
+        $taskId = DB::table('ae_tasks')->insertGetId([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'running',
+            'idempotency_key' => 'obs-deadline-sign',
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'irrigation_check',
+            'workflow_phase' => 'irrigating',
+            'control_mode_snapshot' => 'auto',
+            'scheduled_for' => $now,
+            'due_at' => $now,
+            'stage_entered_at' => $now->copy()->subMinutes(2),
+            'stage_deadline_at' => $now->copy()->addMinutes(10),
+            'created_at' => $now->copy()->subMinutes(5),
+            'updated_at' => $now->copy()->subMinute(),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'buildRuntimeFromDatabase');
+        $method->setAccessible(true);
+
+        /** @var array<string,mixed> $runtime */
+        $runtime = $method->invoke($service, $zone->id, [], true);
+
+        $this->assertSame($taskId, $runtime['task_id']);
+        // AE3 contract: remaining = deadline - now (positive while deadline is ahead).
+        $this->assertGreaterThan(0, (int) $runtime['stage_deadline_remaining_sec']);
+        $this->assertEqualsWithDelta(600, (int) $runtime['stage_deadline_remaining_sec'], 2);
+
+        Carbon::setTestNow();
+    }
+
     public function test_enrich_payload_adds_scheduler_claimed_stuck_hint(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-06-23 12:00:00'));
@@ -440,5 +479,85 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
         $this->assertIsArray($skip);
         $this->assertSame('EC_BATCH_PARTIAL_FAILURE', $skip['event_type'] ?? null);
         $this->assertSame('magnesium', $skip['payload']['failed_component'] ?? null);
+    }
+
+    public function test_enrich_payload_backfills_empty_timeline_from_zone_events(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-16 12:00:00'));
+
+        $zone = Zone::factory()->create();
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'TWO_TANK_STARTUP_INITIATED',
+            'payload_json' => json_encode(['task_id' => 11]),
+            'created_at' => now()->subMinutes(30),
+        ]);
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'CLEAN_FILL_COMPLETED',
+            'payload_json' => json_encode(['task_id' => 11]),
+            'created_at' => now()->subMinutes(10),
+        ]);
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'SOME_NOISE_EVENT',
+            'payload_json' => json_encode([]),
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'timeline' => [],
+            'observability' => [
+                'runtime' => ['task_is_active' => false],
+                'hang_hints' => [],
+                'overall_health' => 'idle',
+            ],
+        ]);
+
+        $timeline = $payload['timeline'] ?? null;
+        $this->assertIsArray($timeline);
+        $this->assertCount(2, $timeline);
+        $this->assertSame('TWO_TANK_STARTUP_INITIATED', $timeline[0]['event'] ?? null);
+        $this->assertSame('CLEAN_FILL_COMPLETED', $timeline[1]['event'] ?? null);
+        $this->assertFalse($timeline[0]['active'] ?? true);
+        $this->assertTrue($timeline[1]['active'] ?? false);
+        $this->assertSame('Бак чистой воды заполнен', $timeline[1]['label'] ?? null);
+    }
+
+    public function test_enrich_payload_does_not_overwrite_non_empty_timeline(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-16 12:00:00'));
+
+        $zone = Zone::factory()->create();
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'CLEAN_FILL_COMPLETED',
+            'payload_json' => json_encode([]),
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        $existing = [
+            [
+                'event' => 'AE_LIVE_EVENT',
+                'timestamp' => now()->subMinute()->toIso8601String(),
+                'label' => 'From AE3',
+                'active' => true,
+            ],
+        ];
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'timeline' => $existing,
+            'observability' => [
+                'runtime' => ['task_is_active' => true],
+                'hang_hints' => [],
+                'overall_health' => 'active',
+            ],
+        ]);
+
+        $this->assertSame($existing, $payload['timeline'] ?? null);
     }
 }

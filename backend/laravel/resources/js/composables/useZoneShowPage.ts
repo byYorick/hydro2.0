@@ -152,7 +152,8 @@ export function useZoneShowPage() {
     fetchHistoryWithNodes: fetchHistoryWithNodes as (
       zoneId: number,
       metric: 'SOIL_MOISTURE',
-      params: { from?: string; to: string }
+      params: { from?: string; to: string },
+      forceRefresh?: boolean,
     ) => Promise<Record<number, Array<{ ts: number; value: number }>>>,
     hasSoilMoisture,
   })
@@ -164,10 +165,14 @@ export function useZoneShowPage() {
     const updates = parseNodeTelemetryBatch(payload)
     updates.forEach((update) => {
       pageState.applyRealtimeTelemetryPoint(update.metric_type, update.value, update.ts)
-      chart.appendRealtimePoint(update.metric_type, {
-        ts: update.ts,
-        value: update.value,
-      })
+      chart.appendRealtimePoint(
+        update.metric_type,
+        {
+          ts: update.ts,
+          value: update.value,
+        },
+        update.node_id,
+      )
     })
   }
 
@@ -334,6 +339,7 @@ export function useZoneShowPage() {
     activeGrowCycle,
     zoneId,
     reloadZone,
+    reloadZonePageProps,
     showToast,
     setLoading,
     handleError,

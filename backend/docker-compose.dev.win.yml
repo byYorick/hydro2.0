@@ -157,6 +157,8 @@ services:
     build:
       context: ./services
       dockerfile: mqtt-bridge/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - MQTT_HOST=mqtt
@@ -193,6 +195,8 @@ services:
     build:
       context: ./services
       dockerfile: history-logger/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - MQTT_HOST=mqtt
@@ -228,6 +232,8 @@ services:
     build:
       context: ./services
       dockerfile: automation-engine/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - LOG_LEVEL=DEBUG
@@ -332,6 +338,8 @@ services:
     build:
       context: ./services
       dockerfile: digital-twin/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - PG_HOST=db
@@ -367,6 +375,8 @@ services:
     build:
       context: ./services
       dockerfile: telemetry-aggregator/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - PG_HOST=db

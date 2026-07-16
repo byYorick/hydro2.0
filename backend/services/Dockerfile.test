@@ -9,17 +9,22 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем requirements для всех сервисов
+# Копируем requirements для всех сервисов (prod + shared test deps)
 COPY requirements-test.txt /app/requirements-test.txt
 COPY history-logger/requirements.txt /app/history-logger-requirements.txt
 COPY automation-engine/requirements.txt /app/automation-engine-requirements.txt
 COPY mqtt-bridge/requirements.txt /app/mqtt-bridge-requirements.txt
 
-# Устанавливаем зависимости
+# Устанавливаем runtime + тестовые зависимости отдельно
 RUN pip install --no-cache-dir -r /app/requirements-test.txt && \
     pip install --no-cache-dir -r /app/history-logger-requirements.txt && \
     pip install --no-cache-dir -r /app/automation-engine-requirements.txt && \
     pip install --no-cache-dir -r /app/mqtt-bridge-requirements.txt && \
+    pip install --no-cache-dir \
+        pytest==8.2.0 \
+        pytest-asyncio==0.24.0 \
+        pytest-cov==4.1.0 \
+        jsonschema>=4.23.0 && \
     pip install --upgrade pytest-asyncio==0.24.0
 
 # Копируем код

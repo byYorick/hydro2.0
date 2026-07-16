@@ -35,7 +35,10 @@ export const DIAGRAM_GEO = {
 
 export interface DiagramFlowPoints {
   waterInletFlowY: ComputedRef<number>
-  busFlowX: ComputedRef<number>
+  cleanDrainFlowY: ComputedRef<number>
+  solutionDrainFlowY: ComputedRef<number>
+  cleanBusFlowX: ComputedRef<number>
+  solutionBusFlowX: ComputedRef<number>
   pumpOutletFlowX: ComputedRef<number>
   recircFlowX: ComputedRef<number>
   recircFlowY: ComputedRef<number>
@@ -48,8 +51,20 @@ export function createDiagramFlow(flowOffset: Ref<number>): DiagramFlowPoints {
     () => T.inlet.top + (T.tank.top - T.inlet.top) * flowOffset.value,
   )
 
-  const busFlowX = computed(
+  const cleanDrainFlowY = computed(
+    () => DIAGRAM_GEO.tankBottom + (T.busY - DIAGRAM_GEO.tankBottom) * flowOffset.value,
+  )
+
+  const solutionDrainFlowY = computed(
+    () => DIAGRAM_GEO.tankBottom + (T.busY - DIAGRAM_GEO.tankBottom) * flowOffset.value,
+  )
+
+  const cleanBusFlowX = computed(
     () => DIAGRAM_GEO.cleanCx + (DIAGRAM_GEO.pumpInletX - DIAGRAM_GEO.cleanCx) * flowOffset.value,
+  )
+
+  const solutionBusFlowX = computed(
+    () => DIAGRAM_GEO.solutionCx + (DIAGRAM_GEO.pumpInletX - DIAGRAM_GEO.solutionCx) * flowOffset.value,
   )
 
   const pumpOutletFlowX = computed(
@@ -84,7 +99,10 @@ export function createDiagramFlow(flowOffset: Ref<number>): DiagramFlowPoints {
 
   return {
     waterInletFlowY,
-    busFlowX,
+    cleanDrainFlowY,
+    solutionDrainFlowY,
+    cleanBusFlowX,
+    solutionBusFlowX,
     pumpOutletFlowX,
     recircFlowX,
     recircFlowY,

@@ -136,7 +136,7 @@
             :key="idx"
             class="flex-1 h-1.5 rounded-full transition-all duration-300"
             :class="getPhaseBarClass(idx)"
-            :title="`Фаза ${idx + 1}${idx === currentPhaseIndex ? ' (текущая)' : idx < currentPhaseIndex ? ' (завершена)' : ' (предстоит)'}`"
+            :title="`Фаза ${idx}${idx === currentPhaseIndex + 1 ? ' (текущая)' : idx < currentPhaseIndex + 1 ? ' (завершена)' : ' (предстоит)'}`"
           ></div>
         </div>
       </div>

@@ -137,9 +137,9 @@ class NodeController extends Controller
         if (isset($validated['new_only']) && $validated['new_only']) {
             $query->whereNull('zone_id');
         }
-        // Поиск непривязанных нод (новые или без зоны)
+        // Поиск непривязанных нод (без зоны и без pending-привязки)
         if (isset($validated['unassigned']) && $validated['unassigned']) {
-            $query->whereNull('zone_id');
+            $query->whereNull('zone_id')->whereNull('pending_zone_id');
         }
 
         // Поиск по имени, UID или типу

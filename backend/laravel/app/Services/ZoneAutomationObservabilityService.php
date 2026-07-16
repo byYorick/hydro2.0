@@ -36,6 +36,130 @@ class ZoneAutomationObservabilityService
         'CORRECTION_INTERRUPTED_STAGE_COMPLETE',
     ];
 
+    private const TIMELINE_MAX_EVENTS = 12;
+
+    private const TIMELINE_MAX_AGE_SEC = 86400;
+
+    /**
+     * Workflow-oriented zone_events used when AE3/Laravel timeline is empty.
+     *
+     * @var list<string>
+     */
+    private const TIMELINE_EVENT_TYPES = [
+        'SCHEDULE_TASK_ACCEPTED',
+        'SCHEDULE_TASK_COMPLETED',
+        'SCHEDULE_TASK_FAILED',
+        'SCHEDULE_TASK_EXECUTION_STARTED',
+        'SCHEDULE_TASK_EXECUTION_FINISHED',
+        'TASK_RECEIVED',
+        'TASK_STARTED',
+        'TASK_FINISHED',
+        'AE_TASK_STARTED',
+        'AE_TASK_COMPLETED',
+        'AE_TASK_FAILED',
+        'DECISION_MADE',
+        'COMMAND_DISPATCHED',
+        'COMMAND_FAILED',
+        'COMMAND_EFFECT_NOT_CONFIRMED',
+        'CLEAN_FILL_COMPLETED',
+        'CLEAN_FILL_RETRY_STARTED',
+        'CLEAN_FILL_STARTED',
+        'CLEAN_FILL_IN_PROGRESS',
+        'CLEAN_FILL_TIMEOUT',
+        'CLEAN_FILL_SOURCE_EMPTY',
+        'SOLUTION_FILL_COMPLETED',
+        'SOLUTION_FILL_STARTED',
+        'SOLUTION_FILL_IN_PROGRESS',
+        'SOLUTION_FILL_TIMEOUT',
+        'SOLUTION_FILL_LEAK_DETECTED',
+        'SOLUTION_FILL_CORRECTION',
+        'PREPARE_TARGETS_REACHED',
+        'PREPARE_TARGETS_NOT_REACHED',
+        'TWO_TANK_STARTUP_INITIATED',
+        'AUTOMATION_CONTROL_MODE_UPDATED',
+        'MANUAL_STEP_ACCEPTED',
+        'MANUAL_STEP_REQUESTED',
+        'MANUAL_STEP_EXECUTED',
+        'WORKFLOW_RECOVERY_STALE_STOPPED',
+        'WORKFLOW_RECOVERY_ENQUEUED',
+        'WORKFLOW_RECOVERY_WORKFLOW_FALLBACK',
+        'LEVEL_SWITCH_CHANGED',
+        'CORRECTION_SKIPPED_COOLDOWN',
+        'CORRECTION_SKIPPED_DOSE_DISCARDED',
+        'CORRECTION_SKIPPED_FRESHNESS',
+        'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+        'CORRECTION_SKIPPED_WATER_LEVEL',
+        'CORRECTION_SKIPPED_DEAD_ZONE',
+        'CORRECTION_SKIPPED_EMERGENCY_STOP',
+        'CORRECTION_SKIPPED_BY_ALERT_BLOCK',
+        'CORRECTION_ACTION_DEFERRED',
+        'CORRECTION_NO_EFFECT',
+        'CORRECTION_COMPLETE',
+        'CORRECTION_EXHAUSTED',
+        'CORRECTION_INTERRUPTED_STAGE_COMPLETE',
+        'EC_BATCH_PARTIAL_FAILURE',
+    ];
+
+    /**
+     * Human labels for timeline backfill (frontend may re-map known codes).
+     *
+     * @var array<string, string>
+     */
+    private const TIMELINE_EVENT_LABELS = [
+        'SCHEDULE_TASK_ACCEPTED' => 'Scheduler: задача принята',
+        'SCHEDULE_TASK_COMPLETED' => 'Scheduler: задача завершена',
+        'SCHEDULE_TASK_FAILED' => 'Scheduler: задача с ошибкой',
+        'SCHEDULE_TASK_EXECUTION_STARTED' => 'Automation-engine: запуск выполнения',
+        'SCHEDULE_TASK_EXECUTION_FINISHED' => 'Automation-engine: выполнение завершено',
+        'TASK_RECEIVED' => 'Automation-engine: задача получена',
+        'TASK_STARTED' => 'Automation-engine: выполнение начато',
+        'TASK_FINISHED' => 'Automation-engine: выполнение завершена',
+        'AE_TASK_STARTED' => 'Automation-engine: задача начата',
+        'AE_TASK_COMPLETED' => 'Automation-engine: задача завершена',
+        'AE_TASK_FAILED' => 'Automation-engine: задача с ошибкой',
+        'DECISION_MADE' => 'Automation-engine: решение принято',
+        'COMMAND_DISPATCHED' => 'Команда отправлена узлу',
+        'COMMAND_FAILED' => 'Ошибка отправки команды',
+        'COMMAND_EFFECT_NOT_CONFIRMED' => 'Эффект команды не подтверждён',
+        'CLEAN_FILL_COMPLETED' => 'Бак чистой воды заполнен',
+        'CLEAN_FILL_RETRY_STARTED' => 'Запущен повторный цикл clean-fill',
+        'CLEAN_FILL_STARTED' => 'Запущено наполнение бака чистой воды',
+        'CLEAN_FILL_IN_PROGRESS' => 'Идёт наполнение бака чистой воды',
+        'CLEAN_FILL_TIMEOUT' => 'Таймаут набора чистой воды',
+        'CLEAN_FILL_SOURCE_EMPTY' => 'Источник чистой воды пуст',
+        'SOLUTION_FILL_COMPLETED' => 'Бак рабочего раствора заполнен',
+        'SOLUTION_FILL_STARTED' => 'Запущено наполнение бака раствора',
+        'SOLUTION_FILL_IN_PROGRESS' => 'Идёт наполнение бака раствора',
+        'SOLUTION_FILL_TIMEOUT' => 'Таймаут набора бака раствора',
+        'SOLUTION_FILL_LEAK_DETECTED' => 'Обнаружена утечка раствора',
+        'SOLUTION_FILL_CORRECTION' => 'Коррекция раствора при наполнении',
+        'PREPARE_TARGETS_REACHED' => 'Целевые pH/EC достигнуты',
+        'PREPARE_TARGETS_NOT_REACHED' => 'Цели pH/EC не достигнуты',
+        'TWO_TANK_STARTUP_INITIATED' => 'Запущен старт 2-баковой схемы',
+        'AUTOMATION_CONTROL_MODE_UPDATED' => 'Режим управления автоматикой обновлён',
+        'MANUAL_STEP_ACCEPTED' => 'Ручной шаг принят',
+        'MANUAL_STEP_REQUESTED' => 'Запрошен ручной шаг',
+        'MANUAL_STEP_EXECUTED' => 'Ручной шаг выполнен',
+        'WORKFLOW_RECOVERY_STALE_STOPPED' => 'Залипшая фаза сброшена (авто-восстановление)',
+        'WORKFLOW_RECOVERY_ENQUEUED' => 'Workflow возобновлён после рестарта AE',
+        'WORKFLOW_RECOVERY_WORKFLOW_FALLBACK' => 'Workflow переключён на резервный',
+        'LEVEL_SWITCH_CHANGED' => 'Изменение датчика уровня',
+        'CORRECTION_SKIPPED_COOLDOWN' => 'Коррекция пропущена: кулдаун',
+        'CORRECTION_SKIPPED_DOSE_DISCARDED' => 'Коррекция пропущена: доза отброшена',
+        'CORRECTION_SKIPPED_FRESHNESS' => 'Коррекция пропущена: устаревшая телеметрия',
+        'CORRECTION_SKIPPED_WINDOW_NOT_READY' => 'Коррекция пропущена: окно не готово',
+        'CORRECTION_SKIPPED_WATER_LEVEL' => 'Коррекция пропущена: уровень воды',
+        'CORRECTION_SKIPPED_DEAD_ZONE' => 'Коррекция пропущена: мёртвая зона',
+        'CORRECTION_SKIPPED_EMERGENCY_STOP' => 'Коррекция пропущена: E-STOP',
+        'CORRECTION_SKIPPED_BY_ALERT_BLOCK' => 'Коррекция пропущена: блок алерта',
+        'CORRECTION_ACTION_DEFERRED' => 'Коррекция отложена',
+        'CORRECTION_NO_EFFECT' => 'Коррекция без эффекта',
+        'CORRECTION_COMPLETE' => 'Коррекция завершена',
+        'CORRECTION_EXHAUSTED' => 'Коррекция исчерпана',
+        'CORRECTION_INTERRUPTED_STAGE_COMPLETE' => 'Коррекция прервана: этап завершён',
+        'EC_BATCH_PARTIAL_FAILURE' => 'Частичный сбой EC-дозы',
+    ];
+
     public function __construct(
         private readonly ObservabilityThresholdRegistry $thresholds,
     ) {}
@@ -106,8 +230,93 @@ class ZoneAutomationObservabilityService
         $observability['correction'] = $this->buildCorrectionContext($zoneId, $runtimeTaskId);
 
         $payload['observability'] = $observability;
+        $payload = $this->backfillTimelineIfEmpty($zoneId, $payload);
 
         return $payload;
+    }
+
+    /**
+     * When AE3/Laravel did not supply timeline events, fill from recent zone_events.
+     * Never overwrites a non-empty timeline.
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function backfillTimelineIfEmpty(int $zoneId, array $payload): array
+    {
+        $timeline = $payload['timeline'] ?? null;
+        if (is_array($timeline) && $timeline !== []) {
+            return $payload;
+        }
+
+        $payload['timeline'] = $this->buildTimelineFromZoneEvents($zoneId);
+
+        return $payload;
+    }
+
+    /**
+     * @return list<array{event: string, timestamp: string, label: string, active: bool}>
+     */
+    private function buildTimelineFromZoneEvents(int $zoneId): array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('zone_events')) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count(self::TIMELINE_EVENT_TYPES), '?'));
+        $minCreatedAt = Carbon::now()->subSeconds(self::TIMELINE_MAX_AGE_SEC);
+        $bindings = array_merge([$zoneId], self::TIMELINE_EVENT_TYPES, [$minCreatedAt, self::TIMELINE_MAX_EVENTS]);
+
+        $rows = DB::select(
+            "SELECT id, type, payload_json, created_at
+             FROM zone_events
+             WHERE zone_id = ?
+               AND type IN ({$placeholders})
+               AND created_at >= ?
+             ORDER BY id DESC
+             LIMIT ?",
+            $bindings,
+        );
+
+        if ($rows === []) {
+            return [];
+        }
+
+        $rows = array_reverse($rows);
+        $events = [];
+
+        foreach ($rows as $row) {
+            $type = is_string($row->type ?? null) ? strtoupper(trim((string) $row->type)) : '';
+            if ($type === '') {
+                continue;
+            }
+
+            $createdAt = $row->created_at ?? null;
+            $timestamp = $createdAt !== null
+                ? Carbon::parse((string) $createdAt)->toIso8601String()
+                : Carbon::now()->toIso8601String();
+
+            $eventPayload = $this->decodeZoneEventPayload($row->payload_json ?? null);
+            $labelFromPayload = null;
+            if (isset($eventPayload['message']) && is_string($eventPayload['message']) && trim($eventPayload['message']) !== '') {
+                $labelFromPayload = trim($eventPayload['message']);
+            } elseif (isset($eventPayload['label']) && is_string($eventPayload['label']) && trim($eventPayload['label']) !== '') {
+                $labelFromPayload = trim($eventPayload['label']);
+            }
+
+            $events[] = [
+                'event' => $type,
+                'timestamp' => $timestamp,
+                'label' => $labelFromPayload ?? (self::TIMELINE_EVENT_LABELS[$type] ?? $type),
+                'active' => false,
+            ];
+        }
+
+        if ($events !== []) {
+            $events[array_key_last($events)]['active'] = true;
+        }
+
+        return $events;
     }
 
     /**
@@ -192,7 +401,11 @@ class ZoneAutomationObservabilityService
 
         $stageDeadlineRemainingSec = null;
         if ($task->stage_deadline_at ?? null) {
-            $stageDeadlineRemainingSec = Carbon::parse((string) $task->stage_deadline_at)->diffInSeconds(now(), false);
+            // AE3 contract: remaining = deadline - now (positive while deadline is still ahead).
+            $stageDeadlineRemainingSec = now()->diffInSeconds(
+                Carbon::parse((string) $task->stage_deadline_at),
+                false
+            );
         }
 
         $resolvedStageElapsedSec = $preferDatabaseTiming

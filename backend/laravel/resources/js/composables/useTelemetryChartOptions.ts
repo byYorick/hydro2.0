@@ -119,7 +119,13 @@ const resolveAxisBounds = (seriesItem?: TelemetrySeriesInput): { min?: number; m
       : 2
     return { min: 0, max }
   }
-  if (normalized.includes('soil') || normalized.includes('влажность')) {
+  const seriesName = String(seriesItem?.name ?? '').toLowerCase()
+  if (
+    seriesName.startsWith('soil_')
+    || seriesName.includes('soil_moisture')
+    || normalized.includes('soil')
+    || normalized.includes('влажность')
+  ) {
     return { min: 0, max: 100 }
   }
 

@@ -50,6 +50,7 @@ required_vars=(
     APP_URL
     APP_KEY
     POSTGRES_PASSWORD
+    REDIS_PASSWORD
     REVERB_APP_KEY
     REVERB_APP_SECRET
     REVERB_ALLOWED_ORIGINS
@@ -115,12 +116,19 @@ fi
 
 echo ""
 echo "Проверка docker compose config..."
-if ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >/dev/null 2>&1; then
+COMPOSE_CONFIG_OUT="$(mktemp)"
+if ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config >"${COMPOSE_CONFIG_OUT}" 2>/tmp/hydro-prod-compose-err; then
     ok "docker compose config валиден"
+    if grep -qE '^name:[[:space:]]*hydro-prod[[:space:]]*$' "${COMPOSE_CONFIG_OUT}"; then
+        ok "compose project name = hydro-prod (изолирован от dev)"
+    else
+        fail "ожидался project name hydro-prod в docker-compose.prod.yml"
+    fi
 else
     fail "docker compose config — ошибка (см. вывод ниже)"
-    ${DOCKER_COMPOSE} --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config 2>&1 | tail -20 >&2 || true
+    tail -20 /tmp/hydro-prod-compose-err >&2 || true
 fi
+rm -f "${COMPOSE_CONFIG_OUT}"
 
 echo ""
 if [ "${errors}" -gt 0 ]; then

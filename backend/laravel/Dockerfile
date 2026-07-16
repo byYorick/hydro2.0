@@ -1,14 +1,20 @@
 FROM webdevops/php-nginx:8.2
 
+# Dev-образ: Node (Vite HMR) + Chromium (Dusk/E2E). Production — см. Dockerfile.prod.
+ARG INSTALL_BROWSER_TOOLS=true
+
 RUN apt-get update && \
-    apt-get install -y curl ca-certificates gnupg supervisor chromium chromium-driver fonts-liberation postgresql-client && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg supervisor postgresql-client && \
+    if [ "$INSTALL_BROWSER_TOOLS" = "true" ]; then \
+        apt-get install -y --no-install-recommends chromium chromium-driver fonts-liberation; \
+    fi && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" >/etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
-    apt-get install -y nodejs && \
+    apt-get install -y --no-install-recommends nodejs && \
     npm --version && node --version && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 WORKDIR /app
 ENV WEB_DOCUMENT_ROOT=/app/public

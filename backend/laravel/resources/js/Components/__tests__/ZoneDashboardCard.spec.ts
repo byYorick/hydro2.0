@@ -1,14 +1,19 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { router } from '@inertiajs/vue3'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import CombinedTelemetrySparkline from '@/Components/ZoneDashboardCard/CombinedTelemetrySparkline.vue'
 import MetricPillBar from '@/Components/ZoneDashboardCard/MetricPillBar.vue'
+import CycleProgressStack from '@/Components/ZoneDashboardCard/CycleProgressStack.vue'
 
 vi.mock('@inertiajs/vue3', () => ({
   Link: {
     name: 'Link',
     props: ['href'],
-    template: '<a :href="href"><slot /></a>',
+    template: '<a :href="href" @click.stop><slot /></a>',
+  },
+  router: {
+    visit: vi.fn(),
   },
 }))
 
@@ -93,6 +98,21 @@ describe('ZoneDashboardCard', () => {
     expect(wrapper.text()).toContain('Обновление:')
   })
 
+  it('показывает текущий workflow-статус зоны в шапке', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          alerts_count: 0,
+          system_state: { label: 'Готов', phase: 'ready', stale: false },
+        }),
+      },
+    })
+
+    const status = wrapper.find('[data-testid="zone-card-current-status"]')
+    expect(status.exists()).toBe(true)
+    expect(status.text()).toContain('Готов')
+  })
+
   it('в non-dense показывает только выбранную метрику на графике и переключает вкладки', async () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {
@@ -127,6 +147,7 @@ describe('ZoneDashboardCard', () => {
     const wrapper = mount(ZoneDashboardCard, {
       props: {
         zone: makeZone({
+          alerts_count: 0,
           telemetry: {
             ph: 5.6,
             ec: 1.9,
@@ -142,6 +163,72 @@ describe('ZoneDashboardCard', () => {
     for (const metric of metricBars) {
       expect(metric.props('offline')).toBe(true)
     }
+    expect(wrapper.text()).toContain('НЕТ СВЯЗИ')
+    expect(wrapper.text()).not.toContain('ВНЕ НОРМЫ')
+  })
+
+  it('показывает «НЕТ ДАННЫХ» при unknown telemetryHealth без алертов', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          alerts_count: 0,
+          telemetry: {
+            ph: null,
+            ec: null,
+            temperature: null,
+            updated_at: new Date().toISOString(),
+          },
+          targets: {
+            ph: null,
+            ec: null,
+            temperature: null,
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('НЕТ ДАННЫХ')
+    expect(wrapper.text()).not.toContain('OK')
+  })
+
+  it('MetricPillBar не рендерит marker при offline=true', () => {
+    const offline = mount(MetricPillBar, {
+      props: {
+        label: 'pH',
+        value: 5.6,
+        targetMin: 5.3,
+        targetMax: 5.7,
+        offline: true,
+      },
+    })
+    expect(offline.find('.h-2\\.5.w-\\[3px\\]').exists()).toBe(false)
+
+    const online = mount(MetricPillBar, {
+      props: {
+        label: 'pH',
+        value: 5.6,
+        targetMin: 5.3,
+        targetMax: 5.7,
+        offline: false,
+      },
+    })
+    expect(online.find('.h-2\\.5.w-\\[3px\\]').exists()).toBe(true)
+  })
+
+  it('без system_state при IRR online показывает «Нет данных», не «Ожидание»', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          system_state: null,
+          irrig_node: { online: true, stale: false, last_seen_at: '2026-04-30T06:32:00.000Z' },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Нет данных')
+    expect(wrapper.text()).not.toContain('Ожидание')
+    expect(wrapper.text()).toContain('IRR')
+    expect(wrapper.text()).toContain('online')
   })
 
   it('показывает статус IRR-ноды и адаптирует баки под одно-баковую топологию', () => {
@@ -223,6 +310,121 @@ describe('ZoneDashboardCard', () => {
 
     expect(wrapper.text()).not.toContain('Автоматика остановлена')
     expect(wrapper.text()).toContain('Алертов: 4')
+  })
+
+  it('при наличии cycle не показывает empty-state «Активный цикл не запущен»', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          cycle: {
+            status: 'RUNNING',
+            progress: null,
+            planting_at: null,
+            stages: [],
+            current_stage: null,
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).not.toContain('Активный цикл не запущен')
+    const stack = wrapper.findComponent(CycleProgressStack)
+    expect(stack.props('hasCycle')).toBe(true)
+  })
+
+  it('показывает empty-state цикла только если cycle == null', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({ cycle: null }),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Активный цикл не запущен')
+  })
+
+  it('считает прогресс фазы локально по датам (1-based день)', () => {
+    const now = Date.now()
+    // 4 ч из 10 ч фазы → 40%; день посадки = 1
+    const stageFrom = new Date(now - 4 * 60 * 60 * 1000)
+    const stageTo = new Date(now + 6 * 60 * 60 * 1000)
+    const planting = new Date(now - 4 * 60 * 60 * 1000)
+    const harvest = new Date(planting.getTime() + 10 * 24 * 60 * 60 * 1000)
+
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          cycle: {
+            status: 'RUNNING',
+            // Устаревший snapshot DTO не должен перебивать live-расчёт.
+            progress: { overall_pct: 0, stage_pct: 0 },
+            planting_at: planting.toISOString(),
+            expected_harvest_at: harvest.toISOString(),
+            stages: [
+              {
+                state: 'ACTIVE',
+                from: stageFrom.toISOString(),
+                to: stageTo.toISOString(),
+                name: 'Вегетация',
+                pct: 0,
+              },
+            ],
+            current_stage: { name: 'Вегетация' },
+          },
+        }),
+      },
+    })
+
+    expect(wrapper.text()).toMatch(/День 1\/10/)
+    const stack = wrapper.findComponent(CycleProgressStack)
+    expect(stack.props('phase')).toMatchObject({
+      dayElapsed: 1,
+      progress: 40,
+    })
+    expect(stack.props('overallPct')).toBeGreaterThan(0)
+  })
+
+  it('задаёт ось EC 0–5 даже без targets', () => {
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone({
+          targets: {
+            ph: { min: 5.35, max: 5.55 },
+            ec: null,
+            temperature: { min: 22.5, max: 25.5 },
+          },
+        }),
+      },
+    })
+
+    const ecBar = wrapper.findAllComponents(MetricPillBar).find((m) => m.props('label') === 'EC')
+    expect(ecBar).toBeTruthy()
+    expect(ecBar!.props('axisMin')).toBe(0)
+    expect(ecBar!.props('axisMax')).toBe(5)
+  })
+
+  it('карточка — div с кликом, tabs вне Link; клик ведёт на /zones/:id', async () => {
+    vi.mocked(router.visit).mockClear()
+    const wrapper = mount(ZoneDashboardCard, {
+      props: {
+        zone: makeZone(),
+        dense: false,
+        sparklineSeriesData: { ph: [5.5], ec: [1.8], temperature: [23] },
+      },
+    })
+
+    const root = wrapper.find('[data-testid="zone-dashboard-card"]')
+    expect(root.element.tagName).toBe('DIV')
+    expect(root.find('a button').exists()).toBe(false)
+
+    const metricTabs = wrapper.findAll('button.metric-tab')
+    expect(metricTabs.length).toBeGreaterThan(0)
+    // tabs не внутри <a>
+    for (const tab of metricTabs) {
+      expect(tab.element.closest('a')).toBeNull()
+    }
+
+    await root.trigger('click')
+    expect(router.visit).toHaveBeenCalledWith('/zones/886')
   })
 
   it('показывает в алерте только сообщение без сырого JSON', () => {

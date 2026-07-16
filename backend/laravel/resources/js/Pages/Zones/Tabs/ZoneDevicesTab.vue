@@ -32,10 +32,16 @@
       />
     </div>
     <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
-      <ZoneBindingsPanel :zone-id="zone.id" />
+      <ZoneBindingsPanel
+        :zone-id="zone.id"
+        :can-manage="canManageDevices"
+      />
     </div>
     <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-xl p-2">
-      <AutomationEngine :zone-id="zone.id" />
+      <AutomationEngine
+        :zone-id="zone.id"
+        :can-manage="canManageDevices"
+      />
     </div>
   </div>
 </template>

@@ -7,12 +7,14 @@ export interface ZoneTelemetryChartDeps {
   fetchHistory: (
     zoneId: number,
     metric: 'PH' | 'EC',
-    params: { from?: string; to: string }
+    params: { from?: string; to: string },
+    forceRefresh?: boolean
   ) => Promise<Array<{ ts: number; value: number }>>
   fetchHistoryWithNodes: (
     zoneId: number,
     metric: 'SOIL_MOISTURE',
-    params: { from?: string; to: string }
+    params: { from?: string; to: string },
+    forceRefresh?: boolean
   ) => Promise<Record<number, Array<{ ts: number; value: number }>>>
   hasSoilMoisture: Ref<boolean>
 }
@@ -79,11 +81,8 @@ export function useZoneTelemetryChart(
     }
 
     const lastPoint = series[series.length - 1]
-    if (
-      lastPoint &&
-      lastPoint.ts === normalizedPoint.ts &&
-      lastPoint.value === normalizedPoint.value
-    ) {
+    if (lastPoint && lastPoint.ts === normalizedPoint.ts) {
+      lastPoint.value = normalizedPoint.value
       return
     }
 
@@ -95,7 +94,27 @@ export function useZoneTelemetryChart(
     pruneSeries(series)
   }
 
-  const appendRealtimePoint = (metricType: string, point: { ts: number; value: number }): void => {
+  const mergeHistoryWithRealtimeTail = (
+    history: Array<{ ts: number; value: number }>,
+    current: Array<{ ts: number; value: number }>,
+  ): Array<{ ts: number; value: number }> => {
+    if (history.length === 0) {
+      return [...current]
+    }
+    const lastHistoryTs = history[history.length - 1]?.ts ?? Number.NEGATIVE_INFINITY
+    const tail = current.filter((point) => point.ts > lastHistoryTs)
+    const merged = [...history]
+    for (const point of tail) {
+      appendPointToSeries(merged, point)
+    }
+    return merged
+  }
+
+  const appendRealtimePoint = (
+    metricType: string,
+    point: { ts: number; value: number },
+    nodeId?: number | null,
+  ): void => {
     const normalizedMetric = String(metricType).trim().toUpperCase()
 
     if (normalizedMetric === 'PH') {
@@ -105,6 +124,18 @@ export function useZoneTelemetryChart(
 
     if (normalizedMetric === 'EC') {
       appendPointToSeries(chartDataEc.value, point)
+      return
+    }
+
+    if (normalizedMetric === 'SOIL_MOISTURE') {
+      const key = Number(nodeId)
+      if (!Number.isFinite(key)) {
+        return
+      }
+      if (!chartDataSoilMoisture.value[key]) {
+        chartDataSoilMoisture.value[key] = []
+      }
+      appendPointToSeries(chartDataSoilMoisture.value[key], point)
     }
   }
 
@@ -136,7 +167,7 @@ export function useZoneTelemetryChart(
     try {
       const params: { from?: string; to: string } = { to: now.toISOString() }
       if (from) params.from = from.toISOString()
-      return await fetchHistory(requestZoneId, metric, params)
+      return await fetchHistory(requestZoneId, metric, params, true)
     } catch (err) {
       logger.error(`Failed to load ${metric} history:`, err)
       return []
@@ -162,7 +193,7 @@ export function useZoneTelemetryChart(
     try {
       const params: { from?: string; to: string } = { to: now.toISOString() }
       if (from) params.from = from.toISOString()
-      return await fetchHistoryWithNodes(requestZoneId, 'SOIL_MOISTURE', params)
+      return await fetchHistoryWithNodes(requestZoneId, 'SOIL_MOISTURE', params, true)
     } catch (err) {
       logger.error('Failed to load SOIL_MOISTURE history:', err)
       return {}
@@ -172,6 +203,9 @@ export function useZoneTelemetryChart(
   async function refreshChartData(timeRange: TelemetryRange): Promise<void> {
     const requestVersion = ++chartDataRequestVersion
     isChartLoading.value = true
+    const previousPh = chartDataPh.value
+    const previousEc = chartDataEc.value
+    const previousSoil = chartDataSoilMoisture.value
     const soilPromise = hasSoilMoisture.value
       ? loadSoilMoistureData(timeRange)
       : Promise.resolve<Record<number, Array<{ ts: number; value: number }>>>({})
@@ -183,9 +217,14 @@ export function useZoneTelemetryChart(
         soilPromise,
       ])
       if (requestVersion !== chartDataRequestVersion) return
-      chartDataPh.value = phData
-      chartDataEc.value = ecData
-      chartDataSoilMoisture.value = soilData
+      chartDataPh.value = mergeHistoryWithRealtimeTail(phData, previousPh)
+      chartDataEc.value = mergeHistoryWithRealtimeTail(ecData, previousEc)
+      const mergedSoil: Record<number, Array<{ ts: number; value: number }>> = { ...soilData }
+      for (const [nodeKey, series] of Object.entries(previousSoil)) {
+        const nodeId = Number(nodeKey)
+        mergedSoil[nodeId] = mergeHistoryWithRealtimeTail(soilData[nodeId] ?? [], series)
+      }
+      chartDataSoilMoisture.value = mergedSoil
     } finally {
       if (requestVersion === chartDataRequestVersion) {
         isChartLoading.value = false
@@ -219,6 +258,12 @@ export function useZoneTelemetryChart(
     chartDataSoilMoisture.value = {}
     if (!newZoneId) return
     void refreshChartData(chartTimeRange.value)
+  })
+
+  watch(hasSoilMoisture, (enabled, wasEnabled) => {
+    if (enabled && !wasEnabled && zoneId.value) {
+      void refreshChartData(chartTimeRange.value)
+    }
   })
 
   return {

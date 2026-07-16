@@ -53,12 +53,11 @@ export function getEventTypeLabel(type: string | null | undefined): string {
 }
 
 export function getEventMessage(event: CycleEvent): string {
-  if (typeof event.message === 'string' && event.message.trim().length > 0) {
-    return event.message
-  }
-
   const details = event.details ?? {}
   const type = event.type ?? ''
+  const rawMessage = typeof event.message === 'string' ? event.message.trim() : ''
+  // Игнорировать message, если это сырой technical type (legacy formatter fallback).
+  const hasUsefulMessage = rawMessage.length > 0 && rawMessage !== type
 
   if (type === 'CYCLE_HARVESTED') {
     return `Урожай собран${details.batch_label ? ` (партия: ${details.batch_label})` : ''}`
@@ -76,20 +75,24 @@ export function getEventMessage(event: CycleEvent): string {
     return `Критическое предупреждение: ${details.message || details.code || 'alert'}`
   }
   if (type === 'IRRIGATION_CYCLE_STARTED') {
-    return String(details.label ?? 'Полив запущен')
+    return String(details.label ?? (hasUsefulMessage ? rawMessage : 'Полив запущен'))
   }
   if (type === 'IRRIGATION_CYCLE_FINISHED') {
-    return String(details.label ?? 'Полив завершён')
+    return String(details.label ?? (hasUsefulMessage ? rawMessage : 'Полив завершён'))
   }
   if (type === 'IRRIGATION_CYCLE_STOPPED') {
-    return String(details.label ?? 'Полив остановлен')
+    return String(details.label ?? (hasUsefulMessage ? rawMessage : 'Полив остановлен'))
   }
   if (type === 'IRRIGATION_CYCLE_SKIPPED') {
-    return String(details.label ?? 'Полив пропущен')
+    return String(details.label ?? (hasUsefulMessage ? rawMessage : 'Полив пропущен'))
   }
   if (type === 'AE_TASK_FAILED') {
     const reason = String(details.error_message ?? details.error_code ?? '')
     return `Ошибка выполнения${reason ? `: ${reason}` : ''}`
+  }
+
+  if (hasUsefulMessage) {
+    return rawMessage
   }
 
   return translateEventKind(type)

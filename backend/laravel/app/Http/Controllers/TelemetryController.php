@@ -69,12 +69,19 @@ class TelemetryController extends Controller
         ]);
 
         $metric = strtoupper($validated['metric']);
+        $preferredChannels = $this->zoneFrontendTelemetry->getPreferredChannels($zoneId, $metric, true);
+
         $q = TelemetrySample::query()
             ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
             ->where('sensors.zone_id', $zoneId)
             ->whereNotNull('sensors.zone_id')
             ->where('sensors.type', $metric)
-            ->orderBy('telemetry_samples.ts', 'asc');
+            // Keep newest samples under the hard limit (ASC+LIMIT would drop the fresh tail).
+            ->orderByDesc('telemetry_samples.ts');
+
+        if ($preferredChannels !== []) {
+            $q->whereIn('sensors.label', $preferredChannels);
+        }
 
         if (! empty($validated['from'])) {
             $q->where('telemetry_samples.ts', '>=', $validated['from']);
@@ -89,7 +96,7 @@ class TelemetryController extends Controller
             'sensors.node_id',
             'sensors.label as channel',
             'sensors.type as metric_type',
-        ]);
+        ])->sortBy('ts')->values();
 
         return response()->json([
             'status' => 'ok',

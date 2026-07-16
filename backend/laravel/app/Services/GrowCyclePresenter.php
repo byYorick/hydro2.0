@@ -31,7 +31,9 @@ class GrowCyclePresenter
 
         $plantingDate = Carbon::parse($plantingAt);
         $now = now();
-        $hoursSincePlanting = $now->diffInHours($plantingDate, false);
+        // elapsed = planting → now (не now → planting: знаковый diff даёт отрицательное
+        // и overall_pct навсегда остаётся 0%).
+        $hoursSincePlanting = max(0.0, $plantingDate->floatDiffInHours($now));
 
         $stages = [];
         $currentStageIndex = -1;
@@ -55,7 +57,7 @@ class GrowCyclePresenter
                 } else {
                     $state = 'ACTIVE';
                     if ($segment['duration_hours'] > 0) {
-                        $elapsed = max(0, $now->diffInHours($stageStart, false));
+                        $elapsed = max(0.0, $stageStart->floatDiffInHours($now));
                         $pct = min(100, max(0, ($elapsed / $segment['duration_hours']) * 100));
                     }
                 }
@@ -113,7 +115,12 @@ class GrowCyclePresenter
                 'current_stage' => $currentStage,
                 'progress' => [
                     'overall_pct' => round($overallProgress, 1),
-                    'stage_pct' => $currentStageIndex >= 0 ? $stages[$currentStageIndex]['pct'] : 0,
+                    'stage_pct' => round(
+                        $currentStageIndex >= 0
+                            ? $stages[$currentStageIndex]['pct']
+                            : (collect($stages)->firstWhere('state', 'ACTIVE')['pct'] ?? 0),
+                        1
+                    ),
                 ],
                 'stages' => $stages,
             ],

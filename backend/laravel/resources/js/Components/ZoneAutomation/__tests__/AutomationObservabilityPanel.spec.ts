@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AutomationState } from '@/types/Automation'
 import AutomationObservabilityPanel from '../AutomationObservabilityPanel.vue'
 
+const routerVisit = vi.fn()
+
+vi.mock('@inertiajs/vue3', () => ({
+  router: {
+    visit: (...args: unknown[]) => routerVisit(...args),
+  },
+}))
+
 vi.mock('@/Components/Badge.vue', () => ({
   default: {
     name: 'Badge',
@@ -111,8 +119,8 @@ describe('AutomationObservabilityPanel', () => {
     expect(wrapper.text()).toContain('waiting_command_stuck')
     expect(wrapper.text()).toContain('scheduler_intent_pending')
     expect(wrapper.text()).toContain('pump-node-1')
-    expect(wrapper.text()).toContain('Task:')
-    expect(wrapper.text()).toContain('#9001')
+    expect(wrapper.find('[data-testid="automation-causal-strip"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('task #9001')
     expect(wrapper.text()).toContain('intent_id=101')
     expect(wrapper.text()).toContain('age_sec=540')
     expect(wrapper.text()).toContain('two_tank_drip_substrate_trays')
@@ -121,6 +129,71 @@ describe('AutomationObservabilityPanel', () => {
     const badge = wrapper.find('[data-testid="health-badge"]')
     expect(badge.attributes('data-variant')).toBe('danger')
     expect(badge.text()).toContain('Критично')
+  })
+
+  it('renders irrigation decision card when decision is present', () => {
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          decision: {
+            outcome: 'irrigate',
+            reason_code: 'soil_below_threshold',
+            strategy: 'smart_soil_v1',
+            bundle_revision: 'rev-42',
+            degraded: true,
+          },
+        }),
+      },
+    })
+
+    const card = wrapper.find('[data-testid="automation-decision-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('irrigate')
+    expect(card.text()).toContain('smart_soil_v1')
+    expect(card.text()).toContain('soil_below_threshold')
+    expect(card.text()).toContain('rev-42')
+    expect(card.text()).toContain('degraded')
+  })
+
+  it('opens events tab with task_id from causal strip link', async () => {
+    routerVisit.mockClear()
+    const wrapper = mount(AutomationObservabilityPanel, {
+      props: {
+        automationState: buildState({
+          observability: {
+            overall_health: 'active',
+            runtime: {
+              zone_id: 7,
+              task_id: 9001,
+              task_is_active: true,
+              task_status: 'running',
+              correction_step: 'corr_check',
+            },
+            hang_hints: [],
+            correction: {
+              latest_skip: {
+                event_id: 55,
+                event_type: 'CORRECTION_SKIPPED_COOLDOWN',
+                age_sec: 12,
+              },
+              last_dose: {
+                ph: { no_effect_count: 1 },
+                ec: { no_effect_count: 0 },
+              },
+            },
+          },
+        }),
+      },
+    })
+
+    const strip = wrapper.find('[data-testid="automation-causal-strip"]')
+    expect(strip.exists()).toBe(true)
+    expect(strip.text()).toContain('task #9001 → running → corr_check → CORRECTION_SKIPPED_COOLDOWN')
+    expect(strip.text()).toContain('skip_event_id=55')
+    expect(strip.text()).toContain('ph_no_effect=1')
+
+    await wrapper.find('[data-testid="automation-causal-events-link"]').trigger('click')
+    expect(routerVisit).toHaveBeenCalledWith('/zones/7?tab=events&task_id=9001')
   })
 
   it('renders without error when automation state is null', () => {

@@ -282,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'
 import ZoneAutomationRuntimeSection from '@/Components/ZoneAutomation/ZoneAutomationRuntimeSection.vue'
@@ -518,9 +518,19 @@ const automationStateMetaLabel = computed(() => {
 })
 
 function handleProcessStateSnapshot(snapshot: AutomationState): void {
+  if (props.zoneId && snapshot.zone_id > 0 && snapshot.zone_id !== Number(props.zoneId)) {
+    return
+  }
   lastAutomationSnapshot.value = snapshot
   syncControlModeFromAutomationState(snapshot)
 }
+
+watch(
+  () => props.zoneId,
+  () => {
+    lastAutomationSnapshot.value = null
+  },
+)
 
 async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Promise<void> {
   Object.assign(climateForm, payload.climateForm)

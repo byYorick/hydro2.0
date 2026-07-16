@@ -47,6 +47,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
   const workspace = ref<ScheduleWorkspace | null>(null)
   const automationState = ref<AutomationState | null>(null)
   const selectedExecution = ref<ExecutionRun | null>(null)
+  const selectionClearedByUser = ref(false)
   const diagnostics = ref<SchedulerDiagnostics | null>(null)
   const loading = ref(false)
   const detailLoading = ref(false)
@@ -57,6 +58,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
 
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeControlModeEvents: (() => void) | null = null
+  let workspaceRequestSeq = 0
 
   /**
    * `apiGet` уже снимает status-envelope `{status, data: ...}` через `extractData`,
@@ -218,38 +220,59 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     if (!props.zoneId) {
       workspace.value = null
       selectedExecution.value = null
+      selectionClearedByUser.value = false
       updatedAt.value = null
       loading.value = false
       return
     }
 
+    const requestSeq = ++workspaceRequestSeq
+    const requestedZoneId = props.zoneId
     loading.value = true
     error.value = null
 
     try {
       const response = await api.zones.scheduleWorkspace<ScheduleWorkspace | ScheduleWorkspaceResponse>(
-        props.zoneId,
+        requestedZoneId,
         { horizon: horizon.value },
       )
+      if (requestSeq !== workspaceRequestSeq || props.zoneId !== requestedZoneId) {
+        return
+      }
       workspace.value = unwrapEnvelope<ScheduleWorkspace>(response)
       updatedAt.value = new Date().toISOString()
 
       const nextSelectedExecutionId = selectedExecution.value?.execution_id?.trim()
       if (nextSelectedExecutionId) {
         await fetchExecution(nextSelectedExecutionId, { silent: true })
-      } else if (activeRun.value?.execution_id) {
+      } else if (!selectionClearedByUser.value && activeRun.value?.execution_id) {
         await fetchExecution(activeRun.value.execution_id, { silent: true })
-      } else if (recentRuns.value[0]?.execution_id) {
+      } else if (!selectionClearedByUser.value && recentRuns.value[0]?.execution_id) {
         await fetchExecution(recentRuns.value[0].execution_id, { silent: true })
-      } else {
+      } else if (!selectionClearedByUser.value) {
         selectedExecution.value = null
       }
     } catch (fetchError) {
-      logger.warn('[ZoneSchedulerTab] Failed to fetch schedule workspace', { fetchError, zoneId: props.zoneId })
+      if (requestSeq !== workspaceRequestSeq || props.zoneId !== requestedZoneId) {
+        return
+      }
+      logger.warn('[ZoneSchedulerTab] Failed to fetch schedule workspace', { fetchError, zoneId: requestedZoneId })
       error.value = 'Не удалось получить workspace планировщика.'
     } finally {
-      loading.value = false
+      if (requestSeq === workspaceRequestSeq && props.zoneId === requestedZoneId) {
+        loading.value = false
+      }
     }
+  }
+
+  function clearSelectedExecution(): void {
+    selectionClearedByUser.value = true
+    selectedExecution.value = null
+  }
+
+  function selectExecution(executionId: string): void {
+    selectionClearedByUser.value = false
+    void fetchExecution(executionId)
   }
 
   async function fetchAutomationState(options?: { silent?: boolean }): Promise<void> {
@@ -409,7 +432,15 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
   watch(
     () => props.zoneId,
     () => {
+      workspaceRequestSeq += 1
+      workspace.value = null
+      selectedExecution.value = null
+      selectionClearedByUser.value = false
+      automationState.value = null
+      error.value = null
       startControlModeEventSubscription()
+      void fetchWorkspace()
+      void fetchAutomationState({ silent: true })
     },
   )
 
@@ -922,6 +953,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     workspace,
     automationState,
     selectedExecution,
+    selectionClearedByUser,
     diagnostics,
     loading,
     detailLoading,
@@ -947,6 +979,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: Z
     fetchAutomationState,
     fetchExecution,
     fetchDiagnostics,
+    selectExecution,
+    clearSelectedExecution,
     setHorizon,
     clearDiagnostics,
     clearPollTimer,

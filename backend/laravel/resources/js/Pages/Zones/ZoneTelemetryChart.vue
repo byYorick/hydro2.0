@@ -31,12 +31,16 @@ interface Props {
   seriesName?: string
   data?: TelemetrySample[]
   timeRange?: TelemetryRange
+  currentValue?: number | null
+  targetRange?: { min: number; max: number } | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   seriesName: 'value',
   data: () => [],
   timeRange: '24H',
+  currentValue: null,
+  targetRange: null,
 })
 
 const { theme, isDark } = useTheme()
@@ -48,6 +52,8 @@ const series = computed(() => [{
   color: '#60a5fa',
   data: props.data,
   yAxisIndex: 0,
+  currentValue: props.currentValue,
+  targetRange: props.targetRange,
 }])
 
 const timeRange = computed<TelemetryRange>(() => props.timeRange)

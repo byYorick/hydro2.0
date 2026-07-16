@@ -251,10 +251,13 @@ resources/js/Pages/
   - иначе → «AE3 live».
 - **Client fallback:** если `observability` отсутствует, `resolveObservability()` строит минимальный блок из `state_details`/`workflow_phase`;
   при `state_meta.is_stale=true` добавляется hint `state_snapshot_stale` (если ещё нет в payload).
+- **Decision card:** если в payload есть `decision` (irrigation decision от AE3: `outcome`, `reason_code`, `strategy`, `bundle_revision`, `degraded`), панель показывает компактный блок — без ухода на Events/Scheduler.
+- **Causal strip:** краткая сводка из уже доступных полей (`task_id`, `correction_step`, latest skip, `no_effect_count`) + deep-link `?tab=events&task_id={id}` на вкладку Events; **не** копирует grouped causal UI и **не** показывает live-список команд ACK→DONE.
+- **Timeline backfill:** если `state.timeline` пуст (AE down / Laravel fallback), Laravel заполняет последние ≤12 workflow-oriented `zone_events` в том же формате `{ event, timestamp, label?, active? }`; непустой AE3 timeline **не** перезаписывается.
 
 **Не смешивать с:**
 - `GET /api/zones/{id}/scheduler-diagnostics` (engineer/admin only);
-- grouped `zone_events` timeline (causal chain, не hang detection).
+- полный grouped `zone_events` causal chain (живёт на Events tab; на Automation — только strip + deep-link).
 
 ### 6.6.3. Shared UI автоматики зоны
 
