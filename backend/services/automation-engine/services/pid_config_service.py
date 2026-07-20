@@ -1,6 +1,12 @@
 """
-Сервис для чтения PID конфигов из БД.
-Кеширует конфиги в памяти для быстрого доступа.
+DEPRECATED — не использовать в runtime AE3-Lite.
+
+Сервис чтения/кеша PID-конфигов для legacy ``AdaptivePid``
+(``utils.adaptive_pid``). Канонический runtime читает ``zone.pid.*`` и
+``zone.correction`` через AE3 read-model / ``CorrectionPlanner``.
+
+См. ``doc_ai/06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md`` §10.
+Новые импорты из ``ae3lite/*`` запрещены.
 """
 import json
 import logging

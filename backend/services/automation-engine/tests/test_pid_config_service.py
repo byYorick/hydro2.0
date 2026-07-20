@@ -1,5 +1,9 @@
 """
-Тесты для PidConfigService
+Legacy-тесты PidConfigService / AdaptivePid.
+
+Канонический AE3 PID path покрыт ``test_ae3lite_correction_planner.py`` и
+``test_ae3lite_observation_analyzer.py``. Эти тесты остаются для deprecated
+модулей ``services.pid_config_service`` / ``utils.adaptive_pid`` до их удаления.
 """
 import pytest
 import sys

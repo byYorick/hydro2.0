@@ -1,9 +1,21 @@
 """
-Adaptive PID controller with zones, safety limits and basic statistics.
+DEPRECATED — не использовать в runtime AE3-Lite.
 
-Примечание: Это легковесная реализация для дозирования pH/EC. Она рассчитана
-на вызов с фиксированным шагом (dt в секундах) в автоматизации, не хранит
-состояние на диск и живет в памяти процесса automation-engine.
+Исторический in-memory AdaptivePid (зоны dead/close/far, без персиста
+``pid_state``, без observation-driven dose→hold→observe).
+
+Канон коррекции pH/EC:
+- ``ae3lite/domain/services/correction_planner.py``
+- ``ae3lite/domain/services/observation_analyzer.py``
+- ``ae3lite/application/handlers/correction.py``
+- ``doc_ai/06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md`` §10
+
+Модуль оставлен только для legacy unit-тестов ``tests/test_pid_config_service*``.
+Новые импорты из ``ae3lite/*`` запрещены.
+
+---
+Легковесная реализация с зонами и safety limits; не хранит состояние на диск
+и живёт в памяти процесса (legacy path).
 """
 from __future__ import annotations
 

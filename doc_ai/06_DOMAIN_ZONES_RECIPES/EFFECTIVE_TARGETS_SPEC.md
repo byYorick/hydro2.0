@@ -13,6 +13,14 @@
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не имеют права переопределять canonical `pH/EC target|min|max`;
 - zone automation UI показывает эти значения как readonly derived fields, а не как редактируемые runtime-настройки.
 
+Актуализация PID authority для AE3 (2026-07-20):
+- nested `targets.ph.controller` / `targets.ec.controller` (Kp/Ki/Kd/deadband/max_dose/…)
+  в схеме effective-targets — **legacy/документальный** контракт Laravel-модели;
+  **AE3 runtime их не читает** как source of truth;
+- AE3 PID tuning: `zone.pid.{ph,ec}` + `zone.correction.resolved_config.controllers.*`;
+- process gain / observe timing: `zone.process_calibration.*`;
+- см. `PID_CONFIG_REFERENCE.md`.
+
 Актуализация per-phase EC и day/night (2026-04-13):
 - runtime-spec для two-tank добавляет `target_ec_prepare`, `target_ec_prepare_min`, `target_ec_prepare_max`, `npk_ec_share` — см. §10;
 - AE3 handler выбирает между prepare-target и full-target по текущей фазе workflow (`solution_fill`/`tank_recirc` ↔ `irrigation`/`irrig_recirc`);
@@ -193,6 +201,9 @@ interface PhTarget {
   min: number;        // Минимально допустимое значение (например, 5.8)
   max: number;        // Максимально допустимое значение (например, 6.2)
 
+  // LEGACY / documentation-only для AE3:
+  // AE3 НЕ читает эти поля как PID authority.
+  // Канон: zone.pid.* + zone.correction.controllers.* + process_calibration.
   // Опциональные параметры PID контроллера
   controller?: {
     mode: "PID" | "ON_OFF";   // Режим контроллера
@@ -234,6 +245,8 @@ interface EcTarget {
   min: number;        // Минимально допустимое значение
   max: number;        // Максимально допустимое значение
 
+  // LEGACY / documentation-only для AE3 (см. §4.1 / шапку документа):
+  // AE3 НЕ читает эти поля как PID authority.
   // Опциональные параметры контроллера
   controller?: {
     mode: "PID" | "ON_OFF";

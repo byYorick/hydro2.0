@@ -20,6 +20,7 @@ from statistics import median
 from typing import Any, Mapping
 
 from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.domain.services.correction_planner import effective_process_gain
 
 
 # ── Named constants (replacing the inline magic numbers from handler) ──
@@ -84,21 +85,34 @@ class ObservationAnalyzer:
         pid_type: str,
         corr: CorrectionState,
         process_cfg: Mapping[str, Any],
+        pid_entry: Mapping[str, Any] | None = None,
+        phase_key: str = "generic",
     ) -> float:
         """Compute the dose-response prediction for a freshly issued pulse.
+
+        Uses the same effective process gain as ``CorrectionPlanner``
+        (``effective_process_gain``: auth ⊕ learned EMA blend, retention/wave
+        weights, 0.25×–4× clamp, tank_recirc EC floor) so no-effect thresholds
+        match the gain that sized the dose.
 
         Raises ValueError when the required process gain or dose amount is
         missing; the handler translates this into a TaskExecutionError.
         """
         if pid_type == "ec":
-            gain = self._coerce_float(process_cfg.get("ec_gain_per_ml"))
+            kind = "ec"
             amount_ml = corr.ec_amount_ml
         elif corr.needs_ph_up:
-            gain = self._coerce_float(process_cfg.get("ph_up_gain_per_ml"))
+            kind = "ph_up"
             amount_ml = corr.ph_amount_ml
         else:
-            gain = self._coerce_float(process_cfg.get("ph_down_gain_per_ml"))
+            kind = "ph_down"
             amount_ml = corr.ph_amount_ml
+        gain = effective_process_gain(
+            kind=kind,
+            process_cfg=process_cfg,
+            pid_entry=pid_entry or {},
+            phase_key=phase_key,
+        )
         if gain is None or gain <= 0 or amount_ml is None or amount_ml <= 0:
             raise ValueError(
                 f"Для оценки отклика {pid_type} требуется process gain и положительный amount_ml"
@@ -264,10 +278,16 @@ class ObservationAnalyzer:
     ) -> Mapping[str, Any]:
         """Fold this observation into the running adaptive EMA stats.
 
-        Contract: the existing observations counter is incremented once per
-        call (matches the pre-refactor handler behavior). Audit finding B10
-        tracks a follow-up fix for observations-inflation; we keep the same
-        semantics here so this refactor is behavior-preserving.
+        Contract (B10 — no observations inflation):
+        - Gain EMA + per-gain ``observations`` update only when
+          ``dose_amount_ml > 0 and learning_effect > 0``.
+        - Top-level ``adaptive.observations`` and effectiveness / retention /
+          wave EMAs advance only on that same learning update (not on every
+          finalize call, including no-effect / zero-dose).
+        - Timing EMAs are independent: transport/settle update only when the
+          corresponding sample timestamps are present; ``timing.observations``
+          increments only when at least one timing field is learned (no forced
+          floor of 1).
         """
         stats = dict(pid_entry.get("stats")) if isinstance(pid_entry.get("stats"), Mapping) else {}
         adaptive = dict(stats.get("adaptive")) if isinstance(stats.get("adaptive"), Mapping) else {}
@@ -281,31 +301,35 @@ class ObservationAnalyzer:
         )
         gain_entry = dict(gains.get(gain_key)) if isinstance(gains.get(gain_key), Mapping) else {}
         gain_observations = int(gain_entry.get("observations") or 0)
-        if dose_amount_ml > 0 and learning_effect > 0:
+        learning_update = dose_amount_ml > 0 and learning_effect > 0
+        if learning_update:
             learned_gain = learning_effect / dose_amount_ml
             gain_entry["ema"] = self._ema(gain_entry.get("ema"), learned_gain, gain_observations)
             gain_entry["observations"] = gain_observations + 1
             gains[gain_key] = gain_entry
 
+            adaptive_observations = int(adaptive.get("observations") or 0)
+            adaptive["effectiveness_ema"] = self._ema_ratio(
+                adaptive.get("effectiveness_ema"),
+                0.0 if expected_effect <= 0 else learning_effect / expected_effect,
+                adaptive_observations,
+            )
+            adaptive["retention_ema"] = self._ema_ratio(
+                adaptive.get("retention_ema"),
+                retention_ratio,
+                adaptive_observations,
+            )
+            adaptive["wave_score_ema"] = self._ema_ratio(
+                adaptive.get("wave_score_ema"),
+                wave_score,
+                adaptive_observations,
+            )
+            adaptive["observations"] = adaptive_observations + 1
+
         adaptive["gains"] = gains
-        adaptive["effectiveness_ema"] = self._ema_ratio(
-            adaptive.get("effectiveness_ema"),
-            0.0 if expected_effect <= 0 else learning_effect / expected_effect,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["retention_ema"] = self._ema_ratio(
-            adaptive.get("retention_ema"),
-            retention_ratio,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["wave_score_ema"] = self._ema_ratio(
-            adaptive.get("wave_score_ema"),
-            wave_score,
-            int(adaptive.get("observations") or 0),
-        )
-        adaptive["observations"] = int(adaptive.get("observations") or 0) + 1
 
         timing_observations = int(timing.get("observations") or 0)
+        timing_learned = False
         if first_reaction_sec is not None:
             timing["transport_delay_sec_ema"] = self._ema(
                 timing.get("transport_delay_sec_ema"),
@@ -313,17 +337,23 @@ class ObservationAnalyzer:
                 timing_observations,
             )
             timing_observations += 1
+            timing_learned = True
         if settle_sec is not None:
+            # When both timing fields arrive from one window, share the same
+            # prior observation count for the settle EMA (pre-increment).
+            settle_prior = (
+                timing_observations - 1 if first_reaction_sec is not None else timing_observations
+            )
             timing["settle_sec_ema"] = self._ema(
                 timing.get("settle_sec_ema"),
                 settle_sec,
-                max(0, timing_observations - 1),
+                max(0, settle_prior),
             )
-        timing["observations"] = max(
-            timing_observations,
-            int(timing.get("observations") or 0),
-            1,
-        )
+            if first_reaction_sec is None:
+                timing_observations += 1
+            timing_learned = True
+        if timing_learned:
+            timing["observations"] = timing_observations
         adaptive["timing"] = timing
 
         stats["adaptive"] = adaptive

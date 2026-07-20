@@ -19,6 +19,8 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 4. Успешный terminal outcome mutating-команды только `DONE`; все остальные — fail.
 5. Изменения схемы БД только через Laravel миграции (не ручной DDL).
 6. `ae3lite/*` не импортирует legacy runtime пакеты.
+   В т.ч. запрещены `utils.adaptive_pid` и `services.pid_config_service`
+   (deprecated; канон — `CorrectionPlanner` / `pid_state`, см. `PID_CONFIG_REFERENCE.md` §10).
 7. Переключение `zones.automation_runtime` на `ae3` запрещено при активной task или lease.
 8. Runtime читает zone state напрямую из PostgreSQL read-model, без HTTP к Laravel.
 9. Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.services.correction_planner import CorrectionPlanner
+from ae3lite.domain.services.correction_planner import CorrectionPlanner, _next_pid_state
 
 
 def _correction_config(*, ph_overrides=None, ec_overrides=None, dosing_overrides=None) -> dict:
@@ -642,7 +642,7 @@ def test_build_dose_plan_ignores_stale_feedforward_bias_after_hold_window() -> N
         ph_up_actuator={
             "node_uid": "ph-node",
             "channel": "ph_up_pump",
-            # ml_per_sec=1.0 → 0.3ml / 1.0 * 1000 = 300ms > _MIN_DOSE_MS (50ms)
+            # ml_per_sec=1.0 → 0.3ml / 1.0 * 1000 = 300ms > pump_calibration.min_dose_ms (50)
             "calibration": {"ml_per_sec": 1.0},
         },
         ph_down_actuator=None,
@@ -973,8 +973,9 @@ def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> 
     )
 
     assert dose_plan.needs_ec is True
-    # integral = 0.9 + gap*dt = 0.9 + 1.0*10 = 10.9, clamped to max_integral=1.0
-    assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
+    # Conditional integration anti-windup: PI wants ~10 ml but gap/gain caps to 4 ml,
+    # so ΔI for this tick is discarded and integral stays at the pre-tick value.
+    assert dose_plan.pid_state_updates["ec"]["integral"] == pytest.approx(0.9)
     assert dose_plan.pid_state_updates["ec"]["prev_error"] == 1.0
     # output = 10.0 ml by PI term, but one pulse is capped to the modeled
     # closure dose to the canonical target: (2.0 - 1.0) / 0.25 = 4.0 ml.
@@ -1123,7 +1124,8 @@ def test_build_dose_plan_handles_mixed_naive_aware_last_measurement() -> None:
     )
 
     assert dose_plan.needs_ec is True
-    assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
+    # Same saturation path as anti-windup test: freeze at pre-tick integral.
+    assert dose_plan.pid_state_updates["ec"]["integral"] == pytest.approx(0.9)
 
 
 def test_build_dose_plan_allows_ph_when_ec_is_in_retry_window() -> None:
@@ -1380,7 +1382,7 @@ def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
             "ec_npk": {
                 "node_uid": "ec-node",
                 "channel": "pump_a",
-                # ml_per_sec=1.0 so even small derivative doses exceed _MIN_DOSE_MS (50ms)
+                # ml_per_sec=1.0 so even small derivative doses exceed pump_calibration.min_dose_ms (50)
                 "calibration": {"ml_per_sec": 1.0},
             },
         },
@@ -1476,11 +1478,13 @@ def test_pid_integral_accumulates_over_time() -> None:
 
     The old code copied the integral from previous state without incrementing it,
     making ki (integral gain) effectively dead (ki * 0 = 0 always).
+
+    ki is kept small so the resulting dose stays under gap/gain and max_dose_ml;
+    otherwise conditional-integration anti-windup would freeze I on this tick.
     """
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 8, 12, 0, 0)
     last_measurement_at = now - timedelta(seconds=30)
-    gap = 1.0  # EC gap: current_ec=1.0, target_ec=2.0 → ec_lo=2.0 with window=none, gap=1.0
 
     # pid_state with zero integral (starting fresh)
     plan = planner.build_dose_plan(
@@ -1493,7 +1497,7 @@ def test_pid_integral_accumulates_over_time() -> None:
         correction_config=_correction_config(
             ec_overrides={
                 "kp": 0.0,
-                "ki": 1.0,
+                "ki": 0.01,
                 "kd": 0.0,
                 "deadband": 0.0,
                 "max_dose_ml": 1000.0,
@@ -1525,6 +1529,7 @@ def test_pid_integral_accumulates_over_time() -> None:
     )
 
     # integral must have grown: gap * dt = 1.0 * 30 = 30.0
+    # dose = ki*I/gain = 0.01*30 = 0.3 < gap/gain=1.0 → not saturated
     assert plan.pid_state_updates["ec"]["integral"] == 30.0, (
         "PID integral must accumulate gap*dt each step; ki term is dead if integral stays 0"
     )
@@ -1904,11 +1909,11 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
 
 
 def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
-    """Дозы ниже _MIN_DOSE_MS=50ms должны давать warning-лог и возвращать reason="below_min_dose_ms"."""
+    """Импульс короче pump_calibration.min_dose_ms → discard + WARNING (below_min_dose_ms)."""
     import logging
     from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
 
-    # 0.002ml / 1.0 ml_per_sec = 2ms < 50ms → должен быть warning
+    # 0.002ml / 1.0 ml_per_sec = 2ms < min_dose_ms=50 из fixture → warning
     with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
         duration_ms, reason, details = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
 
@@ -1920,6 +1925,33 @@ def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
                for record in caplog.records), (
         "Expected warning log for sub-minimum dose, got none"
     )
+
+
+def test_dose_ml_to_ms_threshold_follows_pump_calibration_min_dose_ms() -> None:
+    """Порог discard задаётся pump_calibration.min_dose_ms, не hard-coded константой."""
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+
+    # 40ms pulse: проходит при min_dose_ms=20, отбрасывается при min_dose_ms=50
+    calibration = {"ml_per_sec": 1.0}
+    loose = _correction_config(
+        dosing_overrides={
+            "pump_calibration": {
+                "min_dose_ms": 20,
+                "ml_per_sec_min": 0.01,
+                "ml_per_sec_max": 100.0,
+            }
+        }
+    )
+    strict = _correction_config()  # min_dose_ms=50
+
+    ok_ms, ok_reason, _ = _dose_ml_to_ms(0.04, calibration, loose)
+    bad_ms, bad_reason, bad_details = _dose_ml_to_ms(0.04, calibration, strict)
+
+    assert ok_ms == 40
+    assert ok_reason == ""
+    assert bad_ms == 0
+    assert bad_reason == "below_min_dose_ms"
+    assert bad_details["min_dose_ms"] == 50
 
 
 def test_dose_ml_to_ms_does_not_flag_max_dose_vs_node_max_duration_as_dual_mismatch() -> None:
@@ -2181,6 +2213,8 @@ def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
 
     Sanity check that the B4 fix is narrowly targeted and does not wipe
     integrator state on normal same-direction ticks.
+
+    Gains are tuned so the dose stays under gap/gain (no anti-windup freeze).
     """
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 10, 12, 0, 0)
@@ -2193,13 +2227,21 @@ def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
         ph_tolerance_pct=1.0,
         ec_tolerance_pct=5.0,
         correction_config=_correction_config(
-            ph_overrides={"kp": 0.5, "ki": 0.1, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+            ph_overrides={
+                "kp": 0.2,
+                "ki": 0.01,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 20.0,
+                "max_integral": 100.0,
+            },
         ),
         workflow_phase="tank_recirc",
         process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.5}},
         pid_state={
             "ph": {
-                "integral": 5.0,
+                "integral": 1.0,
                 "prev_error": 0.4,
                 "prev_derivative": 0.0,
                 "last_measurement_at": now - timedelta(seconds=10),
@@ -2212,15 +2254,17 @@ def test_build_dose_plan_preserves_ph_integral_when_same_direction() -> None:
         ph_up_actuator={
             "node_uid": "ph-node",
             "channel": "ph_up_pump",
-            "calibration": {"ml_per_sec": 8.0},
+            # ml_per_sec=1.0 so 0.32 ml → 320ms > min_dose_ms=50
+            "calibration": {"ml_per_sec": 1.0},
         },
         ph_down_actuator=None,
     )
 
     assert dose_plan.needs_ph_up is True
     ph_upd = dose_plan.pid_state_updates["ph"]
-    # Same-direction continuation: integral starts at 5.0, accumulates 0.5*10=5.0.
-    assert ph_upd["integral"] == pytest.approx(10.0)
+    # Same-direction: integral starts at 1.0, accumulates gap*dt = 0.5*10 = 5.0 → 6.0.
+    # dose = (0.2*0.5 + 0.01*6)/0.5 = 0.32 < gap/gain=1.0 → not saturated.
+    assert ph_upd["integral"] == pytest.approx(6.0)
 
 
 def test_build_dose_plan_no_direction_reset_when_no_prior_measurement() -> None:
@@ -2391,3 +2435,234 @@ def test_build_dose_plan_clamp_recalculates_effective_ml() -> None:
     assert plan.ec_duration_ms == 300_000
     assert plan.ec_amount_ml == pytest.approx(0.1 * 300_000 / 1000)
     assert plan.dose_discarded_reason == "clamped_to_max_dose_ms"
+
+
+def test_pid_integral_freeze_skips_hold_observe_dead_time() -> None:
+    """P0: after observe-style clock touch, I must not grow by gap*dead_time.
+
+    Simulates hold+observe (120s) via ``accumulate_integral=False``, then an
+    active planning tick 5s later. Baseline without freeze would accumulate
+    gap*125; with freeze only gap*5 is added.
+    """
+    t0 = datetime(2026, 3, 15, 12, 0, 0)
+    controller = {"kp": 0.0, "ki": 1.0, "kd": 0.0, "max_integral": 1000.0}
+    entry = {
+        "integral": 0.0,
+        "prev_error": 0.0,
+        "prev_derivative": 0.0,
+        "last_measurement_at": t0,
+    }
+    gap = 1.0
+
+    # Dead time: advance measurement clock without integrating (post-observe).
+    touched = _next_pid_state(
+        kind="ec",
+        gap=gap,
+        current_value=1.0,
+        controller_cfg=controller,
+        pid_entry=entry,
+        now=t0 + timedelta(seconds=120),
+        accumulate_integral=False,
+    )
+    assert touched["integral"] == pytest.approx(0.0)
+    assert touched["last_measurement_at"] == t0 + timedelta(seconds=120)
+
+    # Active tick 5s later: only active dt contributes.
+    active = _next_pid_state(
+        kind="ec",
+        gap=gap,
+        current_value=1.0,
+        controller_cfg=controller,
+        pid_entry=touched,
+        now=t0 + timedelta(seconds=125),
+        accumulate_integral=True,
+    )
+    assert active["integral"] == pytest.approx(5.0)
+
+    # Baseline without freeze: wall-clock dt=125 → I=125.
+    windup = _next_pid_state(
+        kind="ec",
+        gap=gap,
+        current_value=1.0,
+        controller_cfg=controller,
+        pid_entry=entry,
+        now=t0 + timedelta(seconds=125),
+        accumulate_integral=True,
+    )
+    assert windup["integral"] == pytest.approx(125.0)
+
+
+def test_pid_integral_frozen_when_gap_gain_cap_saturates() -> None:
+    """P1: when dose hits gap/gain cap, integral does not grow on that tick."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 15, 12, 0, 0)
+    integral_before = 2.0
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 2.0,
+                "ki": 0.5,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 50.0,
+                "max_integral": 100.0,
+            },
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 0.25}},
+        pid_state={
+            "ec": {
+                "integral": integral_before,
+                "prev_error": 1.0,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=20),
+            }
+        },
+        now=now,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "pump_a",
+                "calibration": {"ml_per_sec": 10.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is True
+    # Without anti-windup: I would be 2 + 1*20 = 22. With freeze: stays at 2.0.
+    assert plan.pid_state_updates["ec"]["integral"] == pytest.approx(integral_before)
+    # Cap still applied: gap/gain = 1/0.25 = 4.0
+    assert plan.ec_amount_ml == pytest.approx(4.0)
+
+
+def test_pid_integral_grows_when_dose_not_saturated() -> None:
+    """Anti-windup must not freeze I when the uncapped dose fits under caps."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 15, 12, 0, 0)
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.5,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 0.1,
+                "ki": 0.01,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 50.0,
+                "max_integral": 100.0,
+            },
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={
+            "ec": {
+                "integral": 1.0,
+                "prev_error": 0.5,
+                "prev_derivative": 0.0,
+                "last_measurement_at": now - timedelta(seconds=10),
+            }
+        },
+        now=now,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "pump_a",
+                # Slow pump so 0.11 ml exceeds min_dose_ms=50.
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    # gap=0.5, I = 1 + 0.5*10 = 6; dose = (0.1*0.5 + 0.01*6)/1 = 0.11 < gap/gain=0.5
+    assert plan.needs_ec is True
+    assert plan.pid_state_updates["ec"]["integral"] == pytest.approx(6.0)
+
+
+def test_default_derivative_filter_alpha_is_0_35() -> None:
+    """Missing derivative_filter_alpha must default to 0.35, not 1.0."""
+    now = datetime(2026, 3, 15, 12, 0, 0)
+    entry = {
+        "integral": 0.0,
+        "prev_error": 0.0,
+        "prev_derivative": 0.0,
+        "last_measurement_at": now - timedelta(seconds=10),
+    }
+    # raw_derivative = (1.0 - 0.0) / 10 = 0.1
+    # alpha=0.35 → derivative = 0.35*0.1 + 0.65*0 = 0.035
+    missing = _next_pid_state(
+        kind="ec",
+        gap=1.0,
+        current_value=1.0,
+        controller_cfg={"kp": 0.0, "ki": 0.0, "kd": 1.0},
+        pid_entry=entry,
+        now=now,
+    )
+    explicit = _next_pid_state(
+        kind="ec",
+        gap=1.0,
+        current_value=1.0,
+        controller_cfg={"kp": 0.0, "ki": 0.0, "kd": 1.0, "derivative_filter_alpha": 0.35},
+        pid_entry=entry,
+        now=now,
+    )
+    raw = _next_pid_state(
+        kind="ec",
+        gap=1.0,
+        current_value=1.0,
+        controller_cfg={"kp": 0.0, "ki": 0.0, "kd": 1.0, "derivative_filter_alpha": 1.0},
+        pid_entry=entry,
+        now=now,
+    )
+    zero = _next_pid_state(
+        kind="ec",
+        gap=1.0,
+        current_value=1.0,
+        controller_cfg={"kp": 0.0, "ki": 0.0, "kd": 1.0, "derivative_filter_alpha": 0.0},
+        pid_entry=entry,
+        now=now,
+    )
+
+    assert missing["prev_derivative"] == pytest.approx(0.035)
+    assert explicit["prev_derivative"] == pytest.approx(0.035)
+    assert raw["prev_derivative"] == pytest.approx(0.1)
+    # Explicit 0.0 must be respected (fully inertial), not coerced via `or 1.0`.
+    assert zero["prev_derivative"] == pytest.approx(0.0)
+
+
+def test_pid_max_integral_clamp_still_applies_when_unsaturated() -> None:
+    """max_integral clamp remains the safety net when dose is not saturated."""
+    now = datetime(2026, 3, 15, 12, 0, 0)
+    updated = _next_pid_state(
+        kind="ec",
+        gap=1.0,
+        current_value=1.0,
+        controller_cfg={"kp": 0.0, "ki": 0.0, "kd": 0.0, "max_integral": 5.0},
+        pid_entry={
+            "integral": 4.0,
+            "prev_error": 1.0,
+            "prev_derivative": 0.0,
+            "last_measurement_at": now - timedelta(seconds=10),
+        },
+        now=now,
+        accumulate_integral=True,
+    )
+    # 4 + 1*10 = 14 → clamped to 5
+    assert updated["integral"] == pytest.approx(5.0)

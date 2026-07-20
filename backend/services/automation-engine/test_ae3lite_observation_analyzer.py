@@ -112,6 +112,81 @@ def test_expected_effect_raises_when_dose_missing() -> None:
         )
 
 
+def test_expected_effect_uses_blended_gain_like_planner() -> None:
+    """When learned EMA ≠ auth gain, expected_effect must match planner blend."""
+    from ae3lite.domain.services.correction_planner import effective_process_gain
+
+    analyzer = ObservationAnalyzer()
+    process_cfg = {"ec_gain_per_ml": 0.3}
+    pid_entry = {
+        "stats": {
+            "adaptive": {
+                "gains": {
+                    "ec_gain_per_ml": {"ema": 0.6, "observations": 6},
+                },
+                "retention_ema": 1.0,
+                "wave_score_ema": 0.0,
+                "observations": 6,
+            }
+        }
+    }
+    phase_key = "irrigation"
+    amount_ml = 2.0
+    blended = effective_process_gain(
+        kind="ec",
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key=phase_key,
+    )
+    assert blended is not None
+    assert blended != pytest.approx(0.3)  # learned pulls away from auth
+
+    effect = analyzer.expected_effect(
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=amount_ml),
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key=phase_key,
+    )
+    assert effect == pytest.approx(float(blended) * amount_ml)
+    # Auth-only would be 0.6; blended is higher → threshold rises with learned gain.
+    assert effect > 0.6
+
+
+def test_expected_effect_tank_recirc_ec_floor_matches_planner() -> None:
+    """tank_recirc EC floor: learned below auth must not shrink expected_effect."""
+    from ae3lite.domain.services.correction_planner import effective_process_gain
+
+    analyzer = ObservationAnalyzer()
+    process_cfg = {"ec_gain_per_ml": 0.4}
+    pid_entry = {
+        "stats": {
+            "adaptive": {
+                "gains": {
+                    "ec_gain_per_ml": {"ema": 0.1, "observations": 6},
+                },
+                "retention_ema": 1.0,
+                "wave_score_ema": 0.0,
+            }
+        }
+    }
+    blended = effective_process_gain(
+        kind="ec",
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key="tank_recirc",
+    )
+    assert blended == pytest.approx(0.4)
+    effect = analyzer.expected_effect(
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=1.0),
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key="tank_recirc",
+    )
+    assert effect == pytest.approx(0.4)
+
+
 # ── directional_effect ──────────────────────────────────────────────
 
 
@@ -371,6 +446,9 @@ def test_merge_adaptive_stats_skips_gain_learning_when_dose_is_zero() -> None:
                     "ec_gain_per_ml": {"ema": 0.3, "observations": 5},
                 },
                 "observations": 5,
+                "effectiveness_ema": 0.8,
+                "retention_ema": 0.9,
+                "wave_score_ema": 0.1,
             }
         }
     }
@@ -388,6 +466,78 @@ def test_merge_adaptive_stats_skips_gain_learning_when_dose_is_zero() -> None:
     )
     # gain unchanged
     assert merged["adaptive"]["gains"]["ec_gain_per_ml"] == {"ema": 0.3, "observations": 5}
+    # B10: no learning update → adaptive.observations and ratio EMAs stay put.
+    assert merged["adaptive"]["observations"] == 5
+    assert merged["adaptive"]["effectiveness_ema"] == pytest.approx(0.8)
+    assert merged["adaptive"]["retention_ema"] == pytest.approx(0.9)
+    assert merged["adaptive"]["wave_score_ema"] == pytest.approx(0.1)
+    # Timing without samples must not force observations=1.
+    assert "observations" not in merged["adaptive"].get("timing", {})
+
+
+def test_merge_adaptive_stats_no_effect_does_not_inflate_observations() -> None:
+    """Call with dose but learning_effect=0 must not bump gain/adaptive counters."""
+    analyzer = ObservationAnalyzer()
+    prior = {
+        "stats": {
+            "adaptive": {
+                "gains": {
+                    "ec_gain_per_ml": {"ema": 0.3, "observations": 5},
+                },
+                "observations": 5,
+                "effectiveness_ema": 0.75,
+            }
+        }
+    }
+    merged = analyzer.merge_adaptive_stats(
+        pid_entry=prior,
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=2.0),
+        dose_amount_ml=2.0,
+        learning_effect=0.0,
+        expected_effect=0.6,
+        first_reaction_sec=None,
+        settle_sec=None,
+        wave_score=0.5,
+        retention_ratio=0.0,
+    )
+    assert merged["adaptive"]["gains"]["ec_gain_per_ml"]["observations"] == 5
+    assert merged["adaptive"]["observations"] == 5
+    assert merged["adaptive"]["effectiveness_ema"] == pytest.approx(0.75)
+
+
+def test_merge_adaptive_stats_timing_updates_independently_of_gain() -> None:
+    """Timing EMAs may advance without a gain learning update."""
+    analyzer = ObservationAnalyzer()
+    prior = {
+        "stats": {
+            "adaptive": {
+                "gains": {
+                    "ec_gain_per_ml": {"ema": 0.3, "observations": 5},
+                },
+                "observations": 5,
+                "timing": {"observations": 2, "transport_delay_sec_ema": 15.0},
+            }
+        }
+    }
+    merged = analyzer.merge_adaptive_stats(
+        pid_entry=prior,
+        pid_type="ec",
+        corr=_corr(ec_amount_ml=2.0),
+        dose_amount_ml=2.0,
+        learning_effect=0.0,
+        expected_effect=0.6,
+        first_reaction_sec=20.0,
+        settle_sec=40.0,
+        wave_score=0.0,
+        retention_ratio=0.0,
+    )
+    assert merged["adaptive"]["gains"]["ec_gain_per_ml"]["observations"] == 5
+    assert merged["adaptive"]["observations"] == 5
+    timing = merged["adaptive"]["timing"]
+    assert timing["observations"] == 3
+    assert timing["transport_delay_sec_ema"] == pytest.approx(0.8 * 15.0 + 0.2 * 20.0)
+    assert timing["settle_sec_ema"] == pytest.approx(40.0)  # first settle seed uses prior=2
 
 
 # ── expected_cross_coupling_ph ──────────────────────────────────────

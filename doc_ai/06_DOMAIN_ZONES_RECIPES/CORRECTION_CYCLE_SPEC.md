@@ -205,6 +205,16 @@ Observability (UI/Grafana, 2026-07-09):
 - каждый ready `observe` шаг обязан писать zone-event с `baseline_value`, `observed_value`,
   `actual_effect`, `expected_effect`, `threshold_effect` и итогом `is_no_effect`, чтобы
   exhaustion/no-effect диагностика была читаема без ручного анализа telemetry SQL.
+- `expected_effect` считается как `effective_process_gain * amount_ml`, где
+  `effective_process_gain` — тот же auth⊕learned blend (с clamps / tank_recirc EC floor),
+  что использует `CorrectionPlanner` при расчёте дозы. Порог no-effect и sizing дозы
+  не должны расходиться по источнику gain.
+- Adaptive stats (`pid_state.stats.adaptive`): gain / effectiveness / retention / wave
+  observations инкрементируются только при валидном learning update
+  (`dose_amount_ml > 0` и `learning_effect > 0`); timing EMA — отдельно (audit B10).
+- Integral PID: накопление `gap×dt` только на active measurement ticks; hold/observe
+  dead time не раздувает I. При saturation дозы (`gap/gain`, `max_dose_ml`,
+  `clamped_to_max_dose_ms`) ΔI тика не персистится (conditional integration).
 - runtime PID-тюнинг использует zoned PID-профили из `zone.pid.{ph|ec}`:
   `dead_zone` задаёт deadband, а `zone_coeffs.close|far` выбираются по величине текущего gap
   (`<= close_zone` -> close, `> close_zone` -> far), чтобы далеко от target дозы были грубее,

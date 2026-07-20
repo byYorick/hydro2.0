@@ -6,8 +6,10 @@
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
-**Обновлено:** 2026-03-12 — приведено в соответствие с реализацией AE3-Lite
-(фикс integral spike, удаление dead-code параметров, валидация ml_per_sec).
+**Обновлено:** 2026-07-20 — impulse model + PI assist; integral freeze на
+hold/observe; conditional-integration anti-windup; `expected_effect` на
+`effective_process_gain`; порог дозы из `pump_calibration.min_dose_ms`;
+legacy `AdaptivePid` / `pid_config_service` помечены deprecated (не runtime).
 
 ---
 
@@ -15,11 +17,25 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 1.1. Где живёт PID
 
-**Активный PID** реализован **inline** в
-`ae3lite/domain/services/correction_planner.py` (`_next_pid_state`,
-`_compute_amount_ml`). Он использует состояние, персистируемое в таблице
-`pid_state` в PostgreSQL — это обеспечивает сохранность integral/derivative
-при перезапуске процесса.
+**Канонический runtime** — импульсный observation-driven контур
+`dose → hold → observe → decide` в AE3-Lite:
+
+- планирование дозы / PID math: `ae3lite/domain/services/correction_planner.py`
+  (`_next_pid_state`, `_compute_amount_ml`, `effective_process_gain`);
+- observation / no-effect: `ae3lite/domain/services/observation_analyzer.py`;
+- orchestration FSM: `ae3lite/application/handlers/correction.py` (8 шагов `corr_*`).
+
+Состояние персистируется в таблице `pid_state` (integral/derivative/stats
+переживают рестарт automation-engine).
+
+Это **не** классический continuous PID: между импульсами идёт transport delay +
+observe window; hard cap `dose ≤ gap / process_gain` не даёт одному pulse
+перелететь target. При `kp ≥ 1` выход часто упирается в model dose
+(`gap/gain`) — коэффициенты в основном задают undershoot и вклад I/D.
+
+**Legacy (не runtime AE3):** `utils/adaptive_pid.py` и
+`services/pid_config_service.py` — deprecated, не импортируются `ae3lite/*`.
+См. §10.
 
 ### 1.2. Источник конфигурации
 
@@ -31,7 +47,10 @@ bundle `automation_effective_bundles.config.zone.pid.*`.
 Каноническое разделение source of truth:
 - `zone.pid.*` хранит только tuning PID-контура;
 - target берётся только из текущей recipe phase;
-- лимиты доз и интервалы между дозами живут только в `zone.correction.resolved_config.controllers.*`.
+- лимиты доз и интервалы между дозами живут только в `zone.correction.resolved_config.controllers.*`;
+- process gain / transport_delay / settle — `zone.process_calibration.*` по phase_key;
+- nested `targets.ph.controller` / `targets.ec.controller` в effective-targets
+  **не** являются authority для AE3 PID (см. `EFFECTIVE_TARGETS_SPEC.md`).
 
 Поля `target`, `max_output`, `min_interval_ms` в `zone.pid.*` (вне актуального контракта) и
 `system.pid_defaults.*` удалены и не поддерживаются.
@@ -39,20 +58,29 @@ bundle `automation_effective_bundles.config.zone.pid.*`.
 ### 1.3. Расчёт дозы (упрощённо)
 
 ```
-gap = max(0, target - current)       # всегда ≥ 0
-integral += gap * dt                  # накопление ошибки × время
+gap = max(0, target - current)       # всегда ≥ 0; EC только «вверх»
+integral += gap * dt                  # только active-time dt (не hold/observe)
 derivative = (gap - prev_error) / dt  # скорость изменения ошибки
+derivative = α * raw + (1-α) * prev   # EMA; α default 0.35 если ключ отсутствует
 
-if process_gain настроен:
-    output_units = kp*gap + ki*integral + kd*derivative
-    dose_ml = output_units / process_gain
+# process_gain обязателен (fail-closed); volume×sensitivity fallback удалён
+# effective_gain = auth ⊕ learned EMA (clamp 0.25×–4×; tank_recirc EC floor)
+output_units = kp*gap + ki*integral + kd*derivative
+dose_ml = output_units / effective_gain
 
-else:
-    dose_ml = gap * solution_volume_l * sensitivity
-
+dose_ml = min(dose_ml, gap / effective_gain)   # hard cap: не перелетать target за 1 импульс
 dose_ml = clamp(dose_ml, 0, max_dose_ml)
+# при saturation (gap/gain | max_dose_ml | max_dose_ms) — conditional integration:
+# ΔI тика не персистится (anti-windup via _with_frozen_integral)
 duration_ms = dose_ml / ml_per_sec * 1000
+# импульс < pump_calibration.min_dose_ms → discard (below_min_dose_ms)
 ```
+
+`solution_volume_l` обязателен в correction config (fail-closed metadata/UI),
+но **не входит** в формулу `dose_ml`.
+
+`expected_effect` для no-effect использует тот же `effective_process_gain`,
+что и planner (parity порога с gain, которым считали дозу).
 
 ---
 
@@ -175,6 +203,14 @@ planner возвращает `retry_after_sec` и доза не выдаётся
 **Тип:** float
 Ограничивает накопленный integral через clamp: `integral ∈ [-max_integral, max_integral]`.
 
+Дополнительно (AE3, 2026-07-20):
+- **Integral freeze / active-time:** за hold+observe `integral` не растёт;
+  `_next_pid_state(..., accumulate_integral=False)` или touch
+  `last_measurement_at` после observe двигает measurement clock без `gap×dt`.
+- **Conditional integration:** если доза на тике упёрлась в `gap/gain`,
+  `max_dose_ml` или `clamped_to_max_dose_ms`, ΔI тика откатывается
+  (`_with_frozen_integral`) — clamp `max_integral` остаётся запасным потолком.
+
 | | pH | EC |
 |--|----|----|
 | Дефолт | 20.0 | 100.0 |
@@ -186,9 +222,10 @@ planner возвращает `retry_after_sec` и доза не выдаётся
 **Тип:** float, диапазон `[0.0, 1.0]`
 EMA-фильтр: `derivative = alpha * raw + (1 - alpha) * prev_derivative`.
 
-- `1.0` — без фильтрации
-- `0.35` — рекомендовано (умеренное сглаживание)
-- `0.0` — полностью инерционный (не использовать)
+- ключ **отсутствует** → default **`0.35`** (код: `_DEFAULT_DERIVATIVE_FILTER_ALPHA`);
+- `1.0` — без фильтрации (явное значение уважается);
+- `0.0` — полностью инерционный (явное значение уважается; обычно не использовать);
+- для большинства гидроконтуров рекомендуется `kd = 0.0`.
 
 ---
 
@@ -220,21 +257,26 @@ EMA-фильтр: `derivative = alpha * raw + (1 - alpha) * prev_derivative`.
 - Если `dose_ml < min_effective_ml`, доза принудительно поднимается до `min_effective_ml`
 - Значение `0.0` или отсутствие = не применяется
 
-### 4.2. Минимальный порог `_MIN_DOSE_MS = 50 мс`
+### 4.2. Минимальный порог `pump_calibration.min_dose_ms`
 
-После конвертации `ml → ms` применяется ещё один фильтр: импульсы короче
-50 мс отбрасываются (ниже надёжного времени активации насоса).
+После конвертации `ml → ms` импульсы короче **`pump_calibration.min_dose_ms`**
+отбрасываются (reason `below_min_dose_ms`, команда не публикуется).
 
-Если доза отброшена — в лог пишется **WARNING** с полями:
-- `dose_ml`, `ml_per_sec`, `duration_ms`
+Hard-coded `_MIN_DOSE_MS = 50` в AE3 runtime **нет** — порог задаётся
+калибровкой насоса (вместе с `ml_per_sec` / `max_dose_ms`). Типовые
+production-значения часто порядка десятков–сотен мс; согласуйте с
+физическим разрешением насоса и firmware `safe_limits`.
 
-Это означает, что `min_effective_ml` слишком мало для данной скорости насоса.
-Увеличь `min_effective_ml` или замедли насос.
+Если доза отброшена — в лог/событие попадают:
+- `dose_ml`, `ml_per_sec`, `duration_ms`, `min_dose_ms`
+
+Это обычно значит, что `min_effective_ml` слишком мало для данной скорости
+насоса, либо `min_dose_ms` завышен. Увеличь `min_effective_ml`, замедли
+насос или пересмотри `min_dose_ms`.
 
 **Формула проверки:**
 ```
-min_pulse_ml = ml_per_sec * (MIN_DOSE_MS / 1000)
-             = ml_per_sec * 0.05
+min_pulse_ml = ml_per_sec * (min_dose_ms / 1000)
 
 Если min_effective_ml < min_pulse_ml → доза может быть отброшена.
 ```
@@ -273,20 +315,33 @@ min_pulse_ml = ml_per_sec * (MIN_DOSE_MS / 1000)
 }
 ```
 
-**`ec_gain_per_ml`** — прирост EC (mS/cm) на 1 мл питательного раствора
-в баке `solution_volume_l` литров. Используется как делитель:
-`dose_ml = output_units / ec_gain_per_ml`.
+**`ec_gain_per_ml`** — прирост EC (mS/cm) на 1 мл дозы в текущей фазе
+(эмпирическая process gain калибровка). Используется как делитель:
+`dose_ml = output_units / effective_gain`. Величина **зависит** от объёма
+контура физически, но `solution_volume_l` в runtime-формулу **не подставляется**
+автоматически — оператор калибрует gain под реальный бак/контур.
 
 Observation-driven runtime требует явные process gain:
 `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`.
 Если для фазы отсутствует нужный gain или не заданы
 `transport_delay_sec` / `settle_sec`, planner/handler работают fail-closed.
 
+**Effective gain** (`effective_process_gain` / `_process_gain`):
+`auth ⊕ learned EMA` с весом по числу observations, retention/wave,
+clamp `[0.25×, 4×] auth`. Тот же effective gain использует
+`ObservationAnalyzer.expected_effect` для порога no-effect.
+
 Для `tank_recirc` runtime дополнительно использует conservative floor:
 learned `pid_state.stats.adaptive.gains.ec_gain_per_ml.ema` может
 повысить оценку gain, но не может опустить её ниже authoritative
 `process_calibrations.tank_recirc.ec_gain_per_ml`. Это защищает рециркуляцию
 от раздувания EC-дозы из-за переобучения на слишком “мягких” окнах.
+
+**Adaptive observations (B10):** счётчики
+`stats.adaptive.observations` и gain `observations` / effectiveness /
+retention / wave EMA инкрементируются только при валидном learning update
+(`dose_amount_ml > 0` и `learning_effect > 0`). Timing EMA обновляется
+отдельно и не раздувает gain observations.
 
 ### Observe-параметры
 
@@ -439,9 +494,10 @@ learned `pid_state.stats.adaptive.gains.ec_gain_per_ml.ema` может
 | Постоянные дозы малого объёма | `deadband` слишком мал | Увеличить `deadband` |
 | Перерегулирование (oscillation) | `kp` или `ki` слишком велики | Снизить на 20% |
 | Медленная реакция | `kp` слишком мал | Увеличить `kp` |
-| WARNING "Dose discarded" в логах | `min_effective_ml` < `ml_per_sec * 0.05` | Увеличить `min_effective_ml` |
+| WARNING / discard `below_min_dose_ms` | `duration_ms < pump_calibration.min_dose_ms` | Поднять `min_effective_ml` или снизить `min_dose_ms` / скорость |
 | `PlannerConfigurationError: ml_per_sec out of range` | Некорректная калибровка насоса | Проверить значение ml_per_sec |
-| Integral spike после нормализации | Устаревшая версия planner | Обновить до фикса `last_measurement_at` |
+| Integral spike после нормализации | Устаревшая версия planner | Обновить до фикса `last_measurement_at` + freeze |
+| Ложные no-effect после адаптации gain | Порог на auth gain (legacy) | Runtime должен считать `expected_effect` через `effective_process_gain` |
 
 ### 8.3. Просмотр PID state через БД
 
@@ -468,8 +524,22 @@ WHERE zone_id = $1;
 
 | Файл | Назначение |
 |------|-----------|
-| `ae3lite/domain/services/correction_planner.py` | Расчёт дозы, PID inline |
+| `ae3lite/domain/services/correction_planner.py` | Расчёт дозы, PID inline, `effective_process_gain` |
+| `ae3lite/domain/services/observation_analyzer.py` | Observe window, expected_effect, adaptive EMA |
 | `ae3lite/domain/services/phase_utils.py` | `normalize_phase_key` |
 | `ae3lite/infrastructure/repositories/pid_state_repository.py` | Персистентность |
 | `ae3lite/application/handlers/correction.py` | Orchestration (8-шаговая FSM) |
 | `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` | State machine коррекции |
+
+---
+
+## 10. Legacy (не использовать в runtime)
+
+| Модуль | Статус |
+|--------|--------|
+| `backend/services/automation-engine/utils/adaptive_pid.py` | **DEPRECATED** — in-memory AdaptivePid; не импортируется `ae3lite/*` |
+| `backend/services/automation-engine/services/pid_config_service.py` | **DEPRECATED** — кеш/загрузка для AdaptivePid; не runtime AE3 |
+| `tests/test_pid_config_service*.py` | Тесты только legacy-стека |
+
+Канон: AE3-Lite planner + `pid_state` + `zone.correction` / `zone.pid` /
+`process_calibration`. Не добавляйте новые вызовы legacy-модулей.

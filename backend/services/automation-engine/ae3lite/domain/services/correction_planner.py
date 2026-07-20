@@ -27,6 +27,10 @@ _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 #: `ml / ml_per_sec * 1000` не превышал согласованный cap до отправки команды.
 _DEFAULT_MAX_DOSE_MS: int = 60_000
 
+#: EMA-фильтр производной, когда ``derivative_filter_alpha`` отсутствует в конфиге.
+#: Явные ``0.0`` / ``1.0`` из конфига уважаются; ``or 1.0`` нельзя — затирает ``0.0``.
+_DEFAULT_DERIVATIVE_FILTER_ALPHA: float = 0.35
+
 # ── Порядок fallback-выбора EC-компонентов (5.3) ──────────────────────────────
 
 #: Предпочтительный порядок EC-компонентов, когда ec_component_policy не настроен.
@@ -308,6 +312,7 @@ class CorrectionPlanner:
                     if ec_dosing_mode == "multi_parallel":
                         _assert_distinct_parallel_actuators(ec_actuators)
                     ec_pid_entry = _pid_entry(pid_state, "ec")
+                    ec_integral_before = float(ec_pid_entry.get("integral") or 0.0)
                     ec_pid_update = _next_pid_state(
                         kind="ec",
                         gap=ec_gap,
@@ -354,6 +359,7 @@ class CorrectionPlanner:
                         discarded: list[dict[str, Any]] = []
                         total_ml = 0.0
                         total_ms = 0
+                        multi_saturated = False
                         contract_max = _positive_float(
                             correction_config.get("max_ec_dose_ml"), _DEFAULT_MAX_EC_DOSE_ML
                         )
@@ -395,6 +401,7 @@ class CorrectionPlanner:
                                 )
 
                             dose_ml = output_units * active_ratio / gain
+                            uncapped_component_ml = dose_ml
                             dose_ml = min(dose_ml, component_gap / gain if component_gap > 0 else 0.0)
                             dose_ml = min(dose_ml, max_ml * active_ratio)
 
@@ -416,8 +423,11 @@ class CorrectionPlanner:
                                             "capped_ml": round(float(dose_ml), 4),
                                         }
                                     )
+                                    multi_saturated = True
                                     continue
                             dose_ml = round(max(0.0, dose_ml), 4)
+                            if _dose_output_saturated(uncapped_ml=uncapped_component_ml, capped_ml=dose_ml):
+                                multi_saturated = True
 
                             requested_ml = dose_ml
                             effective_ml, requested_ml, duration_ms, reason, details = _resolve_dose_duration(
@@ -427,6 +437,8 @@ class CorrectionPlanner:
                             )
                             _absorb_dual_calibration_mismatches(dual_mismatch_collector, details)
                             dose_ml = effective_ml
+                            if reason == "clamped_to_max_dose_ms":
+                                multi_saturated = True
                             if duration_ms <= 0 and requested_ml > 0:
                                 discarded.append(
                                     {
@@ -470,6 +482,12 @@ class CorrectionPlanner:
                             )
                             ec_duration_ms = int(total_ms)
                             if ec_pid_update:
+                                if multi_saturated:
+                                    ec_pid_update = _with_frozen_integral(
+                                        pid_update=ec_pid_update,
+                                        integral_before=ec_integral_before,
+                                        controller_cfg=ec_controller_cfg,
+                                    )
                                 if ec_pid_zone:
                                     ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
                                 pid_updates["ec"] = ec_pid_update
@@ -532,6 +550,7 @@ class CorrectionPlanner:
                         pid_entry=_pid_entry(pid_state, "ec"),
                         now=now,
                     )
+                    ec_integral_before = float(_pid_entry(pid_state, "ec").get("integral") or 0.0)
                     if ec_pid_update:
                         if ec_pid_zone:
                             ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
@@ -545,6 +564,19 @@ class CorrectionPlanner:
                         )
                     )
                     _absorb_dual_calibration_mismatches(dual_mismatch_collector, ec_duration_details)
+                    if (
+                        ec_duration_reason == "clamped_to_max_dose_ms"
+                        and isinstance(ec_pid_update, Mapping)
+                        and ec_pid_update
+                    ):
+                        ec_pid_update = _with_frozen_integral(
+                            pid_update=ec_pid_update,
+                            integral_before=ec_integral_before,
+                            controller_cfg=ec_controller_cfg,
+                        )
+                        if ec_pid_zone:
+                            ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
+                        pid_updates["ec"] = ec_pid_update
                     # Planner-level discard (min_effective exceeds gap cap) takes precedence
                     # over duration-level discard so the reason reflects the root cause.
                     if ec_planner_discard_reason:
@@ -600,6 +632,7 @@ class CorrectionPlanner:
                     pid_entry=_pid_entry(pid_state, "ph"),
                     now=now,
                 )
+                ph_integral_before = float(_pid_entry(pid_state, "ph").get("integral") or 0.0)
                 if ph_pid_update:
                     if ph_pid_zone:
                         ph_pid_update = {**ph_pid_update, "current_zone": ph_pid_zone}
@@ -613,6 +646,19 @@ class CorrectionPlanner:
                     )
                 )
                 _absorb_dual_calibration_mismatches(dual_mismatch_collector, ph_duration_details)
+                if (
+                    ph_duration_reason == "clamped_to_max_dose_ms"
+                    and isinstance(ph_pid_update, Mapping)
+                    and ph_pid_update
+                ):
+                    ph_pid_update = _with_frozen_integral(
+                        pid_update=ph_pid_update,
+                        integral_before=ph_integral_before,
+                        controller_cfg=ph_controller_cfg,
+                    )
+                    if ph_pid_zone:
+                        ph_pid_update = {**ph_pid_update, "current_zone": ph_pid_zone}
+                    pid_updates["ph"] = ph_pid_update
                 if ph_planner_discard_reason:
                     ph_discarded_reason = ph_planner_discard_reason
                     ph_discarded_details = ph_planner_discard_details
@@ -959,6 +1005,7 @@ def _compute_amount_ml(
     now: datetime,
 ) -> tuple[float, Mapping[str, Any], str, Mapping[str, Any]]:
     gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
+    integral_before = float(pid_entry.get("integral") or 0.0)
     pid_update = _next_pid_state(
         kind=kind,
         gap=gap,
@@ -979,12 +1026,18 @@ def _compute_amount_ml(
             f"Для {kind} в режиме observation-driven correction требуется process gain"
         )
 
+    uncapped_ml = dose_ml
+    saturated = False
+
     if gain is not None and gap > 0:
         # A single pulse must not exceed the modelled dose required to reach the
         # nearest allowed bound/target. Without this cap, kp>1 PI output can
         # command a dose that overshoots the window in one step and causes
         # acid/base ping-pong during recirculation.
-        dose_ml = min(dose_ml, gap / gain)
+        capped = min(dose_ml, gap / gain)
+        if capped < dose_ml:
+            saturated = True
+        dose_ml = capped
 
     gap_cap_ml = (gap / gain) if (gain is not None and gain > 0 and gap > 0) else None
     min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
@@ -997,6 +1050,8 @@ def _compute_amount_ml(
         # multi_sequential branch; without it, single-dose could overshoot and
         # cause ping-pong around the setpoint.
         if gap_cap_ml is not None:
+            if dose_ml > gap_cap_ml:
+                saturated = True
             dose_ml = min(dose_ml, gap_cap_ml)
         if dose_ml > 0 and dose_ml < min_effective_ml:
             discard_reason = f"{kind}_min_effective_exceeds_cap"
@@ -1007,6 +1062,7 @@ def _compute_amount_ml(
                 "capped_ml": round(float(dose_ml), 6),
             }
             dose_ml = 0.0
+            saturated = True
 
     controller_max = _positive_float(controller_cfg.get("max_dose_ml"), 0.0)
     if kind == "ec":
@@ -1014,9 +1070,46 @@ def _compute_amount_ml(
     else:
         contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), _DEFAULT_MAX_PH_DOSE_ML)
     max_ml = min(controller_max, contract_max) if controller_max > 0 else contract_max
+    if dose_ml > max_ml:
+        saturated = True
     dose_ml = min(dose_ml, max_ml)
     dose_ml = round(max(0.0, dose_ml), 4)
+    if _dose_output_saturated(uncapped_ml=uncapped_ml, capped_ml=dose_ml):
+        saturated = True
+    if saturated:
+        # Conditional integration / anti-windup: do not persist ΔI when the
+        # actuator command is clamped by gap/gain or max_dose_ml.
+        pid_update = _with_frozen_integral(
+            pid_update=pid_update,
+            integral_before=integral_before,
+            controller_cfg=controller_cfg,
+        )
     return dose_ml, pid_update, discard_reason, discard_details
+
+
+def effective_process_gain(
+    *,
+    kind: str,
+    process_cfg: Mapping[str, Any],
+    pid_entry: Mapping[str, Any],
+    phase_key: str,
+) -> float | None:
+    """Authoritative ⊕ learned process gain used by dose planning and no-effect thresholds.
+
+    Same algorithm as the planner pulse sizing path: blend learned EMA into the
+    calibrated gain with retention/wave weighting, clamp to 0.25×–4× of auth,
+    and apply the tank_recirc EC floor (learned may raise confidence but must
+    not shrink auth gain and inflate the next impulse).
+
+    Shared with ``ObservationAnalyzer.expected_effect`` so the no-effect
+    threshold uses the identical effective gain the planner used for the dose.
+    """
+    return _process_gain(
+        kind=kind,
+        process_cfg=process_cfg,
+        pid_entry=pid_entry,
+        phase_key=phase_key,
+    )
 
 
 def _process_gain(
@@ -1083,19 +1176,28 @@ def _next_pid_state(
     controller_cfg: Mapping[str, Any],
     pid_entry: Mapping[str, Any],
     now: datetime,
+    accumulate_integral: bool = True,
 ) -> Mapping[str, Any]:
+    """Advance PID state for one measurement tick.
+
+    ``accumulate_integral=False`` advances the measurement clock (and D-term)
+    without adding ``gap * dt`` — used to skip hold/observe dead time so the
+    integrator does not wind up during transport delay. Handler already touches
+    ``last_measurement_at`` after observe; this flag makes the same contract
+    available to the planner/tests without a separate code path.
+    """
     now = _to_utc_naive(now)
     integral = float(pid_entry.get("integral") or 0.0)
     prev_error = float(pid_entry.get("prev_error") or 0.0)
     prev_derivative = float(pid_entry.get("prev_derivative") or 0.0)
     last_measurement_at = pid_entry.get("last_measurement_at")
-    alpha = float(controller_cfg.get("derivative_filter_alpha") or 1.0)
-    alpha = min(1.0, max(0.0, alpha))
+    alpha = _resolve_derivative_filter_alpha(controller_cfg)
     derivative = 0.0
     if isinstance(last_measurement_at, datetime):
         dt = (now - _to_utc_naive(last_measurement_at)).total_seconds()
         if dt > 0:
-            integral += gap * dt
+            if accumulate_integral:
+                integral += gap * dt
             raw_derivative = (gap - prev_error) / dt
             derivative = alpha * raw_derivative + (1.0 - alpha) * prev_derivative
     max_integral = float(controller_cfg.get("max_integral") or 0.0)
@@ -1109,6 +1211,38 @@ def _next_pid_state(
         "last_measured_value": round(current_value, 6),
         "last_correction_kind": "ec" if kind == "ec" else "ph",
     }
+
+
+def _resolve_derivative_filter_alpha(controller_cfg: Mapping[str, Any]) -> float:
+    raw = controller_cfg.get("derivative_filter_alpha")
+    if raw is None:
+        return _DEFAULT_DERIVATIVE_FILTER_ALPHA
+    try:
+        alpha = float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_DERIVATIVE_FILTER_ALPHA
+    return min(1.0, max(0.0, alpha))
+
+
+def _dose_output_saturated(*, uncapped_ml: float, capped_ml: float) -> bool:
+    """True when a positive PID output was reduced by a hard dose cap."""
+    if uncapped_ml <= 0:
+        return False
+    return float(capped_ml) + 1e-9 < float(uncapped_ml)
+
+
+def _with_frozen_integral(
+    *,
+    pid_update: Mapping[str, Any],
+    integral_before: float,
+    controller_cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Conditional integration: keep pre-tick integral when the dose saturates."""
+    frozen = float(integral_before)
+    max_integral = float(controller_cfg.get("max_integral") or 0.0)
+    if max_integral > 0:
+        frozen = max(-max_integral, min(max_integral, frozen))
+    return {**dict(pid_update), "integral": round(frozen, 6)}
 
 
 def _reset_pid_state_if_inside_bounds(

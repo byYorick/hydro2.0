@@ -3009,6 +3009,8 @@ class CorrectionHandler(BaseStageHandler):
             pid_type=pid_type,
             corr=corr,
             process_cfg=window.process_cfg,
+            pid_entry=pid_entry,
+            phase_key=self._runtime_phase_key(task=task),
         )
         threshold_effect = expected_effect * float(observe_cfg["min_effect_fraction"])
         response = self._observation_analyzer.analyze_window(
@@ -3147,10 +3149,16 @@ class CorrectionHandler(BaseStageHandler):
         pid_type: str,
         corr: CorrectionState,
         process_cfg: Mapping[str, Any],
+        pid_entry: Mapping[str, Any] | None = None,
+        phase_key: str = "generic",
     ) -> float:
         try:
             return self._observation_analyzer.expected_effect(
-                pid_type=pid_type, corr=corr, process_cfg=process_cfg,
+                pid_type=pid_type,
+                corr=corr,
+                process_cfg=process_cfg,
+                pid_entry=pid_entry,
+                phase_key=phase_key,
             )
         except ValueError:
             raise TaskExecutionError(
