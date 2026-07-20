@@ -1179,7 +1179,7 @@ actions:
     task_id: ${task_id}
   timeout: 40.0
   expected_rows: 1
-# Аудит таймаута (2026): см. E102 — до ~12 мин достаточно для лимита попыток prepare_recirc.
+# Аудит таймаута (2026): до ~12 мин достаточно для лимита попыток prepare_recirc.
 - step: wait_task_failed_retry_limit_first
   type: db.wait
   query: "\nSELECT id, status, error_code, error_message, stage_retry_count\nFROM\

@@ -22,11 +22,12 @@
 - `snapshot/` — snapshot и replay
 - `infrastructure/` — readiness и bindings
 - `grow_cycle/` — циклы выращивания
-- `automation_engine/` — архив сценариев до AE3, не входит в поддерживаемые AE3-suite'ы
+- `automation_engine/` — sim/API regression (`E64`, `E65`, `E74`)
 - `ae3lite/` — standalone AE3-Lite start-cycle, two-tank real-hardware core и smart-irrigation real-hardware
 - `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
-- `workflow/` — архив two-tank workflow сценариев до AE3, не входит в поддерживаемые AE3-suite'ы
+- `workflow/` — sim workflow (`E96` solution_topup, `E97` solution_change gate)
+- `calibration/` — sensor calibration realhw (`E110`, `E111`)
 
 Полный список и DoD: `../../../doc_ai/13_TESTING/E2E_SCENARIOS.md`.
 
@@ -44,26 +45,32 @@
 - `ae3lite/E99_ae3_double_execution_guard.yaml` — защита от двойного исполнения
 - `ae3lite/E110_ae3_node_runtime_event_contract.yaml` — node runtime events -> `zone_events` -> AE3 metrics/state timeline
 - `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
+- `ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml` — каноничный путь до `workflow_phase=ready`
 - `ae3lite/E107_ae3_irrigation_runtime_test_node.yaml` — smart-irrigation runtime path на реальной test-node
-- `ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml` — soil-moisture ingest-contract для smart-irrigation
+- `ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml` — soil-moisture ingest-contract для smart-irrigation
 - `ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml` — inline correction во время irrigation на реальной test-node
+- `ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml` — per-phase EC target
+- `ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml` — solution_low → setup
 
-## Архив прежних сценариев
+## Sim / API suites (не realhw)
 
-Каталоги `automation_engine/` и `workflow/` сохранены как архив исторических
-сценариев прежнего automation runtime. После перехода на standalone `AE3-Lite` они не входят в
-поддерживаемые suite'ы `automation_engine`, `automation_engine_realhw`,
-`workflow`, `prod_readiness_realhw` и `full`: эти suite names теперь являются
-compatibility alias'ами на актуальные AE3-сценарии.
+Каталоги `automation_engine/` и `workflow/` содержат только уникальные sim/API сценарии
+(без legacy aliases на E100):
 
-Текущее соответствие:
-- `ae3lite_contract` -> `ae3lite/E95..E99`
-- `ae3lite_testnode_realhw_core` -> `ae3lite/E100..E106`
-- `ae3lite_testnode_realhw_irrigation` -> `ae3lite/E107..E109`
-- `ae3lite_realhw` -> `ae3lite/E100..E109`
-- `automation_engine` -> исторический compatibility alias на поддерживаемые entrypoints
-- `workflow` -> исторический compatibility alias на поддерживаемые entrypoints
-- `prod_readiness_realhw` -> compatibility aggregate real-hardware набор
+- `automation_engine/` → `E64`, `E65`, `E74`
+- `workflow/` → `E96`, `E97`
+
+Suite mapping:
+
+- `ae3lite_contract` → `ae3lite/E95..E99` + `E110` (node runtime events, sim)
+- `ae3lite_testnode_realhw_core` → `ae3lite/E100,E101×2,E103..E106,E112,E113` (9)
+- `ae3lite_testnode_realhw_irrigation` → `ae3lite/E107..E109`
+- `ae3lite_realhw` → core + irrigation
+- `calibration_realhw` → `calibration/E110..E111`
+- `automation_engine` → sim/API `E64/E65/E74`
+- `workflow` → sim `E96/E97`
+- `prod_readiness_realhw` → `ae3lite_realhw` + `calibration_realhw`
+- `automation_engine_realhw` → alias на `ae3lite_realhw`
 
 ## Формат действий
 

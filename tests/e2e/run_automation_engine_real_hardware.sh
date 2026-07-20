@@ -133,35 +133,13 @@ sync_automation_engine_env
 export AUTOMATION_ENGINE_HOST AUTOMATION_ENGINE_API_PORT
 
 SERVICES=(automation-engine history-logger laravel mqtt-bridge digital-twin)
-AUTOMATION_SCENARIOS=(
-  "scenarios/automation_engine/E61_fail_closed_corrections.yaml"
-  "scenarios/automation_engine/E64_effective_targets_only.yaml"
-  "scenarios/automation_engine/E65_phase_transition_api.yaml"
-  "scenarios/automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml"
-  "scenarios/automation_engine/E67_nutrition_strict_contract.yaml"
-  "scenarios/automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml"
-  "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
-  "scenarios/automation_engine/E80_ph_pid_ki_convergence.yaml"
-  "scenarios/automation_engine/E81_ec_correction_partial_calibration.yaml"
-)
-WORKFLOW_SCENARIOS=(
-  "scenarios/workflow/E83_clean_water_fill.yaml"
-  "scenarios/workflow/E84_solution_preparation.yaml"
-  "scenarios/workflow/E85_recirculation_targets.yaml"
-  "scenarios/workflow/E86_ec_ph_correction.yaml"
-  "scenarios/workflow/E87_ec_ph_correction_during_fill.yaml"
-  "scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml"
-  "scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml"
-  "scenarios/workflow/E94_startup_to_ready_smoke.yaml"
-  "scenarios/workflow/E96_reactive_solution_topup_level_switch.yaml"
-  "scenarios/workflow/E97_solution_change_operator_gate.yaml"
-)
+# Канонический realhw-набор: только уникальные AE3/test_node сценарии.
+# Legacy aliases (E61/E66–E68/E80–E89/E94 → E100) и sim-only (E64/E65/E74/E96/E97)
+# из realhw launcher убраны — они живут в node_sim suites.
 AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"
   "scenarios/ae3lite/E101_ae3_two_tank_realhw_ready_during_fill.yaml"
   "scenarios/ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml"
-  "scenarios/ae3lite/E102_ae3_recirculation_retry_limit_alert_reset_realhw.yaml"
-  "scenarios/ae3lite/E102_ae3_two_tank_realhw_ready_during_recirculation.yaml"
   "scenarios/ae3lite/E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"
   "scenarios/ae3lite/E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"
   "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
@@ -171,11 +149,10 @@ AE3LITE_SCENARIOS=(
 )
 SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"
-  "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"
+  "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml"
   "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
 INLINE_IRRIGATION_SCENARIOS=(
-  "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"
   "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
 CALIBRATION_SCENARIOS=(
@@ -186,10 +163,10 @@ CALIBRATION_SCENARIOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set ae3lite|smart_irrigation|inline_irrigation|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full   # default: full
+  SCENARIO_SET=ae3lite|smart_irrigation|inline_irrigation|calibration|full   # default: full
   TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID/TEST_SOIL_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
@@ -200,8 +177,6 @@ EOF
 
 collect_full_scenarios() {
   printf '%s\n' \
-    "${AUTOMATION_SCENARIOS[@]}" \
-    "${WORKFLOW_SCENARIOS[@]}" \
     "${AE3LITE_SCENARIOS[@]}" \
     "${SMART_IRRIGATION_SCENARIOS[@]}" \
     "${CALIBRATION_SCENARIOS[@]}" \
@@ -238,12 +213,6 @@ apply_scenario_filters() {
 
 resolve_scenarios() {
   case "$SCENARIO_SET" in
-    automation)
-      SCENARIOS=("${AUTOMATION_SCENARIOS[@]}")
-      ;;
-    workflow)
-      SCENARIOS=("${WORKFLOW_SCENARIOS[@]}")
-      ;;
     ae3lite)
       SCENARIOS=("${AE3LITE_SCENARIOS[@]}")
       ;;
@@ -258,6 +227,12 @@ resolve_scenarios() {
       ;;
     full)
       mapfile -t SCENARIOS < <(collect_full_scenarios)
+      ;;
+    automation|workflow)
+      echo "❌ SCENARIO_SET=$SCENARIO_SET удалён: legacy aliases на E100 больше не в realhw launcher."
+      echo "   Используйте --set=ae3lite|smart_irrigation|inline_irrigation|calibration|full"
+      echo "   Sim-сценарии E64/E65/E74/E96/E97 — через tools/testing/run_e2e.sh (node_sim)."
+      exit 1
       ;;
     *)
       echo "❌ Неизвестный SCENARIO_SET: $SCENARIO_SET"
@@ -292,7 +267,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full>"
+      echo "❌ Используйте формат --set=<ae3lite|smart_irrigation|inline_irrigation|calibration|full>"
       exit 1
       ;;
     --list)

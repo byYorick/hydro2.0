@@ -381,8 +381,7 @@ main() {
                 "grow_cycle/E53_manual_advance_stage"
                 "grow_cycle/E54_pause_resume_harvest"
                 
-                # AUTOMATION ENGINE
-                "automation_engine/E61_fail_closed_corrections"
+                # AUTOMATION ENGINE (sim/API regression; без legacy E100 aliases)
                 "automation_engine/E64_effective_targets_only"
                 "automation_engine/E65_phase_transition_api"
                 "automation_engine/E74_node_zone_mismatch_guard"

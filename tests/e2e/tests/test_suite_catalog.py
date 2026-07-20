@@ -25,6 +25,12 @@ class TestSuiteCatalog(unittest.TestCase):
             msg=f"Scenario '{relative_suffix}' is missing in suite: {scenarios}",
         )
 
+    def assert_missing_scenario(self, scenarios, relative_suffix: str) -> None:
+        self.assertFalse(
+            any(Path(item).as_posix().endswith(relative_suffix) for item in scenarios),
+            msg=f"Scenario '{relative_suffix}' should not be in suite: {scenarios}",
+        )
+
     def test_scheduler_suite_contains_start_cycle_intent_path(self) -> None:
         scenarios = self.suite._get_suite_scenarios("scheduler")
         self.assert_contains_scenario(
@@ -39,9 +45,11 @@ class TestSuiteCatalog(unittest.TestCase):
             "scenarios/ae3lite/E99_ae3_double_execution_guard.yaml",
             "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml",
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
-            "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml",
+            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
             "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
             "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
+            "scenarios/ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml",
+            "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
 
@@ -50,10 +58,14 @@ class TestSuiteCatalog(unittest.TestCase):
         for suffix in [
             "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
-            "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml",
+            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
             "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
+        self.assert_missing_scenario(
+            scenarios,
+            "scenarios/ae3lite/E102_ae3_two_tank_realhw_ready_during_recirculation.yaml",
+        )
 
     def test_ae3lite_decomposed_suites_match_new_taxonomy(self) -> None:
         contract = self.suite._get_suite_scenarios("ae3lite_contract")
@@ -68,6 +80,7 @@ class TestSuiteCatalog(unittest.TestCase):
             realhw_core,
             "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
         )
+        self.assertEqual(len(realhw_core), 9)
         self.assert_contains_scenario(
             realhw_irrigation,
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
@@ -85,23 +98,33 @@ class TestSuiteCatalog(unittest.TestCase):
         ]:
             self.assert_contains_scenario(scenarios, suffix)
 
-    def test_automation_engine_suite_contains_legacy_entrypoints(self) -> None:
+    def test_automation_engine_suite_keeps_unique_sim_scenarios_only(self) -> None:
         scenarios = self.suite._get_suite_scenarios("automation_engine")
         for suffix in [
-            "scenarios/automation_engine/E61_fail_closed_corrections.yaml",
+            "scenarios/automation_engine/E64_effective_targets_only.yaml",
             "scenarios/automation_engine/E65_phase_transition_api.yaml",
             "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
+        self.assertEqual(len(scenarios), 3)
 
-    def test_workflow_suite_contains_legacy_entrypoints(self) -> None:
+    def test_workflow_suite_keeps_unique_sim_scenarios_only(self) -> None:
         scenarios = self.suite._get_suite_scenarios("workflow")
         for suffix in [
-            "scenarios/workflow/E83_clean_water_fill.yaml",
-            "scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml",
-            "scenarios/workflow/E94_startup_to_ready_smoke.yaml",
+            "scenarios/workflow/E96_reactive_solution_topup_level_switch.yaml",
+            "scenarios/workflow/E97_solution_change_operator_gate.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
+        self.assertEqual(len(scenarios), 2)
+
+    def test_prod_readiness_realhw_maps_to_canonical_ae3_set(self) -> None:
+        scenarios = self.suite._get_suite_scenarios("prod_readiness_realhw")
+        self.assert_contains_scenario(scenarios, "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml")
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
+        )
+        self.assertEqual(len(scenarios), 14)
 
     def test_discover_by_suite_alias_supports_ae3_suites(self) -> None:
         discovered = self.suite.discover_scenarios(["ae3lite_v1", "ae3lite_realhw"])
@@ -115,7 +138,7 @@ class TestSuiteCatalog(unittest.TestCase):
         )
         self.assert_contains_scenario(
             discovered,
-            "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml",
+            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
         )
         self.assert_contains_scenario(
             discovered,
@@ -149,10 +172,11 @@ class TestSuiteCatalog(unittest.TestCase):
             "scheduler",
             "automation_engine",
             "workflow",
+            "prod_readiness_realhw",
         ]:
             self.assertIn(suite_name, choices)
 
-    def test_full_suite_includes_legacy_and_ae3_scenarios(self) -> None:
+    def test_full_suite_includes_canonical_ae3_and_sim_scenarios(self) -> None:
         scenarios = self.suite._get_suite_scenarios("full")
         self.assert_contains_scenario(
             scenarios,
@@ -160,15 +184,15 @@ class TestSuiteCatalog(unittest.TestCase):
         )
         self.assert_contains_scenario(
             scenarios,
-            "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml",
+            "scenarios/ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml",
         )
         self.assert_contains_scenario(
             scenarios,
-            "scenarios/automation_engine/E61_fail_closed_corrections.yaml",
+            "scenarios/automation_engine/E64_effective_targets_only.yaml",
         )
         self.assert_contains_scenario(
             scenarios,
-            "scenarios/workflow/E94_startup_to_ready_smoke.yaml",
+            "scenarios/workflow/E96_reactive_solution_topup_level_switch.yaml",
         )
         self.assert_contains_scenario(
             scenarios,

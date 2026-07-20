@@ -245,13 +245,11 @@
 - node-sim выполняет
 - Команды DONE + WS
 
-### E61_fail_closed_corrections.yaml
-**DoD:** stale telemetry → AE НЕ дозирует
+### E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml
+**DoD:** missing actuator plan → AE3 fail-closed до MQTT (realhw)
 
-Проверяет fail-closed поведение:
-- Stale telemetry ph/ec
-- AE НЕ дозирует
-- Создается событие/alert "skipped"
+Канонический fail-closed сценарий на реальной test_node. Исторический
+`E61_fail_closed_corrections` (alias на E100 smoke) удалён.
 
 ### E62_controller_fault_isolation.yaml
 **DoD:** исключение в контроллере → остальные работают

@@ -130,8 +130,6 @@ class TestSuite:
             str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),
             str(base_path / "ae3lite" / "E101_ae3_two_tank_realhw_ready_during_fill.yaml"),
             str(base_path / "ae3lite" / "E101_ae3_two_tank_realhw_setup_ready.yaml"),
-            str(base_path / "ae3lite" / "E102_ae3_recirculation_retry_limit_alert_reset_realhw.yaml"),
-            str(base_path / "ae3lite" / "E102_ae3_two_tank_realhw_ready_during_recirculation.yaml"),
             str(base_path / "ae3lite" / "E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"),
             str(base_path / "ae3lite" / "E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"),
             str(base_path / "ae3lite" / "E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"),
@@ -141,7 +139,7 @@ class TestSuite:
         ]
         ae3lite_testnode_realhw_irrigation = [
             str(base_path / "ae3lite" / "E107_ae3_irrigation_runtime_test_node.yaml"),
-            str(base_path / "ae3lite" / "E108_ae3_irrigation_inline_correction_contract.yaml"),
+            str(base_path / "ae3lite" / "E108_ae3_soil_moisture_telemetry_contract.yaml"),
             str(base_path / "ae3lite" / "E109_ae3_irrigation_inline_correction_test_node.yaml"),
         ]
         ae3lite_v1 = list(ae3lite_contract)
@@ -200,31 +198,16 @@ class TestSuite:
                 str(base_path / "grow_cycle" / "E58_cycle_completion.yaml"),
                 str(base_path / "grow_cycle" / "E59_cycle_restart.yaml"),
             ],
+            # Sim/API regression (не realhw): unique scenarios only, без aliases на E100.
             "automation_engine": [
-                str(base_path / "automation_engine" / "E61_fail_closed_corrections.yaml"),
                 str(base_path / "automation_engine" / "E64_effective_targets_only.yaml"),
                 str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
-                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
-                str(base_path / "automation_engine" / "E67_nutrition_strict_contract.yaml"),
-                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
-                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
-                str(base_path / "automation_engine" / "E80_ph_pid_ki_convergence.yaml"),
-                str(base_path / "automation_engine" / "E81_ec_correction_partial_calibration.yaml"),
-            ],
-            "automation_engine_realhw": [
-                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
-                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
                 str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
+            "automation_engine_realhw": list(ae3lite_realhw),
             "workflow": [
-                str(base_path / "workflow" / "E83_clean_water_fill.yaml"),
-                str(base_path / "workflow" / "E84_solution_preparation.yaml"),
-                str(base_path / "workflow" / "E85_recirculation_targets.yaml"),
-                str(base_path / "workflow" / "E86_ec_ph_correction.yaml"),
-                str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
-                str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
-                str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
-                str(base_path / "workflow" / "E94_startup_to_ready_smoke.yaml"),
+                str(base_path / "workflow" / "E96_reactive_solution_topup_level_switch.yaml"),
+                str(base_path / "workflow" / "E97_solution_change_operator_gate.yaml"),
             ],
             "scheduler": [
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),
@@ -251,21 +234,7 @@ class TestSuite:
                 str(base_path / "chaos" / "E71_db_flaky.yaml"),
                 str(base_path / "chaos" / "E72_ws_down_snapshot_recover.yaml"),
             ],
-            "prod_readiness_realhw": [
-                str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
-                str(base_path / "scheduler" / "E94_start_lighting_tick_intent_executor_path.yaml"),
-                str(base_path / "scheduler" / "E95_lighting_off_photoperiod_boundary.yaml"),
-                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
-                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
-                str(base_path / "workflow" / "E83_clean_water_fill.yaml"),
-                str(base_path / "workflow" / "E84_solution_preparation.yaml"),
-                str(base_path / "workflow" / "E85_recirculation_targets.yaml"),
-                str(base_path / "workflow" / "E86_ec_ph_correction.yaml"),
-                str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
-                str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
-                str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
-                str(base_path / "workflow" / "E94_startup_to_ready_smoke.yaml"),
-            ],
+            "prod_readiness_realhw": ae3lite_realhw + calibration_realhw,
             "full": self._get_all_scenarios(),
         }
 

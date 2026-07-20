@@ -143,48 +143,54 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 # Показать, какие сценарии будут запущены
 tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
 
-# Каноничный AE3-Lite two-tank smoke на реальной test-node
+# Каноничный AE3-Lite two-tank набор на реальной test-node (9 сценариев)
 tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
 
-# Только smart-irrigation real-hardware tranche
+# Только smart-irrigation real-hardware tranche (E107–E109)
 tests/e2e/run_automation_engine_real_hardware.sh --set=smart_irrigation
 
-# Только inline irrigation correction regression-набор
+# Только inline irrigation correction
 tests/e2e/run_automation_engine_real_hardware.sh --set=inline_irrigation
+
+# Sensor calibration realhw (E110–E111)
+tests/e2e/run_automation_engine_real_hardware.sh --set=calibration
 
 # Точечный wrapper над real-hardware harness для smart-irrigation
 tests/e2e/run_smart_irrigation_pipeline.sh
 
-# Полный real-hardware набор
+# Полный канонический real-hardware набор (~14 сценариев)
 tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
-По умолчанию `SCENARIO_SET=full`. Wrapper прогоняет все real-hardware entrypoints
-из compatibility-наборов `automation_engine`, `workflow`, `ae3lite`, `smart_irrigation`, `inline_irrigation` и `calibration`. Исторические имена наборов при этом
-остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
-AE3 сценарии через `scenario_ref` внутри самих файлов.
+По умолчанию `SCENARIO_SET=full` = `ae3lite` ∪ `smart_irrigation` ∪ `calibration`.
+Legacy sets `automation`/`workflow` (aliases на E100) удалены из launcher;
+sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются через `tools/testing/run_e2e.sh`.
 
 Ключевые AE3 real-hardware сценарии:
 
+- `E100_ae3_two_tank_realhw_smoke` — быстрый smoke до `clean_fill_check`.
 - `E101_ae3_two_tank_realhw_setup_ready` — каноничный end-to-end путь до `workflow_phase=ready`; именно этот тест доводит систему до состояния, где реальный полив разрешён.
 - `E101_ae3_two_tank_realhw_ready_during_fill` — альтернативный happy-path, где `ready` достигается ещё на fill-path.
-- `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-сценарий, который после retry-limit снова доводит систему до `ready`.
-- `E104_ae3_two_tank_realhw_hot_reload_correction_config` — strict hot-reload test активного correction loop; он проверяет, что pH/EC реально сходятся к target после live reconfiguration, но сам по себе не является каноничным тестом “полив разрешён”.
-- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict sequential observe-loop test в `prepare_recirculation_check`; перед recirculation-loop сценарий детерминированно seed-ит раствор вне target window, затем требует порядка `EC -> observe -> PH`, проверяет delayed peak/decay на telemetry samples и строгий выход pH/EC в target, но не финальный выход в `ready`.
-- `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — во время `prepare_recirculation_check` опустошение бака (`solution_min`) снимает no-effect block и уводит в `startup` (обычная подготовка), без terminal fail.
-- `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path на реальной test-node.
-- `E108_ae3_irrigation_inline_correction_contract` — канонический soil-moisture telemetry contract для smart-irrigation.
-- `E109_ae3_irrigation_inline_correction_test_node` — inline correction во время полива на реальной test-node.
+- `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-сценарий: retry-limit → resolve → второй прогон до `ready`.
+- `E104_ae3_two_tank_realhw_hot_reload_correction_config` — strict hot-reload test активного correction loop.
+- `E105_ae3_two_tank_fail_closed_missing_command_plan_realhw` — fail-closed planner до MQTT.
+- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict sequential `EC → observe → PH` в `prepare_recirculation_check`.
+- `E112_ae3_per_phase_ec_target_realhw` — per-phase EC target (`npk_share`).
+- `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — `solution_min` depleted → `startup` без terminal fail.
+- `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path.
+- `E108_ae3_soil_moisture_telemetry_contract` — soil-moisture ingest contract.
+- `E109_ae3_irrigation_inline_correction_test_node` — inline correction во время полива.
+- `calibration/E110` / `E111` — create/cancel session и unsupported `calibrate` → `INVALID`.
 
 Опциональные фильтры:
 
 ```bash
 # Включать только сценарии по regex
-E2E_SCENARIO_INCLUDE_REGEX='scenarios/(workflow|automation_engine)/' \
+E2E_SCENARIO_INCLUDE_REGEX='scenarios/ae3lite/E10[01]' \
   tests/e2e/run_automation_engine_real_hardware.sh --set=full
 
 # Исключать сценарии по regex
-E2E_SCENARIO_EXCLUDE_REGEX='scenarios/chaos/' \
+E2E_SCENARIO_EXCLUDE_REGEX='E112|E113' \
   tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 

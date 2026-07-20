@@ -1,4 +1,4 @@
-# Конфигурация profile=test_node_multi_v1 для AE3/E61 realhw-like E2E сценариев
+# Конфигурация profile=test_node_multi_v1 для AE3 realhw-like E2E сценариев
 
 profile: test_node_multi_v1
 
