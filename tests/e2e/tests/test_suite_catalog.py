@@ -80,7 +80,19 @@ class TestSuiteCatalog(unittest.TestCase):
             realhw_core,
             "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml",
         )
-        self.assertEqual(len(realhw_core), 9)
+        self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml",
+        )
+        self.assertEqual(len(realhw_core), 12)
         self.assert_contains_scenario(
             realhw_irrigation,
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
@@ -94,7 +106,8 @@ class TestSuiteCatalog(unittest.TestCase):
         scenarios = self.suite._get_suite_scenarios("calibration_realhw")
         for suffix in [
             "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
-            "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml",
+            "scenarios/calibration/E111_sensor_calibration_realhw_force_invalid.yaml",
+            "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         ]:
             self.assert_contains_scenario(scenarios, suffix)
 
@@ -124,7 +137,11 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
         )
-        self.assertEqual(len(scenarios), 14)
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
+        )
+        self.assertEqual(len(scenarios), 18)
 
     def test_discover_by_suite_alias_supports_ae3_suites(self) -> None:
         discovered = self.suite.discover_scenarios(["ae3lite_v1", "ae3lite_realhw"])
@@ -153,7 +170,11 @@ class TestSuiteCatalog(unittest.TestCase):
         )
         self.assert_contains_scenario(
             discovered,
-            "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml",
+            "scenarios/calibration/E111_sensor_calibration_realhw_force_invalid.yaml",
+        )
+        self.assert_contains_scenario(
+            discovered,
+            "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         )
 
     def test_cli_parser_includes_ae3_suites(self) -> None:

@@ -63,10 +63,10 @@
 Suite mapping:
 
 - `ae3lite_contract` → `ae3lite/E95..E99` + `E110` (node runtime events, sim)
-- `ae3lite_testnode_realhw_core` → `ae3lite/E100,E101×2,E103..E106,E112,E113` (9)
+- `ae3lite_testnode_realhw_core` → `ae3lite/E100,E101×2,E103..E106,E112..E116` (12)
 - `ae3lite_testnode_realhw_irrigation` → `ae3lite/E107..E109`
 - `ae3lite_realhw` → core + irrigation
-- `calibration_realhw` → `calibration/E110..E111`
+- `calibration_realhw` → `calibration/E110,E111,E117`
 - `automation_engine` → sim/API `E64/E65/E74`
 - `workflow` → sim `E96/E97`
 - `prod_readiness_realhw` → `ae3lite_realhw` + `calibration_realhw`

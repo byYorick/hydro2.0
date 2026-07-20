@@ -46,6 +46,18 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/ae3lite/E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"',
             self.script,
         )
+        self.assertIn(
+            '"scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"',
+            self.script,
+        )
         self.assertNotIn("E102_ae3_two_tank_realhw_ready_during_recirculation", self.script)
         self.assertNotIn("E102_ae3_recirculation_retry_limit_alert_reset", self.script)
         self.assertNotIn("AUTOMATION_SCENARIOS=(", self.script)
@@ -70,7 +82,11 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             self.script,
         )
         self.assertIn(
-            '"scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"',
+            '"scenarios/calibration/E111_sensor_calibration_realhw_force_invalid.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml"',
             self.script,
         )
         self.assertIn('INLINE_IRRIGATION_SCENARIOS=(', self.script)

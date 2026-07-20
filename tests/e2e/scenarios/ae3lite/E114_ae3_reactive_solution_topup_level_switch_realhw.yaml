@@ -1,62 +1,39 @@
-# E96: Реактивный solution_topup по edge level_solution_max 1→0
-# Wave 3 audit gap — WATER_FLOW_ENGINE.md §19.2.1
-# Запуск:
-#   cd tests/e2e && python -m runner.e2e_runner scenarios/workflow/E96_reactive_solution_topup_level_switch.yaml
+# E114: Реактивный solution_topup по edge level_solution_max 1→0 (realhw test_node)
+# Порт workflow/E96 без node_sim — уровни через hardware_set_fault_mode.
+# Запуск (через realhw launcher):
+#   ./tests/e2e/run_automation_engine_real_hardware.sh \
+#     scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml
 # DoD:
-# - зона two-tank в workflow_phase=ready
-# - node_sim публикует level_switch_changed на level_solution_max (state=false)
-# - AE3 создаёт intent/task solution_topup (реактивный path)
+# - зона AE3 two-tank в workflow_phase=ready на реальной ${TEST_NODE_UID}
+# - edge level_solution_max 1→0 через set_fault_mode
+# - zone_events LEVEL_SWITCH_CHANGED + ae_tasks solution_topup
+# Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
-name: E96_reactive_solution_topup_level_switch
+name: E114_ae3_reactive_solution_topup_level_switch_realhw
+auth_role: agronomist
 description: |
-  Проверяет реактивный автодолив бака раствора (этап B, §19):
-  1) зона AE3 two-tank в фазе ready,
-  2) read-model: solution_min triggered, solution_max был full,
-  3) симулируем edge level_solution_max 1→0 через MQTT event,
-  4) AE3 создаёт solution_topup task или intent с trigger=level_switch.
+  Real-hardware порт E96: реактивный автодолив бака раствора (§19.2.1).
+  1) resolve irrig ${TEST_NODE_UID} в зоне ${TEST_NODE_ZONE_UID} (без node_sim),
+  2) AE3 + logic_profile с solution_topup_enabled + two_tank_commands,
+  3) force workflow_phase=ready, hardware_reset_state,
+  4) full tank → drop level_solution_max,
+  5) LEVEL_SWITCH_CHANGED + solution_topup task/intent.
 
-setup:
-  node_sim:
-    config:
-      mqtt:
-        host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1884}
-      node:
-        gh_uid: gh-test-1
-        zone_uid: zn-test-1
-        node_uid: ${TEST_NODE_UID}
-        hardware_id: esp32-test-irr-topup-001
-        node_type: irrigation
-        mode: configured
-        channels:
-          - level_clean_min
-          - level_clean_max
-          - level_solution_min
-          - level_solution_max
-        actuators:
-          - pump_main
-          - valve_solution_fill
-      telemetry:
-        interval_seconds: 2.0
-        heartbeat_interval_seconds: 15.0
+tags:
+  - realhw
+  - ae3lite
 
 actions:
-  - step: start_node_simulator
-    type: start_simulator
-    config_ref: node_sim.config
-    wait_seconds: 3
-
   - step: set_test_context
     type: set
-    test_gh_uid: ${TEST_NODE_GH_UID}
     test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: ${TEST_NODE_UID}
-    idempotency_key: e96-topup-${TIMESTAMP_MS}
+    idempotency_key: e114-topup-${TIMESTAMP_MS}
 
   - step: get_zone_row
     type: database_query
     query: |
-      SELECT id, greenhouse_id
+      SELECT id, greenhouse_id, automation_runtime
       FROM zones
       WHERE uid = :zone_uid
       LIMIT 1
@@ -69,6 +46,7 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
     greenhouse_id: ${zone_row.0.greenhouse_id}
+    previous_automation_runtime: ${zone_row.0.automation_runtime}
 
   - step: resolve_irrig_node
     type: database_query
@@ -88,6 +66,32 @@ actions:
     type: set
     irrig_node_id: ${irrig_node_row.0.node_id}
 
+  - step: wait_zone_ae_runtime_idle_before_cleanup
+    type: db.wait
+    query: |
+      SELECT 1 AS ready
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM ae_zone_leases
+        WHERE zone_id = :zone_id
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM zone_automation_intents
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running')
+      )
+    params:
+      zone_id: ${zone_id}
+    timeout: 120.0
+    expected_rows: 1
+
   - step: ensure_zone_automation_runtime_ae3
     type: database_execute
     query: |
@@ -97,32 +101,6 @@ actions:
       WHERE id = :zone_id
     params:
       zone_id: ${zone_id}
-
-  - step: delete_old_level_sensors
-    type: database_execute
-    query: |
-      DELETE FROM sensors
-      WHERE zone_id = :zone_id
-        AND type = 'WATER_LEVEL'
-        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
-    params:
-      zone_id: ${zone_id}
-
-  - step: insert_level_sensors
-    type: database_execute
-    query: |
-      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
-      SELECT :greenhouse_id, :zone_id, :node_id, 'inside', 'WATER_LEVEL', label, TRUE, NOW(), NOW()
-      FROM (VALUES
-        ('level_clean_max'),
-        ('level_clean_min'),
-        ('level_solution_max'),
-        ('level_solution_min')
-      ) AS items(label)
-    params:
-      greenhouse_id: ${greenhouse_id}
-      zone_id: ${zone_id}
-      node_id: ${irrig_node_id}
 
   - step: cleanup_zone_ae_commands
     type: database_execute
@@ -175,20 +153,41 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: publish_irrig_node_config
+    type: api_post
+    endpoint: /api/nodes/${irrig_node_id}/config/publish
+    payload: {}
+
+  - step: wait_level_sensors_registered
+    type: db.wait
+    query: |
+      SELECT COUNT(*)::int AS sensor_count
+      FROM sensors
+      WHERE zone_id = :zone_id
+        AND node_id = CAST(:irrig_node_id AS bigint)
+        AND type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')
+        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+      HAVING COUNT(*) = 4
+    params:
+      zone_id: ${zone_id}
+      irrig_node_id: ${irrig_node_id}
+    timeout: 60.0
+    expected_rows: 1
+
   - step: create_plant
     type: api_post
     endpoint: /api/plants
     payload:
-      name: e96-plant-${TIMESTAMP_S}
-      scientific_name: Solution Topup Test Plant
+      name: e114-plant-${TIMESTAMP_S}
+      scientific_name: Solution Topup Realhw Plant
     save: plant_response
 
   - step: create_recipe
     type: api_post
     endpoint: /api/recipes
     payload:
-      name: e96-recipe-${TIMESTAMP_S}
-      description: Reactive solution_topup level switch
+      name: e114-recipe-${TIMESTAMP_S}
+      description: Reactive solution_topup level switch realhw
       plant_id: ${plant_response.data.id}
     save: recipe_response
 
@@ -196,7 +195,7 @@ actions:
     type: api_post
     endpoint: /api/recipes/${recipe_response.data.id}/revisions
     payload:
-      description: E96 topup revision
+      description: E114 topup revision
     save: revision_response
 
   - step: add_phase_0
@@ -349,6 +348,27 @@ actions:
     endpoint: /api/automation-bundles/grow_cycle/${cycle_id}/validate
     payload: {}
 
+  - step: reset_test_node_state
+    type: hardware_reset_state
+    zone_id: ${zone_id}
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    save: reset_state_response
+
+  - step: wait_reset_state_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_state_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+
   - step: insert_ready_workflow_state
     type: database_execute
     query: |
@@ -357,7 +377,8 @@ actions:
       ON CONFLICT (zone_id) DO UPDATE
       SET workflow_phase = 'ready',
           version = zone_workflow_state.version + 1,
-          updated_at = NOW()
+          updated_at = NOW(),
+          payload = '{}'::jsonb
     params:
       zone_id: ${zone_id}
 
@@ -421,21 +442,17 @@ actions:
       cycle_id: ${cycle_id}
 
   # Realhw: live test_node continuously overwrites telemetry_last.
-  # Drive levels via set_fault_mode so DB read-model matches the edge
-  # (AE3 decides from telemetry_last, not from MQTT event snapshot alone).
+  # Drive levels via hardware_set_fault_mode so DB read-model matches the edge.
   - step: clear_level_overrides_before_topup
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_solution_min_override: -1
-        level_solution_max_override: -1
-        level_clean_min_override: -1
-        level_clean_max_override: -1
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      level_solution_min_override: -1
+      level_solution_max_override: -1
+      level_clean_min_override: -1
+      level_clean_max_override: -1
     save: clear_level_overrides_response
 
   - step: wait_clear_level_overrides_done
@@ -453,18 +470,15 @@ actions:
     expected_rows: 1
 
   - step: force_solution_tank_full
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_solution_min_override: true
-        level_solution_max_override: true
-        level_clean_min_override: true
-        level_clean_max_override: true
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      level_solution_min_override: true
+      level_solution_max_override: true
+      level_clean_min_override: true
+      level_clean_max_override: true
     save: force_full_tank_response
 
   - step: wait_force_full_tank_done
@@ -507,18 +521,15 @@ actions:
     save: topup_edge_window
 
   - step: drop_solution_max_edge
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_solution_min_override: true
-        level_solution_max_override: false
-        level_clean_min_override: true
-        level_clean_max_override: true
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      level_solution_min_override: true
+      level_solution_max_override: false
+      level_clean_min_override: true
+      level_clean_max_override: true
     save: drop_solution_max_response
 
   - step: wait_drop_solution_max_done
@@ -622,20 +633,85 @@ assertions:
         value: solution_topup
 
 cleanup:
-  - step: reset_test_node_levels_after_run
-    type: ae_test_hook
-    optional: true
+  # Stop AE topup loop ASAP: cancel task, restore tank full, clear leases/hardware.
+  - step: cancel_solution_topup_task
+    type: database_execute
+    condition: "bool(context.get('task_id'))"
+    query: |
+      UPDATE ae_tasks
+      SET status = 'cancelled',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE id = CAST(:task_id AS bigint)
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+    params:
+      task_id: ${task_id}
+
+  - step: cancel_zone_active_ae_tasks
+    type: database_execute
+    query: |
+      UPDATE ae_tasks
+      SET status = 'cancelled',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+    params:
+      zone_id: ${zone_id}
+
+  - step: restore_solution_tank_full_after_topup
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_solution_min_override: -1
-        level_solution_max_override: -1
-        level_clean_min_override: -1
-        level_clean_max_override: -1
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      level_solution_min_override: true
+      level_solution_max_override: true
+      level_clean_min_override: true
+      level_clean_max_override: true
+    save: restore_full_tank_response
+
+  - step: wait_restore_solution_tank_full_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${restore_full_tank_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: reset_test_node_state_after_run
+    type: hardware_reset_state
+    zone_id: ${zone_id}
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    save: cleanup_reset_state_response
+
+  - step: wait_cleanup_reset_state_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${cleanup_reset_state_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: delete_zone_leases
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
 
   - step: abort_cycle
     type: api_post
@@ -646,7 +722,7 @@ cleanup:
 
   - step: delete_test_ae_commands
     type: database_execute
-    condition: ${task_id is not None and task_id != ''}
+    condition: "bool(context.get('task_id'))"
     query: |
       DELETE FROM ae_commands WHERE task_id = CAST(:task_id AS bigint);
     params:
@@ -655,7 +731,7 @@ cleanup:
 
   - step: delete_test_ae_stage_transitions
     type: database_execute
-    condition: ${task_id is not None and task_id != ''}
+    condition: "bool(context.get('task_id'))"
     query: |
       DELETE FROM ae_stage_transitions WHERE task_id = CAST(:task_id AS bigint);
     params:
@@ -664,17 +740,39 @@ cleanup:
 
   - step: delete_test_ae_task
     type: database_execute
-    condition: ${task_id is not None and task_id != ''}
+    condition: "bool(context.get('task_id'))"
     query: |
       DELETE FROM ae_tasks WHERE id = CAST(:task_id AS bigint);
     params:
       task_id: ${task_id}
     optional: true
 
+  - step: delete_zone_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
   - step: delete_test_intents
     type: database_execute
     query: |
       DELETE FROM zone_automation_intents WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: soft_restore_workflow_idle
+    type: database_execute
+    query: |
+      INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)
+      VALUES (:zone_id, 'idle', 1, NOW(), '{}'::jsonb)
+      ON CONFLICT (zone_id) DO UPDATE
+      SET workflow_phase = 'idle',
+          version = zone_workflow_state.version + 1,
+          updated_at = NOW(),
+          payload = '{}'::jsonb
     params:
       zone_id: ${zone_id}
     optional: true
@@ -687,6 +785,29 @@ cleanup:
       cycle_id: ${cycle_id}
     optional: true
     condition: ${cycle_id}
+
+  - step: cleanup_created_logic_profile
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM automation_config_documents
+      WHERE namespace = 'zone.logic_profile'
+        AND scope_type = 'zone'
+        AND scope_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: restore_zone_runtime
+    type: database_execute
+    optional: true
+    query: |
+      UPDATE zones
+      SET automation_runtime = COALESCE(NULLIF(:previous_runtime, ''), automation_runtime),
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+      previous_runtime: ${previous_automation_runtime}
 
   - step: delete_recipe
     type: api_delete

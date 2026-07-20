@@ -143,7 +143,7 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 # Показать, какие сценарии будут запущены
 tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
 
-# Каноничный AE3-Lite two-tank набор на реальной test-node (9 сценариев)
+# Каноничный AE3-Lite two-tank набор на реальной test-node (12 сценариев)
 tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
 
 # Только smart-irrigation real-hardware tranche (E107–E109)
@@ -152,13 +152,13 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=smart_irrigation
 # Только inline irrigation correction
 tests/e2e/run_automation_engine_real_hardware.sh --set=inline_irrigation
 
-# Sensor calibration realhw (E110–E111)
+# Sensor calibration realhw (E110, E111, E117)
 tests/e2e/run_automation_engine_real_hardware.sh --set=calibration
 
 # Точечный wrapper над real-hardware harness для smart-irrigation
 tests/e2e/run_smart_irrigation_pipeline.sh
 
-# Полный канонический real-hardware набор (~14 сценариев)
+# Полный канонический real-hardware набор (~18 сценариев)
 tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
@@ -177,10 +177,15 @@ sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются чер
 - `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict sequential `EC → observe → PH` в `prepare_recirculation_check`.
 - `E112_ae3_per_phase_ec_target_realhw` — per-phase EC target (`npk_share`).
 - `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — `solution_min` depleted → `startup` без terminal fail.
+- `E114_ae3_reactive_solution_topup_level_switch_realhw` — реактивный `solution_topup` по edge `level_solution_max`.
+- `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 `solution_change`.
+- `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
 - `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path.
 - `E108_ae3_soil_moisture_telemetry_contract` — soil-moisture ingest contract.
 - `E109_ae3_irrigation_inline_correction_test_node` — inline correction во время полива.
-- `calibration/E110` / `E111` — create/cancel session и unsupported `calibrate` → `INVALID`.
+- `calibration/E110` — create/cancel session.
+- `calibration/E111` — `force_invalid` → `INVALID` (negative).
+- `calibration/E117` — happy-path point1→point2→`completed`.
 
 Опциональные фильтры:
 

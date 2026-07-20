@@ -206,6 +206,15 @@ typedef struct {
 } virtual_irr_fail_safe_config_t;
 
 typedef struct {
+    bool point1_valid;
+    float point1_raw;
+    float point1_value;
+    bool point2_valid;
+    float point2_raw;
+    float point2_value;
+} sensor_calibration_points_t;
+
+typedef struct {
     bool min_check_completed;
     bool terminal_event_emitted;
 } virtual_clean_fill_guard_t;
@@ -308,6 +317,11 @@ typedef struct {
     float soil_moisture;
     bool estop_pressed_present;
     bool estop_pressed;
+    bool calibrate_stage_present;
+    int calibrate_stage;
+    bool calibrate_value_present;
+    float calibrate_value;
+    bool calibrate_force_invalid;
     int execute_delay_ms;
 } pending_command_t;
 
@@ -496,6 +510,9 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .solution_fill_started_at = 0,
 };
 
+static sensor_calibration_points_t s_ph_calibration;
+static sensor_calibration_points_t s_ec_calibration;
+
 static virtual_state_t s_virtual_state = {
     .flow_rate = 0.0f,
     .pump_bus_current = 150.0f,
@@ -645,6 +662,8 @@ static int64_t get_uptime_ms_precise(void) {
 
 static void reset_virtual_state_runtime(void) {
     s_virtual_state = DEFAULT_VIRTUAL_STATE;
+    memset(&s_ph_calibration, 0, sizeof(s_ph_calibration));
+    memset(&s_ec_calibration, 0, sizeof(s_ec_calibration));
     memset(&s_virtual_clean_fill_guard, 0, sizeof(s_virtual_clean_fill_guard));
     memset(&s_virtual_solution_fill_guard, 0, sizeof(s_virtual_solution_fill_guard));
     memset(&s_virtual_recirculation_guard, 0, sizeof(s_virtual_recirculation_guard));
@@ -1922,6 +1941,7 @@ static bool is_supported_actuator_command(const char *channel, const char *cmd) 
 }
 
 static bool publish_all_config_reports(const char *reason);
+static cJSON *build_calibration_object_for_node(const virtual_node_t *node);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
 static void persist_received_config_or_namespace(
@@ -2246,6 +2266,18 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
             sensor_mode_active ? "true" : "false",
             sensor_mode_active ? "true" : "false"
         );
+    } else if (channel && strcmp(channel, "soil_moisture") == 0) {
+        /* smart_soil_v1 (E107) читает SOIL_MOISTURE через read_metric_windows и
+         * отбрасывает stub/metadata.stub — иначе outcome=degraded_run
+         * (smart_soil_telemetry_missing_or_stale) вместо skip/run. */
+        len = snprintf(
+            payload,
+            sizeof(payload),
+            "{\"metric_type\":\"%s\",\"value\":%s,\"ts\":%lld,\"stub\":false}",
+            metric_type,
+            value_buf,
+            (long long)get_timestamp_seconds()
+        );
     } else {
         len = snprintf(
             payload,
@@ -2355,6 +2387,13 @@ static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {
     }
 
     cJSON_AddItemToObject(json, "channels", channels);
+
+    {
+        cJSON *calibration = build_calibration_object_for_node(node);
+        if (calibration) {
+            cJSON_AddItemToObject(json, "calibration", calibration);
+        }
+    }
 
     cJSON *wifi = cJSON_CreateObject();
     if (wifi) {
@@ -3259,11 +3298,113 @@ static bool is_sensor_calibration_channel(const char *channel) {
     return strcmp(channel, "ph_sensor") == 0 || strcmp(channel, "ec_sensor") == 0;
 }
 
-static bool is_unsupported_sensor_calibration_command(const pending_command_t *job) {
+static bool is_force_invalid_sensor_calibration_command(const pending_command_t *job) {
     if (!job || !is_sensor_calibration_channel(job->channel)) {
         return false;
     }
-    return strcmp(job->cmd, "calibrate") == 0;
+    if (strcmp(job->cmd, "calibrate") != 0) {
+        return false;
+    }
+    return job->calibrate_force_invalid;
+}
+
+static cJSON *build_calibration_object_for_node(const virtual_node_t *node) {
+    const sensor_calibration_points_t *points = NULL;
+    const char *sensor_key = NULL;
+    cJSON *calibration;
+    cJSON *block;
+    cJSON *point1;
+    cJSON *point2;
+
+    if (!node) {
+        return NULL;
+    }
+    if (strcmp(node->node_type, "ph") == 0) {
+        points = &s_ph_calibration;
+        sensor_key = "ph";
+    } else if (strcmp(node->node_type, "ec") == 0) {
+        points = &s_ec_calibration;
+        sensor_key = "ec";
+    } else {
+        return NULL;
+    }
+    if (!points->point1_valid && !points->point2_valid) {
+        return NULL;
+    }
+
+    calibration = cJSON_CreateObject();
+    block = cJSON_CreateObject();
+    if (!calibration || !block) {
+        cJSON_Delete(calibration);
+        cJSON_Delete(block);
+        return NULL;
+    }
+    if (points->point1_valid) {
+        point1 = cJSON_CreateObject();
+        if (point1) {
+            cJSON_AddNumberToObject(point1, "raw", points->point1_raw);
+            cJSON_AddNumberToObject(point1, "value", points->point1_value);
+            cJSON_AddItemToObject(block, "point1", point1);
+        }
+    }
+    if (points->point2_valid) {
+        point2 = cJSON_CreateObject();
+        if (point2) {
+            cJSON_AddNumberToObject(point2, "raw", points->point2_raw);
+            cJSON_AddNumberToObject(point2, "value", points->point2_value);
+            cJSON_AddItemToObject(block, "point2", point2);
+        }
+    }
+    cJSON_AddItemToObject(calibration, sensor_key, block);
+    return calibration;
+}
+
+static bool apply_sensor_calibration_command(const pending_command_t *job, cJSON *details) {
+    sensor_calibration_points_t *points = NULL;
+    float raw;
+    float value;
+
+    if (!job || !details) {
+        return false;
+    }
+    if (strcmp(job->channel, "ph_sensor") == 0) {
+        points = &s_ph_calibration;
+    } else if (strcmp(job->channel, "ec_sensor") == 0) {
+        points = &s_ec_calibration;
+    } else {
+        cJSON_AddStringToObject(details, "error", "unsupported_calibration_channel");
+        return false;
+    }
+    if (!job->calibrate_stage_present || (job->calibrate_stage != 1 && job->calibrate_stage != 2)) {
+        cJSON_AddStringToObject(details, "error", "invalid_calibration_stage");
+        return false;
+    }
+    if (!job->calibrate_value_present) {
+        cJSON_AddStringToObject(details, "error", "missing_calibration_reference");
+        return false;
+    }
+
+    value = job->calibrate_value;
+    raw = value * 1000.0f;
+    if (job->calibrate_stage == 1) {
+        points->point1_valid = true;
+        points->point1_raw = raw;
+        points->point1_value = value;
+        /* New session: clear point2 until second sample arrives. */
+        points->point2_valid = false;
+        points->point2_raw = 0.0f;
+        points->point2_value = 0.0f;
+    } else {
+        points->point2_valid = true;
+        points->point2_raw = raw;
+        points->point2_value = value;
+    }
+
+    cJSON_AddNumberToObject(details, "stage", job->calibrate_stage);
+    cJSON_AddNumberToObject(details, "reference_value", value);
+    cJSON_AddNumberToObject(details, "raw", raw);
+    cJSON_AddStringToObject(details, "note", "sensor_calibration_applied");
+    return true;
 }
 
 static void extract_command_params(cJSON *command_json, pending_command_t *job) {
@@ -3427,6 +3568,29 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
     }
 
     job->execute_delay_ms = resolve_command_delay_ms(job->kind, job, params);
+    cJSON *force_invalid = cJSON_GetObjectItem(params, "force_invalid");
+    if (force_invalid && (cJSON_IsBool(force_invalid) || cJSON_IsNumber(force_invalid))) {
+        job->calibrate_force_invalid = cJSON_IsBool(force_invalid)
+            ? cJSON_IsTrue(force_invalid)
+            : (cJSON_GetNumberValue(force_invalid) > 0);
+    }
+
+    cJSON *stage = cJSON_GetObjectItem(params, "stage");
+    if (stage && cJSON_IsNumber(stage)) {
+        job->calibrate_stage_present = true;
+        job->calibrate_stage = (int)cJSON_GetNumberValue(stage);
+    }
+
+    cJSON *known_ph = cJSON_GetObjectItem(params, "known_ph");
+    cJSON *tds_value = cJSON_GetObjectItem(params, "tds_value");
+    if (known_ph && cJSON_IsNumber(known_ph)) {
+        job->calibrate_value_present = true;
+        job->calibrate_value = (float)cJSON_GetNumberValue(known_ph);
+    } else if (tds_value && cJSON_IsNumber(tds_value)) {
+        job->calibrate_value_present = true;
+        job->calibrate_value = (float)cJSON_GetNumberValue(tds_value);
+    }
+
 }
 
 static void update_virtual_state_from_command(const pending_command_t *job, cJSON *details, const char **status_out) {
@@ -3971,8 +4135,8 @@ static void execute_pending_command(const pending_command_t *job) {
         return;
     }
 
-    if (job->kind == COMMAND_KIND_GENERIC && is_unsupported_sensor_calibration_command(job)) {
-        cJSON_AddStringToObject(details, "error", "unsupported_sensor_calibration_command");
+    if (job->kind == COMMAND_KIND_GENERIC && is_force_invalid_sensor_calibration_command(job)) {
+        cJSON_AddStringToObject(details, "error", "forced_invalid_sensor_calibration_command");
         publish_command_response(job->node_uid, job->channel, job->cmd_id, "INVALID", details);
         cJSON_Delete(details);
         return;
@@ -4086,6 +4250,13 @@ static void execute_pending_command(const pending_command_t *job) {
         trigger_hardware_reboot = true;
     } else if (job->kind == COMMAND_KIND_ACTUATOR) {
         update_virtual_state_from_command(job, details, &final_status);
+    } else if (job->kind == COMMAND_KIND_GENERIC && strcmp(job->cmd, "calibrate") == 0) {
+        if (!apply_sensor_calibration_command(job, details)) {
+            final_status = "INVALID";
+        } else {
+            publish_config_report_for_node(node);
+            cJSON_AddStringToObject(details, "config_report", "published");
+        }
     } else {
         cJSON_AddStringToObject(details, "note", "virtual_noop");
     }

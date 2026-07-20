@@ -146,6 +146,9 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
   "scenarios/ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml"
   "scenarios/ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml"
+  "scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"
+  "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"
+  "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"
 )
 SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"
@@ -157,7 +160,8 @@ INLINE_IRRIGATION_SCENARIOS=(
 )
 CALIBRATION_SCENARIOS=(
   "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"
-  "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"
+  "scenarios/calibration/E111_sensor_calibration_realhw_force_invalid.yaml"
+  "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml"
 )
 
 usage() {

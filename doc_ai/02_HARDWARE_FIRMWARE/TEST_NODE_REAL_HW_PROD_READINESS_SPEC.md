@@ -207,9 +207,9 @@ Pipeline:
 - `activate_sensor_mode`, `deactivate_sensor_mode`
 
 Особенность: неизвестный `cmd` попадает в `COMMAND_KIND_GENERIC` и обычно завершается `DONE` (`virtual_noop`), а не `INVALID`.
-Исключение: `calibrate` на `ph_sensor`/`ec_sensor` завершается terminal `INVALID` с
-`details.error=unsupported_sensor_calibration_command`, чтобы negative-path sensor calibration
-не маскировался под успешный `virtual_noop`.
+`calibrate` на `ph_sensor`/`ec_sensor` поддерживается для HIL: terminal `DONE`, in-memory points и
+`config_report` с `calibration.ph|ec`. Negative-path: `params.force_invalid=true` → `INVALID`
+(`details.error=forced_invalid_sensor_calibration_command`).
 
 Параметры `storage_state/set_fault_mode`:
 
@@ -374,7 +374,7 @@ Transient-overlap правило для `pump_main`:
 Канонический launcher: `tests/e2e/run_automation_engine_real_hardware.sh`
 (`--set=ae3lite|smart_irrigation|inline_irrigation|calibration|full`).
 
-Two-tank core (`--set=ae3lite`, 9 сценариев):
+Two-tank core (`--set=ae3lite`, 12 сценариев):
 
 - `E100_ae3_two_tank_realhw_smoke` — быстрый smoke до `clean_fill_check`.
 - `E101_ae3_two_tank_realhw_setup_ready` — каноничный сценарий, который доводит two-tank систему до `workflow_phase=ready`; после этого полив разрешён.
@@ -385,9 +385,12 @@ Two-tank core (`--set=ae3lite`, 9 сценариев):
 - `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict same-window тест для correction sub-machine в `prepare_recirculation_check`: сценарий обязан увидеть, что planner держит `EC` и `PH` в одном correction window, а runtime исполняет их последовательно (`EC -> observe -> PH`) без reset ноды и без раннего failed terminal state.
 - `E112_ae3_per_phase_ec_target_realhw` — per-phase EC target через `npk_share`.
 - `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — `solution_min` depleted → `startup` без terminal fail.
+- `E114_ae3_reactive_solution_topup_level_switch_realhw` — реактивный `solution_topup` по edge `level_solution_max`.
+- `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 (`await_operator_drain_confirm`).
+- `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
 
 Irrigation (`--set=smart_irrigation`): `E107`, `E108` (soil-moisture telemetry contract), `E109` (inline correction).
-Calibration (`--set=calibration`): `E110` create/cancel, `E111` unsupported `calibrate` → `INVALID`.
+Calibration (`--set=calibration`): `E110` create/cancel, `E111` `force_invalid`→`INVALID`, `E117` happy-path → `completed`.
 
 Удалены как дубли/legacy (без потери покрытия):
 
@@ -527,8 +530,8 @@ Fail-safe семантика `nd-test-irrig-1` выровнена с real `stora
 ## 7.5. Ограничения командной семантики
 
 - Большинство неизвестных `cmd` по-прежнему завершаются `DONE` (`virtual_noop`) вместо `INVALID`.
-- Исключение сделано только для `calibrate` на `ph_sensor`/`ec_sensor`, где требуется terminal `INVALID`
-  для negative-path sensor calibration.
+- `calibrate` на `ph_sensor`/`ec_sensor` — поддерживаемый HIL-путь (DONE + `calibration.*` в config_report);
+  forced negative — только через `params.force_invalid=true`.
 - Остальные `virtual_noop` всё ещё могут маскировать ошибки оркестрации и не подходят для боевых нод.
 
 ## 7.6. Ограничения multi-node эмуляции
