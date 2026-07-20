@@ -981,23 +981,15 @@ async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch:
     assert decision_payload["correction_window_id"] == "task:6:tank_recirc:prepare_recirculation_check"
     assert decision_payload["needs_ec"] is True
     assert decision_payload["needs_ph_down"] is True
-    assert pid_repo.upsert_calls == [
-        {
-            "zone_id": 60,
-            "updates": [
-                {
-                    "pid_type": "ph",
-                    "last_measurement_at": NOW,
-                    "last_measured_value": 6.2,
-                },
-                {
-                    "pid_type": "ec",
-                    "last_measurement_at": NOW,
-                    "last_measured_value": 1.7,
-                }
-            ],
-        }
-    ]
+    # F2/F3: persist after dose routing; EC (dosing) first, PH peer = clock touch only.
+    assert len(pid_repo.upsert_calls) == 1
+    assert pid_repo.upsert_calls[0]["zone_id"] == 60
+    updates = {u["pid_type"]: u for u in pid_repo.upsert_calls[0]["updates"]}
+    assert updates["ec"]["last_measurement_at"] == NOW
+    assert updates["ec"]["last_measured_value"] == 1.7
+    assert updates["ph"]["last_measurement_at"] == NOW
+    assert updates["ph"]["last_measured_value"] == 6.2
+    assert "integral" not in updates["ph"]
     assert not any(call.args[1] == "CORRECTION_ACTION_DEFERRED" for call in create_event.await_args_list)
 
 
@@ -2567,8 +2559,15 @@ async def test_corr_check_logs_discarded_dose_with_runtime_details(monkeypatch: 
 
     outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
-    assert outcome.kind in {"exit_correction", "enter_correction"}
-    assert create_event.await_count >= 1
+    # F1: discard ≠ success / ≠ DEAD_ZONE
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.attempt == 2  # base attempt=1 + discard bump
+    assert outcome.correction.outcome_success is None
+    event_types = [call.args[1] for call in create_event.await_args_list]
+    assert "CORRECTION_SKIPPED_DOSE_DISCARDED" in event_types
+    assert "CORRECTION_SKIPPED_DEAD_ZONE" not in event_types
     discarded_call = next(
         call for call in create_event.await_args_list
         if call.args[1] == "CORRECTION_SKIPPED_DOSE_DISCARDED"
@@ -3705,7 +3704,8 @@ async def test_corr_check_manual_control_mode_blocks_dose_routing(monkeypatch: p
     task = _make_task(corr=corr, control_mode="manual")
     gateway = _MockGateway()
     monitor = _MockRuntimeMonitor(ph=5.0, ec=1.0)
-    handler = _make_handler(monitor=monitor, gateway=gateway)
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=monitor, gateway=gateway, pid_repo=pid_repo)
 
     off_snapshot = {
         "valve_clean_supply": False,
@@ -3731,6 +3731,7 @@ async def test_corr_check_manual_control_mode_blocks_dose_routing(monkeypatch: p
         for call in gateway.calls
         for cmd in call["commands"]
     )
+    assert pid_repo.upsert_calls == [], "F2: flow_hold/control_mode must not persist plan integral"
     assert (REGISTRY.get_sample_value("ae3_correction_control_mode_blocked_total") or 0.0) >= 1.0
 
 
@@ -3804,3 +3805,197 @@ async def test_corr_wait_ec_observe_out_of_bounds_increments_metric(monkeypatch:
 
     after = REGISTRY.get_sample_value("ae3_correction_observe_out_of_bounds_total") or 0.0
     assert after == before + 1.0
+
+
+async def test_corr_check_discard_does_not_emit_dead_zone_success(monkeypatch: pytest.MonkeyPatch):
+    """F1: dose_discarded_reason must not report DEAD_ZONE success."""
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5)
+    task = _make_task(corr=corr)
+    runtime = dict(RUNTIME)
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "max_dose_ml": 10.0,
+            "min_interval_sec": 0, "max_integral": 20.0,
+            "observe": {
+                "observe_poll_sec": 2, "window_min_samples": 3, "decision_window_sec": 6,
+                "min_effect_fraction": 0.25, "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2, "no_effect_consecutive_limit": 3,
+            },
+        },
+        "ph": {
+            "kp": 0.0, "ki": 0.0, "kd": 0.0, "deadband": 0.05, "max_dose_ml": 10.0,
+            "min_interval_sec": 0, "max_integral": 20.0,
+            "observe": {
+                "observe_poll_sec": 2, "window_min_samples": 3, "decision_window_sec": 6,
+                "min_effect_fraction": 0.25, "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2, "no_effect_consecutive_limit": 3,
+            },
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node", "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 10.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50, "ml_per_sec_min": 0.01, "ml_per_sec_max": 100.0,
+    }
+    runtime["prepare_tolerance"] = {"ph_pct": 1.0, "ec_pct": 0.1}
+    runtime["target_ec_min"] = 2.0
+    runtime["target_ec_max"] = 2.05
+    runtime["correction"]["decision_window_retry_sec"] = 11
+    runtime["correction_by_phase"] = {"solution_fill": dict(runtime["correction"])}
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=1.98), pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.due_delay_sec == 11
+    # Discard may clock-touch last_measurement_at, but must not commit plan integral.
+    for call in pid_repo.upsert_calls:
+        for row in call.get("updates") or []:
+            assert "integral" not in row, "discard must not persist plan integral"
+    assert "CORRECTION_SKIPPED_DEAD_ZONE" not in [c.args[1] for c in create_event.await_args_list]
+
+
+async def test_corr_check_dual_ec_ph_persists_only_ec_integral_on_ec_first(monkeypatch: pytest.MonkeyPatch):
+    """F3: pending PH must not commit integral while EC dose is selected first."""
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    runtime = deepcopy(RUNTIME)
+    runtime["prepare_tolerance"] = {"ph_pct": 1.0, "ec_pct": 1.0}
+    runtime["target_ph_min"] = 5.9
+    runtime["target_ph_max"] = 6.1
+    runtime["target_ec_min"] = 1.9
+    runtime["target_ec_max"] = 2.1
+    runtime["pid_state"] = {
+        "ec": {"integral": 1.0, "prev_error": 0.0, "last_measurement_at": NOW - timedelta(seconds=10)},
+        "ph": {"integral": 2.0, "prev_error": 0.0, "last_measurement_at": NOW - timedelta(seconds=10)},
+    }
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0, "ki": 0.5, "kd": 0.0, "deadband": 0.01, "max_dose_ml": 10.0,
+            "min_interval_sec": 0, "max_integral": 20.0,
+            "observe": {
+                "observe_poll_sec": 2, "window_min_samples": 3, "decision_window_sec": 6,
+                "min_effect_fraction": 0.25, "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2, "no_effect_consecutive_limit": 3,
+            },
+        },
+        "ph": {
+            "kp": 1.0, "ki": 0.5, "kd": 0.0, "deadband": 0.01, "max_dose_ml": 10.0,
+            "min_interval_sec": 0, "max_integral": 20.0,
+            "observe": {
+                "observe_poll_sec": 2, "window_min_samples": 3, "decision_window_sec": 6,
+                "min_effect_fraction": 0.25, "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2, "no_effect_consecutive_limit": 3,
+            },
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node", "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": None,
+        "ph_down": {
+            "node_uid": "ph-node", "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50, "ml_per_sec_min": 0.01, "ml_per_sec_max": 100.0,
+    }
+    runtime["correction_by_phase"] = {"tank_recirc": dict(runtime["correction"])}
+    monitor = _MockRuntimeMonitor(
+        ph=6.4, ec=1.6,
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 6.4},
+            {"ts": NOW - timedelta(seconds=5), "value": 6.4},
+            {"ts": NOW - timedelta(seconds=3), "value": 6.4},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 1.6},
+            {"ts": NOW - timedelta(seconds=5), "value": 1.6},
+            {"ts": NOW - timedelta(seconds=3), "value": 1.6},
+        ],
+    )
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    assert outcome.correction.needs_ph_down is True
+    assert len(pid_repo.upsert_calls) == 1
+    updates = {u["pid_type"]: u for u in pid_repo.upsert_calls[0]["updates"]}
+    assert "ec" in updates
+    assert "integral" in updates["ec"]
+    assert "ph" in updates
+    assert "integral" not in updates["ph"], "pending PH must not commit ΔI before PH dose"
+    assert "last_measurement_at" in updates["ph"]
+
+
+async def test_corr_check_partial_multi_component_discard_emits_event(monkeypatch: pytest.MonkeyPatch):
+    """F5: multi_component_partial must be observable even when needs_ec remains True."""
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    dose_plan = DosePlan(
+        needs_ec=True,
+        ec_component="multi_parallel",
+        ec_node_uid="ec-node",
+        ec_channel="ec_ca",
+        ec_amount_ml=1.0,
+        ec_duration_ms=500,
+        needs_ph_up=False,
+        needs_ph_down=False,
+        dose_discarded_reason="multi_component_partial",
+        dose_discarded_details={"discarded": [{"component": "micro", "reason": "below_min_dose_ms"}]},
+        pid_state_updates={"ec": {"integral": 1.5, "prev_error": 0.4, "last_measurement_at": NOW}},
+    )
+    handler = _make_handler(pid_repo=_MockPidStateRepository())
+    monkeypatch.setattr(handler, "_interrupt_for_control_mode_dosing", AsyncMock(return_value=None))
+    plan = _MockPlan()
+    runtime = plan.runtime
+    outcome = await handler._finalize_dose_plan_routing(
+        task=task,
+        plan=plan,
+        corr=corr,
+        now=NOW,
+        dose_plan=dose_plan,
+        runtime=runtime,
+        pid_state={},
+        current_ph=6.0,
+        current_ec=1.5,
+        target_ph=6.0,
+        target_ec=2.0,
+        current_stage="solution_fill_check",
+        workflow_ready=False,
+        enforce_attempt_caps=False,
+    )
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    discarded = [
+        c for c in create_event.await_args_list
+        if c.args[1] == "CORRECTION_SKIPPED_DOSE_DISCARDED"
+    ]
+    assert discarded, "partial discard must emit observability event"
+    assert discarded[0].args[2]["reason"] == "multi_component_partial"
+    assert discarded[0].args[2]["partial"] is True
+

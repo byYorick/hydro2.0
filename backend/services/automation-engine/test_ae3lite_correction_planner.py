@@ -1269,8 +1269,6 @@ def test_build_dose_plan_keeps_ph_and_ec_in_same_correction_window() -> None:
     assert dose_plan.needs_ec is True
     assert dose_plan.needs_ph_down is True
     assert dose_plan.ph_channel == "ph_down_pump"
-    assert dose_plan.deferred_action == ""
-    assert dose_plan.deferred_reason == ""
     assert "ph" in dose_plan.pid_state_updates
     assert "ec" in dose_plan.pid_state_updates
 
@@ -2434,10 +2432,26 @@ def test_build_dose_plan_clamp_recalculates_effective_ml() -> None:
     assert plan.ec_requested_ml > plan.ec_amount_ml
     assert plan.ec_duration_ms == 300_000
     assert plan.ec_amount_ml == pytest.approx(0.1 * 300_000 / 1000)
-    assert plan.dose_discarded_reason == "clamped_to_max_dose_ms"
+    # Clamp is saturation of a successful pulse — not a discard.
+    assert plan.dose_discarded_reason == ""
+    assert plan.dose_clamped_reason == "clamped_to_max_dose_ms"
 
 
-def test_pid_integral_freeze_skips_hold_observe_dead_time() -> None:
+def test_merge_controller_outcome_fields_keeps_both_reasons() -> None:
+    from ae3lite.domain.services.correction_planner import _merge_controller_outcome_fields
+
+    reason, details = _merge_controller_outcome_fields(
+        ec_reason="below_min_dose_ms",
+        ec_details={"min_dose_ms": 50},
+        ph_reason="ph_down_min_effective_exceeds_cap",
+        ph_details={"min_effective_ml": 1.0},
+    )
+    assert reason == "below_min_dose_ms"
+    assert details["ec_reason"] == "below_min_dose_ms"
+    assert details["ph_reason"] == "ph_down_min_effective_exceeds_cap"
+    assert details["ec"]["min_dose_ms"] == 50
+    assert details["ph"]["min_effective_ml"] == 1.0
+
     """P0: after observe-style clock touch, I must not grow by gap*dead_time.
 
     Simulates hold+observe (120s) via ``accumulate_integral=False``, then an

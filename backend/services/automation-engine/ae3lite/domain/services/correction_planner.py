@@ -81,9 +81,9 @@ class DosePlan:
     retry_after_sec: Optional[int] = None
     dose_discarded_reason: str = ""
     dose_discarded_details: Mapping[str, Any] = field(default_factory=dict)
-    deferred_action: str = ""
-    deferred_reason: str = ""
-    deferred_details: Mapping[str, Any] = field(default_factory=dict)
+    #: Saturation clamp (доза всё ещё уходит) — НЕ discard. Отдельно от dose_discarded_*.
+    dose_clamped_reason: str = ""
+    dose_clamped_details: Mapping[str, Any] = field(default_factory=dict)
     dead_zone_details: Mapping[str, Any] = field(default_factory=dict)
     pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
     ec_pid_zone: str = ""
@@ -268,6 +268,8 @@ class CorrectionPlanner:
         ec_duration_ms = 0
         ec_discarded_reason = ""
         ec_discarded_details: Mapping[str, Any] = {}
+        ec_clamped_reason = ""
+        ec_clamped_details: Mapping[str, Any] = {}
         ec_dose_sequence: tuple[EcDoseStep, ...] = ()
 
         ph_node_uid = ""
@@ -277,10 +279,9 @@ class CorrectionPlanner:
         ph_duration_ms = 0
         ph_discarded_reason = ""
         ph_discarded_details: Mapping[str, Any] = {}
+        ph_clamped_reason = ""
+        ph_clamped_details: Mapping[str, Any] = {}
         dual_mismatch_collector: list[dict[str, Any]] = []
-        deferred_action = ""
-        deferred_reason = ""
-        deferred_details: Mapping[str, Any] = {}
 
         if ec_needs:
             ec_retry_after = _retry_after(
@@ -577,12 +578,15 @@ class CorrectionPlanner:
                         if ec_pid_zone:
                             ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
                         pid_updates["ec"] = ec_pid_update
-                    # Planner-level discard (min_effective exceeds gap cap) takes precedence
-                    # over duration-level discard so the reason reflects the root cause.
+                    # Planner-level discard (min_effective exceeds gap cap) takes precedence.
+                    # Clamp is NOT a discard — dose still proceeds (separate dose_clamped_*).
                     if ec_planner_discard_reason:
                         ec_discarded_reason = ec_planner_discard_reason
                         ec_discarded_details = ec_planner_discard_details
-                    else:
+                    elif ec_duration_reason == "clamped_to_max_dose_ms":
+                        ec_clamped_reason = ec_duration_reason
+                        ec_clamped_details = ec_duration_details
+                    elif ec_duration_reason:
                         ec_discarded_reason = ec_duration_reason
                         ec_discarded_details = ec_duration_details
                     ec_needs = ec_duration_ms > 0
@@ -662,7 +666,10 @@ class CorrectionPlanner:
                 if ph_planner_discard_reason:
                     ph_discarded_reason = ph_planner_discard_reason
                     ph_discarded_details = ph_planner_discard_details
-                else:
+                elif ph_duration_reason == "clamped_to_max_dose_ms":
+                    ph_clamped_reason = ph_duration_reason
+                    ph_clamped_details = ph_duration_details
+                elif ph_duration_reason:
                     ph_discarded_reason = ph_duration_reason
                     ph_discarded_details = ph_duration_details
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
@@ -683,6 +690,18 @@ class CorrectionPlanner:
             "ph_has_explicit_window": ph_has_explicit_window,
             "ec_has_explicit_window": ec_has_explicit_window,
         }
+        discarded_reason, discarded_details = _merge_controller_outcome_fields(
+            ec_reason=ec_discarded_reason,
+            ec_details=ec_discarded_details,
+            ph_reason=ph_discarded_reason,
+            ph_details=ph_discarded_details,
+        )
+        clamped_reason, clamped_details = _merge_controller_outcome_fields(
+            ec_reason=ec_clamped_reason,
+            ec_details=ec_clamped_details,
+            ph_reason=ph_clamped_reason,
+            ph_details=ph_clamped_details,
+        )
         return DosePlan(
             needs_ec=ec_needs,
             ec_component=ec_component_name,
@@ -703,11 +722,10 @@ class CorrectionPlanner:
             ph_duration_ms=ph_duration_ms,
             ph_retry_after_sec=ph_retry_after,
             retry_after_sec=retry_after,
-            dose_discarded_reason=ec_discarded_reason or ph_discarded_reason,
-            dose_discarded_details=ec_discarded_details or ph_discarded_details,
-            deferred_action=deferred_action,
-            deferred_reason=deferred_reason,
-            deferred_details=deferred_details,
+            dose_discarded_reason=discarded_reason,
+            dose_discarded_details=discarded_details,
+            dose_clamped_reason=clamped_reason,
+            dose_clamped_details=clamped_details,
             dead_zone_details=dead_zone_details,
             pid_state_updates=pid_updates,
             ec_pid_zone=ec_pid_zone,
@@ -725,6 +743,40 @@ def _resolve_target_tolerance_bounds(
 ) -> tuple[float, float]:
     tol = abs(float(target)) * (float(tolerance_pct) / 100.0)
     return float(target) - tol, float(target) + tol
+
+
+def _merge_controller_outcome_fields(
+    *,
+    ec_reason: str,
+    ec_details: Mapping[str, Any],
+    ph_reason: str,
+    ph_details: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any]]:
+    """Merge EC/PH outcome reasons without masking the peer controller.
+
+    Primary ``reason`` stays EC-first for backward-compatible single-field
+    consumers; details always expose both sides when present.
+    """
+    ec_reason = str(ec_reason or "").strip()
+    ph_reason = str(ph_reason or "").strip()
+    if not ec_reason and not ph_reason:
+        return "", {}
+    if ec_reason and not ph_reason:
+        return ec_reason, {
+            **(dict(ec_details) if isinstance(ec_details, Mapping) else {}),
+            "ec_reason": ec_reason,
+        }
+    if ph_reason and not ec_reason:
+        return ph_reason, {
+            **(dict(ph_details) if isinstance(ph_details, Mapping) else {}),
+            "ph_reason": ph_reason,
+        }
+    return ec_reason, {
+        "ec_reason": ec_reason,
+        "ph_reason": ph_reason,
+        "ec": dict(ec_details) if isinstance(ec_details, Mapping) else {},
+        "ph": dict(ph_details) if isinstance(ph_details, Mapping) else {},
+    }
 
 
 def _phase_mapping(raw: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:

@@ -89,7 +89,8 @@ Percent = Annotated[float, Field(ge=0.1, le=100.0)]
 Milliliters = Annotated[float, Field(gt=0.0, le=1000.0)]
 Liters = Annotated[float, Field(ge=1.0, le=10_000.0)]
 
-# Non-negative gain/integral factors — used by PID sections.
+# Non-negative gain/integral factors — retained for catalog/docs parity;
+# controller kp/ki/kd fields use inline Annotated bounds below.
 Gain100 = Annotated[float, Field(ge=0.0, le=100.0)]
 Gain1000 = Annotated[float, Field(ge=0.0, le=1000.0)]
 
@@ -99,14 +100,34 @@ Gain1000 = Annotated[float, Field(ge=0.0, le=1000.0)]
 class AntiWindup(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool
+    enabled: bool = Field(
+        description=(
+            "DEPRECATED / ignored-by-runtime: AE3 anti-windup — conditional "
+            "integration при saturation дозы; флаг schema/UI не enforcement."
+        ),
+    )
 
 
 class NoEffect(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool
-    max_count: Annotated[int, Field(ge=1, le=10)]
+    enabled: bool = Field(
+        description=(
+            "DEPRECATED / ignored-by-runtime: no-effect fail-closed читает "
+            "observe.no_effect_consecutive_limit, не этот флаг."
+        ),
+    )
+    max_count: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=10,
+            description=(
+                "DEPRECATED / ignored-by-runtime: лимит consecutive no-effect — "
+                "observe.no_effect_consecutive_limit."
+            ),
+        ),
+    ]
 
 
 class Observe(_DictShim, BaseModel):
@@ -124,33 +145,72 @@ class Observe(_DictShim, BaseModel):
 class PhOvershootGuard(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool
-    hard_min: Annotated[float, Field(ge=0.0, le=14.0)]
-    hard_max: Annotated[float, Field(ge=0.0, le=14.0)]
+    enabled: bool = Field(
+        description="DEPRECATED / ignored-by-runtime: overshoot guard не enforcement в AE3.",
+    )
+    hard_min: Annotated[
+        float,
+        Field(ge=0.0, le=14.0, description="DEPRECATED / ignored-by-runtime."),
+    ]
+    hard_max: Annotated[
+        float,
+        Field(ge=0.0, le=14.0, description="DEPRECATED / ignored-by-runtime."),
+    ]
 
 
 class EcOvershootGuard(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool
-    hard_min: Annotated[float, Field(ge=0.0, le=20.0)]
-    hard_max: Annotated[float, Field(ge=0.0, le=20.0)]
+    enabled: bool = Field(
+        description="DEPRECATED / ignored-by-runtime: overshoot guard не enforcement в AE3.",
+    )
+    hard_min: Annotated[
+        float,
+        Field(ge=0.0, le=20.0, description="DEPRECATED / ignored-by-runtime."),
+    ]
+    hard_max: Annotated[
+        float,
+        Field(ge=0.0, le=20.0, description="DEPRECATED / ignored-by-runtime."),
+    ]
 
 
 # ─── Controllers ───────────────────────────────────────────────────────────
 
+_KP_FALLBACK_DESC = (
+    "Fallback Kp если zone.pid.{ph,ec}.zone_coeffs отсутствует. "
+    "При наличии zone.pid AE3 перекрывает kp/ki/kd из zone_coeffs.close|far — "
+    "не второй редактор (см. PidConfigForm / zone.pid)."
+)
+_DEADBAND_FALLBACK_DESC = (
+    "Fallback deadband если zone.pid.*.dead_zone отсутствует. "
+    "При наличии zone.pid AE3 берёт deadband из dead_zone."
+)
+
+
 class PhController(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    mode: Literal["cross_coupled_pi_d"]
-    kp: Gain1000
-    ki: Gain100
-    kd: Gain100
+    mode: Literal["cross_coupled_pi_d"] = Field(
+        description="DEPRECATED / ignored-by-runtime: декоративный label схемы, AE3 не ветвится по mode.",
+    )
+    kp: Annotated[float, Field(ge=0.0, le=1000.0, description=_KP_FALLBACK_DESC)]
+    ki: Annotated[float, Field(ge=0.0, le=100.0, description=_KP_FALLBACK_DESC.replace("Kp", "Ki").replace("kp", "ki"))]
+    kd: Annotated[float, Field(ge=0.0, le=100.0, description=_KP_FALLBACK_DESC.replace("Kp", "Kd").replace("kp", "kd"))]
     derivative_filter_alpha: Annotated[float, Field(ge=0.0, le=1.0)]
-    deadband: Annotated[float, Field(ge=0.0, le=2.0)]
+    deadband: Annotated[float, Field(ge=0.0, le=2.0, description=_DEADBAND_FALLBACK_DESC)]
     max_dose_ml: Milliliters
     min_interval_sec: Annotated[int, Field(ge=1, le=3600)]
-    max_integral: Annotated[float, Field(gt=0.0, le=500.0)]
+    max_integral: Annotated[
+        float,
+        Field(
+            gt=0.0,
+            le=500.0,
+            description=(
+                "Канонический anti-windup clamp интеграла (AE3 читает отсюда). "
+                "zone.pid.*.max_integral — legacy UI field, runtime не использует."
+            ),
+        ),
+    ]
     anti_windup: AntiWindup
     overshoot_guard: PhOvershootGuard
     no_effect: NoEffect
@@ -160,15 +220,27 @@ class PhController(_DictShim, BaseModel):
 class EcController(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    mode: Literal["supervisory_allocator"]
-    kp: Gain1000
-    ki: Gain100
-    kd: Gain100
+    mode: Literal["supervisory_allocator"] = Field(
+        description="DEPRECATED / ignored-by-runtime: декоративный label схемы, AE3 не ветвится по mode.",
+    )
+    kp: Annotated[float, Field(ge=0.0, le=1000.0, description=_KP_FALLBACK_DESC)]
+    ki: Annotated[float, Field(ge=0.0, le=100.0, description=_KP_FALLBACK_DESC.replace("Kp", "Ki").replace("kp", "ki"))]
+    kd: Annotated[float, Field(ge=0.0, le=100.0, description=_KP_FALLBACK_DESC.replace("Kp", "Kd").replace("kp", "kd"))]
     derivative_filter_alpha: Annotated[float, Field(ge=0.0, le=1.0)]
-    deadband: Annotated[float, Field(ge=0.0, le=5.0)]
+    deadband: Annotated[float, Field(ge=0.0, le=5.0, description=_DEADBAND_FALLBACK_DESC)]
     max_dose_ml: Milliliters
     min_interval_sec: Annotated[int, Field(ge=1, le=3600)]
-    max_integral: Annotated[float, Field(gt=0.0, le=500.0)]
+    max_integral: Annotated[
+        float,
+        Field(
+            gt=0.0,
+            le=500.0,
+            description=(
+                "Канонический anti-windup clamp интеграла (AE3 читает отсюда). "
+                "zone.pid.*.max_integral — legacy UI field, runtime не использует."
+            ),
+        ),
+    ]
     anti_windup: AntiWindup
     overshoot_guard: EcOvershootGuard
     no_effect: NoEffect
@@ -264,7 +336,12 @@ class Tolerance(_DictShim, BaseModel):
 class Safety(_DictShim, BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    safe_mode_on_no_effect: bool
+    safe_mode_on_no_effect: bool = Field(
+        description=(
+            "DEPRECATED / ignored-by-runtime: no-effect fail-closed идёт через "
+            "observe.no_effect_consecutive_limit + alert path; флаг не enforcement."
+        ),
+    )
     block_on_active_no_effect_alert: bool
 
 

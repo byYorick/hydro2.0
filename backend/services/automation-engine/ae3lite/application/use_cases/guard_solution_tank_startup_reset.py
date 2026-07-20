@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.level_monitor import load_zone_level_monitor_config, solution_tank_is_depleted
+from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.infrastructure.metrics import CORRECTION_NO_EFFECT_RESET_FAILED
 
 _logger = logging.getLogger(__name__)
 
@@ -90,18 +92,29 @@ class GuardSolutionTankStartupResetUseCase:
     async def _clear_correction_blocks(self, *, zone_id: int) -> None:
         if self._pid_state_repository is None:
             return
-        try:
-            await self._pid_state_repository.reset_no_effect_counts(zone_id=int(zone_id))
-            _logger.info(
-                "solution tank guard: сброшен no_effect block zone_id=%s reason=solution_tank_depleted",
-                zone_id,
-            )
-        except Exception:
-            _logger.warning(
-                "solution tank guard: не удалось сбросить no_effect_count zone_id=%s",
-                zone_id,
-                exc_info=True,
-            )
+        zone_id = int(zone_id)
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
+                _logger.info(
+                    "solution tank guard: сброшен no_effect block zone_id=%s reason=solution_tank_depleted",
+                    zone_id,
+                )
+                return
+            except Exception as exc:
+                last_exc = exc
+                _logger.warning(
+                    "solution tank guard: не удалось сбросить no_effect_count zone_id=%s attempt=%s",
+                    zone_id,
+                    attempt,
+                    exc_info=True,
+                )
+        CORRECTION_NO_EFFECT_RESET_FAILED.inc()
+        raise TaskExecutionError(
+            "corr_no_effect_reset_failed",
+            f"Не удалось сбросить no_effect_count для зоны {zone_id} (solution_tank_depleted): {last_exc}",
+        )
 
     async def _load_solution_min_sensor_cfg(self, *, zone_id: int) -> dict[str, Any]:
         level_cfg = await load_zone_level_monitor_config(zone_id=zone_id, fetch_fn=self._fetch_fn)

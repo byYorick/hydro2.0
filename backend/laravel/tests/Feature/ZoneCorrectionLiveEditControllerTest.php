@@ -100,9 +100,9 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'correction_patch' => [
                     'timing.stabilization_sec' => 45,
                     'retry.telemetry_stale_retry_sec' => 20,
-                    'controllers.ec.kp' => 0.7,
+                    'controllers.ec.max_dose_ml' => 18.0,
                     'controllers.ec.observe.decision_window_sec' => 12,
-                    'controllers.ec.overshoot_guard.hard_max' => 9.5,
+                    'controllers.ec.max_integral' => 88.0,
                 ],
             ]);
 
@@ -116,9 +116,9 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         );
         $this->assertSame(45, data_get($doc->payload, 'base_config.timing.stabilization_sec'));
         $this->assertSame(20, data_get($doc->payload, 'base_config.retry.telemetry_stale_retry_sec'));
-        $this->assertSame(0.7, data_get($doc->payload, 'base_config.controllers.ec.kp'));
+        $this->assertSame(18.0, data_get($doc->payload, 'base_config.controllers.ec.max_dose_ml'));
         $this->assertSame(12, data_get($doc->payload, 'base_config.controllers.ec.observe.decision_window_sec'));
-        $this->assertSame(9.5, data_get($doc->payload, 'base_config.controllers.ec.overshoot_guard.hard_max'));
+        $this->assertSame(88.0, data_get($doc->payload, 'base_config.controllers.ec.max_integral'));
 
         // resolved_config тоже обновлён (resolver пересобирает после upsert)
         $this->assertSame(45, data_get($doc->payload, 'resolved_config.base.timing.stabilization_sec'));
@@ -137,7 +137,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
                 'phase' => 'tank_recirc',
                 'correction_patch' => [
                     'timing.stabilization_sec' => 150,
-                    'controllers.ph.kp' => 0.35,
+                    'controllers.ph.max_dose_ml' => 7.5,
                 ],
             ]);
 
@@ -150,7 +150,7 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
             false,
         );
         $this->assertSame(150, data_get($doc->payload, 'phase_overrides.tank_recirc.timing.stabilization_sec'));
-        $this->assertSame(0.35, data_get($doc->payload, 'phase_overrides.tank_recirc.controllers.ph.kp'));
+        $this->assertSame(7.5, data_get($doc->payload, 'phase_overrides.tank_recirc.controllers.ph.max_dose_ml'));
     }
 
     public function test_calibration_patch_requires_phase(): void

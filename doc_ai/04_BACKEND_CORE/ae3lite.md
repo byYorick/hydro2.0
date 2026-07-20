@@ -249,7 +249,7 @@ Correction runtime invariants:
 14. при `task_type=solution_change` completion `solution_fill` (включая interrupt из correction) обязан
     идти в `solution_fill_stop_to_refill_confirm` (operator gate G2), а не в `*_stop_to_ready/prepare`.
 15. `expected_effect` для no-effect использует `effective_process_gain` (тот же auth⊕learned blend, что planner); adaptive observations не инфлейтятся без learning update (см. `PID_CONFIG_REFERENCE.md`).
-16. PID integral не накапливается за hold/observe dead time; при saturation дозы ΔI тика не персистится. Legacy `utils/adaptive_pid.py` / `services/pid_config_service.py` **не** являются runtime path.
+16. PID integral не накапливается за hold/observe dead time; при saturation дозы ΔI тика не персистится. Legacy `utils/adaptive_pid.py` / `services/pid_config_service.py` / `correction_cooldown.py` **удалены** (2026-07-20); канон — `CorrectionPlanner` + `pid_state` + `zone.pid` / `zone.correction` (см. `PID_CONFIG_REFERENCE.md` §0).
 #### `PlannedCommand`
 
 Execution record внутри task:

@@ -59,23 +59,17 @@ class ZoneCorrectionLiveEditController extends Controller
         'dosing.max_ec_dose_ml',
         'dosing.max_ph_dose_ml',
         'dosing.solution_volume_l',
-        // safety
-        'safety.safe_mode_on_no_effect',
+        // safety (block_on_active_no_effect_alert is enforced;
+        // safe_mode_on_no_effect is schema theatre / ignored-by-runtime)
         'safety.block_on_active_no_effect_alert',
         // tolerance
         'tolerance.prepare_tolerance.ph_pct',
         'tolerance.prepare_tolerance.ec_pct',
-        // PID per-controller (ph)
-        'controllers.ph.kp', 'controllers.ph.ki', 'controllers.ph.kd',
-        'controllers.ph.deadband',
+        // Controllers: caps / observe / max_integral (AE3 authority).
+        // kp/ki/kd/deadband — НЕ live-edit: канон zone.pid.{ph,ec} (PidConfigForm).
+        // anti_windup / overshoot_guard / no_effect.enabled — ignored-by-runtime.
         'controllers.ph.max_dose_ml', 'controllers.ph.min_interval_sec',
         'controllers.ph.max_integral', 'controllers.ph.derivative_filter_alpha',
-        'controllers.ph.anti_windup.enabled',
-        'controllers.ph.overshoot_guard.enabled',
-        'controllers.ph.overshoot_guard.hard_min',
-        'controllers.ph.overshoot_guard.hard_max',
-        'controllers.ph.no_effect.enabled',
-        'controllers.ph.no_effect.max_count',
         'controllers.ph.observe.telemetry_period_sec',
         'controllers.ph.observe.window_min_samples',
         'controllers.ph.observe.decision_window_sec',
@@ -83,17 +77,8 @@ class ZoneCorrectionLiveEditController extends Controller
         'controllers.ph.observe.min_effect_fraction',
         'controllers.ph.observe.stability_max_slope',
         'controllers.ph.observe.no_effect_consecutive_limit',
-        // PID per-controller (ec) — симметрично
-        'controllers.ec.kp', 'controllers.ec.ki', 'controllers.ec.kd',
-        'controllers.ec.deadband',
         'controllers.ec.max_dose_ml', 'controllers.ec.min_interval_sec',
         'controllers.ec.max_integral', 'controllers.ec.derivative_filter_alpha',
-        'controllers.ec.anti_windup.enabled',
-        'controllers.ec.overshoot_guard.enabled',
-        'controllers.ec.overshoot_guard.hard_min',
-        'controllers.ec.overshoot_guard.hard_max',
-        'controllers.ec.no_effect.enabled',
-        'controllers.ec.no_effect.max_count',
         'controllers.ec.observe.telemetry_period_sec',
         'controllers.ec.observe.window_min_samples',
         'controllers.ec.observe.decision_window_sec',

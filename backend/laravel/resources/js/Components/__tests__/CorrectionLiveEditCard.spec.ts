@@ -118,11 +118,11 @@ const correctionDocument = {
         description: 'ec controller section',
         fields: [
           {
-            path: 'controllers.ec.kp',
-            label: 'Kp',
-            description: 'ec kp',
+            path: 'controllers.ec.max_dose_ml',
+            label: 'Max dose',
+            description: 'ec max dose',
             type: 'number',
-            min: 0,
+            min: 0.1,
             max: 1000,
             step: 0.1,
           },
@@ -229,7 +229,7 @@ describe('CorrectionLiveEditCard', () => {
       config_revision: 21,
       phase: 'tank_recirc',
       affected_fields: {
-        correction: ['controllers.ec.kp'],
+        correction: ['controllers.ec.max_dose_ml'],
         calibration: ['transport_delay_sec'],
       },
     })
@@ -239,7 +239,7 @@ describe('CorrectionLiveEditCard', () => {
 
     await wrapper.find('[data-testid="correction-live-correction-target"]').setValue('tank_recirc')
     await wrapper.find('[data-testid="correction-live-calibration-target"]').setValue('tank_recirc')
-    await wrapper.find('[data-testid="correction-live-field-controllers__ec__kp"]').setValue('0.95')
+    await wrapper.find('[data-testid="correction-live-field-controllers__ec__max_dose_ml"]').setValue('12.5')
     await wrapper.find('[data-testid="correction-live-calibration-field-transport_delay_sec"]').setValue('28')
     await wrapper.find('[data-testid="correction-live-reason"]').setValue('tank recirc tuning')
     await wrapper.find('[data-testid="correction-live-form"]').trigger('submit')
@@ -249,7 +249,7 @@ describe('CorrectionLiveEditCard', () => {
       reason: 'tank recirc tuning',
       phase: 'tank_recirc',
       correction_patch: {
-        'controllers.ec.kp': 0.95,
+        'controllers.ec.max_dose_ml': 12.5,
       },
       calibration_patch: {
         transport_delay_sec: 28,

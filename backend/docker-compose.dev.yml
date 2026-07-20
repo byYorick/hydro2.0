@@ -448,13 +448,17 @@ services:
       start_period: 20s
     restart: unless-stopped
   grafana:
-    image: grafana/grafana:11.5.2
+    # grafana/grafana:11.5.2 segfaults (exit 139) on this host even for `grafana --version`;
+    # OSS build of the same version starts cleanly.
+    image: grafana/grafana-oss:11.5.2
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       # Плагин grafana-clock-panel отключен из-за проблем с установкой (403 Forbidden)
       # - GF_INSTALL_PLUGINS=grafana-clock-panel
+      # Disable auto preinstall of cloud plugins (403 from grafana.com in this env)
+      - GF_PLUGINS_PREINSTALL_DISABLED=true
       - GF_DEFAULT_LANGUAGE=ru
       - GF_USERS_DEFAULT_LANGUAGE=ru
     volumes:
@@ -672,7 +676,7 @@ services:
       - ./services:/app
     profiles:
       - tests
-    command: ["python", "-m", "pytest", "automation-engine/tests/test_pid_config_service.py", "automation-engine/tests/test_pid_config_service_cache_update.py", "automation-engine/tests/test_pid_config_type_safety.py", "automation-engine/tests/test_zone_automation_pid_cleanup.py", "automation-engine/test_pid_integration.py", "-v"]
+    command: ["python", "-m", "pytest", "automation-engine/test_ae3lite_pid_output_event.py", "automation-engine/test_ae3lite_pid_state_repository.py", "automation-engine/test_ae3lite_correction_planner.py", "-v"]
 
   node-emulator:
     build:

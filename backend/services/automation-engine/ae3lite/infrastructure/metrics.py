@@ -402,6 +402,11 @@ CORRECTION_CONTROL_MODE_BLOCKED = Counter(
     "Correction dosing deferred because manual/semi control_mode stopped flow-path",
 )
 
+CORRECTION_NO_EFFECT_RESET_FAILED = Counter(
+    "ae3_correction_no_effect_reset_failed_total",
+    "Failed to reset pid_state.no_effect_count after correction success / solution_low setup",
+)
+
 # ─── Startup recovery ────────────────────────────────────────────────
 
 STARTUP_RECOVERY_RUN = Counter(

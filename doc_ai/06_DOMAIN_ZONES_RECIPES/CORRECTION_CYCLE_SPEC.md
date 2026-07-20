@@ -18,6 +18,22 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - запуск цикла автоматики выполняется через `POST /zones/{id}/start-cycle`;
 - runtime-резолв target/config выполняется через SQL read-model (effective-targets API не используется в runtime path).
 
+### Authority matrix (correction / PID, 2026-07-20)
+
+| Параметр | Source of truth |
+|----------|-----------------|
+| target pH/EC | recipe phase only |
+| kp/ki/kd, dead/close/far zones | `zone.pid.{ph,ec}` |
+| min_interval_sec, max_dose_ml, **max_integral**, derivative_filter_alpha, observe | `zone.correction.controllers.*` |
+| process gains, transport_delay, settle | `zone.process_calibration.*` |
+| min/max_dose_ms, ml_per_sec | pump_calibration |
+
+- `targets.*.controller` в effective-targets — **не** AE3 authority;
+- discard дозы (`below_min_dose_ms`, saturation clamp, sensor OOB) ≠
+  `CORRECTION_SKIPPED_DEAD_ZONE` (gap внутри deadband / нет needs_*);
+- dead code `DosePlan.deferred_action` / `CORRECTION_ACTION_DEFERRED` удалён
+  из planner/handler (исторические UI labels событий могут оставаться).
+
 Актуализация per-phase EC и day/night (2026-04-13):
 - EC target в correction теперь зависит от текущей фазы workflow: для `solution_fill`/`tank_recirc` используется prepare-target (доля NPK от полного EC), для `irrigation`/`irrig_recirc` — полный EC;
 - handler-уровневые accessors `_effective_ec_target/min/max` и `_effective_ph_target/min/max` (`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107,1129,1143,1157,1161,1167`) выбирают значение по фазе и применяют day/night override (если `day_night_enabled=true` на phase snapshot);
@@ -376,6 +392,10 @@ Observability (UI/Grafana, 2026-07-09):
 **Из `pump_calibration` (zone policy, `system.pump_calibration_policy`):**
 - `pump_calibration.max_dose_ms` — **runaway guard** и согласование с firmware: hard cap длительности одной дозы на стороне AE3. Default `60_000` ms (60 с — совпадает с `CORRECTION_NODE_ACTUATOR_MAX_DURATION_MS` / `safe_limits.max_duration_ms` ph_node/ec_node). Если расчётный `duration_ms` больше, длительность **clamps** до cap, а объём пересчитывается: `effective_ml = ml_per_sec * clamped_ms / 1000`. В MQTT-команде `params.ml` = `effective_ml`; в zone events `EC_DOSING` / `PH_CORRECTED` публикуются **оба** поля: `effective_ml` и `requested_ml` (исходный объём до clamp). PID/attempt-логика оперирует `effective_ml`. Для зон с увеличенным NodeConfig cap задайте `max_dose_ms` явно (≤ `_MAX_DURATION_MS_SANITY` history-logger = 300_000).
 - `pump_calibration.min_dose_ms` — **нижний порог**. Если расчётный `duration_ms` ниже — доза **discarded** с reason `below_min_dose_ms` (без публикации команды). Это защита от микро-доз ниже физического разрешения насоса.
+- **Discard ≠ deadband:** `CORRECTION_SKIPPED_DOSE_DISCARDED` — доза отброшена (ниже min / partial multi-component и т.п.), targets могут оставаться out of tolerance. Runtime **не** эмитит `CORRECTION_SKIPPED_DEAD_ZONE` и **не** завершает окно как `success=True`; вместо этого retry `corr_check` с backoff (`decision_window_retry_sec` или `level_poll_interval_sec` в prepare) и инкрементом `attempt` (включая prepare), плюс clock-touch `last_measurement_at` без commit plan integral.
+- **Clamp ≠ discard:** `clamped_to_max_dose_ms` пишется в `dose_clamped_*` и эмитит `CORRECTION_DOSE_CLAMPED` (доза всё ещё уходит). Не маскируется под `CORRECTION_SKIPPED_DOSE_DISCARDED`.
+- **True deadband:** `CORRECTION_SKIPPED_DEAD_ZONE` + `success=True` — только когда planner не видит дозы вне deadband **и** нет `dose_discarded_reason`.
+- **PID persist timing:** plan updates (`integral` / `prev_*`) персистятся только после подтверждения маршрута дозы (не на flow_hold / discard / cooldown). При dual EC+PH commit I только для controller, чья dose уходит сейчас; peer — clock-touch без ΔI. `last_dose_at` — только после terminal `DONE`.
 
 **Dual calibration (AE3 ↔ firmware) — ops checklist:**
 - AE3 планирует `params.ml` по DB `pump_calibrations.ml_per_sec`; ph_node/ec_node исполняют dose по NodeConfig `ml_per_second` и **игнорируют** `params.duration_ms` (если передан).
@@ -400,6 +420,7 @@ Observability (UI/Grafana, 2026-07-09):
 - `controllers.{ec,ph}.max_dose_ml` — controller-level cap per dose в мл (применяется до перевода в ms).
 - `controllers.{ec,ph}.min_interval_sec` — минимальный интервал между дозами одного controller'а. Конфигурируемо per controller; типовые production-значения: pH 60–120 с, EC 60–120 с. Прежние комментарии «pH ≥ 20 с, EC ≥ 10 с» устарели — на них не опираться.
 - `last_dose_at` в `pid_state` пишется **только после terminal `DONE`** дозирующей команды в correction handler (не на этапе планирования). Timestamp якорится на момент подтверждённого DONE (`utcnow` после успешного `run_batch`), а не на старт tick handler'а. Это предотвращает фантомный cooldown при fail/TIMEOUT дозы и ранний старт `min_interval_sec`.
+- Plan `integral` / `prev_*` коммитятся в `_finalize_dose_plan_routing` **после** подтверждения dose routing (не до control_mode gate, не при discard/cooldown). Observe finalize трогает только `last_measurement_at` (без ΔI) — эквивалент `accumulate_integral=False`.
 
 **Из `pid_configs.{ec,ph}`:**
 - `close_zone` / `far_zone` — зоны PID-коэффициентов. При `far_zone <= close_zone` → `PlannerConfigurationError` на этапе build плана.
@@ -973,7 +994,10 @@ void handle_system_command(const char* cmd, cJSON* params) {
 | `CORRECTION_DECISION_MADE`       | `corr_check`        | Когда planner/runtime выбрал следующий correction contour в окне     |
 | `CORRECTION_COMPLETE`            | `corr_check`        | Когда `pH/EC` вошли в целевое окно                                   |
 | `CORRECTION_SKIPPED_COOLDOWN`    | `corr_check`        | Когда PID-контур ещё в `min_interval_sec` и доза откладывается       |
-| `CORRECTION_SKIPPED_DEAD_ZONE`   | `corr_check`        | Когда planner не видит допустимой дозы вне deadband                  |
+| `CORRECTION_SKIPPED_DOSE_DISCARDED` | `corr_check`     | Доза discarded (`below_min_dose_ms` / partial multi-component и т.п.); не success |
+| `CORRECTION_DOSE_CLAMPED`         | `corr_check`        | Saturation clamp (`clamped_to_max_dose_ms`); доза уходит, не discard |
+| `CORRECTION_SKIPPED_DEAD_ZONE`   | `corr_check`        | Истинный deadband (нет `dose_discarded_reason`); success=True        |
+| `CORRECTION_NO_EFFECT_RESET_FAILED` | `corr_check`    | Fail-closed: не удалось сбросить `no_effect_count` после success     |
 | `CORRECTION_LIMIT_POLICY_APPLIED` | `corr_check` / fill-start | Когда `solution_fill` запускает continuous correction без attempt caps |
 | `CORRECTION_ATTEMPT_CAP_IGNORED` | `corr_check` / fill | Когда `solution_fill` сознательно игнорирует достигнутый attempt cap |
 | `CORRECTION_SKIPPED_WATER_LEVEL` | `corr_check`        | Когда correction пропущен из-за низкого уровня воды                  |

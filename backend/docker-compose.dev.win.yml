@@ -428,7 +428,7 @@ services:
       - ./services:/app
     profiles:
       - tests
-    command: ["python", "-m", "pytest", "automation-engine/tests/test_pid_config_service.py", "automation-engine/tests/test_pid_config_service_cache_update.py", "automation-engine/tests/test_pid_config_type_safety.py", "automation-engine/tests/test_zone_automation_pid_cleanup.py", "automation-engine/test_pid_integration.py", "-v"]
+    command: ["python", "-m", "pytest", "automation-engine/test_ae3lite_pid_output_event.py", "automation-engine/test_ae3lite_pid_state_repository.py", "automation-engine/test_ae3lite_correction_planner.py", "-v"]
 
 volumes:
   postgres_data:

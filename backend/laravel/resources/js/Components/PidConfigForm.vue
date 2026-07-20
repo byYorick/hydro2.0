@@ -528,7 +528,7 @@ const FIELD_HELP: Record<string, string> = {
   'far.kp': 'Пропорциональный коэффициент для дальней зоны, когда отклонение от target ещё велико.',
   'far.ki': 'Интегральный коэффициент для дальней зоны. Обычно требует осторожной настройки, чтобы не накопить лишнюю дозу.',
   'far.kd': 'Дифференциальный коэффициент для дальней зоны. Помогает стабилизировать aggressive-коррекцию.',
-  max_integral: 'Предел накопления интегральной ошибки. Нужен, чтобы интегральная часть не разгоняла контур в saturation.',
+  max_integral: 'DEPRECATED для AE3: runtime читает controllers.*.max_integral из zone.correction. Поле zone.pid сохраняется для совместимости payload, на clamp интеграла не влияет.',
 }
 
 function fieldHelp(key: string): string {

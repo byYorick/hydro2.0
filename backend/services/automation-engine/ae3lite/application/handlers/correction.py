@@ -45,6 +45,7 @@ from ae3lite.domain.services.correction_planner import (
     CorrectionPlanner,
     DosePlan,
     resolve_dose_feedback_from_response,
+    _next_pid_state,
 )
 from ae3lite.domain.services.correction_transition_policy import (
     CorrectionTransitionPolicy,
@@ -66,6 +67,7 @@ from ae3lite.infrastructure.metrics import (
     CORRECTION_ESTOP_INTERRUPT,
     CORRECTION_EXHAUSTED,
     CORRECTION_NO_EFFECT,
+    CORRECTION_NO_EFFECT_RESET_FAILED,
     CORRECTION_OBSERVE_OUT_OF_BOUNDS,
     IRRIGATION_EC_COMPONENT_DOSE,
 )
@@ -681,15 +683,11 @@ class CorrectionHandler(BaseStageHandler):
             # с чистого листа. Сам business-alert остаётся в БД как history —
             # его resolves через notify-path после ack пользователя или через
             # AlertAutoResolver когда is_no_effect=false стабилизируется.
-            if self._pid_state_repository is not None:
-                try:
-                    await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
-                except Exception:
-                    _logger.warning(
-                        "Failed to reset no_effect_count on CORRECTION_COMPLETE for zone %s",
-                        task.zone_id,
-                        exc_info=True,
-                    )
+            await self._reset_no_effect_counts_fail_closed(
+                task=task,
+                corr=corr,
+                context="CORRECTION_COMPLETE",
+            )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         flow_hold = await self._interrupt_for_control_mode_dosing(
@@ -1003,15 +1001,11 @@ class CorrectionHandler(BaseStageHandler):
                         "current_ec": current_ec,
                     },
                 )
-                if self._pid_state_repository is not None:
-                    try:
-                        await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
-                    except Exception:
-                        _logger.warning(
-                            "Failed to reset no_effect_count on solution_low setup zone %s",
-                            task.zone_id,
-                            exc_info=True,
-                        )
+                await self._reset_no_effect_counts_fail_closed(
+                    task=task,
+                    corr=corr,
+                    context="CORRECTION_INTERRUPTED_SOLUTION_LOW",
+                )
                 self._observe_fail_safe_transition(
                     task=task,
                     reason="recirculation_solution_low",
@@ -1095,15 +1089,15 @@ class CorrectionHandler(BaseStageHandler):
         workflow_ready: bool,
         enforce_attempt_caps: bool,
     ) -> StageOutcome:
-        """Persist PID state, route a built ``DosePlan`` into the next FSM step.
+        """Route a built ``DosePlan`` into the next FSM step.
 
         Handles the post-planner tail of ``_run_check``:
-        * persist PID state updates
-        * log deferred action (if planner requested it)
-        * handle "no dose needed" (cooldown / dead zone / discarded)
+        * control_mode / flow_hold gate (before any plan PID persist)
+        * handle "no dose needed" (cooldown / true dead zone / discarded)
         * enforce per-direction attempt caps
         * save the dose plan into the correction state
         * decide priority (pending_ph / ec_first / ph_only)
+        * persist PID I/D only for the controller about to dose
         * log ``CORRECTION_DECISION_MADE`` + emit ``PID_OUTPUT`` event
         * return the ``enter_correction`` StageOutcome
 
@@ -1112,11 +1106,7 @@ class CorrectionHandler(BaseStageHandler):
         handler as orchestrator (no new class — just a cohesive private
         method that tests exercise end-to-end through handler fixtures).
         """
-        # Persist updated PID state so the controller has memory across attempts.
-        await self._persist_pid_state_updates(
-            zone_id=task.zone_id, updates=dose_plan.pid_state_updates, now=now,
-        )
-
+        # Flow-hold / control_mode must win before committing plan integral.
         if dose_plan.needs_any:
             flow_hold = await self._interrupt_for_control_mode_dosing(
                 task=task,
@@ -1125,33 +1115,6 @@ class CorrectionHandler(BaseStageHandler):
             )
             if flow_hold is not None:
                 return flow_hold
-
-        if dose_plan.deferred_action:
-            selected_action = "ec" if dose_plan.needs_ec else ("ph_up" if dose_plan.needs_ph_up else "ph_down")
-            await self._log_correction_event(
-                zone_id=task.zone_id,
-                event_type="CORRECTION_ACTION_DEFERRED",
-                task=task,
-                corr=corr,
-                payload={
-                    "selected_action": selected_action,
-                    "deferred_action": dose_plan.deferred_action,
-                    "reason": dose_plan.deferred_reason,
-                    "current_ph": current_ph,
-                    "current_ec": current_ec,
-                    "target_ph": target_ph,
-                    "target_ec": target_ec,
-                    "target_ph_min": runtime.target_ph_min,
-                    "target_ph_max": runtime.target_ph_max,
-                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
-                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
-                    **(
-                        dict(dose_plan.deferred_details)
-                        if isinstance(dose_plan.deferred_details, Mapping)
-                        else {}
-                    ),
-                },
-            )
 
         if not dose_plan.needs_any and dose_plan.retry_after_sec:
             await self._log_correction_event(
@@ -1180,6 +1143,9 @@ class CorrectionHandler(BaseStageHandler):
 
         if not dose_plan.needs_any:
             if dose_plan.dose_discarded_reason:
+                # Discard ≠ deadband: targets may still be out of tolerance.
+                # Retry corr_check with backoff; count toward attempt exhaustion.
+                # Do NOT emit CORRECTION_SKIPPED_DEAD_ZONE or success=True.
                 await self._log_correction_event(
                     zone_id=task.zone_id,
                     event_type="CORRECTION_SKIPPED_DOSE_DISCARDED",
@@ -1196,6 +1162,43 @@ class CorrectionHandler(BaseStageHandler):
                         "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
                     },
                 )
+                # Freeze measurement clock so retry does not inflate I via wall-clock dt.
+                await self._touch_pid_measurement_clock(
+                    zone_id=task.zone_id,
+                    now=now,
+                    current_ph=current_ph,
+                    current_ec=current_ec,
+                )
+                next_attempt = int(corr.attempt) + 1
+                if enforce_attempt_caps and next_attempt >= corr.max_attempts:
+                    return await self._correction_exhausted(
+                        task=task, plan=plan, corr=replace(corr, attempt=next_attempt),
+                    )
+                if not enforce_attempt_caps and next_attempt >= corr.max_attempts:
+                    await self._log_attempt_cap_ignored(
+                        task=task,
+                        corr=corr,
+                        cap_type="overall",
+                        current_value=next_attempt,
+                        limit_value=corr.max_attempts,
+                    )
+                if current_stage == "prepare_recirculation_check" and not workflow_ready:
+                    retry_delay_sec = int(runtime.level_poll_interval_sec)
+                else:
+                    retry_delay_sec = self._correction_retry_delay_sec(
+                        correction_cfg=self._correction_config(plan=plan, task=task),
+                        key="decision_window_retry_sec",
+                    )
+                next_corr = replace(corr, corr_step="corr_check", attempt=next_attempt)
+                return self._enter_correction_after_delay_or_interrupt(
+                    task=task,
+                    plan=plan,
+                    corr=next_corr,
+                    now=now,
+                    due_delay_sec=retry_delay_sec,
+                )
+
+            # True deadband / within PID dead zone — not a discarded dose.
             if current_stage == "prepare_recirculation_check" and not workflow_ready:
                 next_corr = replace(corr, corr_step="corr_check")
                 return self._enter_correction_after_delay_or_interrupt(
@@ -1242,6 +1245,54 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
+
+        # Observability: true partial discard (component skipped) vs saturation clamp.
+        if dose_plan.dose_discarded_reason:
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_DOSE_DISCARDED",
+                task=task,
+                corr=corr,
+                payload={
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "reason": dose_plan.dose_discarded_reason,
+                    "partial": True,
+                    "needs_ec": dose_plan.needs_ec,
+                    "needs_ph_up": dose_plan.needs_ph_up,
+                    "needs_ph_down": dose_plan.needs_ph_down,
+                    **(dict(dose_plan.dose_discarded_details) if isinstance(dose_plan.dose_discarded_details, Mapping) else {}),
+                    "target_ph_min": runtime.target_ph_min,
+                    "target_ph_max": runtime.target_ph_max,
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                },
+            )
+        elif dose_plan.dose_clamped_reason:
+            # Clamp is successful routing with capped pulse — not a skip/discard.
+            if dose_plan.needs_ec:
+                CORRECTION_DOSE_CLAMPED.labels(pid_type="ec").inc()
+            if dose_plan.needs_ph_up or dose_plan.needs_ph_down:
+                CORRECTION_DOSE_CLAMPED.labels(pid_type="ph").inc()
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_DOSE_CLAMPED",
+                task=task,
+                corr=corr,
+                payload={
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "reason": dose_plan.dose_clamped_reason,
+                    "needs_ec": dose_plan.needs_ec,
+                    "needs_ph_up": dose_plan.needs_ph_up,
+                    "needs_ph_down": dose_plan.needs_ph_down,
+                    **(dict(dose_plan.dose_clamped_details) if isinstance(dose_plan.dose_clamped_details, Mapping) else {}),
+                    "target_ph_min": runtime.target_ph_min,
+                    "target_ph_max": runtime.target_ph_max,
+                    "target_ec_min": self._effective_ec_min(task=task, runtime=runtime),
+                    "target_ec_max": self._effective_ec_max(task=task, runtime=runtime),
+                },
+            )
 
         # Per-direction attempt cap enforcement (EC + pH separately).
         if enforce_attempt_caps:
@@ -1358,6 +1409,18 @@ class CorrectionHandler(BaseStageHandler):
             decision_reason = "ph_raise_needed" if dose_plan.needs_ph_up else "ph_lower_needed"
         else:
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
+
+        # Persist PID plan updates only after dose routing is confirmed and not
+        # flow-held. Dual EC+PH: commit I only for the controller about to dose;
+        # peer gets measurement-clock touch only (integral freeze).
+        await self._persist_pid_state_updates(
+            zone_id=task.zone_id,
+            updates=self._select_pid_updates_for_persist(
+                dose_plan=dose_plan,
+                selected_action=str(selected_action),
+            ),
+            now=now,
+        )
 
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -3062,13 +3125,30 @@ class CorrectionHandler(BaseStageHandler):
                 "is_no_effect": is_no_effect,
             },
         )
+        # Integral freeze: full accumulate_integral=False contract (clock + D/prev,
+        # no ΔI) for hold/observe dead time.
+        runtime = plan.runtime
+        target_ph = float(self._effective_ph_target(task=task, runtime=runtime))
+        target_ec = float(self._effective_ec_target(task=task, runtime=runtime))
+        if pid_type == "ec":
+            gap_for_freeze = max(0.0, target_ec - float(observed_value))
+        else:
+            gap_for_freeze = abs(target_ph - float(observed_value))
+        frozen_pid = _next_pid_state(
+            kind=pid_type,
+            gap=gap_for_freeze,
+            current_value=float(observed_value),
+            controller_cfg={},
+            pid_entry=pid_entry,
+            now=now,
+            accumulate_integral=False,
+        )
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
             now=now,
             updates={
                 pid_type: {
-                    "last_measurement_at": now,
-                    "last_measured_value": observed_value,
+                    **dict(frozen_pid),
                     "no_effect_count": next_no_effect_count,
                     "stats": self._observation_analyzer.merge_adaptive_stats(
                         pid_entry=pid_entry,
@@ -3340,6 +3420,132 @@ class CorrectionHandler(BaseStageHandler):
         except Exception:
             _logger.debug("Не удалось записать PID_OUTPUT zone event", exc_info=True)
 
+    @staticmethod
+    def _select_pid_updates_for_persist(
+        *,
+        dose_plan: DosePlan,
+        selected_action: str,
+    ) -> dict[str, Any]:
+        """Commit plan PID I/D only for the controller about to dose.
+
+        Peer controller (pending dual EC+PH) gets a measurement-clock touch
+        without integral / prev_* — equivalent to ``accumulate_integral=False``
+        so hold/observe of the active dose cannot wind up the pending loop.
+        """
+        raw = dose_plan.pid_state_updates
+        if not isinstance(raw, Mapping):
+            return {}
+
+        def _clock_touch(entry: Mapping[str, Any]) -> dict[str, Any]:
+            touch: dict[str, Any] = {}
+            if "last_measurement_at" in entry:
+                touch["last_measurement_at"] = entry["last_measurement_at"]
+            if "last_measured_value" in entry:
+                touch["last_measured_value"] = entry["last_measured_value"]
+            # Sync D/prev without committing peer integral (full freeze contract).
+            if "prev_error" in entry:
+                touch["prev_error"] = entry["prev_error"]
+            if "prev_derivative" in entry:
+                touch["prev_derivative"] = entry["prev_derivative"]
+            return touch
+
+        out: dict[str, Any] = {}
+        action = str(selected_action or "").strip().lower()
+        if action == "ec":
+            ec = raw.get("ec")
+            if isinstance(ec, Mapping):
+                out["ec"] = dict(ec)
+            if (dose_plan.needs_ph_up or dose_plan.needs_ph_down):
+                ph = raw.get("ph")
+                if isinstance(ph, Mapping):
+                    touch = _clock_touch(ph)
+                    if touch:
+                        out["ph"] = touch
+        elif action in {"ph_up", "ph_down", "ph"}:
+            ph = raw.get("ph")
+            if isinstance(ph, Mapping):
+                out["ph"] = dict(ph)
+            if dose_plan.needs_ec:
+                ec = raw.get("ec")
+                if isinstance(ec, Mapping):
+                    touch = _clock_touch(ec)
+                    if touch:
+                        out["ec"] = touch
+        return out
+
+    async def _touch_pid_measurement_clock(
+        self,
+        *,
+        zone_id: int,
+        now: datetime,
+        current_ph: float,
+        current_ec: float,
+    ) -> None:
+        """Advance last_measurement_at without committing plan integral (discard retry)."""
+        if self._pid_state_repository is None:
+            return
+        await self._persist_pid_state_updates(
+            zone_id=zone_id,
+            now=now,
+            updates={
+                "ec": {
+                    "last_measurement_at": now,
+                    "last_measured_value": round(float(current_ec), 6),
+                    "prev_derivative": 0.0,
+                },
+                "ph": {
+                    "last_measurement_at": now,
+                    "last_measured_value": round(float(current_ph), 6),
+                    "prev_derivative": 0.0,
+                },
+            },
+        )
+
+    async def _reset_no_effect_counts_fail_closed(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+        context: str,
+    ) -> None:
+        """Reset no_effect_count with one retry; fail-closed on persistent error.
+
+        Stale ``no_effect_count`` can block later corrections via alert-block
+        policy — silently swallowing the failure leaves the zone stuck.
+        """
+        if self._pid_state_repository is None:
+            return
+        zone_id = int(task.zone_id)
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
+                return
+            except Exception as exc:
+                last_exc = exc
+                _logger.warning(
+                    "Failed to reset no_effect_count (%s) for zone %s attempt=%s",
+                    context,
+                    zone_id,
+                    attempt,
+                    exc_info=True,
+                )
+        CORRECTION_NO_EFFECT_RESET_FAILED.inc()
+        try:
+            await self._log_correction_event(
+                zone_id=zone_id,
+                event_type="CORRECTION_NO_EFFECT_RESET_FAILED",
+                task=task,
+                corr=corr,
+                payload={"context": context, "error": str(last_exc) if last_exc else "unknown"},
+            )
+        except Exception:
+            _logger.debug("Failed to emit CORRECTION_NO_EFFECT_RESET_FAILED", exc_info=True)
+        raise TaskExecutionError(
+            "corr_no_effect_reset_failed",
+            f"Не удалось сбросить no_effect_count для зоны {zone_id} ({context})",
+        ) from last_exc
+
     async def _persist_pid_state_updates(
         self,
         *,
@@ -3349,9 +3555,12 @@ class CorrectionHandler(BaseStageHandler):
     ) -> None:
         """Persist PID state updates (integral, prev_error, etc.) to the DB.
 
-        Called after every ``_run_check`` so the I- and D-terms accumulate
-        across correction attempts.  No-op if no repository is wired or the
-        update dict is empty.
+        Plan I/D updates are committed from ``_finalize_dose_plan_routing`` only
+        after dose routing is confirmed (not on flow_hold / discard / cooldown).
+        Observe finalize writes ``last_measurement_at`` without ΔI — equivalent
+        to ``accumulate_integral=False`` for hold/observe dead time.
+        ``last_dose_at`` is written only after terminal DONE in dose steps.
+        No-op if no repository is wired or the update dict is empty.
         """
         if not updates or self._pid_state_repository is None:
             return

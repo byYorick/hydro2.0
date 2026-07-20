@@ -251,19 +251,33 @@ class PrepareRecircCheckHandler(BaseStageHandler):
     async def _clear_correction_blocks(self, *, task: Any, reason: str) -> None:
         if self._pid_state_repository is None:
             return
-        try:
-            await self._pid_state_repository.reset_no_effect_counts(zone_id=int(task.zone_id))
-            _logger.info(
-                "prepare_recirculation_check: сброшен no_effect block zone_id=%s reason=%s",
-                task.zone_id,
-                reason,
-            )
-        except Exception:
-            _logger.warning(
-                "prepare_recirculation_check: не удалось сбросить no_effect_count zone_id=%s",
-                getattr(task, "zone_id", None),
-                exc_info=True,
-            )
+        zone_id = int(task.zone_id)
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                await self._pid_state_repository.reset_no_effect_counts(zone_id=zone_id)
+                _logger.info(
+                    "prepare_recirculation_check: сброшен no_effect block zone_id=%s reason=%s",
+                    zone_id,
+                    reason,
+                )
+                return
+            except Exception as exc:
+                last_exc = exc
+                _logger.warning(
+                    "prepare_recirculation_check: не удалось сбросить no_effect_count "
+                    "zone_id=%s attempt=%s",
+                    zone_id,
+                    attempt,
+                    exc_info=True,
+                )
+        from ae3lite.infrastructure.metrics import CORRECTION_NO_EFFECT_RESET_FAILED
+
+        CORRECTION_NO_EFFECT_RESET_FAILED.inc()
+        raise TaskExecutionError(
+            "corr_no_effect_reset_failed",
+            f"Не удалось сбросить no_effect_count для зоны {zone_id} ({reason}): {last_exc}",
+        )
 
     def _build_correction_state(
         self,

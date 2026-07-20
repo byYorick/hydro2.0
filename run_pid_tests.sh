@@ -35,8 +35,8 @@ run_php_tests() {
         sleep 10
     fi
     
-    echo "Запуск PHP unit тестов..."
-    docker-compose -f docker-compose.dev.yml exec -T laravel php artisan test --filter=ZonePidConfig
+    echo "Запуск PHP unit тестов (zone.pid authority + pid-logs)..."
+    docker-compose -f docker-compose.dev.yml exec -T laravel php artisan test --filter=ZonePid
     local exit_code=$?
     
     if [ $exit_code -eq 0 ]; then

@@ -449,6 +449,10 @@ def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
         )
 
 
+# Shape template for missing correction keys. Theatre / ignored-by-runtime
+# (schema still accepts; AE3 does not enforce): controllers.*.mode,
+# anti_windup.*, overshoot_guard.*, no_effect.enabled/max_count,
+# safety.safe_mode_on_no_effect. See zone_correction.py Field descriptions.
 _REQUIRED_ZONE_CORRECTION_TEMPLATE: dict[str, Any] = {
     "runtime": {
         "required_node_type": "",

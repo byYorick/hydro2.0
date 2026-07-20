@@ -205,12 +205,11 @@ automation-engine/
 ├── repositories/         # SQL read-path (зоны, телеметрия, узлы, рецепты)
 ├── services/             # Зарезервировано (пакет может быть пустым)
 ├── infrastructure/       # CommandBus и сопутствующие модули (если есть)
-├── utils/
+├── utils/                  # logging_context, retry, zone_prioritizer
 ├── recipe_utils.py
 ├── health_monitor.py
 ├── alerts_manager.py
 ├── command_bus.py
-├── correction_cooldown.py
 ├── test_*.py
 └── tests/                  # Доп. pytest-модули
 ```

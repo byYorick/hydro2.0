@@ -16,10 +16,20 @@
 Актуализация PID authority для AE3 (2026-07-20):
 - nested `targets.ph.controller` / `targets.ec.controller` (Kp/Ki/Kd/deadband/max_dose/…)
   в схеме effective-targets — **legacy/документальный** контракт Laravel-модели;
-  **AE3 runtime их не читает** как source of truth;
-- AE3 PID tuning: `zone.pid.{ph,ec}` + `zone.correction.resolved_config.controllers.*`;
-- process gain / observe timing: `zone.process_calibration.*`;
-- см. `PID_CONFIG_REFERENCE.md`.
+  **AE3 runtime их не читает** как source of truth и **не** должен получать
+  новые поля «второго редактора»;
+- **канон AE3 (единственный runtime path):**
+
+  | Параметр | Source of truth |
+  |----------|-----------------|
+  | target pH/EC | recipe phase only |
+  | kp/ki/kd, dead/close/far | `zone.pid.{ph,ec}` |
+  | min_interval_sec, max_dose_ml, max_integral, derivative_filter_alpha, observe | `zone.correction.controllers.*` |
+  | process gains / transport_delay / settle | `zone.process_calibration.*` |
+  | min/max_dose_ms, ml_per_sec | pump_calibration |
+
+- `controllers.kp/ki/kd` при наличии `zone.pid` — fallback only (LiveEdit скрывает);
+- см. `PID_CONFIG_REFERENCE.md` §0.
 
 Актуализация per-phase EC и day/night (2026-04-13):
 - runtime-spec для two-tank добавляет `target_ec_prepare`, `target_ec_prepare_min`, `target_ec_prepare_max`, `npk_ec_share` — см. §10;
@@ -201,10 +211,11 @@ interface PhTarget {
   min: number;        // Минимально допустимое значение (например, 5.8)
   max: number;        // Максимально допустимое значение (например, 6.2)
 
-  // LEGACY / documentation-only для AE3:
-  // AE3 НЕ читает эти поля как PID authority.
-  // Канон: zone.pid.* + zone.correction.controllers.* + process_calibration.
-  // Опциональные параметры PID контроллера
+  // LEGACY / documentation-only для AE3 — НЕ authority.
+  // AE3 НЕ читает эти поля. Не добавляйте сюда новые runtime-параметры:
+  // тюнинг PID → zone.pid.*; caps/observe/max_integral → zone.correction.controllers.*;
+  // gains/delays → zone.process_calibration.*; targets → recipe phase.
+  // Опциональные параметры PID контроллера (исторический Laravel shape)
   controller?: {
     mode: "PID" | "ON_OFF";   // Режим контроллера
     Kp?: number;              // Пропорциональный коэффициент
@@ -246,7 +257,7 @@ interface EcTarget {
   max: number;        // Максимально допустимое значение
 
   // LEGACY / documentation-only для AE3 (см. §4.1 / шапку документа):
-  // AE3 НЕ читает эти поля как PID authority.
+  // AE3 НЕ читает эти поля как PID authority. Не расширять как runtime contract.
   // Опциональные параметры контроллера
   controller?: {
     mode: "PID" | "ON_OFF";
