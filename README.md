@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/banner.svg" alt="hydro 2.0 — Smart Hydroponic Greenhouse Control" width="100%"/>
+  <img src="social-preview.png" alt="hydro 2.0 — Smart Hydroponic Greenhouse Control" width="100%"/>
 </p>
 
 <p align="center">
