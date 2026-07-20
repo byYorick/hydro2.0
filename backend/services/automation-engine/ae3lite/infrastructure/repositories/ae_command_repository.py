@@ -311,6 +311,41 @@ class PgAeCommandRepository:
             )
         return dict(row) if row is not None else None
 
+    async def mark_recovery_batch_resume(
+        self,
+        *,
+        ae_command_id: int,
+        stage_name: str,
+        stage_execution_token: str,
+        now: datetime,
+    ) -> bool:
+        """Помечает command-stage как требующий resume полного RuntimePlan batch."""
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        marker = {
+            "stage": stage_name,
+            "stage_execution_token": stage_execution_token,
+        }
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ae_commands
+                SET payload = jsonb_set(
+                        COALESCE(payload, '{}'::jsonb),
+                        '{_ae3_recovery_resume}',
+                        $2::jsonb,
+                        true
+                    ),
+                    updated_at = $3
+                WHERE id = $1
+                RETURNING id
+                """,
+                ae_command_id,
+                marker,
+                normalized_now,
+            )
+        return row is not None
+
     async def resolve_greenhouse_uid(self, *, zone_id: int) -> Optional[str]:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -440,7 +475,84 @@ class PgAeCommandRepository:
             )
         return dict(row) if row is not None else None
 
-    async def get_latest_for_task(self, *, task_id: int) -> Optional[Mapping[str, Any]]:
+    async def get_latest_for_task(
+        self,
+        *,
+        task_id: int,
+        exclude_fail_safe: bool = True,
+    ) -> Optional[Mapping[str, Any]]:
+        """Возвращает последнюю ae_command задачи.
+
+        По умолчанию исключает fail-safe shutdown publishes (`_ae3_fail_safe`),
+        чтобы они не маскировали штатный command-stage recovery.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if exclude_fail_safe:
+                row = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM ae_commands
+                    WHERE task_id = $1
+                      AND NOT (COALESCE(payload, '{}'::jsonb) @> '{"_ae3_fail_safe": true}'::jsonb)
+                    ORDER BY step_no DESC, id DESC
+                    LIMIT 1
+                    """,
+                    task_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM ae_commands
+                    WHERE task_id = $1
+                    ORDER BY step_no DESC, id DESC
+                    LIMIT 1
+                    """,
+                    task_id,
+                )
+        return dict(row) if row is not None else None
+
+    async def has_recovery_batch_resume(
+        self,
+        *,
+        task_id: int,
+        stage_name: str,
+        stage_execution_token: str,
+    ) -> bool:
+        """True, если у задачи есть resume-marker текущего stage execution."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id
+                FROM ae_commands
+                WHERE task_id = $1
+                  AND NOT (COALESCE(payload, '{}'::jsonb) @> '{"_ae3_fail_safe": true}'::jsonb)
+                  AND COALESCE(payload->'_ae3_recovery_resume'->>'stage', '') = $2
+                  AND COALESCE(
+                        payload->'_ae3_recovery_resume'->>'stage_execution_token',
+                        ''
+                      ) = $3
+                ORDER BY step_no DESC, id DESC
+                LIMIT 1
+                """,
+                task_id,
+                str(stage_name or "").strip(),
+                str(stage_execution_token or "").strip(),
+            )
+        return row is not None
+
+    async def get_latest_by_planner_step(
+        self,
+        *,
+        task_id: int,
+        planner_step: str,
+    ) -> Optional[Mapping[str, Any]]:
+        """Возвращает последний execution record детерминированного шага planner.
+
+        Fail-safe publishes исключаются: они не участвуют в штатном batch resume.
+        """
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -448,10 +560,13 @@ class PgAeCommandRepository:
                 SELECT *
                 FROM ae_commands
                 WHERE task_id = $1
+                  AND planner_step = $2
+                  AND NOT (COALESCE(payload, '{}'::jsonb) @> '{"_ae3_fail_safe": true}'::jsonb)
                 ORDER BY step_no DESC, id DESC
                 LIMIT 1
                 """,
                 task_id,
+                planner_step,
             )
         return dict(row) if row is not None else None
 

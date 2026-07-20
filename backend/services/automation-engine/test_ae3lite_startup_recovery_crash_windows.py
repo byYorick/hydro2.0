@@ -265,8 +265,71 @@ async def test_w4_crash_in_waiting_command_recovers_without_republish() -> None:
 
 
 @pytest.mark.asyncio
-async def test_w5_delayed_terminal_done_after_restart_advances_stage() -> None:
-    """W5: terminal DONE после restart → reconcile продвигает stage без republish."""
+async def test_w4b_crash_after_first_done_of_irrigation_batch_resumes_same_stage() -> None:
+    """W4b: первая команда batch DONE → recovery не пропускает остальные команды stage."""
+    prefix = f"ae3-cw-w4b-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    recovery_use_case, task_repo, command_repo, _lease_repo, _alerts = _build_use_case()
+    await _sweep_orphans(now)
+    baseline_scanned = await _count_active_recovery_tasks()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=now,
+            topology="two_tank",
+            current_stage="irrigation_start",
+            workflow_phase="irrigating",
+            task_type="irrigation_start",
+        )
+        cmd_id = f"{prefix}-cmd"
+        legacy_id = await _insert_legacy_command(
+            zone_id=zone_id,
+            cmd_id=cmd_id,
+            status="DONE",
+            ack_at=now + timedelta(seconds=1),
+            now=now + timedelta(seconds=1),
+        )
+        await _insert_ae_command(
+            task_id=task_id,
+            now=now,
+            cmd_id=cmd_id,
+            external_id=str(legacy_id),
+            planner_step="irrigation_start:0:valve_solution_supply",
+            node_uid="nd-irrig-1",
+            channel="valve_solution_supply",
+            payload={
+                "cmd": "set_relay",
+                "params": {"state": True},
+                "cmd_id": cmd_id,
+            },
+        )
+
+        result = await recovery_use_case.run(now=now + timedelta(seconds=2))
+
+        updated = await task_repo.get_by_id(task_id=task_id)
+        ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
+        assert result.scanned_tasks == baseline_scanned + 1
+        assert result.failed_tasks == 0
+        assert result.recovered_waiting_command_tasks == 1
+        assert updated is not None
+        assert updated.status == "pending"
+        assert updated.current_stage == "irrigation_start"
+        assert ae_command is not None
+        assert ae_command["terminal_status"] == "DONE"
+        assert ae_command["payload"]["_ae3_recovery_resume"]["stage"] == "irrigation_start"
+        assert await _count_ae_commands(task_id=task_id) == 1
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_w5_delayed_terminal_done_after_restart_resumes_command_stage() -> None:
+    """W5: terminal DONE после restart → reconcile возобновляет полный stage без republish."""
     prefix = f"ae3-cw-w5-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     reconcile_use_case, _recovery, task_repo, command_repo, workflow_repo = (
@@ -323,9 +386,9 @@ async def test_w5_delayed_terminal_done_after_restart_advances_stage() -> None:
         assert second.progressed_tasks == 1
         assert updated is not None
         assert updated.status == "pending"
-        assert updated.current_stage == "clean_fill_check"
+        assert updated.current_stage == "clean_fill_start"
         assert workflow_row is not None
-        assert workflow_row.payload.get("ae3_cycle_start_stage") == "clean_fill_check"
+        assert workflow_row.payload.get("ae3_cycle_start_stage") == "clean_fill_start"
         assert ae_command is not None
         assert ae_command["terminal_status"] == "DONE"
         assert await _count_ae_commands(task_id=task_id) == 1

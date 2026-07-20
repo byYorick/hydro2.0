@@ -3,8 +3,8 @@
 Spec: аудит критика #5 — explicit recovery algorithm using topology registry.
 
 Tests:
- 1. Command DONE + next_stage → task transitioned to next stage
- 2. Command DONE + terminal_error → task failed with terminal error
+ 1. Command DONE → current stage requeued for full RuntimePlan batch verification
+ 2. Command DONE + terminal_error → current stage requeued before terminal routing
  3. Correction in-flight (task.correction != None) → task failed (safe)
  4. Command still pending (waiting_command) → stays waiting_command
  5. Task in claimed/running (no confirmed command) → task failed
@@ -340,8 +340,8 @@ def _make_use_case(
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-async def test_recovery_command_done_routes_to_next_stage():
-    """Command DONE + clean_fill_start has next_stage=clean_fill_check → requeue to next stage."""
+async def test_recovery_command_done_requeues_same_stage_for_batch_verification():
+    """Command DONE подтверждает step, но не весь batch command-stage."""
     task = _make_task(status="waiting_command", stage="clean_fill_start")
     uc, repo, _leases = _make_use_case(tasks=[task], gateway_state="done")
 
@@ -350,11 +350,11 @@ async def test_recovery_command_done_routes_to_next_stage():
     assert result.scanned_tasks == 1
     assert result.failed_tasks == 0
     assert len(repo.requeued) == 1
-    assert repo.requeued[0]["workflow"].current_stage == "clean_fill_check"
+    assert repo.requeued[0]["workflow"].current_stage == "clean_fill_start"
 
 
-async def test_recovery_terminal_stage_done_fails_task(monkeypatch: pytest.MonkeyPatch):
-    """Command DONE + terminal_error stage (clean_fill_timeout_stop) → task failed."""
+async def test_recovery_terminal_stage_done_requeues_for_full_batch(monkeypatch: pytest.MonkeyPatch):
+    """Даже terminal_error применяется handler'ом только после полного command batch."""
     zone_events: list[tuple[int, str, dict]] = []
 
     async def _record_zone_event(zone_id: int, event_type: str, details: dict | None = None) -> bool:
@@ -382,16 +382,16 @@ async def test_recovery_terminal_stage_done_fails_task(monkeypatch: pytest.Monke
 
     result = await uc.run(now=NOW)
 
-    assert result.failed_tasks == 1
-    assert repo.failed[0]["error_code"] == "clean_tank_not_filled_timeout"
-    assert len(repo.requeued) == 0
-    assert len(alerts.calls) == 1
-    assert alerts.calls[0]["details"]["error_code"] == "clean_tank_not_filled_timeout"
+    assert result.failed_tasks == 0
+    assert len(repo.failed) == 0
+    assert len(repo.requeued) == 1
+    assert repo.requeued[0]["workflow"].current_stage == "clean_fill_timeout_stop"
+    assert len(alerts.calls) == 0
     assert len(leases.released) == 1
     assert workflow_repo.upserts
-    assert workflow_repo.upserts[0]["workflow_phase"] == "idle"
+    assert workflow_repo.upserts[0]["workflow_phase"] == "tank_filling"
     assert zone_events
-    assert zone_events[0][2]["outcome"] == "failed"
+    assert zone_events[0][2]["outcome"] == "recovered_waiting_command"
     assert zone_events[0][2]["stage"] == "clean_fill_timeout_stop"
 
 
@@ -491,8 +491,8 @@ async def test_recovery_claimed_task_fails():
     assert leases.released[0]["owner"] == "worker-a"
 
 
-async def test_recovery_running_with_done_advances_to_next_stage():
-    """running + legacy DONE → topology transition без fail (фаза 2)."""
+async def test_recovery_running_with_done_requeues_same_stage():
+    """running + legacy DONE → batch resume без преждевременного topology transition."""
     task = _make_task(status="running", stage="prepare_recirculation_start")
     uc, repo, _leases = _make_use_case(tasks=[task], gateway_state="done")
 
@@ -501,7 +501,7 @@ async def test_recovery_running_with_done_advances_to_next_stage():
     assert result.failed_tasks == 0
     assert result.recovered_waiting_command_tasks == 1
     assert len(repo.requeued) == 1
-    assert repo.requeued[0]["workflow"].current_stage == "prepare_recirculation_check"
+    assert repo.requeued[0]["workflow"].current_stage == "prepare_recirculation_start"
 
 
 async def test_recovery_poll_stage_done_requeues_same_stage_not_completed():
@@ -536,8 +536,8 @@ async def test_recovery_terminal_ready_stage_done_marks_completed():
     assert len(repo.requeued) == 0
 
 
-async def test_recovery_generic_cycle_start_startup_done_marks_completed():
-    """generic_cycle_start startup (command, no next_stage) → mark_completed after DONE."""
+async def test_recovery_generic_cycle_start_startup_done_requeues_for_batch_verification():
+    """Даже single-command topology завершает stage только через обычный handler."""
     task = _make_task(
         status="waiting_command",
         stage="startup",
@@ -549,9 +549,11 @@ async def test_recovery_generic_cycle_start_startup_done_marks_completed():
     result = await uc.run(now=NOW)
 
     assert result.failed_tasks == 0
-    assert result.completed_tasks == 1
-    assert repo.completed == [task.id]
-    assert len(repo.requeued) == 0
+    assert result.completed_tasks == 0
+    assert result.recovered_waiting_command_tasks == 1
+    assert repo.completed == []
+    assert len(repo.requeued) == 1
+    assert repo.requeued[0]["workflow"].current_stage == "startup"
 
 
 async def test_recovery_running_with_pending_legacy_stays_waiting_command():
@@ -688,7 +690,7 @@ async def test_recovery_unknown_stage_syncs_workflow_idle_before_fail() -> None:
     }]
 
 
-async def test_recovery_success_event_reports_next_stage(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_recovery_success_event_reports_resumed_stage(monkeypatch: pytest.MonkeyPatch) -> None:
     zone_events: list[tuple[int, str, dict]] = []
 
     async def _record_zone_event(zone_id: int, event_type: str, details: dict | None = None) -> bool:
@@ -713,7 +715,7 @@ async def test_recovery_success_event_reports_next_stage(monkeypatch: pytest.Mon
     assert zone_events
     assert zone_events[0][1] == "AE_STARTUP_RECOVERY_OUTCOME"
     assert zone_events[0][2]["outcome"] == "recovered_waiting_command"
-    assert zone_events[0][2]["stage"] == "clean_fill_check"
+    assert zone_events[0][2]["stage"] == "clean_fill_start"
 
 
 async def test_recovery_gateway_fail_syncs_workflow_rollback() -> None:

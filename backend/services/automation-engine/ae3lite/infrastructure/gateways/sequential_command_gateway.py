@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 _NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "RUNNING"})
 _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"})
 _PROTOCOL_VIOLATION_STATUSES = frozenset({"ACCEPTED"})
+_AE3_FAIL_SAFE_KEY = "_ae3_fail_safe"
+_AE3_STAGE_EXECUTION_TOKEN_KEY = "_ae3_stage_execution_token"
+_AE3_RECOVERY_RESUME_KEY = "_ae3_recovery_resume"
+_PUMP_MAIN_CHANNEL = "pump_main"
 
 
 def _response_details_from_legacy_row(legacy_row: Mapping[str, Any]) -> dict[str, Any]:
@@ -126,6 +130,70 @@ class SequentialCommandGateway:
         current = await get_by_id(task_id=task_id)
         return current is None
 
+    def _stage_execution_token(self, *, task: Any) -> str:
+        stage = str(getattr(task, "current_stage", "") or "").strip() or "unknown"
+        workflow = getattr(task, "workflow", None)
+        anchor = getattr(workflow, "stage_entered_at", None)
+        if not isinstance(anchor, datetime):
+            anchor = getattr(task, "created_at", None)
+        if isinstance(anchor, datetime):
+            return f"{stage}:{anchor.isoformat()}"
+        return f"{stage}:task:{int(getattr(task, 'id', 0) or 0)}"
+
+    async def mark_recovery_batch_resume(self, *, task: Any, now: datetime) -> bool:
+        """Персистентно разрешает skip DONE planner_step только для recovery stage-run."""
+        ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
+        if ae_command is None or not str(ae_command.get("planner_step") or "").strip():
+            return False
+        mark_resume = getattr(self._command_repository, "mark_recovery_batch_resume", None)
+        if not callable(mark_resume):
+            return False
+        return bool(
+            await mark_resume(
+                ae_command_id=int(ae_command["id"]),
+                stage_name=str(getattr(task, "current_stage", "") or ""),
+                stage_execution_token=self._stage_execution_token(task=task),
+                now=now,
+            )
+        )
+
+    async def _load_recovery_resume_marker(self, *, task: Any) -> Mapping[str, Any] | None:
+        ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
+        if ae_command is None:
+            return None
+        payload = ae_command.get("payload")
+        if not isinstance(payload, Mapping):
+            return None
+        marker = payload.get(_AE3_RECOVERY_RESUME_KEY)
+        if not isinstance(marker, Mapping):
+            return None
+        stage = str(getattr(task, "current_stage", "") or "").strip()
+        token = self._stage_execution_token(task=task)
+        if (
+            str(marker.get("stage") or "").strip() != stage
+            or str(marker.get("stage_execution_token") or "").strip() != token
+        ):
+            return None
+        return {
+            "stage": stage,
+            "stage_execution_token": token,
+        }
+
+    async def _recovery_batch_resume_active(self, *, task: Any) -> bool:
+        stage = str(getattr(task, "current_stage", "") or "").strip()
+        token = self._stage_execution_token(task=task)
+        has_resume = getattr(self._command_repository, "has_recovery_batch_resume", None)
+        if callable(has_resume):
+            return bool(
+                await has_resume(
+                    task_id=task.id,
+                    stage_name=stage,
+                    stage_execution_token=token,
+                )
+            )
+        # Fallback для unit-моков без has_recovery_batch_resume.
+        return await self._load_recovery_resume_marker(task=task) is not None
+
     async def run_batch(
         self,
         *,
@@ -136,14 +204,40 @@ class SequentialCommandGateway:
     ) -> Mapping[str, Any]:
         current_task = task
         combined_statuses: list[dict[str, Any]] = []
+        recovery_resume_marker: Mapping[str, Any] | None = None
+        if track_task_state and await self._recovery_batch_resume_active(task=task):
+            recovery_resume_marker = await self._load_recovery_resume_marker(task=task)
+            if recovery_resume_marker is None:
+                # has_recovery_batch_resume нашёл marker, но latest payload без него —
+                # восстановим канонический marker из текущего stage token.
+                recovery_resume_marker = {
+                    "stage": str(getattr(task, "current_stage", "") or "").strip(),
+                    "stage_execution_token": self._stage_execution_token(task=task),
+                }
 
         for seq_index, command in enumerate(commands):
+            planner_step = planner_step_for_command(
+                task=current_task,
+                command=command,
+                seq_index=seq_index,
+            )
+            if recovery_resume_marker is not None:
+                completed_status = await self._completed_planner_step_status(
+                    task=current_task,
+                    command=command,
+                    planner_step=planner_step,
+                )
+                if completed_status is not None:
+                    combined_statuses.append(completed_status)
+                    continue
             result = await self._run_command(
                 task=current_task,
                 command=command,
                 now=now,
                 track_task_state=track_task_state,
                 seq_index=seq_index,
+                planner_step=planner_step,
+                recovery_resume_marker=recovery_resume_marker,
             )
             combined_statuses.extend(result["command_statuses"])
             current_task = result["task"]
@@ -169,6 +263,196 @@ class SequentialCommandGateway:
             "commands_total": len(combined_statuses),
             "commands_failed": 0,
             "command_statuses": combined_statuses,
+        }
+
+    async def run_publish_only_batch(
+        self,
+        *,
+        task: Any,
+        commands: Sequence[PlannedCommand],
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        """Fail-safe publish-only: pump_main строго первым, затем fan-out без await terminal.
+
+        Успех = все publish приняты HL/MQTT (HTTP accept). Terminal DONE не ждём:
+        команды должны уйти на железо максимально быстро; alert уже есть на failure.
+        """
+        if not commands:
+            return {
+                "success": True,
+                "task": task,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "command_statuses": [],
+            }
+
+        pump_items: list[tuple[int, PlannedCommand]] = []
+        other_items: list[tuple[int, PlannedCommand]] = []
+        for seq_index, command in enumerate(commands):
+            channel = str(command.channel or "").strip().lower()
+            if channel == _PUMP_MAIN_CHANNEL:
+                pump_items.append((seq_index, command))
+            else:
+                other_items.append((seq_index, command))
+
+        combined_statuses: list[dict[str, Any]] = []
+        failures: list[tuple[str, str]] = []
+
+        def _record_result(result: Mapping[str, Any] | BaseException) -> None:
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, BaseException):
+                failures.append(
+                    (
+                        str(getattr(result, "code", "") or "command_send_failed"),
+                        str(result).strip() or type(result).__name__,
+                    )
+                )
+                return
+            combined_statuses.extend(result["command_statuses"])
+            if not bool(result["success"]):
+                failures.append(
+                    (
+                        str(result.get("error_code") or "command_failed"),
+                        str(result.get("error_message") or "Команда завершилась ошибкой"),
+                    )
+                )
+
+        # 1) pump_main OFF — строго последовательно до fan-out клапанов.
+        for seq_index, command in pump_items:
+            try:
+                result = await self._publish_without_terminal(
+                    task=task,
+                    command=command,
+                    now=now,
+                    seq_index=seq_index,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _record_result(exc)
+                break
+            _record_result(result)
+            if failures:
+                break
+
+        # 2) Остальные OFF — fan-out publish без await terminal между ними.
+        if not failures and other_items:
+            gathered = await asyncio.gather(
+                *(
+                    self._publish_without_terminal(
+                        task=task,
+                        command=command,
+                        now=now,
+                        seq_index=seq_index,
+                    )
+                    for seq_index, command in other_items
+                ),
+                return_exceptions=True,
+            )
+            for result in gathered:
+                _record_result(result)
+
+        if failures:
+            error_code, error_message = failures[0]
+            return {
+                "success": False,
+                "task": task,
+                "commands_total": len(commands),
+                "commands_failed": len(failures),
+                "command_statuses": combined_statuses,
+                "error_code": error_code,
+                "error_message": error_message,
+            }
+
+        return {
+            "success": True,
+            "task": task,
+            "commands_total": len(commands),
+            "commands_failed": 0,
+            "command_statuses": combined_statuses,
+        }
+
+    async def _completed_planner_step_status(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        planner_step: str | None,
+    ) -> dict[str, Any] | None:
+        """Пропускает только точно совпавший step текущего stage execution, уже DONE.
+
+        После startup recovery command-stage запускается повторно. RuntimePlan
+        снова задаёт полный ожидаемый batch, а ``planner_step`` связывает каждый
+        ожидаемый step с его persisted execution record в ``ae_commands``.
+        DONE от прежнего входа в тот же stage name (другой stage_execution_token)
+        или fail-safe publish не принимаются.
+        """
+        if not planner_step:
+            return None
+        get_latest = getattr(self._command_repository, "get_latest_by_planner_step", None)
+        if not callable(get_latest):
+            return None
+        existing = await get_latest(task_id=task.id, planner_step=planner_step)
+        if existing is None:
+            return None
+        terminal_status = str(existing.get("terminal_status") or "").strip().upper()
+        if terminal_status != "DONE":
+            return None
+
+        stored_payload = existing.get("payload")
+        planned_payload = command.payload if isinstance(command.payload, Mapping) else {}
+        if not isinstance(stored_payload, Mapping):
+            return None
+        if bool(stored_payload.get(_AE3_FAIL_SAFE_KEY)):
+            return None
+        current_token = self._stage_execution_token(task=task)
+        stored_token = str(stored_payload.get(_AE3_STAGE_EXECUTION_TOKEN_KEY) or "").strip()
+        if stored_token != current_token:
+            logger.info(
+                "AE3 batch resume: DONE planner_step принадлежит другому stage execution "
+                "task_id=%s stage=%s planner_step=%s stored_token=%s current_token=%s",
+                task.id,
+                getattr(task, "current_stage", None),
+                planner_step,
+                stored_token or None,
+                current_token,
+            )
+            return None
+        if (
+            str(existing.get("node_uid") or "").strip() != str(command.node_uid or "").strip()
+            or str(existing.get("channel") or "").strip() != str(command.channel or "").strip()
+            or str(stored_payload.get("cmd") or "").strip() != str(planned_payload.get("cmd") or "").strip()
+            or stored_payload.get("params") != planned_payload.get("params")
+        ):
+            logger.warning(
+                "AE3 batch resume: persisted DONE planner_step не совпал с RuntimePlan "
+                "task_id=%s stage=%s planner_step=%s",
+                task.id,
+                getattr(task, "current_stage", None),
+                planner_step,
+            )
+            return None
+
+        logger.info(
+            "AE3 batch resume: пропуск подтверждённого DONE step "
+            "task_id=%s stage=%s planner_step=%s ae_command_id=%s",
+            task.id,
+            getattr(task, "current_stage", None),
+            planner_step,
+            existing.get("id"),
+        )
+        payload_cmd_id = str(stored_payload.get("cmd_id") or "").strip() or None
+        return {
+            "ae_command_id": existing.get("id"),
+            "node_uid": command.node_uid,
+            "channel": command.channel,
+            "cmd": str(planned_payload.get("cmd") or ""),
+            "external_id": existing.get("external_id"),
+            "legacy_cmd_id": payload_cmd_id,
+            "terminal_status": "DONE",
+            "response_details": {},
+            "recovered": True,
         }
 
     async def waiting_command_poll_deadline_exceeded(self, *, task: Any, now: datetime) -> bool:
@@ -235,11 +519,22 @@ class SequentialCommandGateway:
         now: datetime,
         track_task_state: bool,
         seq_index: int = 0,
+        planner_step: str | None = None,
+        recovery_resume_marker: Mapping[str, Any] | None = None,
+        await_terminal: bool = True,
     ) -> Mapping[str, Any]:
         # complete_on_ack устарел для mutating-команд: terminal success только по DONE (протокол 2.0).
         _ = self._complete_on_ack(command)
-        planned = command
-        planner_step = planner_step_for_command(task=task, command=command, seq_index=seq_index)
+        planned = self._enrich_command_payload(
+            task=task,
+            command=command,
+            recovery_resume_marker=recovery_resume_marker,
+        )
+        resolved_planner_step = planner_step or planner_step_for_command(
+            task=task,
+            command=planned,
+            seq_index=seq_index,
+        )
         ae_command_id: int | None = None
         cmd_id = ""
         cmd_name = ""
@@ -250,9 +545,9 @@ class SequentialCommandGateway:
             ):
                 published = await self._publish_pipeline.publish(
                     task=task,
-                    command=command,
+                    command=planned,
                     now=now,
-                    planner_step=planner_step,
+                    planner_step=resolved_planner_step,
                     seq_index=seq_index,
                 )
         except CommandPublishError as exc:
@@ -266,7 +561,7 @@ class SequentialCommandGateway:
                 return self._cleanup_race_batch_result(task=task, message=str(exc))
             return await self._handle_publish_failure(
                 task=task,
-                planned=command,
+                planned=planned,
                 ae_command_id=ae_command_id,
                 cmd_id=cmd_id,
                 cmd_name=cmd_name,
@@ -276,7 +571,7 @@ class SequentialCommandGateway:
         except Exception as exc:
             return await self._handle_publish_failure(
                 task=task,
-                planned=command,
+                planned=planned,
                 ae_command_id=ae_command_id,
                 cmd_id=cmd_id,
                 cmd_name=cmd_name,
@@ -288,9 +583,9 @@ class SequentialCommandGateway:
         cmd_id = published.cmd_id
         published_cmd_id = published.published_cmd_id
         cmd_name = published.cmd_name
-        command_payload = dict(command.payload)
+        command_payload = dict(planned.payload)
         command_payload["cmd_id"] = cmd_id
-        planned = replace(command, step_no=published.step_no, payload=command_payload)
+        planned = replace(planned, step_no=published.step_no, payload=command_payload)
 
         with log_context_scope(cmd_id=cmd_id):
             external_id = published.external_id
@@ -303,6 +598,13 @@ class SequentialCommandGateway:
                 "legacy_cmd_id": published_cmd_id,
                 "terminal_status": None,
             }
+
+            if not await_terminal:
+                return {
+                    "success": True,
+                    "task": task,
+                    "command_statuses": [status_entry],
+                }
 
             if not track_task_state:
                 return await self._await_terminal_without_task_fsm(
@@ -883,6 +1185,38 @@ class SequentialCommandGateway:
                 "error_code": f"command_{legacy_status.strip().lower()}",
                 "error_message": str(legacy_row.get("error_message") or f"Команда завершилась с терминальным статусом {legacy_status}"),
             }
+
+    async def _publish_without_terminal(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        now: datetime,
+        seq_index: int = 0,
+    ) -> Mapping[str, Any]:
+        """Publish команды до HL accept без ожидания terminal DONE."""
+        return await self._run_command(
+            task=task,
+            command=command,
+            now=now,
+            track_task_state=False,
+            seq_index=seq_index,
+            await_terminal=False,
+        )
+
+    def _enrich_command_payload(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        recovery_resume_marker: Mapping[str, Any] | None = None,
+    ) -> PlannedCommand:
+        """Добавляет stage token и (при resume) marker, чтобы skip/recovery были scoped."""
+        payload = dict(command.payload) if isinstance(command.payload, Mapping) else {}
+        payload[_AE3_STAGE_EXECUTION_TOKEN_KEY] = self._stage_execution_token(task=task)
+        if recovery_resume_marker is not None:
+            payload[_AE3_RECOVERY_RESUME_KEY] = dict(recovery_resume_marker)
+        return replace(command, payload=payload)
 
     async def _maybe_raise_offline_instead_of_command_error(
         self,

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -15,6 +16,10 @@ from common.hmac_utils import canonical_json_payload
 from common.mqtt import AsyncMqttClient, MqttClient
 
 logger = logging.getLogger(__name__)
+
+
+class NodeSecretResolutionError(RuntimeError):
+    """Raised when a command cannot be signed with an authorized node secret."""
 
 
 def _wait_mqtt_message_puback(result: Any, timeout: float) -> bool:
@@ -101,7 +106,124 @@ def _validate_command_params(*, cmd: str, params: dict) -> None:
                 raise ValueError(f"command {cmd} params.max_step_pct={mstep} must be within 0..100")
 
 
+async def _resolve_node_secret(
+    *,
+    node_uid: str,
+    node_id: Optional[int] = None,
+    zone_id: Optional[int] = None,
+) -> str:
+    """Resolve the per-node HMAC secret, failing closed in production-like environments.
+
+    When ``zone_id`` is provided, secret lookup and zone assignment are checked in
+    one SQL (closes TOCTOU rebind window between assign-check and secret read).
+    Secret value is returned raw (no ``.strip()``) to match Laravel ``NodeSecretService``.
+    """
+    if not node_uid:
+        raise NodeSecretResolutionError("node_uid is required to resolve command signing secret")
+
+    try:
+        if zone_id is not None and node_id is not None:
+            rows = await fetch(
+                """
+                SELECT config->>'node_secret' AS node_secret
+                FROM nodes
+                WHERE id = $1 AND uid = $2 AND zone_id = $3
+                """,
+                node_id,
+                node_uid,
+                zone_id,
+            )
+        elif zone_id is not None:
+            rows = await fetch(
+                """
+                SELECT config->>'node_secret' AS node_secret
+                FROM nodes
+                WHERE uid = $1 AND zone_id = $2
+                """,
+                node_uid,
+                zone_id,
+            )
+        elif node_id is None:
+            rows = await fetch(
+                """
+                SELECT config->>'node_secret' AS node_secret
+                FROM nodes
+                WHERE uid = $1
+                """,
+                node_uid,
+            )
+        else:
+            rows = await fetch(
+                """
+                SELECT config->>'node_secret' AS node_secret
+                FROM nodes
+                WHERE id = $1 AND uid = $2
+                """,
+                node_id,
+                node_uid,
+            )
+    except Exception as exc:
+        logger.error(
+            "Failed to resolve per-node command signing secret: "
+            "node_uid=%s node_id=%s zone_id=%s",
+            node_uid,
+            node_id,
+            zone_id,
+            exc_info=True,
+        )
+        raise NodeSecretResolutionError(
+            f"Unable to resolve command signing secret for node '{node_uid}'"
+        ) from exc
+
+    if not rows:
+        if zone_id is not None:
+            raise NodeSecretResolutionError(
+                f"Node '{node_uid}' is not assigned to zone {zone_id} "
+                "(or secret lookup missed during rebind)"
+            )
+        raise NodeSecretResolutionError(
+            f"Unable to resolve command signing secret for node '{node_uid}'"
+        )
+
+    # Match Laravel NodeSecretService: non-empty string check without mutating secret.
+    secret = rows[0].get("node_secret")
+    if isinstance(secret, str) and secret != "":
+        return secret
+
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    if app_env in ("production", "prod"):
+        logger.error(
+            "Per-node command signing secret is missing; refusing publish: "
+            "node_uid=%s node_id=%s zone_id=%s",
+            node_uid,
+            node_id,
+            zone_id,
+        )
+        raise NodeSecretResolutionError(
+            f"Per-node command signing secret is not configured for node '{node_uid}'"
+        )
+
+    fallback = get_settings().node_default_secret
+    if not isinstance(fallback, str) or not fallback:
+        raise NodeSecretResolutionError(
+            f"Command signing secret is not configured for node '{node_uid}'"
+        )
+
+    logger.warning(
+        "Using NODE_DEFAULT_SECRET fallback for command signing outside production: "
+        "node_uid=%s node_id=%s zone_id=%s app_env=%s",
+        node_uid,
+        node_id,
+        zone_id,
+        app_env or "unset",
+    )
+    return fallback
+
+
 def _create_command_payload(
+    *,
+    node_uid: str,
+    secret: str,
     cmd_id: Optional[str] = None,
     params: Optional[dict] = None,
     cmd: Optional[str] = None,
@@ -120,11 +242,12 @@ def _create_command_payload(
     commands never reach a node signed.
     """
     cmd_id = cmd_id or str(uuid.uuid4())
+    if not node_uid:
+        raise ValueError("'node_uid' is required")
     if not cmd:
         raise ValueError("'cmd' is required")
-    secret = get_settings().node_default_secret
     if not secret:
-        raise ValueError("node_default_secret is not configured")
+        raise ValueError(f"command signing secret is not configured for node '{node_uid}'")
 
     effective_params = params or {}
     _validate_command_params(cmd=cmd, params=effective_params)
@@ -151,8 +274,13 @@ def _create_command_payload(
     payload["ts"] = ts
     payload_str = canonical_json_payload(payload)
     computed_sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
-    if sig and sig != computed_sig:
-        logger.warning("Overriding provided command signature with server-generated HMAC")
+    if sig:
+        logger.warning(
+            "Ignoring caller-provided command signature and re-signing server-side: "
+            "node_uid=%s cmd_id=%s",
+            node_uid,
+            cmd_id,
+        )
     payload["sig"] = computed_sig
     return payload
 

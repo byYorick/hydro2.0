@@ -1492,7 +1492,7 @@ async def repair_worker(
     batch_size: int = 25,
     shutdown_event: Optional[asyncio.Event] = None,
 ):
-    """Воркер раннего self-heal для зависших SENT/ACK до laravel timeout."""
+    """Переигрывает недоставленные статусы, не создавая execution TIMEOUT."""
     logger.info(
         "Starting status repair worker: interval=%s stale_after_seconds=%s batch_size=%s",
         interval,

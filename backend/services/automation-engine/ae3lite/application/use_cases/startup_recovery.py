@@ -502,12 +502,11 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> AutomationTask:
-        """Recovery v2: использует topology registry, чтобы определить следующий stage после command DONE.
+        """Маршрутизирует DONE без принятия одного command step за весь stage.
 
-        1. Прочитать ``task.current_stage``.
-        2. Найти ``StageDef`` в registry.
-        3. Если задан ``terminal_error`` -> завершить ошибкой.
-        4. Если задан ``next_stage`` -> перейти в следующий stage.
+        Command-stage всегда requeue'ится на тот же stage для сверки полного
+        RuntimePlan batch. Остальные handler'ы продолжают registry-driven
+        recovery по своей topology семантике.
         """
         topology = task.topology
         current_stage = task.current_stage
@@ -543,6 +542,35 @@ class StartupRecoveryUseCase:
             )
             await self._release_lease_after_recovery_fail(task=failed, now=now)
             return failed
+
+        # DONE подтверждает только одну команду, а не весь command batch stage.
+        # Возвращаем stage в pending: обычный handler восстановит полный
+        # RuntimePlan, gateway пропустит persisted DONE planner_step'ы и
+        # выполнит оставшиеся команды до topology transition.
+        if stage_def.handler == "command":
+            mark_batch_resume = getattr(
+                self._command_gateway,
+                "mark_recovery_batch_resume",
+                None,
+            )
+            if callable(mark_batch_resume):
+                marked = await mark_batch_resume(task=task, now=now)
+                if not marked:
+                    return await self._fail_task(
+                        task=task,
+                        error_code="startup_recovery_unconfirmed_command",
+                        error_message=(
+                            f"Нельзя безопасно возобновить command batch задачи {task.id}: "
+                            f"отсутствует persisted planner_step для stage={task.current_stage}"
+                        ),
+                        now=now,
+                        recovery_source=recovery_source,
+                    )
+            return await self._requeue_recovered_command_stage(
+                task=task,
+                stage_def=stage_def,
+                now=now,
+            )
 
         # Terminal error stage
         if stage_def.terminal_error is not None:
@@ -629,38 +657,6 @@ class StartupRecoveryUseCase:
             await self._release_lease_after_recovery_success(task=requeued, now=now)
             return requeued
 
-        # Single-command terminal success (e.g. generic_cycle_start startup):
-        # command DONE без next_stage/terminal_error завершает задачу.
-        if (
-            stage_def.handler == "command"
-            and stage_def.next_stage is None
-            and stage_def.terminal_error is None
-        ):
-            await self._safe_upsert_workflow_phase(
-                zone_id=task.zone_id,
-                workflow_phase=stage_def.workflow_phase,
-                payload={"ae3_cycle_start_stage": current_stage},
-                scheduler_task_id=str(task.id),
-                now=now,
-            )
-            completed = await self._task_repository.mark_completed(
-                task_id=task.id,
-                owner=str(task.claimed_by or ""),
-                now=now,
-            )
-            if completed is None:
-                logger.error(
-                    "Startup recovery: mark_completed returned None task_id=%s zone_id=%s stage=%s",
-                    task.id,
-                    task.zone_id,
-                    current_stage,
-                )
-                raise StartupRecoveryError(
-                    f"Не удалось завершить task_id={task.id} после recovery DONE",
-                )
-            await self._release_lease_after_recovery_success(task=completed, now=now)
-            return completed
-
         # Poll/handler stages (handler != "command" and != "ready") have no static
         # next_stage — transitions are decided by the handler at runtime. A stale
         # DONE from the previous command batch must not terminal-complete the task.
@@ -723,6 +719,49 @@ class StartupRecoveryUseCase:
             )
         await self._release_lease_after_recovery_success(task=completed, now=now)
         return completed
+
+    async def _requeue_recovered_command_stage(
+        self,
+        *,
+        task: AutomationTask,
+        stage_def: Any,
+        now: datetime,
+    ) -> AutomationTask:
+        current_stage = str(task.current_stage or "")
+        await self._safe_upsert_workflow_phase(
+            zone_id=task.zone_id,
+            workflow_phase=stage_def.workflow_phase,
+            payload={"ae3_cycle_start_stage": current_stage},
+            scheduler_task_id=str(task.id),
+            now=now,
+        )
+        continued_workflow = WorkflowState(
+            current_stage=current_stage,
+            workflow_phase=stage_def.workflow_phase,
+            stage_deadline_at=task.workflow.stage_deadline_at,
+            stage_retry_count=task.workflow.stage_retry_count,
+            stage_entered_at=task.workflow.stage_entered_at,
+            clean_fill_cycle=task.workflow.clean_fill_cycle,
+        )
+        requeued = await self._task_repo_update_stage(
+            task=task,
+            workflow=continued_workflow,
+            now=now,
+        )
+        if requeued is None:
+            logger.error(
+                "Startup recovery: update_stage returned None on command-stage batch resume "
+                "task_id=%s zone_id=%s stage=%s",
+                task.id,
+                task.zone_id,
+                current_stage,
+            )
+            raise StartupRecoveryError(
+                f"Не удалось повторно поставить task_id={task.id} в очередь "
+                f"для продолжения command batch stage={current_stage}",
+            )
+        await self._release_lease_after_recovery_success(task=requeued, now=now)
+        return requeued
 
     async def _task_repo_update_stage(
         self, *, task: AutomationTask, workflow: WorkflowState, now: datetime,

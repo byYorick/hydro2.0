@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+import zlib
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
-from command_service import _create_command_payload, _get_gh_uid_from_zone_id, _get_zone_uid_from_id
+from command_service import (
+    NodeSecretResolutionError,
+    _create_command_payload,
+    _get_gh_uid_from_zone_id,
+    _get_zone_uid_from_id,
+    _resolve_node_secret,
+)
 from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
 from common.commands import _affected_rows
@@ -21,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 _SUSTAINED_FAIL_CYCLES_BEFORE_ALERT = 3
 _consecutive_fail_cycles = 0
+
+# Namespace for per-cmd_id session advisory locks during MQTT republish.
+# Keeps concurrent drain workers from double-publishing the same row after
+# FOR UPDATE is released (previous bug: SKIP LOCKED ended with the SELECT txn).
+_DRAIN_PUBLISH_LOCK_NAMESPACE = zlib.crc32(b"hl_queued_cmd_drain_publish") & 0x7FFFFFFF
+
+
+def _cmd_publish_advisory_lock_key(cmd_id: str) -> int:
+    """Stable 63-bit key: namespace in high 31 bits + crc32(cmd_id) in low 32."""
+    cmd_hash = zlib.crc32(cmd_id.encode("utf-8")) & 0xFFFFFFFF
+    return (_DRAIN_PUBLISH_LOCK_NAMESPACE << 32) | cmd_hash
 
 
 def _extract_signed_payload_fields(params: dict[str, Any]) -> tuple[dict[str, Any], int | None, str | None]:
@@ -102,6 +121,13 @@ async def _claim_stale_queued_command_rows(
     stale_after_seconds: float,
     limit: int,
 ) -> list[dict[str, Any]]:
+    """List drain candidates without row locks.
+
+    Publish exclusivity is enforced per cmd_id via session advisory lock held
+    for the full MQTT republish window (see ``_try_claim_cmd_for_publish``).
+    The name ``_claim_*`` is historical; row-level FOR UPDATE is intentionally
+    not used here because it would release before MQTT PUBACK.
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -122,12 +148,43 @@ async def _claim_stale_queued_command_rows(
               AND c.created_at <= NOW() - ($1 * INTERVAL '1 second')
             ORDER BY c.created_at ASC, c.id ASC
             LIMIT $2
-            FOR UPDATE OF c SKIP LOCKED
             """,
             stale_after_seconds,
             limit,
         )
         return [dict(row) for row in rows]
+
+
+@asynccontextmanager
+async def _try_claim_cmd_for_publish(cmd_id: str) -> AsyncIterator[bool]:
+    """Hold a session advisory lock on ``cmd_id`` for the publish window.
+
+    Yields True only when the lock was acquired AND the row is still in
+    QUEUED/SEND_FAILED. Connection stays checked out until exit so the
+    session lock survives MQTT I/O (unlike FOR UPDATE SKIP LOCKED alone).
+    """
+    lock_key = _cmd_publish_advisory_lock_key(cmd_id)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        acquired = bool(
+            await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", int(lock_key))
+        )
+        if not acquired:
+            yield False
+            return
+        try:
+            still_pending = await conn.fetchval(
+                """
+                SELECT 1
+                FROM commands
+                WHERE cmd_id = $1
+                  AND status IN ('QUEUED', 'SEND_FAILED')
+                """,
+                cmd_id,
+            )
+            yield still_pending is not None
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1::bigint)", int(lock_key))
 
 
 async def drain_stale_queued_commands_once(
@@ -180,65 +237,107 @@ async def drain_stale_queued_commands_once(
                 COMMAND_QUEUE_DRAIN_FAILED.inc()
             continue
 
-        try:
-            skip_response = await ensure_command_for_publish(
-                cmd_id=cmd_id,
-                zone_id=zone_id,
-                node_id=node_id,
-                node_uid=node_uid,
-                channel=channel,
-                cmd_name=cmd_name,
-                params=raw_params,
-                command_source=command_source,
-            )
-            if skip_response:
+        async with _try_claim_cmd_for_publish(cmd_id) as claimed:
+            if not claimed:
+                # Another drain worker holds the publish lease, or status left
+                # the drain set between SELECT and claim.
                 summary["skipped"] += 1
                 COMMAND_QUEUE_DRAIN_SKIPPED.inc()
                 logger.info(
-                    "[QUEUED_DRAIN] skipped cmd_id=%s zone_id=%s reason=non_republishable",
+                    "[QUEUED_DRAIN] skipped cmd_id=%s zone_id=%s reason=publish_claim_busy",
                     cmd_id,
                     zone_id,
                 )
                 continue
 
-            effective_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-            zone_uid = await _get_zone_uid_from_id(zone_id)
-            params, stored_ts, stored_sig = _extract_signed_payload_fields(raw_params)
-            payload = _create_command_payload(
-                cmd_id=cmd_id,
-                params=params,
-                cmd=cmd_name,
-                ts=stored_ts,
-                sig=stored_sig,
-            )
-            await publish_command_with_retry(
-                payload=payload,
-                cmd_id=cmd_id,
-                cmd_name=cmd_name,
-                zone_id=zone_id,
-                node_uid=node_uid,
-                channel=channel,
-                effective_gh_uid=effective_gh_uid,
-                zone_uid=zone_uid,
-            )
-            summary["drained"] += 1
-            COMMAND_QUEUE_DRAIN_SUCCEEDED.inc()
-            logger.info(
-                "[QUEUED_DRAIN] republished cmd_id=%s zone_id=%s node_uid=%s",
-                cmd_id,
-                zone_id,
-                node_uid,
-            )
-        except Exception:
-            summary["failed"] += 1
-            COMMAND_QUEUE_DRAIN_FAILED.inc()
-            logger.warning(
-                "[QUEUED_DRAIN] failed cmd_id=%s zone_id=%s node_uid=%s",
-                cmd_id,
-                zone_id,
-                node_uid,
-                exc_info=True,
-            )
+            try:
+                skip_response = await ensure_command_for_publish(
+                    cmd_id=cmd_id,
+                    zone_id=zone_id,
+                    node_id=node_id,
+                    node_uid=node_uid,
+                    channel=channel,
+                    cmd_name=cmd_name,
+                    params=raw_params,
+                    command_source=command_source,
+                )
+                if skip_response:
+                    summary["skipped"] += 1
+                    COMMAND_QUEUE_DRAIN_SKIPPED.inc()
+                    logger.info(
+                        "[QUEUED_DRAIN] skipped cmd_id=%s zone_id=%s reason=non_republishable",
+                        cmd_id,
+                        zone_id,
+                    )
+                    continue
+
+                effective_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
+                zone_uid = await _get_zone_uid_from_id(zone_id)
+                params, stored_ts, stored_sig = _extract_signed_payload_fields(raw_params)
+                try:
+                    secret = await _resolve_node_secret(
+                        node_uid=node_uid,
+                        node_id=node_id,
+                        zone_id=zone_id,
+                    )
+                except NodeSecretResolutionError as exc:
+                    # Permanent: node left the command's zone (rebind TOCTOU).
+                    # Transient missing-secret / DB errors stay QUEUED for retry.
+                    if "not assigned to zone" not in str(exc):
+                        raise
+                    abandoned = await _abandon_non_republishable_command(
+                        cmd_id=cmd_id,
+                        reason=f"secret_or_zone_mismatch:{exc}",
+                        zone_id=zone_id,
+                        node_uid=node_uid,
+                        channel=channel,
+                        cmd_name=cmd_name,
+                    )
+                    if abandoned:
+                        summary["skipped"] += 1
+                        COMMAND_QUEUE_DRAIN_SKIPPED.inc()
+                    else:
+                        summary["failed"] += 1
+                        COMMAND_QUEUE_DRAIN_FAILED.inc()
+                    continue
+
+                payload = _create_command_payload(
+                    node_uid=node_uid,
+                    secret=secret,
+                    cmd_id=cmd_id,
+                    params=params,
+                    cmd=cmd_name,
+                    ts=stored_ts,
+                    sig=stored_sig,
+                )
+                await publish_command_with_retry(
+                    payload=payload,
+                    cmd_id=cmd_id,
+                    cmd_name=cmd_name,
+                    zone_id=zone_id,
+                    node_uid=node_uid,
+                    channel=channel,
+                    effective_gh_uid=effective_gh_uid,
+                    zone_uid=zone_uid,
+                )
+                summary["drained"] += 1
+                COMMAND_QUEUE_DRAIN_SUCCEEDED.inc()
+                logger.info(
+                    "[QUEUED_DRAIN] republished cmd_id=%s zone_id=%s node_uid=%s",
+                    cmd_id,
+                    zone_id,
+                    node_uid,
+                )
+            except Exception:
+                summary["failed"] += 1
+                COMMAND_QUEUE_DRAIN_FAILED.inc()
+                logger.warning(
+                    "[QUEUED_DRAIN] failed cmd_id=%s zone_id=%s node_uid=%s",
+                    cmd_id,
+                    zone_id,
+                    node_uid,
+                    exc_info=True,
+                )
 
     return summary
 

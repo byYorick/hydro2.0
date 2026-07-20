@@ -824,7 +824,17 @@ Canonical status endpoint для зон на `ae3`.
 1. проверить `waiting_command` задачи по строкам в `commands`
 2. если terminal уже есть, корректно финализировать task
 3. `claimed|running` без подтверждённой активной внешней команды перевести в `failed` с контролируемым `error_code`
-4. **исключение (фаза 2):** если у `claimed|running` последняя `ae_commands` + legacy `commands` уже terminal `DONE`, recovery выполняет тот же topology transition, что и для `waiting_command` + DONE (без republish в MQTT)
+4. **исключение (фаза 2):** если у `claimed|running|waiting_command` последняя
+   `ae_commands` + legacy `commands` уже terminal `DONE`, recovery не считает
+   завершённым весь command-stage и не выполняет topology transition. Задача
+   requeue'ится на тот же stage; обычный handler восстанавливает полный список
+   ожидаемых команд из `RuntimePlan`, а gateway сверяет его с persisted
+   `ae_commands.planner_step`, пропускает только точно совпавшие terminal `DONE`
+   steps и выполняет оставшиеся команды batch без повторной публикации уже
+   завершённых steps. Право на такой skip ограничено persisted marker
+   `_ae3_recovery_resume` в payload последней `ae_commands`; marker связан с
+   `stage` и `stage_execution_token`, поэтому `DONE` от прежнего штатного входа
+   в тот же stage не может быть принят за текущий batch.
 5. если у `claimed|running` команда ещё не terminal — перевести задачу в `waiting_command` и оставить на reconcile (без fail)
 6. освободить lease с истёкшим `leased_until` и при recovery-fail владельца задачи
 7. фоновый reconcile `waiting_command` задач (`WaitingCommandReconcileUseCase` в worker loop) без republish
@@ -841,6 +851,9 @@ Canonical status endpoint для зон на `ae3`.
 3. crash после publish, но до локального обновления статуса
 4. crash в `waiting_command`
 5. delayed terminal status после restart
+6. crash между командами multi-command batch после первой `DONE`: recovery
+   остаётся на текущем stage, завершённый `planner_step` не публикуется повторно,
+   topology transition выполняется только после `DONE` всех ожидаемых steps
 
 ### 9.3 Failure policy
 

@@ -64,6 +64,7 @@ async def _insert_task(
     current_stage: str = "startup",
     workflow_phase: str = "idle",
     intent_id: int | None = None,
+    task_type: str = "cycle_start",
 ) -> int:
     rows = await fetch(
         """
@@ -83,11 +84,12 @@ async def _insert_task(
             workflow_phase,
             intent_id
         )
-        VALUES ($1, 'cycle_start', $2, $3, $4, $4, 'worker-a', $4, $4, $4,
-                $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $5, 'worker-a', $5, $5, $5,
+                $6, $7, $8, $9)
         RETURNING id
         """,
         zone_id,
+        task_type,
         task_status,
         f"{prefix}-task",
         now,
@@ -105,12 +107,18 @@ async def _insert_ae_command(
     now: datetime,
     cmd_id: str,
     external_id: str | None = None,
+    planner_step: str | None = "test-stage:0:pump_main",
+    step_no: int = 1,
+    node_uid: str = "nd-irrig-1",
+    channel: str = "pump_main",
+    payload: dict | None = None,
 ) -> int:
     rows = await fetch(
         """
         INSERT INTO ae_commands (
             task_id,
             step_no,
+            planner_step,
             node_uid,
             channel,
             payload,
@@ -121,9 +129,10 @@ async def _insert_ae_command(
         )
         VALUES (
             $1,
-            1,
-            'nd-irrig-1',
-            'pump_main',
+            $5,
+            $6,
+            $7,
+            $8,
             $2::jsonb,
             $3::varchar,
             CASE WHEN $3::varchar IS NULL THEN 'pending' ELSE 'accepted' END,
@@ -133,9 +142,13 @@ async def _insert_ae_command(
         RETURNING id
         """,
         task_id,
-        {"cmd": "set_relay", "params": {"state": True}, "cmd_id": cmd_id},
+        payload or {"cmd": "set_relay", "params": {"state": True}, "cmd_id": cmd_id},
         external_id,
         now,
+        step_no,
+        planner_step,
+        node_uid,
+        channel,
     )
     return int(rows[0]["id"])
 
@@ -500,7 +513,7 @@ async def test_startup_recovery_releases_only_expired_leases() -> None:
 
 
 @pytest.mark.asyncio
-async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without_republish() -> None:
+async def test_startup_recovery_native_two_tank_done_requeues_same_stage_without_republish() -> None:
     prefix = f"ae3-recovery-native-two-tank-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task_repo = PgAutomationTaskRepository()
@@ -565,7 +578,7 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         assert result.recovered_waiting_command_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"
-        assert updated_task.current_stage == "clean_fill_check"
+        assert updated_task.current_stage == "clean_fill_start"
         expected_due_at = (now + timedelta(seconds=5)).replace(microsecond=0, tzinfo=None)
         assert updated_task.due_at == expected_due_at
         assert workflow_row is not None
@@ -587,7 +600,7 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         assert events
         payload = events[0]["payload_json"]
         assert payload["outcome"] == "recovered_waiting_command"
-        assert payload["stage"] == "clean_fill_check"
+        assert payload["stage"] == "clean_fill_start"
         assert payload["task_id"] == task_id
     finally:
         await _cleanup(prefix)
@@ -694,8 +707,8 @@ async def test_startup_recovery_foreign_lease_owner_not_released_on_fail() -> No
 
 
 @pytest.mark.asyncio
-async def test_startup_recovery_running_prepare_recirc_done_advances_stage() -> None:
-    """Регрессия: рестарт AE при running + DONE на prepare_recirculation_start."""
+async def test_startup_recovery_running_prepare_recirc_done_resumes_same_stage() -> None:
+    """Регрессия: DONE одной команды не завершает весь prepare_recirculation_start batch."""
     prefix = f"ae3-recovery-running-recirc-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     task_repo = PgAutomationTaskRepository()
@@ -756,11 +769,11 @@ async def test_startup_recovery_running_prepare_recirc_done_advances_stage() -> 
         assert result.recovered_waiting_command_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"
-        assert updated_task.current_stage == "prepare_recirculation_check"
+        assert updated_task.current_stage == "prepare_recirculation_start"
         assert updated_task.error_code is None
         assert workflow_row is not None
         assert workflow_row.workflow_phase == "tank_recirc"
-        assert workflow_row.payload.get("ae3_cycle_start_stage") == "prepare_recirculation_check"
+        assert workflow_row.payload.get("ae3_cycle_start_stage") == "prepare_recirculation_start"
         assert await _count_ae_commands(task_id=task_id) == 1
     finally:
         await _cleanup(prefix)
@@ -976,8 +989,8 @@ def _build_waiting_command_reconcile_use_case(
 
 
 @pytest.mark.asyncio
-async def test_waiting_command_reconcile_delayed_done_advances_stage() -> None:
-    """W5: команда завершилась после startup recovery → background reconcile продвигает stage."""
+async def test_waiting_command_reconcile_delayed_done_resumes_command_stage() -> None:
+    """W5: delayed DONE возвращает command-stage для проверки полного batch."""
     prefix = f"ae3-wc-reconcile-delayed-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     reconcile_use_case, _recovery, task_repo, command_repo, workflow_repo = (
@@ -1047,9 +1060,9 @@ async def test_waiting_command_reconcile_delayed_done_advances_stage() -> None:
         assert second.progressed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"
-        assert updated_task.current_stage == "clean_fill_check"
+        assert updated_task.current_stage == "clean_fill_start"
         assert workflow_row is not None
-        assert workflow_row.payload.get("ae3_cycle_start_stage") == "clean_fill_check"
+        assert workflow_row.payload.get("ae3_cycle_start_stage") == "clean_fill_start"
         assert events
         assert events[0]["payload_json"]["recovery_source"] == "waiting_command_reconcile"
         assert events[0]["payload_json"]["outcome"] == "recovered_waiting_command"
@@ -1163,7 +1176,7 @@ async def test_waiting_command_reconcile_progresses_done_despite_foreign_active_
         assert result.progressed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"
-        assert updated_task.current_stage == "clean_fill_check"
+        assert updated_task.current_stage == "clean_fill_start"
     finally:
         await _cleanup(prefix)
 

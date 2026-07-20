@@ -101,6 +101,44 @@ class ProcessCommandTimeoutsTest extends TestCase
         ]);
     }
 
+    public function test_process_timeouts_does_not_overwrite_concurrent_done_transition(): void
+    {
+        Config::set('commands.timeout_minutes', 5);
+
+        $zone = Zone::factory()->create();
+        $command = Command::create([
+            'zone_id' => $zone->id,
+            'cmd_id' => 'cmd-timeout-race-done',
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'run_pump',
+            'sent_at' => now()->subMinutes(10),
+            'ack_at' => now()->subMinutes(9),
+        ]);
+
+        $eventName = 'eloquent.retrieved: '.Command::class;
+        Event::listen($eventName, function (Command $retrieved) use ($command): void {
+            if ($retrieved->id !== $command->id) {
+                return;
+            }
+
+            DB::table('commands')
+                ->where('id', $command->id)
+                ->update(['status' => Command::STATUS_DONE]);
+        });
+
+        try {
+            $this->artisan('commands:process-timeouts')
+                ->assertExitCode(0);
+        } finally {
+            Event::forget($eventName);
+        }
+
+        $command->refresh();
+        $this->assertSame(Command::STATUS_DONE, $command->status);
+        $this->assertNull($command->failed_at);
+        $this->assertNull($command->error_code);
+    }
+
     public function test_process_timeouts_dispatches_event_created_for_command_status(): void
     {
         Config::set('commands.timeout_minutes', 5);
@@ -136,5 +174,81 @@ class ProcessCommandTimeoutsTest extends TestCase
         $this->assertSame('command_status', $captured[0]->kind);
         $this->assertSame($zone->id, $captured[0]->zoneId);
         $this->assertStringContainsString('cmd-timeout-ws', $captured[0]->message);
+    }
+
+    public function test_process_timeouts_keeps_timeout_when_side_effects_fail(): void
+    {
+        Config::set('commands.timeout_minutes', 5);
+
+        $zone = Zone::factory()->create();
+        $command = Command::create([
+            'zone_id' => $zone->id,
+            'cmd_id' => 'cmd-timeout-side-effect-fail',
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'run_pump',
+            'sent_at' => now()->subMinutes(10),
+            'ack_at' => now()->subMinutes(9),
+        ]);
+
+        $eventName = 'eloquent.updated: '.Command::class;
+        Event::listen($eventName, function () {
+            throw new \RuntimeException('simulated observer failure');
+        });
+
+        try {
+            $this->artisan('commands:process-timeouts')
+                ->expectsOutputToContain('Processed 1 command(s)')
+                ->assertExitCode(0);
+        } finally {
+            Event::forget($eventName);
+        }
+
+        $command->refresh();
+        $this->assertSame(Command::STATUS_TIMEOUT, $command->status);
+        $this->assertEquals('command_timeout', $command->error_code);
+        $this->assertEquals(1, $command->result_code);
+        $this->assertNotNull($command->failed_at);
+    }
+
+    public function test_process_timeouts_does_not_duplicate_timeout_on_rerun(): void
+    {
+        Config::set('commands.timeout_minutes', 5);
+
+        $zone = Zone::factory()->create();
+        $command = Command::create([
+            'zone_id' => $zone->id,
+            'cmd_id' => 'cmd-timeout-idempotent-rerun',
+            'status' => Command::STATUS_SENT,
+            'cmd' => 'run_pump',
+            'sent_at' => now()->subMinutes(10),
+        ]);
+
+        $this->artisan('commands:process-timeouts')->assertExitCode(0);
+        $command->refresh();
+        $this->assertSame(Command::STATUS_TIMEOUT, $command->status);
+        $failedAt = $command->failed_at;
+
+        $eventsBefore = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'command_status')
+            ->where('entity_id', 'cmd-timeout-idempotent-rerun')
+            ->count();
+
+        $this->artisan('commands:process-timeouts')
+            ->expectsOutputToContain('No commands found to timeout')
+            ->assertExitCode(0);
+
+        $command->refresh();
+        $this->assertSame(Command::STATUS_TIMEOUT, $command->status);
+        $this->assertEquals($failedAt?->toIso8601String(), $command->failed_at?->toIso8601String());
+
+        $eventsAfter = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'command_status')
+            ->where('entity_id', 'cmd-timeout-idempotent-rerun')
+            ->count();
+
+        $this->assertSame($eventsBefore, $eventsAfter);
+        $this->assertSame(1, $eventsBefore);
     }
 }

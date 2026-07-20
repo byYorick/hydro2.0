@@ -130,8 +130,8 @@ FastAPI lifespan
 | Статус до crash | `ae_commands` / legacy | Сейчас | Target (после плана) |
 |-----------------|------------------------|--------|----------------------|
 | `waiting_command` | не terminal | остаётся, нет poll | background reconcile → DONE → `pending` |
-| `waiting_command` | `DONE` | → `pending` next stage | без изменений |
-| `running` | последняя `DONE` | **fail** | topology transition (как после waiting DONE) |
+| `waiting_command` | `DONE` | → `pending` next stage | requeue текущего command-stage; RuntimePlan подтверждает весь batch |
+| `running` | последняя `DONE` | **fail** | requeue текущего command-stage; завершённые `planner_step` не republish'ятся |
 | `running` | in-flight, не terminal | **fail** | → `waiting_command` + reconcile |
 | `running` | нет ae_command | **fail** | fail или requeue `pending` (см. фазу 2) |
 | `claimed` | нет ae_command | **fail** | fail (crash до publish) |
@@ -176,22 +176,28 @@ try recover_waiting_command (для claimed|running|waiting_command)
   missing ae_command + claimed|running → fail startup_recovery_unconfirmed_command
   waiting_command → fail ae3_missing_ae_command (как раньше)
   state waiting_command + in-flight legacy → persist waiting_command для claimed|running
-  state done → _apply_topology_done_transition
+  state done → requeue текущего command-stage
+    → handler восстанавливает RuntimePlan
+    → gateway пропускает совпавшие terminal DONE planner_step
+    → topology transition только после полного batch
   state failed → _finalize_recovery_failure
 ```
 
 **Ограничения:**
-- Только stages из topology registry с детерминированным `next_stage` / `terminal_error`.
+- Только stages из topology registry; command-stage после recovery обязательно
+  проходит повторную проверку полного RuntimePlan batch.
 - Запрет auto-resume для stages с side-effect между DONE и transition (если появятся — whitelist в registry).
 
 **Файлы:**
 - `ae3lite/application/use_cases/startup_recovery.py` — `_handle_recovery_gateway_result`, `_persist_waiting_command_status`
 
 **Тесты:**
-- [x] Unit: `running` + legacy DONE → `pending` next stage
+- [x] Unit: `running` + legacy DONE → `pending` текущий stage
 - [x] Unit: `running` + legacy pending → `waiting_command`, не fail
 - [x] Integration: `prepare_recirculation_start` + DONE
 - [x] Негатив: `running` + нет ae_command → fail
+- [x] Crash-window: первая `DONE` из multi-command `irrigation_start` не
+  переводит задачу в `irrigation_check`; повторный batch не публикует первый step
 
 **Обновлено:** `ae3lite.md` §9.1 п.4–5.
 
@@ -280,7 +286,7 @@ try recover_waiting_command (для claimed|running|waiting_command)
 
 | Риск | Митигация |
 |------|-----------|
-| Fail-open при resume `running` после DONE | Только registry-driven transitions; code review per stage; тест на каждый critical stage |
+| Fail-open при resume `running` после DONE | Requeue текущего stage + полная сверка RuntimePlan по `planner_step`; topology transition только из handler |
 | Двойной reconcile двумя worker'ами | lease + `UPDATE … WHERE status` guards; фаза 6 advisory lock |
 | Retry storm при background reconcile | batch limit, exponential backoff, метрики |
 | Ложные алерты после deploy | dedupe_key; resolve при успешном recover |

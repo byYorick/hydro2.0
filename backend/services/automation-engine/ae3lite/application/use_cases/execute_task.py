@@ -58,12 +58,12 @@ class ExecuteTaskUseCase:
     """Выполняет один stage AE3 cycle_start и возвращает terminal-задачу или безопасно requeue'нутую."""
 
     FAIL_SAFE_SHUTDOWN_CHANNELS = (
+        "pump_main",
         "valve_clean_fill",
         "valve_clean_supply",
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
-        "pump_main",
     )
 
     def __init__(
@@ -1465,6 +1465,7 @@ class ExecuteTaskUseCase:
                             "params": {"state": False},
                             "allow_no_effect": True,
                             "dedupe_bypass": True,
+                            "_ae3_fail_safe": True,
                         },
                     )
                 )
@@ -1472,51 +1473,69 @@ class ExecuteTaskUseCase:
         if not planned_commands:
             return
         try:
-            result = await self._command_gateway.run_batch(
+            result = await self._command_gateway.run_publish_only_batch(
                 task=task,
                 commands=tuple(planned_commands),
                 now=now,
-                track_task_state=False,
             )
             if not bool(result.get("success")):
                 stage = str(getattr(task, "current_stage", "") or "unknown")
                 error_code = str(result.get("error_code") or "unknown")
-                FLOW_STOP_FAILED.labels(stage=stage or "unknown").inc()
                 logger.error(
                     "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s error_code=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
                     error_code,
                 )
-                try:
-                    await send_biz_alert(
-                        zone_id=int(task.zone_id),
-                        code="biz_flow_stop_failed_hardware_may_be_active",
-                        severity="critical",
-                        message="Не удалось подтвердить остановку flow-path; оборудование может оставаться активным",
-                        details={
-                            "task_id": int(getattr(task, "id", 0) or 0),
-                            "stage": stage,
-                            "reason": "fail_safe_shutdown_non_success",
-                            "error_code": error_code,
-                        },
-                        scope_parts=(f"stage:{stage}",),
-                    )
-                except Exception:
-                    inc_observability_write_failed(kind="biz_alert")
-                    logger.warning(
-                        "AE3 fail-safe shutdown: не удалось создать biz-alert zone_id=%s task_id=%s",
-                        getattr(task, "zone_id", None),
-                        getattr(task, "id", None),
-                        exc_info=True,
-                    )
+                await self._emit_fail_safe_shutdown_alert(
+                    task=task,
+                    reason="fail_safe_shutdown_non_success",
+                    error_code=error_code,
+                )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "AE3 fail-safe shutdown batch завершился ошибкой: task_id=%s zone_id=%s",
                 getattr(task, "id", None),
                 getattr(task, "zone_id", None),
+            )
+            await self._emit_fail_safe_shutdown_alert(
+                task=task,
+                reason="fail_safe_shutdown_exception",
+                error_code=str(getattr(exc, "code", "") or type(exc).__name__),
+            )
+
+    async def _emit_fail_safe_shutdown_alert(
+        self,
+        *,
+        task: Any,
+        reason: str,
+        error_code: str,
+    ) -> None:
+        stage = str(getattr(task, "current_stage", "") or "unknown")
+        FLOW_STOP_FAILED.labels(stage=stage or "unknown").inc()
+        try:
+            await send_biz_alert(
+                zone_id=int(task.zone_id),
+                code="biz_flow_stop_failed_hardware_may_be_active",
+                severity="critical",
+                message="Не удалось подтвердить остановку flow-path; оборудование может оставаться активным",
+                details={
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": stage,
+                    "reason": reason,
+                    "error_code": error_code,
+                },
+                scope_parts=(f"stage:{stage}",),
+            )
+        except Exception:
+            inc_observability_write_failed(kind="biz_alert")
+            logger.warning(
+                "AE3 fail-safe shutdown: не удалось создать biz-alert zone_id=%s task_id=%s",
+                getattr(task, "zone_id", None),
+                getattr(task, "id", None),
+                exc_info=True,
             )
 
     def _log_skip_fail_safe_shutdown(self, *, task: Any, reason: str) -> None:

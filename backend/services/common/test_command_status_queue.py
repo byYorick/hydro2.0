@@ -838,6 +838,47 @@ async def test_repair_stuck_commands_once_skips_when_no_correlation():
 
 
 @pytest.mark.asyncio
+async def test_repair_stuck_commands_does_not_timeout_active_timed_ack():
+    queue = AsyncMock()
+    queue.ensure_table = AsyncMock()
+    queue.mark_delivered = AsyncMock()
+    queue.purge_dlq_item = AsyncMock()
+
+    fetch_rows = [
+        [
+            {
+                "id": 45,
+                "cmd_id": "cmd-active-timed-ack",
+                "status": "ACK",
+                "zone_id": 10,
+                "node_id": 14,
+                "channel": "pump_main",
+                "cmd": "run_pump",
+                "params": {"duration_ms": 180000},
+                "status_since": None,
+            }
+        ],
+        [],
+    ]
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.fetch", new=AsyncMock(side_effect=fetch_rows)), \
+         patch("common.command_status_queue.record_command_status_repair"), \
+         patch("common.command_status_queue.deliver_status_to_laravel", new=AsyncMock()) as mock_deliver:
+        summary = await repair_stuck_commands_once(stale_after_seconds=30.0, limit=10)
+
+    assert summary == {
+        "scanned": 1,
+        "repaired": 0,
+        "replay_failed": 0,
+        "no_correlation": 1,
+    }
+    mock_deliver.assert_not_awaited()
+    queue.mark_delivered.assert_not_awaited()
+    queue.purge_dlq_item.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_repair_stuck_commands_once_records_replay_failed_metric():
     queue = AsyncMock()
     queue.ensure_table = AsyncMock()

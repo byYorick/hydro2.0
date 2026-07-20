@@ -388,7 +388,17 @@ class _GatewayRecorder:
         self.calls: list[dict[str, object]] = []
 
     async def run_batch(self, *, task, commands, now, **kwargs):
-        self.calls.append({"commands": tuple(commands), "kwargs": kwargs})
+        self.calls.append({"method": "sequential", "commands": tuple(commands), "kwargs": kwargs})
+        return {"success": True, "task": task}
+
+    async def run_publish_only_batch(self, *, task, commands, now):
+        self.calls.append(
+            {
+                "method": "publish_only",
+                "commands": tuple(commands),
+                "kwargs": {"track_task_state": False},
+            }
+        )
         return {"success": True, "task": task}
 
 
@@ -1613,20 +1623,22 @@ async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> No
 
     assert finalize.calls[0]["error_code"] == "ae3_task_execution_unhandled_exception"
     assert len(gateway.calls) == 1
+    assert gateway.calls[0]["method"] == "publish_only"
     assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
     sent_channels = [command.channel for command in gateway.calls[0]["commands"]]
     assert sent_channels == [
+        "pump_main",
         "valve_clean_fill",
         "valve_clean_supply",
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
-        "pump_main",
     ]
     assert all(
         command.payload.get("params", {}).get("state") is False
         for command in gateway.calls[0]["commands"]
     )
+    assert all(command.payload.get("_ae3_fail_safe") is True for command in gateway.calls[0]["commands"])
 
 
 @pytest.mark.asyncio
@@ -1650,12 +1662,12 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
     assert len(gateway.calls) == 1
     assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
     assert [command.channel for command in gateway.calls[0]["commands"]] == [
+        "pump_main",
         "valve_clean_fill",
         "valve_clean_supply",
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
-        "pump_main",
     ]
 
 
@@ -1679,6 +1691,44 @@ async def test_execute_task_lease_lost_cancellation_fails_closed_and_runs_fail_s
     assert finalize.calls[0]["error_message"] == "Во время выполнения задачи был потерян zone lease"
     assert len(gateway.calls) == 1
     assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+
+
+@pytest.mark.asyncio
+async def test_fail_safe_shutdown_exception_emits_critical_hardware_may_be_active_alert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    alert = AsyncMock()
+
+    class _GatewayRaises:
+        async def run_publish_only_batch(self, *, task, commands, now):
+            raise RuntimeError("fan-out failed")
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_biz_alert",
+        alert,
+    )
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=_GatewayRaises(),
+        workflow_router=object(),
+    )
+    plan = _PlannerTwoTankOk().build(task=task, snapshot=_SnapshotWithIrrActuators())
+
+    await use_case._attempt_fail_safe_shutdown(
+        task=task,
+        snapshot=_SnapshotWithIrrActuators(),
+        plan=plan,
+        now=NOW,
+    )
+
+    alert.assert_awaited_once()
+    assert alert.await_args.kwargs["code"] == "biz_flow_stop_failed_hardware_may_be_active"
+    assert alert.await_args.kwargs["severity"] == "critical"
+    assert alert.await_args.kwargs["details"]["reason"] == "fail_safe_shutdown_exception"
+    assert alert.await_args.kwargs["details"]["error_code"] == "RuntimeError"
 
 
 @pytest.mark.asyncio

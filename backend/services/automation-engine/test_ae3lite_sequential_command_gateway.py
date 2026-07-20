@@ -86,6 +86,7 @@ class _FakeCommandRepo:
         self.publish_accepted_calls: list[dict] = []
         self.publish_failed_calls: list[dict] = []
         self.publish_retryable_calls: list[dict] = []
+        self.allocated_payloads: list[dict] = []
 
     async def record_publish_retryable_error(
         self,
@@ -126,6 +127,7 @@ class _FakeCommandRepo:
         self.step_no += 1
         ae_id = 100 + self.step_no
         self.created_ids.append(ae_id)
+        self.allocated_payloads.append(dict(payload) if isinstance(payload, dict) else payload)
         return ae_id, self.step_no, False, "pending"
 
     async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now, stage_name=None):
@@ -164,8 +166,11 @@ class _FakeCommandRepo:
     async def get_legacy_command_by_cmd_id(self, *, zone_id, cmd_id):
         return self._legacy_row
 
-    async def get_latest_for_task(self, *, task_id):
+    async def get_latest_for_task(self, *, task_id, exclude_fail_safe=True):
         return self._ae_command_row
+
+    async def get_latest_by_planner_step(self, *, task_id, planner_step):
+        return None
 
 
 class _SequencedLegacyCommandRepo(_FakeCommandRepo):
@@ -184,10 +189,16 @@ def _mock_task(task_id=1, **kwargs):
     """MagicMock task with workflow.stage_deadline_at=None by default."""
     wf = MagicMock()
     wf.stage_deadline_at = None
+    wf.stage_entered_at = NOW
+    wf.corr_step = None
     m = MagicMock()
     m.id = task_id
     m.zone_id = 1
     m.claimed_by = "w1"
+    m.topology = "two_tank"
+    m.current_stage = "irrigation_start"
+    m.status = "running"
+    m.correction = None
     m.workflow = wf
     for k, v in kwargs.items():
         setattr(m, k, v)
@@ -250,11 +261,16 @@ class _FakeHistoryLogger:
 def _make_task(zone_id=1, task_id=1):
     workflow = MagicMock()
     workflow.stage_deadline_at = None
+    workflow.stage_entered_at = NOW
+    workflow.corr_step = None
     m = MagicMock()
     m.id = task_id
     m.zone_id = zone_id
     m.claimed_by = "w1"
     m.topology = "two_tank"
+    m.current_stage = "irrigation_start"
+    m.status = "running"
+    m.correction = None
     m.workflow = workflow
     return m
 
@@ -294,6 +310,225 @@ async def test_run_batch_multiple_commands_all_done():
 
 
 @pytest.mark.asyncio
+async def test_run_batch_resumes_after_first_done_without_republishing_completed_step():
+    stage_token = f"irrigation_start:{NOW.isoformat()}"
+
+    class _BatchResumeCommandRepo(_FakeCommandRepo):
+        async def get_latest_for_task(self, *, task_id, exclude_fail_safe=True):
+            calls = getattr(self, "_latest_calls", 0)
+            self._latest_calls = calls + 1
+            if calls > 0:
+                return self._ae_command_row
+            return {
+                "id": 90,
+                "planner_step": "irrigation_start:0:valve_solution_supply",
+                "payload": {
+                    "_ae3_recovery_resume": {
+                        "stage": "irrigation_start",
+                        "stage_execution_token": stage_token,
+                    },
+                },
+            }
+
+        async def get_latest_by_planner_step(self, *, task_id, planner_step):
+            if planner_step != "irrigation_start:0:valve_solution_supply":
+                return None
+            return {
+                "id": 90,
+                "task_id": task_id,
+                "planner_step": planner_step,
+                "node_uid": "nd-1",
+                "channel": "valve_solution_supply",
+                "external_id": "900",
+                "terminal_status": "DONE",
+                "payload": {
+                    "cmd": "set_relay",
+                    "params": {"state": True},
+                    "cmd_id": "ae3-t1-z1-s1",
+                    "_ae3_stage_execution_token": stage_token,
+                },
+            }
+
+    command_repo = _BatchResumeCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=command_repo, history_logger=history_logger)
+    task = _make_task()
+    commands = [
+        _planned(channel="valve_solution_supply"),
+        _planned(channel="valve_irrigation"),
+        _planned(channel="pump_main"),
+    ]
+
+    result = await gw.run_batch(task=task, commands=commands, now=NOW)
+
+    assert result["success"] is True
+    assert result["commands_total"] == 3
+    assert result["command_statuses"][0]["recovered"] is True
+    assert [call["channel"] for call in history_logger.calls] == [
+        "valve_irrigation",
+        "pump_main",
+    ]
+    # M4: resume-marker копируется на новые ae_commands текущего resume.
+    assert command_repo.allocated_payloads
+    assert all(
+        payload.get("_ae3_recovery_resume", {}).get("stage_execution_token") == stage_token
+        for payload in command_repo.allocated_payloads
+    )
+    assert all(
+        payload.get("_ae3_stage_execution_token") == stage_token
+        for payload in command_repo.allocated_payloads
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_batch_does_not_skip_old_done_from_previous_stage_execution():
+    """H2: DONE прошлого входа в тот же stage name не должен skip'ать шаг."""
+    current_token = f"irrigation_start:{NOW.isoformat()}"
+    old_token = f"irrigation_start:{(NOW - timedelta(hours=1)).isoformat()}"
+
+    class _StaleTokenCommandRepo(_FakeCommandRepo):
+        async def get_latest_for_task(self, *, task_id, exclude_fail_safe=True):
+            return {
+                "id": 90,
+                "external_id": "1001",
+                "planner_step": "irrigation_start:0:valve_solution_supply",
+                "payload": {
+                    "cmd_id": "ae3-t1-z1-s1",
+                    "_ae3_recovery_resume": {
+                        "stage": "irrigation_start",
+                        "stage_execution_token": current_token,
+                    },
+                },
+            }
+
+        async def get_latest_by_planner_step(self, *, task_id, planner_step):
+            return {
+                "id": 90,
+                "task_id": task_id,
+                "planner_step": planner_step,
+                "node_uid": "nd-1",
+                "channel": "valve_solution_supply",
+                "external_id": "900",
+                "terminal_status": "DONE",
+                "payload": {
+                    "cmd": "set_relay",
+                    "params": {"state": True},
+                    "cmd_id": "ae3-t1-z1-s1",
+                    "_ae3_stage_execution_token": old_token,
+                },
+            }
+
+    command_repo = _StaleTokenCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=command_repo, history_logger=history_logger)
+
+    result = await gw.run_batch(
+        task=_make_task(),
+        commands=[_planned(channel="valve_solution_supply")],
+        now=NOW,
+    )
+
+    assert result["success"] is True
+    assert result["command_statuses"][0].get("recovered") is not True
+    assert [call["channel"] for call in history_logger.calls] == ["valve_solution_supply"]
+
+
+@pytest.mark.asyncio
+async def test_run_batch_does_not_skip_fail_safe_done_as_planner_step():
+    """H3: fail-safe ae_command DONE не участвует в штатном batch resume."""
+    stage_token = f"irrigation_start:{NOW.isoformat()}"
+
+    class _FailSafeDoneCommandRepo(_FakeCommandRepo):
+        async def get_latest_for_task(self, *, task_id, exclude_fail_safe=True):
+            return {
+                "id": 91,
+                "external_id": "1001",
+                "planner_step": "irrigation_start:0:pump_main",
+                "payload": {
+                    "cmd_id": "ae3-t1-z1-s1",
+                    "_ae3_recovery_resume": {
+                        "stage": "irrigation_start",
+                        "stage_execution_token": stage_token,
+                    },
+                },
+            }
+
+        async def get_latest_by_planner_step(self, *, task_id, planner_step):
+            return {
+                "id": 99,
+                "task_id": task_id,
+                "planner_step": planner_step,
+                "node_uid": "nd-1",
+                "channel": "pump_main",
+                "external_id": "999",
+                "terminal_status": "DONE",
+                "payload": {
+                    "cmd": "set_relay",
+                    "params": {"state": False},
+                    "cmd_id": "ae3-t1-z1-s99",
+                    "_ae3_fail_safe": True,
+                    "_ae3_stage_execution_token": stage_token,
+                },
+            }
+
+    command_repo = _FailSafeDoneCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=command_repo, history_logger=history_logger)
+
+    result = await gw.run_batch(
+        task=_make_task(),
+        commands=[
+            PlannedCommand(
+                node_uid="nd-1",
+                channel="pump_main",
+                payload={"cmd": "set_relay", "params": {"state": False}},
+                step_no=1,
+            )
+        ],
+        now=NOW,
+    )
+
+    assert result["success"] is True
+    assert result["command_statuses"][0].get("recovered") is not True
+    assert [call["channel"] for call in history_logger.calls] == ["pump_main"]
+
+
+@pytest.mark.asyncio
+async def test_run_batch_does_not_skip_old_done_step_without_recovery_marker():
+    class _OldDoneCommandRepo(_FakeCommandRepo):
+        async def get_latest_by_planner_step(self, *, task_id, planner_step):
+            return {
+                "id": 90,
+                "task_id": task_id,
+                "planner_step": planner_step,
+                "node_uid": "nd-1",
+                "channel": "valve_solution_supply",
+                "external_id": "900",
+                "terminal_status": "DONE",
+                "payload": {
+                    "cmd": "set_relay",
+                    "params": {"state": True},
+                    "cmd_id": "ae3-t1-z1-s1",
+                    "_ae3_stage_execution_token": f"irrigation_start:{NOW.isoformat()}",
+                },
+            }
+
+    command_repo = _OldDoneCommandRepo()
+    history_logger = _FakeHistoryLogger()
+    gw = _make_gw(command_repo=command_repo, history_logger=history_logger)
+
+    result = await gw.run_batch(
+        task=_make_task(),
+        commands=[_planned(channel="valve_solution_supply")],
+        now=NOW,
+    )
+
+    assert result["success"] is True
+    assert len(history_logger.calls) == 1
+    assert result["command_statuses"][0].get("recovered") is None
+
+
+@pytest.mark.asyncio
 async def test_run_batch_complete_on_ack_waits_for_done_not_terminal_on_ack() -> None:
     cmd_repo = _SequencedLegacyCommandRepo(
         legacy_rows=[
@@ -328,6 +563,98 @@ async def test_run_batch_empty_commands():
     result = await gw.run_batch(task=_make_task(), commands=[], now=NOW)
     assert result["success"] is True
     assert result["commands_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_publish_only_batch_publishes_pump_before_valves_without_terminal_wait():
+    """H1: pump_main publish строго до fan-out клапанов; terminal не ждём."""
+    pump_started = asyncio.Event()
+    pump_release = asyncio.Event()
+    valve_published_during_pump: list[str] = []
+
+    class _OrderedHistoryLogger(_FakeHistoryLogger):
+        async def publish(self, *, greenhouse_uid, zone_id, node_uid, channel, cmd, params, cmd_id=None):
+            self.calls.append({"cmd": cmd, "channel": channel})
+            if channel == "pump_main":
+                pump_started.set()
+                await pump_release.wait()
+            elif not pump_release.is_set():
+                valve_published_during_pump.append(channel)
+            return f"hl-{cmd_id}"
+
+    history_logger = _OrderedHistoryLogger()
+    command_repo = _FakeCommandRepo()
+    gw = _make_gw(command_repo=command_repo, history_logger=history_logger)
+    # Valves first in input list — gateway всё равно обязан publish pump_main первым.
+    commands = [
+        _planned(channel="valve_clean_fill"),
+        _planned(channel="valve_irrigation"),
+        _planned(channel="pump_main"),
+    ]
+
+    async def _release_after_pump_started() -> None:
+        await pump_started.wait()
+        await asyncio.sleep(0.02)
+        assert valve_published_during_pump == []
+        assert [call["channel"] for call in history_logger.calls] == ["pump_main"]
+        pump_release.set()
+
+    release_task = asyncio.create_task(_release_after_pump_started())
+    result = await gw.run_publish_only_batch(
+        task=_make_task(),
+        commands=commands,
+        now=NOW,
+    )
+    await release_task
+
+    assert result["success"] is True
+    assert result["commands_total"] == 3
+    assert all(status.get("terminal_status") is None for status in result["command_statuses"])
+    assert [call["channel"] for call in history_logger.calls] == [
+        "pump_main",
+        "valve_clean_fill",
+        "valve_irrigation",
+    ]
+    assert valve_published_during_pump == []
+
+
+@pytest.mark.asyncio
+async def test_mark_recovery_batch_resume_ignores_fail_safe_latest():
+    """H3: get_latest exclude_fail_safe — fail-safe не становится resume anchor."""
+
+    class _FailSafeLatestRepo(_FakeCommandRepo):
+        def __init__(self):
+            super().__init__()
+            self.mark_calls: list[dict] = []
+
+        async def get_latest_for_task(self, *, task_id, exclude_fail_safe=True):
+            if exclude_fail_safe:
+                return {
+                    "id": 50,
+                    "planner_step": "irrigation_start:0:valve_irrigation",
+                    "payload": {"cmd": "set_relay"},
+                }
+            return {
+                "id": 99,
+                "planner_step": "irrigation_start:2:pump_main",
+                "payload": {"_ae3_fail_safe": True, "cmd": "set_relay"},
+            }
+
+        async def mark_recovery_batch_resume(self, *, ae_command_id, stage_name, stage_execution_token, now):
+            self.mark_calls.append(
+                {
+                    "ae_command_id": ae_command_id,
+                    "stage_name": stage_name,
+                    "stage_execution_token": stage_execution_token,
+                }
+            )
+            return True
+
+    repo = _FailSafeLatestRepo()
+    gw = _make_gw(command_repo=repo)
+    marked = await gw.mark_recovery_batch_resume(task=_make_task(), now=NOW)
+    assert marked is True
+    assert repo.mark_calls[0]["ae_command_id"] == 50
 
 
 # ── run_batch: failures ────────────────────────────────────────────────────────

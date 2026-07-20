@@ -77,13 +77,156 @@ def mock_command_routes_db():
          patch("command_routes.execute", new_callable=AsyncMock) as mock_execute, \
          patch("command_routes.mark_command_sent", new_callable=AsyncMock) as mock_mark_command_sent, \
          patch("command_routes.mark_command_send_failed", new_callable=AsyncMock) as mock_mark_command_send_failed, \
-         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
+         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid, \
+         patch(
+             "command_service.fetch",
+             new_callable=AsyncMock,
+             return_value=[{"node_secret": "a" * 64}],
+         ):
         mock_fetch.side_effect = _mock_fetch
         mock_execute.return_value = "OK"
         mock_mark_command_sent.return_value = True
         mock_mark_command_send_failed.return_value = None
         mock_get_gh_uid.return_value = "gh-1"
         yield
+
+
+@pytest.mark.asyncio
+async def test_resolve_node_secret_reads_per_node_secret_from_db():
+    from command_service import _resolve_node_secret
+
+    per_node_secret = "b" * 64
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": per_node_secret}],
+    ) as mock_fetch:
+        resolved = await _resolve_node_secret(node_uid="nd-irrig-1", node_id=7)
+
+    assert resolved == per_node_secret
+    query, node_id, node_uid = mock_fetch.await_args.args
+    assert "config->>'node_secret'" in query
+    assert node_id == 7
+    assert node_uid == "nd-irrig-1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_node_secret_preserves_raw_secret_without_strip():
+    """Laravel NodeSecretService returns raw secret; HL must not strip whitespace."""
+    from command_service import _resolve_node_secret
+
+    raw_secret = "  " + ("ab" * 32) + "  "
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": raw_secret}],
+    ):
+        resolved = await _resolve_node_secret(node_uid="nd-irrig-1", node_id=7)
+
+    assert resolved == raw_secret
+
+
+@pytest.mark.asyncio
+async def test_resolve_node_secret_with_zone_id_checks_assignment_in_one_query():
+    from command_service import NodeSecretResolutionError, _resolve_node_secret
+
+    per_node_secret = "c" * 64
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": per_node_secret}],
+    ) as mock_fetch:
+        resolved = await _resolve_node_secret(
+            node_uid="nd-irrig-1",
+            node_id=7,
+            zone_id=42,
+        )
+
+    assert resolved == per_node_secret
+    query, node_id, node_uid, zone_id = mock_fetch.await_args.args
+    assert "zone_id = $3" in query
+    assert node_id == 7
+    assert node_uid == "nd-irrig-1"
+    assert zone_id == 42
+
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        with pytest.raises(NodeSecretResolutionError, match="not assigned to zone"):
+            await _resolve_node_secret(node_uid="nd-irrig-1", node_id=7, zone_id=99)
+
+
+@pytest.mark.asyncio
+async def test_resolve_node_secret_fails_closed_in_production(monkeypatch):
+    from command_service import NodeSecretResolutionError, _resolve_node_secret
+
+    monkeypatch.setenv("APP_ENV", "production")
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": None}],
+    ), patch("command_service.get_settings") as mock_settings:
+        with pytest.raises(NodeSecretResolutionError, match="not configured"):
+            await _resolve_node_secret(node_uid="nd-irrig-1", node_id=7)
+
+    mock_settings.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_node_secret_uses_default_only_outside_production(
+    monkeypatch, caplog
+):
+    from command_service import _resolve_node_secret
+
+    monkeypatch.setenv("APP_ENV", "local")
+    with patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": None}],
+    ), patch("command_service.get_settings") as mock_settings:
+        mock_settings.return_value = Mock(node_default_secret="dev-default-secret")
+        resolved = await _resolve_node_secret(node_uid="nd-irrig-1", node_id=7)
+
+    assert resolved == "dev-default-secret"
+    assert "Using NODE_DEFAULT_SECRET fallback" in caplog.text
+
+
+def test_create_command_payload_resigns_with_explicit_per_node_secret(caplog):
+    import hashlib
+    import hmac
+
+    from command_service import _create_command_payload
+    from common.hmac_utils import canonical_json_payload
+
+    secret = "c" * 64
+    unsigned_payload = {
+        "cmd": "run_pump",
+        "cmd_id": "cmd-per-node-secret",
+        "params": {"duration_ms": 1000},
+        "ts": 1737979200,
+    }
+
+    with patch("command_service.time.time", return_value=1737979200):
+        payload = _create_command_payload(
+            node_uid="nd-irrig-1",
+            secret=secret,
+            cmd=unsigned_payload["cmd"],
+            cmd_id=unsigned_payload["cmd_id"],
+            params=unsigned_payload["params"],
+            ts=unsigned_payload["ts"],
+            sig="caller-supplied-signature",
+        )
+
+    expected_sig = hmac.new(
+        secret.encode(),
+        canonical_json_payload(unsigned_payload).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    assert payload["sig"] == expected_sig
+    assert payload["sig"] != "caller-supplied-signature"
+    assert "Ignoring caller-provided command signature" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -279,11 +422,27 @@ async def test_ensure_command_for_publish_skips_real_ack_with_sent_at():
 
 
 @pytest.mark.asyncio
-async def test_mark_command_sent_fail_closed_on_noop_update():
+async def test_mark_command_sent_idempotent_when_ack_already_has_sent_at():
+    """ACK + sent_at после publish — идемпотентный success, не MarkCommandSentError."""
+    from common.commands import mark_command_sent
+
+    with patch("common.commands.execute", new=AsyncMock(return_value="UPDATE 0")), \
+         patch(
+             "common.commands.fetch",
+             new=AsyncMock(return_value=[{"status": "ACK", "sent_at": "2026-01-01"}]),
+         ):
+        assert await mark_command_sent("cmd-ack") is True
+
+
+@pytest.mark.asyncio
+async def test_mark_command_sent_fail_closed_on_unknown_status():
     from common.commands import MarkCommandSentError, mark_command_sent
 
     with patch("common.commands.execute", new=AsyncMock(return_value="UPDATE 0")), \
-         patch("common.commands.fetch", new=AsyncMock(return_value=[{"status": "ACK", "sent_at": "2026-01-01"}])):
+         patch(
+             "common.commands.fetch",
+             new=AsyncMock(return_value=[{"status": "RUNNING", "sent_at": None}]),
+         ):
         with pytest.raises(MarkCommandSentError):
             await mark_command_sent("cmd-fail")
 
@@ -347,6 +506,122 @@ async def test_drain_abandons_send_failed_with_null_zone_id():
 
 
 @pytest.mark.asyncio
+async def test_drain_skips_when_publish_claim_busy():
+    """Concurrent drain must not double-publish: busy advisory claim → skip."""
+    from contextlib import asynccontextmanager
+
+    from commands.drain import drain_stale_queued_commands_once
+
+    claim_row = {
+        "cmd_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "zone_id": 1,
+        "node_id": 2,
+        "channel": "pump",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 1000},
+        "status": "QUEUED",
+        "source": "api",
+        "node_uid": "nd-irrig-1",
+    }
+
+    @asynccontextmanager
+    async def _busy_claim(_cmd_id: str):
+        yield False
+
+    with patch(
+        "commands.drain._claim_stale_queued_command_rows",
+        new_callable=AsyncMock,
+        return_value=[claim_row],
+    ), patch(
+        "commands.drain._try_claim_cmd_for_publish",
+        new=_busy_claim,
+    ), patch(
+        "commands.drain.publish_command_with_retry",
+        new_callable=AsyncMock,
+    ) as publish:
+        summary = await drain_stale_queued_commands_once(stale_after_seconds=0, limit=10)
+
+    publish.assert_not_awaited()
+    assert summary == {"scanned": 1, "drained": 0, "skipped": 1, "failed": 0}
+
+
+@pytest.mark.asyncio
+async def test_drain_republish_holds_claim_and_passes_zone_to_secret():
+    """Successful drain resolves secret with zone_id under an active publish claim."""
+    from contextlib import asynccontextmanager
+
+    from commands.drain import drain_stale_queued_commands_once
+
+    claim_row = {
+        "cmd_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "zone_id": 7,
+        "node_id": 3,
+        "channel": "pump",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 500, "__hl_ts": 1737979200, "__hl_sig": "sig"},
+        "status": "QUEUED",
+        "source": "api",
+        "node_uid": "nd-irrig-1",
+    }
+
+    @asynccontextmanager
+    async def _ok_claim(_cmd_id: str):
+        yield True
+
+    with patch(
+        "commands.drain._claim_stale_queued_command_rows",
+        new_callable=AsyncMock,
+        return_value=[claim_row],
+    ), patch(
+        "commands.drain._try_claim_cmd_for_publish",
+        new=_ok_claim,
+    ), patch(
+        "commands.drain.ensure_command_for_publish",
+        new_callable=AsyncMock,
+        return_value=None,
+    ), patch(
+        "commands.drain._get_gh_uid_from_zone_id",
+        new_callable=AsyncMock,
+        return_value="gh-1",
+    ), patch(
+        "commands.drain._get_zone_uid_from_id",
+        new_callable=AsyncMock,
+        return_value="zn-7",
+    ), patch(
+        "commands.drain._resolve_node_secret",
+        new_callable=AsyncMock,
+        return_value="d" * 64,
+    ) as resolve_secret, patch(
+        "commands.drain._create_command_payload",
+        return_value={"cmd_id": claim_row["cmd_id"], "cmd": "run_pump"},
+    ), patch(
+        "commands.drain.publish_command_with_retry",
+        new_callable=AsyncMock,
+        return_value={"status": "ok"},
+    ) as publish:
+        summary = await drain_stale_queued_commands_once(stale_after_seconds=0, limit=10)
+
+    resolve_secret.assert_awaited_once_with(
+        node_uid="nd-irrig-1",
+        node_id=3,
+        zone_id=7,
+    )
+    publish.assert_awaited_once()
+    assert summary == {"scanned": 1, "drained": 1, "skipped": 0, "failed": 0}
+
+
+def test_cmd_publish_advisory_lock_key_is_stable():
+    from commands.drain import _cmd_publish_advisory_lock_key
+
+    key_a = _cmd_publish_advisory_lock_key("cmd-stable-1")
+    key_b = _cmd_publish_advisory_lock_key("cmd-stable-1")
+    key_c = _cmd_publish_advisory_lock_key("cmd-stable-2")
+    assert key_a == key_b
+    assert key_a != key_c
+    assert 0 <= key_a <= 0x7FFFFFFFFFFFFFFF
+
+
+@pytest.mark.asyncio
 async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /commands endpoint."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
@@ -374,6 +649,39 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         # Проверяем, что команда была опубликована в MQTT
         # Структура: mqtt_client._client._client.publish()
         assert mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_does_not_publish_without_per_node_secret_in_production(
+    client, auth_headers, mock_mqtt_client, monkeypatch
+):
+    monkeypatch.setenv("APP_ENV", "production")
+    with patch(
+        "command_routes.get_mqtt_client", new_callable=AsyncMock
+    ) as mock_get_mqtt, patch("command_routes.get_settings") as mock_settings, patch(
+        "command_service.fetch",
+        new_callable=AsyncMock,
+        return_value=[{"node_secret": None}],
+    ):
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "default",
+                "params": {"duration_ms": 1000},
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 503
+    assert "Per-node command signing secret is not configured" in response.json()["detail"]
+    assert not mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio

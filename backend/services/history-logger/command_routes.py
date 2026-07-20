@@ -9,9 +9,11 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from auth import _auth_ingest
 from command_service import (
+    NodeSecretResolutionError,
     _create_command_payload,
     _get_gh_uid_from_zone_id,
     _get_zone_uid_from_id,
+    _resolve_node_secret,
     publish_command_mqtt,
     publish_config_mqtt,
     publish_config_temp_mqtt,
@@ -240,13 +242,22 @@ async def _publish_command_core(
     effective_gh_uid = await resolve_effective_gh_uid(zone_id, req.greenhouse_uid)
 
     try:
+        secret = await _resolve_node_secret(
+            node_uid=node_uid,
+            node_id=node_id,
+            zone_id=zone_id,
+        )
         payload = _create_command_payload(
+            node_uid=node_uid,
+            secret=secret,
             cmd=req.cmd,
             cmd_id=req.cmd_id,
             params=req.params,
             ts=req.ts,
             sig=req.sig,
         )
+    except NodeSecretResolutionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
