@@ -90,6 +90,7 @@ import {
 } from '@/composables/useAutomationDefaults';
 import { resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets';
 import { extractHumanErrorMessage } from '@/utils/errorMessage';
+import { isAssignableLifecycleState, needsRebindConfirm } from '@/composables/useNodeLifecycle';
 import { logger } from '@/utils/logger';
 import type { ClimateFormState } from '@/composables/zoneAutomationTypes';
 
@@ -698,6 +699,23 @@ async function onBindNode(nodeId: number) {
     ) {
         showToast('Нода уже привязана к этой зоне', 'info');
         return;
+    }
+    if (node?.lifecycle_state && !isAssignableLifecycleState(node.lifecycle_state)) {
+        showToast(
+            'Ноду нельзя привязать в текущем lifecycle. Допустимы: REGISTERED_BACKEND, ASSIGNED_TO_ZONE, ACTIVE.',
+            'warning',
+        );
+        return;
+    }
+    if (node && needsRebindConfirm(node) && node.zone_id !== props.zoneId) {
+        const label = node.uid || node.name || `Node #${node.id}`;
+        const ok = typeof window === 'undefined'
+            || window.confirm(
+                `Нода "${label}" уже привязана к другой зоне. Перепривязать? Текущая привязка будет сброшена до подтверждения config_report.`,
+            );
+        if (!ok) {
+            return;
+        }
     }
     bindingFailedNodeIds.value = new Set(
         [...bindingFailedNodeIds.value].filter((id) => id !== nodeId),

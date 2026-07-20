@@ -18,7 +18,7 @@ Breaking-change: обратная совместимость со старыми
 
 1. **Telemetry Flow** — вверх (узлы → backend).
 2. **Command Flow** — вниз (backend → узлы).
-3. **Config Flow** — вверх (узлы → backend, через `config_report`).
+3. **Config Flow** — двусторонний: Laravel → HL → MQTT `…/config` (целевой NodeConfig при bind/rebind/unbind) и вверх `config_report` (узлы → backend, wire ACK).
 4. **Status/LWT Flow** — вверх (узлы → backend).
 5. **Heartbeat Flow** — вверх (узлы → backend).
 6. **Events Flow** — backend → frontend.
@@ -144,16 +144,21 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 
 ---
 
-# 5. CONFIG FLOW (узлы → backend)
+# 5. CONFIG FLOW (backend ↔ узлы)
 
 ## 5.1. Назначение
 NodeConfig определяет:
 - типы каналов (Sensor/Actuator),
 - частоты опроса,
 - безопасные лимиты,
-- параметры Wi‑Fi/MQTT.
+- параметры Wi‑Fi/MQTT,
+- namespace (`gh_uid` / `zone_uid`).
 
-Узел использует этот файл как источник настроек, конфиг хранится в прошивке/NVS.
+**Канон:** Laravel **публикует** целевой NodeConfig вниз через history-logger
+(`PublishNodeConfigJob` → `POST /nodes/{uid}/config` → MQTT `…/config`).
+Нода применяет конфиг в NVS и отвечает вверх `config_report` (wire ACK).
+Bind завершается только после observed `config_report` из целевого namespace
+(см. `NODE_ASSIGNMENT_LOGIC.md`, `NODE_ADDITION_AND_ACTIVATION_FLOW.md`).
 
 Важно по типам:
 - `node_type` на уровне узла передается отдельно (в `node_hello`) и использует только канонические значения
@@ -162,11 +167,13 @@ NodeConfig определяет:
 
 ## 5.2. Шаги
 
-1. Нода формирует NodeConfig в прошивке/NVS.
-2. Отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
-3. Backend сохраняет конфиг и синхронизирует `node_channels`.
-4. Нода валидирует и применяет конфиг локально.
-5. **Backend финализирует bind/rebind после `config_report`**: `history-logger` наблюдает событие, Laravel подтверждает namespace и переводит ноду в `ASSIGNED_TO_ZONE`.
+1. Laravel (UI bind / rebind / swap / detach-unbind) публикует целевой NodeConfig через HL на MQTT `…/config`
+   (часто temp topic `hydro/gh-temp/zn-temp/{hardware_id|uid}/config` пока нода ещё не в целевом namespace).
+2. Нода валидирует, сохраняет в NVS и применяет конфиг (при смене namespace — MQTT restart).
+3. Нода отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
+4. History-logger сохраняет конфиг, синхронизирует `node_channels`, сообщает Laravel observed-факт.
+5. **Laravel финализирует bind/rebind после `config_report`**: подтверждает namespace и переводит ноду в `ASSIGNED_TO_ZONE`
+   (unbind/detach зеркалит `gh-temp`/`zn-temp` без обязательного finalize в зону).
 
 ## 5.3. Топик
 ```

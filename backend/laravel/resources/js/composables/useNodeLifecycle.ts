@@ -19,6 +19,16 @@ export type NodeLifecycleState =
   | 'MAINTENANCE'
   | 'DECOMMISSIONED'
 
+/**
+ * Состояния, из которых backend NodeService допускает UI bind/rebind
+ * (через pending_zone_id). DEGRADED/MAINTENANCE — нет (см. NodeService).
+ */
+export const ASSIGNABLE_LIFECYCLE_STATES: readonly NodeLifecycleState[] = [
+  'REGISTERED_BACKEND',
+  'ASSIGNED_TO_ZONE',
+  'ACTIVE',
+] as const
+
 export interface AllowedTransition {
   value: NodeLifecycleState
   label: string
@@ -42,6 +52,57 @@ interface TransitionNodeResponse {
   node: unknown
   previous_state: string | null
   current_state: string | null
+}
+
+export function isAssignableLifecycleState(
+  state: NodeLifecycleState | string | null | undefined
+): boolean {
+  if (!state) {
+    return false
+  }
+
+  return (ASSIGNABLE_LIFECYCLE_STATES as readonly string[]).includes(state)
+}
+
+/**
+ * Rebind confirm: узел уже стабильно привязан (zone_id) или в assigned/active lifecycle.
+ */
+export function needsRebindConfirm(node: {
+  zone_id?: number | null
+  lifecycle_state?: string | null
+}): boolean {
+  if (node.zone_id) {
+    return true
+  }
+
+  return node.lifecycle_state === 'ASSIGNED_TO_ZONE' || node.lifecycle_state === 'ACTIVE'
+}
+
+/** Возраст pending bind для операторского UX (null если timestamp нет/невалиден). */
+export function formatPendingBindAge(iso: string | null | undefined): string | null {
+  if (!iso) {
+    return null
+  }
+
+  const setAt = new Date(iso)
+  if (Number.isNaN(setAt.getTime())) {
+    return null
+  }
+
+  const minutes = Math.max(0, Math.floor((Date.now() - setAt.getTime()) / 60_000))
+  if (minutes < 1) {
+    return 'только что'
+  }
+  if (minutes < 60) {
+    return `${minutes} мин`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    return `${hours} ч`
+  }
+
+  return `${Math.floor(hours / 24)} д`
 }
 
 export function useNodeLifecycle(showToast?: ToastHandler) {
@@ -128,6 +189,11 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     }
   }
 
+  /**
+   * Проверка возможности UI bind/rebind.
+   * Канон = NodeService: REGISTERED_BACKEND | ASSIGNED_TO_ZONE | ACTIVE.
+   * Не требует allowed transition ASSIGNED_TO_ZONE (rebind идёт через pending → REGISTERED).
+   */
   async function canAssignToZone(nodeId: number): Promise<boolean> {
     const transitions = await getAllowedTransitions(nodeId)
 
@@ -135,15 +201,7 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
       return false
     }
 
-    const currentState = transitions.current_state.value
-
-    if (currentState !== 'REGISTERED_BACKEND') {
-      return false
-    }
-
-    return transitions.allowed_transitions.some(
-      transition => transition.value === 'ASSIGNED_TO_ZONE'
-    )
+    return isAssignableLifecycleState(transitions.current_state.value)
   }
 
   function getStateLabel(state: NodeLifecycleState): string {
@@ -169,5 +227,8 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     getAllowedTransitions,
     canAssignToZone,
     getStateLabel,
+    isAssignableLifecycleState,
+    needsRebindConfirm,
+    formatPendingBindAge,
   }
 }

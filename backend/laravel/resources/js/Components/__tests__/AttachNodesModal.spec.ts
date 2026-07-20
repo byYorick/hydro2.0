@@ -62,6 +62,9 @@ vi.mock('@inertiajs/vue3', () => ({
 vi.mock('@/utils/logger', () => ({
   logger: {
     error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
   },
 }))
 
@@ -267,6 +270,68 @@ describe('AttachNodesModal.vue', () => {
     await flushPromises()
     
     expect(wrapper.text()).toContain('Нет доступных узлов')
+  })
+
+  it('скрывает ноды с не-assignable lifecycle (DEGRADED)', async () => {
+    axiosGetMock.mockResolvedValue({
+      data: {
+        data: [
+          { id: 1, uid: 'ok-1', name: 'OK', type: 'ph', status: 'online', lifecycle_state: 'REGISTERED_BACKEND' },
+          { id: 2, uid: 'bad-2', name: 'Bad', type: 'ph', status: 'online', lifecycle_state: 'DEGRADED' },
+        ],
+      },
+    })
+
+    const wrapper = mount(AttachNodesModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ok-1')
+    expect(wrapper.text()).not.toContain('bad-2')
+  })
+
+  it('просит confirm при rebind pending/assigned lifecycle', async () => {
+    const confirmMock = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmMock)
+
+    axiosGetMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 10,
+            uid: 'nd-rebind',
+            name: 'Rebind',
+            type: 'ph',
+            status: 'online',
+            zone_id: null,
+            lifecycle_state: 'ASSIGNED_TO_ZONE',
+          },
+        ],
+      },
+    })
+
+    const wrapper = mount(AttachNodesModal, {
+      props: {
+        show: true,
+        zoneId: 5,
+      },
+    })
+    await flushPromises()
+
+    const checkbox = wrapper.find('input[type="checkbox"]')
+    await checkbox.setValue(true)
+    await flushPromises()
+
+    const attachButton = wrapper.findAll('button').find((btn) => btn.text().includes('Привязать'))
+    await attachButton!.trigger('click')
+    await flushPromises()
+
+    expect(confirmMock).toHaveBeenCalled()
+    expect(axiosPatchMock).not.toHaveBeenCalled()
   })
 
   it('показывает состояние загрузки', async () => {

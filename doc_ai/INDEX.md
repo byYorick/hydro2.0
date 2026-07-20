@@ -32,9 +32,12 @@ Breaking-change: обратная совместимость со старыми
 
 **Ключевые документы:**
 - `01_SYSTEM/LOGIC_ARCH.md` — логическая модель (Теплица → Зоны → Ноды → Каналы)
-- `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config)
+- `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config: Laravel→HL→MQTT + `config_report`)
 - `01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md` — системный план перехода к единым canonical именам насосов
 - `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md` — жизненный цикл узлов
+- `01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md` — pending bind + `PublishNodeConfigJob` + wire ACK
+- `01_SYSTEM/NODE_ADDITION_AND_ACTIVATION_FLOW.md` — добавление/активация ноды
+- `01_SYSTEM/NODE_DETACH_IMPLEMENTATION.md` — detach/unbind через NodeConfig temp namespace
 - `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта
 
 **См. также:** [README](01_SYSTEM/README.md)
@@ -49,7 +52,7 @@ Breaking-change: обратная совместимость со старыми
 - `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — логика работы узлов
 - `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` — справочник каналов узлов
 - `02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — спецификация NodeConfig
-- `02_HARDWARE_FIRMWARE/CONFIG_REPORT_HANDLING.md` — обработка config_report
+- `02_HARDWARE_FIRMWARE/CONFIG_REPORT_HANDLING.md` — обработка `config_report` (канон wire ACK; `CONFIG_RESPONSE_HANDLING.md` — superseded)
 - `02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
 - `02_HARDWARE_FIRMWARE/HARDWARE_ARCH_FULL.md` — аппаратная архитектура
 - `02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md` — стандарты кодирования C/ESP-IDF

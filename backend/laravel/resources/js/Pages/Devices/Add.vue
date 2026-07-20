@@ -108,7 +108,7 @@
       <!-- Список новых нод -->
       <Card>
         <div class="text-sm font-semibold mb-3">
-          Новые ноды (без привязки к зоне)
+          Новые ноды (без стабильной привязки к зоне)
         </div>
         <div
           v-if="loading"
@@ -157,6 +157,18 @@
                     class="ml-2"
                   >
                     · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
+                  </span>
+                </div>
+                <div
+                  v-if="node.pending_zone_id && !node.zone_id"
+                  class="mt-2 text-xs rounded-md border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] px-2 py-1.5 text-[color:var(--badge-warning-text)]"
+                >
+                  Ожидает подтверждения привязки
+                  <span v-if="formatPendingBindAge(node.pending_zone_set_at)">
+                    · {{ formatPendingBindAge(node.pending_zone_set_at) }}
+                  </span>
+                  <span v-if="node.pending_zone_id">
+                    · зона #{{ node.pending_zone_id }}
                   </span>
                 </div>
               </div>
@@ -291,7 +303,13 @@ const canConfigureDevices = computed(() => {
 })
 
 // Инициализация composables для lifecycle
-const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
+const {
+  canAssignToZone,
+  getStateLabel,
+  isAssignableLifecycleState,
+  needsRebindConfirm,
+  formatPendingBindAge,
+} = useNodeLifecycle(showToast)
 const { handleError } = useErrorHandler(showToast)
 
 const newNodes = ref<Device[]>([])
@@ -353,7 +371,7 @@ async function loadNewNodes(): Promise<void> {
   try {
     const previousNodes = new Map(newNodes.value.map(node => [node.id, node]))
 
-    newNodes.value = await api.nodes.list({ unassigned: true })
+    newNodes.value = await api.nodes.list({ new_only: true })
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
@@ -420,11 +438,11 @@ async function assignNode(node: any) {
     return
   }
 
-  // Lifecycle-aware валидация: проверяем, может ли узел быть присвоен к зоне
-  if (node.lifecycle_state && node.lifecycle_state !== 'REGISTERED_BACKEND') {
+  // Lifecycle-aware: REGISTERED_BACKEND | ASSIGNED_TO_ZONE | ACTIVE (канон NodeService)
+  if (node.lifecycle_state && !isAssignableLifecycleState(node.lifecycle_state)) {
     const currentStateLabel = getStateLabel(node.lifecycle_state)
     showToast(
-      `Узел не может быть присвоен к зоне. Текущее состояние: ${currentStateLabel}. Требуется: Зарегистрирован (REGISTERED_BACKEND)`,
+      `Узел не может быть привязан к зоне. Текущее состояние: ${currentStateLabel}. Допустимы: Зарегистрирован, Привязан к зоне, Активен.`,
       'error',
       6000
     )
@@ -437,7 +455,7 @@ async function assignNode(node: any) {
       const canAssign = await canAssignToZone(node.id)
       if (!canAssign) {
         showToast(
-          'Узел не может быть присвоен к зоне. Узел должен быть зарегистрирован (REGISTERED_BACKEND) перед присвоением.',
+          'Узел не может быть привязан к зоне в текущем lifecycle-состоянии. Допустимы: REGISTERED_BACKEND, ASSIGNED_TO_ZONE, ACTIVE.',
           'error',
           6000
         )
@@ -446,6 +464,17 @@ async function assignNode(node: any) {
     } catch (err) {
       logger.warn('[Devices/Add] Failed to check lifecycle state, proceeding with assignment:', err)
       // Продолжаем с присвоением, backend вернет ошибку если lifecycle не подходит
+    }
+  }
+
+  if (needsRebindConfirm(node)) {
+    const label = node.name || node.uid || `Node #${node.id}`
+    const ok = typeof window === 'undefined'
+      || window.confirm(
+        `Нода "${label}" уже привязана. Перепривязать к другой зоне? Текущая привязка будет сброшена до подтверждения config_report.`
+      )
+    if (!ok) {
+      return
     }
   }
 
@@ -474,8 +503,9 @@ async function assignNode(node: any) {
         delete pendingAssignments[node.id]
       } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
         // Ожидаем config_report от ноды (через history-logger)
+        const pendingAge = formatPendingBindAge(updatedNode.pending_zone_set_at)
         showToast(
-          `Нода "${node.uid}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
+          `Нода "${node.uid}" привязывается к зоне. Ждём config_report (~2-5 сек)${pendingAge ? ` · ожидает: ${pendingAge}` : ''}…`,
           'info',
           5000
         )
@@ -532,7 +562,7 @@ async function assignNode(node: any) {
     const errMsg = apiErr?.response?.data?.message
     if (errMsg?.includes('lifecycle') || errMsg?.includes('state')) {
       showToast(
-        `Ошибка lifecycle: ${errMsg}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
+        `Ошибка lifecycle: ${errMsg}. Допустимы состояния: REGISTERED_BACKEND, ASSIGNED_TO_ZONE, ACTIVE.`,
         'error',
         7000
       )

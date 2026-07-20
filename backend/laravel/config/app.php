@@ -106,14 +106,14 @@ return [
     ],
 
     /*
-    | S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN): убран hardcoded дефолт
-    | "hydro-default-secret-key-2025" из production-конфига. Если ENV
-    | NODE_DEFAULT_SECRET не задан:
-    |   - dev/testing/local: используется legacy default через `??` fallback
-    |     в потребителях (`ConfigSignatureService`, `CommandSignatureService`,
-    |     `NodeConfigService`).
-    |   - production: возвращается null; потребители fallback'ятся на
-    |     `config('app.key')`, который должен быть случайным per-instance.
+    | Per-node HMAC: nodes.config.node_secret (generated on register/hello).
+    | NODE_DEFAULT_SECRET / APP_KEY fallback is allowed only outside production
+    | (NodeSecretService resolves with WARN). In production: fail-closed.
+    |
+    | S1.5 (AUDIT_2026_05_28_BUGFIX_PLAN): hardcoded default removed from
+    | production config. If ENV NODE_DEFAULT_SECRET is unset:
+    |   - local/testing: 'hydro-default-secret-key-2025' (legacy fallback only)
+    |   - production: null (no shared secret; require per-node secret)
     */
     'node_default_secret' => env('NODE_DEFAULT_SECRET',
         in_array(env('APP_ENV', 'production'), ['production', 'prod'], true)

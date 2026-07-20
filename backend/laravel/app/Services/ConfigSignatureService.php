@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\Log;
 
 class ConfigSignatureService
 {
+    public function __construct(
+        private readonly NodeSecretService $nodeSecretService,
+    ) {}
+
     /**
      * Подписать конфигурацию узла HMAC подписью с timestamp.
      *
@@ -114,8 +118,6 @@ class ConfigSignatureService
      */
     private function getNodeSecret(DeviceNode $node): ?string
     {
-        // В будущем можно добавить поле secret в таблицу nodes
-        // Пока используем общий секрет из конфигурации
-        return config('app.node_default_secret') ?? config('app.key');
+        return $this->nodeSecretService->resolve($node);
     }
 }

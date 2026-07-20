@@ -145,7 +145,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `emit_event` | Да | Нет | `Missing` | Специфично для test-node. |
 | `set_fault_mode` | Да | Нет | `Missing` | Симуляционная команда test-node. |
 | `reset_state` | Да | Нет | `Missing` | Симуляционная команда test-node. |
-| `reset_binding` | Да | Нет | `Missing` | Симуляционная/операционная команда test-node. |
+| `reset_binding` | Да (sim-only) | Нет | `Sim-only` | **Не канон production.** Канонический unbind = NodeConfig `gh-temp`/`zn-temp` через HL (`NODE_DETACH_IMPLEMENTATION.md`). Cmd остаётся только в `test_node` / `node_sim`. |
 | `activate_sensor_mode` | Да | Да (`ph/ec/system`) | `Direct` | Реализовано на service-channel `system`; включает sensor mode и публикует telemetry snapshot. |
 | `deactivate_sensor_mode` | Да | Да (`ph/ec/system`) | `Direct` | Реализовано на service-channel `system`; выключает sensor mode. |
 | `calibrate` | Нет (в test_node) | Да (`ph/ec`) | `Gap in test-node` | Для parity e2e желательно поддержать и в test-node. |

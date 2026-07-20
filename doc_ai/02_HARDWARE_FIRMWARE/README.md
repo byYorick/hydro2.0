@@ -66,7 +66,9 @@ Breaking-change: обратная совместимость со старыми
 Протокол взаимодействия с узлами
 
 #### [CONFIG_REPORT_HANDLING.md](CONFIG_REPORT_HANDLING.md)
-Подтверждение привязки ноды к зоне через `config_report` (fail-closed binding)
+Подтверждение привязки ноды к зоне через `config_report` (fail-closed binding).
+Канон: Laravel публикует NodeConfig через HL; finalize — только после `config_report`.
+(`CONFIG_RESPONSE_HANDLING.md` — superseded stub.)
 
 #### [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md)
 Спецификация `firmware/test_node` для HIL/E2E и доведения реальных нод до production-ready режима:

@@ -722,6 +722,10 @@ class ZoneReadinessService
             return [];
         }
 
+        if (! config('hydro.auto_bind_transport_roles', false)) {
+            return $missingBindings;
+        }
+
         $autoBoundRoles = $this->autoBindTransportRolesFromNodeChannels($zone, $missingBindings);
         if ($autoBoundRoles === []) {
             return $missingBindings;
@@ -741,7 +745,9 @@ class ZoneReadinessService
     {
         $roleCandidates = [
             'pump_main' => ['pump_main'],
-            'drain' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+            // AE3 solution_drain_* резолвит requested_channel=valve_drain по role ИЛИ channel.
+            // role=drain + channel=valve_drain достаточно; fill/supply/irrigation — не drain.
+            'drain' => ['valve_drain', 'drain', 'drain_main', 'drain_valve'],
         ];
 
         $autoBound = [];
@@ -749,6 +755,15 @@ class ZoneReadinessService
             if (! isset($roleCandidates[$role])) {
                 continue;
             }
+
+            $candidates = $roleCandidates[$role];
+            $priorityCases = [];
+            $priorityBindings = [];
+            foreach ($candidates as $index => $candidate) {
+                $priorityCases[] = 'WHEN ? THEN '.$index;
+                $priorityBindings[] = $candidate;
+            }
+            $prioritySql = 'CASE LOWER(node_channels.channel) '.implode(' ', $priorityCases).' ELSE 999 END';
 
             $channelId = NodeChannel::query()
                 ->select('node_channels.id')
@@ -759,12 +774,13 @@ class ZoneReadinessService
                         ->orWhere('nodes.pending_zone_id', $zone->id);
                 })
                 ->whereRaw("LOWER(COALESCE(node_channels.type, '')) = 'actuator'")
-                ->where(function ($query) use ($roleCandidates, $role) {
-                    foreach ($roleCandidates[$role] as $candidate) {
+                ->where(function ($query) use ($candidates) {
+                    foreach ($candidates as $candidate) {
                         $query->orWhereRaw('LOWER(node_channels.channel) = ?', [$candidate]);
                     }
                 })
                 ->whereNull('channel_bindings.id')
+                ->orderByRaw($prioritySql, $priorityBindings)
                 ->orderBy('node_channels.id')
                 ->value('node_channels.id');
 

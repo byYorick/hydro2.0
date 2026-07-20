@@ -91,11 +91,8 @@ HTTP Request: POST http://laravel/api/nodes/register "HTTP/1.1 201 Created"
    - Сохраняет `hardware_id`, `type`, `fw_version`, `capabilities`
 3. Если да - обновляет существующий узел (fw_version, capabilities и т.д.)
 
-**ВАЖНО:** 🔐 **WiFi и MQTT настройки НЕ обновляются!**
-
-**Логика:**
-- Если нода отправила `node_hello`, значит она **уже подключена** к WiFi и MQTT с правильными настройками
-- Сервер не публикует NodeConfig, конфиг приходит только через `config_report`
+**ВАЖНО:** 🔐 На этапе **регистрации** (`node_hello`) Laravel **не** публикует NodeConfig —
+нода уже в MQTT (иначе hello не дошёл бы). Публикация конфига начинается на этапе **bind**.
 
 **Состояние узла после регистрации:**
 ```sql
@@ -105,7 +102,7 @@ hardware_id: esp32-78e36ddde468
 zone_id: NULL
 pending_zone_id: NULL
 lifecycle_state: REGISTERED_BACKEND
-config: NULL  -- Конфиг НЕ создан!
+config: NULL  -- Конфиг ещё не опубликован сервером
 ```
 
 ### 4️⃣ Привязка узла к зоне (через UI или API)
@@ -118,23 +115,37 @@ config: NULL  -- Конфиг НЕ создан!
 **Laravel обновляет узел:**
 ```sql
 UPDATE nodes
-SET pending_zone_id = 6
+SET pending_zone_id = 6,
+    pending_zone_set_at = NOW()
 WHERE id = 7;
+-- zone_id остаётся NULL до wire ACK
 ```
 
-**⚡ Нода отправляет config_report:**
+**⚡ Laravel публикует целевой NodeConfig (канон bind):**
 
-После установки `pending_zone_id` сервер **не публикует** конфиг. При подключении к MQTT нода отправляет `config_report` со своим актуальным NodeConfig.
+После установки `pending_zone_id` (при `zone_id = null`) срабатывает
+`PublishNodeConfigOnUpdate` → `PublishNodeConfigJob` → history-logger
+`POST /nodes/{uid}/config` → MQTT (часто temp topic):
 
-**MQTT топик:**
+```
+hydro/gh-temp/zn-temp/{hardware_id|uid}/config
+```
+
+Laravel **не** ходит в MQTT напрямую — только через HL.
+
+Нода применяет конфиг (NVS + namespace) и публикует `config_report` из **целевого** namespace.
+
+**MQTT топик ACK:**
 - `hydro/{gh_uid}/{zone_uid}/{node_uid}/config_report`
 
 **Пример payload:**
 ```json
 {
   "node_id": "nd-clim-esp32new",
-  "version": 1,
+  "version": 3,
   "type": "climate",
+  "gh_uid": "gh-main",
+  "zone_uid": "zn-zone-a",
   "channels": [
     { "name": "temp_air", "type": "SENSOR", "metric": "TEMPERATURE" }
   ],
@@ -147,7 +158,7 @@ WHERE id = 7;
 
 **Python код:** `handle_config_report()` в `mqtt_handlers.py`
 
-**Действия (ДЛЯ REGISTERED_BACKEND узлов с pending_zone_id):**
+**Действия (для узлов с `pending_zone_id`):**
 
 **Step 1:** Сохраняет `nodes.config` и синхронизирует `node_channels`
 
@@ -189,7 +200,7 @@ pending_zone_id: NULL
 lifecycle_state: ASSIGNED_TO_ZONE
 ```
 
-### 8️⃣ Узел работает и отправляет данные
+### 7️⃣ Узел работает и отправляет данные
 
 **MQTT топики:**
 - `hydro/{gh_uid}/{zone_uid}/{node_uid}/temperature/telemetry`
@@ -211,15 +222,15 @@ lifecycle_state: ASSIGNED_TO_ZONE
 
 ## Важные особенности архитектуры
 
-### 🔐 Конфиг всегда firmware-defined
+### 🔐 Кто публикует NodeConfig
 
-**Ранее:** сервер публиковал конфиг и мог перезаписывать рабочие WiFi/MQTT настройки.
-
-**Сейчас:**
-- ✅ Узел отправляет `node_hello`
-- ✅ Laravel регистрирует узел без zone_id
-- ✅ Сервер **не публикует** NodeConfig
-- ✅ Нода использует конфиг из прошивки/NVS и отправляет `config_report`
+**Канон (bind / rebind / unbind):**
+- ✅ Узел отправляет `node_hello` → Laravel регистрирует без `zone_id` (на этом шаге publish **нет**)
+- ✅ При bind Laravel **публикует** целевой NodeConfig: `PublishNodeConfigJob` → HL → MQTT `…/config`
+  (часто `hydro/gh-temp/zn-temp/{hw|uid}/config`)
+- ✅ Нода применяет конфиг и отвечает `config_report` (wire ACK); finalize — только Laravel
+- ✅ Unbind/detach: `NodeFirmwareUnbindService` → temp namespace config через HL
+- ✅ Прямой MQTT publish из Laravel **запрещён** — только через history-logger
 
 ## Проблемы и решения
 
@@ -258,10 +269,11 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 
 **Тест 2: Завершение привязки**
 ```bash
-# После привязки узла к зоне через UI, узел отправляет config_report:
+# После UI-assign Laravel публикует NodeConfig (часто на temp topic).
+# Finalize требует config_report из ЦЕЛЕВОГО namespace (не gh-temp/zn-temp):
 docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
-  -t 'hydro/gh-temp/zn-temp/nd-clim-esp3278e/config_report' \
-  -m '{"node_id":"nd-clim-esp3278e","version":1,"channels":[{"name":"temp_air","type":"SENSOR","metric":"TEMPERATURE"}]}'
+  -t 'hydro/gh-main/zn-zone-a/nd-clim-esp3278e/config_report' \
+  -m '{"node_id":"nd-clim-esp3278e","version":3,"gh_uid":"gh-main","zone_uid":"zn-zone-a","channels":[{"name":"temp_air","type":"SENSOR","metric":"TEMPERATURE"}]}'
 ```
 
 **Ожидаемый результат:**
@@ -411,13 +423,17 @@ environment:
 
 ## Итоги
 
-✅ **Автоматическая регистрация работает!**
-- Узел отправляет node_hello → автоматически регистрируется в REGISTERED_BACKEND
-- Пользователь привязывает к зоне → узел получает конфиг
-- Узел подтверждает `config_report` → Laravel завершает bind и переводит узел в ASSIGNED_TO_ZONE
+✅ **Автоматическая регистрация + pending bind**
+- Узел отправляет `node_hello` → регистрируется в `REGISTERED_BACKEND`
+- Пользователь привязывает к зоне → Laravel публикует NodeConfig через HL (часто temp topic)
+- Узел подтверждает `config_report` → Laravel завершает bind (`ASSIGNED_TO_ZONE`)
 - Узел начинает работу → данные записываются в базу
 
-✅ **Все общение через History Logger**
+✅ **Границы ответственности**
 - ESP32 ↔ MQTT ↔ History Logger ↔ Laravel
-- Никаких прямых подключений узлов к Laravel API
-- Централизованная transport-обработка всех сообщений, при owner-контроле bind/rebind в Laravel
+- HL — единственная точка MQTT publish (config и commands)
+- Owner bind/rebind/finalize — Laravel (`NodeConfigReportObserverService`)
+- Канон ACK — `config_report` (не `config_response`)
+
+См. также: `doc_ai/01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md`, `NODE_ADDITION_AND_ACTIVATION_FLOW.md`,
+`doc_ai/02_HARDWARE_FIRMWARE/CONFIG_REPORT_HANDLING.md`.

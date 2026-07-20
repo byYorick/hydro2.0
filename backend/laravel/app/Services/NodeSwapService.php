@@ -9,44 +9,94 @@ use Illuminate\Support\Facades\Log;
 
 class NodeSwapService
 {
+    public function __construct(
+        private readonly ZoneNodeAutomationBindingValidator $bindingValidator,
+        private readonly NodeLifecycleService $lifecycleService,
+        private readonly NodeFirmwareUnbindService $firmwareUnbindService,
+        private readonly NodeSecretService $nodeSecretService,
+    ) {}
+
     /**
-     * Заменить узел новым узлом.
+     * Заменить узел новым узлом через pending bind-контракт.
      *
-     * Логика:
-     * - Найти старый узел по ID
-     * - Найти новый узел по hardware_id (или создать)
-     * - Перепривязать zone_id, channels (опционально)
-     * - Пометить старый узел как DECOMMISSIONED
-     * - Вернуть новый узел
+     * Новый узел получает pending_zone_id (zone_id остаётся null) до config_report.
+     * Старый узел снимается с зоны и переводится в DECOMMISSIONED.
+     * До очистки zone_id — best-effort firmware unbind (NodeConfig gh-temp/zn-temp),
+     * по аналогии с NodeService::detach().
      *
-     * @param  int  $oldNodeId  ID старого узла
-     * @param  string  $newHardwareId  Hardware ID нового узла
-     * @param  array  $options  Дополнительные опции:
-     *                          - migrate_telemetry: bool (по умолчанию false) - мигрировать историю телеметрии
-     *                          - migrate_channels: bool (по умолчанию true) - перепривязать каналы
+     * @param  array{
+     *     migrate_telemetry?: bool,
+     *     migrate_channels?: bool
+     * }  $options
      */
     public function swapNode(int $oldNodeId, string $newHardwareId, array $options = []): DeviceNode
     {
-        return DB::transaction(function () use ($oldNodeId, $newHardwareId, $options) {
-            // Находим старый узел
-            $oldNode = DeviceNode::findOrFail($oldNodeId);
+        // Best-effort unbind до транзакции: HTTP вне DB lock, пока нода ещё на zone-топике.
+        $oldPreview = DeviceNode::query()->findOrFail($oldNodeId);
+        $unbindZoneId = $oldPreview->zone_id;
+        if ($unbindZoneId) {
+            $this->firmwareUnbindService->publishTempNamespaceConfig($oldPreview, (int) $unbindZoneId);
+        }
 
-            // Находим или создаём новый узел по hardware_id
-            $newNode = DeviceNode::where('hardware_id', $newHardwareId)->first();
+        return DB::transaction(function () use ($oldNodeId, $newHardwareId, $options) {
+            $oldNode = DeviceNode::query()->lockForUpdate()->findOrFail($oldNodeId);
+            $targetZoneId = $oldNode->zone_id ?? $oldNode->pending_zone_id;
+
+            if (! $targetZoneId) {
+                throw new \DomainException(
+                    'Cannot swap node that is not assigned or pending assignment to a zone'
+                );
+            }
+
+            if ($oldNode->lifecycleState() === NodeLifecycleState::DECOMMISSIONED) {
+                throw new \DomainException('Cannot swap a decommissioned node');
+            }
+
+            $newNode = DeviceNode::query()
+                ->where('hardware_id', $newHardwareId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($newNode && (int) $newNode->id === (int) $oldNode->id) {
+                throw new \DomainException('Cannot swap a node with itself');
+            }
+
+            if ($newNode) {
+                $this->assertNewNodeEligibleForSwap($newNode, (int) $targetZoneId);
+            }
+
+            // Сначала освобождаем зону у старого узла — иначе fail-closed validator
+            // увидит дубликат роли/телеметрии на той же зоне.
+            $this->firmwareUnbindService->mirrorTempNamespaceInStoredConfig($oldNode);
+            $oldNode->zone_id = null;
+            $oldNode->pending_zone_id = null;
+            $oldNode->save();
+
+            if (! $this->lifecycleService->transitionToDecommissioned($oldNode, 'node_swap')) {
+                throw new \DomainException(
+                    'Cannot decommission old node: lifecycle transition not allowed from '.$oldNode->lifecycleState()->value
+                );
+            }
 
             if (! $newNode) {
-                // Создаём новый узел на основе старого
                 $newNode = new DeviceNode;
                 $newNode->uid = $this->generateNewNodeUid($oldNode);
                 $newNode->hardware_id = $newHardwareId;
                 $newNode->type = $oldNode->type;
                 $newNode->name = $oldNode->name.' (заменён)';
-                $newNode->zone_id = $oldNode->zone_id;
-                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после получения config_report от ноды
-                $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $newNode->validated = true;
                 $newNode->first_seen_at = now();
+                $newNode->zone_id = null;
+                $newNode->pending_zone_id = null;
+                $newNode->status = 'offline';
+                $this->nodeSecretService->ensureOnNode($newNode);
                 $newNode->save();
+
+                if (! $this->lifecycleService->ensureRegistered($newNode, 'node_swap_create')) {
+                    throw new \DomainException(
+                        'Cannot register replacement node: lifecycle transition to REGISTERED_BACKEND failed'
+                    );
+                }
 
                 Log::info('New node created during swap', [
                     'old_node_id' => $oldNodeId,
@@ -54,39 +104,14 @@ class NodeSwapService
                     'new_hardware_id' => $newHardwareId,
                 ]);
             } else {
-                // Обновляем существующий узел
-                if (! $newNode->zone_id && $oldNode->zone_id) {
-                    $newNode->zone_id = $oldNode->zone_id;
+                if (! $this->lifecycleService->ensureRegistered($newNode, 'node_swap_reuse')) {
+                    throw new \DomainException(
+                        'Cannot prepare replacement node: lifecycle transition to REGISTERED_BACKEND failed'
+                    );
                 }
-                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после получения config_report от ноды
-                // Если узел был в ASSIGNED_TO_ZONE или ACTIVE, переводим в REGISTERED_BACKEND,
-                // чтобы конфиг был опубликован заново и нода подтвердила установку
-                $previousState = $newNode->lifecycle_state;
-                if ($newNode->lifecycle_state &&
-                    in_array($newNode->lifecycle_state, [
-                        NodeLifecycleState::ASSIGNED_TO_ZONE,
-                        NodeLifecycleState::ACTIVE,
-                        NodeLifecycleState::DEGRADED,
-                    ])) {
-                    $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                    Log::info('Node lifecycle reset to REGISTERED_BACKEND during swap to trigger config publish', [
-                        'node_id' => $newNode->id,
-                        'previous_state' => $previousState?->value,
-                        'new_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
-                    ]);
-                } elseif (! $newNode->lifecycle_state) {
-                    $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                }
-                $newNode->save();
-
-                Log::info('Existing node updated during swap', [
-                    'old_node_id' => $oldNodeId,
-                    'new_node_id' => $newNode->id,
-                    'new_hardware_id' => $newHardwareId,
-                ]);
+                $this->nodeSecretService->ensureOnNode($newNode);
             }
 
-            // Перепривязываем каналы, если указано
             $migrateChannels = $options['migrate_channels'] ?? true;
             if ($migrateChannels) {
                 $oldNode->channels()->update(['node_id' => $newNode->id]);
@@ -96,12 +121,16 @@ class NodeSwapService
                 ]);
             }
 
-            // Мигрируем историю телеметрии, если указано
+            $this->bindingValidator->assertBindAllowed($newNode, (int) $targetZoneId);
+
+            $newNode->zone_id = null;
+            $newNode->pending_zone_id = (int) $targetZoneId;
+            $newNode->save();
+
             $migrateTelemetry = $options['migrate_telemetry'] ?? false;
             $telemetryMigrationResult = null;
             if ($migrateTelemetry) {
                 $telemetryMigrationResult = $this->migrateTelemetryHistory($oldNode->id, $newNode->id);
-                // Если миграция критична и не удалась, прерываем транзакцию
                 if (! $telemetryMigrationResult['success']) {
                     throw new \DomainException(
                         'Telemetry migration failed: '.($telemetryMigrationResult['error'] ?? 'Unknown error')
@@ -109,36 +138,62 @@ class NodeSwapService
                 }
             }
 
-            // Помечаем старый узел как DECOMMISSIONED
-            $oldNode->lifecycle_state = NodeLifecycleState::DECOMMISSIONED;
-            $oldNode->status = 'offline';
-            $oldNode->save();
-
-            Log::info('Node swap completed', [
+            Log::info('Node swap completed (pending bind)', [
                 'old_node_id' => $oldNodeId,
                 'old_uid' => $oldNode->uid,
                 'new_node_id' => $newNode->id,
                 'new_uid' => $newNode->uid,
                 'new_hardware_id' => $newHardwareId,
+                'pending_zone_id' => $newNode->pending_zone_id,
+                'zone_id' => $newNode->zone_id,
                 'telemetry_migrated' => $migrateTelemetry,
                 'telemetry_migration_success' => $telemetryMigrationResult['success'] ?? null,
             ]);
 
-            // Возвращаем результат с информацией о миграции
-            $newNode->setAttribute('_swap_metadata', [
+            $fresh = $newNode->fresh();
+            $fresh->setAttribute('_swap_metadata', [
                 'telemetry_migrated' => $migrateTelemetry,
                 'telemetry_migration_success' => $telemetryMigrationResult['success'] ?? null,
                 'telemetry_migration_warning' => $telemetryMigrationResult['warning'] ?? null,
+                'pending_bind' => true,
+                'pending_zone_id' => $fresh->pending_zone_id,
             ]);
 
-            return $newNode;
+            return $fresh;
         });
     }
 
+    private function assertNewNodeEligibleForSwap(DeviceNode $newNode, int $targetZoneId): void
+    {
+        if ($newNode->lifecycleState() === NodeLifecycleState::DECOMMISSIONED) {
+            throw new \DomainException('Cannot swap onto a decommissioned node');
+        }
+
+        if ($newNode->zone_id && (int) $newNode->zone_id !== $targetZoneId) {
+            throw new \DomainException(
+                'Replacement node is already assigned to another zone'
+            );
+        }
+
+        if (
+            $newNode->pending_zone_id
+            && (int) $newNode->pending_zone_id !== $targetZoneId
+            && ! $newNode->zone_id
+        ) {
+            throw new \DomainException(
+                'Replacement node already has a pending bind to another zone'
+            );
+        }
+
+        if ($newNode->zone_id && (int) $newNode->zone_id === $targetZoneId) {
+            throw new \DomainException(
+                'Replacement node is already assigned to the target zone; finalize or detach first'
+            );
+        }
+    }
+
     /**
-     * Мигрировать историю телеметрии от старого узла к новому.
-     *
-     * @return array ['success' => bool, 'error' => string|null, 'warning' => string|null]
+     * @return array{success: bool, error: ?string, warning: ?string, samples_migrated?: int, last_migrated?: int, sensors_migrated?: int}
      */
     private function migrateTelemetryHistory(int $oldNodeId, int $newNodeId): array
     {
@@ -155,12 +210,10 @@ class NodeSwapService
                 ? 0
                 : DB::table('telemetry_last')->whereIn('sensor_id', $sensorIds)->count();
 
-            // Переносим привязку сенсоров к новой ноде
             $sensorsUpdated = DB::table('sensors')
                 ->where('node_id', $oldNodeId)
                 ->update(['node_id' => $newNodeId]);
 
-            // Проверяем, что все сенсоры были обновлены
             $warning = null;
             if ($sensorsUpdated !== $sensorsCount) {
                 $warning = "Expected to migrate {$sensorsCount} sensors, but only {$sensorsUpdated} were updated.";
@@ -197,7 +250,6 @@ class NodeSwapService
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            // Возвращаем информацию об ошибке для обработки вызывающим кодом
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -206,12 +258,8 @@ class NodeSwapService
         }
     }
 
-    /**
-     * Генерировать новый uid для заменённого узла.
-     */
     private function generateNewNodeUid(DeviceNode $oldNode): string
     {
-        // Используем префикс из старого uid и добавляем суффикс
         $baseUid = $oldNode->uid;
         $counter = 1;
 

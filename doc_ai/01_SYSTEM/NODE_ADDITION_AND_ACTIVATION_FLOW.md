@@ -183,7 +183,9 @@ $node->save();
 
 ### Этап 3: Привязка узла к зоне через UI (REGISTERED_BACKEND → ожидание config_report)
 
-> Важно: публикация конфигов с сервера отключена. Актуальный поток — нода отправляет `config_report`, сервер сохраняет конфиг и завершает привязку.
+> Важно: bind/rebind — двухэтапный. Laravel публикует целевой NodeConfig через `PublishNodeConfigJob`
+> (на этапе bind — часто на temp topic), но `zone_id` выставляется **только** после observed `config_report`
+> из целевого namespace (`NodeConfigReportObserverService`).
 
 **Файлы:**
 - `backend/laravel/app/Services/NodeService.php` - логика привязки
@@ -254,11 +256,11 @@ if ($isAssignmentFromUI) {
 
 **Процесс:**
 
-1. **Нода подключается к MQTT** после provisioning или перезагрузки.
-2. **Публикует текущий NodeConfig** в `hydro/{gh_uid}/{zone_uid}/{node_uid}/config_report`.
+1. **Нода подключается к MQTT** после provisioning или перезагрузки (или после получения bind-конфига с temp topic).
+2. **Применяет NodeConfig** (из MQTT publish Laravel / NVS) и **публикует `config_report`** в `hydro/{gh_uid}/{zone_uid}/{node_uid}/config_report`.
 3. **History Logger сохраняет конфиг** и синхронизирует каналы.
 
-**Важно:** конфиг формируется в прошивке и/или хранится в NVS, сервер его не публикует.
+**Важно:** bootstrap bind зависит от серверной публикации NodeConfig (`PublishNodeConfigJob` + temp topic при `pending_zone_id && !zone_id`). Подтверждение привязки — только `config_report` из целевого namespace; без него `zone_id` не выставляется.
 
 ---
 
@@ -425,12 +427,13 @@ MAINTENANCE (обслуживание)
 
 Это гарантирует, что узел **реально получил и применил конфиг** перед началом работы.
 
-### 2. Защита от перезаписи рабочих настроек
+### 2. Защита от преждевременной привязки
 
-- Сервер не публикует конфиг на ноды
-- Узел использует конфиг из прошивки/NVS
-- Это предотвращает перезапись рабочих WiFi/MQTT настроек
+- Laravel **публикует** целевой NodeConfig при bind (`PublishNodeConfigJob`, temp topic пока нода не в целевом namespace)
+- `zone_id` выставляется только после observed `config_report` с совпавшим `gh_uid/zone_uid`
+- Это предотвращает «привязку на бумаге» без подтверждения с провода
 - После успешной привязки временный топик очищается
+- Зависший `pending_zone_id` истекает по TTL (`nodes:expire-pending-bindings`, якорь `pending_zone_set_at`)
 
 ### 4. Все общение через History Logger
 

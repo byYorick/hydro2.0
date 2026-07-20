@@ -7,6 +7,10 @@ use Illuminate\Support\Facades\Log;
 
 class CommandSignatureService
 {
+    public function __construct(
+        private readonly NodeSecretService $nodeSecretService,
+    ) {}
+
     /**
      * Подписать команду HMAC подписью.
      *
@@ -264,8 +268,6 @@ class CommandSignatureService
      */
     private function getNodeSecret(DeviceNode $node): ?string
     {
-        // В будущем можно добавить поле secret в таблицу nodes
-        // Пока используем общий секрет из конфигурации
-        return config('app.node_default_secret') ?? config('app.key');
+        return $this->nodeSecretService->resolve($node);
     }
 }

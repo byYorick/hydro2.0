@@ -41,6 +41,7 @@ timezone VARCHAR
 type VARCHAR (GREENHOUSE, ROOM, FARM)
 coordinates JSONB
 description TEXT
+provisioning_token VARCHAR(64) UNIQUE NOT NULL  -- DEPRECATED / pending drop (legacy column; NOT a node bind mechanism)
 created_at
 updated_at
 ```
@@ -54,6 +55,7 @@ updated_at
 
 - `uid` используется в MQTT как сегмент `{gh}`.
 - В Backend/AI `greenhouse.uid` — основной внешний идентификатор теплицы.
+- `provisioning_token`: **deprecated, pending drop**. Колонка остаётся NOT NULL unique ради seeders/AE/e2e inserts; значение генерируется при create только для constraint, **скрыто в API** (`Greenhouse::$hidden`) и **не используется** для bind узлов (привязка только через UI).
 
 ---
 
@@ -157,6 +159,8 @@ zone_config_changes_zone_id_namespace_idx
 ```
 id BIGSERIAL PK
 zone_id BIGINT FK → zones
+pending_zone_id BIGINT FK → zones NULL  -- незавершённый bind/rebind/swap
+pending_zone_set_at TIMESTAMP NULL       -- якорь TTL для pending bind
 uid VARCHAR(64) UNIQUE -- внешний строковый ID узла, совпадает с сегментом {node} в MQTT
 name VARCHAR
 type VARCHAR (ph, ec, climate, irrig, light, relay, water_sensor, recirculation, unknown)
@@ -179,6 +183,7 @@ nodes_zone_status_idx (zone_id, status) WHERE zone_id IS NOT NULL
 nodes_last_seen_at_idx (last_seen_at) WHERE last_seen_at IS NOT NULL
 nodes_type_idx (type) WHERE type IS NOT NULL
 nodes_status_idx (status) -- уже существует
+nodes_pending_zone_set_at_idx (pending_zone_set_at)
 ```
 
 Семантика идентификаторов:
@@ -188,6 +193,7 @@ nodes_status_idx (status) -- уже существует
  - используется в MQTT как сегмент `{node}`;
  - передаётся в конфигурации узла (NodeConfig) и команды;
  - применяется Backend/AI как основной внешний ключ при адресации узла.
+- `config.node_secret` — per-node HMAC secret (32 bytes, hex). Генерируется при register/`node_hello` (`NodeSecretService`), если отсутствует. В production fallback на `APP_KEY` **запрещён** (fail-closed).
 
 ### 3.1.1. Каноническая схема `nodes.type` (strict)
 

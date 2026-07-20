@@ -360,6 +360,23 @@ static void node_config_handler_process_internal(
             // Новый конфиг имеет реальные значения - это привязка от пользователя, применяем
             ESP_LOGI(TAG, "Applying config: node was in temporary mode but new config has real zone assignment (user binding)");
         }
+    } else {
+        // Нода уже привязана к реальной зоне. Конфиг с gh-temp/zn-temp = backend detach/unbind:
+        // возвращаем NVS/MQTT namespace в preconfig (см. NodeFirmwareUnbindService / NODE_DETACH_IMPLEMENTATION).
+        cJSON *new_gh_uid = cJSON_GetObjectItem(config, "gh_uid");
+        cJSON *new_zone_uid = cJSON_GetObjectItem(config, "zone_uid");
+        bool unbind_to_temp = false;
+        if (new_gh_uid && cJSON_IsString(new_gh_uid) && new_gh_uid->valuestring &&
+            strcmp(new_gh_uid->valuestring, "gh-temp") == 0) {
+            unbind_to_temp = true;
+        }
+        if (!unbind_to_temp && new_zone_uid && cJSON_IsString(new_zone_uid) && new_zone_uid->valuestring &&
+            strcmp(new_zone_uid->valuestring, "zn-temp") == 0) {
+            unbind_to_temp = true;
+        }
+        if (unbind_to_temp) {
+            ESP_LOGI(TAG, "Applying detach/unbind config: returning to temp namespace (gh-temp/zn-temp)");
+        }
     }
 
     // Загрузка предыдущего конфига

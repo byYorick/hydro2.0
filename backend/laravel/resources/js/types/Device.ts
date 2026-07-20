@@ -91,6 +91,8 @@ export interface Device {
   zone?: Zone
   zone_id?: number
   pending_zone_id?: number | null
+  /** ISO timestamp начала незавершённого bind/rebind (pending_zone_id). */
+  pending_zone_set_at?: string | null
   channels?: DeviceChannel[]
   last_seen_at?: string
   last_heartbeat_at?: string

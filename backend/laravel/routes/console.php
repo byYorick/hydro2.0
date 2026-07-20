@@ -91,6 +91,11 @@ Schedule::command('commands:process-timeouts')
     ->everyThirtySeconds()
     ->description('Автоматическая обработка timeout для команд в статусе SENT');
 
+// TTL незавершённых pending bind/rebind/swap (offline / namespace mismatch)
+Schedule::command('nodes:expire-pending-bindings')
+    ->everyFiveMinutes()
+    ->description('Очистка зависших pending_zone_id по TTL');
+
 // Автоматический replay DLQ алертов: ежедневно в 4:00
 Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->dailyAt('04:00')

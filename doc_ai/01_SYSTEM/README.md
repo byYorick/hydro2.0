@@ -23,7 +23,7 @@ Breaking-change: обратная совместимость со старыми
 **Полные потоки данных**
 - Telemetry Flow (узлы → backend)
 - Command Flow (backend → узлы)
-- Config Flow (`config_report`: узлы → backend)
+- Config Flow (Laravel → HL → MQTT `…/config` + `config_report` вверх)
 - Status/LWT Flow
 - Heartbeat Flow
 - Events Flow
@@ -62,7 +62,7 @@ Breaking-change: обратная совместимость со старыми
 Добавление и активация узла в системе
 
 #### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
-Реализация отвязки узлов от зон
+Реализация отвязки узлов от зон (NodeConfig temp namespace через HL; unbind ≠ отсутствие bind-publish)
 
 ---
 

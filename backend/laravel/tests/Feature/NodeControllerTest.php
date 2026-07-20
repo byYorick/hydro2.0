@@ -64,6 +64,78 @@ class NodeControllerTest extends TestCase
             ]);
     }
 
+    public function test_nodes_index_exposes_pending_bind_fields(): void
+    {
+        // agronomist видит unassigned/pending (ZoneAccessHelper::canViewUnassignedNodes)
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'pending_zone_set_at' => now()->subMinutes(12),
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/nodes?new_only=true');
+
+        $response->assertStatus(200);
+        $row = collect($response->json('data.data'))->firstWhere('id', $node->id);
+        $this->assertNotNull($row);
+        $this->assertSame($zone->id, $row['pending_zone_id']);
+        $this->assertNotNull($row['pending_zone_set_at']);
+        $this->assertArrayHasKey('lifecycle_state', $row);
+    }
+
+    public function test_nodes_index_new_only_includes_pending_excludes_assigned(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+        $pending = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        $assigned = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+        $free = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/nodes?new_only=true');
+        $response->assertStatus(200);
+        $ids = collect($response->json('data.data'))->pluck('id');
+
+        $this->assertTrue($ids->contains($pending->id));
+        $this->assertTrue($ids->contains($free->id));
+        $this->assertFalse($ids->contains($assigned->id));
+    }
+
+    public function test_nodes_index_unassigned_excludes_pending(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+        $pending = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+        ]);
+        $free = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/nodes?unassigned=true');
+        $response->assertStatus(200);
+        $ids = collect($response->json('data.data'))->pluck('id');
+
+        $this->assertTrue($ids->contains($free->id));
+        $this->assertFalse($ids->contains($pending->id));
+    }
+
     public function test_nodes_index_does_not_include_config(): void
     {
         $user = User::factory()->create();

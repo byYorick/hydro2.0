@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 class NodeConfigService
 {
+    public function __construct(
+        private readonly NodeSecretService $nodeSecretService,
+    ) {}
+
     /**
      * Сформировать NodeConfig для отправки ноде.
      *
@@ -40,10 +44,7 @@ class NodeConfigService
 
         $config['version'] = $config['version'] ?? 1;
         if ($includeCredentials) {
-            $nodeSecret = $config['node_secret'] ?? null;
-            if (! is_string($nodeSecret) || $nodeSecret === '') {
-                $config['node_secret'] = config('app.node_default_secret') ?? config('app.key');
-            }
+            $this->injectResolvedNodeSecret($node, $config);
         }
 
         $config = $this->mergeIrrigationFailSafeMirror($node, $config);
@@ -63,10 +64,14 @@ class NodeConfigService
             return [];
         }
 
-        return $this->sanitizeConfig($config, $includeCredentials);
+        return $this->sanitizeConfig($node, $config, $includeCredentials);
     }
 
-    private function sanitizeConfig(array $config, bool $includeCredentials): array
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function sanitizeConfig(DeviceNode $node, array $config, bool $includeCredentials): array
     {
         if (! $includeCredentials) {
             if (array_key_exists('wifi', $config)) {
@@ -79,10 +84,7 @@ class NodeConfigService
 
             unset($config['node_secret']);
         } else {
-            $nodeSecret = $config['node_secret'] ?? null;
-            if (! is_string($nodeSecret) || $nodeSecret === '') {
-                $config['node_secret'] = config('app.node_default_secret') ?? config('app.key');
-            }
+            $this->injectResolvedNodeSecret($node, $config);
         }
 
         if (isset($config['channels']) && is_array($config['channels'])) {
@@ -92,6 +94,22 @@ class NodeConfigService
         }
 
         return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function injectResolvedNodeSecret(DeviceNode $node, array &$config): void
+    {
+        $nodeSecret = $config['node_secret'] ?? null;
+        if (is_string($nodeSecret) && $nodeSecret !== '') {
+            return;
+        }
+
+        $resolved = $this->nodeSecretService->resolve($node);
+        if (is_string($resolved) && $resolved !== '') {
+            $config['node_secret'] = $resolved;
+        }
     }
 
     /**

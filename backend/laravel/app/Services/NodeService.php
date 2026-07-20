@@ -15,6 +15,8 @@ class NodeService
     public function __construct(
         private NodeLifecycleService $lifecycleService,
         private NodeRegistryService $registryService,
+        private NodeFirmwareUnbindService $firmwareUnbindService,
+        private NodeSecretService $nodeSecretService,
     ) {}
 
     /**
@@ -61,6 +63,10 @@ class NodeService
     {
         return DB::transaction(function () use ($data) {
             $node = DeviceNode::create($data);
+            $this->nodeSecretService->ensureOnNode($node);
+            if ($node->isDirty('config')) {
+                $node->save();
+            }
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
 
             // S2.1 (AUDIT_2026_05_28_BUGFIX_PLAN): targeted cache invalidation,
@@ -78,7 +84,8 @@ class NodeService
     {
         // Используем SERIALIZABLE isolation level для критичной операции обновления узла
         // с retry логикой на serialization failures
-        return TransactionHelper::withSerializableRetry(function () use ($node, $data) {
+        $unbindFromZoneId = null;
+        $updated = TransactionHelper::withSerializableRetry(function () use ($node, $data, &$unbindFromZoneId) {
 
             // Блокируем строку для предотвращения lost updates
             $node = DeviceNode::where('id', $node->id)
@@ -180,15 +187,10 @@ class NodeService
                 } elseif ($samePendingZoneAssignment) {
                     $data['pending_zone_id'] = $newZoneId;
 
-                    if ($node->lifecycleState() !== NodeLifecycleState::REGISTERED_BACKEND) {
-                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                        Log::info('Node pending assignment normalized to REGISTERED_BACKEND before config retry', [
-                            'node_id' => $node->id,
-                            'uid' => $node->uid,
-                            'pending_zone_id' => $newZoneId,
-                            'previous_lifecycle_state' => $currentState->value,
-                        ]);
-                    }
+                    $this->transitionLifecycleToRegistered(
+                        $node,
+                        'pending_bind_retry_normalize'
+                    );
 
                     $shouldRepublishConfig = true;
 
@@ -207,10 +209,28 @@ class NodeService
                      */
                     $data['pending_zone_id'] = $newZoneId;
 
-                    // Если это переприв язка в другую зону, сбрасываем в REGISTERED_BACKEND.
+                    /**
+                     * Уход с assigned MQTT namespace (cross-zone rebind или recovery с zone_id):
+                     * best-effort firmware unbind ДО очистки zone_id — как detach/swap.
+                     * Иначе нода остаётся на старом zone-топике и не слышит temp bind-конфиг.
+                     * First-bind (zone_id был null) — unbind не нужен.
+                     * Same-zone idempotent ASSIGNED — сюда не попадаем.
+                     */
+                    if ($oldZoneId) {
+                        $this->firmwareUnbindService->publishTempNamespaceConfig(
+                            $node,
+                            (int) $oldZoneId
+                        );
+                        $this->firmwareUnbindService->mirrorTempNamespaceInStoredConfig($node);
+                    }
+
+                    // Если это перепривязка в другую зону, сбрасываем в REGISTERED_BACKEND.
                     if ($oldZoneId && (int) $oldZoneId !== (int) $newZoneId) {
-                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                         $node->zone_id = null; // Явно очищаем старый zone_id
+                        $this->transitionLifecycleToRegistered(
+                            $node,
+                            'reassign_to_another_zone'
+                        );
                         $this->clearNodeChannelBindings($node->id, 'reassign_to_another_zone');
                         Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
                             'node_id' => $node->id,
@@ -220,15 +240,10 @@ class NodeService
                     } else {
                         // Первичная привязка или recovery из неконсистентного состояния.
                         $node->zone_id = null;
-                        if ($node->lifecycleState() !== NodeLifecycleState::REGISTERED_BACKEND) {
-                            $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                            Log::info('Node bind flow normalized lifecycle to REGISTERED_BACKEND', [
-                                'node_id' => $node->id,
-                                'uid' => $node->uid,
-                                'pending_zone_id' => $newZoneId,
-                                'previous_lifecycle_state' => $currentState->value,
-                            ]);
-                        }
+                        $this->transitionLifecycleToRegistered(
+                            $node,
+                            'bind_flow_normalize'
+                        );
                     }
 
                     Log::info('UI zone assignment: set pending_zone_id, waiting for node confirmation', [
@@ -288,10 +303,13 @@ class NodeService
              * КРИТИЧНО: Не срабатывает при привязке от UI, так как там pending_zone_id установлен
              */
             if (! $node->zone_id && $oldZoneId && ! $isAssignmentFromUI) {
-                // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                $unbindFromZoneId = (int) $oldZoneId;
                 $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
-                $node->save();
+                $this->firmwareUnbindService->mirrorTempNamespaceInStoredConfig($node);
+                $this->transitionLifecycleToRegistered($node, 'zone_cleared_via_update');
+                if ($node->isDirty()) {
+                    $node->save();
+                }
                 $this->clearNodeChannelBindings($node->id, 'zone_cleared_via_update');
 
                 Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
@@ -324,28 +342,43 @@ class NodeService
 
             return $node->fresh();
         }, maxRetries: 6, baseDelayMs: 75, useSerializable: false);
+
+        // Best-effort firmware unbind после commit (HTTP вне транзакции).
+        if ($unbindFromZoneId !== null) {
+            $this->firmwareUnbindService->publishTempNamespaceConfig($updated, $unbindFromZoneId);
+        }
+
+        return $updated;
     }
 
     /**
      * Отвязать узел от зоны.
      * При отвязке нода сбрасывается в REGISTERED_BACKEND и считается новой.
+     * До очистки БД best-effort публикуется unbind NodeConfig (gh-temp/zn-temp),
+     * чтобы firmware ушла из старого MQTT namespace.
      */
     public function detach(DeviceNode $node): DeviceNode
     {
-        return DB::transaction(function () use ($node) {
-            $oldZoneId = $node->zone_id;
-            $oldPendingZoneId = $node->pending_zone_id;
+        $oldZoneId = $node->zone_id;
+        $oldPendingZoneId = $node->pending_zone_id;
 
-            // Если нода уже отвязана (нет ни zone_id, ни pending_zone_id), ничего не делаем
-            if (! $oldZoneId && ! $oldPendingZoneId) {
-                Log::info('Node already detached', [
-                    'node_id' => $node->id,
-                    'uid' => $node->uid,
-                ]);
+        // Если нода уже отвязана (нет ни zone_id, ни pending_zone_id), ничего не делаем
+        if (! $oldZoneId && ! $oldPendingZoneId) {
+            Log::info('Node already detached', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+            ]);
 
-                return $node;
-            }
+            return $node;
+        }
 
+        // Пока нода ещё assigned — публикуем unbind в текущий zone-топик через HL.
+        // Ошибка/offline не блокирует detach: HL дропает zombie telemetry (node_unassigned).
+        if ($oldZoneId) {
+            $this->firmwareUnbindService->publishTempNamespaceConfig($node, (int) $oldZoneId);
+        }
+
+        return DB::transaction(function () use ($node, $oldZoneId, $oldPendingZoneId) {
             // Отвязываем от зоны
             $node->zone_id = null;
 
@@ -356,11 +389,12 @@ class NodeService
              */
             $node->pending_zone_id = null;
 
-            // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
-            // Это позволит ей снова появиться в списке новых нод для привязки
-            $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-
-            $node->save();
+            // Сбрасываем lifecycle через FSM, чтобы нода снова появилась в пуле для привязки
+            $this->firmwareUnbindService->mirrorTempNamespaceInStoredConfig($node);
+            $this->transitionLifecycleToRegistered($node, 'explicit_detach');
+            if ($node->isDirty()) {
+                $node->save();
+            }
             $this->clearNodeChannelBindings($node->id, 'explicit_detach');
 
             Log::info('Node detached from zone', [
@@ -397,6 +431,36 @@ class NodeService
             $node->delete();
             Log::info('Node deleted', ['node_id' => $nodeId, 'uid' => $nodeUid]);
         });
+    }
+
+    /**
+     * Сброс lifecycle в REGISTERED_BACKEND через NodeLifecycleService FSM.
+     *
+     * Используется при bind/rebind/detach — прямой записи lifecycle_state быть не должно.
+     *
+     * @throws \DomainException если переход запрещён FSM
+     */
+    private function transitionLifecycleToRegistered(DeviceNode $node, string $reason): void
+    {
+        if ($node->lifecycleState() === NodeLifecycleState::REGISTERED_BACKEND) {
+            return;
+        }
+
+        $previous = $node->lifecycleState()->value;
+        $ok = $this->lifecycleService->transitionToRegistered($node, $reason);
+
+        if (! $ok) {
+            throw new \DomainException(
+                "Cannot reset node lifecycle to REGISTERED_BACKEND from {$previous} ({$reason})"
+            );
+        }
+
+        Log::info('Node lifecycle normalized to REGISTERED_BACKEND via FSM', [
+            'node_id' => $node->id,
+            'uid' => $node->uid,
+            'previous_lifecycle_state' => $previous,
+            'reason' => $reason,
+        ]);
     }
 
     private function clearNodeChannelBindings(int $nodeId, string $reason): void

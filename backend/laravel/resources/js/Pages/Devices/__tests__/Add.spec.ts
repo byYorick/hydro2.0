@@ -71,6 +71,9 @@ vi.mock('@/composables/useNodeLifecycle', () => ({
   useNodeLifecycle: () => ({
     canAssignToZone: vi.fn().mockResolvedValue(true),
     getStateLabel: vi.fn(() => 'Registered'),
+    isAssignableLifecycleState: vi.fn(() => true),
+    needsRebindConfirm: vi.fn(() => false),
+    formatPendingBindAge: vi.fn(() => null),
   }),
 }))
 
@@ -174,7 +177,7 @@ describe('Devices/Add.vue', () => {
     const wrapper = mount(DevicesAdd)
     await flushPromises()
 
-    expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', { params: { unassigned: true } })
+    expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', { params: { new_only: true } })
     expect(wrapper.text()).toContain('UID: nd-clim-1')
     expect(wrapper.text()).not.toContain('Новых нод не найдено')
 

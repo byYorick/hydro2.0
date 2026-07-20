@@ -2,26 +2,28 @@
 
 namespace App\Services;
 
-use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
-use App\Models\Greenhouse;
-use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class NodeRegistryService
 {
+    public function __construct(
+        private readonly NodeLifecycleService $lifecycleService,
+        private readonly NodeSecretService $nodeSecretService,
+    ) {}
+
     /**
      * Зарегистрировать узел в системе.
      *
      * Если узел уже существует, обновляет его атрибуты.
      * Если узел новый, создаёт его и отмечает как validated.
      *
-     * ВАЖНО: Автопривязка к зоне отключена. Привязка должна происходить только
-     * через явное действие пользователя (кнопка "Привязать" в UI).
+     * Привязка к зоне — только через явное действие пользователя (UI).
+     * Параметр $zoneUid игнорируется (обратная совместимость API).
      *
      * @param  string  $nodeUid  Уникальный идентификатор узла (MAC/UID)
-     * @param  string|null  $zoneUid  UID зоны (игнорируется, оставлен для обратной совместимости)
+     * @param  string|null  $zoneUid  UID зоны (игнорируется)
      * @param  array  $attributes  Дополнительные атрибуты (firmware_version, hardware_revision и т.д.)
      */
     public function registerNode(
@@ -40,19 +42,16 @@ class NodeRegistryService
                         ->lockForUpdate()
                         ->first();
 
-                    if (! $node) {
+                    $isNew = $node === null;
+                    if ($isNew) {
                         $node = new DeviceNode;
                         $node->uid = $nodeUid;
                     }
 
-                    // КРИТИЧНО: Автопривязка к зоне при регистрации УДАЛЕНА
-                    // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
-                    // Если указан zoneUid, игнорируем его и логируем предупреждение
                     if ($zoneUid) {
-                        Log::warning('Node registration: zoneUid provided but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                        Log::debug('Node registration: ignoring zone_uid (bind is UI-only)', [
                             'node_uid' => $nodeUid,
                             'requested_zone_uid' => $zoneUid,
-                            'ip' => request()->ip(),
                         ]);
                     }
 
@@ -78,19 +77,25 @@ class NodeRegistryService
                     }
 
                     // Устанавливаем first_seen_at при первом появлении
-                    if (! $node->id || ! $node->first_seen_at) {
+                    if ($isNew || ! $node->first_seen_at) {
                         $node->first_seen_at = now();
                     }
 
                     // Отмечаем как validated
                     $node->validated = true;
-
-                    // Устанавливаем lifecycle_state в REGISTERED_BACKEND при регистрации
-                    if (! $node->id || ! $node->lifecycle_state) {
-                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                    }
-
+                    $this->nodeSecretService->ensureOnNode($node);
                     $node->save();
+
+                    // Первичная регистрация — только через FSM (UNPROVISIONED → … → REGISTERED_BACKEND)
+                    if ($isNew || $node->lifecycle_state === null) {
+                        if (! $this->lifecycleService->ensureRegistered($node, 'node_registration')) {
+                            Log::warning('Node registration: failed to reach REGISTERED_BACKEND via FSM', [
+                                'node_id' => $node->id,
+                                'uid' => $node->uid,
+                                'lifecycle_state' => $node->lifecycleState()->value,
+                            ]);
+                        }
+                    }
 
                     Log::info('Node registered', [
                         'node_id' => $node->id,
@@ -137,9 +142,8 @@ class NodeRegistryService
     /**
      * Зарегистрировать узел из node_hello сообщения (MQTT).
      *
-     * ВАЖНО: Автопривязка к зоне отключена. Даже если в provisioning_meta указаны
-     * greenhouse_token и zone_id, они игнорируются. Привязка должна происходить только
-     * через явное действие пользователя (кнопка "Привязать" в UI).
+     * Привязка к зоне — только через UI. Поля greenhouse_token/zone_id в
+     * provisioning_meta игнорируются (legacy payload, не используются для bind).
      *
      * @param  array  $helloData  Данные из node_hello:
      *                            - hardware_id: string
@@ -147,7 +151,7 @@ class NodeRegistryService
      *                            - fw_version: string|null
      *                            - hardware_revision: string|null
      *                            - capabilities: array (используются только как метаданные, каналы по ним не создаются)
-     *                            - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
+     *                            - provisioning_meta: array {node_name, node_uid; greenhouse_token/zone_id ignored}
      */
     public function registerNodeFromHello(array $helloData): DeviceNode
     {
@@ -182,9 +186,16 @@ class NodeRegistryService
                     $node->hardware_id = $hardwareId;
                     $node->type = $nodeType;
                     $node->first_seen_at = now();
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-
                     $node->save();
+
+                    if (! $this->lifecycleService->ensureRegistered($node, 'node_hello_create')) {
+                        Log::warning('NodeRegistryService: failed to register new node via FSM', [
+                            'node_id' => $node->id,
+                            'uid' => $uid,
+                            'hardware_id' => $hardwareId,
+                            'lifecycle_state' => $node->lifecycleState()->value,
+                        ]);
+                    }
 
                     Log::info('Node created successfully', [
                         'node_id' => $node->id,
@@ -220,27 +231,35 @@ class NodeRegistryService
 
                 $provisioningMeta = $helloData['provisioning_meta'] ?? [];
                 if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
-                    Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                    Log::debug('Node registration: ignoring legacy provisioning_meta bind fields', [
                         'node_id' => $node->id,
                         'hardware_id' => $hardwareId,
                         'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
                         'has_zone_id' => isset($provisioningMeta['zone_id']),
-                        'zone_id' => $provisioningMeta['zone_id'] ?? null,
                     ]);
                 }
 
                 if (! $node->zone_id && ! $node->pending_zone_id) {
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                    Log::info('NodeRegistryService: Reset lifecycle_state to REGISTERED_BACKEND for unbound node', [
-                        'node_id' => $node->id,
-                        'uid' => $node->uid,
-                        'hardware_id' => $hardwareId,
-                    ]);
-                } elseif (! $node->lifecycle_state) {
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    if ($this->lifecycleService->ensureRegistered($node, 'node_hello_unbound_reset')) {
+                        Log::info('NodeRegistryService: Ensured REGISTERED_BACKEND for unbound node via FSM', [
+                            'node_id' => $node->id,
+                            'uid' => $node->uid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                    } else {
+                        Log::warning('NodeRegistryService: Could not reset unbound node to REGISTERED_BACKEND', [
+                            'node_id' => $node->id,
+                            'uid' => $node->uid,
+                            'hardware_id' => $hardwareId,
+                            'lifecycle_state' => $node->lifecycleState()->value,
+                        ]);
+                    }
+                } elseif ($node->lifecycle_state === null) {
+                    $this->lifecycleService->ensureRegistered($node, 'node_hello_missing_state');
                 }
 
                 $node->validated = true;
+                $this->nodeSecretService->ensureOnNode($node);
                 $node->save();
 
                 $this->attachUnassignedErrors($node);
@@ -541,47 +560,6 @@ class NodeRegistryService
         }
 
         return $uid;
-    }
-
-    /**
-     * Найти теплицу по токену.
-     *
-     * @param  string  $token  Greenhouse provisioning_token (секретный токен, не uid!)
-     */
-    private function findGreenhouseByToken(string $token): ?Greenhouse
-    {
-        // Ищем по provisioning_token (секретный токен, не публичный uid)
-        // Это предотвращает регистрацию нод в чужие теплицы, т.к. uid доступен всем viewer'ам
-        return Greenhouse::where('provisioning_token', $token)->first();
-    }
-
-    /**
-     * Разрешить zone_uid в zone_id.
-     *
-     * @param  string  $zoneUid  Может быть в формате "zn-1" или просто "1"
-     */
-    private function resolveZoneId(string $zoneUid): ?int
-    {
-        // Если формат zn-{id}
-        if (str_starts_with($zoneUid, 'zn-')) {
-            $zoneIdStr = substr($zoneUid, 3);
-            if (is_numeric($zoneIdStr)) {
-                // Проверяем, существует ли зона
-                $zone = Zone::find((int) $zoneIdStr);
-
-                return $zone?->id;
-            }
-        }
-
-        // Если это просто число
-        if (is_numeric($zoneUid)) {
-            $zone = Zone::find((int) $zoneUid);
-
-            return $zone?->id;
-        }
-
-        // В будущем можно добавить поиск по uid, если он появится в таблице zones
-        return null;
     }
 
     /**

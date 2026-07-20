@@ -17,7 +17,7 @@ class NodeRegistryServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new NodeRegistryService;
+        $this->service = app(NodeRegistryService::class);
     }
 
     public function test_register_node_creates_new_node(): void
@@ -41,6 +41,7 @@ class NodeRegistryServiceTest extends TestCase
         $this->assertEquals('ph', $node->type);
         $this->assertTrue($node->validated);
         $this->assertNotNull($node->first_seen_at);
+        $this->assertEquals(\App\Enums\NodeLifecycleState::REGISTERED_BACKEND, $node->lifecycle_state);
     }
 
     public function test_register_node_updates_existing_node(): void
@@ -72,31 +73,29 @@ class NodeRegistryServiceTest extends TestCase
 
     public function test_register_node_with_zone_uid_ignored(): void
     {
-        // КРИТИЧНО: Автопривязка отключена - zone_uid игнорируется
+        // zone_uid — legacy param; bind is UI-only
         $zone = Zone::factory()->create();
 
         $node = $this->service->registerNode(
             'nd-ph-1',
-            "zn-{$zone->id}",  // zone_uid предоставлен, но должен быть проигнорирован
+            "zn-{$zone->id}",
             []
         );
 
-        // Узел должен остаться непривязанным (zone_id = null)
         $this->assertNull($node->zone_id);
     }
 
     public function test_register_node_with_numeric_zone_uid_ignored(): void
     {
-        // КРИТИЧНО: Автопривязка отключена - zone_uid игнорируется
+        // zone_uid — legacy param; bind is UI-only
         $zone = Zone::factory()->create();
 
         $node = $this->service->registerNode(
             'nd-ph-1',
-            (string) $zone->id,  // zone_uid предоставлен, но должен быть проигнорирован
+            (string) $zone->id,
             []
         );
 
-        // Узел должен остаться непривязанным (zone_id = null)
         $this->assertNull($node->zone_id);
     }
 
@@ -165,5 +164,48 @@ class NodeRegistryServiceTest extends TestCase
             $existing->first_seen_at->format('Y-m-d H:i:s'),
             $node->first_seen_at->format('Y-m-d H:i:s')
         );
+    }
+
+    public function test_register_node_generates_node_secret_when_absent(): void
+    {
+        $node = $this->service->registerNode('nd-ph-secret-1', null, ['type' => 'ph']);
+
+        $node->refresh();
+        $secret = $node->config['node_secret'] ?? null;
+
+        $this->assertIsString($secret);
+        $this->assertSame(64, strlen($secret));
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $secret);
+    }
+
+    public function test_register_node_from_hello_generates_node_secret_when_absent(): void
+    {
+        $node = $this->service->registerNodeFromHello([
+            'hardware_id' => 'esp32-secret-gen-001',
+            'node_type' => 'ph',
+            'fw_version' => '1.0.0',
+        ]);
+
+        $node->refresh();
+        $secret = $node->config['node_secret'] ?? null;
+
+        $this->assertIsString($secret);
+        $this->assertSame(64, strlen($secret));
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $secret);
+    }
+
+    public function test_register_node_preserves_existing_node_secret(): void
+    {
+        $existingSecret = str_repeat('ab', 32);
+        DeviceNode::create([
+            'uid' => 'nd-ph-keep-secret',
+            'type' => 'ph',
+            'config' => ['node_secret' => $existingSecret],
+        ]);
+
+        $node = $this->service->registerNode('nd-ph-keep-secret', null, ['type' => 'ph']);
+        $node->refresh();
+
+        $this->assertSame($existingSecret, $node->config['node_secret']);
     }
 }

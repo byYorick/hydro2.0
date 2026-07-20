@@ -14,6 +14,7 @@ class Greenhouse extends Model
 
     protected $fillable = [
         'uid',
+        // Legacy: DB NOT NULL unique; not used for node binding (pending drop migration).
         'provisioning_token',
         'name',
         'timezone',
@@ -24,7 +25,8 @@ class Greenhouse extends Model
     ];
 
     protected $hidden = [
-        'provisioning_token', // Скрываем токен от API-ответов
+        // Legacy column — never expose (not a bind mechanism).
+        'provisioning_token',
     ];
 
     protected $casts = [

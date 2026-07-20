@@ -8,7 +8,8 @@ from typing import Any
 from command_service import _create_command_payload, _get_gh_uid_from_zone_id, _get_zone_uid_from_id
 from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
-from common.db import get_pool
+from common.commands import _affected_rows
+from common.db import execute, get_pool
 from metrics import (
     COMMAND_QUEUE_DRAIN_FAILED,
     COMMAND_QUEUE_DRAIN_SCANNED,
@@ -32,6 +33,68 @@ def _extract_signed_payload_fields(params: dict[str, Any]) -> tuple[dict[str, An
     ts_value = int(stored_ts) if isinstance(stored_ts, (int, float)) else None
     sig_value = str(stored_sig) if isinstance(stored_sig, str) and stored_sig else None
     return clean_params, ts_value, sig_value
+
+
+async def _abandon_non_republishable_command(
+    *,
+    cmd_id: str | None,
+    reason: str,
+    zone_id: int | None = None,
+    node_uid: str | None = None,
+    channel: str | None = None,
+    cmd_name: str | None = None,
+) -> bool:
+    """Mark QUEUED/SEND_FAILED rows that can never be republished as INVALID.
+
+    Returns True when the row left the drain set (so the cycle counts as skip).
+    """
+    if not cmd_id:
+        logger.warning(
+            "[QUEUED_DRAIN] cannot abandon row without cmd_id reason=%s zone_id=%s node_uid=%s",
+            reason,
+            zone_id,
+            node_uid,
+        )
+        return False
+
+    try:
+        result = await execute(
+            """
+            UPDATE commands
+            SET status = 'INVALID',
+                failed_at = NOW(),
+                error_code = 'DRAIN_ABANDON',
+                error_message = $2,
+                result_code = 1,
+                updated_at = NOW()
+            WHERE cmd_id = $1
+              AND status IN ('QUEUED', 'SEND_FAILED')
+            """,
+            cmd_id,
+            reason,
+        )
+        abandoned = _affected_rows(result) > 0
+
+        logger.warning(
+            "[QUEUED_DRAIN] abandoned non-republishable cmd_id=%s reason=%s "
+            "zone_id=%s node_uid=%s channel=%s cmd=%s abandoned=%s",
+            cmd_id,
+            reason,
+            zone_id,
+            node_uid,
+            channel,
+            cmd_name,
+            abandoned,
+        )
+        return abandoned
+    except Exception:
+        logger.warning(
+            "[QUEUED_DRAIN] failed to abandon cmd_id=%s reason=%s",
+            cmd_id,
+            reason,
+            exc_info=True,
+        )
+        return False
 
 
 async def _claim_stale_queued_command_rows(
@@ -98,8 +161,23 @@ async def drain_stale_queued_commands_once(
         command_source = str(row.get("source") or "api").strip() or "api"
 
         if not cmd_id or zone_id <= 0 or node_id <= 0 or not node_uid or not channel or not cmd_name:
-            summary["failed"] += 1
-            COMMAND_QUEUE_DRAIN_FAILED.inc()
+            # Permanently non-republishable row (e.g. SEND_FAILED reset_binding with
+            # zone_id=NULL after sim unbind). Leave the drain queue as INVALID so
+            # sustained-fail alerts are not re-fired every cycle.
+            abandoned = await _abandon_non_republishable_command(
+                cmd_id=cmd_id or None,
+                reason="missing_required_publish_fields",
+                zone_id=zone_id if zone_id > 0 else None,
+                node_uid=node_uid or None,
+                channel=channel or None,
+                cmd_name=cmd_name or None,
+            )
+            if abandoned:
+                summary["skipped"] += 1
+                COMMAND_QUEUE_DRAIN_SKIPPED.inc()
+            else:
+                summary["failed"] += 1
+                COMMAND_QUEUE_DRAIN_FAILED.inc()
             continue
 
         try:

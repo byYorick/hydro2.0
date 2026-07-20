@@ -26,12 +26,16 @@ class GreenhouseControllerTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.uid', 'gh-main-3')
-            ->assertJsonPath('data.name', 'Main GH');
+            ->assertJsonPath('data.name', 'Main GH')
+            ->assertJsonMissing(['provisioning_token']);
 
         $this->assertDatabaseHas('greenhouses', [
             'uid' => 'gh-main-3',
             'name' => 'Main GH',
         ]);
+        $this->assertNotEmpty(
+            Greenhouse::query()->where('uid', 'gh-main-3')->value('provisioning_token')
+        );
     }
 
     public function test_greenhouse_store_accepts_empty_string_greenhouse_type_id_as_null(): void

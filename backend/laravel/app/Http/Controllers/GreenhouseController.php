@@ -87,8 +87,8 @@ class GreenhouseController extends Controller
             }
         }
 
-        // Генерируем уникальный provisioning_token для регистрации нод
-        // Этот токен не должен быть доступен через API (скрыт в модели)
+        // Legacy column: NOT NULL unique placeholder. Not used for node binding;
+        // kept until a dedicated drop migration. Hidden from API responses.
         $data['provisioning_token'] = 'gh_'.\Illuminate\Support\Str::random(32);
 
         $greenhouse = Greenhouse::create($data);

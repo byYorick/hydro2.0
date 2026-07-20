@@ -18,6 +18,7 @@ class DeviceNodeResource extends JsonResource
             'id' => $this->id,
             'zone_id' => $this->zone_id,
             'pending_zone_id' => $this->pending_zone_id,
+            'pending_zone_set_at' => $this->pending_zone_set_at?->toIso8601String(),
             'uid' => $this->uid,
             'name' => $this->name,
             'type' => $this->type,

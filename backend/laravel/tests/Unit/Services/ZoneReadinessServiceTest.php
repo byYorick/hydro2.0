@@ -33,6 +33,7 @@ class ZoneReadinessServiceTest extends TestCase
         config()->set('zones.readiness.e2e_mode', false);
         config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
         config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', true);
+        config()->set('hydro.auto_bind_transport_roles', false);
 
         $this->service = app(ZoneReadinessService::class);
     }
@@ -504,5 +505,181 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertFalse($readiness['checks']['blocking_alerts_clear']);
         $this->assertCount(1, $readiness['blocking_alerts']);
         $this->assertContains('Есть активный блокирующий alert: не настроен correction config зоны', $readiness['errors']);
+    }
+
+    public function test_check_zone_readiness_does_not_auto_bind_transport_roles_by_default(): void
+    {
+        config()->set('hydro.auto_bind_transport_roles', false);
+        config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertContains('pump_main', $readiness['missing_bindings']);
+        $this->assertContains('drain', $readiness['missing_bindings']);
+        $this->assertSame(0, ChannelBinding::query()->count());
+    }
+
+    public function test_check_zone_readiness_auto_binds_transport_roles_when_flag_enabled(): void
+    {
+        config()->set('hydro.auto_bind_transport_roles', true);
+        config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->createPidConfigs($zone);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertTrue($readiness['ready']);
+        $this->assertEmpty($readiness['missing_bindings']);
+        $this->assertTrue($readiness['checks']['pump_main']);
+        $this->assertTrue($readiness['checks']['drain']);
+        $this->assertSame(2, ChannelBinding::query()->count());
+        $this->assertTrue(
+            InfrastructureInstance::query()->where('label', 'Auto Main Pump')->exists()
+        );
+        $this->assertTrue(
+            InfrastructureInstance::query()->where('label', 'Auto Drain')->exists()
+        );
+    }
+
+    public function test_auto_bind_prefers_valve_drain_over_legacy_drain_aliases(): void
+    {
+        config()->set('hydro.auto_bind_transport_roles', true);
+        config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        // Старые ошибочные aliases идут раньше по id — auto-bind обязан предпочесть valve_drain.
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'valve_solution_fill',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain_main',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $valveDrain = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'valve_drain',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->createPidConfigs($zone);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertTrue($readiness['checks']['drain']);
+        $this->assertEmpty($readiness['missing_bindings']);
+
+        $drainBinding = ChannelBinding::query()->where('role', 'drain')->first();
+        $this->assertNotNull($drainBinding);
+        $this->assertSame((int) $valveDrain->id, (int) $drainBinding->node_channel_id);
+    }
+
+    public function test_auto_bind_does_not_treat_valve_solution_fill_as_drain(): void
+    {
+        config()->set('hydro.auto_bind_transport_roles', true);
+        config()->set('zones.readiness.required_bindings', ['pump_main', 'drain']);
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'valve_solution_fill',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->createPidConfigs($zone);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertContains('drain', $readiness['missing_bindings']);
+        $this->assertFalse($readiness['checks']['drain']);
+        $this->assertSame(1, ChannelBinding::query()->where('role', 'pump_main')->count());
+        $this->assertSame(0, ChannelBinding::query()->where('role', 'drain')->count());
     }
 }

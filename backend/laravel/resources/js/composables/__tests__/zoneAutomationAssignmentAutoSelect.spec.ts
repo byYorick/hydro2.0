@@ -55,4 +55,22 @@ describe('autoSelectAssignmentsByNodeType', () => {
     expect(result.irrigation).toBe(10)
     expect(result.light).toBe(11)
   })
+
+  it('распознаёт irrigation-ноду по каналу valve_drain', () => {
+    const nodes: AutomationNode[] = [
+      { id: 21, type: 'relay_node', zone_id: 7, channels: [{ channel: 'valve_drain' }] },
+    ]
+
+    const result = autoSelectAssignmentsByNodeType(emptyAssignments, nodes, 7)
+    expect(result.irrigation).toBe(21)
+  })
+
+  it('не считает valve_solution_fill достаточным для irrigation auto-select без pump/drain', () => {
+    const nodes: AutomationNode[] = [
+      { id: 22, type: 'unknown_node', zone_id: 7, channels: [{ channel: 'valve_solution_fill' }] },
+    ]
+
+    const result = autoSelectAssignmentsByNodeType(emptyAssignments, nodes, 7)
+    expect(result.irrigation).toBeNull()
+  })
 })

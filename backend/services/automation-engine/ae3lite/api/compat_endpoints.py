@@ -33,10 +33,16 @@ def _normalized_status(value: Any) -> str | None:
     return normalized or None
 
 
-def _error_extra(details: Any, **defaults: Any) -> dict[str, Any]:
+def _error_extra(details: Any, **overrides: Any) -> dict[str, Any]:
+    """Merge exception details with path/body overrides into one kwargs dict.
+
+    Overrides win over ``details`` so callers can safely do
+    ``api_error_detail(code, status_code=..., **_error_extra(details, zone_id=zone_id))``.
+    Passing ``zone_id=zone_id, **details`` separately raises ``KeyError('zone_id')``
+    under Python 3.11+ (DICT_MERGE on duplicate keyword keys).
+    """
     payload = dict(details if isinstance(details, dict) else {})
-    for key, value in defaults.items():
-        payload.setdefault(key, value)
+    payload.update(overrides)
     return payload
 
 
@@ -210,15 +216,13 @@ def bind_start_cycle_route(
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **(details if isinstance(details, dict) else {}),
+                    **_error_extra(details, zone_id=zone_id),
                 ) from exc
             if code == "start_cycle_intent_terminal":
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **_error_extra(details, idempotency_key=req.idempotency_key),
+                    **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
                 ) from exc
             logger.error(
                 "AE3 compat start-cycle: create task failed zone_id=%s code=%s trace_id=%s error=%s",
@@ -231,8 +235,7 @@ def bind_start_cycle_route(
             raise api_error_detail(
                 code,
                 status_code=503,
-                zone_id=zone_id,
-                **_error_extra(details, idempotency_key=req.idempotency_key),
+                **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
             ) from exc
 
         task = creation.task
@@ -436,15 +439,13 @@ def bind_start_irrigation_route(
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **(details if isinstance(details, dict) else {}),
+                    **_error_extra(details, zone_id=zone_id),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **_error_extra(details, idempotency_key=req.idempotency_key),
+                    **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
                 ) from exc
             logger.error(
                 "AE3 compat start-irrigation: create task failed zone_id=%s code=%s trace_id=%s error=%s",
@@ -457,8 +458,7 @@ def bind_start_irrigation_route(
             raise api_error_detail(
                 code,
                 status_code=503,
-                zone_id=zone_id,
-                **_error_extra(details, idempotency_key=req.idempotency_key),
+                **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
         _log_route_info(
@@ -629,15 +629,13 @@ def bind_start_lighting_tick_route(
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **(details if isinstance(details, dict) else {}),
+                    **_error_extra(details, zone_id=zone_id),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **_error_extra(details, idempotency_key=req.idempotency_key),
+                    **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
                 ) from exc
             logger.error(
                 "AE3 compat start-lighting-tick: create task failed zone_id=%s code=%s trace_id=%s error=%s",
@@ -650,8 +648,7 @@ def bind_start_lighting_tick_route(
             raise api_error_detail(
                 code,
                 status_code=503,
-                zone_id=zone_id,
-                **_error_extra(details, idempotency_key=req.idempotency_key),
+                **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
         _log_route_info(
@@ -831,15 +828,13 @@ def bind_start_solution_topup_route(
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **(details if isinstance(details, dict) else {}),
+                    **_error_extra(details, zone_id=zone_id),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **_error_extra(details, idempotency_key=req.idempotency_key),
+                    **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
                 ) from exc
             status_code = 409 if code.startswith("start_solution_topup_") else 503
             logger.error(
@@ -853,8 +848,7 @@ def bind_start_solution_topup_route(
             raise api_error_detail(
                 code,
                 status_code=status_code,
-                zone_id=zone_id,
-                **_error_extra(details, idempotency_key=req.idempotency_key),
+                **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
         _log_route_info(
@@ -1032,15 +1026,13 @@ def bind_start_solution_change_route(
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **(details if isinstance(details, dict) else {}),
+                    **_error_extra(details, zone_id=zone_id),
                 ) from exc
             if raw_code == "start_cycle_intent_terminal":
                 raise api_error_detail(
                     code,
                     status_code=409,
-                    zone_id=zone_id,
-                    **_error_extra(details, idempotency_key=req.idempotency_key),
+                    **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
                 ) from exc
             status_code = 409 if code.startswith(("start_solution_change_", "solution_change_")) else 503
             logger.error(
@@ -1054,8 +1046,7 @@ def bind_start_solution_change_route(
             raise api_error_detail(
                 code,
                 status_code=status_code,
-                zone_id=zone_id,
-                **_error_extra(details, idempotency_key=req.idempotency_key),
+                **_error_extra(details, zone_id=zone_id, idempotency_key=req.idempotency_key),
             ) from exc
         task = creation.task
         _log_route_info(

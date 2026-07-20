@@ -27,7 +27,12 @@ vi.mock('../useErrorHandler', () => ({
   }),
 }))
 
-import { useNodeLifecycle } from '../useNodeLifecycle'
+import {
+  useNodeLifecycle,
+  isAssignableLifecycleState,
+  needsRebindConfirm,
+  formatPendingBindAge,
+} from '../useNodeLifecycle'
 
 describe('useNodeLifecycle', () => {
   let mockShowToast: ReturnType<typeof vi.fn>
@@ -106,7 +111,7 @@ describe('useNodeLifecycle', () => {
     expect(mockGetLifecycleAllowedTransitions).toHaveBeenCalledWith(1)
   })
 
-  it('should check if node can be assigned to zone', async () => {
+  it('should allow assign from REGISTERED_BACKEND', async () => {
     const { canAssignToZone } = useNodeLifecycle(mockShowToast)
 
     mockGetLifecycleAllowedTransitions.mockResolvedValue({
@@ -131,7 +136,7 @@ describe('useNodeLifecycle', () => {
     expect(canAssign).toBe(true)
   })
 
-  it('should return false if node cannot be assigned to zone', async () => {
+  it('should allow assign/rebind from ACTIVE (NodeService canon)', async () => {
     const { canAssignToZone } = useNodeLifecycle(mockShowToast)
 
     mockGetLifecycleAllowedTransitions.mockResolvedValue({
@@ -143,17 +148,54 @@ describe('useNodeLifecycle', () => {
       },
       allowed_transitions: [
         {
-          value: 'DEGRADED',
-          label: 'С проблемами',
+          value: 'REGISTERED_BACKEND',
+          label: 'Зарегистрирован',
+          can_receive_telemetry: false,
+          is_active: false,
+        },
+      ],
+    })
+
+    expect(await canAssignToZone(1)).toBe(true)
+  })
+
+  it('should allow assign/rebind from ASSIGNED_TO_ZONE', async () => {
+    const { canAssignToZone } = useNodeLifecycle(mockShowToast)
+
+    mockGetLifecycleAllowedTransitions.mockResolvedValue({
+      current_state: {
+        value: 'ASSIGNED_TO_ZONE',
+        label: 'Привязан к зоне',
+        can_receive_telemetry: false,
+        is_active: false,
+      },
+      allowed_transitions: [],
+    })
+
+    expect(await canAssignToZone(1)).toBe(true)
+  })
+
+  it('should return false for DEGRADED (not assignable by NodeService)', async () => {
+    const { canAssignToZone } = useNodeLifecycle(mockShowToast)
+
+    mockGetLifecycleAllowedTransitions.mockResolvedValue({
+      current_state: {
+        value: 'DEGRADED',
+        label: 'С проблемами',
+        can_receive_telemetry: true,
+        is_active: true,
+      },
+      allowed_transitions: [
+        {
+          value: 'ACTIVE',
+          label: 'Активен',
           can_receive_telemetry: true,
           is_active: true,
         },
       ],
     })
 
-    const canAssign = await canAssignToZone(1)
-
-    expect(canAssign).toBe(false)
+    expect(await canAssignToZone(1)).toBe(false)
   })
 
   it('should get state label in Russian', () => {
@@ -167,6 +209,28 @@ describe('useNodeLifecycle', () => {
     expect(getStateLabel('ASSIGNED_TO_ZONE')).toBe('Привязан к зоне')
     expect(getStateLabel('MAINTENANCE')).toBe('Обслуживание')
     expect(getStateLabel('DECOMMISSIONED')).toBe('Списан')
+  })
+
+  it('isAssignableLifecycleState matches NodeService gate', () => {
+    expect(isAssignableLifecycleState('REGISTERED_BACKEND')).toBe(true)
+    expect(isAssignableLifecycleState('ASSIGNED_TO_ZONE')).toBe(true)
+    expect(isAssignableLifecycleState('ACTIVE')).toBe(true)
+    expect(isAssignableLifecycleState('DEGRADED')).toBe(false)
+    expect(isAssignableLifecycleState('MAINTENANCE')).toBe(false)
+    expect(isAssignableLifecycleState(null)).toBe(false)
+  })
+
+  it('needsRebindConfirm for already assigned nodes', () => {
+    expect(needsRebindConfirm({ zone_id: 5, lifecycle_state: 'ACTIVE' })).toBe(true)
+    expect(needsRebindConfirm({ zone_id: null, lifecycle_state: 'ASSIGNED_TO_ZONE' })).toBe(true)
+    expect(needsRebindConfirm({ zone_id: null, lifecycle_state: 'REGISTERED_BACKEND' })).toBe(false)
+  })
+
+  it('formatPendingBindAge returns human age', () => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString()
+    expect(formatPendingBindAge(fiveMinAgo)).toBe('5 мин')
+    expect(formatPendingBindAge(null)).toBeNull()
+    expect(formatPendingBindAge('not-a-date')).toBeNull()
   })
 
   it('should track loading state', async () => {

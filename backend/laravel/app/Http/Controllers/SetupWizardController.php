@@ -425,7 +425,7 @@ class SetupWizardController extends Controller
                 'label' => 'Дренаж',
                 'asset_type' => 'DRAIN',
                 'required' => true,
-                'channel_candidates' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+                'channel_candidates' => ['valve_drain', 'drain', 'drain_main', 'drain_valve'],
                 'direction' => 'actuator',
             ],
             [
@@ -626,7 +626,7 @@ class SetupWizardController extends Controller
     private function findMatchingChannelIds(DeviceNode $node, array $candidates, string $direction): array
     {
         $normalizedCandidates = array_map(static fn (string $channel): string => strtolower($channel), $candidates);
-        $matches = [];
+        $ranked = [];
 
         foreach ($node->channels as $channel) {
             $type = strtolower((string) ($channel->type ?? ''));
@@ -638,19 +638,40 @@ class SetupWizardController extends Controller
             $actuatorType = strtolower((string) data_get($channel->config, 'actuator_type', ''));
             $metric = strtolower((string) ($channel->metric ?? ''));
 
-            $matchesCandidate = false;
+            $bestRank = null;
             foreach ([$name, $actuatorType, $metric] as $candidateValue) {
-                if ($candidateValue !== '' && in_array($candidateValue, $normalizedCandidates, true)) {
-                    $matchesCandidate = true;
-                    break;
+                if ($candidateValue === '') {
+                    continue;
+                }
+
+                $rank = array_search($candidateValue, $normalizedCandidates, true);
+                if ($rank === false) {
+                    continue;
+                }
+
+                if ($bestRank === null || $rank < $bestRank) {
+                    $bestRank = $rank;
                 }
             }
 
-            if (! $matchesCandidate) {
+            if ($bestRank === null) {
                 continue;
             }
 
-            $matches[] = (int) $channel->id;
+            $ranked[] = [
+                'rank' => $bestRank,
+                'id' => (int) $channel->id,
+            ];
+        }
+
+        usort(
+            $ranked,
+            static fn (array $left, array $right): int => [$left['rank'], $left['id']] <=> [$right['rank'], $right['id']]
+        );
+
+        $matches = [];
+        foreach ($ranked as $item) {
+            $matches[] = $item['id'];
         }
 
         return array_values(array_unique($matches));
@@ -700,6 +721,7 @@ class SetupWizardController extends Controller
                     'valve_clean_supply',
                     'valve_solution_fill',
                     'valve_solution_supply',
+                    'valve_drain',
                     'level_clean_min',
                     'level_clean_max',
                     'level_solution_min',
@@ -708,6 +730,7 @@ class SetupWizardController extends Controller
                     'pump_in',
                     'drain',
                     'drain_main',
+                    'drain_valve',
                 ]);
         }
 

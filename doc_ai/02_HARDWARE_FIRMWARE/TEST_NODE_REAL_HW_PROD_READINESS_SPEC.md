@@ -1,8 +1,8 @@
 # TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md
 # Спецификация test_node для доведения реальных нод до боевого режима
 
-**Версия:** 1.1  
-**Дата обновления:** 2026-07-13
+**Версия:** 1.2  
+**Дата обновления:** 2026-07-20
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -371,11 +371,29 @@ Transient-overlap правило для `pump_main`:
 
 ### 5.4.1. Каноничные AE3 real-hardware сценарии
 
+Канонический launcher: `tests/e2e/run_automation_engine_real_hardware.sh`
+(`--set=ae3lite|smart_irrigation|inline_irrigation|calibration|full`).
+
+Two-tank core (`--set=ae3lite`, 9 сценариев):
+
+- `E100_ae3_two_tank_realhw_smoke` — быстрый smoke до `clean_fill_check`.
 - `E101_ae3_two_tank_realhw_setup_ready` — каноничный сценарий, который доводит two-tank систему до `workflow_phase=ready`; после этого полив разрешён.
 - `E101_ae3_two_tank_realhw_ready_during_fill` — альтернативный happy-path, где `ready` достигается ещё на fill-path без recirculation.
 - `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-вариант: после first-run retry-limit второй прогон снова доводит систему до `ready`.
 - `E104_ae3_two_tank_realhw_hot_reload_correction_config` — не тест “полив уже разрешён”, а strict hot-reload тест активного correction loop; он проверяет сходимость pH/EC и применение новой config version внутри `tank_recirc`.
+- `E105_ae3_two_tank_fail_closed_missing_command_plan_realhw` — planner fail-closed до MQTT при missing actuator plan.
 - `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict same-window тест для correction sub-machine в `prepare_recirculation_check`: сценарий обязан увидеть, что planner держит `EC` и `PH` в одном correction window, а runtime исполняет их последовательно (`EC -> observe -> PH`) без reset ноды и без раннего failed terminal state.
+- `E112_ae3_per_phase_ec_target_realhw` — per-phase EC target через `npk_share`.
+- `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — `solution_min` depleted → `startup` без terminal fail.
+
+Irrigation (`--set=smart_irrigation`): `E107`, `E108` (soil-moisture telemetry contract), `E109` (inline correction).
+Calibration (`--set=calibration`): `E110` create/cancel, `E111` unsupported `calibrate` → `INVALID`.
+
+Удалены как дубли/legacy (без потери покрытия):
+
+- `E102_*ready_during_recirculation` — ⊂ `E101_setup_ready`;
+- `E102_*retry_limit_alert_reset` — ⊂ `E103` (recovery supersets double-fail);
+- 14 YAML aliases `E61/E66–E68/E80–E89/E94` → `E100`.
 
 Для `E106` важен отдельный инвариант воспроизводимости:
 

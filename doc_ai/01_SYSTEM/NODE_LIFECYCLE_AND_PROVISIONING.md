@@ -134,11 +134,12 @@ Breaking-change: обратная совместимость со старыми
 
 Во всех документах 2.0 под `logical_node_id` понимается именно этот строковый `uid` (`nodes.uid`), а не числовой PK `nodes.id`.
 
-### `greenhouse_token` (устарело)
+### `greenhouse_token` / `provisioning_token` (removed from bind path)
 
-- Токен больше **не используется** для автоматической привязки теплицы/зоны при `node_hello`.
-- Backend игнорирует поля `greenhouse_token` и `zone_id` в `provisioning_meta`, фиксируя только `hardware_id`, `node_type`, `fw_version` и `node_name`.
-- Привязка к теплице и зоне выполняется **только вручную** через UI/Android (оператор выбирает зону и подтверждает).
+- **Статус bind-path:** removed. Токен **не используется** для привязки узла к теплице/зоне.
+- Backend игнорирует поля `greenhouse_token` и `zone_id` в `provisioning_meta` (`node_hello`); фиксирует только `hardware_id`, `node_type`, `fw_version`, `node_name` / `node_uid`.
+- Привязка к теплице и зоне — **только вручную** через UI/Android.
+- **Колонка БД** `greenhouses.provisioning_token`: deprecated, **pending drop**. Пока остаётся NOT NULL unique (генерация при create Greenhouse — только для DB constraint / seeders; значение в `$hidden`, API не отдаёт token как способ bind). Artisan `security:check-config` напоминает о deprecation.
 
 Backend:
 
@@ -151,21 +152,22 @@ Backend:
 
 ## 3.4. Привязка к зоне (REGISTERED_BACKEND → ASSIGNED_TO_ZONE)
 
-Привязка управляется через UI (frontend/Android):
+Привязка управляется через UI (frontend/Android) по pending-контракту
+(см. `NODE_ASSIGNMENT_LOGIC.md`):
 
-1. **Оператор выбирает зону и тип ноды**
-2. **Backend обновляет `DeviceNode`:**
-   - `zone_id`,
-   - `node_role` (например, `ZONE_PH_CONTROLLER`),
-   - имя
-3. **Нода остается в состоянии `REGISTERED_BACKEND`**
-4. **Нода подключается и отправляет `config_report`** в топик `hydro/{gh}/{zone}/{node}/config_report`
-5. **Нода использует встроенный конфиг**, валидирует, сохраняет в NVS и применяет
-6. **Backend обрабатывает `config_report`** и переводит ноду в `ASSIGNED_TO_ZONE`
-8. **После перехода в `ASSIGNED_TO_ZONE`** узел участвует в **зонной логике** 
+1. **Оператор выбирает зону**
+2. **Backend выставляет `pending_zone_id`**, оставляя `zone_id = null`, lifecycle `REGISTERED_BACKEND`
+3. **Laravel публикует целевой NodeConfig** через `PublishNodeConfigJob` → history-logger
+   (часто на temp topic `hydro/gh-temp/zn-temp/{hardware_id|uid}/config`)
+4. **Нода применяет конфиг** (NVS + MQTT namespace), затем публикует `config_report`
+   в `hydro/{gh}/{zone}/{node}/config_report`
+5. **Только после observed `config_report`** с совпавшим `gh_uid`/`zone_uid` Laravel делает
+   `pending_zone_id → zone_id` и `ASSIGNED_TO_ZONE`
+6. **После перехода в `ASSIGNED_TO_ZONE`** узел участвует в **зонной логике**
    (`../06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md`, `../06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md`)
 
-**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения `config_report` от ноды. Это гарантирует, что сервер использует актуальный конфиг. Любые `greenhouse_token`/`zone_id`, присланные в `node_hello`, на привязку не влияют.
+**Важно:** сервер **публикует** целевой NodeConfig для bootstrap bind; bind считается завершённым
+только после `config_report` с провода. Любые `greenhouse_token`/`zone_id` из `node_hello` на привязку не влияют.
 
 Инварианты bind/rebind:
 
@@ -174,6 +176,25 @@ Backend:
 - Перепривязка в **другую** зону всегда проходит через pending-state: сервер очищает текущий `zone_id`, выставляет `pending_zone_id = target_zone_id`, переводит lifecycle в `REGISTERED_BACKEND` и ждёт `config_report` из целевого namespace.
 - Финализация bind/rebind выполняется только после `config_report` из целевого namespace MQTT; до этого нода не считается закреплённой за новой зоной.
 - `history-logger` в этом flow выступает только observer/transport: он сохраняет `config_report` и сообщает Laravel наблюдаемый факт. Саму финализацию bind/rebind (`zone_id`, `pending_zone_id`, lifecycle) выполняет только Laravel.
+
+### 3.4.1. FSM: сброс в `REGISTERED_BACKEND` (rebind / detach)
+
+Канонические переходы «назад в пул незакреплённых» (только через `NodeLifecycleService`, без прямой записи `lifecycle_state`):
+
+| Из | В | Когда |
+|----|---|--------|
+| `ASSIGNED_TO_ZONE` | `REGISTERED_BACKEND` | rebind в другую зону, detach, retry pending |
+| `ACTIVE` | `REGISTERED_BACKEND` | rebind / detach активной ноды |
+| `DEGRADED` | `REGISTERED_BACKEND` | detach деградированной ноды |
+| `MAINTENANCE` | `REGISTERED_BACKEND` | detach из обслуживания |
+
+**Единственный owner переходов lifecycle:** `NodeLifecycleService`.
+
+- `NodeService` (UI bind/rebind/detach) → `transitionToRegistered`.
+- `NodeSwapService` → `transitionToDecommissioned` / `ensureRegistered` (pending bind сохраняется: `pending_zone_id`, `zone_id=null`).
+- `NodeRegistryService` (регистрация / `node_hello`) → `ensureRegistered` (путь `UNPROVISIONED → PROVISIONED_WIFI → REGISTERED_BACKEND`).
+- `DeviceNode::transitionTo*()` — тонкие делегаты в `NodeLifecycleService` (FSM обязателен; запрещённый переход возвращает `false` и не меняет состояние).
+- Прямое присваивание `lifecycle_state` вне `NodeLifecycleService` (и fixtures/seeders/тестов) запрещено.
 
 Состояние: `ASSIGNED_TO_ZONE`.
 
@@ -268,14 +289,18 @@ Backend:
 ### 6.1. Состояния жизненного цикла
 - ✅ Поле `lifecycle_state` в таблице `nodes` (enum, default: 'UNPROVISIONED')
 - ✅ Enum `NodeLifecycleState` в Laravel со всеми состояниями
-- ✅ Сервис `NodeLifecycleService` для управления переходами с валидацией
-- ✅ Методы в модели `DeviceNode` для работы с состояниями
+- ✅ Сервис `NodeLifecycleService` — **единственный owner** переходов с валидацией FSM
+- ✅ Методы в модели `DeviceNode::transitionTo*()` — делегаты в `NodeLifecycleService` (не пишут state напрямую)
+- ✅ `ensureRegistered()` для первичной регистрации и reset unbound-нод
 
 **Файлы:**
 - `backend/laravel/database/migrations/2025_11_17_174432_add_lifecycle_to_nodes_table.php`
 - `backend/laravel/app/Enums/NodeLifecycleState.php`
 - `backend/laravel/app/Services/NodeLifecycleService.php`
 - `backend/laravel/app/Models/DeviceNode.php`
+- `backend/laravel/app/Services/NodeService.php`
+- `backend/laravel/app/Services/NodeSwapService.php`
+- `backend/laravel/app/Services/NodeRegistryService.php`
 
 ### 6.2. Идентификаторы узла
 - ✅ Поле `hardware_id` в таблице `nodes` (string, nullable, unique)
@@ -289,7 +314,7 @@ Backend:
 - ✅ Обработчик `handle_node_hello` в `history-logger`
 - ✅ Подписка на топики `hydro/node_hello` и `hydro/+/+/+/node_hello`
 - ✅ Интеграция с Laravel API `/api/nodes/register`
-- ✅ Автопривязка по `greenhouse_token` отключена; привязка выполняется только вручную через UI
+- ✅ `greenhouse_token` / `provisioning_token` removed from bind path; колонка БД deprecated pending drop; привязка только вручную через UI
 
 **Файлы:**
 - `backend/services/history-logger/main.py`

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -33,6 +34,46 @@ from .node_channels_sync import sync_node_channels_from_payload
 from telemetry_processing import refresh_node_cache_for_uid
 
 logger = logging.getLogger(__name__)
+
+
+def _preserve_existing_node_secret(
+    existing_config: Any,
+    incoming: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Keep DB node_secret when firmware config_report omits credentials.
+
+    History-logger replaces ``nodes.config`` wholesale from config_report.
+    Firmware ACK payloads typically do not include ``node_secret``, which would
+    otherwise wipe the per-node HMAC secret written by Laravel.
+    """
+    if not isinstance(incoming, dict):
+        return incoming
+
+    existing: Dict[str, Any] = {}
+    if isinstance(existing_config, dict):
+        existing = existing_config
+    elif isinstance(existing_config, (bytes, bytearray, memoryview)):
+        try:
+            parsed = json.loads(bytes(existing_config).decode("utf-8"))
+            if isinstance(parsed, dict):
+                existing = parsed
+        except Exception:
+            existing = {}
+    elif isinstance(existing_config, str) and existing_config.strip():
+        try:
+            parsed = json.loads(existing_config)
+            if isinstance(parsed, dict):
+                existing = parsed
+        except Exception:
+            existing = {}
+
+    existing_secret = existing.get("node_secret")
+    if isinstance(existing_secret, str) and existing_secret != "":
+        merged = dict(incoming)
+        merged["node_secret"] = existing_secret
+        return merged
+
+    return incoming
 
 
 def _extract_fw_version(data: Dict[str, Any]) -> Optional[str]:
@@ -82,6 +123,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
 
         CONFIG_REPORT_RECEIVED.inc()
         data = _normalize_config_report_channels_for_storage(data)
+        data = _preserve_existing_node_secret(node.get("config"), data)
         fw_version = _extract_fw_version(data)
 
         if fw_version:
@@ -202,7 +244,8 @@ async def _load_node_row_or_buffer(
                    uid,
                    lifecycle_state,
                    zone_id,
-                   pending_zone_id
+                   pending_zone_id,
+                   config
             FROM nodes
             WHERE hardware_id = $1
             """,
@@ -238,7 +281,8 @@ async def _load_node_row_or_buffer(
                uid,
                lifecycle_state,
                zone_id,
-               pending_zone_id
+               pending_zone_id,
+               config
         FROM nodes
         WHERE uid = $1
         """,
@@ -463,4 +507,8 @@ async def _complete_binding_after_config_report(
             return False
 
 
-__all__ = ["handle_config_report", "sync_node_channels_from_payload"]
+__all__ = [
+    "handle_config_report",
+    "sync_node_channels_from_payload",
+    "_preserve_existing_node_secret",
+]

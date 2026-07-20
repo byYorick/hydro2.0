@@ -13,7 +13,7 @@ class ConfigSignatureServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new ConfigSignatureService;
+        $this->service = app(ConfigSignatureService::class);
     }
 
     public function test_sign_config_adds_timestamp_and_signature(): void

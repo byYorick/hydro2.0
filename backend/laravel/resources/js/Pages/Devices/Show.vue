@@ -75,7 +75,8 @@
               v-else-if="device.pending_zone_id && !device.zone_id"
               class="text-xs text-[color:var(--text-muted)] mt-1"
             >
-              Ожидается подтверждение привязки от ноды
+              Ожидает подтверждения привязки
+              <span v-if="pendingBindAge"> · {{ pendingBindAge }}</span>
             </div>
           </div>
         </div>
@@ -425,6 +426,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 import type { SensorCalibrationOverview, SensorCalibrationSessionOutcome } from '@/types/SensorCalibration'
+import { formatPendingBindAge } from '@/composables/useNodeLifecycle'
 
 interface PageProps {
   device?: Device
@@ -454,6 +456,7 @@ const linkedZoneName = computed(() => {
   return '-'
 })
 const hasZoneAssignment = computed(() => linkedZoneId.value !== null)
+const pendingBindAge = computed(() => formatPendingBindAge(device.value.pending_zone_set_at))
 const zoneAssignmentTitle = computed(() => {
   if (device.value.zone_id) {
     return 'Привязано к зоне'

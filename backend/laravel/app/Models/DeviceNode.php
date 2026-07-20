@@ -18,6 +18,7 @@ class DeviceNode extends Model
     protected $fillable = [
         'zone_id',
         'pending_zone_id',
+        'pending_zone_set_at',
         'uid',
         'name',
         'type',
@@ -40,6 +41,7 @@ class DeviceNode extends Model
         'last_seen_at' => 'datetime',
         'last_heartbeat_at' => 'datetime',
         'first_seen_at' => 'datetime',
+        'pending_zone_set_at' => 'datetime',
         'validated' => 'boolean',
         'config' => 'array',
         'lifecycle_state' => NodeLifecycleState::class,
@@ -63,6 +65,19 @@ class DeviceNode extends Model
     protected static function boot(): void
     {
         parent::boot();
+
+        // TTL-якорь для pending bind: ставим при установке pending_zone_id, чистим при сбросе.
+        static::saving(function (DeviceNode $node) {
+            if (! $node->isDirty('pending_zone_id')) {
+                return;
+            }
+
+            if ($node->pending_zone_id) {
+                $node->pending_zone_set_at = now();
+            } else {
+                $node->pending_zone_set_at = null;
+            }
+        });
 
         // Публикуем событие для новых нод, чтобы они появлялись в UI (unassigned list)
         static::created(function (DeviceNode $node) {
@@ -183,66 +198,65 @@ class DeviceNode extends Model
     }
 
     /**
-     * Переход в состояние PROVISIONED_WIFI.
+     * Переход в состояние PROVISIONED_WIFI (через NodeLifecycleService FSM).
      */
-    public function transitionToProvisioned(): void
+    public function transitionToProvisioned(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::PROVISIONED_WIFI;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToProvisioned($this, $reason);
     }
 
     /**
-     * Переход в состояние REGISTERED_BACKEND.
+     * Переход в состояние REGISTERED_BACKEND (через NodeLifecycleService FSM).
      */
-    public function transitionToRegistered(): void
+    public function transitionToRegistered(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToRegistered($this, $reason);
     }
 
     /**
-     * Переход в состояние ASSIGNED_TO_ZONE.
+     * Переход в состояние ASSIGNED_TO_ZONE (через NodeLifecycleService FSM).
      */
-    public function transitionToAssigned(): void
+    public function transitionToAssigned(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToAssigned($this, $reason);
     }
 
     /**
-     * Переход в состояние ACTIVE.
+     * Переход в состояние ACTIVE (через NodeLifecycleService FSM).
      */
-    public function transitionToActive(): void
+    public function transitionToActive(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::ACTIVE;
-        $this->status = 'online';
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToActive($this, $reason);
     }
 
     /**
-     * Переход в состояние DEGRADED.
+     * Переход в состояние DEGRADED (через NodeLifecycleService FSM).
      */
-    public function transitionToDegraded(): void
+    public function transitionToDegraded(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::DEGRADED;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToDegraded($this, $reason);
     }
 
     /**
-     * Переход в состояние MAINTENANCE.
+     * Переход в состояние MAINTENANCE (через NodeLifecycleService FSM).
      */
-    public function transitionToMaintenance(): void
+    public function transitionToMaintenance(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::MAINTENANCE;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToMaintenance($this, $reason);
     }
 
     /**
-     * Переход в состояние DECOMMISSIONED.
+     * Переход в состояние DECOMMISSIONED (через NodeLifecycleService FSM).
      */
-    public function transitionToDecommissioned(): void
+    public function transitionToDecommissioned(?string $reason = null): bool
     {
-        $this->lifecycle_state = NodeLifecycleState::DECOMMISSIONED;
-        $this->save();
+        return app(\App\Services\NodeLifecycleService::class)
+            ->transitionToDecommissioned($this, $reason);
     }
 }

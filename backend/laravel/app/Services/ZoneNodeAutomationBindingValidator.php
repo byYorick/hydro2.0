@@ -23,7 +23,7 @@ class ZoneNodeAutomationBindingValidator
      */
     private const WATER_AUTOMATION_ROLE_CHANNELS = [
         'pump_main' => ['pump_main'],
-        'drain' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+        'drain' => ['valve_drain', 'drain', 'drain_main', 'drain_valve'],
         'pump_acid' => ['pump_acid'],
         'pump_base' => ['pump_base'],
         'pump_a' => ['pump_a'],

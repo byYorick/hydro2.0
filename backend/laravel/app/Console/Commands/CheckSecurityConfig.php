@@ -25,7 +25,11 @@ class CheckSecurityConfig extends Command
      */
     public function handle(): int
     {
-        if (! app()->isProduction()) {
+        // Note (legacy): greenhouses.provisioning_token is deprecated / pending drop —
+        // NOT a node bind mechanism; column kept NOT NULL unique for seeders/AE inserts.
+        $this->line('Note: greenhouses.provisioning_token is deprecated (pending drop); bind is UI-only.');
+
+        if (! app()->environment('production', 'prod')) {
             $this->info('Not in production, skipping security checks');
 
             return self::SUCCESS;
@@ -60,6 +64,16 @@ class CheckSecurityConfig extends Command
         $appKey = config('app.key');
         if (empty($appKey) || $appKey === 'base64:default_key') {
             $errors[] = 'APP_KEY is default or empty (insecure)';
+        }
+
+        // Per-node secrets: production must not rely on shared NODE_DEFAULT_SECRET / app.key
+        $nodeDefaultSecret = config('app.node_default_secret');
+        if (is_string($nodeDefaultSecret) && $nodeDefaultSecret !== '') {
+            if ($nodeDefaultSecret === 'hydro-default-secret-key-2025') {
+                $errors[] = 'NODE_DEFAULT_SECRET is the insecure hardcoded default (use per-node nodes.config.node_secret)';
+            } else {
+                $this->warn('NODE_DEFAULT_SECRET is set in production; prefer per-node nodes.config.node_secret only');
+            }
         }
 
         if (! empty($errors)) {

@@ -7,10 +7,17 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 from ae3lite.api import bind_start_irrigation_route
+from ae3lite.api.compat_endpoints import _error_extra
 from ae3lite.api.contracts import StartIrrigationRequest
 from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.errors import TaskCreateError
+
+
+def test_error_extra_overrides_duplicate_zone_id_without_keyerror() -> None:
+    """Regression: zone_id=..., **details raises KeyError('zone_id') on Py3.11+ DICT_MERGE."""
+    merged = _error_extra({"zone_id": 99, "hint": "busy"}, zone_id=7)
+    assert merged == {"zone_id": 7, "hint": "busy"}
 
 
 def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
@@ -239,6 +246,71 @@ async def test_compat_start_irrigation_translates_intent_terminal_task_create_er
     assert detail["zone_id"] == 7
     assert detail["idempotency_key"] == "sch:z7:irrigation-term"
     assert detail["hint"] == "already_done"
+
+
+@pytest.mark.asyncio
+async def test_compat_start_irrigation_zone_busy_details_with_zone_id_no_keyerror() -> None:
+    """TaskCreateError.details often include zone_id; must not KeyError on api_error_detail merge."""
+    app = FastAPI()
+
+    async def validate_zone(_zone_id: int):
+        return None
+
+    async def validate_security(_request):
+        return None
+
+    async def load_zone_workflow_phase(_zone_id: int) -> str:
+        return "ready"
+
+    async def claim_intent(**kwargs):
+        return {
+            "decision": "claimed",
+            "intent": {"id": 88, "zone_id": kwargs["zone_id"], "status": "claimed"},
+        }
+
+    async def create_task_from_intent(**kwargs):
+        raise TaskCreateError(
+            "start_cycle_zone_busy",
+            "zone busy",
+            details={"zone_id": kwargs["zone_id"], "active_intent_id": 42},
+        )
+
+    async def mark_intent_terminal(**kwargs):
+        return None
+
+    bind_start_irrigation_route(
+        app,
+        validate_scheduler_zone_fn=validate_zone,
+        validate_scheduler_security_baseline_fn=validate_security,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: False,
+        start_irrigation_rate_limit_check_fn=lambda _zone_id: True,
+        start_irrigation_rate_limit_window_sec_fn=lambda: 10,
+        start_irrigation_rate_limit_max_requests_fn=lambda: 30,
+        claim_start_irrigation_intent_fn=claim_intent,
+        load_zone_workflow_phase_fn=load_zone_workflow_phase,
+        create_task_from_intent_fn=create_task_from_intent,
+        kick_worker_fn=lambda: None,
+        build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
+        mark_intent_terminal_fn=mark_intent_terminal,
+        logger=SimpleNamespace(
+            warning=lambda *args, **kwargs: None,
+            error=lambda *args, **kwargs: None,
+        ),
+    )
+    endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-irrigation")
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-dup-zone"}),
+            req=StartIrrigationRequest(source="laravel_scheduler", idempotency_key="sch:z7:irrigation-dup"),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_irrigation_zone_busy"
+    assert detail["zone_id"] == 7
+    assert detail["active_intent_id"] == 42
 
 
 @pytest.mark.asyncio

@@ -32,22 +32,30 @@ class NodeLifecycleService
         NodeLifecycleState::ASSIGNED_TO_ZONE->value => [
             NodeLifecycleState::ACTIVE->value,
             NodeLifecycleState::MAINTENANCE->value,
+            // rebind/detach: сброс в пул незакреплённых до нового config_report
+            NodeLifecycleState::REGISTERED_BACKEND->value,
             NodeLifecycleState::DECOMMISSIONED->value,
         ],
         NodeLifecycleState::ACTIVE->value => [
             NodeLifecycleState::DEGRADED->value,
             NodeLifecycleState::MAINTENANCE->value,
+            // rebind/detach активной ноды
+            NodeLifecycleState::REGISTERED_BACKEND->value,
             NodeLifecycleState::DECOMMISSIONED->value,
         ],
         NodeLifecycleState::DEGRADED->value => [
             NodeLifecycleState::ACTIVE->value,
             NodeLifecycleState::MAINTENANCE->value,
+            // detach деградированной ноды
+            NodeLifecycleState::REGISTERED_BACKEND->value,
             NodeLifecycleState::DECOMMISSIONED->value,
         ],
         NodeLifecycleState::MAINTENANCE->value => [
             NodeLifecycleState::ACTIVE->value,
             NodeLifecycleState::DEGRADED->value,
             NodeLifecycleState::ASSIGNED_TO_ZONE->value,
+            // detach из обслуживания
+            NodeLifecycleState::REGISTERED_BACKEND->value,
             NodeLifecycleState::DECOMMISSIONED->value,
         ],
         NodeLifecycleState::DECOMMISSIONED->value => [
@@ -181,5 +189,32 @@ class NodeLifecycleService
     public function transitionToDecommissioned(DeviceNode $node, ?string $reason = null): bool
     {
         return $this->transition($node, NodeLifecycleState::DECOMMISSIONED, $reason);
+    }
+
+    /**
+     * Довести узел до REGISTERED_BACKEND по допустимым FSM-путям.
+     *
+     * Для первичной регистрации: MANUFACTURED → UNPROVISIONED → PROVISIONED_WIFI → REGISTERED_BACKEND.
+     * Для rebind/detach/reset: ASSIGNED/ACTIVE/DEGRADED/MAINTENANCE → REGISTERED_BACKEND.
+     */
+    public function ensureRegistered(DeviceNode $node, ?string $reason = null): bool
+    {
+        if ($node->lifecycleState() === NodeLifecycleState::REGISTERED_BACKEND) {
+            return true;
+        }
+
+        if ($node->lifecycleState() === NodeLifecycleState::MANUFACTURED) {
+            if (! $this->transition($node, NodeLifecycleState::UNPROVISIONED, $reason)) {
+                return false;
+            }
+        }
+
+        if ($node->lifecycleState() === NodeLifecycleState::UNPROVISIONED) {
+            if (! $this->transitionToProvisioned($node, $reason)) {
+                return false;
+            }
+        }
+
+        return $this->transitionToRegistered($node, $reason);
     }
 }

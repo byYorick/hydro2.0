@@ -314,6 +314,39 @@ async def test_drain_preserves_signed_payload_metadata():
 
 
 @pytest.mark.asyncio
+async def test_drain_abandons_send_failed_with_null_zone_id():
+    """Null zone_id rows must leave QUEUED/SEND_FAILED, not keep failing drain cycles."""
+    from commands.drain import drain_stale_queued_commands_once
+
+    claim_row = {
+        "cmd_id": "6d1032d6-dd37-44bd-840a-911822b0df34",
+        "zone_id": None,
+        "node_id": 2,
+        "channel": "system",
+        "cmd": "reset_binding",
+        "params": {},
+        "status": "SEND_FAILED",
+        "source": None,
+        "node_uid": "nd-test-ph-1",
+    }
+
+    with patch(
+        "commands.drain._claim_stale_queued_command_rows",
+        new_callable=AsyncMock,
+        return_value=[claim_row],
+    ), patch(
+        "commands.drain._abandon_non_republishable_command",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as abandon:
+        summary = await drain_stale_queued_commands_once(stale_after_seconds=0, limit=10)
+
+    abandon.assert_awaited_once()
+    assert abandon.await_args.kwargs["reason"] == "missing_required_publish_fields"
+    assert summary == {"scanned": 1, "drained": 0, "skipped": 1, "failed": 0}
+
+
+@pytest.mark.asyncio
 async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /commands endpoint."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \

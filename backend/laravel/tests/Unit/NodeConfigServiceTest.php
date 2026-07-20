@@ -13,6 +13,20 @@ class NodeConfigServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    private string $originalEnv;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->originalEnv = (string) $this->app['env'];
+    }
+
+    protected function tearDown(): void
+    {
+        $this->app['env'] = $this->originalEnv;
+        parent::tearDown();
+    }
+
     public function test_get_stored_config_sanitizes_credentials_and_gpio(): void
     {
         $node = DeviceNode::factory()->create([
@@ -209,5 +223,52 @@ class NodeConfigServiceTest extends TestCase
             'irrigation_solution_min_guard_enabled' => true,
             'estop_debounce_ms' => 120,
         ], $config['fail_safe_guards']);
+    }
+
+    public function test_generate_node_config_does_not_fallback_to_app_key_in_production(): void
+    {
+        $this->app['env'] = 'production';
+        config(['app.node_default_secret' => null, 'app.key' => 'base64:prod-app-key-should-not-leak']);
+
+        $node = new DeviceNode([
+            'id' => 99,
+            'uid' => 'nd-ph-no-secret',
+            'type' => 'ph',
+            'config' => [
+                'node_id' => 'nd-ph-no-secret',
+                'version' => 3,
+                'type' => 'ph',
+                'channels' => [],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertArrayNotHasKey('node_secret', $config);
+    }
+
+    public function test_generate_node_config_includes_per_node_secret(): void
+    {
+        $secret = bin2hex(random_bytes(32));
+        $node = new DeviceNode([
+            'id' => 100,
+            'uid' => 'nd-ph-with-secret',
+            'type' => 'ph',
+            'config' => [
+                'node_id' => 'nd-ph-with-secret',
+                'version' => 3,
+                'type' => 'ph',
+                'node_secret' => $secret,
+                'channels' => [],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame($secret, $config['node_secret']);
     }
 }

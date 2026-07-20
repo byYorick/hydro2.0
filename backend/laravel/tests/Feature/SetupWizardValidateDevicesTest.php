@@ -156,7 +156,7 @@ class SetupWizardValidateDevicesTest extends TestCase
         ]);
         $drainChannel = NodeChannel::query()->create([
             'node_id' => $irrigationNode->id,
-            'channel' => 'valve_solution_supply',
+            'channel' => 'valve_drain',
             'type' => 'ACTUATOR',
         ]);
 

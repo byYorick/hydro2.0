@@ -72,7 +72,7 @@ class NodeController extends Controller
         // Eager loading для предотвращения N+1 запросов
         // Исключаем config из выборки для предотвращения утечки Wi-Fi/MQTT кредов
         $query = DeviceNode::query()
-            ->select('id', 'uid', 'name', 'type', 'zone_id', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'created_at', 'updated_at')
+            ->select('id', 'uid', 'name', 'type', 'zone_id', 'pending_zone_id', 'pending_zone_set_at', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'last_seen_at', 'created_at', 'updated_at')
             ->with(['zone:id,name,status', 'channels' => function ($channelQuery) {
                 // Исключаем полный config из каналов, но безопасно извлекаем actuator_type и binding_role для UI.
                 $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit',

@@ -363,7 +363,7 @@ const ASSIGNED_ROLE_KEYS: ZoneAutomationBindRole[] = [
 const ROLE_FILTER_SPECS: Record<ZoneAutomationBindRole, RoleFilterSpec> = {
   irrigation: {
     typeCandidates: ['irrig', 'pump', 'pump_node', 'relay', 'relay_node'],
-    channelCandidates: ['pump_main', 'drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+    channelCandidates: ['pump_main', 'valve_drain', 'drain', 'drain_main', 'drain_valve'],
     bindingRoleCandidates: ['pump_main', 'drain'],
   },
   ph_correction: {

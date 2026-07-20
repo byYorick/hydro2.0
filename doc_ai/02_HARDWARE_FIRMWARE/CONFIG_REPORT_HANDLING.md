@@ -1,6 +1,6 @@
 # Обработка config_report от ноды
 
-**Дата:** 2026-03-02
+**Дата:** 2026-07-20
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -18,7 +18,7 @@ Breaking-change: обратная совместимость со старыми
 ## Поток привязки ноды
 
 1. **Пользователь привязывает ноду к зоне** через UI
-   - backend выставляет intent (`pending_zone_id` / `zone_id` в зависимости от сценария)
+   - backend выставляет `pending_zone_id` (`zone_id` остаётся null до wire ACK)
    - запускается publish NodeConfig в устройство через pipeline:
      `Laravel -> PublishNodeConfigJob -> history-logger -> MQTT .../config -> node`
 
@@ -27,14 +27,14 @@ Breaking-change: обратная совместимость со старыми
    - исходящий snapshot: `hydro/{gh}/{zone}/{node}/config_report`
    - payload содержит полный актуальный NodeConfig из NVS
 
-3. **history-logger обрабатывает `config_report`**
+3. **history-logger обрабатывает `config_report`** (transport/observer)
    - Сохраняет конфиг в `nodes.config`
    - Синхронизирует `node_channels` из payload
-   - Завершает binding только если `config_report` пришёл из целевого namespace и соответствует intent
+   - Сообщает Laravel observed-факт (`POST /api/python/nodes/config-report-observed`)
 
-4. **Нода переводится в целевое состояние binding**
-   - только после подтверждённого `config_report`
-   - fail-closed: без подтверждения binding не финализируется
+4. **Laravel финализирует binding** (`NodeConfigReportObserverService`)
+   - только после `config_report` из целевого namespace с совпавшим `gh_uid`/`zone_uid`
+   - fail-closed: без подтверждения `pending_zone_id → zone_id` не выполняется
 
 ---
 

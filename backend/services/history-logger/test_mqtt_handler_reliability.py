@@ -60,6 +60,69 @@ async def test_handle_status_offline_unknown_node_skips_alert_and_increments_met
 
 
 @pytest.mark.asyncio
+async def test_handle_config_report_preserves_existing_node_secret() -> None:
+    from handlers.config_report import handle_config_report
+
+    topic = "hydro/gh-1/zn-1/nd-ph-1/config_report"
+    payload = b'{"node_id":"nd-ph-1","version":3,"channels":[]}'
+    existing_secret = "a" * 64
+
+    with patch("handlers.config_report.fetch", new_callable=AsyncMock) as mock_fetch, patch(
+        "handlers.config_report.execute", new_callable=AsyncMock
+    ) as mock_execute, patch(
+        "handlers.config_report.sync_node_channels_from_payload", new_callable=AsyncMock
+    ), patch(
+        "handlers.config_report._complete_binding_after_config_report",
+        new_callable=AsyncMock,
+        return_value=True,
+    ), patch(
+        "handlers.config_report._complete_sensor_calibrations_after_config_report",
+        new_callable=AsyncMock,
+    ), patch(
+        "handlers.config_report.refresh_node_cache_for_uid", new_callable=AsyncMock
+    ), patch(
+        "handlers.config_report.CONFIG_REPORT_RECEIVED"
+    ), patch(
+        "handlers.config_report.CONFIG_REPORT_PROCESSED"
+    ):
+        mock_fetch.return_value = [
+            {
+                "id": 1,
+                "uid": "nd-ph-1",
+                "lifecycle_state": "ASSIGNED_TO_ZONE",
+                "zone_id": 1,
+                "pending_zone_id": None,
+                "config": {"node_secret": existing_secret, "version": 2},
+            }
+        ]
+
+        await handle_config_report(topic, payload)
+
+        stored = mock_execute.await_args.args[1]
+        assert stored["node_secret"] == existing_secret
+        assert "node_secret" not in __import__("json").loads(payload)
+
+
+def test_preserve_existing_node_secret_keeps_db_value() -> None:
+    from handlers.config_report import _preserve_existing_node_secret
+
+    out = _preserve_existing_node_secret(
+        {"node_secret": "b" * 64, "version": 1},
+        {"version": 3, "channels": []},
+    )
+    assert out["node_secret"] == "b" * 64
+    assert out["version"] == 3
+
+
+def test_preserve_existing_node_secret_noop_when_absent() -> None:
+    from handlers.config_report import _preserve_existing_node_secret
+
+    incoming = {"version": 3}
+    assert _preserve_existing_node_secret({}, incoming) is incoming
+    assert _preserve_existing_node_secret(None, incoming) is incoming
+
+
+@pytest.mark.asyncio
 async def test_handle_config_report_does_not_mark_processed_on_laravel_ack_fail() -> None:
     from handlers.config_report import handle_config_report
 
