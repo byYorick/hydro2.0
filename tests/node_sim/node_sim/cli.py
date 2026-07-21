@@ -356,8 +356,8 @@ async def run_scenario(config: SimConfig, scenario_name: str):
             await asyncio.sleep(5)
             
             # Включаем насос для создания базового тока
-            logger.info("Enabling main_pump to create base current...")
-            node.set_actuator("main_pump", True, pwm_value=255)
+            logger.info("Enabling pump_main to create base current...")
+            node.set_actuator("pump_main", True, pwm_value=255)
             await asyncio.sleep(2)
             
             # Включаем режим перегрузки
@@ -372,7 +372,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
                 error_publisher,
                 current_ma=current_ma,
                 threshold_ma=500.0,
-                actuator="main_pump"
+                actuator="pump_main"
             )
             logger.info("infra_overcurrent error published. This should create an ACTIVE alert and WS push.")
             

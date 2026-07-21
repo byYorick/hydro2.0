@@ -28,7 +28,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
@@ -88,9 +88,9 @@ actions:
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
-        channel: main_pump
+        channel: pump_main
         state: true
       timeout_sec: 3  # Очень короткий таймаут
     expected_status: [200, 422]
@@ -109,7 +109,7 @@ actions:
       WHERE zone_id = :zone_id
         AND node_id = :node_id
         AND cmd = 'set_relay'
-        AND channel = 'main_pump'
+        AND channel = 'pump_main'
         AND created_at >= to_timestamp(:test_started_at)
       ORDER BY created_at DESC
       LIMIT 1

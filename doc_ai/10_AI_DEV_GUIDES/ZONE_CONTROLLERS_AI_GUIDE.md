@@ -232,7 +232,7 @@ irrigation_duration_sec (например: 10)
 create_command(
  zone.id,
  node_irrig,
- "pump_irrigation",
+ "pump_main",
  "run",
  {"duration_ms": irrigation_duration_sec * 1000}
 )

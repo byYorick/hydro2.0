@@ -51,7 +51,7 @@ class NodeModel:
     
     Содержит:
     - Идентификаторы: gh_uid, zone_uid, node_uid, hardware_id, node_type
-    - Каналы актуаторов: main_pump, drain_pump, mister, fan, light, heater
+    - Каналы актуаторов: pump_main (alias main_pump), drain_pump, mister, fan, light, heater
     - Сенсоры: air_temp_c, air_rh, co2_ppm, lux, solution_temp_c, ph, ec, ina209_ma, flow_present
     - Правила физики для токов и потоков
     """
@@ -66,7 +66,7 @@ class NodeModel:
     
     # Каналы актуаторов
     actuators: List[str] = field(default_factory=lambda: [
-        "main_pump", "drain_pump", "mister", "fan", "light", "heater"
+        "pump_main", "drain_pump", "mister", "fan", "light", "heater"
     ])
     
     # Состояние актуаторов
@@ -94,7 +94,8 @@ class NodeModel:
     
     # Токи для разных актуаторов (базовые значения в мА)
     actuator_base_currents: Dict[str, float] = field(default_factory=lambda: {
-        "main_pump": 150.0,
+        "pump_main": 150.0,
+        "main_pump": 150.0,  # legacy alias
         "drain_pump": 120.0,
         "mister": 80.0,
         "fan": 60.0,
@@ -195,7 +196,7 @@ class NodeModel:
         Установить состояние актуатора.
         
         Args:
-            actuator: Имя актуатора (main_pump, drain_pump, etc.)
+            actuator: Имя актуатора (pump_main/main_pump, drain_pump, etc.)
             state: Включен (True) или выключен (False)
             pwm_value: Значение PWM (0-255)
         """
@@ -220,7 +221,7 @@ class NodeModel:
             act_state.current_ma = base * pwm_factor
             
             # Для насосов устанавливаем flow_present
-            if actuator in ("main_pump", "drain_pump"):
+            if actuator in ("pump_main", "main_pump", "drain_pump"):
                 act_state.flow_present = True
         else:
             # Актуатор выключен
@@ -228,7 +229,7 @@ class NodeModel:
             act_state.start_time = None
             
             # Для насосов сбрасываем flow_present
-            if actuator in ("main_pump", "drain_pump"):
+            if actuator in ("pump_main", "main_pump", "drain_pump"):
                 act_state.flow_present = False
         
         # Обновляем телеметрию детерминированно
@@ -285,8 +286,8 @@ class NodeModel:
         if self.overcurrent_mode:
             total_current = self.overcurrent_current
         else:
-            # Добавляем шум к току, если включен main_pump
-            main_pump = self.actuator_states.get("main_pump")
+            # Добавляем шум к току, если включен pump_main (или legacy alias main_pump)
+            main_pump = self.actuator_states.get("pump_main") or self.actuator_states.get("main_pump")
             if main_pump and main_pump.state:
                 noise = random.uniform(-self.noise_amplitude, self.noise_amplitude)
                 total_current += noise
@@ -297,7 +298,7 @@ class NodeModel:
         
         # Обновляем flow_present (логическое ИЛИ всех насосов)
         flow_present = False
-        for act_name in ("main_pump", "drain_pump"):
+        for act_name in ("pump_main", "main_pump", "drain_pump"):
             act_state = self.actuator_states.get(act_name)
             if act_state and act_state.state and act_state.flow_present:
                 flow_present = True
@@ -329,7 +330,7 @@ class NodeModel:
         Установить режим отсутствия потока для актуатора (no_flow).
         
         Args:
-            actuator: Имя актуатора (main_pump, drain_pump)
+            actuator: Имя актуатора (pump_main/main_pump, drain_pump)
             enabled: Включить режим отсутствия потока
         """
         act_state = self.actuator_states.get(actuator)
@@ -349,7 +350,7 @@ class NodeModel:
         Args:
             current_time: Текущее время
         """
-        for act_name in ("main_pump", "drain_pump"):
+        for act_name in ("pump_main", "main_pump", "drain_pump"):
             act_state = self.actuator_states.get(act_name)
             if not act_state or not act_state.state:
                 continue

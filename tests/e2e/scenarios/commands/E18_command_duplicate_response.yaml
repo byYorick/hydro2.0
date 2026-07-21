@@ -27,7 +27,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
@@ -75,9 +75,9 @@ actions:
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
-        channel: main_pump
+        channel: pump_main
         state: false
     save: duplicate_command_response
 
@@ -87,7 +87,7 @@ actions:
 
   - step: node_sends_done_first
     type: mqtt_publish
-    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/pump_main/command_response"
     payload:
       cmd_id: ${duplicate_command_id}
       status: "DONE"
@@ -99,7 +99,7 @@ actions:
 
   - step: node_sends_done_duplicate
     type: mqtt_publish
-    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/pump_main/command_response"
     payload:
       cmd_id: ${duplicate_command_id}
       status: "DONE"

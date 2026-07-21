@@ -27,7 +27,8 @@ help:
 	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
 	@echo "  refresh        - full clean dev refresh with only base users in DB"
 	@echo "  seed           - run Laravel seeders"
-	@echo "  reset-db       - wipe hydro_dev (+ Redis/MQTT retained), seed base users, restart runtime"
+	@echo "  reset-db       - wipe hydro_dev (+ Redis/MQTT retained), seed base users, restart runtime
+                   (self-contained: поднимает core без зависимости от healthy HL/prometheus)"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
@@ -138,7 +139,9 @@ seed: up
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed
 
 .PHONY: reset-db
-reset-db: up
+# Не зависит от `up`: полный `compose up` падает, если history-logger unhealthy
+# (prometheus waits on HL). Скрипт сам поднимает core + runtime без monitoring.
+reset-db:
 	@BACKEND_COMPOSE_FILE=$(BACKEND_COMPOSE_FILE) \
 		DOCKER_COMPOSE="$(DOCKER_COMPOSE)" \
 		RESET_DB_DATABASE=$(RESET_DB_DATABASE) \

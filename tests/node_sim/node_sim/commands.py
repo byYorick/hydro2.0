@@ -662,7 +662,7 @@ class CommandHandler:
     def _handle_set_relay(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду set_relay."""
         state = params.get("state")
-        channel = params.get("channel", "main_pump")  # По умолчанию main_pump
+        channel = params.get("channel", "pump_main")  # По умолчанию pump_main
         
         if state is None:
             return CommandStatus.INVALID, {"error": "Missing 'state' parameter"}
@@ -695,7 +695,7 @@ class CommandHandler:
     
     def _handle_run(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду run_pump (запуск насоса)."""
-        channel = params.get("channel", "main_pump")
+        channel = params.get("channel", "pump_main")
         duration_ms = params.get("duration_ms", 0)
         correction_type = params.get("type")
         ml = params.get("ml")
@@ -822,7 +822,7 @@ class CommandHandler:
     
     def _handle_stop(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду stop (legacy, не используется в strict режиме)."""
-        channel = params.get("channel", "main_pump")
+        channel = params.get("channel", "pump_main")
         
         # Используем модель для остановки
         if channel in self.node.actuators:
@@ -843,7 +843,7 @@ class CommandHandler:
     def _handle_set_pwm(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду set_pwm."""
         value = params.get("value")
-        channel = params.get("channel", "main_pump")
+        channel = params.get("channel", "pump_main")
         
         if value is None:
             return CommandStatus.INVALID, {"error": "Missing 'value' parameter"}
@@ -953,7 +953,7 @@ class CommandHandler:
     
     def _handle_hil_set_flow(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду hil_set_flow (HIL установка потока)."""
-        channel = params.get("channel", "main_pump")
+        channel = params.get("channel", "pump_main")
         flow = params.get("flow")
         
         if flow is None:

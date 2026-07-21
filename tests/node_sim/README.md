@@ -131,7 +131,7 @@ node.set_overcurrent_mode(enabled=True, current=600.0)  # 600 мА
 Имитирует отсутствие потока для насосов (для тестирования ошибки biz_no_flow):
 ```python
 # Через команду hil_set_flow или напрямую
-node.set_no_flow_mode("main_pump", enabled=True)
+node.set_no_flow_mode("pump_main", enabled=True)
 ```
 
 ### Мониторинг команд

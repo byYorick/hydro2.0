@@ -1028,8 +1028,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
  - повторная серверная валидация назначения ролей;
  - привязка ролей инфраструктуры зоны к каналам выбранных нод;
  - для обязательных ролей создаются/обновляются bind-ы:
-   `main_pump`, `drain`, `ph_acid_pump`, `ph_base_pump`,
-   `ec_npk_pump`, `ec_calcium_pump`, `ec_magnesium_pump`, `ec_micro_pump`;
+   `pump_main`, `drain`, `pump_acid`, `pump_base`,
+   `pump_a`, `pump_b`, `pump_c`, `pump_d`;
 - для опциональных ролей, при наличии, создаются bind-ы `vent`, `heater`, `light`.
 - для zonal climate v1 используются zone-owned bindings:
   - `co2_sensor`
@@ -1068,7 +1068,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
     "applied_bindings": [
       {
         "assignment_role": "irrigation",
-        "binding_role": "main_pump",
+        "binding_role": "pump_main",
         "node_id": 101,
         "node_uid": "nd-test-irrig-1",
         "channel_id": 2001

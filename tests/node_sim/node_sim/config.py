@@ -39,7 +39,7 @@ class NodeConfig:
     # sensors = список "channel" ключей, которые идут в MQTT topic сегмент {channel}
     # (например, ph_sensor, ec_sensor, air_temp_c, air_rh, co2_ppm, lux, solution_temp_c)
     sensors: List[str] = field(default_factory=lambda: ["ph_sensor", "ec_sensor", "solution_temp_c", "air_temp_c", "air_rh"])
-    actuators: List[str] = field(default_factory=lambda: ["main_pump", "drain_pump", "fan", "heater", "light", "mister"])
+    actuators: List[str] = field(default_factory=lambda: ["pump_main", "drain_pump", "fan", "heater", "light", "mister"])
 
 
 @dataclass
@@ -146,7 +146,7 @@ class SimConfig:
             drift_noise_per_minute=node_data.get("drift_noise_per_minute", 0.0),
             # Поддержка старого поля channels: считаем, что это те же MQTT channel keys
             sensors=node_data.get("sensors", node_data.get("channels", ["ph_sensor", "ec_sensor", "solution_temp_c"])),
-            actuators=node_data.get("actuators", ["main_pump", "drain_pump", "fan", "heater", "light", "mister"])
+            actuators=node_data.get("actuators", ["pump_main", "drain_pump", "fan", "heater", "light", "mister"])
         )
         
         # Конфигурация телеметрии

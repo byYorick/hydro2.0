@@ -171,7 +171,7 @@ if temp < target - hysteresis → включить нагрев
 
 ```
 if (now - last_irrigation > interval) AND water_level_ok:
- pump_irrigation.run(duration)
+ pump_main.run(duration)
 ```
 
 События:

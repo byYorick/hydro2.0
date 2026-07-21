@@ -177,7 +177,7 @@ node:
 ```yaml
 node:
   actuators:  # Должны быть указаны активаторы
-    - main_pump
+    - pump_main
 ```
 
 4. Проверьте логи с DEBUG уровнем:

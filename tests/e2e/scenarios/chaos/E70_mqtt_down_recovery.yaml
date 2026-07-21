@@ -25,7 +25,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
 
 actions:
   - step: get_zones
@@ -90,7 +90,7 @@ actions:
     endpoint: /api/nodes/${node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
         state: true
     save: command_response
@@ -136,7 +136,7 @@ actions:
     endpoint: /api/nodes/${node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
         state: false
     save: command_response_2
@@ -147,7 +147,7 @@ actions:
     endpoint: /api/nodes/${node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
         state: false
     save: command_response_2_retry

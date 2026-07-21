@@ -120,7 +120,7 @@ actions:
     retry_delay_seconds: 2
     command:
       node_uid: ${test_node_uid}
-      channel: main_pump
+      channel: pump_main
       cmd: set_relay
       params:
         state: 1

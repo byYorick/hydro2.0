@@ -27,7 +27,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
@@ -87,7 +87,7 @@ actions:
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
         state: false
     save: command_response
@@ -98,7 +98,7 @@ actions:
     type: database_query
     query: |
       INSERT INTO zone_events (zone_id, type, entity_type, entity_id, payload_json, created_at)
-      VALUES (:zone_id, 'COMMAND_SENT', 'command', 'test-cmd-' || :timestamp, '{"cmd": "set_relay", "channel": "main_pump"}'::jsonb, NOW())
+      VALUES (:zone_id, 'COMMAND_SENT', 'command', 'test-cmd-' || :timestamp, '{"cmd": "set_relay", "channel": "pump_main"}'::jsonb, NOW())
       RETURNING id
     params:
       zone_id: ${zone_id}

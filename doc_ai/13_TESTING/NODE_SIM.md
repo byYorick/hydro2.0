@@ -47,7 +47,7 @@ node:
     - ph_sensor
     - solution_temp_c
   actuators:                   # Активаторы узла
-    - main_pump
+    - pump_main
     - drain_pump
 
 telemetry:
@@ -147,7 +147,7 @@ nodes:
     channels:
       - ph_sensor
     actuators:
-      - main_pump
+      - pump_main
   
   - node_uid: nd-ec-1
     hardware_id: esp32-sim-002
@@ -243,7 +243,7 @@ failure_mode:
 - `solution_temp_c` - температура раствора
 
 Активаторы:
-- `main_pump` - основной насос
+- `pump_main` - основной насос
 - `drain_pump` - дренажный насос
 
 ### ec (EC сенсор)
@@ -253,7 +253,7 @@ failure_mode:
 - `solution_temp_c` - температура раствора
 
 Активаторы:
-- `main_pump` - основной насос
+- `pump_main` - основной насос
 
 ### climate (Климат)
 
@@ -272,7 +272,7 @@ failure_mode:
 ### pump (Насос)
 
 Активаторы:
-- `main_pump` - основной насос
+- `pump_main` - основной насос
 - `drain_pump` - дренажный насос
 
 ## Примеры использования
@@ -296,7 +296,7 @@ python -m node_sim.cli run --config preconfig_node.yaml
 node:
   mode: configured
   actuators:
-    - main_pump
+    - pump_main
 
 failure_mode:
   delay_response: false  # Нормальная обработка

@@ -32,7 +32,7 @@ setup:
           - air_temp_c
           - air_rh
         actuators:
-          - main_pump
+          - pump_main
           - drain_pump
           - fan
           - heater

@@ -72,7 +72,7 @@ actions:
     type: database_execute
     query: |
       INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
-      VALUES (:node_id, 'main_pump', 'ACTUATOR', NOW(), NOW())
+      VALUES (:node_id, 'pump_main', 'ACTUATOR', NOW(), NOW())
       ON CONFLICT (node_id, channel) DO UPDATE
       SET type = 'ACTUATOR',
           updated_at = NOW()
@@ -101,7 +101,7 @@ actions:
       FROM node_channels
       WHERE node_id = :node_id
         AND type = 'ACTUATOR'
-      ORDER BY CASE WHEN channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END, id
+      ORDER BY CASE WHEN channel IN ('pump_main', 'main_pump') THEN 0 ELSE 1 END, id
       LIMIT 1
     params:
       node_id: ${node_id}
@@ -126,7 +126,7 @@ actions:
       INSERT INTO channel_bindings
         (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
       VALUES
-        (:infrastructure_instance_id, :node_channel_id, 'actuator', 'main_pump', NOW(), NOW())
+        (:infrastructure_instance_id, :node_channel_id, 'actuator', 'pump_main', NOW(), NOW())
       ON CONFLICT (node_channel_id) DO NOTHING
     params:
       infrastructure_instance_id: ${infra_response.data.id}
@@ -189,7 +189,7 @@ cleanup:
     query: |
       DELETE FROM channel_bindings
       WHERE infrastructure_instance_id = :infrastructure_instance_id
-        AND role = 'main_pump'
+        AND role = 'pump_main'
     params:
       infrastructure_instance_id: ${infra_response.data.id}
     optional: true

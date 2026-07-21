@@ -327,7 +327,7 @@ export class APITestHelper {
         'last_heartbeat_at' => now(),
         'first_seen_at' => now(),
       ]);
-      foreach (['main_pump', 'force_irrigation', 'storage_state', 'drain'] as $channel) {
+      foreach (['pump_main', 'force_irrigation', 'storage_state', 'drain'] as $channel) {
         $config = $channel === 'storage_state' ? ['actuator_type' => 'SYSTEM'] : null;
         \\App\\Models\\NodeChannel::query()->create([
           'node_id' => $node->id,

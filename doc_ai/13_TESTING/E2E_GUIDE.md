@@ -207,7 +207,7 @@ HTTP запросы к Laravel API:
   payload:
     type: "pump_control"
     params:
-      channel: "main_pump"
+      channel: "pump_main"
       action: "start"
   headers:                      # Опционально
     Authorization: "Bearer ${API_TOKEN}"

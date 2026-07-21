@@ -390,9 +390,9 @@ actions:
                   no_effect_consecutive_limit: 4
             dosing:
               solution_volume_l: 20.0
-              dose_ec_channel: dose_ec_a
-              dose_ph_up_channel: dose_ph_up
-              dose_ph_down_channel: dose_ph_down
+              dose_ec_channel: pump_a
+              dose_ph_up_channel: pump_base
+              dose_ph_down_channel: pump_acid
               max_ec_dose_ml: 14.0
               max_ph_dose_ml: 10.0
 
@@ -400,7 +400,7 @@ actions:
     type: database_execute
     query: |
       DELETE FROM channel_bindings
-      WHERE role IN ('dose_ec_a', 'dose_ph_up', 'dose_ph_down')
+      WHERE role IN ('pump_a', 'pump_base', 'pump_acid')
         AND node_channel_id IN (
           SELECT nc.id
           FROM node_channels nc
@@ -468,9 +468,9 @@ actions:
       SELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()
       FROM (
         VALUES
-          ('AE3 E2E EC Dose', CAST(:ec_pump_channel_id AS bigint), 'dose_ec_a'),
-          ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'dose_ph_up'),
-          ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'dose_ph_down')
+          ('AE3 E2E EC Dose', CAST(:ec_pump_channel_id AS bigint), 'pump_a'),
+          ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'pump_base'),
+          ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'pump_acid')
       ) AS mapping(label, node_channel_id, role)
       JOIN infrastructure_instances ii
         ON ii.owner_type = 'zone'

@@ -253,9 +253,9 @@ hydro/gh/zone/node/channel/command
 
 | Канал | Тип действия |
 |------------------|--------------|
-| ph_doser_up / ph_doser_down (alias: pump_base / pump_acid) | дозирование pH-корректора |
+| pump_base / pump_acid (legacy alias: ph_doser_up / ph_doser_down) | дозирование pH-корректора |
 | pump_a / pump_b / pump_c / pump_d | внесение удобрений (NPK / Ca / Mg / Micro) |
-| pump_irrigation | полив |
+| pump_main (legacy alias: main_pump; transient path: pump_irrigation в test-node) | полив |
 | valve_irrigation | клапан |
 | fan_air | вентилятор |
 | heater / heater_air | подогрев |

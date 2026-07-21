@@ -40,7 +40,7 @@ scenarios:
         payload:
           type: "pump_control"
           params:
-            channel: "main_pump"
+            channel: "pump_main"
             action: "start"
             duration_seconds: 5
         expected_status: 200

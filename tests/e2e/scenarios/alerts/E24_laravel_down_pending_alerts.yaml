@@ -142,7 +142,7 @@ setup:
         username: ${MQTT_USER:-null}
       node:
         actuators:
-        - main_pump
+        - pump_main
         channels:
         - ph_sensor
         gh_uid: gh-test-1

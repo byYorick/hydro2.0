@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Полный reset hydro_dev: schema + Redis + MQTT retained + рестарт runtime-сервисов.
 # Вызывается из корневого `make reset-db`.
+#
+# Не зависит от полного `make up`: поднимает только core (db/redis/mqtt/laravel),
+# чтобы unhealthy history-logger / prometheus не блокировали wipe+seed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,10 +27,18 @@ RESET_DB_APP_ENV="${RESET_DB_APP_ENV:-local}"
 RESET_DB_SEEDER_CLASS="${RESET_DB_SEEDER_CLASS:-ResetDbSeeder}"
 MQTT_HOST="${MQTT_HOST:-localhost}"
 MQTT_PORT="${MQTT_PORT:-1883}"
+WAIT_TIMEOUT_SEC="${RESET_DB_WAIT_TIMEOUT_SEC:-180}"
+
+CORE_SERVICES=(db redis mqtt laravel)
+RUNTIME_SERVICES=(laravel automation-engine history-logger mqtt-bridge telemetry-aggregator)
 
 cd "${PROJECT_ROOT}"
 
 echo "==> reset-db: target DB=${RESET_DB_DATABASE} seeder=${RESET_DB_SEEDER_CLASS}"
+
+echo "==> 0/5 Ensure core services (db redis mqtt laravel)"
+# Имена сервисов ограничивают граф зависимостей: prometheus/grafana не блокируют reset.
+compose up -d --build --wait --wait-timeout "${WAIT_TIMEOUT_SEC}" "${CORE_SERVICES[@]}"
 
 echo "==> 1/5 PostgreSQL: drop public schema (hypertables/partitions) + extensions"
 # DROP SCHEMA public CASCADE надёжнее migrate:fresh на Timescale (как tests/RefreshDatabase.php).
@@ -85,15 +96,13 @@ else
   echo "    mosquitto_sub/pub недоступны на хосте — полагаемся на restart mqtt"
 fi
 compose restart mqtt >/dev/null
+compose up -d --wait --wait-timeout "${WAIT_TIMEOUT_SEC}" mqtt >/dev/null
 
 echo "==> 5/5 Restart runtime services (node-sim-manager остаётся остановленным)"
-compose restart \
-  laravel \
-  automation-engine \
-  history-logger \
-  mqtt-bridge \
-  telemetry-aggregator \
-  >/dev/null
+# --no-deps: не тянуть prometheus (depends_on healthy HL) и не ждать monitoring-стек.
+# --force-recreate: гарантирует чистый старт после wipe БД / restart MQTT даже если контейнер был unhealthy.
+compose up -d --no-deps --force-recreate --wait --wait-timeout "${WAIT_TIMEOUT_SEC}" \
+  "${RUNTIME_SERVICES[@]}" >/dev/null
 
 echo "==> reset-db: done (DB=${RESET_DB_DATABASE}, Redis flushed, MQTT retained cleared, services restarted)"
 echo "    node-sim-manager остановлен; при необходимости: ${DOCKER_COMPOSE} -f ${COMPOSE_FILE} start node-sim-manager"

@@ -254,49 +254,93 @@ class MqttClient:
     def start(self):
         """
         Start MQTT client and wait for connection. Raises exception if connection fails.
-        
+
         ВАЖНО: Этот метод может вызываться через run_in_executor() из async контекста,
         поэтому блокирует executor thread, но не event loop. Используем неблокирующее
         ожидание через threading.Event для возможности прервать ожидание.
+
+        Transient DNS/connect ошибки (типичны при docker compose restart mqtt) —
+        ретраим с backoff, чтобы lifespan HL/других сервисов не падал с первого раза.
         """
         # Если уже подключены, ничего не делаем - используем существующее соединение
         if self._connected.is_set():
             logger.debug("MQTT client already connected, skipping start()")
             return
-        
+
         s = get_settings()
         client_id = self._client._client_id.decode() if isinstance(self._client._client_id, bytes) else self._client._client_id
-        logger.info(f"Starting MQTT client: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}, client_id={client_id}")
-        try:
-            # Проверяем, не запущен ли уже loop (чтобы не создавать дублирующие подключения)
-            if hasattr(self._client, '_thread') and self._client._thread and self._client._thread.is_alive():
-                logger.debug("MQTT loop already running, attempting reconnect instead of new connection")
-                try:
-                    self._client.reconnect()
-                except Exception as reconnect_error:
-                    logger.warning(f"Reconnect failed, doing full reconnection: {reconnect_error}")
-                    self._client.loop_stop()
-                    self._client.connect(self._host, self._port, keepalive=60)  # Увеличено до 60 секунд
+        logger.info(
+            f"Starting MQTT client: host={self._host}, port={self._port}, "
+            f"tls={s.mqtt_tls}, user={s.mqtt_user}, client_id={client_id}"
+        )
+
+        connect_timeout = 5.0
+        max_attempts = 6
+        backoff = 0.5
+        max_backoff = 5.0
+        last_error: Optional[BaseException] = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                # Проверяем, не запущен ли уже loop (чтобы не создавать дублирующие подключения)
+                if hasattr(self._client, '_thread') and self._client._thread and self._client._thread.is_alive():
+                    logger.debug("MQTT loop already running, attempting reconnect instead of new connection")
+                    try:
+                        self._client.reconnect()
+                    except Exception as reconnect_error:
+                        logger.warning(f"Reconnect failed, doing full reconnection: {reconnect_error}")
+                        self._client.loop_stop()
+                        self._client.connect(self._host, self._port, keepalive=60)
+                        self._client.loop_start()
+                else:
+                    # Новое подключение
+                    self._client.connect(self._host, self._port, keepalive=60)
                     self._client.loop_start()
-            else:
-                # Новое подключение
-                self._client.connect(self._host, self._port, keepalive=60)  # Увеличено до 60 секунд для стабильности
-                self._client.loop_start()
-        except Exception as e:
-            logger.error(f"Failed to connect to MQTT broker {self._host}:{self._port} (TLS={s.mqtt_tls}): {e}", exc_info=True)
-            raise
-        # wait connected with timeout (неблокирующее ожидание)
-        timeout = 10.0  # 10 seconds
-        # Используем Event.wait() вместо time.sleep() для неблокирующего ожидания
-        # Это позволяет прервать ожидание, если соединение установилось раньше
-        if self._connected.wait(timeout=timeout):
-            logger.info(f"MQTT client connected to {self._host}:{self._port}")
-            return
-        
-        # Connection failed
-        self._client.loop_stop()
+
+                if self._connected.wait(timeout=connect_timeout):
+                    logger.info(f"MQTT client connected to {self._host}:{self._port}")
+                    return
+
+                # Handshake timeout — останавливаем loop перед следующей попыткой
+                self._client.loop_stop()
+                last_error = ConnectionError(
+                    f"MQTT client failed to connect to {self._host}:{self._port} "
+                    f"within {connect_timeout} seconds"
+                )
+                logger.warning(
+                    f"MQTT connect attempt {attempt}/{max_attempts} timed out "
+                    f"({self._host}:{self._port})"
+                )
+            except Exception as e:
+                last_error = e
+                try:
+                    self._client.loop_stop()
+                except Exception:
+                    pass
+                logger.warning(
+                    f"MQTT connect attempt {attempt}/{max_attempts} failed "
+                    f"({self._host}:{self._port}, TLS={s.mqtt_tls}): {e}"
+                )
+
+            if attempt >= max_attempts:
+                break
+            # Даём шанс параллельно установившемуся on_connect
+            if self._connected.wait(timeout=backoff):
+                logger.info(
+                    f"MQTT client connected to {self._host}:{self._port} during backoff"
+                )
+                return
+            backoff = min(backoff * 2, max_backoff)
+
+        logger.error(
+            f"Failed to connect to MQTT broker {self._host}:{self._port} "
+            f"(TLS={s.mqtt_tls}) after {max_attempts} attempts: {last_error}"
+        )
+        if isinstance(last_error, BaseException):
+            raise last_error
         raise ConnectionError(
-            f"MQTT client failed to connect to {self._host}:{self._port} within {timeout} seconds"
+            f"MQTT client failed to connect to {self._host}:{self._port} "
+            f"after {max_attempts} attempts"
         )
 
     def stop(self):

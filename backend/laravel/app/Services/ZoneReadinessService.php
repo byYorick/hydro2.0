@@ -1002,11 +1002,19 @@ class ZoneReadinessService
      */
     private function checkOnlineNodes(Zone $zone): array
     {
-        $nodes = collect();
         $bindingsAvailable = DB::getSchemaBuilder()->hasTable('channel_bindings');
 
+        // Канон: узлы зоны = zone_id/pending_zone_id ∪ узлы из channel_bindings.
+        // Раньше при частичных bind-ах (только pH/EC) irrig игнорировался, а при
+        // пустых bind-ах был fallback — из-за этого UI мог показывать ложные
+        // no_nodes / nodes_offline рядом с missing_binding.
+        $zoneNodes = $zone->nodes()
+            ->select('id', 'uid', 'name', 'status')
+            ->get();
+
+        $boundNodes = collect();
         if ($bindingsAvailable) {
-            $nodes = ChannelBinding::query()
+            $boundNodes = ChannelBinding::query()
                 ->join('node_channels', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
                 ->join('nodes', 'node_channels.node_id', '=', 'nodes.id')
                 ->join('infrastructure_instances', 'channel_bindings.infrastructure_instance_id', '=', 'infrastructure_instances.id')
@@ -1023,17 +1031,15 @@ class ZoneReadinessService
                 ->distinct()
                 ->get();
         } else {
-            Log::error('channel_bindings table does not exist; readiness node check will fallback to zone nodes', [
+            Log::error('channel_bindings table does not exist; readiness node check uses zone nodes only', [
                 'zone_id' => $zone->id,
             ]);
         }
 
-        // Если bind-ы ещё не созданы (типичный onboarding), считаем ноды напрямую по zone_id.
-        if ($nodes->isEmpty()) {
-            $nodes = $zone->nodes()
-                ->select('id', 'uid', 'name', 'status')
-                ->get();
-        }
+        $nodes = $zoneNodes
+            ->concat($boundNodes)
+            ->unique('id')
+            ->values();
 
         $onlineNodes = $nodes->filter(function ($node) {
             return is_string($node->status) && strtolower($node->status) === 'online';

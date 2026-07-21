@@ -24,7 +24,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0

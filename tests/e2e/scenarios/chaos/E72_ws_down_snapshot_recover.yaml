@@ -78,7 +78,7 @@ actions:
     endpoint: /api/zones/${zone_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
         state: true
     save: command_during_ws_down

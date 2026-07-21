@@ -25,7 +25,7 @@ setup:
         channels:
           - ph_sensor
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
@@ -76,9 +76,9 @@ actions:
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: pump_main
       params:
-        channel: main_pump
+        channel: pump_main
         state: true
     save: command_response
     optional: true  # Может вернуть 503 если bridge недоступен
@@ -93,7 +93,7 @@ actions:
     type: database_query
     query: |
       INSERT INTO commands (zone_id, node_id, cmd, channel, params, status, source, cmd_id, created_at, updated_at)
-      VALUES (:zone_id, :node_id, 'set_relay', 'main_pump', '{"state": true, "channel": "main_pump"}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
+      VALUES (:zone_id, :node_id, 'set_relay', 'pump_main', '{"state": true, "channel": "pump_main"}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
       RETURNING cmd_id
     params:
       zone_id: ${test_zone_id}

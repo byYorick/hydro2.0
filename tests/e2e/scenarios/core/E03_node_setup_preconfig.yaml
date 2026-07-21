@@ -46,7 +46,7 @@ actions:
             - ph_sensor
             - solution_temp_c
           actuators:
-            - main_pump
+            - pump_main
         telemetry:
           interval_seconds: 2.0
           heartbeat_interval_seconds: 15.0
@@ -171,7 +171,7 @@ actions:
         - name: solution_temp_c
           type: SENSOR
           metric: TEMPERATURE
-        - name: main_pump
+        - name: pump_main
           type: ACTUATOR
           actuator_type: PUMP
       wifi:

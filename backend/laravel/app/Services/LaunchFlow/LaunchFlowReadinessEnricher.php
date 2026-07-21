@@ -33,7 +33,7 @@ class LaunchFlowReadinessEnricher
                 'severity' => 'error',
                 'action' => [
                     'type' => 'open_nodes_binding',
-                    'route' => ['name' => 'zones.infrastructure', 'params' => ['zone' => $zone->id]],
+                    'route' => $this->zoneDevicesRoute($zone),
                     'label' => 'Привязать узлы',
                 ],
             ];
@@ -46,7 +46,7 @@ class LaunchFlowReadinessEnricher
                 'severity' => 'error',
                 'action' => [
                     'type' => 'diagnostics',
-                    'route' => ['name' => 'zones.show', 'params' => ['zone' => $zone->id]],
+                    'route' => $this->zoneDevicesRoute($zone),
                     'label' => 'Проверить состояние узлов',
                 ],
             ];
@@ -88,7 +88,7 @@ class LaunchFlowReadinessEnricher
                         'action' => [
                             'type' => 'open_binding_editor',
                             'role' => $role,
-                            'route' => ['name' => 'zones.infrastructure', 'params' => ['zone' => $zone->id]],
+                            'route' => $this->zoneDevicesRoute($zone),
                             'label' => 'Привязать канал',
                         ],
                     ];
@@ -106,7 +106,7 @@ class LaunchFlowReadinessEnricher
                         'action' => [
                             'type' => 'open_calibration',
                             'role' => $role,
-                            'route' => ['name' => 'zones.calibration', 'params' => ['zone' => $zone->id, 'pump' => $role]],
+                            'route' => $this->zoneAutomationRoute($zone),
                             'label' => 'Выполнить калибровку',
                         ],
                     ];
@@ -124,7 +124,7 @@ class LaunchFlowReadinessEnricher
                         'action' => [
                             'type' => 'open_pid_editor',
                             'pid_type' => $pidType,
-                            'route' => ['name' => 'zones.edit', 'params' => ['zone' => $zone->id]],
+                            'route' => $this->zoneAutomationRoute($zone),
                             'label' => 'Настроить PID',
                         ],
                     ];
@@ -142,7 +142,7 @@ class LaunchFlowReadinessEnricher
                         'action' => [
                             'type' => 'open_process_calibration',
                             'mode' => $mode,
-                            'route' => ['name' => 'zones.calibration', 'params' => ['zone' => $zone->id, 'mode' => $mode]],
+                            'route' => $this->zoneAutomationRoute($zone),
                             'label' => 'Выполнить калибровку',
                         ],
                     ];
@@ -173,6 +173,10 @@ class LaunchFlowReadinessEnricher
                     'severity' => 'error',
                 ];
                 break;
+            case 'no_nodes':
+            case 'no_online_nodes':
+                // Уже отражены через checks → no_nodes_bound / nodes_offline.
+                break;
             default:
                 $out[] = [
                     'code' => $type !== '' ? $type : 'unknown',
@@ -183,6 +187,34 @@ class LaunchFlowReadinessEnricher
         }
 
         return $out;
+    }
+
+    /**
+     * Каноническая страница привязок каналов: Zones/Show → tab=devices (ZoneBindingsPanel).
+     * Маршрут zones.infrastructure не существует — не использовать.
+     *
+     * @return array{name: string, params: array{zoneId: int, tab: string}}
+     */
+    private function zoneDevicesRoute(Zone $zone): array
+    {
+        return [
+            'name' => 'zones.show',
+            'params' => ['zoneId' => $zone->id, 'tab' => 'devices'],
+        ];
+    }
+
+    /**
+     * Каноническая страница калибровок/PID: Zones/Show → tab=automation.
+     * Маршруты zones.calibration / zones.edit не существуют — не использовать.
+     *
+     * @return array{name: string, params: array{zoneId: int, tab: string}}
+     */
+    private function zoneAutomationRoute(Zone $zone): array
+    {
+        return [
+            'name' => 'zones.show',
+            'params' => ['zoneId' => $zone->id, 'tab' => 'automation'],
+        ];
     }
 
     private function bindingMessage(string $role): string

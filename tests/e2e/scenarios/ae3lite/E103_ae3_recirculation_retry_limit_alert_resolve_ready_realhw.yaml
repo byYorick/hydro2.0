@@ -335,9 +335,9 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: dose_ec_a
-            dose_ph_up_channel: dose_ph_up
-            dose_ph_down_channel: dose_ph_down
+            dose_ec_channel: pump_a
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 20.0
             max_ph_dose_ml: 10.0
           timing:
@@ -443,9 +443,9 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: dose_ec_a
-            dose_ph_up_channel: dose_ph_up
-            dose_ph_down_channel: dose_ph_down
+            dose_ec_channel: pump_a
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 8.0
             max_ph_dose_ml: 4.0
           timing:
@@ -464,8 +464,8 @@ actions:
   save: correction_config_update_response
 - step: cleanup_existing_correction_bindings
   type: database_execute
-  query: "DELETE FROM channel_bindings\nWHERE role IN ('dose_ec_a', 'dose_ph_up',\
-    \ 'dose_ph_down')\n  AND node_channel_id IN (\n    SELECT nc.id\n    FROM node_channels\
+  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_base',\
+    \ 'pump_acid')\n  AND node_channel_id IN (\n    SELECT nc.id\n    FROM node_channels\
     \ nc\n    JOIN nodes n ON n.id = nc.node_id\n    WHERE n.zone_id = :zone_id\n\
     \  )\n"
   params:
@@ -500,9 +500,9 @@ actions:
   query: "INSERT INTO channel_bindings (\n  infrastructure_instance_id,\n  node_channel_id,\n\
     \  direction,\n  role,\n  created_at,\n  updated_at\n)\nSELECT ii.id, mapping.node_channel_id,\
     \ 'actuator', mapping.role, NOW(), NOW()\nFROM (\n  VALUES\n    ('AE3 E2E EC Dose',\
-    \ CAST(:ec_pump_channel_id AS bigint), 'dose_ec_a'),\n    ('AE3 E2E PH Up', CAST(:ph_up_channel_id\
-    \ AS bigint), 'dose_ph_up'),\n    ('AE3 E2E PH Down', CAST(:ph_down_channel_id\
-    \ AS bigint), 'dose_ph_down')\n) AS mapping(label, node_channel_id, role)\nJOIN\
+    \ CAST(:ec_pump_channel_id AS bigint), 'pump_a'),\n    ('AE3 E2E PH Up', CAST(:ph_up_channel_id\
+    \ AS bigint), 'pump_base'),\n    ('AE3 E2E PH Down', CAST(:ph_down_channel_id\
+    \ AS bigint), 'pump_acid')\n) AS mapping(label, node_channel_id, role)\nJOIN\
     \ infrastructure_instances ii\n  ON ii.owner_type = 'zone'\n AND ii.owner_id =\
     \ :zone_id\n AND ii.label = mapping.label\n"
   params:
@@ -629,9 +629,9 @@ actions:
                   ph_pct: 5
                   ec_pct: 10
                 correction:
-                  dose_ec_channel: dose_ec_a
-                  dose_ph_up_channel: dose_ph_up
-                  dose_ph_down_channel: dose_ph_down
+                  dose_ec_channel: pump_a
+                  dose_ph_up_channel: pump_base
+                  dose_ph_down_channel: pump_acid
                   max_ec_dose_ml: 60.0
                   max_ph_dose_ml: 40.0
                   stabilization_sec: 0
@@ -1337,9 +1337,9 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: dose_ec_a
-            dose_ph_up_channel: dose_ph_up
-            dose_ph_down_channel: dose_ph_down
+            dose_ec_channel: pump_a
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 20.0
             max_ph_dose_ml: 10.0
           timing:
@@ -1434,9 +1434,9 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: dose_ec_a
-            dose_ph_up_channel: dose_ph_up
-            dose_ph_down_channel: dose_ph_down
+            dose_ec_channel: pump_a
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 36.0
             max_ph_dose_ml: 16.0
           timing:
@@ -2076,8 +2076,8 @@ cleanup:
 - step: cleanup_e2e_bindings
   type: database_execute
   optional: true
-  query: "DELETE FROM channel_bindings\nWHERE role IN ('dose_ec_a', 'dose_ph_up',\
-    \ 'dose_ph_down')\n  AND node_channel_id IN (\n    CAST(:ec_pump_channel_id AS\
+  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_base',\
+    \ 'pump_acid')\n  AND node_channel_id IN (\n    CAST(:ec_pump_channel_id AS\
     \ bigint),\n    CAST(:ph_up_channel_id AS bigint),\n    CAST(:ph_down_channel_id\
     \ AS bigint)\n  )\n"
   params:

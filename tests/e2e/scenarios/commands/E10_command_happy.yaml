@@ -64,7 +64,7 @@ actions:
       FROM node_channels
       WHERE node_id = :node_id
         AND type = 'ACTUATOR'
-      ORDER BY CASE WHEN channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END, id
+      ORDER BY CASE WHEN channel IN ('pump_main', 'main_pump') THEN 0 ELSE 1 END, id
       LIMIT 1
     params:
       node_id: ${test_node_id}

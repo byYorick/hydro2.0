@@ -36,7 +36,7 @@ nodes:
     # Actuator channels: AE отправляет run_pump (EC коррекция) и dose (pH коррекция)
     # node_type=ph — поддерживает dose команды; run_pump обрабатывается generic-хэндлером
     actuators:
-      - ec_npk_pump   # EC коррекция: run_pump(add_nutrients) - E86/E87
+      - pump_a   # EC коррекция: run_pump(add_nutrients) - E86/E87
       - acid_pump     # pH коррекция: dose(add_acid) - E86/E87
     telemetry:
       # Не генерируем телеметрию из node-sim — EC/pH инжектируются через SQL

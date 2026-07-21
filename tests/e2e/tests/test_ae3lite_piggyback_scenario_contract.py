@@ -106,9 +106,9 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
 
         for phase in (solution_fill, tank_recirc):
             dosing = phase.get("dosing") or {}
-            self.assertEqual(dosing.get("dose_ec_channel"), "dose_ec_a")
-            self.assertEqual(dosing.get("dose_ph_up_channel"), "dose_ph_up")
-            self.assertEqual(dosing.get("dose_ph_down_channel"), "dose_ph_down")
+            self.assertEqual(dosing.get("dose_ec_channel"), "pump_a")
+            self.assertEqual(dosing.get("dose_ph_up_channel"), "pump_base")
+            self.assertEqual(dosing.get("dose_ph_down_channel"), "pump_acid")
 
 
 if __name__ == "__main__":
