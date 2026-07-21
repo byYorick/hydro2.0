@@ -137,6 +137,8 @@ services:
     - DIGITAL_TWIN_URL=http://digital-twin:8003
     # Must match digital-twin DIGITAL_TWIN_API_TOKEN (Bearer for /simulations/live/*)
     - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:-dev-token-12345}
+    - NODE_SIM_MANAGER_URL=http://node-sim-manager:9100
+    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-dev-token-12345}
     volumes:
     - ../../backend/laravel:/app
     # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
@@ -180,6 +182,8 @@ services:
     - NODE_SIM_MANAGER_URL=http://node-sim-manager:9100
     # Без токена DT отклоняет не-localhost вызовы из Laravel (docker network)
     - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:-dev-token-12345}
+    # DT → node-sim-manager /sessions/* также требует Bearer из docker network
+    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-dev-token-12345}
     depends_on:
       postgres:
         condition: service_healthy
@@ -204,6 +208,7 @@ services:
     - APP_ENV=testing
     - LOG_LEVEL=INFO
     - NODE_SIM_ROOT=/node-sim
+    - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-dev-token-12345}
     volumes:
     - ../../tests/node_sim:/node-sim:ro
     depends_on:

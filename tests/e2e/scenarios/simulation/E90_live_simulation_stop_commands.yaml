@@ -235,6 +235,8 @@ actions:
     type: http_request
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
+    headers:
+      Authorization: Bearer dev-token-12345
     retries: 10
     retry_delay_seconds: 2
     capture_response: node_sim_session
@@ -256,6 +258,8 @@ actions:
     type: http_request
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
+    headers:
+      Authorization: Bearer dev-token-12345
     retries: 10
     retry_delay_seconds: 2
     capture_response: node_sim_session_after

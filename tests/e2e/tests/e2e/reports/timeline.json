@@ -1,11 +1,11 @@
 {
   "test_suite": "E90_live_simulation_orchestration",
-  "generated_at": "2026-07-21T11:37:57.286771",
+  "generated_at": "2026-07-21T11:40:42.529456",
   "test_cases": [
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 6.863540887832642,
+      "duration": 6.9003660678863525,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.149681"
+      "timestamp": "2026-07-21T11:39:18.047764"
     },
     {
       "name": "set_test_uids",
       "status": "passed",
-      "duration": 0.20360803604125977,
+      "duration": 0.2063286304473877,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.353511"
+      "timestamp": "2026-07-21T11:39:18.254251"
     },
     {
       "name": "fetch_zone_id",
       "status": "passed",
-      "duration": 0.23367977142333984,
+      "duration": 0.2020878791809082,
       "error_message": null,
       "steps": [
         {
@@ -39,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.587284"
+      "timestamp": "2026-07-21T11:39:18.456407"
     },
     {
       "name": "fetch_node_id",
       "status": "passed",
-      "duration": 0.22687721252441406,
+      "duration": 0.21750903129577637,
       "error_message": null,
       "steps": [
         {
@@ -52,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.814250"
+      "timestamp": "2026-07-21T11:39:18.673991"
     },
     {
       "name": "set_zone_and_node",
       "status": "passed",
-      "duration": 1.430511474609375e-05,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +65,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.814399"
+      "timestamp": "2026-07-21T11:39:18.674108"
     },
     {
       "name": "detach_orphan_zone_nodes",
       "status": "passed",
-      "duration": 0.002874612808227539,
+      "duration": 0.0028603076934814453,
       "error_message": null,
       "steps": [
         {
@@ -78,12 +78,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.817356"
+      "timestamp": "2026-07-21T11:39:18.677020"
     },
     {
       "name": "ensure_sim_node_on_zone",
       "status": "passed",
-      "duration": 0.007636547088623047,
+      "duration": 0.0019767284393310547,
       "error_message": null,
       "steps": [
         {
@@ -91,12 +91,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.825464"
+      "timestamp": "2026-07-21T11:39:18.679097"
     },
     {
       "name": "load_test_node_correction_preset",
       "status": "passed",
-      "duration": 0.0012273788452148438,
+      "duration": 0.0012564659118652344,
       "error_message": null,
       "steps": [
         {
@@ -104,12 +104,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:44.826781"
+      "timestamp": "2026-07-21T11:39:18.680423"
     },
     {
       "name": "apply_test_node_correction_preset",
       "status": "passed",
-      "duration": 0.29021120071411133,
+      "duration": 0.2572367191314697,
       "error_message": null,
       "steps": [
         {
@@ -117,12 +117,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:45.117109"
+      "timestamp": "2026-07-21T11:39:18.937767"
     },
     {
       "name": "wait_for_node_online",
       "status": "passed",
-      "duration": 0.0023145675659179688,
+      "duration": 0.0008809566497802734,
       "error_message": null,
       "steps": [
         {
@@ -130,12 +130,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:45.119545"
+      "timestamp": "2026-07-21T11:39:18.938721"
     },
     {
       "name": "ensure_pwm_channel",
       "status": "passed",
-      "duration": 0.005425214767456055,
+      "duration": 0.0016818046569824219,
       "error_message": null,
       "steps": [
         {
@@ -143,12 +143,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:45.125201"
+      "timestamp": "2026-07-21T11:39:18.940461"
     },
     {
       "name": "capture_anchor_time",
       "status": "passed",
-      "duration": 0.0028192996978759766,
+      "duration": 0.0004315376281738281,
       "error_message": null,
       "steps": [
         {
@@ -156,12 +156,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:45.128098"
+      "timestamp": "2026-07-21T11:39:18.940942"
     },
     {
       "name": "set_anchor_time",
       "status": "passed",
-      "duration": 1.1205673217773438e-05,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -169,12 +169,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:45.128189"
+      "timestamp": "2026-07-21T11:39:18.941002"
     },
     {
       "name": "start_live_simulation",
       "status": "passed",
-      "duration": 1.5226893424987793,
+      "duration": 1.3459641933441162,
       "error_message": null,
       "steps": [
         {
@@ -182,12 +182,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.650919"
+      "timestamp": "2026-07-21T11:39:20.287004"
     },
     {
       "name": "set_job_id",
       "status": "passed",
-      "duration": 8.344650268554688e-06,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -195,12 +195,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.650975"
+      "timestamp": "2026-07-21T11:39:20.287065"
     },
     {
       "name": "wait_for_simulation_row",
       "status": "passed",
-      "duration": 0.0029451847076416016,
+      "duration": 0.0033888816833496094,
       "error_message": null,
       "steps": [
         {
@@ -208,12 +208,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.653984"
+      "timestamp": "2026-07-21T11:39:20.290516"
     },
     {
       "name": "set_simulation_context",
       "status": "passed",
-      "duration": 1.5020370483398438e-05,
+      "duration": 1.52587890625e-05,
       "error_message": null,
       "steps": [
         {
@@ -221,12 +221,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.654127"
+      "timestamp": "2026-07-21T11:39:20.290656"
     },
     {
       "name": "wait_for_simulation_running",
       "status": "passed",
-      "duration": 0.0009515285491943359,
+      "duration": 0.0010750293731689453,
       "error_message": null,
       "steps": [
         {
@@ -234,12 +234,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.655118"
+      "timestamp": "2026-07-21T11:39:20.291767"
     },
     {
       "name": "check_node_sim_session_running",
       "status": "passed",
-      "duration": 0.04639792442321777,
+      "duration": 0.043825387954711914,
       "error_message": null,
       "steps": [
         {
@@ -247,35 +247,98 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:34:46.701577"
+      "timestamp": "2026-07-21T11:39:20.335667"
     },
     {
       "name": "wait_for_simulation_completion",
-      "status": "failed",
-      "duration": 90.08171916007996,
-      "error_message": "Timeout waiting for DB condition: SELECT status\nFROM zone_simulations\nWHERE id = :simulation_id\n  AND status = 'completed'\nLIMIT 1\n",
+      "status": "passed",
+      "duration": 60.01392841339111,
+      "error_message": null,
       "steps": [
         {
           "name": "wait_for_simulation_completion",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT status\nFROM zone_simulations\nWHERE id = :simulation_id\n  AND status = 'completed'\nLIMIT 1\n"
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:36:16.783419"
+      "timestamp": "2026-07-21T11:40:20.349671"
+    },
+    {
+      "name": "check_node_sim_session_stopped",
+      "status": "passed",
+      "duration": 0.031922340393066406,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_node_sim_session_stopped",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-07-21T11:40:20.381666"
     },
     {
       "name": "simulation_completed_with_meta",
-      "status": "failed",
-      "duration": 90.04017949104309,
-      "error_message": "Timeout waiting for DB condition: SELECT\n  status,\n  scenario->'simulation'->>'real_duration_minutes' as real_duration_minutes,\n  scenario->'simulation'->>'orchestrator' as orchestrator,\n  scenario->'simulation'->>'real_ended_at' as real_ended_at\nFROM zone_simulations\nWHERE id = :simulation_id\n  AND status = 'completed'\n  AND scenario->'simulation'->>'real_ended_at' IS NOT NULL\nLIMIT 1\n",
+      "status": "passed",
+      "duration": 0.0009958744049072266,
+      "error_message": null,
       "steps": [
         {
           "name": "simulation_completed_with_meta",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT\n  status,\n  scenario->'simulation'->>'real_duration_minutes' as real_duration_minutes,\n  scenario->'simulation'->>'orchestrator' as orchestrator,\n  scenario->'simulation'->>'real_ended_at' as real_ended_at\nFROM zone_simulations\nWHERE id = :simulation_id\n  AND status = 'completed'\n  AND scenario->'simulation'->>'real_ended_at' IS NOT NULL\nLIMIT 1\n"
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-07-21T11:37:46.823707"
+      "timestamp": "2026-07-21T11:40:20.382678"
+    },
+    {
+      "name": "simulation_zone_created",
+      "status": "passed",
+      "duration": 0.0007371902465820312,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "simulation_zone_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-07-21T11:40:20.383425"
+    },
+    {
+      "name": "simulation_grow_cycle_created",
+      "status": "passed",
+      "duration": 0.002155780792236328,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "simulation_grow_cycle_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-07-21T11:40:20.385592"
+    },
+    {
+      "name": "node_sim_session_running",
+      "status": "passed",
+      "duration": 4.553794860839844e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "node_sim_session_running",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-07-21T11:40:20.385647"
+    },
+    {
+      "name": "node_sim_session_stopped",
+      "status": "passed",
+      "duration": 9.059906005859375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "node_sim_session_stopped",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-07-21T11:40:20.385661"
     }
   ],
   "timeline": [],
@@ -287,12 +350,12 @@
       "context_vars": {
         "zone_id": 1,
         "node_id": 78,
-        "job_id": "sim_8006ff32-ec89-49a2-acd8-e46b0e473fd0",
-        "simulation_id": 1,
-        "simulation_zone_id": 106,
-        "node_sim_session_id": "sim-106-1784622886",
-        "sim_zone_id": 106,
-        "sim_grow_cycle_id": 173
+        "job_id": "sim_64074e50-2200-40bd-902c-05dbb8423373",
+        "simulation_id": 2,
+        "simulation_zone_id": 107,
+        "node_sim_session_id": "sim-107-1784623160",
+        "sim_zone_id": 107,
+        "sim_grow_cycle_id": 175
       }
     }
   }
