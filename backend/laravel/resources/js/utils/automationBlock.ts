@@ -127,7 +127,10 @@ export function isProcessStoppingCode(code?: string | null): boolean {
 type AlertCodeInput = string | Pick<Alert, 'code'> | null | undefined
 
 function extractAlertCode(input?: AlertCodeInput): string | null {
-  if (typeof input === 'string' || input == null) {
+  if (input == null) {
+    return null
+  }
+  if (typeof input === 'string') {
     return normalizeAlertCode(input)
   }
 

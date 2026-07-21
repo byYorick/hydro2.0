@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "generated_at": "2026-07-08T08:43:24+00:00",
+    "generated_at": "2026-07-21T07:44:58+00:00",
     "tracked_tables_count": 29,
     "tables": {
         "ae_commands": {
@@ -1870,6 +1870,11 @@
                 "pending_zone_id": {
                     "data_type": "bigint",
                     "udt_name": "int8",
+                    "is_nullable": "YES"
+                },
+                "pending_zone_set_at": {
+                    "data_type": "timestamp without time zone",
+                    "udt_name": "timestamp",
                     "is_nullable": "YES"
                 },
                 "rssi": {

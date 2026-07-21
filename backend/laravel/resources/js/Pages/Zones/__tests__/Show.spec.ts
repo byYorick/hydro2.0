@@ -356,6 +356,7 @@ vi.mock('@/composables/useTelemetry', () => ({
     loading: { value: false },
     refresh: vi.fn(),
     fetchHistory: fetchHistoryMock,
+    fetchHistoryWithNodes: vi.fn().mockResolvedValue({}),
   }),
 }))
 
@@ -479,18 +480,24 @@ vi.mock('@/composables/useLoading', () => {
   }
 })
 
-vi.mock('@/composables/usePageProps', () => ({
-  usePageProps: (keys?: string[]) => {
-    const props = usePageMockInstance.props
-    const result: any = {}
-    if (keys) {
-      keys.forEach(key => {
-        result[key] = { value: props[key] }
+vi.mock('@/composables/usePageProps', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { computed } = require('vue')
+  return {
+    usePageProps: (keys?: string[]) => {
+      const props = usePageMockInstance.props
+      if (!keys || keys.length === 0) {
+        return computed(() => props)
+      }
+      const result: Record<string, unknown> = {}
+      keys.forEach((key) => {
+        // Real usePageProps returns ComputedRef — plain { value } breaks watch()
+        result[key] = computed(() => props[key as keyof typeof props])
       })
-    }
-    return result
-  },
-}))
+      return result
+    },
+  }
+})
 
 vi.mock('@/utils/logger', () => ({
   logger: {
@@ -577,10 +584,12 @@ describe('Zones/Show.vue', () => {
     fetchHistoryMock.mockClear()
     usePageMockInstance.props.auth.user.role = 'operator'
     
-    // Мокируем window.location для zoneId computed
+    // Мокируем window.location для zoneId computed и ZoneEventsTab deep-link
     Object.defineProperty(window, 'location', {
       value: {
         pathname: '/zones/1',
+        search: '',
+        href: '/zones/1',
       },
       writable: true,
       configurable: true,

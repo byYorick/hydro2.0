@@ -315,7 +315,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     }
 
     const propsPhaseClean = phaseFromProps && typeof phaseFromProps === 'object'
-      ? { ...(phaseFromProps as Record<string, unknown>) }
+      ? { ...(phaseFromProps as unknown as Record<string, unknown>) }
       : null
     // Backend may omit duration; never let explicit 0 from normalized props wipe snapshot hours.
     if (propsPhaseClean && Number(propsPhaseClean.duration_hours) === 0) {

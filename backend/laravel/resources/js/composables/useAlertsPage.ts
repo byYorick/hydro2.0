@@ -29,12 +29,8 @@ interface AlertZoneOption {
   name: string
 }
 
-export interface AlertRecord extends Omit<Alert, 'zone'> {
+export interface AlertRecord extends Alert {
   details?: Record<string, unknown> | null
-  code?: string
-  source?: string
-  message?: string
-  zone?: { id: number; name: string } | undefined
 }
 
 export type GroupedAlertSectionKey = 'automation_block' | 'safety' | 'other_active' | 'resolved'

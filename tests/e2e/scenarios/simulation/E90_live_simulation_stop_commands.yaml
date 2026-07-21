@@ -83,6 +83,39 @@ actions:
     zone_id: ${zone_row.0.zone_id}
     node_id: ${node_row.0.node_id}
 
+  # Изоляция: orphan offline узлы на source-зоне ломают live-sim grow-cycle start.
+  - step: detach_orphan_zone_nodes
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = NULL,
+          status = 'offline',
+          lifecycle_state = 'REGISTERED',
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND (
+          uid LIKE 'esp32-unassigned-%%'
+          OR uid LIKE 'e2e-unassigned-%%'
+          OR (status = 'offline' AND uid NOT LIKE 'nd-test-%%' AND id <> :node_id)
+        );
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
+  - step: ensure_sim_node_on_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :zone_id,
+          status = 'online',
+          lifecycle_state = 'ASSIGNED_TO_ZONE',
+          last_seen_at = NOW(),
+          updated_at = NOW()
+      WHERE id = :node_id;
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
   - step: load_test_node_correction_preset
     type: database_query
     query: |

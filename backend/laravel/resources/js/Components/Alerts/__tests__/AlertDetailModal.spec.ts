@@ -1,5 +1,12 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/composables/useRole', () => ({
+  useRole: () => ({
+    canResolveAlerts: { value: true },
+  }),
+}))
+
 import AlertDetailModal from '../AlertDetailModal.vue'
 import type { Alert } from '@/types/Alert'
 

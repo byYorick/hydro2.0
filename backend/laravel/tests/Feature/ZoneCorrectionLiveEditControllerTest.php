@@ -116,9 +116,10 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         );
         $this->assertSame(45, data_get($doc->payload, 'base_config.timing.stabilization_sec'));
         $this->assertSame(20, data_get($doc->payload, 'base_config.retry.telemetry_stale_retry_sec'));
-        $this->assertSame(18.0, data_get($doc->payload, 'base_config.controllers.ec.max_dose_ml'));
+        // JSON/pgsql могут нормализовать 18.0 → int 18; сравниваем как float.
+        $this->assertSame(18.0, (float) data_get($doc->payload, 'base_config.controllers.ec.max_dose_ml'));
         $this->assertSame(12, data_get($doc->payload, 'base_config.controllers.ec.observe.decision_window_sec'));
-        $this->assertSame(88.0, data_get($doc->payload, 'base_config.controllers.ec.max_integral'));
+        $this->assertSame(88.0, (float) data_get($doc->payload, 'base_config.controllers.ec.max_integral'));
 
         // resolved_config тоже обновлён (resolver пересобирает после upsert)
         $this->assertSame(45, data_get($doc->payload, 'resolved_config.base.timing.stabilization_sec'));

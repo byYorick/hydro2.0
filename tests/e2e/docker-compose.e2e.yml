@@ -135,6 +135,8 @@ services:
     - PHP_FPM_PM_MAX_REQUESTS=500
     - HISTORY_LOGGER_URL=http://history-logger:9300
     - DIGITAL_TWIN_URL=http://digital-twin:8003
+    # Must match digital-twin DIGITAL_TWIN_API_TOKEN (Bearer for /simulations/live/*)
+    - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:-dev-token-12345}
     volumes:
     - ../../backend/laravel:/app
     # Canonical JSON Schemas (repo root) — JsonSchemaValidator + zones:validate-configs
@@ -176,6 +178,8 @@ services:
     - PG_PASS=${POSTGRES_PASSWORD:-hydro_e2e}
     - PYTHONPATH=/app
     - NODE_SIM_MANAGER_URL=http://node-sim-manager:9100
+    # Без токена DT отклоняет не-localhost вызовы из Laravel (docker network)
+    - DIGITAL_TWIN_API_TOKEN=${DIGITAL_TWIN_API_TOKEN:-dev-token-12345}
     depends_on:
       postgres:
         condition: service_healthy

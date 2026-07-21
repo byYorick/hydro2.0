@@ -40,6 +40,51 @@ actions:
     zone_id: ${zone_row.0.id}
     greenhouse_id: ${zone_row.0.greenhouse_id}
 
+  # Изоляция от предыдущих сценариев (E22 unassigned и т.п.):
+  # offline/orphan узлы на зоне блокируют start-cycle (ae3_required_node_offline).
+  - step: detach_orphan_zone_nodes
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = NULL,
+          status = 'offline',
+          lifecycle_state = 'REGISTERED',
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND (
+          uid LIKE 'esp32-unassigned-%%'
+          OR uid LIKE 'e2e-unassigned-%%'
+          OR (status = 'offline' AND uid NOT LIKE 'nd-test-%%')
+        );
+    params:
+      zone_id: ${zone_id}
+
+  # AE3 fail-closed на несколько активных PH/EC sensors в одной зоне.
+  - step: keep_single_active_ph_ec_sensors
+    type: database_execute
+    query: |
+      UPDATE sensors s
+      SET is_active = false,
+          updated_at = NOW()
+      WHERE s.zone_id = :zone_id
+        AND upper(s.type::text) IN ('PH', 'EC')
+        AND s.is_active = true
+        AND s.id NOT IN (
+          SELECT keep_id FROM (
+            SELECT DISTINCT ON (upper(s2.type::text)) s2.id AS keep_id
+            FROM sensors s2
+            JOIN nodes n ON n.id = s2.node_id
+            WHERE s2.zone_id = :zone_id
+              AND upper(s2.type::text) IN ('PH', 'EC')
+              AND s2.is_active = true
+            ORDER BY upper(s2.type::text),
+                     (n.uid LIKE 'nd-test-%%') DESC,
+                     s2.id ASC
+          ) kept
+        );
+    params:
+      zone_id: ${zone_id}
+
   - step: ensure_ae3_virtual_irrig_node
     type: database_execute
     query: |

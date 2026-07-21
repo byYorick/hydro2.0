@@ -45,6 +45,7 @@ describe('CausalChainPanel.vue', () => {
     const run = buildRun({
       status: 'failed',
       is_active: false,
+      task_type: 'irrigation_start',
       error_code: 'ACT_TIMEOUT',
       chain: [
         { step: 'SNAPSHOT', at: null, ref: 'ev-8819', detail: 'pH=6.5', status: 'ok' },
@@ -79,6 +80,7 @@ describe('CausalChainPanel.vue', () => {
     const run = buildRun({
       status: 'failed',
       is_active: false,
+      task_type: 'irrigation_start',
       error_code: 'ACT_TIMEOUT',
     })
     const wrapper = mount(CausalChainPanel, { props: { run } })

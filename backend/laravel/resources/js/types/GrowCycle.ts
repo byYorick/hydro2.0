@@ -1,7 +1,7 @@
 /**
  * Статус цикла выращивания
  */
-export type GrowCycleStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'ABORTED' | 'HARVESTED'
+export type GrowCycleStatus = 'PLANNED' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'ABORTED' | 'HARVESTED'
 
 /**
  * Модель цикла выращивания

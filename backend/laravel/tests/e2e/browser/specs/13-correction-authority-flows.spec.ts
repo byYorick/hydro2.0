@@ -17,8 +17,9 @@ test.describe('Correction Authority Flows', () => {
 
     await page.locator('[data-testid="correction-live-correction-target"]').selectOption('tank_recirc');
     await page.locator('[data-testid="correction-live-calibration-target"]').selectOption('tank_recirc');
+    // kp/ki/kd — не live-edit (канон zone.pid); берём whitelisted max_dose_ml.
     await liveEditCard.getByText('PID-контур EC').click();
-    await page.locator('[data-testid="correction-live-field-controllers__ec__kp"]').fill('0.91');
+    await page.locator('[data-testid="correction-live-field-controllers__ec__max_dose_ml"]').fill('81');
     await page.locator('[data-testid="correction-live-calibration-field-transport_delay_sec"]').fill('14');
     await page.locator('[data-testid="correction-live-reason"]').fill('playwright phase 6.2 live edit');
     await expect(page.locator('[data-testid="correction-live-correction-dirty"]')).toContainText('1 полей');
@@ -28,7 +29,7 @@ test.describe('Correction Authority Flows', () => {
       reason: 'playwright phase 6.2 live edit',
       phase: 'tank_recirc',
       correction_patch: {
-        'controllers.ec.kp': 0.91,
+        'controllers.ec.max_dose_ml': 81,
       },
       calibration_patch: {
         transport_delay_sec: 14,
@@ -41,11 +42,13 @@ test.describe('Correction Authority Flows', () => {
     await page.locator('[data-testid="correction-live-calibration-target"]').selectOption('tank_recirc');
     await page.locator('[data-testid="correction-live-edit"]').getByText('PID-контур EC').click();
     await page.locator('[data-testid="correction-live-reload"]').click();
-    await expect(page.locator('[data-testid="correction-live-field-controllers__ec__kp"]')).toHaveValue('0.91');
+    // После reload <details> EC снова закрыт (open только у timing/retry).
+    await page.locator('[data-testid="correction-live-edit"]').getByText('PID-контур EC').click();
+    await expect(page.locator('[data-testid="correction-live-field-controllers__ec__max_dose_ml"]')).toHaveValue('81');
     await expect(page.locator('[data-testid="correction-live-calibration-field-transport_delay_sec"]')).toHaveValue('14');
 
     const correctionDocument = await apiHelper.getAutomationConfig('zone', testZone.id, 'zone.correction');
-    expect(Number(correctionDocument?.payload?.phase_overrides?.tank_recirc?.controllers?.ec?.kp ?? 0)).toBe(0.91);
+    expect(Number(correctionDocument?.payload?.phase_overrides?.tank_recirc?.controllers?.ec?.max_dose_ml ?? 0)).toBe(81);
 
     const calibrationDocument = await apiHelper.getAutomationConfig(
       'zone',
@@ -142,6 +145,8 @@ test.describe('Correction Authority Flows', () => {
 
       await expect(page.locator('[data-testid="correction-config-form"]')).toBeVisible({ timeout: 15000 });
       await page.locator('[data-testid="correction-config-tab-base"]').click();
+      // controllers.ph.kp — advanced_only; нужен «расширенный режим».
+      await page.locator('[data-testid="correction-config-advanced-mode"]').check();
 
       const baseKpInput = page.locator('[data-testid="correction-config-base-controllers.ph.kp"]').first();
       await expect(baseKpInput).toBeVisible({ timeout: 15000 });

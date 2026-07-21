@@ -107,7 +107,7 @@ const lastAppliedDeepLink = ref<string | null>(null)
 function readDeepLinkParams(): { taskId: string | null; executionId: string | null } {
   // Prefer window.location: zone tab switching uses useUrlState → history.replaceState,
   // which does not update Inertia page.url.
-  const fromWindow = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : ''
+  const fromWindow = typeof window !== 'undefined' ? (window.location.search ?? '').replace(/^\?/, '') : ''
   const pageUrl = typeof page.url === 'string' ? page.url : ''
   const fromPage = pageUrl.includes('?') ? pageUrl.slice(pageUrl.indexOf('?') + 1) : ''
   const params = new URLSearchParams(fromWindow || fromPage)

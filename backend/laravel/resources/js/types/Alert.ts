@@ -1,5 +1,3 @@
-import type { Zone } from './Zone'
-
 /**
  * Тип алерта
  */
@@ -11,13 +9,21 @@ export type AlertType = string
 export type AlertStatus = 'active' | 'resolved' | 'RESOLVED' | 'ACTIVE'
 
 /**
+ * Краткий снимок зоны в payload алерта (list/detail API не отдают полный Zone).
+ */
+export type AlertZoneRef = {
+  id: number
+  name: string
+}
+
+/**
  * Модель алерта
  */
 export interface Alert {
   id: number
   type: AlertType
   zone_id?: number
-  zone?: Zone
+  zone?: AlertZoneRef
   source?: string
   code?: string
   title?: string

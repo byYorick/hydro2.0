@@ -9,6 +9,7 @@ export const DEFAULT_PUMP_CALIBRATION_SETTINGS: PumpCalibrationSettings = {
   ml_per_sec_min: 0.001,
   ml_per_sec_max: 1000,
   min_dose_ms: 1,
+  max_dose_ms: 60_000,
   calibration_duration_min_sec: 1,
   calibration_duration_max_sec: 60,
   quality_score_basic: 0.5,

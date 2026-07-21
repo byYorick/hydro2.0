@@ -205,7 +205,9 @@ async def test_sensor_snapshot_ignores_stale_values_and_reads_rain_label(monkeyp
 async def test_sensor_snapshot_weather_fresh_when_core_outside_sensors_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
+    # Freshness считается относительно datetime.now(utc); фиксированная дата
+    # быстро становится stale и ломает weather_fresh.
+    now = datetime.now(timezone.utc)
 
     async def fake_fetch(_sql, _gh_id):
         return [

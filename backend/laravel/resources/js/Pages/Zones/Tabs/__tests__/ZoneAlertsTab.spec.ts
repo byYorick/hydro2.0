@@ -18,6 +18,12 @@ vi.mock('@/composables/useToast', () => ({
   }),
 }))
 
+vi.mock('@/composables/useRole', () => ({
+  useRole: () => ({
+    canResolveAlerts: { value: true },
+  }),
+}))
+
 import ZoneAlertsTab from '../ZoneAlertsTab.vue'
 
 function makeAlert(overrides: Record<string, unknown> = {}) {

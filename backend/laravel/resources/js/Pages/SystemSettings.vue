@@ -162,8 +162,7 @@ const SECTIONED_NAMESPACES = new Set(['observability_thresholds'])
 const COMMAND_TEMPLATES_NAMESPACE = 'automation_command_templates'
 
 type DraftScalar = string | number | boolean | undefined
-type DraftValue = DraftScalar | AutomationCommandTemplateStep[]
-type SettingsDraft = Record<string, DraftValue>
+type SettingsDraft = Record<string, DraftScalar>
 
 const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
   automation_defaults: 'system.automation_defaults',
@@ -281,7 +280,9 @@ function syncDraft(): void {
 
 function normalizeDraft(): Record<string, unknown> {
   if (usesCommandTemplatesForm.value) {
-    return normalizeAutomationCommandTemplates(commandTemplatesDraft.value)
+    return {
+      ...normalizeAutomationCommandTemplates(commandTemplatesDraft.value),
+    } as Record<string, unknown>
   }
 
   const result: Record<string, unknown> = {}
