@@ -293,32 +293,6 @@ function sanitizeWaterForm(
       0,
       100
     ),
-    irrigationRecoveryMaxContinueAttempts: clamp(
-      toRoundedNumber(
-        raw?.irrigationRecoveryMaxContinueAttempts,
-        typeof fallback.irrigationRecoveryMaxContinueAttempts === 'number'
-          ? fallback.irrigationRecoveryMaxContinueAttempts
-          : defaults.water_irrigation_recovery_max_continue_attempts
-      ),
-      1,
-      30
-    ),
-    irrigationRecoveryTimeoutSeconds: clamp(
-      toRoundedNumber(
-        raw?.irrigationRecoveryTimeoutSeconds,
-        typeof fallback.irrigationRecoveryTimeoutSeconds === 'number'
-          ? fallback.irrigationRecoveryTimeoutSeconds
-          : defaults.water_irrigation_recovery_timeout_sec
-      ),
-      30,
-      86400
-    ),
-    irrigationRecoveryEnabled: toBoolean(
-      raw?.irrigationRecoveryEnabled,
-      typeof fallback.irrigationRecoveryEnabled === 'boolean'
-        ? fallback.irrigationRecoveryEnabled
-        : defaults.water_irrigation_recovery_enabled
-    ),
     irrigationAutoReplayAfterSetup: toBoolean(
       raw?.irrigationAutoReplayAfterSetup,
       typeof fallback.irrigationAutoReplayAfterSetup === 'boolean'

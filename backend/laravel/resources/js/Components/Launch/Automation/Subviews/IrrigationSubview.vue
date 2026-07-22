@@ -119,46 +119,15 @@
     </template>
 
     <div class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-dim)] pb-1 border-b border-dashed border-[var(--border-muted)]">
-      Recovery / повторы
+      Повторы setup
     </div>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
-      <ToggleField
-        :model-value="waterForm.irrigationRecoveryEnabled !== false"
-        :label="meta('irrigationRecoveryEnabled').label"
-        :title="meta('irrigationRecoveryEnabled').details"
-        @update:model-value="(v) => upd('irrigationRecoveryEnabled', v)"
-      />
-      <Field
-        :label="meta('irrigationRecoveryMaxContinueAttempts').label"
-        :hint="meta('irrigationRecoveryMaxContinueAttempts').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :disabled="waterForm.irrigationRecoveryEnabled === false"
-          :title="meta('irrigationRecoveryMaxContinueAttempts').details"
-          :value="waterForm.irrigationRecoveryMaxContinueAttempts ?? 0"
-          @input="upd('irrigationRecoveryMaxContinueAttempts', toInt($event))"
-        />
-      </Field>
-      <Field
-        :label="meta('irrigationRecoveryTimeoutSeconds').label"
-        :hint="meta('irrigationRecoveryTimeoutSeconds').hint"
-      >
-        <input
-          v-bind="numAttrs"
-          :disabled="waterForm.irrigationRecoveryEnabled === false"
-          :title="meta('irrigationRecoveryTimeoutSeconds').details"
-          :value="waterForm.irrigationRecoveryTimeoutSeconds ?? 0"
-          @input="upd('irrigationRecoveryTimeoutSeconds', toInt($event))"
-        />
-      </Field>
       <Field
         :label="meta('irrigationMaxSetupReplays').label"
         :hint="meta('irrigationMaxSetupReplays').hint"
       >
         <input
           v-bind="numAttrs"
-          :disabled="waterForm.irrigationRecoveryEnabled === false"
           :title="meta('irrigationMaxSetupReplays').details"
           :value="waterForm.irrigationMaxSetupReplays ?? 0"
           @input="upd('irrigationMaxSetupReplays', toInt($event))"
@@ -168,7 +137,6 @@
         :model-value="!!waterForm.irrigationAutoReplayAfterSetup"
         :label="meta('irrigationAutoReplayAfterSetup').label"
         :title="meta('irrigationAutoReplayAfterSetup').details"
-        :disabled="waterForm.irrigationRecoveryEnabled === false"
         @update:model-value="(v) => upd('irrigationAutoReplayAfterSetup', v)"
       />
     </div>
@@ -176,7 +144,7 @@
     <Hint :show="showHints">
       SMART soil v1 принимает решение о поливе по выборке датчиков
       влажности. Без сенсора используйте <span class="font-mono">task</span>
-      (по времени).
+      (по времени). На поливе допускается только pH-коррекция.
     </Hint>
   </div>
 </template>
@@ -214,14 +182,9 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
     details: 'Сколько секунд длится один запуск полива.',
   },
   correctionDuringIrrigation: {
-    label: 'Разрешить коррекцию во время полива',
-    hint: 'Параллельная коррекция pH/EC',
-    details: 'Если включено, корректировки pH/EC могут выполняться во время активного полива.',
-  },
-  irrigationRecoveryEnabled: {
-    label: 'Post-irrigation recovery',
-    hint: 'Восстановление после полива',
-    details: 'Если цели pH/EC не достигнуты к концу полива, AE запускает irrigation_recovery (рециркуляция + коррекция). Выключите, чтобы сразу вернуться в ready.',
+    label: 'pH-коррекция во время полива',
+    hint: 'Только pH, без EC',
+    details: 'Если включено, во время полива допускается только pH-коррекция. EC-дозирование на irrigation path запрещено.',
   },
   irrigationAutoReplayAfterSetup: {
     label: 'Автоповтор полива после setup',
@@ -253,16 +216,6 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
     hint: 'Алерт на расхождение сенсоров',
     details: 'Если разброс влажности между сенсорами выше порога, генерируется диагностический сигнал.',
   },
-  irrigationRecoveryMaxContinueAttempts: {
-    label: 'Макс. попыток recovery-continue',
-    hint: 'Лимит окон коррекции в recovery',
-    details: 'Сколько окон коррекции pH/EC допускается в irrigation_recovery до fail-closed (irrigation_recovery_stop_failed).',
-  },
-  irrigationRecoveryTimeoutSeconds: {
-    label: 'Таймаут recovery, сек',
-    hint: 'Ожидание шага восстановления',
-    details: 'Предельное время шага восстановления полива перед ошибкой.',
-  },
   irrigationMaxSetupReplays: {
     label: 'Макс. повторов setup',
     hint: 'Лимит перезапуска подготовки',
@@ -272,7 +225,7 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
 const meta = createMetaResolver<WaterFormState>(IRRIGATION_FIELD_META, {
   label: '',
   hint: 'Параметр режима полива',
-  details: 'Параметр влияет на расписание, SMART-решение или recovery полива.',
+  details: 'Параметр влияет на расписание, SMART-решение или повторы setup полива.',
 })
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]) {

@@ -106,6 +106,10 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
     assert out.kind == "enter_correction"
     assert out.correction is not None
     assert out.correction.return_stage_success == "irrigation_check"
+    assert out.correction.ec_max_attempts == 0  # pH-only; DB maps 0 → NULL
+    assert out.correction.pipeline_phase == "irrigation_ph"
+    assert out.correction.ec_pid_frozen is True
+    assert out.correction.active_component is None
 
 
 @pytest.mark.asyncio

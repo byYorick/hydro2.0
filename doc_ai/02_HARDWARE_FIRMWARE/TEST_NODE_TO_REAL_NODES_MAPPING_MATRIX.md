@@ -92,10 +92,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
 | `ec_sensor` | `ec_node/ec_sensor` | `Direct` | Канал совпадает. |
-| `pump_a` | `ec_node/pump_a` | `Direct` | Совпадает по имени и роли. |
-| `pump_b` | `ec_node/pump_b` | `Direct` | Совпадает по имени и роли. |
-| `pump_c` | `ec_node/pump_c` | `Direct` | Совпадает по имени и роли. |
-| `pump_d` | `ec_node/pump_d` | `Direct` | Совпадает по имени и роли. |
+| `pump_a` | `ec_node/pump_a` | `Direct` | Канон: `npk`. |
+| `pump_b` | `ec_node/pump_b` | `Direct` | Канон: `calcium`. |
+| `pump_c` | `ec_node/pump_c` | `Direct` | Канон: `magnesium`. |
+| `pump_d` | `ec_node/pump_d` | `Direct` | Канон: `micro`. |
 | `system` (sensor-mode service) | `ec_node/system` | `Direct` | Команды `activate_sensor_mode` и `deactivate_sensor_mode` зарегистрированы на service-channel `system`. |
 
 ## 4.4. `nd-test-soil-1` (`type=water_sensor`)

@@ -186,10 +186,9 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         # Target'ы не достигнуты: вход в коррекцию.
         _logger.info("prepare_recirculation_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
         # Сенсоры уже активны: их включил prepare_recirculation_start → sensor_mode_activate.
-        corr = self._build_correction_state(
+        corr = await self._enter_recirc_pipeline_correction(
             task=task,
             runtime=runtime,
-            sensors_already_active=True,
             return_stage_success=stage_def.on_corr_success or "prepare_recirculation_stop_to_ready",
             return_stage_fail=stage_def.on_corr_fail or "prepare_recirculation_window_exhausted",
         )
@@ -316,3 +315,83 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             return_stage_fail=return_stage_fail,
         )
         return replace(corr, **self._probe_snapshot_correction_fields(task=task))
+
+    async def _enter_recirc_pipeline_correction(
+        self,
+        *,
+        task: Any,
+        runtime: Any,
+        return_stage_success: str,
+        return_stage_fail: str,
+    ) -> CorrectionState:
+        """Open prepare pipeline at recirc_ca with baseline targets from DB or fail-closed."""
+        import json
+
+        from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
+        from ae3lite.domain.services.nutrient_pipeline import (
+            ComponentTargets,
+            compute_component_targets,
+            pipeline_phase_for_index,
+        )
+        from ae3lite.infrastructure.repositories.prepare_baseline_repository import (
+            PgPrepareBaselineRepository,
+        )
+
+        corr = self._build_correction_state(
+            task=task,
+            runtime=runtime,
+            sensors_already_active=True,
+            return_stage_success=return_stage_success,
+            return_stage_fail=return_stage_fail,
+        )
+        targets: ComponentTargets | None = None
+        baseline_id = None
+        try:
+            repo = PgPrepareBaselineRepository()
+            row = await repo.fetch_latest_baseline(
+                zone_id=int(task.zone_id),
+                ae_task_id=int(getattr(task, "id", 0) or 0) or None,
+            )
+            if row is None:
+                row = await repo.fetch_latest_baseline(zone_id=int(task.zone_id))
+            if row is not None:
+                baseline_id = int(row["id"]) if row.get("id") is not None else None
+                raw_targets = row.get("component_targets_json")
+                if isinstance(raw_targets, str):
+                    raw_targets = json.loads(raw_targets)
+                if isinstance(raw_targets, dict) and "T_ca" in raw_targets:
+                    targets = ComponentTargets.from_mapping(raw_targets)
+                else:
+                    ratios = row.get("ratios_json")
+                    if isinstance(ratios, str):
+                        ratios = json.loads(ratios)
+                    targets = compute_component_targets(
+                        water_ec=float(row["water_ec"]),
+                        water_ph=float(row.get("water_ph") or 0.0),
+                        target_ec=float(row["target_ec"]),
+                        ratios=ratios if isinstance(ratios, dict) else {},
+                    )
+        except Exception:
+            _logger.warning(
+                "prepare_recirc: не удалось загрузить baseline zone_id=%s",
+                task.zone_id,
+                exc_info=True,
+            )
+        if targets is None:
+            raise TaskExecutionError(
+                ErrorCodes.AE3_WATER_BASELINE_INVALID,
+                "Для prepare_recirculation отсутствует water baseline (zone_prepare_baselines)",
+            )
+        phase0 = pipeline_phase_for_index(0)
+        return replace(
+            corr,
+            pipeline_phase=phase0,
+            active_component="calcium",
+            water_ec=targets.water_ec,
+            water_ph=targets.water_ph,
+            nutrient_budget=targets.nutrient_budget,
+            component_targets_json=targets.to_json(),
+            baseline_id=baseline_id,
+            ec_pid_frozen=False,
+            dilute_attempts=0,
+        )

@@ -20,8 +20,8 @@ _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "solution_fill_stop": ("pump_main", "valve_solution_fill", "valve_clean_supply"),
     "prepare_recirculation_start": ("valve_solution_supply", "valve_solution_fill", "pump_main"),
     "prepare_recirculation_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply"),
-    "irrigation_recovery_start": ("valve_irrigation", "valve_solution_supply", "valve_solution_fill", "pump_main"),
-    "irrigation_recovery_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply", "valve_irrigation"),
+    "recirc_dilute_start": ("valve_clean_supply",),
+    "recirc_dilute_stop": ("valve_clean_supply",),
     "solution_drain_start": ("valve_drain",),
     "solution_drain_stop": ("valve_drain",),
 }
@@ -64,17 +64,11 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
             {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
         ],
-        "irrigation_recovery_start": [
-            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
-            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
-            {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": True}},
-            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+        "recirc_dilute_start": [
+            {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": True}},
         ],
-        "irrigation_recovery_stop": [
-            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
-            {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
-            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
-            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
+        "recirc_dilute_stop": [
+            {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": False}},
         ],
         "solution_drain_start": [{"channel": "valve_drain", "cmd": "set_relay", "params": {"state": True}}],
         "solution_drain_stop": [{"channel": "valve_drain", "cmd": "set_relay", "params": {"state": False}}],
@@ -193,9 +187,20 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         )
     target_ph = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ph")
     target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
-    npk_ec_share = _compute_prepare_ec_share(solution_fill_cfg, resolved_base_cfg)
-    target_ec_prepare = round(target_ec * npk_ec_share, 4)
+    # Legacy prepare-share fields kept for RuntimePlan loader parity only.
+    # Prepare EC owner is water-baseline + cumulative T_* (see nutrient_pipeline).
+    ratios_for_share = _to_mapping(solution_fill_cfg.get("ec_component_ratios")) or _to_mapping(
+        resolved_base_cfg.get("ec_component_ratios")
+    )
+    calcium_share = _compute_component_share(ratios_for_share, component="calcium")
+    # Deprecated alias: historically NPK share; now calcium share for fill T_ca pre-estimate.
+    npk_ec_share = calcium_share
+    target_ec_prepare = round(target_ec * calcium_share, 4)
     day_night_cfg = _build_day_night_config(snapshot)
+    recirc_dilute_cfg = _build_recirc_dilute_cfg(
+        tank_recirc_cfg=tank_recirc_cfg,
+        base_cfg=resolved_base_cfg,
+    )
     runtime: dict[str, Any] = {
         "required_node_types": required_node_types,
         "clean_fill_timeout_sec": _require_int(
@@ -221,12 +226,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         ),
         "solution_fill_correction_slack_sec": _resolve_bounded_int(
             fill_retry_cfg.get("solution_fill_correction_slack_sec"),
-            900,
-            0,
-            7200,
-        ),
-        "irrigation_recovery_correction_slack_sec": _resolve_bounded_int(
-            _to_mapping(irrigation_cfg.get("retry")).get("irrigation_recovery_correction_slack_sec"),
             900,
             0,
             7200,
@@ -342,17 +341,18 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "target_ph_max": _resolve_phase_target_bound(snapshot=snapshot, key="ph", bound="max", fallback=target_ph),
         "target_ec_min": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec),
         "target_ec_max": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec),
-        # Per-phase EC targets для двухбакового контура:
-        # Подготовка (solution_fill / tank_recirc) — только доля NPK от полного EC.
-        # Полив (irrigation) — полный EC (кумулятивно: NPK уже в растворе).
+        # Per-phase EC: prepare owner = water baseline + cumulative T_* (runtime capture).
+        # target_ec_prepare / npk_ec_share — deprecated aliases (pre-baseline calcium share).
         "target_ec_prepare": target_ec_prepare,
         "target_ec_prepare_min": round(
-            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec) * npk_ec_share, 4
+            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec) * calcium_share, 4
         ),
         "target_ec_prepare_max": round(
-            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec) * npk_ec_share, 4
+            _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec) * calcium_share, 4
         ),
         "npk_ec_share": npk_ec_share,
+        "ec_component_ratios": dict(ratios_for_share),
+        "recirc": recirc_dilute_cfg,
         "day_night_enabled": day_night_cfg["enabled"],
         "day_night_config": day_night_cfg,
         "prepare_tolerance": dict(default_prepare_tolerance),
@@ -384,8 +384,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "solution_fill_stop",
         "prepare_recirculation_start",
         "prepare_recirculation_stop",
-        "irrigation_recovery_start",
-        "irrigation_recovery_stop",
+        "recirc_dilute_start",
+        "recirc_dilute_stop",
         "solution_drain_start",
         "solution_drain_stop",
     ):
@@ -699,34 +699,56 @@ def _compute_prepare_ec_share(
     solution_fill_cfg: Mapping[str, Any],
     base_cfg: Mapping[str, Any],
 ) -> float:
-    """Доля EC для фазы подготовки (NPK) от полного target.
-
-    Берёт ec_component_ratios из solution_fill или base конфига.
-    Если ratios не заданы — возвращает 1.0 (backward compat: single mode
-    без multi-component, target_ec_prepare = target_ec).
-    """
+    """Deprecated: historically NPK share for prepare. Prefer calcium share / T_*."""
     ratios = _to_mapping(solution_fill_cfg.get("ec_component_ratios")) or _to_mapping(
         base_cfg.get("ec_component_ratios")
     )
-    if not ratios:
-        return 1.0
+    return _compute_component_share(ratios, component="calcium")
 
-    npk = 0.0
+
+def _compute_component_share(ratios: Mapping[str, Any] | None, *, component: str) -> float:
+    """Return component / sum(positive ratios); 1.0 if ratios empty."""
+    if not isinstance(ratios, Mapping) or not ratios:
+        return 1.0
+    want = str(component).strip().lower()
+    selected = 0.0
     total = 0.0
     for k, v in ratios.items():
         try:
             val = float(v)
         except (TypeError, ValueError):
             continue
-        if val > 0:
-            total += val
-            if str(k).strip().lower() == "npk":
-                npk = val
-
-    if total <= 0 or npk <= 0:
+        if val <= 0:
+            continue
+        total += val
+        if str(k).strip().lower() == want:
+            selected = val
+    if total <= 0 or selected <= 0:
         return 1.0
+    return selected / total
 
-    return npk / total
+
+def _build_recirc_dilute_cfg(
+    *,
+    tank_recirc_cfg: Mapping[str, Any],
+    base_cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    """zone.correction.recirc.* dilute-on-overshoot defaults."""
+    recirc = _to_mapping(tank_recirc_cfg.get("recirc")) or _to_mapping(base_cfg.get("recirc"))
+    return {
+        "ec_overshoot_dilute_pct": float(
+            _resolve_float(recirc.get("ec_overshoot_dilute_pct"), default=15.0, minimum=1.0, maximum=100.0)
+        ),
+        "dilute_pulse_sec": int(
+            _resolve_bounded_int(recirc.get("dilute_pulse_sec"), 10, 1, 600)
+        ),
+        "dilute_max_attempts": int(
+            _resolve_bounded_int(recirc.get("dilute_max_attempts"), 3, 0, 20)
+        ),
+        "dilute_settle_sec": int(
+            _resolve_bounded_int(recirc.get("dilute_settle_sec"), 30, 0, 3600)
+        ),
+    }
 
 
 def _build_day_night_config(snapshot: Any) -> dict[str, Any]:
@@ -1023,10 +1045,15 @@ def _build_irrigation_decision(snapshot: Any) -> dict[str, Any]:
 
 
 def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
+    """Deprecated chemistry-recovery block.
+
+    Stages are gone; ``enabled`` is always False (fail-closed). Remaining
+    fields still drive solution_min → setup replay and auto-replay after setup.
+    """
     subsystem = _irrigation_subsystem(snapshot)
     recovery = _to_mapping(subsystem.get("recovery"))
     return {
-        "enabled": bool(recovery.get("enabled", True)),
+        "enabled": False,
         "max_continue_attempts": _resolve_bounded_int(recovery.get("max_continue_attempts"), 5, 1, 30),
         "timeout_sec": _resolve_bounded_int(recovery.get("timeout_sec"), 600, 30, 86400),
         "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", True)),

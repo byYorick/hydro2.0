@@ -42,9 +42,25 @@ IRR_STATE_MAX_AGE_SEC = 30
 PH_DRIFT_BIAS_PER_TICK = 0.0005
 EC_DRIFT_BIAS_PER_TICK = -0.0025
 PH_REACTION_BASE_DELTA = 0.10
-EC_REACTION_BASE_DELTA = 0.055
+# Per-pump EC base deltas (canonical: a=npk, b=calcium, c=magnesium, d=micro).
+EC_REACTION_DELTA_BY_CHANNEL = {
+    "pump_a": 0.068,  # npk
+    "pump_b": 0.055,  # calcium
+    "pump_c": 0.035,  # magnesium
+    "pump_d": 0.018,  # micro
+}
+EC_REACTION_BASE_DELTA = EC_REACTION_DELTA_BY_CHANNEL["pump_a"]
+EC_COMPONENT_BY_CHANNEL = {
+    "pump_a": "npk",
+    "pump_b": "calcium",
+    "pump_c": "magnesium",
+    "pump_d": "micro",
+}
 PH_REACTION_NOMINAL_ML = 8.0
 EC_REACTION_NOMINAL_ML = 12.0
+WATER_EC_BASELINE_DEFAULT = 0.45
+DILUTE_EC_FRACTION_PER_TICK = 0.08
+DILUTE_EC_MIN_STEP_PER_TICK = 0.008
 CORRECTION_DURATION_TO_ML_PER_SEC = 1.0
 CORRECTION_FILL_PHASE_FACTOR = 0.50
 CORRECTION_RECIRC_PH_PHASE_FACTOR = 2.50
@@ -101,6 +117,7 @@ class VirtualState:
     pump_bus_current: float = 150.0
     ph_value: float = 6.90
     ec_value: float = 0.60
+    water_ec_baseline: float = WATER_EC_BASELINE_DEFAULT
     water_level: float = 0.05
     solution_level: float = 0.05
     air_temp: float = 24.0
@@ -424,7 +441,8 @@ class TestNodeSimulator:
             "metric_type": metric_type,
             "value": value,
             "ts": self.get_timestamp_seconds(),
-            "stub": True,
+            # PH/EC/soil: always non-stub (matches firmware/test_node; AE drops stub samples).
+            "stub": False,
         }
         if channel == "ph_sensor":
             active = self.state.ph_sensor_mode_active
@@ -436,6 +454,8 @@ class TestNodeSimulator:
             payload["flow_active"] = active
             payload["stable"] = active
             payload["corrections_allowed"] = active
+        elif channel not in {"ph_sensor", "ec_sensor", "soil_moisture"}:
+            payload["stub"] = True
         return self.publish_json(self.build_topic(node_uid, channel, "telemetry"), payload)
 
     def publish_command_response(
@@ -950,6 +970,29 @@ class TestNodeSimulator:
     def is_solution_fill_active(self) -> bool:
         return self.state.main_pump_on and self.state.valve_clean_supply_on and self.state.valve_solution_fill_on
 
+    def is_dilute_path_active(self) -> bool:
+        """Clean water into solution tank (solution_fill / recirc dilute pulse)."""
+        return self.is_solution_fill_active()
+
+    def apply_dilute_physics(self) -> None:
+        if not self.is_dilute_path_active():
+            return
+        baseline = clamp_float(self.state.water_ec_baseline, 0.4, 3.2)
+        gap = self.state.ec_value - baseline
+        if gap <= 0.0005:
+            return
+        step = max(gap * DILUTE_EC_FRACTION_PER_TICK, DILUTE_EC_MIN_STEP_PER_TICK)
+        step = min(step, gap)
+        self.state.ec_value = clamp_float(self.state.ec_value - step, 0.4, 3.2)
+
+    @staticmethod
+    def resolve_ec_pump_base_delta(channel: str) -> float:
+        return float(EC_REACTION_DELTA_BY_CHANNEL.get(channel, EC_REACTION_BASE_DELTA))
+
+    @staticmethod
+    def resolve_ec_pump_component(channel: str) -> str:
+        return EC_COMPONENT_BY_CHANNEL.get(channel, "npk")
+
     def is_irrigation_active(self) -> bool:
         return self.state.irrigation_on or (
             self.state.main_pump_on and self.state.valve_solution_supply_on and self.state.valve_irrigation_on
@@ -1331,6 +1374,8 @@ class TestNodeSimulator:
             self.state.ph_value = clamp_float(self.state.ph_value - delta, 4.8, 7.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
             self.arm_correction_drift_hold(False, phase_factor)
+            details["channel"] = job.channel
+            details["component"] = "acid"
             details["phase_factor"] = phase_factor
             details["delta_ph"] = -delta
             details["ph_after"] = self.state.ph_value
@@ -1342,17 +1387,23 @@ class TestNodeSimulator:
             self.state.ph_value = clamp_float(self.state.ph_value + delta, 4.8, 7.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
             self.arm_correction_drift_hold(False, phase_factor)
+            details["channel"] = job.channel
+            details["component"] = "base"
             details["phase_factor"] = phase_factor
             details["delta_ph"] = delta
             details["ph_after"] = self.state.ph_value
             handled = True
         elif job.channel in {"pump_a", "pump_b", "pump_c", "pump_d"}:
+            base_delta = self.resolve_ec_pump_base_delta(job.channel)
             scale = self.resolve_correction_reaction_scale(params, EC_REACTION_NOMINAL_ML)
             phase_factor = self.resolve_correction_phase_factor(True)
-            delta = EC_REACTION_BASE_DELTA * scale * phase_factor
+            delta = base_delta * scale * phase_factor
             self.state.ec_value = clamp_float(self.state.ec_value + delta, 0.4, 3.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
             self.arm_correction_drift_hold(True, phase_factor)
+            details["channel"] = job.channel
+            details["component"] = self.resolve_ec_pump_component(job.channel)
+            details["base_delta_ec"] = base_delta
             details["phase_factor"] = phase_factor
             details["delta_ec"] = delta
             details["ec_after"] = self.state.ec_value
@@ -1425,6 +1476,8 @@ class TestNodeSimulator:
                 if ec_value is not None:
                     self.state.ec_drift_hold_ticks = 0
                     self.state.ec_value = clamp_float(ec_value, 0.4, 3.2)
+                    self.state.water_ec_baseline = self.state.ec_value
+                    details["water_ec_baseline"] = self.state.water_ec_baseline
                 if soil_moisture_pct is not None:
                     self.state.soil_moisture = clamp_float(soil_moisture_pct, 0.0, 100.0)
 
@@ -1534,6 +1587,7 @@ class TestNodeSimulator:
 
         self.state.ph_value = clamp_float(self.state.ph_value + ph_drift, 4.8, 7.2)
         self.state.ec_value = clamp_float(self.state.ec_value + ec_drift, 0.4, 3.2)
+        self.apply_dilute_physics()
 
         if self.state.clean_fill_stage_active and self.state.clean_fill_started_at > 0:
             if (now_sec - self.state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC:

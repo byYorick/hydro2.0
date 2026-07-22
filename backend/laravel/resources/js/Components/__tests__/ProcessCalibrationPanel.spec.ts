@@ -296,7 +296,16 @@ describe('ProcessCalibrationPanel.vue', () => {
 
     await wrapper.get('[data-testid="process-calibration-input-transport_delay_sec"]').setValue('30')
     await wrapper.get('[data-testid="process-calibration-input-confidence"]').setValue('0.5')
-    currentSolutionFill = calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 })
+    await wrapper.get('[data-testid="process-calibration-input-ec_component_gain_calcium"]').setValue('0.25')
+    await wrapper.get('[data-testid="process-calibration-input-ec_component_gain_npk"]').setValue('0.15')
+    currentSolutionFill = calibration('solution_fill', {
+      confidence: 0.5,
+      transport_delay_sec: 30,
+      ec_component_gains: {
+        calcium: { ec_gain_per_ml: 0.25 },
+        npk: { ec_gain_per_ml: 0.15 },
+      },
+    })
 
     await wrapper.get('[data-testid="process-calibration-save"]').trigger('click')
     await flushPromises()
@@ -309,12 +318,41 @@ describe('ProcessCalibrationPanel.vue', () => {
             transport_delay_sec: 30,
             confidence: 0.5,
             source: 'manual',
+            ec_gain_per_ml: 0.11,
+            ec_component_gains: {
+              calcium: { ec_gain_per_ml: 0.25 },
+              npk: { ec_gain_per_ml: 0.15 },
+            },
           }),
         }),
       }),
     }))
     expect(showToastMock).toHaveBeenCalledWith('Калибровка «Наполнение» сохранена.', 'success')
     expect(wrapper.text()).toContain('30 + 45 = 75 сек')
+  })
+
+  it('читает flat legacy ec_component_gains и гидратит форму', async () => {
+    installDocumentMocks({
+      solution_fill: calibration('solution_fill', {
+        ec_component_gains: {
+          calcium: 0.25,
+          npk: 0.15,
+        },
+      }),
+    })
+
+    const wrapper = mount(ProcessCalibrationPanel, {
+      props: { zoneId: 7 },
+    })
+
+    await flushPromises()
+
+    expect(
+      (wrapper.get('[data-testid="process-calibration-input-ec_component_gain_calcium"]').element as HTMLInputElement).value,
+    ).toBe('0.25')
+    expect(
+      (wrapper.get('[data-testid="process-calibration-input-ec_component_gain_npk"]').element as HTMLInputElement).value,
+    ).toBe('0.15')
   })
 
   it('показывает историю сохранений для активного режима', async () => {

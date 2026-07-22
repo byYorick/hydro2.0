@@ -359,12 +359,12 @@ def test_stage_keeps_active_for_irrigation_check() -> None:
     assert SensorModeController.stage_keeps_active(task=_task(current_stage="irrigation_check")) is True
 
 
-def test_stage_keeps_active_for_irrigation_recovery_check() -> None:
+def test_stage_keeps_active_false_for_removed_irrigation_recovery_check() -> None:
     assert (
         SensorModeController.stage_keeps_active(
             task=_task(current_stage="irrigation_recovery_check"),
         )
-        is True
+        is False
     )
 
 

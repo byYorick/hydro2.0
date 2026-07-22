@@ -123,7 +123,23 @@ class CommandHandler:
 
         # Эмпирические коэффициенты для симуляции корректировок
         self._ph_delta_per_ml = 0.01
-        self._ec_delta_per_ml = 0.02
+        self._ec_delta_per_ml = 0.02  # legacy / unknown channel
+        # Per-pump EC deltas (canonical: a=npk, b=calcium, c=magnesium, d=micro).
+        # Values = base_delta / nominal_ml (12) so dose ml maps to firmware amplitudes.
+        self._ec_delta_per_ml_by_channel = {
+            "pump_a": 0.068 / 12.0,
+            "pump_b": 0.055 / 12.0,
+            "pump_c": 0.035 / 12.0,
+            "pump_d": 0.018 / 12.0,
+        }
+        self._ec_component_by_channel = {
+            "pump_a": "npk",
+            "pump_b": "calcium",
+            "pump_c": "magnesium",
+            "pump_d": "micro",
+        }
+        self._water_ec_baseline = 0.45
+        self._dilute_ec_fraction = 0.08  # align firmware/test_node DILUTE_EC_FRACTION_PER_TICK
         
         # Маппинг команд (strict format, без legacy-алиасов)
         self.command_map = {
@@ -623,12 +639,20 @@ class CommandHandler:
         else:
             return status.value
 
-    def _apply_dose_effect(self, correction_type: str, ml: float) -> tuple[bool, Dict[str, Any]]:
+    def _apply_dose_effect(
+        self,
+        correction_type: str,
+        ml: float,
+        *,
+        channel: Optional[str] = None,
+    ) -> tuple[bool, Dict[str, Any]]:
         """Применить эффект дозировки к сенсорам."""
         details: Dict[str, Any] = {
             "correction_type": correction_type,
             "ml": ml,
         }
+        if channel:
+            details["channel"] = channel
         if correction_type in ("add_acid", "add_base"):
             sensor = "ph_sensor" if "ph_sensor" in self.node.sensor_states else "ph"
             current = self.node.get_sensor_value(sensor)
@@ -639,7 +663,11 @@ class CommandHandler:
                 delta = -delta
             new_value = max(0.0, min(14.0, current + delta))
             self.node.set_sensor_value(sensor, new_value)
-            details.update({"ph_before": current, "ph_after": new_value})
+            details.update({
+                "component": "acid" if correction_type == "add_acid" else "base",
+                "ph_before": current,
+                "ph_after": new_value,
+            })
             return True, details
 
         if correction_type in ("add_nutrients", "dilute"):
@@ -647,15 +675,50 @@ class CommandHandler:
             current = self.node.get_sensor_value(sensor)
             if current is None:
                 return False, {**details, "details": "No EC sensor available"}
-            delta = self._ec_delta_per_ml * ml
             if correction_type == "dilute":
-                delta = -delta
+                new_value = self._apply_dilute_ec(current)
+                details.update({
+                    "component": "dilute",
+                    "ec_before": current,
+                    "ec_after": new_value,
+                    "water_ec_baseline": self._water_ec_baseline,
+                })
+                return True, details
+
+            delta_per_ml = self._ec_delta_per_ml_by_channel.get(
+                channel or "",
+                self._ec_delta_per_ml,
+            )
+            delta = delta_per_ml * ml
             new_value = max(0.0, current + delta)
             self.node.set_sensor_value(sensor, new_value)
-            details.update({"ec_before": current, "ec_after": new_value})
+            component = self._ec_component_by_channel.get(channel or "", "npk")
+            details.update({
+                "component": component,
+                "base_delta_ec_per_ml": delta_per_ml,
+                "ec_before": current,
+                "ec_after": new_value,
+            })
             return True, details
 
         return False, {**details, "details": "Unsupported correction type"}
+
+    def _apply_dilute_ec(self, current: Optional[float] = None) -> float:
+        """Снизить EC к водопроводному baseline (valve_clean_supply / dilute)."""
+        sensor = "ec_sensor" if "ec_sensor" in self.node.sensor_states else "ec"
+        if current is None:
+            current = self.node.get_sensor_value(sensor)
+        if current is None:
+            return self._water_ec_baseline
+        gap = current - self._water_ec_baseline
+        if gap <= 0.0005:
+            new_value = current
+        else:
+            step = max(gap * self._dilute_ec_fraction, 0.01)
+            step = min(step, gap)
+            new_value = max(self._water_ec_baseline, current - step)
+        self.node.set_sensor_value(sensor, new_value)
+        return new_value
     
     # Обработчики команд
     
@@ -674,12 +737,21 @@ class CommandHandler:
         if channel in self.node.actuators:
             self.node.set_actuator(channel, state)
             logger.info(f"Set actuator {channel} to {state}")
-            return CommandStatus.DONE, {"details": f"Actuator {channel} set to {state}"}
+            response: Dict[str, Any] = {"details": f"Actuator {channel} set to {state}", "channel": channel}
+            if channel == "valve_clean_supply" and state is True:
+                ec_after = self._apply_dilute_ec()
+                response["dilute"] = {
+                    "channel": channel,
+                    "component": "dilute",
+                    "ec_after": ec_after,
+                    "water_ec_baseline": self._water_ec_baseline,
+                }
+            return CommandStatus.DONE, response
         else:
             # Fallback для старых команд
             self.relay_states[channel] = state
             logger.info(f"Set relay {channel} to {state}")
-            return CommandStatus.DONE, {"details": f"Relay {channel} set to {state}"}
+            return CommandStatus.DONE, {"details": f"Relay {channel} set to {state}", "channel": channel}
 
     def _handle_force_irrigation(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду FORCE_IRRIGATION через run_pump."""
@@ -714,14 +786,16 @@ class CommandHandler:
             if duration_ms > 0:
                 asyncio.create_task(self._stop_pump_after(channel, duration_ms))
             
-            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms, "channel": channel}
             if correction_type and ml is not None:
                 try:
                     ml_value = float(ml)
                 except (TypeError, ValueError):
                     ml_value = None
                 if ml_value is not None and ml_value > 0:
-                    applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+                    applied, dose_details = self._apply_dose_effect(
+                        correction_type, ml_value, channel=channel
+                    )
                     response["dose"] = dose_details
                     if not applied:
                         return CommandStatus.NO_EFFECT, response
@@ -734,23 +808,26 @@ class CommandHandler:
             logger.info(f"Started pump {channel} for {duration_ms}ms")
             if duration_ms > 0:
                 asyncio.create_task(self._stop_pump_after(channel, duration_ms))
-            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms, "channel": channel}
             if correction_type and ml is not None:
                 try:
                     ml_value = float(ml)
                 except (TypeError, ValueError):
                     ml_value = None
                 if ml_value is not None and ml_value > 0:
-                    applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+                    applied, dose_details = self._apply_dose_effect(
+                        correction_type, ml_value, channel=channel
+                    )
                     response["dose"] = dose_details
                     if not applied:
                         return CommandStatus.NO_EFFECT, response
             return CommandStatus.DONE, response
-
+    
     def _handle_dose(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду dose."""
         ml = params.get("ml")
         correction_type = params.get("type")
+        channel = params.get("channel")
 
         if ml is None:
             return CommandStatus.INVALID, {"error": "Missing 'ml' parameter"}
@@ -761,9 +838,19 @@ class CommandHandler:
         if ml_value <= 0:
             return CommandStatus.INVALID, {"error": "Parameter 'ml' must be positive"}
         if not correction_type:
-            return CommandStatus.INVALID, {"error": "Missing 'type' parameter"}
+            # Infer nutrient type from EC pump channel when type omitted.
+            if channel in self._ec_component_by_channel:
+                correction_type = "add_nutrients"
+            elif channel in {"pump_acid"}:
+                correction_type = "add_acid"
+            elif channel in {"pump_base"}:
+                correction_type = "add_base"
+            else:
+                return CommandStatus.INVALID, {"error": "Missing 'type' parameter"}
 
-        applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+        applied, dose_details = self._apply_dose_effect(
+            correction_type, ml_value, channel=channel
+        )
         if applied:
             return CommandStatus.DONE, {"details": "Dose applied", **dose_details}
         return CommandStatus.NO_EFFECT, {"details": "Dose had no effect", **dose_details}

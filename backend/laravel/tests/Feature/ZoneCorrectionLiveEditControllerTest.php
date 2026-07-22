@@ -87,6 +87,54 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
         $resp->assertStatus(422)->assertJsonPath('code', 'path_not_whitelisted');
     }
 
+    public function test_irrigation_recovery_slack_path_rejected_from_allowlist(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $zone = $this->zoneInLive();
+        $this->seedDefaults($zone);
+
+        $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
+                'reason' => 'obsolete recovery slack',
+                'correction_patch' => ['retry.irrigation_recovery_correction_slack_sec' => 120],
+            ]);
+
+        $resp->assertStatus(422)->assertJsonPath('code', 'path_not_whitelisted');
+    }
+
+    public function test_recirc_overshoot_paths_are_whitelisted(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $zone = $this->zoneInLive();
+        $this->seedDefaults($zone);
+
+        $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
+                'reason' => 'tune dilute overshoot',
+                'correction_patch' => [
+                    'recirc.ec_overshoot_dilute_pct' => 18,
+                    'recirc.dilute_pulse_sec' => 12,
+                    'recirc.dilute_max_attempts' => 4,
+                    'recirc.dilute_settle_sec' => 45,
+                ],
+            ]);
+
+        $resp->assertOk();
+
+        $doc = app(AutomationConfigDocumentService::class)->getDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            false,
+        );
+        $this->assertSame(18.0, (float) data_get($doc->payload, 'base_config.recirc.ec_overshoot_dilute_pct'));
+        $this->assertSame(12, data_get($doc->payload, 'base_config.recirc.dilute_pulse_sec'));
+        $this->assertSame(4, data_get($doc->payload, 'base_config.recirc.dilute_max_attempts'));
+        $this->assertSame(45, data_get($doc->payload, 'base_config.recirc.dilute_settle_sec'));
+    }
+
     public function test_base_config_categorical_paths_applied(): void
     {
         $user = User::factory()->create(['role' => 'agronomist']);
@@ -203,6 +251,58 @@ class ZoneCorrectionLiveEditControllerTest extends TestCase
             'namespace' => 'zone.correction.live',
             'user_id' => $user->id,
         ]);
+    }
+
+    public function test_calibration_ec_component_gains_nested_path_applies(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $zone = $this->zoneInLive();
+        $this->seedDefaults($zone);
+
+        $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
+                'reason' => 'tune per-component EC gains',
+                'phase' => 'tank_recirc',
+                'calibration_patch' => [
+                    'ec_component_gains.calcium.ec_gain_per_ml' => 0.25,
+                    'ec_component_gains.npk.ec_gain_per_ml' => 0.15,
+                ],
+            ]);
+
+        $resp->assertOk();
+
+        $doc = app(AutomationConfigDocumentService::class)->getDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            false,
+        );
+        $this->assertSame(0.25, data_get($doc->payload, 'ec_component_gains.calcium.ec_gain_per_ml'));
+        $this->assertSame(0.15, data_get($doc->payload, 'ec_component_gains.npk.ec_gain_per_ml'));
+        $this->assertSame(
+            ['ec_gain_per_ml' => 0.25],
+            data_get($doc->payload, 'ec_component_gains.calcium'),
+        );
+    }
+
+    public function test_calibration_flat_ec_component_gains_path_rejected(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $token = $user->createToken('t')->plainTextToken;
+        $zone = $this->zoneInLive();
+        $this->seedDefaults($zone);
+
+        $resp = $this->actingAs($user)->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson("/api/zones/{$zone->id}/correction/live-edit", [
+                'reason' => 'flat gains must fail closed',
+                'phase' => 'tank_recirc',
+                'calibration_patch' => [
+                    'ec_component_gains.calcium' => 0.25,
+                ],
+            ]);
+
+        $resp->assertStatus(422)->assertJsonPath('code', 'path_not_whitelisted');
     }
 
     public function test_combined_correction_and_calibration_single_revision_bump(): void

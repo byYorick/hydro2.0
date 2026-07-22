@@ -96,7 +96,6 @@ class ZoneCorrectionConfigCatalog
                 'prepare_recirculation_timeout_sec' => 900,
                 'prepare_recirculation_correction_slack_sec' => 0,
                 'solution_fill_correction_slack_sec' => 900,
-                'irrigation_recovery_correction_slack_sec' => 900,
                 'prepare_recirculation_max_attempts' => 4,
                 'prepare_recirculation_max_correction_attempts' => 40,
                 'telemetry_stale_retry_sec' => 30,
@@ -112,6 +111,12 @@ class ZoneCorrectionConfigCatalog
             'safety' => [
                 'safe_mode_on_no_effect' => true,
                 'block_on_active_no_effect_alert' => true,
+            ],
+            'recirc' => [
+                'ec_overshoot_dilute_pct' => 15,
+                'dilute_pulse_sec' => 10,
+                'dilute_max_attempts' => 3,
+                'dilute_settle_sec' => 30,
             ],
         ];
     }
@@ -253,13 +258,6 @@ class ZoneCorrectionConfigCatalog
                         'integer',
                         ['min' => 0, 'max' => 7200, 'advanced_only' => true]
                     ),
-                    self::field(
-                        'retry.irrigation_recovery_correction_slack_sec',
-                        'Irrigation recovery correction slack',
-                        'Доп. секунды к дедлайну irrigation_recovery_check для inline-коррекции (AE по умолчанию 900; 0 = жёстко по timeout).',
-                        'integer',
-                        ['min' => 0, 'max' => 7200, 'advanced_only' => true]
-                    ),
                     self::field('retry.prepare_recirculation_max_attempts', 'Recirculation max windows', 'Сколько timeout-window допускается до alert/stop.', 'integer', ['min' => 1, 'max' => 10]),
                     self::field(
                         'retry.prepare_recirculation_max_correction_attempts',
@@ -309,6 +307,42 @@ class ZoneCorrectionConfigCatalog
                 'fields' => [
                     self::field('safety.safe_mode_on_no_effect', 'Safe mode on no-effect', 'DEPRECATED/ignored-by-runtime: fail-closed идёт через observe.no_effect_consecutive_limit + alert path.', 'boolean', ['advanced_only' => true]),
                     self::field('safety.block_on_active_no_effect_alert', 'Block on active alert', 'Блокировать automatic correction, пока alert no-effect не ack/resolved.', 'boolean'),
+                ],
+            ],
+            [
+                'key' => 'recirc',
+                'label' => 'Recirculation dilute',
+                'description' => 'Порог EC overshoot и параметры добора чистой воды (valve_clean_supply) в prepare recirculation.',
+                'advanced_only' => false,
+                'fields' => [
+                    self::field(
+                        'recirc.ec_overshoot_dilute_pct',
+                        'EC overshoot dilute %',
+                        'Порог перелёта EC относительно активного cumulative target (T_step), после которого runtime делает dilute-импульс чистой воды.',
+                        'number',
+                        ['min' => 1.0, 'max' => 100.0, 'step' => 0.1]
+                    ),
+                    self::field(
+                        'recirc.dilute_pulse_sec',
+                        'Dilute pulse sec',
+                        'Длительность импульса добора чистой воды через valve_clean_supply.',
+                        'integer',
+                        ['min' => 1, 'max' => 600]
+                    ),
+                    self::field(
+                        'recirc.dilute_max_attempts',
+                        'Dilute max attempts',
+                        'Максимум dilute-попыток за одно окно prepare recirculation.',
+                        'integer',
+                        ['min' => 0, 'max' => 20]
+                    ),
+                    self::field(
+                        'recirc.dilute_settle_sec',
+                        'Dilute settle sec',
+                        'Пауза/settle после dilute-импульса перед следующим observe.',
+                        'integer',
+                        ['min' => 0, 'max' => 3600]
+                    ),
                 ],
             ],
         ];

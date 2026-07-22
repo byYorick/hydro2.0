@@ -60,6 +60,12 @@ _RUNTIME = {
     "target_ec": 1.4,
     "target_ec_prepare": 1.4,
     "npk_ec_share": 1.0,
+    "ec_component_ratios": {
+        "calcium": 0.25,
+        "magnesium": 0.15,
+        "npk": 0.45,
+        "micro": 0.15,
+    },
     "prepare_tolerance": {"ph_pct": 15, "ec_pct": 25},
     "correction": {
         "max_ec_correction_attempts": 4,
@@ -925,15 +931,27 @@ async def test_sensor_inconsistency_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_ph_unavailable_raises() -> None:
-    m = _Monitor(max_triggered=False, min_triggered=False, has_ph=False)
+    # EC-only fill gate skips pH; pH is required only on first water-baseline capture.
+    m = _Monitor(max_triggered=False, min_triggered=False, has_ph=False, ph=4.0, ec=0.5)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert exc_info.value.code in {
+        "two_tank_prepare_targets_unavailable",
+        "ae3_water_baseline_invalid",
+    }
+
+
+@pytest.mark.asyncio
+async def test_ec_unavailable_raises() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, has_ec=False, ec=0.5)
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert exc_info.value.code == "two_tank_prepare_targets_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_ec_unavailable_raises() -> None:
-    m = _Monitor(max_triggered=False, min_triggered=False, has_ec=False)
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
-    assert exc_info.value.code == "two_tank_prepare_targets_unavailable"
+async def test_fill_gate_polls_when_ec_ok_despite_bad_ph() -> None:
+    """Wrong/out-of-band pH must not force fill-corr entry when EC is at target."""
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=3.0, ec=1.4)
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "poll"

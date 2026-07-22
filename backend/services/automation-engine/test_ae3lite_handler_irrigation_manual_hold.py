@@ -1,4 +1,4 @@
-"""PR7: manual_hold transitions для irrigation check/recovery handlers."""
+"""PR7: manual_hold transitions для irrigation_check handler."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pytest
 from ae3_preflight_helpers import patch_fetch_zone_nodes_diagnostics
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
-from ae3lite.application.handlers.irrigation_recovery import IrrigationRecoveryCheckHandler
 
 
 NOW = datetime(2026, 7, 6, 9, 0, 0, tzinfo=timezone.utc)
@@ -31,26 +30,6 @@ _IRR_OFF = {
     "is_stale": False,
     "snapshot": {
         "valve_solution_supply": False,
-        "valve_irrigation": False,
-        "pump_main": False,
-    },
-}
-_IRR_RECOVERY_ACTIVE = {
-    "has_snapshot": True,
-    "is_stale": False,
-    "snapshot": {
-        "valve_irrigation": False,
-        "valve_solution_supply": True,
-        "valve_solution_fill": True,
-        "pump_main": True,
-    },
-}
-_IRR_RECOVERY_OFF = {
-    "has_snapshot": True,
-    "is_stale": False,
-    "snapshot": {
-        "valve_solution_supply": False,
-        "valve_solution_fill": False,
         "valve_irrigation": False,
         "pump_main": False,
     },
@@ -141,43 +120,3 @@ async def test_manual_irrigation_check_enters_manual_hold() -> None:
     assert outcome.kind == "transition"
     assert outcome.next_stage == "manual_hold"
     assert outcome.flow_hold_return_stage == "irrigation_check"
-
-
-@pytest.mark.asyncio
-async def test_manual_irrigation_recovery_enters_manual_hold() -> None:
-    from types import SimpleNamespace
-
-    handler = IrrigationRecoveryCheckHandler(
-        runtime_monitor=_Monitor(
-            irr_states=[dict(_IRR_RECOVERY_ACTIVE)],
-            irr_state=_IRR_RECOVERY_OFF,
-        ),
-        command_gateway=_Gateway(),
-    )
-    task = SimpleNamespace(
-        id=4,
-        zone_id=31,
-        topology="two_tank",
-        current_stage="irrigation_recovery_check",
-        workflow=SimpleNamespace(
-            control_mode="manual",
-            pending_manual_step=None,
-            stage_deadline_at=FUTURE,
-            stage_entered_at=NOW,
-        ),
-    )
-    plan = _plan(
-        named={
-            "irrigation_recovery_stop": ("stop_cmd",),
-            "sensor_mode_deactivate": ("deact_cmd",),
-        }
-    )
-    outcome = await handler.run(
-        task=task,
-        plan=plan,
-        stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None),
-        now=NOW,
-    )
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "manual_hold"
-    assert outcome.flow_hold_return_stage == "irrigation_recovery_check"

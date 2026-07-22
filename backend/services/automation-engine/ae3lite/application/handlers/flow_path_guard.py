@@ -62,15 +62,6 @@ _FLOW_PATH_STAGES: dict[str, FlowPathStageConfig] = {
             "pump_main": False,
         },
     ),
-    "irrigation_recovery_check": FlowPathStageConfig(
-        stop_plan_names=("irrigation_recovery_stop", "sensor_mode_deactivate"),
-        off_expected={
-            "valve_solution_supply": False,
-            "valve_solution_fill": False,
-            "valve_irrigation": False,
-            "pump_main": False,
-        },
-    ),
     "solution_drain_check": FlowPathStageConfig(
         stop_plan_names=("solution_drain_stop",),
         off_expected={"valve_drain": False},

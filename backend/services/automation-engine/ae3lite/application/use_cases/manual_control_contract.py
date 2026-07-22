@@ -40,7 +40,6 @@ _ALLOWED_MANUAL_STEPS_BY_STAGE: Final[dict[str, list[str]]] = {
     "prepare_recirculation_check": ["prepare_recirculation_stop"],
     "irrigation_start": ["irrigation_stop"],
     "irrigation_check": ["irrigation_stop"],
-    "irrigation_recovery_check": ["irrigation_recovery_stop"],
     "manual_hold": [],
     "await_operator_drain_confirm": ["solution_drain_confirm", SOLUTION_CHANGE_ABORT_STEP],
     "await_operator_refill_confirm": ["solution_refill_confirm", SOLUTION_CHANGE_ABORT_STEP],

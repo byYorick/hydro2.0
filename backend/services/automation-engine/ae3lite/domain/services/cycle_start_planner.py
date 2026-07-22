@@ -859,9 +859,16 @@ class CycleStartPlanner:
             component = self._extract_ec_component(
                 role=str(actuator.role or ""),
                 pump_calibration=actuator.pump_calibration,
+                channel=channel,
             )
             if component:
                 ec_actuators.setdefault(component, value)
+                # Also index by canonical pump channel so lookup calcium↔pump_b works both ways.
+                from ae3lite.domain.services.nutrient_pipeline import COMPONENT_TO_CHANNEL
+
+                canon_channel = COMPONENT_TO_CHANNEL.get(component)
+                if canon_channel:
+                    ec_actuators.setdefault(canon_channel, value)
             if channel:
                 ec_actuators.setdefault(channel, value)
 
@@ -877,13 +884,20 @@ class CycleStartPlanner:
         *,
         role: str,
         pump_calibration: Mapping[str, Any] | None,
+        channel: str = "",
     ) -> str | None:
+        from ae3lite.domain.services.nutrient_pipeline import resolve_component_from_role_or_channel
+
+        calibration_component = None
         if isinstance(pump_calibration, Mapping):
             raw_component = str(pump_calibration.get("component") or "").strip().lower()
             if raw_component:
-                return raw_component
-
-        return None
+                calibration_component = raw_component
+        return resolve_component_from_role_or_channel(
+            role=role,
+            channel=channel,
+            calibration_component=calibration_component,
+        )
 
     def _resolve_actuator(
         self,

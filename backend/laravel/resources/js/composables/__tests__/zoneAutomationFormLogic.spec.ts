@@ -66,8 +66,6 @@ function createForms(): ZoneAutomationForms {
       irrigationDecisionStaleAfterSeconds: 600,
       irrigationDecisionHysteresisPct: 2,
       irrigationDecisionSpreadAlertThresholdPct: 12,
-      irrigationRecoveryMaxContinueAttempts: 5,
-      irrigationRecoveryTimeoutSeconds: 600,
       irrigationAutoReplayAfterSetup: true,
       irrigationMaxSetupReplays: 1,
       stopOnSolutionMin: true,
@@ -219,11 +217,6 @@ describe('zoneAutomationFormLogic', () => {
                 prepare_recirculation_timeout_sec: 960,
                 clean_fill_retry_cycles: 2,
               },
-              irrigation_recovery: {
-                enabled: false,
-                max_continue_attempts: 7,
-                timeout_sec: 800,
-              },
               correction: {
                 max_ec_correction_attempts: 6,
                 max_ph_correction_attempts: 8,
@@ -287,9 +280,6 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.irrigationDecisionStaleAfterSeconds).toBe(900)
     expect(forms.waterForm.irrigationDecisionHysteresisPct).toBe(3.5)
     expect(forms.waterForm.irrigationDecisionSpreadAlertThresholdPct).toBe(18)
-    expect(forms.waterForm.irrigationRecoveryMaxContinueAttempts).toBe(7)
-    expect(forms.waterForm.irrigationRecoveryTimeoutSeconds).toBe(800)
-    expect(forms.waterForm.irrigationRecoveryEnabled).toBe(false)
     expect(forms.waterForm.irrigationAutoReplayAfterSetup).toBe(false)
     expect(forms.waterForm.irrigationMaxSetupReplays).toBe(4)
     expect(forms.waterForm.stopOnSolutionMin).toBe(false)
@@ -325,9 +315,6 @@ describe('zoneAutomationFormLogic', () => {
     forms.waterForm.irrigationDecisionStaleAfterSeconds = 720
     forms.waterForm.irrigationDecisionHysteresisPct = 4.5
     forms.waterForm.irrigationDecisionSpreadAlertThresholdPct = 16
-    forms.waterForm.irrigationRecoveryMaxContinueAttempts = 9
-    forms.waterForm.irrigationRecoveryTimeoutSeconds = 650
-    forms.waterForm.irrigationRecoveryEnabled = false
     forms.waterForm.irrigationAutoReplayAfterSetup = false
     forms.waterForm.irrigationMaxSetupReplays = 3
     forms.waterForm.stopOnSolutionMin = false
@@ -372,10 +359,7 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.irrigation.decision.config.stale_after_sec).toBe(720)
     expect(payload.subsystems.irrigation.decision.config.hysteresis_pct).toBe(4.5)
     expect(payload.subsystems.irrigation.decision.config.spread_alert_threshold_pct).toBe(16)
-    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts).toBe(9)
-    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.timeout_sec).toBe(650)
-    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.enabled).toBe(false)
-    expect(payload.subsystems.irrigation.recovery.enabled).toBe(false)
+    expect(payload.subsystems.diagnostics.execution.irrigation_recovery).toBeUndefined()
     expect(payload.subsystems.irrigation.recovery.auto_replay_after_setup).toBe(false)
     expect(payload.subsystems.irrigation.recovery.max_setup_replays).toBe(3)
     expect(payload.subsystems.irrigation.safety.stop_on_solution_min).toBe(false)
@@ -386,7 +370,6 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.diagnostics.execution.correction.ec_mix_wait_sec).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.correction.ph_mix_wait_sec).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.correction.stabilization_sec).toBe(50)
-    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.degraded_tolerance.ec_pct).toBe(20)
     expect(payload.subsystems.diagnostics.execution.prepare_tolerance).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.two_tank_commands).toBeUndefined()
     expect(payload.subsystems.solution_change.execution.duration_sec).toBe(120)

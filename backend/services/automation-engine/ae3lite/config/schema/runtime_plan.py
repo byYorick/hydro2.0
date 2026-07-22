@@ -119,13 +119,33 @@ class IrrigationDecision(BaseModel):
 
 
 class IrrigationRecovery(BaseModel):
+    """Setup-replay only, not chemistry.
+
+    Post-irrigation EC/pH recovery stages were removed; ``enabled`` stays False.
+    Live consumers (irrigation_check / workflow_router) read only:
+    - ``max_setup_replays`` — solution_min → setup replay budget
+    - ``auto_replay_after_setup`` — auto-restart irrigation after setup replay
+    Field name kept for runtime_plan / config schema compat (rename is out of scope).
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool = True
-    max_continue_attempts: Annotated[int, Field(ge=1, le=30)]
-    timeout_sec: Annotated[int, Field(ge=30, le=86400)]
-    auto_replay_after_setup: bool
-    max_setup_replays: Annotated[int, Field(ge=0, le=10)]
+    enabled: bool = False  # chemistry recovery removed; always False at runtime
+    max_continue_attempts: Annotated[int, Field(ge=1, le=30)] = 3
+    timeout_sec: Annotated[int, Field(ge=30, le=86400)] = 600
+    auto_replay_after_setup: bool = False
+    max_setup_replays: Annotated[int, Field(ge=0, le=10)] = 0
+
+
+class RecircDiluteConfig(BaseModel):
+    """Dilute-on-overshoot thresholds for prepare recirculation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ec_overshoot_dilute_pct: Annotated[float, Field(ge=1.0, le=100.0)] = 15.0
+    dilute_pulse_sec: Annotated[int, Field(ge=1, le=600)] = 10
+    dilute_max_attempts: Annotated[int, Field(ge=0, le=20)] = 3
+    dilute_settle_sec: Annotated[int, Field(ge=0, le=3600)] = 30
 
 
 class IrrigationSafety(BaseModel):
@@ -299,6 +319,9 @@ class RuntimePlan(BaseModel):
     target_ec_prepare_min: EcValue
     target_ec_prepare_max: EcValue
     npk_ec_share: EcShare
+    # Recipe ratios (optional at load time; used for baseline T_* math)
+    ec_component_ratios: Mapping[str, Any] = {}
+    recirc: RecircDiluteConfig = RecircDiluteConfig()
 
     # Day/night
     day_night_enabled: bool
@@ -358,6 +381,7 @@ __all__ = [
     "IrrigationDecision",
     "IrrigationDecisionConfig",
     "IrrigationRecovery",
+    "RecircDiluteConfig",
     "IrrigationSafety",
     "SoilMoistureTarget",
     "DayNightConfig",

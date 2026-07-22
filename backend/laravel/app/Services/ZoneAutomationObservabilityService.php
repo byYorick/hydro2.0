@@ -903,7 +903,138 @@ class ZoneAutomationObservabilityService
             'last_dose' => $this->fetchPidStateLastDoses($zoneId),
             'latest_skip' => $this->fetchLatestCorrectionSkipEvent($zoneId, $activeTaskId),
             'readiness' => $this->fetchLatestCorrectionReadiness($zoneId, $activeTaskId),
+            'prepare_baseline' => $this->fetchLatestPrepareBaseline($zoneId),
+            'pipeline' => $this->fetchCorrectionPipelineState($zoneId, $activeTaskId),
         ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchLatestPrepareBaseline(int $zoneId): ?array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('zone_prepare_baselines')) {
+            return null;
+        }
+
+        $row = DB::table('zone_prepare_baselines')
+            ->where('zone_id', $zoneId)
+            ->orderByDesc('captured_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        $ratios = $this->decodeJsonColumn($row->ratios_json ?? null);
+        $targets = $this->decodeJsonColumn($row->component_targets_json ?? null);
+
+        return [
+            'id' => isset($row->id) ? (int) $row->id : null,
+            'grow_cycle_id' => isset($row->grow_cycle_id) ? (int) $row->grow_cycle_id : null,
+            'ae_task_id' => isset($row->ae_task_id) ? (int) $row->ae_task_id : null,
+            'water_ec' => isset($row->water_ec) ? (float) $row->water_ec : null,
+            'water_ph' => isset($row->water_ph) ? (float) $row->water_ph : null,
+            'target_ec' => isset($row->target_ec) ? (float) $row->target_ec : null,
+            'nutrient_ec_budget' => isset($row->nutrient_ec_budget) ? (float) $row->nutrient_ec_budget : null,
+            'ratios' => $ratios,
+            'component_targets' => $targets,
+            'captured_at' => isset($row->captured_at)
+                ? Carbon::parse((string) $row->captured_at)->toIso8601String()
+                : null,
+            'source' => is_string($row->source ?? null) ? (string) $row->source : null,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchCorrectionPipelineState(int $zoneId, ?int $activeTaskId = null): ?array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('ae_tasks')) {
+            return null;
+        }
+
+        $schema = DB::getSchemaBuilder();
+        $columns = array_values(array_filter([
+            'id',
+            $schema->hasColumn('ae_tasks', 'corr_pipeline_phase') ? 'corr_pipeline_phase' : null,
+            $schema->hasColumn('ae_tasks', 'corr_active_component') ? 'corr_active_component' : null,
+            $schema->hasColumn('ae_tasks', 'corr_water_ec') ? 'corr_water_ec' : null,
+            $schema->hasColumn('ae_tasks', 'corr_water_ph') ? 'corr_water_ph' : null,
+            $schema->hasColumn('ae_tasks', 'corr_nutrient_budget') ? 'corr_nutrient_budget' : null,
+            $schema->hasColumn('ae_tasks', 'corr_component_targets_json') ? 'corr_component_targets_json' : null,
+            $schema->hasColumn('ae_tasks', 'corr_dilute_attempts') ? 'corr_dilute_attempts' : null,
+            $schema->hasColumn('ae_tasks', 'corr_ec_pid_frozen') ? 'corr_ec_pid_frozen' : null,
+            $schema->hasColumn('ae_tasks', 'corr_baseline_id') ? 'corr_baseline_id' : null,
+        ]));
+
+        if (count($columns) <= 1) {
+            return null;
+        }
+
+        $query = DB::table('ae_tasks')->where('zone_id', $zoneId);
+        if ($activeTaskId !== null) {
+            $query->where('id', $activeTaskId);
+        } else {
+            $placeholders = implode(',', array_fill(0, count(self::ACTIVE_TASK_STATUSES), '?'));
+            $query->whereRaw("status IN ({$placeholders})", self::ACTIVE_TASK_STATUSES)
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id');
+        }
+
+        $row = $query->first($columns);
+
+        if ($row === null) {
+            return null;
+        }
+
+        $hasPipeline = ($row->corr_pipeline_phase ?? null) !== null
+            || ($row->corr_active_component ?? null) !== null
+            || ($row->corr_water_ec ?? null) !== null
+            || ($row->corr_component_targets_json ?? null) !== null;
+
+        if (! $hasPipeline) {
+            return null;
+        }
+
+        $targets = $this->decodeJsonColumn($row->corr_component_targets_json ?? null);
+
+        return [
+            'task_id' => isset($row->id) ? (int) $row->id : null,
+            'pipeline_phase' => is_string($row->corr_pipeline_phase ?? null) ? (string) $row->corr_pipeline_phase : null,
+            'active_component' => is_string($row->corr_active_component ?? null) ? (string) $row->corr_active_component : null,
+            'water_ec' => isset($row->corr_water_ec) ? (float) $row->corr_water_ec : null,
+            'water_ph' => isset($row->corr_water_ph) ? (float) $row->corr_water_ph : null,
+            'nutrient_budget' => isset($row->corr_nutrient_budget) ? (float) $row->corr_nutrient_budget : null,
+            'component_targets' => $targets,
+            'dilute_attempts' => isset($row->corr_dilute_attempts) ? (int) $row->corr_dilute_attempts : null,
+            'ec_pid_frozen' => isset($row->corr_ec_pid_frozen) ? (bool) $row->corr_ec_pid_frozen : null,
+            'baseline_id' => isset($row->corr_baseline_id) ? (int) $row->corr_baseline_id : null,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function decodeJsonColumn(mixed $raw): ?array
+    {
+        if (is_array($raw)) {
+            return array_is_list($raw) ? null : $raw;
+        }
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return is_array($decoded) && ! array_is_list($decoded) ? $decoded : null;
     }
 
     /**

@@ -881,7 +881,7 @@ class BaseStageHandler:
         poll_delay_sec: int,
         exhausted_outcome: Any,
     ) -> StageOutcome | None:
-        """Resilient probe для poll-based stages (irrigation_check, irrigation_recovery).
+        """Resilient probe для poll-based stages (irrigation_check и др.).
 
         Pre-probe (вариант C): если node offline или heartbeat stale — сразу poll,
         не тратим HL roundtrip. Probe (вариант B): при ``irr_state_unavailable``
@@ -2156,18 +2156,30 @@ class BaseStageHandler:
         return self._day_night_override(runtime, "ec", "max", default=base_val)
 
     def _effective_ec_target(self, *, task: Any, runtime: RuntimePlan) -> float:
-        """EC target с учётом текущей фазы workflow и day/night overlay.
+        """EC target с учётом фазы и water-baseline cumulative T_*.
 
-        solution_fill / tank_recirc → target_ec_prepare (NPK-доля от полного EC)
-        irrigation / irrig_recirc   → target_ec (полный, кумулятивный)
-
-        При day_night_enabled и night-интервале полный target (irrigation-фаза)
-        подменяется на day_night.ec.night; prepare target пересчитывается
-        пропорционально из runtime.npk_ec_share — соотношение NPK сохраняется.
+        solution_fill / tank_recirc → T_step из corr.component_targets (если есть),
+        иначе deprecated pre-baseline calcium share (target_ec_prepare).
+        irrigation → EC off на уровне planner; accessor возвращает full target.
         """
+        from ae3lite.domain.services.nutrient_pipeline import (
+            ComponentTargets,
+            active_ec_target_for_corr,
+        )
+
         phase = self._runtime_phase_key(task=task)
         base_full = float(runtime.target_ec)
         full_target = self._irrigation_ec_target(runtime=runtime)
+        corr = getattr(task, "correction", None)
+        if corr is not None and phase in ("solution_fill", "tank_recirc"):
+            targets = ComponentTargets.from_json(getattr(corr, "component_targets_json", None))
+            if targets is not None:
+                return active_ec_target_for_corr(
+                    pipeline_phase=getattr(corr, "pipeline_phase", None),
+                    active_component=getattr(corr, "active_component", None),
+                    targets=targets,
+                    fallback_target_ec=full_target,
+                )
         if phase in ("solution_fill", "tank_recirc"):
             prepare = runtime.target_ec_prepare
             if prepare is not None:

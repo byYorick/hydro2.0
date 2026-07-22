@@ -20,6 +20,7 @@ def normalize_phase_key(raw: Any) -> str:
         return "solution_fill"
     if phase in {"tank_recirc", "prepare_recirculation"}:
         return "tank_recirc"
+    # irrig_recirc: legacy DB/config alias → irrigation (compat only).
     if phase in {"irrigating", "irrigation", "irrig_recirc"}:
         return "irrigation"
     return phase or "generic"

@@ -38,6 +38,10 @@ export function createDefaultProcessCalibrationForm(
     transport_delay_sec: String(defaults.transport_delay_sec),
     settle_sec: String(defaults.settle_sec),
     confidence: String(defaults.confidence),
+    ec_component_gain_npk: '',
+    ec_component_gain_calcium: '',
+    ec_component_gain_magnesium: '',
+    ec_component_gain_micro: '',
   }
 }
 

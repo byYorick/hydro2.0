@@ -463,7 +463,7 @@ INDEX: recipe_revision_phase_idx (recipe_revision_id)
 ```
 
 Семантика новых flat-полей (см. также `../06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md` §2.1.1):
-- `nutrient_ec_dosing_mode` — `sequential` | `parallel`. Управляет порядком дозирования компонентов NPK/Ca/Mg/Micro при EC коррекции в irrigation-фазе.
+- `nutrient_ec_dosing_mode` — `sequential` | `parallel`. Исторический recipe-level knob порядка дозирования NPK/Ca/Mg/Micro. Канон AE3 (2026-07-22): EC-коррекция идёт в `solution_fill` (Ca only → `T_ca`) и `prepare_recirculation` (sequential interleaved pipeline + cumulative `T_*`); на `irrigation` EC **исключён** (только pH). Значение `parallel` не включает EC на поливе.
 - `irrigation_system_type` — тип ирригационной системы фазы; используется для согласованности с `applicable_systems` выбранного субстрата.
 - `substrate_type` — короткий код субстрата из таблицы `substrates` (FK-by-code; см. §5.2.2).
 - `day_night_enabled` — если `true`, AE3 применяет `extensions.day_night.{ph,ec,...}` overrides по локальному времени (см. `EFFECTIVE_TARGETS_SPEC.md` §10).
@@ -1311,6 +1311,15 @@ corr_ec_attempt SMALLINT NULL
 corr_ec_max_attempts SMALLINT NULL
 corr_ph_attempt SMALLINT NULL
 corr_ph_max_attempts SMALLINT NULL
+corr_pipeline_phase VARCHAR(64) NULL
+corr_active_component VARCHAR(64) NULL
+corr_water_ec NUMERIC(12,4) NULL
+corr_water_ph NUMERIC(12,4) NULL
+corr_nutrient_budget NUMERIC(12,4) NULL
+corr_component_targets_json JSONB NULL
+corr_dilute_attempts SMALLINT NOT NULL DEFAULT 0
+corr_ec_pid_frozen BOOLEAN NOT NULL DEFAULT FALSE
+corr_baseline_id BIGINT NULL
 pending_manual_step VARCHAR(64) NULL
 control_mode_snapshot VARCHAR(16) NULL
 irrigation_mode VARCHAR(16) NULL
@@ -1340,8 +1349,49 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
 - `corr_snapshot_*` хранит causal link на последний подтверждённый `IRR_STATE_SNAPSHOT`, который должен переживать `enter_correction`, requeue и process restart;
 - `corr_limit_policy_logged=true` означает, что `CORRECTION_LIMIT_POLICY_APPLIED` уже был записан для текущего correction-window и повторно эмитироваться не должен;
+- sequential nutrient (2026-07-22): `corr_pipeline_phase` / `corr_active_component` /
+  `corr_water_*` / `corr_nutrient_budget` / `corr_component_targets_json` /
+  `corr_dilute_attempts` / `corr_ec_pid_frozen` / `corr_baseline_id` переживают
+  requeue через `update_stage` (см. `CORRECTION_CYCLE_SPEC.md` §3.7);
 - `task_type IN ('cycle_start', 'irrigation_start', 'lighting_tick')` фиксируется DB check constraint (миграция `2026_04_04_*` расширила список).
-- `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|irrig_recirc|ready`.
+- `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|ready`
+  (`irrig_recirc` — **deprecated / removed** из канона sequential nutrient).
+
+### 6.12. zone_prepare_baselines
+
+Persist water-baseline и кумулятивных `T_*` для sequential nutrient prepare
+(запись из AE3 при старте `solution_fill`; чтение в observability / state API).
+
+```
+id BIGSERIAL PK
+zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
+grow_cycle_id BIGINT NULL FK -> grow_cycles ON DELETE SET NULL
+ae_task_id BIGINT NULL FK -> ae_tasks ON DELETE SET NULL
+water_ec NUMERIC(12,4) NOT NULL
+water_ph NUMERIC(12,4) NULL
+target_ec NUMERIC(12,4) NOT NULL
+nutrient_ec_budget NUMERIC(12,4) NOT NULL
+ratios_json JSONB NOT NULL
+component_targets_json JSONB NOT NULL
+captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+source VARCHAR(64) NOT NULL DEFAULT 'ae3_solution_fill'
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+
+Индексы:
+```
+zone_prepare_baselines_zone_captured_idx (zone_id, captured_at DESC)
+zone_prepare_baselines_task_idx (ae_task_id) WHERE ae_task_id IS NOT NULL
+```
+
+Инварианты:
+- `nutrient_ec_budget = target_ec − water_ec` (> 0, иначе AE3 fail-closed до INSERT);
+- `ratios_json` — snapshot `ec_component_ratios` (нормализованные доли);
+- `component_targets_json` — `{T_ca, T_ca_mg, T_ca_mg_npk, T_full, …}`;
+- `ae_tasks.corr_baseline_id` может ссылаться на эту строку на время active prepare.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 ### 6.11.4. ae_stage_transitions
 

@@ -132,6 +132,11 @@ class Zone extends Model
         return $this->hasMany(GrowCycle::class);
     }
 
+    public function prepareBaselines(): HasMany
+    {
+        return $this->hasMany(ZonePrepareBaseline::class);
+    }
+
     /**
      * Проверка валидности инфраструктуры зоны (новая модель)
      * Все required-оборудование должно быть привязано к каналам

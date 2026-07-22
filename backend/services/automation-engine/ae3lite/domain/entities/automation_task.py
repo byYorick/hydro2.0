@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Any, Mapping, Optional
 
 
@@ -16,6 +17,14 @@ def _naive(dt: Any) -> Any:
     if isinstance(dt, datetime) and dt.tzinfo is not None:
         return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
+
+
+def _corr_targets_json(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw
+    return json.dumps(raw, separators=(",", ":"), sort_keys=True, default=str)
 
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 
@@ -155,6 +164,31 @@ class AutomationTask:
                     else None
                 ),
                 limit_policy_logged=bool(row.get("corr_limit_policy_logged")),
+                pipeline_phase=(
+                    str(row["corr_pipeline_phase"])
+                    if row.get("corr_pipeline_phase") is not None
+                    else None
+                ),
+                active_component=(
+                    str(row["corr_active_component"])
+                    if row.get("corr_active_component") is not None
+                    else None
+                ),
+                water_ec=float(row["corr_water_ec"]) if row.get("corr_water_ec") is not None else None,
+                water_ph=float(row["corr_water_ph"]) if row.get("corr_water_ph") is not None else None,
+                nutrient_budget=(
+                    float(row["corr_nutrient_budget"])
+                    if row.get("corr_nutrient_budget") is not None
+                    else None
+                ),
+                component_targets_json=_corr_targets_json(row.get("corr_component_targets_json")),
+                dilute_attempts=int(row.get("corr_dilute_attempts") or 0),
+                ec_pid_frozen=bool(row.get("corr_ec_pid_frozen")),
+                baseline_id=(
+                    int(row["corr_baseline_id"])
+                    if row.get("corr_baseline_id") is not None
+                    else None
+                ),
             )
 
         intent_meta = row.get("intent_meta")

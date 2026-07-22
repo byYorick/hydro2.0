@@ -1,0 +1,81 @@
+# E119: stub — prepare_recirc sequential nutrient pipeline
+# Status: stub (contract-only; NOT in realhw suite).
+# Canon order: Ca → pH → Mg → pH → NPK → pH → Micro → final pH.
+# Live interleaved Ca→pH observe: E106. Full multi-step pipeline realhw = live-only / TBD.
+
+name: E119_ae3_prepare_pipeline_sequence_test_node
+status: stub
+description: |
+  Contract stub for prepare_recirculation sequential nutrient pipeline ordering.
+  Documents interleaved component/pH gates and PIPELINE_STEP_CHANGED without a
+  full multi-hour realhw run of every step.
+
+actions:
+  - step: set_stub_context
+    type: set
+    stub: true
+    skip_live: true
+    scenario: prepare_pipeline_sequence
+    status: stub
+    pipeline_steps:
+      - calcium
+      - ph
+      - magnesium
+      - ph
+      - npk
+      - ph
+      - micro
+      - ph_final
+    actuators:
+      calcium: pump_b
+      magnesium: pump_c
+      npk: pump_a
+      micro: pump_d
+      ph_up: pump_base
+      ph_down: pump_acid
+    expected_events:
+      - PIPELINE_STEP_CHANGED
+      - CORRECTION
+      - RECIRC_DILUTE_STARTED
+      - RECIRC_DILUTE_COMPLETED
+    expected_phases:
+      - prepare_recirculation
+      - tank_recirc
+    forbidden_phases:
+      - irrig_recirc
+      - irrigation_recovery
+    forbidden_prepare_owners:
+      - npk_ec_share
+      - target_ec_prepare
+    forbidden_irrigation_ec_dose: true
+
+assertions:
+  - name: stub_pipeline_starts_with_calcium
+    type: custom_assert
+    condition: "context.get('pipeline_steps', [None])[0] == 'calcium'"
+
+  - name: stub_pipeline_order_is_interleaved
+    type: custom_assert
+    condition: >
+      context.get('pipeline_steps') == [
+        'calcium', 'ph', 'magnesium', 'ph', 'npk', 'ph', 'micro', 'ph_final'
+      ]
+
+  - name: stub_calcium_uses_pump_b
+    type: custom_assert
+    condition: >
+      (context.get('actuators') or {}).get('calcium') == 'pump_b'
+      and (context.get('actuators') or {}).get('npk') == 'pump_a'
+
+  - name: stub_expects_pipeline_step_changed
+    type: custom_assert
+    condition: >
+      'PIPELINE_STEP_CHANGED' in (context.get('expected_events') or [])
+      and 'CORRECTION' in (context.get('expected_events') or [])
+
+  - name: stub_forbids_irrig_recirc_and_npk_prepare_owner
+    type: custom_assert
+    condition: >
+      context.get('stub') is True
+      and 'irrig_recirc' in (context.get('forbidden_phases') or [])
+      and 'npk_ec_share' in (context.get('forbidden_prepare_owners') or [])

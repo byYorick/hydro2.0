@@ -25,7 +25,6 @@ from ae3lite.application.handlers.command import CommandHandler
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
-from ae3lite.application.handlers.irrigation_recovery import IrrigationRecoveryCheckHandler
 from ae3lite.application.handlers.manual_hold import ManualHoldHandler
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
@@ -145,7 +144,6 @@ class WorkflowRouter:
         "solution_drain_check": SolutionDrainCheckHandler,
         "solution_change_complete": SolutionChangeCompleteHandler,
         "irrigation_check": IrrigationCheckHandler,
-        "irrigation_recovery": IrrigationRecoveryCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
         "prepare_recirc_window": PrepareRecircWindowHandler,
         "manual_hold": ManualHoldHandler,
@@ -181,7 +179,7 @@ class WorkflowRouter:
                 # Tests, создающие handlers напрямую, оставляют default False.
                 "live_reload_enabled": True,
             }
-            if key in {"await_ready", "decision_gate", "irrigation_check", "irrigation_recovery", "prepare_recirc"}:
+            if key in {"await_ready", "decision_gate", "irrigation_check", "prepare_recirc"}:
                 kwargs["task_repository"] = task_repository
             if key == "decision_gate":
                 kwargs["decision_controller"] = decision_controller
@@ -849,29 +847,6 @@ class WorkflowRouter:
                     slack = _DEFAULT_CORRECTION_SLACK_SEC
             total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
             return now + timedelta(seconds=total_sec)
-        if stage_def.name == "irrigation_recovery_check":
-            # Базовое окно — irrigation_recovery.timeout_sec; inline EC/pH-коррекциям
-            # нужен correction slack (как у solution_fill / prepare_recirculation).
-            recovery_runtime = runtime.irrigation_recovery
-            timeout_sec = recovery_runtime.timeout_sec
-            if timeout_sec is None and stage_def.timeout_key is not None:
-                timeout_sec = getattr(runtime, stage_def.timeout_key, None)
-            if timeout_sec is None:
-                return None
-            try:
-                base_sec = max(1, int(timeout_sec))
-            except (TypeError, ValueError):
-                return None
-            slack_raw = getattr(runtime, "irrigation_recovery_correction_slack_sec", None)
-            if slack_raw is None:
-                slack = _DEFAULT_CORRECTION_SLACK_SEC
-            else:
-                try:
-                    slack = max(0, min(_MAX_CORRECTION_SLACK_SEC, int(slack_raw)))
-                except (TypeError, ValueError):
-                    slack = _DEFAULT_CORRECTION_SLACK_SEC
-            total_sec = min(base_sec + slack, _MAX_STAGE_TOTAL_SEC)
-            return now + timedelta(seconds=total_sec)
         if stage_def.timeout_key is None:
             return None
         timeout_sec = getattr(runtime, stage_def.timeout_key, None)
@@ -1017,7 +992,6 @@ class WorkflowRouter:
         ("decision_gate", "irrigation_start"): ("IRRIGATION_CYCLE_STARTED", "Полив запущен"),
         ("irrigation_start", "irrigation_check"): ("IRRIGATION_CYCLE_STARTED", "Полив запущен"),
         ("irrigation_check", "irrigation_stop_to_ready"): ("IRRIGATION_CYCLE_FINISHED", "Полив завершён"),
-        ("irrigation_check", "irrigation_stop_to_recovery"): ("IRRIGATION_CYCLE_FINISHED", "Полив завершён, запуск recovery"),
         ("irrigation_check", "irrigation_stop_to_setup"): ("IRRIGATION_CYCLE_STOPPED", "Полив остановлен: низкий уровень раствора"),
         ("decision_gate", "completed_skip"): ("IRRIGATION_CYCLE_SKIPPED", "Полив пропущен"),
     }

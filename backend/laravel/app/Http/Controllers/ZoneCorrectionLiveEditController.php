@@ -51,7 +51,6 @@ class ZoneCorrectionLiveEditController extends Controller
         'retry.prepare_recirculation_timeout_sec',
         'retry.prepare_recirculation_correction_slack_sec',
         'retry.solution_fill_correction_slack_sec',
-        'retry.irrigation_recovery_correction_slack_sec',
         'retry.telemetry_stale_retry_sec',
         'retry.decision_window_retry_sec',
         'retry.low_water_retry_sec',
@@ -65,6 +64,11 @@ class ZoneCorrectionLiveEditController extends Controller
         // tolerance
         'tolerance.prepare_tolerance.ph_pct',
         'tolerance.prepare_tolerance.ec_pct',
+        // recirculation dilute (EC overshoot)
+        'recirc.ec_overshoot_dilute_pct',
+        'recirc.dilute_pulse_sec',
+        'recirc.dilute_max_attempts',
+        'recirc.dilute_settle_sec',
         // Controllers: caps / observe / max_integral (AE3 authority).
         // kp/ki/kd/deadband — НЕ live-edit: канон zone.pid.{ph,ec} (PidConfigForm).
         // anti_windup / overshoot_guard / no_effect.enabled — ignored-by-runtime.
@@ -102,6 +106,11 @@ class ZoneCorrectionLiveEditController extends Controller
         'ph_down_gain_per_ml',
         'ph_per_ec_ml',
         'ec_per_ph_ml',
+        // Nested schema: { calcium: { ec_gain_per_ml }, ... } — not flat numbers.
+        'ec_component_gains.npk.ec_gain_per_ml',
+        'ec_component_gains.calcium.ec_gain_per_ml',
+        'ec_component_gains.magnesium.ec_gain_per_ml',
+        'ec_component_gains.micro.ec_gain_per_ml',
     ];
 
     private const ALLOWED_CALIBRATION_PHASES = [

@@ -304,7 +304,8 @@ def build_automation_observability(
             )
 
     wf_age = runtime.get("workflow_snapshot_age_sec")
-    active_phases = {"tank_filling", "tank_recirc", "irrigating", "irrig_recirc"}
+    # Live topology phases only (irrig_recirc removed with post-irrigation chemistry).
+    active_phases = {"tank_filling", "tank_recirc", "irrigating"}
     db_workflow_phase = ""
     if workflow_state is not None:
         db_workflow_phase = str(getattr(workflow_state, "workflow_phase", "") or "").strip().lower()
@@ -341,7 +342,6 @@ def build_automation_observability(
     if runtime["task_is_active"] and telemetry_fetch_ok:
         clean_max = bool(telemetry.get("clean_max_triggered"))
         solution_max = bool(telemetry.get("solution_max_triggered"))
-        solution_min = bool(telemetry.get("solution_min_triggered"))
         if current_stage in {"clean_fill_check", "clean_fill_start"} and not clean_max and stage_elapsed >= cfg["level_clean_max_unlatched_sec"]:
             _append_hint(
                 hints,
@@ -358,15 +358,6 @@ def build_automation_observability(
                 message=_HANG_HINT_LABELS["level_solution_max_unlatched"],
                 details={"solution_max_triggered": solution_max, "current_stage": current_stage},
             )
-        if current_stage in {"irrigation_recovery_check"} and not solution_min and stage_elapsed >= cfg["level_solution_min_unlatched_sec"]:
-            _append_hint(
-                hints,
-                code="level_solution_min_unlatched",
-                severity="warning",
-                message=_HANG_HINT_LABELS["level_solution_min_unlatched"],
-                details={"solution_min_triggered": solution_min, "current_stage": current_stage},
-            )
-
     nodes_summary = _summarize_required_nodes(node_rows or (), cfg)
     if nodes_summary.get("offline_required"):
         _append_hint(

@@ -313,6 +313,10 @@ class CorrectionHandler(BaseStageHandler):
                 return await self._run_dose_ph(task=task, plan=plan, corr=corr, now=now)
             if step == "corr_wait_ph":
                 return await self._run_wait_ph(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_dilute_pulse":
+                return await self._run_dilute_pulse(task=task, plan=plan, corr=corr, now=now)
+            if step == "corr_dilute_settle":
+                return await self._run_dilute_settle(task=task, plan=plan, corr=corr, now=now)
             if step == "corr_deactivate":
                 return await self._run_deactivate(task=task, plan=plan, corr=corr, now=now)
             if step == "corr_done":
@@ -644,6 +648,23 @@ class CorrectionHandler(BaseStageHandler):
             ec_min=target_ec_min,
             ec_max=target_ec_max,
         )
+        from ae3lite.application.services.correction_pipeline import (
+            maybe_advance_pipeline,
+            pipeline_dose_flags,
+            should_dilute,
+            step_targets_reached,
+        )
+
+        pipeline_step_reached = step_targets_reached(
+            corr=corr,
+            current_ph=current_ph,
+            current_ec=current_ec,
+            target_ph=target_ph,
+            target_ec=target_ec,
+            ph_tol_pct=ph_tol_pct,
+            ec_tol_pct=ec_tol_pct,
+            planner=self._planner,
+        )
         # prepare: классика — оба условия (prepare-tolerance + phase-ready).
         # Short-circuit: irrigation-band и EC уже выше prepare-target (нет dose-down).
         irrigation_short_circuit = (
@@ -656,10 +677,64 @@ class CorrectionHandler(BaseStageHandler):
             if current_stage == "prepare_recirculation_check"
             else False
         )
+        # Pipeline-aware success: advance interleaved steps instead of exiting early.
+        if getattr(corr, "pipeline_phase", None) and pipeline_step_reached:
+            next_corr, finished, advance_payload = maybe_advance_pipeline(
+                corr=corr,
+                current_stage=current_stage,
+            )
+            if advance_payload:
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="PIPELINE_STEP_CHANGED",
+                    task=task,
+                    corr=next_corr,
+                    payload=advance_payload,
+                )
+            if advance_payload and advance_payload.get("reset_ec_pid"):
+                await self._reset_ec_pid_for_pipeline(
+                    task=task,
+                    corr=next_corr,
+                    reason="component_switch",
+                    now=now,
+                )
+                # Mid-pipeline component switch: stale no_effect_count from the
+                # previous EC component must not block the next one.
+                await self._reset_no_effect_counts_fail_closed(
+                    task=task,
+                    corr=next_corr,
+                    context="PIPELINE_COMPONENT_SWITCH",
+                )
+            if not finished:
+                return StageOutcome(
+                    kind="enter_correction",
+                    correction=next_corr,
+                    due_delay_sec=0,
+                )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_COMPLETE",
+                task=task,
+                corr=next_corr,
+                payload={
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "pipeline_phase": getattr(next_corr, "pipeline_phase", None),
+                    "targets_in_tolerance": True,
+                    "workflow_ready": workflow_ready,
+                },
+            )
+            await self._reset_no_effect_counts_fail_closed(
+                task=task,
+                corr=next_corr,
+                context="CORRECTION_COMPLETE",
+            )
+            return self._transition_to_deactivate_or_return(corr=next_corr, success=True)
+
         success_reached = (
             irrigation_short_circuit or (correction_targets_reached and workflow_ready)
-            if current_stage == "prepare_recirculation_check"
-            else correction_targets_reached
+            if current_stage == "prepare_recirculation_check" and not getattr(corr, "pipeline_phase", None)
+            else (correction_targets_reached if not getattr(corr, "pipeline_phase", None) else False)
         )
         if success_reached:
             await self._log_correction_event(
@@ -690,6 +765,32 @@ class CorrectionHandler(BaseStageHandler):
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
+        # Dilute-on-overshoot (recirc EC step only)
+        if should_dilute(
+            corr=corr,
+            runtime=runtime,
+            current_ec=current_ec,
+            t_step=target_ec,
+            current_stage=current_stage,
+        ):
+            dilute_corr = replace(
+                corr,
+                corr_step="corr_dilute_pulse",
+                dilute_attempts=int(getattr(corr, "dilute_attempts", 0) or 0) + 1,
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="RECIRC_DILUTE_STARTED",
+                task=task,
+                corr=dilute_corr,
+                payload={
+                    "current_ec": current_ec,
+                    "t_step": target_ec,
+                    "dilute_attempts": dilute_corr.dilute_attempts,
+                },
+            )
+            return StageOutcome(kind="enter_correction", correction=dilute_corr, due_delay_sec=0)
+
         flow_hold = await self._interrupt_for_control_mode_dosing(
             task=task,
             plan=plan,
@@ -715,6 +816,7 @@ class CorrectionHandler(BaseStageHandler):
         # correction-specific TaskExecutionError so execute_task maps it to
         # a typed failure instead of an anonymous Ae3LiteError surface.
         actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
+        dose_flags = pipeline_dose_flags(corr)
         try:
             process_calibrations = {
                 str(phase_key): self._mapping_view(cfg)
@@ -739,6 +841,10 @@ class CorrectionHandler(BaseStageHandler):
                 ec_actuators=actuators.get("ec_actuators"),
                 ph_up_actuator=actuators.get("ph_up"),
                 ph_down_actuator=actuators.get("ph_down"),
+                active_component=dose_flags.get("active_component"),
+                allow_ec=bool(dose_flags.get("allow_ec", True)),
+                allow_ph=bool(dose_flags.get("allow_ph", True)),
+                freeze_ec_pid=bool(dose_flags.get("freeze_ec_pid", False)),
             )
         except PlannerConfigurationError as exc:
             await self._log_correction_event(
@@ -2063,6 +2169,137 @@ class CorrectionHandler(BaseStageHandler):
             task_override=current_task if current_task is not task else None,
         )
 
+    async def _run_dilute_pulse(
+        self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
+    ) -> StageOutcome:
+        """Open valve_clean_supply for dilute_pulse_sec, then settle."""
+        runtime = self._require_runtime_plan(plan=plan)
+        solution_max = await self._read_level(
+            task=task,
+            zone_id=task.zone_id,
+            labels=runtime.solution_max_sensor_labels,
+            threshold=runtime.level_switch_on_threshold,
+            telemetry_max_age_sec=int(runtime.telemetry_max_age_sec),
+            unavailable_error="two_tank_solution_max_level_unavailable",
+            stale_error="two_tank_solution_max_level_stale",
+            stale_recheck_delay_sec=0.25,
+            prefer_probe_snapshot=True,
+        )
+        if solution_max.get("is_triggered"):
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="RECIRC_DILUTE_BLOCKED",
+                task=task,
+                corr=corr,
+                payload={"reason": "solution_max"},
+            )
+            raise TaskExecutionError(
+                ErrorCodes.AE3_RECIRC_DILUTE_BLOCKED_SOLUTION_MAX,
+                "Dilute заблокирован: solution_max уже ON",
+            )
+
+        named = plan.named_plans if hasattr(plan, "named_plans") else {}
+        start_cmds = tuple(named.get("recirc_dilute_start") or ())
+        if not start_cmds:
+            raise TaskExecutionError(
+                "ae3_empty_command_plan",
+                "Отсутствует command plan recirc_dilute_start",
+            )
+        result = await self._run_command_batch_checked(task=task, commands=start_cmds, now=now)
+        current_task = result.get("task") or task
+        pulse_sec = int(getattr(getattr(runtime, "recirc", None), "dilute_pulse_sec", 10) or 10)
+        next_corr = replace(corr, corr_step="corr_dilute_settle")
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
+            due_delay_sec=float(max(1, pulse_sec)),
+            task_override=current_task if current_task is not task else None,
+        )
+
+    async def _run_dilute_settle(
+        self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
+    ) -> StageOutcome:
+        """Close dilute valve, reset EC PID I/D + no_effect, resume corr_check."""
+        runtime = self._require_runtime_plan(plan=plan)
+        named = plan.named_plans if hasattr(plan, "named_plans") else {}
+        stop_cmds = tuple(named.get("recirc_dilute_stop") or ())
+        current_task = task
+        if stop_cmds:
+            result = await self._run_command_batch_checked(task=task, commands=stop_cmds, now=now)
+            current_task = result.get("task") or task
+
+        await self._reset_ec_pid_for_pipeline(
+            task=task,
+            corr=corr,
+            reason="dilute",
+            now=now,
+        )
+        await self._reset_no_effect_counts_fail_closed(
+            task=task,
+            corr=corr,
+            context="RECIRC_DILUTE",
+        )
+        settle_sec = int(getattr(getattr(runtime, "recirc", None), "dilute_settle_sec", 30) or 30)
+        next_corr = replace(corr, corr_step="corr_check")
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="RECIRC_DILUTE_COMPLETED",
+            task=task,
+            corr=next_corr,
+            payload={"dilute_attempts": int(getattr(corr, "dilute_attempts", 0) or 0)},
+        )
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
+            due_delay_sec=float(max(0, settle_sec)),
+            task_override=current_task if current_task is not task else None,
+        )
+
+    async def _reset_ec_pid_for_pipeline(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+        reason: str,
+        now: datetime,
+    ) -> None:
+        """Reset EC integral/derivative (and emit PID_EC_RESET)."""
+        try:
+            if self._pid_state_repository is not None:
+                await self._persist_pid_state_updates(
+                    zone_id=int(task.zone_id),
+                    updates={
+                        "ec": {
+                            "integral": 0.0,
+                            "prev_error": 0.0,
+                            "prev_derivative": 0.0,
+                            "last_measurement_at": now,
+                        }
+                    },
+                )
+        except Exception:
+            _logger.warning(
+                "PID_EC_RESET failed zone_id=%s reason=%s",
+                getattr(task, "zone_id", None),
+                reason,
+                exc_info=True,
+            )
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="PID_EC_RESET",
+            task=task,
+            corr=corr,
+            payload={
+                "reason": reason,
+                "pipeline_phase": getattr(corr, "pipeline_phase", None),
+                "active_component": getattr(corr, "active_component", None),
+            },
+        )
+
     def _run_done(self, *, corr: CorrectionState) -> StageOutcome:
         success = corr.outcome_success if corr.outcome_success is not None else False
         next_stage = corr.return_stage_success if success else corr.return_stage_fail
@@ -2392,8 +2629,8 @@ class CorrectionHandler(BaseStageHandler):
 
         When steps ``0..N-1`` already succeeded and step ``N`` fails, emit
         ``EC_BATCH_PARTIAL_FAILURE``, mark the correction window failed, and
-        do **not** treat EC target as reached. Auto-enqueue of
-        ``irrigation_recovery`` is intentionally out of MVP scope.
+        do **not** treat EC target as reached. Auto-enqueue of post-irrigation
+        chemistry recovery is intentionally out of scope (stages removed).
         """
         # Stage-bound poll deadline must escalate to stage interrupt, not
         # partial-EC degrade (which would keep the correction window open).
@@ -2519,15 +2756,10 @@ class CorrectionHandler(BaseStageHandler):
             await self._alert_service.emit_irrigation_correction_exhausted(
                 task=task, corr=corr,
             )
-        max_continue_attempts = None
-        if stage.strip().lower() == "irrigation_recovery_check":
-            recovery = getattr(runtime, "irrigation_recovery", None)
-            max_continue_attempts = int(getattr(recovery, "max_continue_attempts", 5) or 5)
         policy_outcome = self._transition_policy.decide_exhausted_transition(
             current_stage=stage,
             stage_retry_count=task.workflow.stage_retry_count,
             level_poll_interval_sec=int(runtime.level_poll_interval_sec),
-            max_continue_attempts=max_continue_attempts,
         )
         if policy_outcome is not None:
             return policy_outcome
@@ -2621,21 +2853,12 @@ class CorrectionHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome | None:
         current_stage = str(task.current_stage).strip().lower()
-        targets_reached: bool | None = None
-        recovery_enabled = True
-        if current_stage == "irrigation_check":
-            targets_reached = await self._targets_reached_on_deadline(
-                task=task, plan=plan, now=now,
-            )
-            recovery = getattr(self._require_runtime_plan(plan=plan), "irrigation_recovery", None)
-            recovery_enabled = bool(getattr(recovery, "enabled", True))
         return self._transition_policy.decide_stage_deadline_transition(
             corr=corr,
             current_stage=current_stage,
             stage_retry_count=task.workflow.stage_retry_count,
             deadline_reached=True,
-            targets_reached=targets_reached,
-            recovery_enabled=recovery_enabled,
+            targets_reached=None,
         )
 
     def _interrupt_for_imminent_flow_probe_deadline(

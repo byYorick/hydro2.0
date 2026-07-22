@@ -94,6 +94,45 @@
     "updated_at": {
       "type": ["string", "null"],
       "description": "Optional update timestamp from pump_calibrations table."
+    },
+    "ec_component_gains": {
+      "description": "Per-component EC process gains for sequential nutrient pipeline. Overrides generic ec_gain_per_ml when set for the active component.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "calcium": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ec_gain_per_ml"],
+          "properties": {
+            "ec_gain_per_ml": { "type": "number", "minimum": 0.0, "maximum": 10.0 }
+          }
+        },
+        "magnesium": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ec_gain_per_ml"],
+          "properties": {
+            "ec_gain_per_ml": { "type": "number", "minimum": 0.0, "maximum": 10.0 }
+          }
+        },
+        "npk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ec_gain_per_ml"],
+          "properties": {
+            "ec_gain_per_ml": { "type": "number", "minimum": 0.0, "maximum": 10.0 }
+          }
+        },
+        "micro": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ec_gain_per_ml"],
+          "properties": {
+            "ec_gain_per_ml": { "type": "number", "minimum": 0.0, "maximum": 10.0 }
+          }
+        }
+      }
     }
   },
   "$comment": "AT LEAST ONE of {ec_gain_per_ml, ph_up_gain_per_ml, ph_down_gain_per_ml} must be > 0 for this calibration to be useful. This is enforced in the Pydantic loader, not at the JSON Schema level (a non-zero disjunction constraint would require allOf+anyOf with enumerated value combinations)."

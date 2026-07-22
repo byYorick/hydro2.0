@@ -461,7 +461,7 @@ scenario_db_metrics_since_epoch() {
           'EC_DOSING',
           'PH_CORRECTED'
         )
-        AND COALESCE(COALESCE(details, payload_json)->>'workflow_phase', '') IN ('irrigating', 'irrig_recirc')
+        AND COALESCE(COALESCE(details, payload_json)->>'workflow_phase', '') = 'irrigating'
         AND NULLIF(COALESCE(COALESCE(details, payload_json)->>'snapshot_event_id', ''), '') IS NULL;
 
       SELECT 'alerts_new_window=' || COUNT(*)

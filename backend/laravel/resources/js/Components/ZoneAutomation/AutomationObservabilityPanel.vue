@@ -134,6 +134,86 @@
     </div>
 
     <div
+      v-if="prepareBaseline || correctionPipeline"
+      class="rounded-lg border border-[color:var(--border-muted)]/70 bg-[color:var(--bg-elevated)] px-3 py-2.5 text-xs space-y-2"
+      data-testid="automation-prepare-baseline"
+    >
+      <p class="font-semibold text-sm text-[color:var(--text-primary)]">
+        Sequential nutrient / baseline
+      </p>
+      <dl
+        v-if="prepareBaseline"
+        class="grid grid-cols-2 gap-1.5 text-[10px]"
+      >
+        <div>
+          <dt class="uppercase tracking-wide opacity-70">
+            Water EC / pH
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            {{ formatNullableNumber(prepareBaseline.water_ec) }} /
+            {{ formatNullableNumber(prepareBaseline.water_ph) }}
+          </dd>
+        </div>
+        <div>
+          <dt class="uppercase tracking-wide opacity-70">
+            Budget / target EC
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            {{ formatNullableNumber(prepareBaseline.nutrient_ec_budget) }} /
+            {{ formatNullableNumber(prepareBaseline.target_ec) }}
+          </dd>
+        </div>
+        <div
+          v-if="ratioSummary"
+          class="col-span-2"
+        >
+          <dt class="uppercase tracking-wide opacity-70">
+            Ratios
+          </dt>
+          <dd class="mt-0.5 font-mono break-all">
+            {{ ratioSummary }}
+          </dd>
+        </div>
+        <div
+          v-if="targetSummary"
+          class="col-span-2"
+        >
+          <dt class="uppercase tracking-wide opacity-70">
+            Cumulative T_*
+          </dt>
+          <dd class="mt-0.5 font-mono break-all">
+            {{ targetSummary }}
+          </dd>
+        </div>
+      </dl>
+      <dl
+        v-if="correctionPipeline"
+        class="grid grid-cols-2 gap-1.5 text-[10px] pt-1 border-t border-[color:var(--border-muted)]/50"
+      >
+        <div>
+          <dt class="uppercase tracking-wide opacity-70">
+            Pipeline step
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            {{ correctionPipeline.pipeline_phase || '—' }}
+            <span v-if="correctionPipeline.active_component">
+              · {{ correctionPipeline.active_component }}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt class="uppercase tracking-wide opacity-70">
+            Dilute / EC PID
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            attempts {{ correctionPipeline.dilute_attempts ?? 0 }}
+            · frozen {{ correctionPipeline.ec_pid_frozen ? 'да' : 'нет' }}
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div
       v-if="failureDiagnostics"
       class="rounded-lg border px-3 py-2.5 text-xs space-y-2"
       :class="failureDiagnostics.isActiveFailure
@@ -545,6 +625,35 @@ const correctionDosing = computed(() => resolveCorrectionDosingDiagnostics(
   props.automationState,
   observability.value,
 ))
+
+const prepareBaseline = computed(() => observability.value?.correction?.prepare_baseline ?? null)
+const correctionPipeline = computed(() => observability.value?.correction?.pipeline ?? null)
+
+const ratioSummary = computed(() => formatComponentMap(prepareBaseline.value?.ratios ?? null))
+const targetSummary = computed(() => {
+  const fromBaseline = formatComponentMap(prepareBaseline.value?.component_targets ?? null)
+  if (fromBaseline) {
+    return fromBaseline
+  }
+  return formatComponentMap(correctionPipeline.value?.component_targets ?? null)
+})
+
+function formatNullableNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return '—'
+  }
+  return Number.isInteger(value) ? String(value) : value.toFixed(3)
+}
+
+function formatComponentMap(map: Record<string, number> | null | undefined): string | null {
+  if (!map) {
+    return null
+  }
+  const parts = Object.entries(map)
+    .filter(([, value]) => Number.isFinite(value))
+    .map(([key, value]) => `${key}=${Number(value).toFixed(3)}`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
 
 const correctionDosingClass = computed(() => {
   const severity = correctionDosing.value?.severity ?? 'neutral'

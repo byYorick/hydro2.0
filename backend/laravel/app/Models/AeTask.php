@@ -43,6 +43,15 @@ class AeTask extends Model
         'workflow_phase',
         'control_mode_snapshot',
         'corr_step',
+        'corr_pipeline_phase',
+        'corr_active_component',
+        'corr_water_ec',
+        'corr_water_ph',
+        'corr_nutrient_budget',
+        'corr_component_targets_json',
+        'corr_dilute_attempts',
+        'corr_ec_pid_frozen',
+        'corr_baseline_id',
         'corr_snapshot_event_id',
         'corr_snapshot_created_at',
         'corr_snapshot_cmd_id',
@@ -64,6 +73,12 @@ class AeTask extends Model
         'claimed_at' => 'datetime',
         'completed_at' => 'datetime',
         'corr_snapshot_created_at' => 'datetime',
+        'corr_water_ec' => 'float',
+        'corr_water_ph' => 'float',
+        'corr_nutrient_budget' => 'float',
+        'corr_component_targets_json' => 'array',
+        'corr_dilute_attempts' => 'integer',
+        'corr_ec_pid_frozen' => 'boolean',
         'intent_meta' => 'array',
         'irrigation_decision_config' => 'array',
         'irrigation_decision_degraded' => 'boolean',
@@ -88,5 +103,10 @@ class AeTask extends Model
     public function snapshotCommand(): BelongsTo
     {
         return $this->belongsTo(Command::class, 'corr_snapshot_cmd_id', 'cmd_id');
+    }
+
+    public function prepareBaseline(): BelongsTo
+    {
+        return $this->belongsTo(ZonePrepareBaseline::class, 'corr_baseline_id');
     }
 }

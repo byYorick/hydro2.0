@@ -66,13 +66,23 @@ static const char *CMD_TAG = "test_node_cmd";
 #define PH_DRIFT_BIAS_PER_TICK 0.0002f
 #define EC_DRIFT_BIAS_PER_TICK -0.0010f
 #define PH_REACTION_BASE_DELTA 0.12f
-#define EC_REACTION_BASE_DELTA 0.068f
+/* Per-pump EC base deltas (canonical: a=npk, b=calcium, c=magnesium, d=micro). */
+#define EC_REACTION_DELTA_PUMP_A 0.068f
+#define EC_REACTION_DELTA_PUMP_B 0.055f
+#define EC_REACTION_DELTA_PUMP_C 0.035f
+#define EC_REACTION_DELTA_PUMP_D 0.018f
+#define EC_REACTION_BASE_DELTA EC_REACTION_DELTA_PUMP_A
 #define PH_REACTION_NOMINAL_ML 8.0f
 #define EC_REACTION_NOMINAL_ML 12.0f
 #define PH_VALUE_MIN 4.0f
 #define PH_VALUE_MAX 8.0f
 #define EC_VALUE_MIN 0.4f
 #define EC_VALUE_MAX 3.2f
+/** Tap/clean-water EC asymptote for dilute via valve_clean_supply. */
+#define WATER_EC_BASELINE_DEFAULT 0.45f
+/** Fraction of (ec - water_baseline) removed per telemetry tick on dilute path. */
+#define DILUTE_EC_FRACTION_PER_TICK 0.08f
+#define DILUTE_EC_MIN_STEP_PER_TICK 0.008f
 #define SOIL_MOISTURE_DEFAULT_PCT 43.0f
 #define SOIL_MOISTURE_PARAM_MIN 0.0f
 #define SOIL_MOISTURE_PARAM_MAX 100.0f
@@ -144,6 +154,8 @@ typedef struct {
     float pump_bus_current;
     float ph_value;
     float ec_value;
+    /** Dilute asymptote; updated by set_fault_mode ec_value seed (clean-water baseline). */
+    float water_ec_baseline;
     float soil_moisture;
     float water_level;
     float solution_level;
@@ -460,6 +472,7 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .pump_bus_current = 150.0f,
     .ph_value = 6.90f,
     .ec_value = 0.60f,
+    .water_ec_baseline = WATER_EC_BASELINE_DEFAULT,
     .soil_moisture = SOIL_MOISTURE_DEFAULT_PCT,
     .water_level = 0.05f,
     .solution_level = 0.05f,
@@ -518,6 +531,7 @@ static virtual_state_t s_virtual_state = {
     .pump_bus_current = 150.0f,
     .ph_value = 6.90f,
     .ec_value = 0.60f,
+    .water_ec_baseline = WATER_EC_BASELINE_DEFAULT,
     .soil_moisture = SOIL_MOISTURE_DEFAULT_PCT,
     .water_level = 0.05f,
     .solution_level = 0.05f,
@@ -1102,6 +1116,71 @@ static float clamp_ph_value(float value) {
 
 static float clamp_ec_value(float value) {
     return clamp_float(value, EC_VALUE_MIN, EC_VALUE_MAX);
+}
+
+static float resolve_ec_pump_base_delta(const char *channel) {
+    if (!channel) {
+        return EC_REACTION_DELTA_PUMP_A;
+    }
+    if (strcmp(channel, "pump_b") == 0) {
+        return EC_REACTION_DELTA_PUMP_B;
+    }
+    if (strcmp(channel, "pump_c") == 0) {
+        return EC_REACTION_DELTA_PUMP_C;
+    }
+    if (strcmp(channel, "pump_d") == 0) {
+        return EC_REACTION_DELTA_PUMP_D;
+    }
+    /* pump_a and unknown EC pumps → npk */
+    return EC_REACTION_DELTA_PUMP_A;
+}
+
+static const char *resolve_ec_pump_component(const char *channel) {
+    if (!channel) {
+        return "npk";
+    }
+    if (strcmp(channel, "pump_b") == 0) {
+        return "calcium";
+    }
+    if (strcmp(channel, "pump_c") == 0) {
+        return "magnesium";
+    }
+    if (strcmp(channel, "pump_d") == 0) {
+        return "micro";
+    }
+    return "npk";
+}
+
+static bool is_dilute_path_active(void) {
+    /* Clean water into solution: same hydraulics as solution_fill / recirc dilute pulse. */
+    return s_virtual_state.main_pump_on &&
+        s_virtual_state.valve_clean_supply_on &&
+        s_virtual_state.valve_solution_fill_on;
+}
+
+static void apply_dilute_physics(void) {
+    float baseline;
+    float gap;
+    float step;
+
+    if (!is_dilute_path_active()) {
+        return;
+    }
+
+    baseline = clamp_ec_value(s_virtual_state.water_ec_baseline);
+    gap = s_virtual_state.ec_value - baseline;
+    if (gap <= 0.0005f) {
+        return;
+    }
+
+    step = gap * DILUTE_EC_FRACTION_PER_TICK;
+    if (step < DILUTE_EC_MIN_STEP_PER_TICK) {
+        step = DILUTE_EC_MIN_STEP_PER_TICK;
+    }
+    if (step > gap) {
+        step = gap;
+    }
+    s_virtual_state.ec_value = clamp_ec_value(s_virtual_state.ec_value - step);
 }
 
 static float clamp_soil_moisture_param(float value) {
@@ -3817,6 +3896,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             s_virtual_state.ph_value + s_virtual_state.pending_ph_delta - delta
         );
         schedule_correction_response(false, -delta, phase_factor);
+        cJSON_AddStringToObject(details, "channel", job->channel);
+        cJSON_AddStringToObject(details, "component", "acid");
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", -delta);
         cJSON_AddNumberToObject(details, "ph_after", projected_peak);
@@ -3831,6 +3912,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             s_virtual_state.ph_value + s_virtual_state.pending_ph_delta + delta
         );
         schedule_correction_response(false, delta, phase_factor);
+        cJSON_AddStringToObject(details, "channel", job->channel);
+        cJSON_AddStringToObject(details, "component", "base");
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", delta);
         cJSON_AddNumberToObject(details, "ph_after", projected_peak);
@@ -3843,15 +3926,20 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         strcmp(job->channel, "pump_c") == 0 ||
         strcmp(job->channel, "pump_d") == 0
     ) {
+        float base_delta = resolve_ec_pump_base_delta(job->channel);
         float scale = resolve_correction_reaction_scale(job, EC_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(true);
-        float delta = EC_REACTION_BASE_DELTA * scale * phase_factor;
+        float delta = base_delta * scale * phase_factor;
         float projected_peak = clamp_float(
             s_virtual_state.ec_value + s_virtual_state.pending_ec_delta + delta,
             0.4f,
             3.2f
         );
+        /* Stack into pending_ec_delta so sequential doses keep wave/decay timing. */
         schedule_correction_response(true, delta, phase_factor);
+        cJSON_AddStringToObject(details, "channel", job->channel);
+        cJSON_AddStringToObject(details, "component", resolve_ec_pump_component(job->channel));
+        cJSON_AddNumberToObject(details, "base_delta_ec", base_delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ec", delta);
         cJSON_AddNumberToObject(details, "ec_after", projected_peak);
@@ -3946,6 +4034,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             if (job->ec_value_present) {
                 clear_correction_response_state();
                 s_virtual_state.ec_value = clamp_ec_value(job->ec_value);
+                /* Seed clean-water baseline for dilute asymptote (fill / overshoot recovery). */
+                s_virtual_state.water_ec_baseline = s_virtual_state.ec_value;
                 apply_forced_metric_drift_hold(true);
                 publish_ec = true;
             }
@@ -3995,6 +4085,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             if (job->ec_value_present) {
                 cJSON_AddNumberToObject(details, "ec_value", s_virtual_state.ec_value);
+                cJSON_AddNumberToObject(details, "water_ec_baseline", s_virtual_state.water_ec_baseline);
             }
             if (job->soil_moisture_present) {
                 cJSON_AddNumberToObject(details, "soil_moisture_pct", s_virtual_state.soil_moisture);
@@ -4806,6 +4897,7 @@ static void apply_passive_drift(void) {
 
     s_virtual_state.ph_value = clamp_ph_value(s_virtual_state.ph_value + ph_drift);
     s_virtual_state.ec_value = clamp_ec_value(s_virtual_state.ec_value + ec_drift);
+    apply_dilute_physics();
 
     if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {

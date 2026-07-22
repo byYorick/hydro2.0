@@ -46,11 +46,16 @@
 - `ae3lite/E110_ae3_node_runtime_event_contract.yaml` — node runtime events -> `zone_events` -> AE3 metrics/state timeline
 - `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
 - `ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml` — каноничный путь до `workflow_phase=ready`
-- `ae3lite/E107_ae3_irrigation_runtime_test_node.yaml` — smart-irrigation runtime path на реальной test-node
+- `ae3lite/E107_ae3_irrigation_runtime_test_node.yaml` — smart-irrigation runtime path (stop→ready, **pH-only** inline, no EC dose / no irrig_recirc)
 - `ae3lite/E108_ae3_soil_moisture_telemetry_contract.yaml` — soil-moisture ingest-contract для smart-irrigation
-- `ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml` — inline correction во время irrigation на реальной test-node
-- `ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml` — per-phase EC target
+- `ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml` — inline **pH-only** correction во время irrigation
+- `ae3lite/E112_ae3_per_phase_ec_target_realhw.yaml` — water-baseline + cumulative `T_*`
 - `ae3lite/E113_ae3_prepare_recirc_solution_low_to_setup_realhw.yaml` — solution_low → setup
+- `ae3lite/E118`–`E121` — sequential nutrient **contract stubs** (`status: stub`, `skip_live`; **не** в realhw suite):
+  - E118 — `WATER_BASELINE_CAPTURED` + Ca fill (`pump_b`)
+  - E119 — interleaved prepare pipeline + `PIPELINE_STEP_CHANGED`
+  - E120 — `RECIRC_DILUTE_*` + `recirc.ec_overshoot_dilute_*`
+  - E121 — irrigation pH-only, stop→ready, forbid irrig_recirc/recovery
 
 ## Sim / API suites (не realhw)
 

@@ -1,15 +1,16 @@
-# E109: AE3-Lite irrigation inline correction on hardware-backed test_node
+# E109: AE3-Lite irrigation inline pH correction on hardware-backed test_node
 name: E109_ae3_irrigation_inline_correction_test_node
 auth_role: admin
 description: |
-  Проверяет inline-коррекцию во время полива (без остановки основной помпы):
+  Проверяет inline pH-коррекцию во время полива (канон sequential nutrient):
   - подготавливает AE3 runtime в фазе ready на `test_node`;
-  - включает correction_during_irrigation=true;
-  - засеивает pH/EC вне окна;
+  - irrigation = только pH (needs_ec=false); EC doses запрещены;
+  - засеивает pH вне окна при EC уже на target;
   - стартует полив и проверяет, что:
     - pump_main включен;
-    - runtime видит одновременно EC и pH отклонения и выбирает первый EC-dose;
-    - EC dosing происходит при активной основной помпе.
+    - runtime выбирает pH dose (не EC);
+    - нет перехода в post-irrigation recovery chemistry;
+    - pH dosing происходит при активной основной помпе.
 
 actions:
   - step: set_test_context
@@ -983,7 +984,7 @@ actions:
     channel: storage_state
     params:
       ph_value: 7.2
-      ec_value: 0.45
+      ec_value: 2.33
       level_clean_min_override: false
       level_clean_max_override: true
       level_solution_min_override: true
@@ -1059,7 +1060,7 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
-  - step: wait_correction_decision_for_dual_gap
+  - step: wait_correction_decision_for_ph_only
     type: db.wait
     query: |
       SELECT
@@ -1075,10 +1076,9 @@ actions:
       WHERE zone_id = :zone_id
         AND type = 'CORRECTION_DECISION_MADE'
         AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
-        AND COALESCE(details, payload_json)->>'selected_action' = 'ec'
-        AND COALESCE(details, payload_json)->>'needs_ec' = 'true'
-        AND COALESCE(details, payload_json)->>'needs_ph_down' = 'true'
-        AND COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
+        AND COALESCE(details, payload_json)->>'selected_action' IN ('ph_down', 'ph_up', 'ph')
+        AND COALESCE(details, payload_json)->>'needs_ec' IN ('false', '0', 'f')
+        AND COALESCE(details, payload_json)->>'workflow_phase' = 'irrigating'
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -1088,19 +1088,20 @@ actions:
     expected_rows: 1
     save: correction_decision_row
 
-  - step: wait_ec_dose_command_during_irrigation
+  - step: wait_ph_dose_command_during_irrigation
     type: db.wait
     query: |
       SELECT
         id,
         created_at,
-        COALESCE(details, payload_json)->>'snapshot_event_id' AS snapshot_event_id
+        COALESCE(details, payload_json)->>'snapshot_event_id' AS snapshot_event_id,
+        COALESCE(details, payload_json)->>'channel' AS channel
       FROM zone_events
       WHERE zone_id = :zone_id
-        AND type = 'EC_DOSING'
+        AND type IN ('PH_CORRECTED', 'PH_DOSING', 'PH_UP_DOSING', 'PH_DOWN_DOSING')
         AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
-        AND COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
-        AND COALESCE(details, payload_json)->>'channel' = 'pump_a'
+        AND COALESCE(details, payload_json)->>'workflow_phase' = 'irrigating'
+        AND COALESCE(details, payload_json)->>'channel' IN ('pump_acid', 'pump_base')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -1108,9 +1109,24 @@ actions:
       task_id: ${task_id}
     timeout: 60.0
     expected_rows: 1
-    save: ec_dose_event_row
+    save: ph_dose_event_row
 
-  - step: wait_main_pump_snapshot_before_ec_dose
+  - step: wait_no_ec_dose_during_irrigation
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS ec_dose_cnt
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'EC_DOSING'
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'workflow_phase' = 'irrigating'
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    expected_rows: 1
+    save: irrig_ec_dose_count_row
+
+  - step: wait_main_pump_snapshot_before_ph_dose
     type: db.wait
     query: |
       -- Timed run_pump does not keep snapshot.pump_main=true; prove irrigation
@@ -1147,24 +1163,25 @@ actions:
     params:
       zone_id: ${zone_id}
       task_id: ${task_id}
-      snapshot_event_id: ${ec_dose_event_row.0.snapshot_event_id}
+      snapshot_event_id: ${ph_dose_event_row.0.snapshot_event_id}
     timeout: 60.0
     expected_rows: 1
     save: pump_main_snapshot_row
 
 assertions:
-  - name: inline_correction_decision_keeps_dual_gap_and_ec_first
+  - name: inline_correction_decision_is_ph_only
     type: custom_assert
-    # Use the first dual-gap decision captured during the run (not the latest
-    # post-EC observe decision which may already be ph_down).
     condition: >
       len(context.get('correction_decision_row', [])) == 1
-      and str(context.get('correction_decision_row', [{}])[0].get('selected_action', '')).lower() == 'ec'
-      and str(context.get('correction_decision_row', [{}])[0].get('needs_ec', '')).lower() in ('true', '1', 't')
-      and str(context.get('correction_decision_row', [{}])[0].get('needs_ph_down', '')).lower() in ('true', '1', 't')
-      and str(context.get('correction_decision_row', [{}])[0].get('decision_reason', '')).lower() == 'ec_first_in_window'
+      and str(context.get('correction_decision_row', [{}])[0].get('selected_action', '')).lower() in ('ph_down', 'ph_up', 'ph')
+      and str(context.get('correction_decision_row', [{}])[0].get('needs_ec', '')).lower() in ('false', '0', 'f')
+      and str(context.get('correction_decision_row', [{}])[0].get('workflow_phase', '')).lower() == 'irrigating'
 
-  - name: inline_correction_keeps_main_pump_active_at_ec_dose
+  - name: inline_correction_has_no_ec_dose
+    type: custom_assert
+    condition: "int(context.get('irrig_ec_dose_count_row', [{}])[0].get('ec_dose_cnt', 1)) == 0"
+
+  - name: inline_correction_keeps_main_pump_active_at_ph_dose
     type: custom_assert
     condition: "len(context.get('pump_main_snapshot_row', [])) == 1"
 

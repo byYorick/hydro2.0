@@ -1406,6 +1406,11 @@ actions:
               dose_ph_down_channel: pump_acid
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
+            recirc:
+              ec_overshoot_dilute_pct: 15
+              dilute_pulse_sec: 10
+              dilute_max_attempts: 3
+              dilute_settle_sec: 30
             timing:
               sensor_mode_stabilization_time_sec: 20
               stabilization_sec: 10

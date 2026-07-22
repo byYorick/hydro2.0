@@ -349,7 +349,10 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import { processCalibrationNamespace } from '@/composables/processCalibrationAuthority'
+import {
+  normalizeEcComponentGains,
+  processCalibrationNamespace,
+} from '@/composables/processCalibrationAuthority'
 import type { AutomationDocument } from '@/composables/useAutomationConfig'
 import { automationConfigsApi } from '@/services/api/automationConfigs'
 import {
@@ -417,6 +420,10 @@ const CORRECTION_SECTION_TEXTS: Record<string, LocalizedCorrectionText> = {
     label: 'Допуски цели',
     description: 'Ширина допустимого окна вокруг целевых pH/EC, по которому runtime решает, что раствор уже достаточно близок к цели.',
   },
+  recirc: {
+    label: 'Рециркуляция / dilute',
+    description: 'Порог EC overshoot и параметры добора чистой воды при перелёте в prepare recirculation pipeline.',
+  },
   'controllers.ph': {
     label: 'PID-контур pH',
     description: 'Лимиты доз, observe и max_integral для pH. Kp/Ki/Kd и dead_zone — только в PidConfigForm (zone.pid.ph).',
@@ -439,7 +446,6 @@ const LIVE_EDITABLE_CORRECTION_FIELDS = new Set<string>([
   'retry.prepare_recirculation_timeout_sec',
   'retry.prepare_recirculation_correction_slack_sec',
   'retry.solution_fill_correction_slack_sec',
-  'retry.irrigation_recovery_correction_slack_sec',
   'retry.telemetry_stale_retry_sec',
   'retry.decision_window_retry_sec',
   'retry.low_water_retry_sec',
@@ -449,6 +455,10 @@ const LIVE_EDITABLE_CORRECTION_FIELDS = new Set<string>([
   'safety.block_on_active_no_effect_alert',
   'tolerance.prepare_tolerance.ph_pct',
   'tolerance.prepare_tolerance.ec_pct',
+  'recirc.ec_overshoot_dilute_pct',
+  'recirc.dilute_pulse_sec',
+  'recirc.dilute_max_attempts',
+  'recirc.dilute_settle_sec',
   // kp/ki/kd/deadband — канон zone.pid (PidConfigForm), не LiveEdit
   'controllers.ph.max_dose_ml',
   'controllers.ph.min_interval_sec',
@@ -520,11 +530,7 @@ const CORRECTION_FIELD_TEXTS: Record<string, LocalizedCorrectionText> = {
   },
   'retry.solution_fill_correction_slack_sec': {
     label: 'Запас времени solution fill',
-    description: 'Дополнительные секунды к дедлайну solution_fill_check для inline pH/EC-коррекции.',
-  },
-  'retry.irrigation_recovery_correction_slack_sec': {
-    label: 'Запас времени irrigation recovery',
-    description: 'Дополнительные секунды к дедлайну irrigation_recovery_check для inline pH/EC-коррекции после полива.',
+    description: 'Дополнительные секунды к дедлайну solution_fill_check для inline Ca/EC-коррекции на наборе.',
   },
   'retry.telemetry_stale_retry_sec': {
     label: 'Повтор после stale telemetry',
@@ -565,6 +571,22 @@ const CORRECTION_FIELD_TEXTS: Record<string, LocalizedCorrectionText> = {
   'tolerance.prepare_tolerance.ec_pct': {
     label: 'Допуск EC',
     description: 'Процентное окно вокруг target EC, в пределах которого correction может считаться успешной без дополнительных доз.',
+  },
+  'recirc.ec_overshoot_dilute_pct': {
+    label: 'Порог EC overshoot для dilute, %',
+    description: 'Если EC выше активного cumulative target (T_step) на этот процент, runtime делает импульс добора чистой воды через valve_clean_supply.',
+  },
+  'recirc.dilute_pulse_sec': {
+    label: 'Длительность dilute-импульса, сек',
+    description: 'Сколько секунд открыт valve_clean_supply при одном dilute-шаге.',
+  },
+  'recirc.dilute_max_attempts': {
+    label: 'Макс. dilute-попыток',
+    description: 'Сколько dilute-импульсов допускается в одном окне prepare recirculation.',
+  },
+  'recirc.dilute_settle_sec': {
+    label: 'Settle после dilute, сек',
+    description: 'Пауза после dilute-импульса перед следующим observe и продолжением pipeline.',
   },
   ...buildControllerFieldTexts('ph'),
   ...buildControllerFieldTexts('ec'),
@@ -632,6 +654,42 @@ const CALIBRATION_FIELDS: CalibrationFieldDescriptor[] = [
     step: 0.001,
     min: -2,
     max: 2,
+  },
+  {
+    path: 'ec_component_gains.calcium.ec_gain_per_ml',
+    label: 'EC gain calcium',
+    description: 'Per-component EC gain для calcium. Пустое/отсутствующее значение → общий ec_gain_per_ml.',
+    type: 'number',
+    step: 0.001,
+    min: 0,
+    max: 10,
+  },
+  {
+    path: 'ec_component_gains.magnesium.ec_gain_per_ml',
+    label: 'EC gain magnesium',
+    description: 'Per-component EC gain для magnesium. Пустое/отсутствующее значение → общий ec_gain_per_ml.',
+    type: 'number',
+    step: 0.001,
+    min: 0,
+    max: 10,
+  },
+  {
+    path: 'ec_component_gains.npk.ec_gain_per_ml',
+    label: 'EC gain NPK',
+    description: 'Per-component EC gain для NPK. Пустое/отсутствующее значение → общий ec_gain_per_ml.',
+    type: 'number',
+    step: 0.001,
+    min: 0,
+    max: 10,
+  },
+  {
+    path: 'ec_component_gains.micro.ec_gain_per_ml',
+    label: 'EC gain micro',
+    description: 'Per-component EC gain для micro. Пустое/отсутствующее значение → общий ec_gain_per_ml.',
+    type: 'number',
+    step: 0.001,
+    min: 0,
+    max: 10,
   },
   {
     path: 'confidence',
@@ -888,11 +946,17 @@ function snapshotFromCalibrationDocument(
   document: AutomationDocument<Record<string, unknown>>,
 ): Record<string, unknown> {
   const payload = asRecord(document.payload)
+  const normalized: Record<string, unknown> = { ...payload }
+  const gains = normalizeEcComponentGains(payload.ec_component_gains)
+  if (gains) {
+    normalized.ec_component_gains = gains
+  }
 
-  return CALIBRATION_FIELDS.reduce<Record<string, unknown>>((acc, field) => {
-    acc[field.path] = payload[field.path] ?? null
-    return acc
-  }, {})
+  const snapshot: Record<string, unknown> = {}
+  for (const field of CALIBRATION_FIELDS) {
+    setByPath(snapshot, field.path, getByPath(normalized, field.path) ?? null)
+  }
+  return snapshot
 }
 
 function correctionTargetLabel(target: CorrectionTarget): string {

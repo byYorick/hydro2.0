@@ -1102,76 +1102,16 @@ async def test_router_solution_fill_check_deadline_falls_back_when_slack_missing
     assert wf.stage_deadline_at == NOW + timedelta(seconds=600 + 900)
 
 
-async def test_router_transition_to_irrigation_recovery_check_uses_recovery_timeout():
-    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
-    task = _make_task(
-        stage="irrigation_recovery_start",
-        phase="irrig_recirc",
-        task_type="irrigation_start",
-    )
-    router, tr, _ = _make_router(return_task=task)
-    router._handlers["command"] = _StubHandler(outcome)
+async def test_router_irrigation_recovery_stages_removed_from_topology():
+    """Post-irrigation chemistry recovery stages are gone from TWO_TANK."""
+    from ae3lite.application.services.workflow_topology import TopologyRegistry
 
-    await router.run(
-        task=task,
-        plan=_MockPlan(runtime={
-            "prepare_recirculation_timeout_sec": 600,
-            "irrigation_recovery": {"timeout_sec": 90},
-            "irrigation_recovery_correction_slack_sec": 0,
-        }),
-        now=NOW,
-    )
-
-    wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.current_stage == "irrigation_recovery_check"
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=90)
-
-
-async def test_router_irrigation_recovery_check_deadline_includes_correction_slack():
-    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
-    task = _make_task(
-        stage="irrigation_recovery_start",
-        phase="irrig_recirc",
-        task_type="irrigation_start",
-    )
-    router, tr, _ = _make_router(return_task=task)
-    router._handlers["command"] = _StubHandler(outcome)
-
-    await router.run(
-        task=task,
-        plan=_MockPlan(
-            runtime={
-                "irrigation_recovery": {"timeout_sec": 30},
-                "irrigation_recovery_correction_slack_sec": 900,
-            }
-        ),
-        now=NOW,
-    )
-
-    wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.current_stage == "irrigation_recovery_check"
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=30 + 900)
-
-
-async def test_router_irrigation_recovery_check_deadline_falls_back_when_slack_missing():
-    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
-    task = _make_task(
-        stage="irrigation_recovery_start",
-        phase="irrig_recirc",
-        task_type="irrigation_start",
-    )
-    router, tr, _ = _make_router(return_task=task)
-    router._handlers["command"] = _StubHandler(outcome)
-
-    await router.run(
-        task=task,
-        plan=_MockPlan(runtime={"irrigation_recovery": {"timeout_sec": 30}}),
-        now=NOW,
-    )
-
-    wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.current_stage == "irrigation_recovery_check"
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=30 + 900)
+    registry = TopologyRegistry()
+    stages = registry.stages("two_tank")
+    assert "irrigation_recovery_check" not in stages
+    assert "irrigation_recovery_start" not in stages
+    assert "irrigation_stop_to_recovery" not in stages
+    assert "irrigation_stop_to_ready" in stages
 
 
 async def test_router_transition_upsert_payload_uses_next_stage_not_old():

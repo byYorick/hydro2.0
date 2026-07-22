@@ -174,15 +174,16 @@ sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются чер
 - `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-сценарий: retry-limit → resolve → второй прогон до `ready`.
 - `E104_ae3_two_tank_realhw_hot_reload_correction_config` — strict hot-reload test активного correction loop.
 - `E105_ae3_two_tank_fail_closed_missing_command_plan_realhw` — fail-closed planner до MQTT.
-- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict sequential `EC → observe → PH` в `prepare_recirculation_check`.
-- `E112_ae3_per_phase_ec_target_realhw` — per-phase EC target (`npk_share`).
+- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — sequential nutrient pipeline (`pump_b` Ca → observe → pH) в `prepare_recirculation_check`.
+- `E112_ae3_per_phase_ec_target_realhw` — water-baseline + cumulative `T_*` (full recipe EC).
 - `E113_ae3_prepare_recirc_solution_low_to_setup_realhw` — `solution_min` depleted → `startup` без terminal fail.
 - `E114_ae3_reactive_solution_topup_level_switch_realhw` — реактивный `solution_topup` по edge `level_solution_max`.
 - `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 `solution_change`.
 - `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
-- `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path.
+- `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path (stop → ready, **pH-only** inline, без EC dose / irrig_recirc / recovery chemistry).
 - `E108_ae3_soil_moisture_telemetry_contract` — soil-moisture ingest contract.
-- `E109_ae3_irrigation_inline_correction_test_node` — inline correction во время полива.
+- `E109_ae3_irrigation_inline_correction_test_node` — inline **pH-only** correction во время полива.
+- `E118`–`E121` — **contract stubs only** (`status: stub`, не в realhw suite): water baseline / prepare pipeline / dilute / irrigation pH-only. Live fragments: E104/E106/E107/E109.
 - `calibration/E110` — create/cancel session.
 - `calibration/E111` — `force_invalid` → `INVALID` (negative).
 - `calibration/E117` — happy-path point1→point2→`completed`.

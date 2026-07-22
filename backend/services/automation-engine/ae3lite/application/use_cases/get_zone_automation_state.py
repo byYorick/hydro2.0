@@ -30,6 +30,7 @@ _WORKFLOW_PHASE_TO_STATE: dict[str, str] = {
     "tank_recirc": "TANK_RECIRC",
     "ready": "READY",
     "irrigating": "IRRIGATING",
+    # Legacy DB rows only — post-irrigation chemistry phase removed from topology.
     "irrig_recirc": "IRRIG_RECIRC",
     "error": "IDLE",
 }
@@ -39,7 +40,7 @@ _STATE_LABELS: dict[str, str] = {
     "TANK_RECIRC": "Рециркуляция раствора",
     "READY": "Раствор готов",
     "IRRIGATING": "Полив",
-    "IRRIG_RECIRC": "Рециркуляция после полива",
+    "IRRIG_RECIRC": "Рециркуляция после полива (deprecated)",
     "IDLE": "Ожидание",
 }
 
@@ -62,8 +63,9 @@ _STAGE_LABELS: dict[str, str] = {
     "decision_gate": "Принятие решения о поливе",
     "irrigation_start": "Запуск полива",
     "irrigation_check": "Полив",
-    "irrigation_recovery_start": "Запуск рециркуляции после полива",
-    "irrigation_recovery_check": "Рециркуляция после полива",
+    # Deprecated recovery stages (removed from topology; kept for historical timeline labels).
+    "irrigation_recovery_start": "Запуск рециркуляции после полива (deprecated)",
+    "irrigation_recovery_check": "Рециркуляция после полива (deprecated)",
     "completed_run": "Полив завершён",
     "completed_skip": "Полив пропущен",
     "apply": "Свет (scheduler tick)",
@@ -94,11 +96,8 @@ _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("decision_gate", "completed_skip"): ("IRRIGATION_SKIPPED", "Полив пропущен по decision-controller"),
     ("decision_gate", "irrigation_start"): ("IRRIGATION_APPROVED", "Полив разрешён"),
     ("irrigation_start", "irrigation_check"): ("IRRIGATION_STARTED", "Полив"),
-    ("irrigation_check", "irrigation_stop_to_recovery"): ("IRRIGATION_STOPPED", "Полив остановлен, запуск recovery"),
     ("irrigation_check", "irrigation_stop_to_ready"): ("IRRIGATION_STOPPED", "Полив завершён"),
     ("irrigation_check", "irrigation_stop_to_setup"): ("IRRIGATION_LOW_SOLUTION", "Остановка полива из-за низкого уровня раствора"),
-    ("irrigation_recovery_start", "irrigation_recovery_check"): ("IRRIGATION_RECOVERY_STARTED", "Запуск recovery после полива"),
-    ("irrigation_recovery_check", "irrigation_recovery_stop_to_ready"): ("IRRIGATION_RECOVERY_COMPLETED", "Recovery после полива завершён"),
 }
 
 _EC_CORRECTION_STEPS = frozenset({"corr_dose_ec", "corr_wait_ec"})
@@ -156,8 +155,6 @@ _CYCLE_START_STAGE_ORDER: tuple[str, ...] = (
     "decision_gate",
     "irrigation_start",
     "irrigation_check",
-    "irrigation_recovery_start",
-    "irrigation_recovery_check",
     "completed_run",
 )
 
@@ -166,6 +163,7 @@ _WORKFLOW_PHASE_PROGRESS: dict[str, int] = {
     "tank_recirc": 45,
     "ready": 65,
     "irrigating": 85,
+    # Legacy DB rows only — not a live topology phase.
     "irrig_recirc": 95,
 }
 
@@ -1150,6 +1148,7 @@ class GetZoneAutomationStateUseCase:
         current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
         if self._workflow_failure_rollback_applied(workflow_state):
             return True
+        # irrig_recirc: legacy compat only for old zone_workflow_state rows.
         return workflow_phase in {"tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"} or current_stage == "startup"
 
     def _workflow_failure_rollback_applied(self, workflow_state: Optional[Any]) -> bool:

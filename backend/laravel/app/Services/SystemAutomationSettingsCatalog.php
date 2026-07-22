@@ -112,7 +112,7 @@ class SystemAutomationSettingsCatalog
                     ['path' => 'water_ph_pct', 'label' => 'pH pct', 'description' => 'Процент допуска по pH.', 'type' => 'number', 'min' => 1.0, 'max' => 50.0, 'step' => 0.1],
                     ['path' => 'water_ec_pct', 'label' => 'EC pct', 'description' => 'Процент допуска по EC.', 'type' => 'number', 'min' => 1.0, 'max' => 50.0, 'step' => 0.1],
                     ['path' => 'water_valve_switching_enabled', 'label' => 'Valve switching', 'description' => 'Разрешать переключение клапанов.', 'type' => 'boolean'],
-                    ['path' => 'water_correction_during_irrigation', 'label' => 'Correction during irrigation', 'description' => 'Разрешать коррекцию во время полива.', 'type' => 'boolean'],
+                    ['path' => 'water_correction_during_irrigation', 'label' => 'pH correction during irrigation', 'description' => 'Разрешать только pH-коррекцию во время полива (EC на поливе запрещён).', 'type' => 'boolean'],
                     ['path' => 'water_drain_control_enabled', 'label' => 'Drain control enabled', 'description' => 'Включать drain control по умолчанию.', 'type' => 'boolean'],
                     ['path' => 'water_drain_target_pct', 'label' => 'Drain target pct', 'description' => 'Целевой дренаж.', 'type' => 'integer', 'min' => 0, 'max' => 100],
                     ['path' => 'water_diagnostics_enabled', 'label' => 'Diagnostics enabled', 'description' => 'Включать diagnostics subsystem.', 'type' => 'boolean'],
@@ -135,13 +135,6 @@ class SystemAutomationSettingsCatalog
                     ['path' => 'water_solution_fill_solution_min_check_delay_ms', 'label' => 'Solution fill solution min check delay', 'description' => 'Задержка перед leak-check по solution_min во время solution_fill.', 'type' => 'integer', 'min' => 0, 'max' => 3600000],
                     ['path' => 'water_recirculation_stop_on_solution_min', 'label' => 'Recirculation stop on solution min', 'description' => 'Останавливать prepare recirculation при нижнем уровне раствора.', 'type' => 'boolean'],
                     ['path' => 'water_estop_debounce_ms', 'label' => 'E-stop debounce', 'description' => 'Debounce физической кнопки аварийной остановки.', 'type' => 'integer', 'min' => 20, 'max' => 5000],
-                    ['path' => 'water_irrigation_recovery_max_continue_attempts', 'label' => 'Irrigation recovery max continue', 'description' => 'Максимум попыток продолжить цикл после recovery.', 'type' => 'integer', 'min' => 1, 'max' => 30],
-                    ['path' => 'water_irrigation_recovery_timeout_sec', 'label' => 'Irrigation recovery timeout', 'description' => 'Таймаут recovery.', 'type' => 'integer', 'min' => 30, 'max' => 86400],
-                    ['path' => 'water_irrigation_recovery_enabled', 'label' => 'Irrigation recovery enabled', 'description' => 'Включает post-irrigation recovery, если цели pH/EC не достигнуты к концу полива.', 'type' => 'boolean'],
-                    ['path' => 'water_irrigation_recovery_target_tolerance_ec_pct', 'label' => 'Recovery target tol EC', 'description' => 'Target tolerance EC для recovery.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_irrigation_recovery_target_tolerance_ph_pct', 'label' => 'Recovery target tol pH', 'description' => 'Target tolerance pH для recovery.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_irrigation_recovery_degraded_tolerance_ec_pct', 'label' => 'Recovery degraded tol EC', 'description' => 'Degraded tolerance EC для recovery.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'water_irrigation_recovery_degraded_tolerance_ph_pct', 'label' => 'Recovery degraded tol pH', 'description' => 'Degraded tolerance pH для recovery.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
                     ['path' => 'water_irrigation_decision_strategy', 'label' => 'Irrigation decision strategy', 'description' => 'Стратегия decision-controller: task или smart_soil_v1.', 'type' => 'string'],
                     ['path' => 'water_irrigation_decision_lookback_sec', 'label' => 'Irrigation lookback sec', 'description' => 'Окно анализа soil telemetry.', 'type' => 'integer', 'min' => 60, 'max' => 86400],
                     ['path' => 'water_irrigation_decision_min_samples', 'label' => 'Irrigation min samples', 'description' => 'Минимум soil samples для smart decision.', 'type' => 'integer', 'min' => 1, 'max' => 100],
@@ -311,13 +304,6 @@ class SystemAutomationSettingsCatalog
                 'water_solution_fill_solution_min_check_delay_ms' => 60000,
                 'water_recirculation_stop_on_solution_min' => true,
                 'water_estop_debounce_ms' => 80,
-                'water_irrigation_recovery_max_continue_attempts' => 5,
-                'water_irrigation_recovery_timeout_sec' => 600,
-                'water_irrigation_recovery_enabled' => true,
-                'water_irrigation_recovery_target_tolerance_ec_pct' => 8.0,
-                'water_irrigation_recovery_target_tolerance_ph_pct' => 4.0,
-                'water_irrigation_recovery_degraded_tolerance_ec_pct' => 16.0,
-                'water_irrigation_recovery_degraded_tolerance_ph_pct' => 8.0,
                 'water_irrigation_decision_strategy' => 'task',
                 'water_irrigation_decision_lookback_sec' => 1800,
                 'water_irrigation_decision_min_samples' => 3,
@@ -592,10 +578,6 @@ class SystemAutomationSettingsCatalog
             $tanksCount = (int) ($effectiveConfig['water_tanks_count'] ?? 0);
             $systemType = (string) ($effectiveConfig['water_system_type'] ?? '');
             $workflow = (string) ($effectiveConfig['water_diagnostics_workflow'] ?? '');
-            $targetEcTolerance = (float) ($effectiveConfig['water_irrigation_recovery_target_tolerance_ec_pct'] ?? 0);
-            $targetPhTolerance = (float) ($effectiveConfig['water_irrigation_recovery_target_tolerance_ph_pct'] ?? 0);
-            $degradedEcTolerance = (float) ($effectiveConfig['water_irrigation_recovery_degraded_tolerance_ec_pct'] ?? 0);
-            $degradedPhTolerance = (float) ($effectiveConfig['water_irrigation_recovery_degraded_tolerance_ph_pct'] ?? 0);
 
             if ($ventMin > $ventMax) {
                 throw new InvalidArgumentException('Field automation_defaults.climate_vent_min_pct must be <= automation_defaults.climate_vent_max_pct.');
@@ -611,12 +593,6 @@ class SystemAutomationSettingsCatalog
             }
             if (! in_array($workflow, ['startup', 'cycle_start', 'diagnostics'], true)) {
                 throw new InvalidArgumentException('Field automation_defaults.water_diagnostics_workflow must be one of: startup, cycle_start, diagnostics.');
-            }
-            if ($targetEcTolerance > $degradedEcTolerance) {
-                throw new InvalidArgumentException('Field automation_defaults.water_irrigation_recovery_target_tolerance_ec_pct must be <= automation_defaults.water_irrigation_recovery_degraded_tolerance_ec_pct.');
-            }
-            if ($targetPhTolerance > $degradedPhTolerance) {
-                throw new InvalidArgumentException('Field automation_defaults.water_irrigation_recovery_target_tolerance_ph_pct must be <= automation_defaults.water_irrigation_recovery_degraded_tolerance_ph_pct.');
             }
 
             return;

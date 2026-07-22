@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import math
 from typing import Any, Mapping, Optional
 
-from ae3lite.domain.errors import PlannerConfigurationError
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.domain.services.phase_utils import normalize_phase_key
 
 _logger = logging.getLogger(__name__)
@@ -159,8 +159,15 @@ class CorrectionPlanner:
         ec_actuators: Optional[Mapping[str, Any]] = None,
         ph_up_actuator: Optional[Mapping[str, Any]] = None,
         ph_down_actuator: Optional[Mapping[str, Any]] = None,
+        active_component: str | None = None,
+        allow_ec: bool = True,
+        allow_ph: bool = True,
+        freeze_ec_pid: bool = False,
     ) -> DosePlan:
         phase_key = normalize_phase_key(workflow_phase)
+        # Irrigation: chemistry owner is pH only (no EC nutrient correction).
+        if phase_key == "irrigation":
+            allow_ec = False
         process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
         process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
         pid_state = pid_state if isinstance(pid_state, Mapping) else {}
@@ -188,6 +195,7 @@ class CorrectionPlanner:
             ec_hi=ec_hi,
             pid_state=pid_state,
             now=now,
+            skip_ec=freeze_ec_pid or not allow_ec,
         )
 
         predicted_ph = _apply_feedforward_bias(
@@ -256,6 +264,20 @@ class CorrectionPlanner:
         ec_needs = ec_gap > ec_deadband
         ph_needs_up = ph_up_gap > ph_deadband
         ph_needs_down = ph_down_gap > ph_deadband
+        if not allow_ec:
+            ec_needs = False
+        if not allow_ph:
+            ph_needs_up = False
+            ph_needs_down = False
+        # Sequential pipeline: force single-component EC (ignore multi batch mode).
+        forced_component = str(active_component or "").strip().lower()
+        if forced_component and allow_ec:
+            # Override dosing mode for this tick — single component to T_step.
+            correction_config = {
+                **dict(correction_config),
+                "ec_dosing_mode": "single",
+                "ec_forced_component": forced_component,
+            }
 
         ec_retry_after = None
         ph_retry_after = None
@@ -518,13 +540,26 @@ class CorrectionPlanner:
                         f"(отброшено={discarded_components})"
                     )
                 if not ec_dose_sequence and not multi_fail_closed:
-                    resolved_component, resolved_ec = _resolve_ec_actuator(
-                        ec_actuator=ec_actuator,
-                        ec_actuators=ec_actuators,
-                        ec_component_policy=ec_component_policy,
-                        phase_key=phase_key,
-                        default_channel=str(correction_config.get("dose_ec_channel") or "").strip().lower(),
-                    )
+                    forced = str(correction_config.get("ec_forced_component") or "").strip().lower()
+                    if forced and isinstance(ec_actuators, Mapping):
+                        resolved_ec = _find_ec_component_actuator(
+                            ec_actuators=ec_actuators,
+                            component=forced,
+                        )
+                        if resolved_ec is None:
+                            raise PlannerConfigurationError(
+                                f"Не найден actuator для EC component={forced}",
+                                code=ErrorCodes.AE3_EC_ACTUATOR_COMPONENT_UNRESOLVED,
+                            )
+                        resolved_component = forced
+                    else:
+                        resolved_component, resolved_ec = _resolve_ec_actuator(
+                            ec_actuator=ec_actuator,
+                            ec_actuators=ec_actuators,
+                            ec_component_policy=ec_component_policy,
+                            phase_key=phase_key,
+                            default_channel=str(correction_config.get("dose_ec_channel") or "").strip().lower(),
+                        )
                     ec_component_name = resolved_component
                     ec_node_uid = str(resolved_ec["node_uid"])
                     ec_channel = str(resolved_ec["channel"])
@@ -907,22 +942,46 @@ def _find_ec_component_actuator(
     ec_actuators: Mapping[str, Any],
     component: str,
 ) -> Mapping[str, Any] | None:
-    """Пытается найти actuator EC-компонента по нормализованному имени."""
+    """Пытается найти actuator EC-компонента по нормализованному имени.
+
+    Resolve order: direct component key → ec_* → pump channel map (pump_b↔calcium)
+    → scan calibration.component / channel / role aliases.
+    """
+    from ae3lite.domain.services.nutrient_pipeline import CHANNEL_TO_COMPONENT, COMPONENT_TO_CHANNEL
+
     want = str(component).strip().lower()
     if not want:
         return None
+    want = _normalize_ec_component_alias(want) or want
+
     direct = ec_actuators.get(want)
     if isinstance(direct, Mapping):
         return direct
     alt = ec_actuators.get(f"ec_{want}")
     if isinstance(alt, Mapping):
         return alt
+    channel = COMPONENT_TO_CHANNEL.get(want)
+    if channel:
+        by_channel = ec_actuators.get(channel)
+        if isinstance(by_channel, Mapping):
+            return by_channel
+
     for name, actuator in ec_actuators.items():
         if not isinstance(actuator, Mapping):
             continue
-        key = str(name).strip().lower()
-        key = key[3:] if key.startswith("ec_") else key
+        key = _normalize_ec_component_alias(name) or str(name).strip().lower()
         if key == want:
+            return actuator
+        calibration = actuator.get("calibration")
+        if isinstance(calibration, Mapping):
+            cal_comp = _normalize_ec_component_alias(calibration.get("component"))
+            if cal_comp == want:
+                return actuator
+        # channel/role identity on the actuator payload itself
+        act_channel = str(actuator.get("channel") or "").strip().lower()
+        if CHANNEL_TO_COMPONENT.get(act_channel) == want:
+            return actuator
+        if act_channel == want or act_channel == channel:
             return actuator
     return None
 
@@ -934,10 +993,19 @@ def _ec_component_process_gain(
     pid_entry: Mapping[str, Any],
     phase_key: str,
 ) -> float | None:
-    """Разрешает EC-gain для конкретного компонента с fallback на общий `ec_gain_per_ml`."""
+    """Разрешает EC-gain для конкретного компонента с fallback на общий `ec_gain_per_ml`.
+
+    Совместимость payload:
+    - nested ``{calcium: {ec_gain_per_ml: N}}``
+    - flat ``{calcium: N}`` (legacy UI)
+    """
     gains = process_cfg.get("ec_component_gains")
     gains = gains if isinstance(gains, Mapping) else {}
-    entry = gains.get(component) if isinstance(gains.get(component), Mapping) else None
+    entry = gains.get(component)
+    if isinstance(entry, (int, float)) and not isinstance(entry, bool):
+        value = float(entry)
+        if value > 0:
+            return value
     if isinstance(entry, Mapping):
         raw = entry.get("ec_gain_per_ml")
         try:
@@ -1307,6 +1375,7 @@ def _reset_pid_state_if_inside_bounds(
     ec_hi: float,
     pid_state: Mapping[str, Any],
     now: datetime,
+    skip_ec: bool = False,
 ) -> dict[str, Any]:
     updates: dict[str, Any] = {}
     if ph_lo <= current_ph <= ph_hi and "ph" in pid_state:
@@ -1320,7 +1389,7 @@ def _reset_pid_state_if_inside_bounds(
             "last_measurement_at": now,
             "current_zone": "dead",
         }
-    if ec_lo <= current_ec <= ec_hi and "ec" in pid_state:
+    if (not skip_ec) and ec_lo <= current_ec <= ec_hi and "ec" in pid_state:
         updates["ec"] = {
             "integral": 0.0,
             "prev_error": 0.0,

@@ -310,6 +310,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Тип: `ACTUATOR`.
 
+**Канон sequential nutrient (AE3, 2026-07-22):** binding role/channel map
+`pump_a=npk`, `pump_b=calcium`, `pump_c=magnesium`, `pump_d=micro`.
+`solution_fill` дозирует только `pump_b` (calcium); recirc pipeline шагает
+по всем четырём + pH pumps (`pump_acid` / `pump_base`).
+
 Каноническая orchestration-команда для correction dosing:
 
 ```json
@@ -349,8 +354,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 ### 3.3. Другие актуаторы
 
 - `valve_irrigation` — клапан полива;
-- `valve_clean_fill` — клапан набора чистой воды;
-- `valve_clean_supply` — клапан забора чистой воды из бака;
+- `valve_clean_fill` — клапан набора чистой воды (в clean tank);
+- `valve_clean_supply` — клапан забора чистой воды из clean tank в solution path;
 - `valve_solution_fill` — клапан набора в бак раствора;
 - `valve_solution_supply` — клапан забора из бака раствора;
 - `pump_main` — главный насос контура подготовки/полива;
@@ -361,6 +366,26 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `roof_vent_left` / `roof_vent_right` — крышные форточки (greenhouse climate); команда `set_position`, параметр `position_pct` 0..100, опционально `max_step_pct`.
 
 Тип: `ACTUATOR`.
+
+#### Dilute-on-overshoot path (recirc, AE3)
+
+При EC overshoot в `prepare_recirculation` AE3 открывает импульс чистой воды
+через **`valve_clean_supply`** (command plans `recirc_dilute_start` /
+`recirc_dilute_stop`). Это **не** `valve_clean_fill` (набор в clean tank) и
+не полный `solution_fill` path.
+
+Ограничения:
+- не переливать `level_solution_max` — при max уже ON dilute fail-closed /
+  `recirc_dilute_blocked_solution_max`;
+- длительность / attempts / settle — `zone.correction.recirc.dilute_*`
+  (см. `CORRECTION_CYCLE_SPEC.md` §3.7.4, `AUTOMATION_CONFIG_AUTHORITY.md`);
+- канал dilute = **`valve_clean_supply`** (plans `recirc_dilute_start` /
+  `recirc_dilute_stop`) — **done** в AE3 (`corr_dilute_pulse` /
+  `corr_dilute_settle`). Dilute — sub-step внутри `prepare_recirculation`;
+  `flow_path_guard` не заводит отдельный stage: prepare expected-state не
+  требует `valve_clean_supply` OFF, а interrupt fail-safe
+  (`correction_interrupt_safety.FAIL_SAFE_SHUTDOWN_CHANNELS`) закрывает
+  `valve_clean_supply` вместе с остальным flow-path.
 
 Пример команды включения/выключения:
 

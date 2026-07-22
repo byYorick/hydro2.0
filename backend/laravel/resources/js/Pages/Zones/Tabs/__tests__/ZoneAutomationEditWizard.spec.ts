@@ -94,8 +94,6 @@ function createProps(overrides: Record<string, unknown> = {}) {
       startupSolutionFillTimeoutSeconds: 1350,
       startupPrepareRecirculationTimeoutSeconds: 900,
       startupCleanFillRetryCycles: 1,
-      irrigationRecoveryMaxContinueAttempts: 5,
-      irrigationRecoveryTimeoutSeconds: 600,
       correctionMaxEcCorrectionAttempts: 5,
       correctionMaxPhCorrectionAttempts: 5,
       correctionPrepareRecirculationMaxAttempts: 3,

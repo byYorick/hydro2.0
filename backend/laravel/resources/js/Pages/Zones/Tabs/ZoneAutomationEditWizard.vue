@@ -214,18 +214,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
     form.irrigationDecisionSpreadAlertThresholdPct =
       automationDefaults.value.water_irrigation_decision_spread_alert_threshold_pct
   }
-  if (
-    form.irrigationRecoveryMaxContinueAttempts === undefined ||
-    !Number.isFinite(Number(form.irrigationRecoveryMaxContinueAttempts))
-  ) {
-    form.irrigationRecoveryMaxContinueAttempts = automationDefaults.value.water_irrigation_recovery_max_continue_attempts
-  }
-  if (form.irrigationRecoveryTimeoutSeconds === undefined || !Number.isFinite(Number(form.irrigationRecoveryTimeoutSeconds))) {
-    form.irrigationRecoveryTimeoutSeconds = automationDefaults.value.water_irrigation_recovery_timeout_sec
-  }
-  if (form.irrigationRecoveryEnabled === undefined) {
-    form.irrigationRecoveryEnabled = automationDefaults.value.water_irrigation_recovery_enabled
-  }
   if (form.irrigationAutoReplayAfterSetup === undefined) {
     form.irrigationAutoReplayAfterSetup = automationDefaults.value.water_irrigation_auto_replay_after_setup
   }
@@ -271,8 +259,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.irrigationDecisionStaleAfterSeconds = clamp(Math.round(form.irrigationDecisionStaleAfterSeconds), 30, 86400)
   form.irrigationDecisionHysteresisPct = clamp(form.irrigationDecisionHysteresisPct, 0, 100)
   form.irrigationDecisionSpreadAlertThresholdPct = clamp(form.irrigationDecisionSpreadAlertThresholdPct, 0, 100)
-  form.irrigationRecoveryMaxContinueAttempts = clamp(Math.round(form.irrigationRecoveryMaxContinueAttempts), 1, 30)
-  form.irrigationRecoveryTimeoutSeconds = clamp(Math.round(form.irrigationRecoveryTimeoutSeconds), 30, 86400)
   form.irrigationMaxSetupReplays = clamp(Math.round(form.irrigationMaxSetupReplays), 0, 10)
   form.correctionMaxEcCorrectionAttempts = clamp(Math.round(form.correctionMaxEcCorrectionAttempts), 1, 50)
   form.correctionMaxPhCorrectionAttempts = clamp(Math.round(form.correctionMaxPhCorrectionAttempts), 1, 50)

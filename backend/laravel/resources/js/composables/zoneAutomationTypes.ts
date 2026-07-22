@@ -104,9 +104,6 @@ export interface WaterFormState {
   irrigationDecisionStaleAfterSeconds?: number
   irrigationDecisionHysteresisPct?: number
   irrigationDecisionSpreadAlertThresholdPct?: number
-  irrigationRecoveryMaxContinueAttempts?: number
-  irrigationRecoveryTimeoutSeconds?: number
-  irrigationRecoveryEnabled?: boolean
   irrigationAutoReplayAfterSetup?: boolean
   irrigationMaxSetupReplays?: number
   stopOnSolutionMin?: boolean

@@ -53,6 +53,79 @@ def test_run_pump_applies_ec_change():
     assert node.get_sensor_value("ec_sensor") == pytest.approx(1.6)
 
 
+def test_dose_per_channel_ec_deltas_distinguish_components():
+    node = _make_node(NodeType.EC)
+    handler = CommandHandler(node, mqtt_client=None)
+
+    status_a, details_a = handler._handle_dose(
+        "dose",
+        {"ml": 12.0, "type": "add_nutrients", "channel": "pump_a"},
+    )
+    assert status_a == CommandStatus.DONE
+    assert details_a["component"] == "npk"
+    assert details_a["channel"] == "pump_a"
+    ec_after_a = details_a["ec_after"]
+
+    node.set_sensor_value("ec_sensor", 1.5)
+    status_b, details_b = handler._handle_dose(
+        "dose",
+        {"ml": 12.0, "type": "add_nutrients", "channel": "pump_b"},
+    )
+    assert status_b == CommandStatus.DONE
+    assert details_b["component"] == "calcium"
+    assert details_b["ec_after"] < ec_after_a
+
+    node.set_sensor_value("ec_sensor", 1.5)
+    status_d, details_d = handler._handle_dose(
+        "dose",
+        {"ml": 12.0, "channel": "pump_d"},
+    )
+    assert status_d == CommandStatus.DONE
+    assert details_d["component"] == "micro"
+    assert details_d["ec_after"] < details_b["ec_after"]
+
+
+def test_dilute_reduces_ec_toward_water_baseline():
+    node = _make_node(NodeType.EC)
+    handler = CommandHandler(node, mqtt_client=None)
+    node.set_sensor_value("ec_sensor", 2.0)
+
+    status, details = handler._handle_dose(
+        "dose",
+        {"ml": 10.0, "type": "dilute", "channel": "valve_clean_supply"},
+    )
+
+    assert status == CommandStatus.DONE
+    assert details["component"] == "dilute"
+    assert details["ec_after"] < 2.0
+    assert details["ec_after"] >= handler._water_ec_baseline
+    assert node.get_sensor_value("ec_sensor") == pytest.approx(details["ec_after"])
+
+
+def test_valve_clean_supply_set_relay_dilutes_ec():
+    node = NodeModel(
+        gh_uid="gh-1",
+        zone_uid="zn-1",
+        node_uid="nd-1",
+        hardware_id="hw-1",
+        node_type=NodeType.IRRIG,
+        actuators=["valve_clean_supply", "pump_main"],
+        sensors=["ec_sensor"],
+    )
+    handler = CommandHandler(node, mqtt_client=None)
+    node.set_sensor_value("ec_sensor", 2.2)
+
+    status, details = handler._handle_set_relay(
+        "set_relay",
+        {"channel": "valve_clean_supply", "state": True},
+    )
+
+    assert status == CommandStatus.DONE
+    assert "dilute" in details
+    assert details["dilute"]["ec_after"] < 2.2
+    assert node.get_sensor_value("ec_sensor") == pytest.approx(details["dilute"]["ec_after"])
+
+
 def test_validate_command_payload_invalid_sig_is_hmac_error():
     node = _make_node(NodeType.PH)
     handler = CommandHandler(node, mqtt_client=None)

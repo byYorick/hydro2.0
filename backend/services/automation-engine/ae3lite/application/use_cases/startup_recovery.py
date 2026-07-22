@@ -34,6 +34,7 @@ from ae3lite.application.services.correction_interrupt_safety import (
     build_pending_check_from_task,
     emit_correction_interrupt_pending_verify,
     is_dose_correction_step,
+    load_open_pending_correction_interrupt_checks,
 )
 from common.db import create_zone_event
 from common.service_logs import send_service_log
@@ -95,6 +96,17 @@ class StartupRecoveryUseCase:
                     "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
                     "(release_expired уже выполнен)",
                 )
+                # Даже без lock восстанавливаем очередь pending-verify из zone_events:
+                # иначе рестарт AE в grace-window теряет in-memory checks.
+                restored: list[CorrectionInterruptPendingCheck] = []
+                try:
+                    restored = list(await load_open_pending_correction_interrupt_checks(now=now))
+                except Exception:
+                    logger.warning(
+                        "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
+                        "(lock skipped)",
+                        exc_info=True,
+                    )
                 return StartupRecoveryResult(
                     released_expired_leases=released_expired_leases,
                     scanned_tasks=0,
@@ -103,6 +115,7 @@ class StartupRecoveryUseCase:
                     waiting_command_tasks=0,
                     recovered_waiting_command_tasks=0,
                     skipped_due_to_lock=True,
+                    pending_correction_safety_checks=tuple(restored),
                 )
             return await self._run_scan_and_heal(
                 now=now,
@@ -203,6 +216,8 @@ class StartupRecoveryUseCase:
         failed_tasks += rec_failed
         terminal_outcomes.extend(rec_outcomes)
 
+        await self._merge_persisted_pending_correction_checks(now=now)
+
         return StartupRecoveryResult(
             released_expired_leases=released_expired_leases,
             scanned_tasks=len(tasks),
@@ -213,6 +228,32 @@ class StartupRecoveryUseCase:
             pending_correction_safety_checks=tuple(self._pending_correction_safety_checks),
             terminal_outcomes=tuple(terminal_outcomes),
         )
+
+    async def _merge_persisted_pending_correction_checks(self, *, now: datetime) -> None:
+        """Подмешивает незакрытые PENDING_VERIFY из zone_events (после рестарта AE)."""
+        try:
+            persisted = await load_open_pending_correction_interrupt_checks(now=now)
+        except Exception:
+            logger.warning(
+                "Startup recovery: не удалось загрузить persisted correction-interrupt checks",
+                exc_info=True,
+            )
+            return
+        if not persisted:
+            return
+        known = {int(check.task_id) for check in self._pending_correction_safety_checks}
+        added = 0
+        for check in persisted:
+            if int(check.task_id) in known:
+                continue
+            self._pending_correction_safety_checks.append(check)
+            known.add(int(check.task_id))
+            added += 1
+        if added:
+            logger.info(
+                "Startup recovery: restored %s persisted correction-interrupt safety checks",
+                added,
+            )
 
     async def reconcile_waiting_command_task(
         self,
@@ -981,6 +1022,7 @@ class StartupRecoveryUseCase:
         )
 
         rollback_phase = resolve_workflow_phase_after_task_failure(task)
+        # irrig_recirc: legacy compat only for old tasks.
         scheduler_task_id = (
             None
             if rollback_phase in {"ready", "irrig_recirc"}

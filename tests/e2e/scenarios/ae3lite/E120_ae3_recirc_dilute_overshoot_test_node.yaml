@@ -1,0 +1,70 @@
+# E120: stub — recirc dilute-on-overshoot via valve_clean_supply
+# Status: stub (contract-only; NOT in realhw suite).
+# Config keys: recirc.ec_overshoot_dilute_pct / dilute_pulse_sec /
+# dilute_max_attempts / dilute_settle_sec. Hydraulics: valve_clean_supply pulse.
+# Hot-reload of dilute fields: E104. Dedicated dilute realhw path = live-only / TBD.
+
+name: E120_ae3_recirc_dilute_overshoot_test_node
+status: stub
+description: |
+  Contract stub for dilute-on-overshoot in prepare_recirculation.
+  Pins event names, config keys, and clean-supply channel without a dedicated
+  overshoot realhw scenario.
+
+actions:
+  - step: set_stub_context
+    type: set
+    stub: true
+    skip_live: true
+    scenario: recirc_dilute_overshoot
+    status: stub
+    dilute_channel: valve_clean_supply
+    calcium_actuator: pump_b
+    recirc:
+      ec_overshoot_dilute_pct: 15
+      dilute_pulse_sec: 10
+      dilute_max_attempts: 3
+      dilute_settle_sec: 30
+    expected_events:
+      - RECIRC_DILUTE_STARTED
+      - RECIRC_DILUTE_COMPLETED
+      - PIPELINE_STEP_CHANGED
+      - CORRECTION
+    expected_phases:
+      - prepare_recirculation
+      - tank_recirc
+    forbidden_phases:
+      - irrig_recirc
+      - irrigation_recovery
+    forbidden_prepare_owners:
+      - npk_ec_share
+      - target_ec_prepare
+    forbidden_irrigation_ec_dose: true
+
+assertions:
+  - name: stub_dilute_uses_clean_supply
+    type: custom_assert
+    condition: "context.get('dilute_channel') == 'valve_clean_supply'"
+
+  - name: stub_documents_recirc_dilute_config_keys
+    type: custom_assert
+    condition: >
+      (context.get('recirc') or {}).get('ec_overshoot_dilute_pct') == 15
+      and (context.get('recirc') or {}).get('dilute_pulse_sec') == 10
+      and (context.get('recirc') or {}).get('dilute_max_attempts') == 3
+      and (context.get('recirc') or {}).get('dilute_settle_sec') == 30
+
+  - name: stub_expects_recirc_dilute_events
+    type: custom_assert
+    condition: >
+      'RECIRC_DILUTE_STARTED' in (context.get('expected_events') or [])
+      and 'RECIRC_DILUTE_COMPLETED' in (context.get('expected_events') or [])
+      and 'PIPELINE_STEP_CHANGED' in (context.get('expected_events') or [])
+
+  - name: stub_forbids_irrig_recirc_and_npk_prepare_owner
+    type: custom_assert
+    condition: >
+      context.get('stub') is True
+      and context.get('calcium_actuator') == 'pump_b'
+      and 'irrig_recirc' in (context.get('forbidden_phases') or [])
+      and 'npk_ec_share' in (context.get('forbidden_prepare_owners') or [])

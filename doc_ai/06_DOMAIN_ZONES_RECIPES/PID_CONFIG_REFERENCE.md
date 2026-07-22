@@ -6,10 +6,11 @@
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
-**Обновлено:** 2026-07-20 — impulse model + PI assist; integral freeze на
-hold/observe; conditional-integration anti-windup; `expected_effect` на
-`effective_process_gain`; порог дозы из `pump_calibration.min_dose_ms`;
-legacy `AdaptivePid` / `pid_config_service` / `correction_cooldown` **удалены**.
+**Обновлено:** 2026-07-22 — sequential nutrient pipeline↔PID invariants (§11);
+impulse model + PI assist; integral freeze на hold/observe; conditional-integration
+anti-windup; `expected_effect` на `effective_process_gain`; порог дозы из
+`pump_calibration.min_dose_ms`; legacy `AdaptivePid` / `pid_config_service` /
+`correction_cooldown` **удалены**.
 
 ---
 
@@ -18,9 +19,12 @@ legacy `AdaptivePid` / `pid_config_service` / `correction_cooldown` **удале
 | Параметр | Source of truth |
 |----------|-----------------|
 | target pH/EC | recipe phase only |
+| cumulative `T_*` / water baseline | `zone_prepare_baselines` + recipe ratios (см. `EFFECTIVE_TARGETS_SPEC.md` §9) |
 | kp/ki/kd, dead/close/far zones | `zone.pid.{ph,ec}` |
 | min_interval_sec, max_dose_ml, **max_integral**, derivative_filter_alpha, observe | `zone.correction.controllers.*` |
 | process gains, transport_delay, settle | `zone.process_calibration.*` |
+| per-component EC gains | `zone.process_calibration.*.ec_component_gains.{calcium\|magnesium\|npk\|micro}.ec_gain_per_ml` |
+| dilute-on-overshoot | `zone.correction.recirc.ec_overshoot_dilute_*` |
 | min/max_dose_ms, ml_per_sec | pump_calibration |
 
 **Не AE3 authority:**
@@ -69,17 +73,19 @@ bundle `automation_effective_bundles.config.zone.pid.*`.
 ### 1.3. Расчёт дозы (упрощённо)
 
 ```
-gap = max(0, target - current)       # всегда ≥ 0; EC только «вверх»
-integral += gap * dt                  # только active-time dt (не hold/observe)
+gap = max(0, T_step - current)        # EC: T_step = active cumulative target; всегда ≥ 0 (вверх-only)
+integral += gap * dt                  # только active-time dt (не hold/observe); не тикаем при corr_ec_pid_frozen
 derivative = (gap - prev_error) / dt  # скорость изменения ошибки
 derivative = α * raw + (1-α) * prev   # EMA; α default 0.35 если ключ отсутствует
 
-# process_gain обязателен (fail-closed); volume×sensitivity fallback удалён
+# process_gain: per-component ec_component_gains.{component}.ec_gain_per_ml если задан,
+# иначе phase ec_gain_per_ml; fail-closed если отсутствует
 # effective_gain = auth ⊕ learned EMA (clamp 0.25×–4×; tank_recirc EC floor)
+# learned EMA — не общий across components (auth per-component only; см. §11)
 output_units = kp*gap + ki*integral + kd*derivative
 dose_ml = output_units / effective_gain
 
-dose_ml = min(dose_ml, gap / effective_gain)   # hard cap: не перелетать target за 1 импульс
+dose_ml = min(dose_ml, gap / effective_gain)   # hard cap: не перелетать T_step за 1 импульс
 dose_ml = clamp(dose_ml, 0, max_dose_ml)
 # при saturation (gap/gain | max_dose_ml | max_dose_ms) — conditional integration:
 # ΔI тика не персистится (anti-windup via _with_frozen_integral)
@@ -342,8 +348,25 @@ min_pulse_ml = ml_per_sec * (min_dose_ms / 1000)
 контура физически, но `solution_volume_l` в runtime-формулу **не подставляется**
 автоматически — оператор калибрует gain под реальный бак/контур.
 
+**`ec_component_gains`** (optional, schema v1+): per-component override для
+sequential nutrient pipeline:
+
+```json
+"ec_component_gains": {
+  "calcium":   { "ec_gain_per_ml": 0.22 },
+  "magnesium": { "ec_gain_per_ml": 0.18 },
+  "npk":       { "ec_gain_per_ml": 0.25 },
+  "micro":     { "ec_gain_per_ml": 0.12 }
+}
+```
+
+При активном компоненте pipeline AE3 берёт
+`ec_component_gains.{component}.ec_gain_per_ml`, иначе fallback на phase
+`ec_gain_per_ml`. Общий EMA learned gain **не** смешивает компоненты
+(см. §11).
+
 Observation-driven runtime требует явные process gain:
-`ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`.
+`ec_gain_per_ml` (или per-component) / `ph_up_gain_per_ml` / `ph_down_gain_per_ml`.
 Если для фазы отсутствует нужный gain или не заданы
 `transport_delay_sec` / `settle_sec`, planner/handler работают fail-closed.
 
@@ -543,7 +566,29 @@ WHERE zone_id = $1;
 
 ---
 
-## 9. Связанные файлы
+## 11. Pipeline ↔ PID инварианты (sequential nutrient)
+
+Pipeline **не заменяет** PID — меняет target (`T_step`) и actuator. Канон
+(см. `CORRECTION_CYCLE_SPEC.md` §3.7, `EFFECTIVE_TARGETS_SPEC.md` §9):
+
+| # | Инвариант | Поведение |
+|---|-----------|-----------|
+| 1 | EC gap | `gap = max(0, T_step − current_ec)` |
+| 2 | Один насос на шаг | `pump_b` для Ca, `pump_c` Mg, `pump_a` NPK, `pump_d` Micro |
+| 3 | Reset I/D на смене компонента | `pid_state.ec.integral/prev_* → 0`; event `PID_EC_RESET` |
+| 4 | Reset I + no_effect на dilute | после `RECIRC_DILUTE_*` |
+| 5 | Freeze EC на pH-gate | `corr_ec_pid_frozen=true`: EC PID не тикает (нет ΔI, нет EC dose) |
+| 6 | Per-component gain | `ec_component_gains.{component}` (auth); не общий EMA across components |
+| 7 | no-effect per component | счётчик сбрасывается при switch компонента |
+| 8 | fill_ca → recirc_ca | **не** reset I (тот же компонент calcium) |
+| 9 | irrigation | только pH PID; EC off |
+| 10 | Overshoot | только dilute (`zone.correction.recirc.*`); EC вверх-only |
+
+Нарушение reset/freeze на switch/pH-gate → перелёты и ложный no-effect.
+
+---
+
+## 12. Связанные файлы
 
 | Файл | Назначение |
 |------|-----------|
@@ -551,14 +596,18 @@ WHERE zone_id = $1;
 | `ae3lite/domain/services/observation_analyzer.py` | Observe window, expected_effect, adaptive EMA |
 | `ae3lite/domain/services/phase_utils.py` | `normalize_phase_key` |
 | `ae3lite/infrastructure/repositories/pid_state_repository.py` | Персистентность |
-| `ae3lite/application/handlers/correction.py` | Orchestration (8-шаговая FSM) |
+| `ae3lite/application/handlers/correction.py` | Orchestration (pipeline + corr_* FSM) |
 | `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` | State machine коррекции |
+| `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 | Water-baseline + `T_*` |
 
 ---
 
-## 10. Удалённый legacy (не восстанавливать)
+## 13. Удалённый legacy (не восстанавливать)
 
 Удалены из дерева (2026-07-20): `utils/adaptive_pid.py`,
 `services/pid_config_service.py`, `correction_cooldown.py` и связанные
 legacy unit-тесты. Канон — только AE3-Lite planner + `pid_state` +
 `zone.correction` / `zone.pid` / `process_calibration`.
+
+Deprecated семантика prepare (2026-07-22): `npk_ec_share` / `target_ec_prepare`
+как owner prepare EC; post-irrigation EC recovery; EC dosing на irrigation.

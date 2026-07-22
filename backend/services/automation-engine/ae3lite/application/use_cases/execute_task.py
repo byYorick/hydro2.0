@@ -1183,6 +1183,7 @@ class ExecuteTaskUseCase:
         )
 
         rollback_phase = resolve_workflow_phase_after_task_failure(task)
+        # irrig_recirc: legacy compat only for old tasks.
         scheduler_task_id = (
             None
             if rollback_phase in {"ready", "irrig_recirc"}

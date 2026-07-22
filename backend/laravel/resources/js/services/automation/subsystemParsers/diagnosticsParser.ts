@@ -105,7 +105,6 @@ export function applyDiagnosticsFromTargets(targets: Dictionary, waterForm: Wate
   applyStartupSection(diagnosticsExecutionResolved, waterForm)
   applyFailSafeGuards(diagnosticsExecutionResolved, waterForm)
   applyCorrectionSection(diagnosticsExecutionResolved, waterForm)
-  applyIrrigationRecoverySection(diagnosticsExecutionResolved, waterForm)
 }
 
 function applyStartupSection(diagnosticsExecutionResolved: Dictionary | null, waterForm: WaterFormState): void {
@@ -206,27 +205,5 @@ function applyCorrectionSection(diagnosticsExecutionResolved: Dictionary | null,
   const correctionStabilizationSec = readNumber(correction?.stabilization_sec)
   if (correctionStabilizationSec !== null) {
     waterForm.correctionStabilizationSec = clamp(Math.round(correctionStabilizationSec), 0, 3600)
-  }
-}
-
-function applyIrrigationRecoverySection(
-  diagnosticsExecutionResolved: Dictionary | null,
-  waterForm: WaterFormState,
-): void {
-  const irrigationRecovery = asRecord(diagnosticsExecutionResolved?.irrigation_recovery)
-
-  const irrigationRecoveryEnabled = readBoolean(irrigationRecovery?.enabled)
-  if (irrigationRecoveryEnabled !== null) {
-    waterForm.irrigationRecoveryEnabled = irrigationRecoveryEnabled
-  }
-
-  const irrigationRecoveryMaxContinueAttempts = readNumber(irrigationRecovery?.max_continue_attempts)
-  if (irrigationRecoveryMaxContinueAttempts !== null) {
-    waterForm.irrigationRecoveryMaxContinueAttempts = clamp(Math.round(irrigationRecoveryMaxContinueAttempts), 1, 30)
-  }
-
-  const irrigationRecoveryTimeoutSec = readNumber(irrigationRecovery?.timeout_sec)
-  if (irrigationRecoveryTimeoutSec !== null) {
-    waterForm.irrigationRecoveryTimeoutSeconds = clamp(Math.round(irrigationRecoveryTimeoutSec), 30, 86400)
   }
 }

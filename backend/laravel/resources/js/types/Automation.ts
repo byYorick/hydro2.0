@@ -196,6 +196,35 @@ export interface AutomationObservabilityCorrection {
   last_dose?: Record<string, AutomationObservabilityCorrectionDose>
   latest_skip?: AutomationObservabilityCorrectionSkip | null
   readiness?: AutomationObservabilityCorrectionReadiness | null
+  prepare_baseline?: AutomationObservabilityPrepareBaseline | null
+  pipeline?: AutomationObservabilityCorrectionPipeline | null
+}
+
+export interface AutomationObservabilityPrepareBaseline {
+  id?: number | null
+  grow_cycle_id?: number | null
+  ae_task_id?: number | null
+  water_ec?: number | null
+  water_ph?: number | null
+  target_ec?: number | null
+  nutrient_ec_budget?: number | null
+  ratios?: Record<string, number> | null
+  component_targets?: Record<string, number> | null
+  captured_at?: string | null
+  source?: string | null
+}
+
+export interface AutomationObservabilityCorrectionPipeline {
+  task_id?: number | null
+  pipeline_phase?: string | null
+  active_component?: string | null
+  water_ec?: number | null
+  water_ph?: number | null
+  nutrient_budget?: number | null
+  component_targets?: Record<string, number> | null
+  dilute_attempts?: number | null
+  ec_pid_frozen?: boolean | null
+  baseline_id?: number | null
 }
 
 export interface AutomationObservability {

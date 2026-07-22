@@ -68,6 +68,16 @@ class CorrectionState:
     snapshot_cmd_id: Optional[str] = None
     snapshot_source_event_type: Optional[str] = None
     limit_policy_logged: bool = False
+    # Sequential nutrient pipeline (water baseline + interleaved Ca/pH/…)
+    pipeline_phase: Optional[str] = None
+    active_component: Optional[str] = None
+    water_ec: Optional[float] = None
+    water_ph: Optional[float] = None
+    nutrient_budget: Optional[float] = None
+    component_targets_json: Optional[str] = None
+    dilute_attempts: int = 0
+    ec_pid_frozen: bool = False
+    baseline_id: Optional[int] = None
 
     @classmethod
     def build_default(
@@ -117,4 +127,13 @@ class CorrectionState:
             ph_duration_ms=None,
             wait_until=None,
             limit_policy_logged=False,
+            pipeline_phase=None,
+            active_component=None,
+            water_ec=None,
+            water_ph=None,
+            nutrient_budget=None,
+            component_targets_json=None,
+            dilute_attempts=0,
+            ec_pid_frozen=False,
+            baseline_id=None,
         )

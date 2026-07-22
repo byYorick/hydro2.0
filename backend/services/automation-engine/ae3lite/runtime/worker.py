@@ -48,8 +48,9 @@ class Ae3RuntimeWorker:
         zone_intent_repository: Any,
         create_task_from_intent_use_case: Any | None = None,
         runtime_monitor: Any | None = None,
+        command_gateway: Any | None = None,
         correction_interrupt_irr_state_max_age_sec: int = 90,
-        correction_interrupt_replay_irrigation: bool = True,
+        correction_interrupt_replay_irrigation: bool = False,
         spawn_background_task_fn: Callable[..., Any],
         now_fn: Callable[[], datetime],
         logger: Any,
@@ -81,6 +82,7 @@ class Ae3RuntimeWorker:
         self._zone_intent_repository = zone_intent_repository
         self._create_task_from_intent_use_case = create_task_from_intent_use_case
         self._runtime_monitor = runtime_monitor
+        self._command_gateway = command_gateway
         self._correction_interrupt_irr_state_max_age_sec = max(
             5,
             int(correction_interrupt_irr_state_max_age_sec),
@@ -188,13 +190,52 @@ class Ae3RuntimeWorker:
             )
         pending_checks = getattr(result, "pending_correction_safety_checks", ()) or ()
         if pending_checks:
-            self._pending_correction_safety_checks.extend(list(pending_checks))
+            self._enqueue_correction_safety_checks(pending_checks)
             self._logger.info(
                 "AE3 startup recovery: queued %s correction-interrupt safety checks",
                 len(pending_checks),
             )
+        # Повторный reload из zone_events — защита от потери in-memory очереди
+        # при рестарте AE в grace-window (даже если use-case вернул пустой tuple).
+        await self._reload_persisted_correction_safety_checks(now=now)
         self._ensure_waiting_command_reconcile_loop()
         return result
+
+    def _enqueue_correction_safety_checks(self, checks: Any) -> int:
+        known = {
+            int(getattr(item, "task_id", 0) or 0)
+            for item in self._pending_correction_safety_checks
+        }
+        added = 0
+        for check in list(checks or ()):
+            task_id = int(getattr(check, "task_id", 0) or 0)
+            if task_id <= 0 or task_id in known:
+                continue
+            self._pending_correction_safety_checks.append(check)
+            known.add(task_id)
+            added += 1
+        return added
+
+    async def _reload_persisted_correction_safety_checks(self, *, now: datetime) -> int:
+        from ae3lite.application.services.correction_interrupt_safety import (
+            load_open_pending_correction_interrupt_checks,
+        )
+
+        try:
+            persisted = await load_open_pending_correction_interrupt_checks(now=now)
+        except Exception:
+            self._logger.warning(
+                "AE3 startup recovery: failed to reload persisted correction-interrupt checks",
+                exc_info=True,
+            )
+            return 0
+        added = self._enqueue_correction_safety_checks(persisted)
+        if added:
+            self._logger.info(
+                "AE3 startup recovery: restored %s persisted correction-interrupt checks",
+                added,
+            )
+        return added
 
     async def shutdown(self, *, grace_sec: float | None = None) -> None:
         if self._shutting_down:
@@ -335,7 +376,6 @@ class Ae3RuntimeWorker:
 
         from ae3lite.application.services.correction_interrupt_safety import (
             emit_correction_interrupt_hardware_safe,
-            escalate_correction_interrupt_hardware_risk,
             evaluate_correction_interrupt_safety,
         )
 
@@ -357,7 +397,17 @@ class Ae3RuntimeWorker:
                     getattr(check, "task_id", None),
                     exc_info=True,
                 )
-                remaining.append(check)
+                deadline = getattr(check, "deadline_at", None)
+                past_deadline = isinstance(deadline, datetime) and now >= deadline
+                if past_deadline:
+                    # Не крутим check вечно после grace — fail-safe + escalate unsafe.
+                    await self._handle_correction_interrupt_unsafe(
+                        check=check,
+                        now=now,
+                        reason="evaluate_exception_after_grace",
+                    )
+                else:
+                    remaining.append(check)
                 continue
 
             status = str(getattr(verdict, "status", "") or "").strip().lower()
@@ -378,8 +428,8 @@ class Ae3RuntimeWorker:
                     )
                     kick_needed = kick_needed or replayed
                 continue
-            # unsafe
-            await escalate_correction_interrupt_hardware_risk(
+            # unsafe: сначала fail-safe stop irrig через HL, затем escalate critical
+            await self._handle_correction_interrupt_unsafe(
                 check=check,
                 now=now,
                 reason=str(getattr(verdict, "reason", "") or "unconfirmed"),
@@ -388,6 +438,87 @@ class Ae3RuntimeWorker:
         self._pending_correction_safety_checks = remaining
         if kick_needed and not self._shutting_down:
             self.kick()
+
+    async def _handle_correction_interrupt_unsafe(
+        self,
+        *,
+        check: Any,
+        now: datetime,
+        reason: str,
+    ) -> None:
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_correction_interrupt_fail_safe_stop,
+            escalate_correction_interrupt_hardware_risk,
+        )
+
+        stop_result = await attempt_correction_interrupt_fail_safe_stop(
+            check=check,
+            now=now,
+            command_gateway=self._command_gateway,
+        )
+        if not stop_result.success:
+            self._logger.warning(
+                "AE3 correction-interrupt unsafe: fail-safe stop skipped/failed "
+                "zone_id=%s task_id=%s stop_reason=%s verdict=%s",
+                getattr(check, "zone_id", None),
+                getattr(check, "task_id", None),
+                stop_result.reason,
+                reason,
+            )
+        await escalate_correction_interrupt_hardware_risk(
+            check=check,
+            now=now,
+            reason=reason,
+        )
+
+    async def _fail_irrigation_replay_intent(
+        self,
+        *,
+        intent_id: int,
+        zone_id: int,
+        now: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        """Terminal-fail claimed replay intent после create-task failure (TOCTOU guard)."""
+        mark = getattr(self, "_safe_mark_intent_terminal_result", None)
+        if not callable(mark):
+            mark_terminal = getattr(self._zone_intent_repository, "mark_terminal", None)
+            if not callable(mark_terminal):
+                self._logger.warning(
+                    "AE3 correction-interrupt irrigation replay: cannot mark intent terminal "
+                    "intent_id=%s zone_id=%s code=%s",
+                    intent_id,
+                    zone_id,
+                    error_code,
+                )
+                return
+            try:
+                await mark_terminal(
+                    intent_id=intent_id,
+                    now=now,
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+            except Exception:
+                self._logger.warning(
+                    "AE3 correction-interrupt irrigation replay mark_terminal failed "
+                    "intent_id=%s zone_id=%s",
+                    intent_id,
+                    zone_id,
+                    exc_info=True,
+                )
+            return
+        await mark(
+            intent_id=intent_id,
+            now=now,
+            success=False,
+            error_code=error_code,
+            error_message=error_message,
+            task_id=None,
+            zone_id=zone_id,
+        )
 
     async def _replay_irrigation_after_correction_interrupt(
         self,
@@ -474,17 +605,46 @@ class Ae3RuntimeWorker:
                 intent_row=intent_row,
                 now=now,
             )
-        except Exception:
+        except Exception as exc:
             self._logger.warning(
                 "AE3 correction-interrupt irrigation replay create-task failed zone_id=%s intent_id=%s",
                 zone_id,
                 intent_id,
                 exc_info=True,
             )
+            await self._fail_irrigation_replay_intent(
+                intent_id=int(intent_id),
+                zone_id=zone_id,
+                now=now,
+                error_code="ae3_irrigation_replay_create_failed",
+                error_message=str(exc)[:500] or "create_task_from_intent failed",
+            )
             return False
 
         created = bool(getattr(creation, "created", False))
         task = getattr(creation, "task", None)
+        if not created:
+            task_intent_id = int(getattr(task, "intent_id", 0) or 0) if task is not None else 0
+            linked_to_this_intent = task is not None and task_intent_id == int(intent_id)
+            self._logger.warning(
+                "AE3 correction-interrupt irrigation replay create-task returned created=False "
+                "zone_id=%s intent_id=%s task_id=%s linked=%s",
+                zone_id,
+                intent_id,
+                getattr(task, "id", None),
+                linked_to_this_intent,
+            )
+            # Claimed intent без новой/связанной task — terminal fail, иначе stuck claimed (TOCTOU).
+            if not linked_to_this_intent:
+                await self._fail_irrigation_replay_intent(
+                    intent_id=int(intent_id),
+                    zone_id=zone_id,
+                    now=now,
+                    error_code="ae3_irrigation_replay_create_failed",
+                    error_message="create_task_from_intent returned created=False",
+                )
+            return False
+
         self._logger.info(
             "AE3 correction-interrupt irrigation replay dispatched zone_id=%s intent_id=%s task_id=%s created=%s",
             zone_id,

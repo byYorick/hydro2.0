@@ -193,6 +193,7 @@ def build_ae3_runtime_bundle(
         zone_intent_repository=zone_intent_repository,
         create_task_from_intent_use_case=create_task_from_intent_use_case,
         runtime_monitor=runtime_monitor,
+        command_gateway=command_gateway,
         correction_interrupt_irr_state_max_age_sec=config.correction_interrupt_irr_state_max_age_sec,
         correction_interrupt_replay_irrigation=config.correction_interrupt_replay_irrigation,
         spawn_background_task_fn=spawn_background_task_fn,

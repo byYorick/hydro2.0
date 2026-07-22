@@ -109,20 +109,17 @@ def test_exhausted_irrigation_check_re_enters_same_stage(
     assert outcome.due_delay_sec == 10
 
 
-def test_exhausted_irrigation_recovery_re_enters_same_stage(
+def test_exhausted_irrigation_recovery_stages_gone(
     policy: CorrectionTransitionPolicy,
 ) -> None:
+    """irrigation_recovery_check removed — exhausted policy returns None."""
     outcome = policy.decide_exhausted_transition(
         current_stage="irrigation_recovery_check",
         stage_retry_count=1,
         level_poll_interval_sec=8,
         max_continue_attempts=5,
     )
-    assert isinstance(outcome, StageOutcome)
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "irrigation_recovery_check"
-    assert outcome.stage_retry_count == 2
-    assert outcome.due_delay_sec == 8
+    assert outcome is None
 
 
 def test_exhausted_irrigation_recovery_stops_failed_at_max_continue(
@@ -134,9 +131,7 @@ def test_exhausted_irrigation_recovery_stops_failed_at_max_continue(
         level_poll_interval_sec=8,
         max_continue_attempts=5,
     )
-    assert outcome is not None
-    assert outcome.next_stage == "irrigation_recovery_stop_failed"
-    assert outcome.stage_retry_count == 5
+    assert outcome is None
 
 
 def test_exhausted_prepare_recirc_goes_to_window_exhausted(
@@ -251,7 +246,7 @@ def test_stage_deadline_irrigation_targets_reached_goes_to_ready(
     assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
-def test_stage_deadline_irrigation_targets_not_reached_goes_to_recovery(
+def test_stage_deadline_irrigation_targets_not_reached_goes_to_ready(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     outcome = policy.decide_stage_deadline_transition(
@@ -262,7 +257,7 @@ def test_stage_deadline_irrigation_targets_not_reached_goes_to_recovery(
         targets_reached=False,
     )
     assert outcome is not None
-    assert outcome.next_stage == "irrigation_stop_to_recovery"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
 def test_stage_deadline_irrigation_recovery_disabled_goes_to_ready(
@@ -307,7 +302,7 @@ def test_stage_deadline_prepare_recirc_preserves_retry(
     assert outcome.stage_retry_count == 4
 
 
-def test_stage_deadline_irrigation_recovery_check_goes_to_stop_failed(
+def test_stage_deadline_irrigation_recovery_check_gone(
     policy: CorrectionTransitionPolicy,
 ) -> None:
     outcome = policy.decide_stage_deadline_transition(
@@ -317,8 +312,7 @@ def test_stage_deadline_irrigation_recovery_check_goes_to_stop_failed(
         deadline_reached=True,
         targets_reached=None,
     )
-    assert outcome is not None
-    assert outcome.next_stage == "irrigation_recovery_stop_failed"
+    assert outcome is None
 
 
 # ── decide_imminent_flow_probe_transition ───────────────────────────

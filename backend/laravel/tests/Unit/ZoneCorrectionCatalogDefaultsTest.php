@@ -54,11 +54,32 @@ class ZoneCorrectionCatalogDefaultsTest extends TestCase
     public function test_defaults_contain_all_required_sections(): void
     {
         $defaults = ZoneCorrectionConfigCatalog::defaults();
-        $required = ['controllers', 'runtime', 'timing', 'dosing', 'retry', 'tolerance', 'safety'];
+        $required = ['controllers', 'runtime', 'timing', 'dosing', 'retry', 'tolerance', 'safety', 'recirc'];
 
         foreach ($required as $section) {
             $this->assertArrayHasKey($section, $defaults, "defaults() must contain section '{$section}'");
         }
+    }
+
+    public function test_defaults_include_recirc_overshoot_fields_and_drop_irrigation_recovery_slack(): void
+    {
+        $defaults = ZoneCorrectionConfigCatalog::defaults();
+
+        $this->assertSame(15, $defaults['recirc']['ec_overshoot_dilute_pct']);
+        $this->assertSame(10, $defaults['recirc']['dilute_pulse_sec']);
+        $this->assertSame(3, $defaults['recirc']['dilute_max_attempts']);
+        $this->assertSame(30, $defaults['recirc']['dilute_settle_sec']);
+        $this->assertArrayNotHasKey('irrigation_recovery_correction_slack_sec', $defaults['retry']);
+
+        $paths = [];
+        foreach (ZoneCorrectionConfigCatalog::fieldCatalog() as $section) {
+            foreach ($section['fields'] as $field) {
+                $paths[] = $field['path'];
+            }
+        }
+
+        $this->assertContains('recirc.ec_overshoot_dilute_pct', $paths);
+        $this->assertNotContains('retry.irrigation_recovery_correction_slack_sec', $paths);
     }
 
     public function test_ec_dosing_mode_enum_includes_multi_sequential(): void

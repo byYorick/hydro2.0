@@ -338,11 +338,11 @@ class AutomationConfigDocumentServiceTest extends TestCase
         $bundle = $compiler->compileGrowCycleBundle($cycle->id);
 
         $this->assertSame(
-            'multi_sequential',
+            'single',
             data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_dosing_mode')
         );
-        $this->assertSame(
-            ['npk'],
+        $this->assertEqualsCanonicalizing(
+            ['npk', 'calcium', 'magnesium', 'micro'],
             data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_excluded_components')
         );
         $this->assertEquals(
@@ -350,8 +350,19 @@ class AutomationConfigDocumentServiceTest extends TestCase
             data_get($bundle->config, 'zone.correction.resolved_config.base.dosing.solution_volume_l')
         );
         $this->assertEquals(
+            ['calcium' => 36.0],
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.solution_fill.ec_component_ratios')
+        );
+        $this->assertSame(
+            'multi_sequential',
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.tank_recirc.ec_dosing_mode')
+        );
+        $this->assertEquals(
             36.0,
-            data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_component_policy.irrigation.calcium')
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.tank_recirc.ec_component_ratios.calcium')
+        );
+        $this->assertFalse(
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_component_policy.needs_ec')
         );
         $this->assertSame(
             'ratio_ec_pid',
@@ -386,15 +397,20 @@ class AutomationConfigDocumentServiceTest extends TestCase
         );
 
         $this->assertSame('delta_ec_by_k', data_get($resolved, 'meta.recipe_nutrient_mode'));
-        $this->assertSame('multi_sequential', data_get($resolved, 'phases.irrigation.ec_dosing_mode'));
+        $this->assertSame('single', data_get($resolved, 'phases.irrigation.ec_dosing_mode'));
         $this->assertSame(110.0, data_get($resolved, 'base.dosing.solution_volume_l'));
-        $this->assertSame(
-            ['npk'],
+        $this->assertEqualsCanonicalizing(
+            ['npk', 'calcium', 'magnesium', 'micro'],
             data_get($resolved, 'phases.irrigation.ec_excluded_components')
         );
-        $this->assertSame(
-            5.0,
-            data_get($resolved, 'phases.irrigation.ec_component_policy.irrigation.micro')
+        $this->assertEquals(
+            ['calcium' => 33.0],
+            data_get($resolved, 'phases.solution_fill.ec_component_ratios')
         );
+        $this->assertEquals(
+            5.0,
+            data_get($resolved, 'phases.tank_recirc.ec_component_ratios.micro')
+        );
+        $this->assertFalse(data_get($resolved, 'phases.irrigation.ec_component_policy.needs_ec'));
     }
 }

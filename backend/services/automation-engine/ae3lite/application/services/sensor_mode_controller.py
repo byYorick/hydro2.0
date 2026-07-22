@@ -40,13 +40,12 @@ _logger = logging.getLogger(__name__)
 
 #: Stages that keep their sensors hot outside correction windows and must
 #: NOT be re-activated by correction. Irrigation keeps sensors active for
-#: real-time monitoring; recovery reads an already-active fleet.
+#: real-time monitoring.
 #: solution_fill_check / prepare_recirculation_check activate sensor mode
 #: before enter_correction (sensors_already_active=True) and must not loop
 #: on empty-window reactivation while samples are still arriving.
 _STAGES_WITH_PERSISTENT_SENSOR_MODE: frozenset[str] = frozenset({
     "irrigation_check",
-    "irrigation_recovery_check",
     "solution_fill_check",
     "prepare_recirculation_check",
 })

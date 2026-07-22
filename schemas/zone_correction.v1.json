@@ -12,7 +12,8 @@
     "dosing",
     "retry",
     "tolerance",
-    "safety"
+    "safety",
+    "recirc"
   ],
   "properties": {
     "controllers": {
@@ -102,7 +103,6 @@
         "prepare_recirculation_timeout_sec",
         "prepare_recirculation_correction_slack_sec",
         "solution_fill_correction_slack_sec",
-        "irrigation_recovery_correction_slack_sec",
         "prepare_recirculation_max_attempts",
         "prepare_recirculation_max_correction_attempts",
         "telemetry_stale_retry_sec",
@@ -115,12 +115,53 @@
         "prepare_recirculation_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 7200 },
         "prepare_recirculation_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
         "solution_fill_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
-        "irrigation_recovery_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
+        "irrigation_recovery_correction_slack_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7200,
+          "description": "DEPRECATED (2026-07-22): post-irrigation chemistry recovery removed; ignored by AE3. Optional for payload compat only — do not set in new configs."
+        },
         "prepare_recirculation_max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
         "prepare_recirculation_max_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
         "telemetry_stale_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
         "decision_window_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
         "low_water_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    },
+    "recirc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ec_overshoot_dilute_pct",
+        "dilute_pulse_sec",
+        "dilute_max_attempts",
+        "dilute_settle_sec"
+      ],
+      "properties": {
+        "ec_overshoot_dilute_pct": {
+          "type": "number",
+          "minimum": 1.0,
+          "maximum": 100.0,
+          "description": "EC overshoot threshold vs active cumulative target T_step before dilute pulse, percent."
+        },
+        "dilute_pulse_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "description": "Duration of clean-water dilute pulse via valve_clean_supply."
+        },
+        "dilute_max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max dilute attempts per prepare recirculation window. Default 3."
+        },
+        "dilute_settle_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "Settle/observe pause after dilute pulse before continuing pipeline."
+        }
       }
     },
     "tolerance": {
@@ -343,7 +384,12 @@
             "prepare_recirculation_timeout_sec": { "type": "integer", "minimum": 30, "maximum": 7200 },
             "prepare_recirculation_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
             "solution_fill_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
-            "irrigation_recovery_correction_slack_sec": { "type": "integer", "minimum": 0, "maximum": 7200 },
+            "irrigation_recovery_correction_slack_sec": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7200,
+              "description": "DEPRECATED (2026-07-22): post-irrigation chemistry recovery removed; ignored by AE3."
+            },
             "prepare_recirculation_max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
             "prepare_recirculation_max_correction_attempts": { "type": "integer", "minimum": 1, "maximum": 500 },
             "telemetry_stale_retry_sec": { "type": "integer", "minimum": 1, "maximum": 3600 },
@@ -371,6 +417,16 @@
           "properties": {
             "safe_mode_on_no_effect": { "type": "boolean" },
             "block_on_active_no_effect_alert": { "type": "boolean" }
+          }
+        },
+        "recirc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ec_overshoot_dilute_pct": { "type": "number", "minimum": 1.0, "maximum": 100.0 },
+            "dilute_pulse_sec": { "type": "integer", "minimum": 1, "maximum": 600 },
+            "dilute_max_attempts": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "dilute_settle_sec": { "type": "integer", "minimum": 0, "maximum": 3600 }
           }
         }
       }

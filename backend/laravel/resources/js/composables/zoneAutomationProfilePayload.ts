@@ -320,20 +320,6 @@ export function buildGrowthCycleConfigPayload(
     20,
     5000
   )
-  const irrigationRecoveryMaxContinueAttempts = clamp(
-    Math.round(
-      normalizeNumber(waterForm.irrigationRecoveryMaxContinueAttempts, automationDefaults.water_irrigation_recovery_max_continue_attempts)
-    ),
-    1,
-    30
-  )
-  const irrigationRecoveryTimeoutSec = clamp(
-    Math.round(normalizeNumber(waterForm.irrigationRecoveryTimeoutSeconds, automationDefaults.water_irrigation_recovery_timeout_sec)),
-    30,
-    86400
-  )
-  const irrigationRecoveryEnabled =
-    waterForm.irrigationRecoveryEnabled ?? automationDefaults.water_irrigation_recovery_enabled ?? true
   const irrigationDecisionLookbackSec = clamp(
     Math.round(normalizeNumber(waterForm.irrigationDecisionLookbackSeconds, automationDefaults.water_irrigation_decision_lookback_sec)),
     60,
@@ -466,19 +452,6 @@ export function buildGrowthCycleConfigPayload(
       prepare_recirculation_max_correction_attempts: correctionPrepareRecirculationMaxCorrectionAttempts,
       stabilization_sec: correctionStabilizationSec,
     }
-    diagnosticsExecution.irrigation_recovery = {
-      enabled: Boolean(irrigationRecoveryEnabled),
-      max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
-      timeout_sec: irrigationRecoveryTimeoutSec,
-      target_tolerance: {
-        ec_pct: automationDefaults.water_irrigation_recovery_target_tolerance_ec_pct,
-        ph_pct: automationDefaults.water_irrigation_recovery_target_tolerance_ph_pct,
-      },
-      degraded_tolerance: {
-        ec_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ec_pct,
-        ph_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ph_pct,
-      },
-    }
     diagnosticsExecution.fail_safe_guards = {
       clean_fill_min_check_delay_ms: cleanFillMinCheckDelayMs,
       solution_fill_clean_min_check_delay_ms: solutionFillCleanMinCheckDelayMs,
@@ -549,9 +522,6 @@ export function buildGrowthCycleConfigPayload(
           },
         },
         recovery: {
-          enabled: Boolean(irrigationRecoveryEnabled),
-          max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
-          timeout_sec: irrigationRecoveryTimeoutSec,
           auto_replay_after_setup: Boolean(irrigationAutoReplayAfterSetup),
           max_setup_replays: irrigationMaxSetupReplays,
         },

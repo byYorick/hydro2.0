@@ -306,9 +306,16 @@ Pipeline:
 
 - `pump_acid`: `pH -= 0.12 * scale * phase_factor`
 - `pump_base`: `pH += 0.12 * scale * phase_factor`
-- `pump_a..pump_d`: `EC += 0.068 * scale * phase_factor`
+- EC per-pump (`pump_a=npk`, `pump_b=calcium`, `pump_c=magnesium`, `pump_d=micro`):
+  - `pump_a`: `EC += 0.068 * scale * phase_factor`
+  - `pump_b`: `EC += 0.055 * scale * phase_factor`
+  - `pump_c`: `EC += 0.035 * scale * phase_factor`
+  - `pump_d`: `EC += 0.018 * scale * phase_factor`
 - onset delayed: `~4 сек` (`2` telemetry tick при периоде `2 сек`)
 - transient decay: ещё `~8 сек`
+- sequential doses накапливают `pending_ec_delta` / `pending_ph_delta` (wave/decay не сбрасывается)
+- dilute: при `pump_main` + `valve_clean_supply` + `valve_solution_fill` EC снижается к `water_ec_baseline`
+  (default `0.45`; seed через `set_fault_mode.ec_value`)
 - при упоре в sensor clamp decay считается только от фактически применённого delta после clamp, поэтому stacked-dose
   не создаёт искусственный inversion ниже seeded baseline
 - residual drift protection:
@@ -342,9 +349,11 @@ Scale:
 
 Наблюдаемость для backend/e2e:
 
-- в `command_response.details` возвращаются `delta_ph/ph_after` или `delta_ec/ec_after`;
+- в `command_response.details` возвращаются `channel`, `component`, `delta_ph/ph_after` или
+  `delta_ec/ec_after` (+ `base_delta_ec` для EC pumps);
 - telemetry `ph_sensor/ec_sensor` при active mode содержит:
-  `flow_active`, `stable`, `corrections_allowed` (все синхронны состоянию sensor mode).
+  `flow_active`, `stable`, `corrections_allowed` (все синхронны состоянию sensor mode)
+  и всегда `stub:false`.
 
 Fail-closed правило:
 

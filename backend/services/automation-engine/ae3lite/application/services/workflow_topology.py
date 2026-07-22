@@ -284,46 +284,11 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("irrigation_stop", "sensor_mode_deactivate"),
         next_stage="completed_run",
     ),
-    "irrigation_stop_to_recovery": StageDef(
-        "irrigation_stop_to_recovery", "command",
-        workflow_phase="irrig_recirc",
-        command_plans=("irrigation_stop", "sensor_mode_deactivate"),
-        next_stage="irrigation_recovery_start",
-    ),
     "irrigation_stop_to_setup": StageDef(
         "irrigation_stop_to_setup", "command",
         workflow_phase="tank_filling",
         command_plans=("irrigation_stop", "sensor_mode_deactivate"),
         next_stage="startup",
-    ),
-    "irrigation_recovery_start": StageDef(
-        "irrigation_recovery_start", "command",
-        workflow_phase="irrig_recirc",
-        command_plans=("sensor_mode_activate", "irrigation_recovery_start"),
-        next_stage="irrigation_recovery_check",
-    ),
-    "irrigation_recovery_check": StageDef(
-        "irrigation_recovery_check", "irrigation_recovery",
-        workflow_phase="irrig_recirc",
-        timeout_key="prepare_recirculation_timeout_sec",
-        has_correction=True,
-        on_corr_success="irrigation_recovery_stop_to_ready",
-        on_corr_fail="irrigation_recovery_stop_failed",
-    ),
-    "irrigation_recovery_stop_to_ready": StageDef(
-        "irrigation_recovery_stop_to_ready", "command",
-        workflow_phase="ready",
-        command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
-        next_stage="completed_run",
-    ),
-    "irrigation_recovery_stop_failed": StageDef(
-        "irrigation_recovery_stop_failed", "command",
-        workflow_phase="irrig_recirc",
-        command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
-        terminal_error=(
-            "irrigation_recovery_targets_not_restored",
-            "Recovery не восстановил целевые параметры после полива.",
-        ),
     ),
     # === Solution topup path (ready autofill) ===
     "solution_topup_guard": StageDef(

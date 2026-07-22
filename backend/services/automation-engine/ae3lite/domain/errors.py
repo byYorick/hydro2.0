@@ -158,6 +158,9 @@ class ErrorCodes:
     # Критические защитные проверки конфигурации
     ZONE_CORRECTION_CONFIG_MISSING_CRITICAL = "zone_correction_config_missing_critical"
     ZONE_DOSING_CALIBRATION_MISSING_CRITICAL = "zone_dosing_calibration_missing_critical"
+    AE3_EC_ACTUATOR_COMPONENT_UNRESOLVED = "ae3_ec_actuator_component_unresolved"
+    AE3_WATER_BASELINE_INVALID = "ae3_water_baseline_invalid"
+    AE3_RECIRC_DILUTE_BLOCKED_SOLUTION_MAX = "recirc_dilute_blocked_solution_max"
     ZONE_PID_CONFIG_MISSING_CRITICAL = "zone_pid_config_missing_critical"
     ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL = "zone_recipe_phase_targets_missing_critical"
 

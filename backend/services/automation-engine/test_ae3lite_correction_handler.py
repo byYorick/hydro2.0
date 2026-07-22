@@ -2234,7 +2234,7 @@ async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_reached()
     assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
-async def test_corr_irrigation_deadline_preempts_to_recovery_when_targets_not_reached():
+async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_not_reached():
     corr = _base_corr(corr_step="corr_wait_ec", attempt=4, ec_attempt=3, ph_attempt=3)
     task = _make_task(
         corr=corr,
@@ -2247,10 +2247,10 @@ async def test_corr_irrigation_deadline_preempts_to_recovery_when_targets_not_re
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "irrigation_stop_to_recovery"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
-async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_recovery(
+async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_ready(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Budget полива истёк mid-command → graceful interrupt, не ae3 task fail."""
@@ -2284,7 +2284,7 @@ async def test_corr_irrigation_stage_bound_poll_deadline_during_dose_goes_to_rec
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "irrigation_stop_to_recovery"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
     assert gateway.calls  # dose was attempted
 
 
@@ -2334,7 +2334,7 @@ async def test_corr_irrigation_poll_deadline_without_deadline_kind_uses_wall_clo
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=tick_now)
 
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "irrigation_stop_to_recovery"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
 
 
 async def test_corr_dose_ec_poll_deadline_without_stage_binding_still_fails(

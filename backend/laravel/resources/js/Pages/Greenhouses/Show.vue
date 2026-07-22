@@ -445,8 +445,6 @@ const waterForm = reactive<WaterFormState>({
   startupSolutionFillTimeoutSeconds: 1800,
   startupPrepareRecirculationTimeoutSeconds: 900,
   startupCleanFillRetryCycles: 2,
-  irrigationRecoveryMaxContinueAttempts: 3,
-  irrigationRecoveryTimeoutSeconds: 600,
   solutionChangeEnabled: false,
   solutionChangeIntervalMinutes: 180,
   solutionChangeDurationSeconds: 120,

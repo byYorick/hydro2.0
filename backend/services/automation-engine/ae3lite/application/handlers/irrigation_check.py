@@ -67,6 +67,8 @@ class IrrigationCheckHandler(BaseStageHandler):
                 "Отсутствует stage_deadline_at для irrigation_check; "
                 "задайте duration_sec или stage_timeout_sec в irrigation_execution.",
             )
+        # Deprecated schema block: only max_setup_replays is still used
+        # (solution_min → setup replay). Chemistry recovery stages are gone.
         recovery = runtime.irrigation_recovery
         solution_min_guard_enabled = bool(runtime.irrigation_safety.stop_on_solution_min)
         expected_irrigation_state = self._resolve_expected_irrigation_state(
@@ -112,14 +114,9 @@ class IrrigationCheckHandler(BaseStageHandler):
             return duration_cap_outcome
 
         if self._deadline_reached(now=now, deadline=deadline):
-            if await self._targets_reached_on_deadline(task=task, plan=plan, now=now, runtime=runtime):
-                _observe_duration("ready")
-                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
-            if not bool(getattr(recovery, "enabled", True)):
-                _observe_duration("ready")
-                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
-            _observe_duration("recovery")
-            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
+            # Post-irrigation chemistry removed: always stop → ready (pH-only during irrig).
+            _observe_duration("ready")
+            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
 
         probe_verified = False
         if recent_event_type == "IRRIGATION_SOLUTION_LOW" and solution_min_guard_enabled:
@@ -166,11 +163,7 @@ class IrrigationCheckHandler(BaseStageHandler):
             )
 
         if not probe_verified:
-            probe_exhausted_stage = (
-                "irrigation_stop_to_recovery"
-                if bool(getattr(recovery, "enabled", True))
-                else "irrigation_stop_to_ready"
-            )
+            probe_exhausted_stage = "irrigation_stop_to_ready"
             probe_outcome = await self._probe_irr_state_with_backoff(
                 task=task,
                 plan=plan,
@@ -233,7 +226,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 corr = CorrectionState.build_default(
                     corr_step="corr_check",
                     max_attempts=max(ec_max_attempts, ph_max_attempts),
-                    ec_max_attempts=ec_max_attempts,
+                    ec_max_attempts=0,  # irrigation: pH only
                     ph_max_attempts=ph_max_attempts,
                     activated_here=False,  # irrigation_start already ran sensor_mode_activate
                     stabilization_sec=self._required_correction_int(
@@ -243,7 +236,13 @@ class IrrigationCheckHandler(BaseStageHandler):
                     return_stage_success=stage_def.on_corr_success or "irrigation_check",
                     return_stage_fail=stage_def.on_corr_fail or "irrigation_check",
                 )
-                corr = replace(corr, **self._probe_snapshot_correction_fields(task=task))
+                corr = replace(
+                    corr,
+                    **self._probe_snapshot_correction_fields(task=task),
+                    pipeline_phase="irrigation_ph",
+                    active_component=None,
+                    ec_pid_frozen=True,
+                )
                 IRRIGATION_CORRECTION_ENTERED.labels(topology=topology).inc()
                 try:
                     details = {

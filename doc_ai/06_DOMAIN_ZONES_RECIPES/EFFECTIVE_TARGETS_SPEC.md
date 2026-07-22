@@ -31,10 +31,14 @@
 - `controllers.kp/ki/kd` при наличии `zone.pid` — fallback only (LiveEdit скрывает);
 - см. `PID_CONFIG_REFERENCE.md` §0.
 
-Актуализация per-phase EC и day/night (2026-04-13):
-- runtime-spec для two-tank добавляет `target_ec_prepare`, `target_ec_prepare_min`, `target_ec_prepare_max`, `npk_ec_share` — см. §10;
-- AE3 handler выбирает между prepare-target и full-target по текущей фазе workflow (`solution_fill`/`tank_recirc` ↔ `irrigation`/`irrig_recirc`);
-- при `day_night_enabled=true` на phase snapshot AE3 применяет late-binding override pH/EC по локальному времени — см. §11;
+Актуализация per-phase EC и day/night (2026-04-13; **переписано 2026-07-22**):
+- prepare owner больше **не** `target_ec_prepare` / `npk_ec_share` — канон: water-baseline +
+  кумулятивные `T_*` + sequential pipeline (см. §9);
+- AE3 выбирает active EC target по pipeline step (`T_ca` / `T_ca_mg` / … / `T_full`), не по
+  «NPK share vs full»;
+- irrigation: только pH; post-irrigation chemistry (`irrig_recirc`) удалена;
+- при `day_night_enabled=true` night `target_ec` пересчитывает `nutrient_budget` и `T_*`
+  от `(target_ec_night − water_ec)` — см. §10;
 - compiled bundle обязан пересчитываться при `advancePhase`/`setPhase`/`changeRecipeRevision` (см. `RECIPE_ENGINE_FULL.md` §3.3).
 
 Актуализация освещения day/night + гарантированный OFF (2026-07-08, этап A `AGRO_AUTONOMY_MASTER_PLAN.md` §A.1):
@@ -657,11 +661,11 @@ interface CorrectionTimingsTarget {
 | Состояние | Используемый параметр стабилизации | Типы коррекций |
 |-----------|-----------------------------------|----------------|
 | **IDLE** | — | Нет коррекций |
-| **TANK_FILLING** | `tank_fill_stabilization_sec` (90s) | NPK + pH |
-| **TANK_RECIRC** | `tank_recirc_stabilization_sec` (30s) | NPK + pH (с `npk_mix_time_sec`, `ph_mix_time_sec`) |
+| **TANK_FILLING** / `solution_fill` | `tank_fill_stabilization_sec` (90s) | Calcium only (`pump_b`), без pH; EC target = water-baseline `T_ca` (см. §9) |
+| **TANK_RECIRC** / `prepare` | `tank_recirc_stabilization_sec` (30s) | interleaved Ca→pH→Mg→pH→NPK→pH→Micro→final pH; cumulative `T_*` (+ dilute-on-overshoot) |
 | **READY** | — | Нет коррекций |
-| **IRRIGATING** | `irrigation_stabilization_sec` (30s) | Ca/Mg/micro + pH |
-| **IRRIG_RECIRC** | `irrig_recirc_stabilization_sec` (30s) | Ca/Mg/micro + pH (с `ca_mg_mix_time_sec`, `ph_mix_time_sec`) |
+| **IRRIGATING** | `irrigation_stabilization_sec` (30s) | только pH; EC excluded (`needs_ec=false`) |
+| **IRRIG_RECIRC** | — | **removed** (legacy; post-irrigation chemistry нет) |
 
 **Логика применения:**
 - После **активации** ноды ждут `*_stabilization_sec` перед разрешением коррекций
@@ -977,44 +981,96 @@ Python сервисы должны регулярно обновлять targets
 
 ---
 
-## 9. Per-Phase EC Target (NPK share для prepare-фаз)
+## 9. Water-baseline EC targets + sequential nutrient (канон)
 
-**Дата:** 2026-04-13. **Статус:** реализовано (`PER_PHASE_EC_TARGET_PLAN.md` помечен DONE).
+**Дата:** 2026-07-22. **Статус:** канон (заменяет NPK-prepare share owner).
 
-### 9.1. Проблема
+Legacy `target_ec_prepare` / `npk_ec_share` / «prepare = только NPK» — **deprecated**:
+больше не source of truth для prepare EC. Старый текст §9 (2026-04-13) описывал
+промежуточную модель и не должен использоваться при реализации pipeline.
 
-В двухбаковой топологии (`SUBSTRATE`/`RECIRC`) в фазах подготовки раствора (`solution_fill`, `tank_recirc`) дозируется **только NPK** — остальные компоненты (Ca/Mg/Micro) добавляются позже, в `irrigation`/`irrig_recirc`.
+### 9.1. Проблема (историческая) и новый контракт
 
-Раньше runtime использовал единый `target_ec` для всех фаз → NPK передозировался в ~2.3× (NPK сам по себе тащил EC до полного 1.5 mS/cm), а Ca/Mg/micro не дозировались в irrigation, потому что gap уже был отрицательный.
+Старая модель дозировала в prepare только NPK-долю полного EC (`target_ec * npk_ec_share`),
+а Ca/Mg/Micro оставляла на irrigation/`irrig_recirc`. Это давало передозировку NPK и
+ломало компонентную сборку при уже достигнутом full EC.
 
-### 9.2. Runtime spec extensions
+**Новый канон:**
+- `solution_fill` — только **calcium** после water-baseline;
+- `prepare_recirculation` — последовательный pipeline
+  `Ca → pH → Mg → pH → NPK → pH → Micro → финальный pH`;
+- `irrigation` — **только pH**; EC / post-irrigation nutrient recovery **запрещены**.
 
-`backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py` теперь добавляет в runtime spec:
+### 9.2. Модель таргетов (water baseline)
 
-| Поле | Значение |
-|------|----------|
-| `target_ec` | Полный EC из phase snapshot (как раньше). |
-| `target_ec_min`, `target_ec_max` | Полный диапазон. |
-| `target_ec_prepare` | `target_ec * npk_ec_share` (округлено до 4 знаков). |
-| `target_ec_prepare_min`, `target_ec_prepare_max` | `phase.ec_min/ec_max * npk_ec_share`. |
-| `npk_ec_share` | Доля NPK от суммы всех `ec_component_ratios`; если ratios не заданы (legacy phase) → `1.0` (backward compat). |
+```
+nutrient_budget = target_ec − water_ec
+T_ca          = water_ec + budget * r_ca
+T_ca_mg       = water_ec + budget * (r_ca + r_mg)
+T_ca_mg_npk   = water_ec + budget * (r_ca + r_mg + r_npk)
+T_full        = water_ec + budget   (= target_ec)
+```
 
-Функция: `_compute_prepare_ec_share(solution_fill_cfg, base_cfg)` в `runtime_plan_builder.py`.
+Где `r_*` — нормализованные `ec_component_ratios` из recipe phase
+(`nutrient_*_ratio_pct` → `RecipeNutritionRuntimeConfigResolver` →
+`phases.{phase}.ec_component_ratios`).
 
-`ec_component_ratios` собираются на стороне Laravel из flat-полей фазы (`nutrient_npk_ratio_pct`, `nutrient_calcium_ratio_pct`, `nutrient_magnesium_ratio_pct`, `nutrient_micro_ratio_pct`) через `App\Support\Automation\RecipeNutritionRuntimeConfigResolver` (`backend/laravel/app/Support/Automation/RecipeNutritionRuntimeConfigResolver.php:41`) и попадают в compiled bundle как `phases.{phase}.ec_component_ratios`.
+| Поле runtime / baseline | Назначение |
+|-------------------------|------------|
+| `water_ec`, `water_ph` | Замер чистой воды при старте `solution_fill` |
+| `nutrient_budget` / `nutrient_ec_budget` | `target_ec − water_ec` |
+| `component_targets` (`T_*`) | Кумулятивные EC-цели по шагам pipeline |
+| `target_ec` | Полный recipe EC (и `T_full`) |
+| `target_ph` | Recipe pH (все pH-gate шаги) |
 
-### 9.3. Handler выбор target по фазе
+Persist: таблица `zone_prepare_baselines` + колонки `ae_tasks.corr_water_*` /
+`corr_nutrient_budget` / `corr_component_targets_json` (см. `DATA_MODEL_REFERENCE.md`).
 
-`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107` — `_effective_ec_target/min/max`:
+**Fail-closed:**
+- missing/stale baseline;
+- `water_ec >= target_ec` (budget ≤ 0);
+- missing ratio / actuator / `ec_component_gains` для активного компонента.
 
-- `phase ∈ {solution_fill, tank_recirc}` → возвращается `target_ec_prepare*`;
-- `phase ∈ {irrigation, irrig_recirc}` или иное → полный `target_ec*`.
+### 9.3. Выбор target по фазе / pipeline step
 
-`build_dose_plan` / `is_within_tolerance` / `_targets_reached` / `_workflow_ready_values_match` используют phase-effective accessors. Дополнительно `_irrigation_ready_short_circuit` / `_finish_ready_or_irrigation_short_circuit`: в `solution_fill` / `tank_recirc` при pH/EC в полном irrigation-band **и** `current_ec > target_ec_prepare` → `solution_fill_stop_to_ready` / `prepare_recirculation_stop_to_ready` без зависания на prepare NPK-target. Первый setup с низким EC по-прежнему идёт в prepare.
+| Контекст | Active EC target | pH |
+|----------|------------------|----|
+| `solution_fill` | `T_ca` | **нет** (pH doses запрещены) |
+| recirc step Ca | `T_ca` | — |
+| recirc step Mg | `T_ca_mg` | — |
+| recirc step NPK | `T_ca_mg_npk` | — |
+| recirc step Micro | `T_full` | — |
+| recirc pH-gate / final pH | EC PID frozen | `target_ph` |
+| `irrigation` | EC off (`needs_ec=false`) | `target_ph` |
 
-### 9.4. Сохранение NPK-доли при day/night ночном override
+`build_dose_plan` / `is_within_tolerance` / `_targets_reached` используют
+**active pipeline step target** (`T_step`), не legacy `target_ec_prepare`.
 
-Если `day_night_enabled=true` и текущее время попадает в night-окно, full-target EC заменяется на `day_night.ec.night`. Для prepare-фаз результирующий EC масштабируется на `npk_ec_share`, чтобы NPK-доля относительно ночного полного целевого EC сохранялась — см. `_day_night_override_scaled` (`base.py:1214`).
+Legacy accessors `_effective_ec_target` с веткой `npk_ec_share` подлежат замене/
+удалению в runtime PR (этот документ — канон семантики).
+
+### 9.4. Day/night и baseline
+
+Если `day_night_enabled=true` и активно night-окно, `target_ec` ← `day_night.ec.night`,
+затем:
+
+```
+nutrient_budget = target_ec_night − water_ec
+T_* = water_ec + budget * cumulative_ratios
+```
+
+Масштабирование через `npk_ec_share` (**не применяется**). Water baseline
+(`water_ec`/`water_ph`) не переснимается при day/night flip внутри того же prepare —
+пересчитываются только budget и `T_*`.
+
+### 9.5. Legacy поля (compat / migration)
+
+| Поле | Статус |
+|------|--------|
+| `target_ec_prepare`, `target_ec_prepare_min/max` | deprecated — не owner prepare EC |
+| `npk_ec_share` | deprecated — не owner prepare EC |
+| `_compute_prepare_ec_share` / `_day_night_override_scaled` (NPK share) | удалить/заменить на baseline math |
+| irrigation `ec_excluded_components=["npk"]` + Ca/Mg/Micro dosing | removed — irrigation = pH-only |
 
 ---
 
@@ -1069,9 +1125,12 @@ Two-tank runtime spec собирает поля:
 - `_day_night_override(runtime, metric, kind, default)` — выбирает `day`/`night` ключи по результату `_is_day_now`.
 - `_effective_ph_target/min/max` и `_effective_ec_target/min/max` оборачивают базовое значение через override.
 
-### 10.5. Pre-phase + night = scaled prepare
+### 10.5. Night override + water baseline
 
-Для prepare-фаз с активным night-override применяется `_day_night_override_scaled` (`base.py:1214`): сначала `target_ec_min/max` подменяется на ночное значение, затем умножается на `npk_ec_share`. Цель — сохранить семантику «в prepare дозируется только NPK» даже при ночном target.
+Для prepare с активным night-override: `target_ec` ← night, затем
+`nutrient_budget = target_ec_night − water_ec` и пересчёт кумулятивных `T_*`.
+Legacy `_day_night_override_scaled` через `npk_ec_share` — **не применять**
+(см. §9.4).
 
 ---
 

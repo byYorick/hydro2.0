@@ -221,7 +221,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 )
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
-        if await self._targets_reached(task=task, plan=plan, now=now, runtime=runtime):
+        # Fill doses calcium only → gate is EC-only to T_ca (skip pH).
+        if await self._fill_ec_target_reached(task=task, plan=plan, now=now, runtime=runtime):
             return StageOutcome(
                 kind="poll",
                 due_delay_sec=int(runtime.level_poll_interval_sec),
@@ -242,10 +243,11 @@ class SolutionFillCheckHandler(BaseStageHandler):
             "solution_fill_check: заполнение продолжается, цели не достигнуты; вход в in-flow correction zone_id=%s",
             task.zone_id,
         )
-        corr = self._build_correction_state(
+        corr = await self._enter_fill_calcium_correction(
             task=task,
+            plan=plan,
             runtime=runtime,
-            sensors_already_active=True,
+            now=now,
             return_stage_success=stage_def.on_corr_success or "solution_fill_check",
             return_stage_fail=stage_def.on_corr_fail or "solution_fill_check",
         )
@@ -352,7 +354,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             max_attempts=max(ec_max_attempts, ph_max_attempts),
             ec_max_attempts=ec_max_attempts,
-            ph_max_attempts=ph_max_attempts,
+            ph_max_attempts=0,  # no pH on fill
             activated_here=not sensors_already_active,
             stabilization_sec=self._required_correction_int(
                 correction_cfg=correction_cfg,
@@ -362,3 +364,281 @@ class SolutionFillCheckHandler(BaseStageHandler):
             return_stage_fail=return_stage_fail,
         )
         return replace(corr, **self._probe_snapshot_correction_fields(task=task))
+
+    async def _fill_ec_target_reached(
+        self, *, task: Any, plan: Any, now: datetime, runtime: Any = None,
+    ) -> bool:
+        """EC-only gate for solution_fill: compare to T_ca when known, skip pH."""
+        if runtime is None:
+            runtime = self._require_runtime_plan(plan=plan)
+        max_age = int(runtime.telemetry_max_age_sec)
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ec = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        if not ec.get("ready"):
+            return False
+        ec_target = await self._resolve_fill_ec_target(task=task, runtime=runtime)
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
+        ec_tol = abs(ec_target) * (
+            self._required_prepare_tolerance_pct(tolerance=tolerance, key="ec_pct") / 100.0
+        )
+        current_ec = float(ec["value"])
+        return (ec_target - ec_tol) <= current_ec <= (ec_target + ec_tol)
+
+    async def _resolve_fill_ec_target(self, *, task: Any, runtime: Any) -> float:
+        """Prefer T_ca from existing fill baseline; else effective/prepare EC."""
+        from ae3lite.domain.services.nutrient_pipeline import (
+            ComponentTargets,
+            active_ec_target_for_corr,
+        )
+
+        existing = await self._load_existing_fill_baseline(task=task)
+        if existing is not None:
+            targets, _baseline_id = existing
+            return active_ec_target_for_corr(
+                pipeline_phase="fill_ca",
+                active_component="calcium",
+                targets=targets,
+                fallback_target_ec=float(self._irrigation_ec_target(runtime=runtime)),
+            )
+        corr = getattr(task, "correction", None)
+        if corr is not None:
+            targets = ComponentTargets.from_json(getattr(corr, "component_targets_json", None))
+            if targets is not None:
+                return active_ec_target_for_corr(
+                    pipeline_phase=getattr(corr, "pipeline_phase", None) or "fill_ca",
+                    active_component=getattr(corr, "active_component", None) or "calcium",
+                    targets=targets,
+                    fallback_target_ec=float(self._irrigation_ec_target(runtime=runtime)),
+                )
+        return float(self._effective_ec_target(task=task, runtime=runtime))
+
+    @staticmethod
+    def _corr_has_fill_baseline(corr: Any) -> bool:
+        if corr is None:
+            return False
+        if getattr(corr, "baseline_id", None) is not None:
+            return True
+        if getattr(corr, "water_ec", None) is not None:
+            return True
+        phase = str(getattr(corr, "pipeline_phase", "") or "").strip().lower()
+        targets_json = getattr(corr, "component_targets_json", None)
+        if phase in {"fill_ca", "fill_calcium"} and targets_json:
+            return True
+        return False
+
+    async def _load_existing_fill_baseline(
+        self, *, task: Any,
+    ) -> tuple[Any, int | None] | None:
+        """Return (ComponentTargets, baseline_id) from task.corr or DB, else None."""
+        import json
+
+        from ae3lite.domain.services.nutrient_pipeline import (
+            ComponentTargets,
+            compute_component_targets,
+        )
+        from ae3lite.infrastructure.repositories.prepare_baseline_repository import (
+            PgPrepareBaselineRepository,
+        )
+
+        corr = getattr(task, "correction", None)
+        if self._corr_has_fill_baseline(corr):
+            targets = ComponentTargets.from_json(getattr(corr, "component_targets_json", None))
+            if targets is None and getattr(corr, "water_ec", None) is not None:
+                # Minimal reconstruct is not possible without ratios/target; treat as present
+                # only when component_targets_json is available.
+                pass
+            if targets is not None:
+                baseline_id = getattr(corr, "baseline_id", None)
+                return targets, int(baseline_id) if baseline_id is not None else None
+
+        try:
+            repo = PgPrepareBaselineRepository()
+            row = await repo.fetch_latest_baseline(
+                zone_id=int(task.zone_id),
+                ae_task_id=int(getattr(task, "id", 0) or 0) or None,
+            )
+            if row is None:
+                row = await repo.fetch_latest_baseline(zone_id=int(task.zone_id))
+            if row is None:
+                return None
+            baseline_id = int(row["id"]) if row.get("id") is not None else None
+            raw_targets = row.get("component_targets_json")
+            if isinstance(raw_targets, str):
+                raw_targets = json.loads(raw_targets)
+            if isinstance(raw_targets, dict) and "T_ca" in raw_targets:
+                targets = ComponentTargets.from_mapping(raw_targets)
+                return targets, baseline_id
+            ratios = row.get("ratios_json")
+            if isinstance(ratios, str):
+                ratios = json.loads(ratios)
+            targets = compute_component_targets(
+                water_ec=float(row["water_ec"]),
+                water_ph=float(row.get("water_ph") or 0.0),
+                target_ec=float(row["target_ec"]),
+                ratios=ratios if isinstance(ratios, dict) else {},
+            )
+            return targets, baseline_id
+        except Exception:
+            _logger.warning(
+                "solution_fill: не удалось загрузить existing baseline zone_id=%s",
+                getattr(task, "zone_id", None),
+                exc_info=True,
+            )
+            return None
+
+    async def _enter_fill_calcium_correction(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        runtime: Any,
+        now: datetime,
+        return_stage_success: str,
+        return_stage_fail: str,
+    ) -> CorrectionState:
+        """Capture water baseline once, persist, open calcium-only correction to T_ca.
+
+        Re-enter after Ca doses must NOT recapture water_ec (budget would shrink).
+        """
+        from ae3lite.domain.errors import ErrorCodes, TaskExecutionError
+        from ae3lite.domain.services.nutrient_pipeline import (
+            PIPELINE_PHASE_FILL_CA,
+            compute_component_targets,
+        )
+        from ae3lite.infrastructure.repositories.prepare_baseline_repository import (
+            PgPrepareBaselineRepository,
+        )
+        from common.db import create_zone_event
+
+        corr = self._build_correction_state(
+            task=task,
+            runtime=runtime,
+            sensors_already_active=True,
+            return_stage_success=return_stage_success,
+            return_stage_fail=return_stage_fail,
+        )
+
+        existing = await self._load_existing_fill_baseline(task=task)
+        if existing is not None:
+            targets, baseline_id = existing
+            _logger.info(
+                "solution_fill: reuse existing water baseline zone_id=%s baseline_id=%s water_ec=%s",
+                task.zone_id,
+                baseline_id,
+                targets.water_ec,
+            )
+            return replace(
+                corr,
+                pipeline_phase=PIPELINE_PHASE_FILL_CA,
+                active_component="calcium",
+                water_ec=targets.water_ec,
+                water_ph=targets.water_ph,
+                nutrient_budget=targets.nutrient_budget,
+                component_targets_json=targets.to_json(),
+                baseline_id=baseline_id,
+                ec_pid_frozen=False,
+                dilute_attempts=0,
+            )
+
+        # First entry only: capture + persist + WATER_BASELINE_CAPTURED
+        max_age = int(runtime.telemetry_max_age_sec)
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ph_win = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="PH",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        ec_win = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        if not ph_win.get("ready") or not ec_win.get("ready"):
+            raise TaskExecutionError(
+                ErrorCodes.AE3_WATER_BASELINE_INVALID,
+                "Не удалось снять стабильный water baseline EC/pH для solution_fill",
+            )
+        current_ec = float(ec_win["value"])
+        current_ph = float(ph_win["value"])
+        # Prefer full recipe target_ec (not T_step) for budget math
+        target_ec = float(self._irrigation_ec_target(runtime=runtime))
+        ratios = getattr(runtime, "ec_component_ratios", None) or {}
+        if not ratios:
+            ratios = correction_cfg.get("ec_component_ratios") or {}
+        targets = compute_component_targets(
+            water_ec=float(current_ec),
+            water_ph=float(current_ph),
+            target_ec=target_ec,
+            ratios=ratios,
+        )
+        baseline_id = None
+        try:
+            repo = PgPrepareBaselineRepository()
+            baseline_id = await repo.insert_baseline(
+                zone_id=int(task.zone_id),
+                water_ec=targets.water_ec,
+                water_ph=targets.water_ph,
+                target_ec=targets.target_ec,
+                nutrient_budget=targets.nutrient_budget,
+                ratios=targets.ratios,
+                component_targets=targets.as_dict(),
+                ae_task_id=int(getattr(task, "id", 0) or 0) or None,
+                grow_cycle_id=getattr(runtime, "grow_cycle_id", None),
+                captured_at=now,
+            )
+        except Exception:
+            _logger.warning(
+                "solution_fill: не удалось persist baseline zone_id=%s",
+                task.zone_id,
+                exc_info=True,
+            )
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "WATER_BASELINE_CAPTURED",
+                {
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "water_ec": targets.water_ec,
+                    "water_ph": targets.water_ph,
+                    "target_ec": targets.target_ec,
+                    "nutrient_budget": targets.nutrient_budget,
+                    "T_ca": targets.T_ca,
+                    "baseline_id": baseline_id,
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "solution_fill: WATER_BASELINE_CAPTURED event failed zone_id=%s",
+                task.zone_id,
+                exc_info=True,
+            )
+        return replace(
+            corr,
+            pipeline_phase=PIPELINE_PHASE_FILL_CA,
+            active_component="calcium",
+            water_ec=targets.water_ec,
+            water_ph=targets.water_ph,
+            nutrient_budget=targets.nutrient_budget,
+            component_targets_json=targets.to_json(),
+            baseline_id=baseline_id,
+            ec_pid_frozen=False,
+            dilute_attempts=0,
+        )

@@ -201,9 +201,11 @@ class Ae3RuntimeConfig:
                 5,
                 int(os.getenv("AE_CORRECTION_INTERRUPT_IRR_STATE_MAX_AGE_SEC", "90")),
             ),
+            # Prod-safe default: auto-replay irrigation после interrupt выключен.
+            # Включить явно: AE_CORRECTION_INTERRUPT_REPLAY_IRRIGATION=1.
             correction_interrupt_replay_irrigation=_env_true(
                 "AE_CORRECTION_INTERRUPT_REPLAY_IRRIGATION",
-                "1",
+                "0",
             ),
         )
 

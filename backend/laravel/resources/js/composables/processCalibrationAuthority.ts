@@ -1,5 +1,13 @@
 import type { AutomationDocument } from '@/composables/useAutomationConfig'
-import type { ProcessCalibrationMode, ZoneProcessCalibration, ZoneProcessCalibrationMeta } from '@/types/ProcessCalibration'
+import type {
+  EcComponentGainEntry,
+  EcComponentGains,
+  EcComponentKey,
+  ProcessCalibrationMode,
+  ZoneProcessCalibration,
+  ZoneProcessCalibrationForm,
+  ZoneProcessCalibrationMeta,
+} from '@/types/ProcessCalibration'
 
 export const PROCESS_CALIBRATION_MODES: ProcessCalibrationMode[] = [
   'solution_fill',
@@ -7,6 +15,8 @@ export const PROCESS_CALIBRATION_MODES: ProcessCalibrationMode[] = [
   'irrigation',
   'generic',
 ]
+
+export const EC_COMPONENT_KEYS: EcComponentKey[] = ['npk', 'calcium', 'magnesium', 'micro']
 
 const PROCESS_CALIBRATION_NAMESPACE_MAP: Record<ProcessCalibrationMode, string> = {
   generic: 'zone.process_calibration.generic',
@@ -74,6 +84,75 @@ export function isRuntimeReadyProcessCalibration(
     && calibration.source !== 'system_default'
 }
 
+/**
+ * Достаёт scalar EC-gain из flat number или nested `{ ec_gain_per_ml }`.
+ */
+export function extractEcComponentGainValue(raw: unknown): number | null {
+  const direct = toNumberOrNull(raw)
+  if (direct !== null) {
+    return direct
+  }
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  return toNumberOrNull((raw as Record<string, unknown>).ec_gain_per_ml)
+}
+
+/**
+ * Нормализует flat `{ calcium: 0.25 }` и nested `{ calcium: { ec_gain_per_ml: 0.25 } }`
+ * в канонический nested shape из schema/AE3.
+ */
+export function normalizeEcComponentGains(raw: unknown): EcComponentGains | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  const source = raw as Record<string, unknown>
+  const result: EcComponentGains = {}
+
+  for (const key of EC_COMPONENT_KEYS) {
+    const value = extractEcComponentGainValue(source[key])
+    if (value !== null) {
+      result[key] = { ec_gain_per_ml: value }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : null
+}
+
+/**
+ * Собирает nested `ec_component_gains` payload из полей формы ProcessCalibrationPanel.
+ */
+export function buildEcComponentGainsPayload(
+  form: Pick<
+    ZoneProcessCalibrationForm,
+    | 'ec_component_gain_npk'
+    | 'ec_component_gain_calcium'
+    | 'ec_component_gain_magnesium'
+    | 'ec_component_gain_micro'
+  >,
+): EcComponentGains | undefined {
+  const mapping: Array<[keyof typeof form, EcComponentKey]> = [
+    ['ec_component_gain_npk', 'npk'],
+    ['ec_component_gain_calcium', 'calcium'],
+    ['ec_component_gain_magnesium', 'magnesium'],
+    ['ec_component_gain_micro', 'micro'],
+  ]
+
+  const gains: EcComponentGains = {}
+  for (const [formKey, component] of mapping) {
+    const value = toNumberOrNull(form[formKey])
+    if (value !== null) {
+      const entry: EcComponentGainEntry = { ec_gain_per_ml: value }
+      gains[component] = entry
+    }
+  }
+
+  return Object.keys(gains).length > 0 ? gains : undefined
+}
+
 export function documentToZoneProcessCalibration(
   zoneId: number,
   mode: ProcessCalibrationMode,
@@ -97,6 +176,7 @@ export function documentToZoneProcessCalibration(
     valid_from: toStringOrNull(payload.valid_from) ?? document.updated_at,
     valid_to: toStringOrNull(payload.valid_to),
     is_active: payload.is_active !== false,
+    ec_component_gains: normalizeEcComponentGains(payload.ec_component_gains),
     meta: toMeta(payload.meta),
   }
 }

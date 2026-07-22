@@ -1,0 +1,85 @@
+# Пример seed для sequential nutrient correction без железа.
+# Канон actuators: pump_a=npk, pump_b=calcium, pump_c=magnesium, pump_d=micro;
+# dilute через valve_clean_supply (снижает EC к water baseline).
+#
+# Запуск профиля test_node:
+#   python -m node_sim.cli run --config config/test_node.yaml
+# Затем seed через storage_state/set_fault_mode (см. ниже) или используйте
+# эти initial_sensors как стартовые значения в single-node EC/PH sim.
+
+mqtt:
+  host: localhost
+  port: 1883
+  tls: false
+  keepalive: 60
+
+telemetry:
+  interval_seconds: 2.0
+  heartbeat_interval_seconds: 30.0
+
+# --- Baseline seed (чистая вода перед solution_fill) ---
+# AE3 capture: water_ec≈0.45, water_ph≈7.0 → nutrient_budget = target_ec - water_ec
+nodes:
+  - node_uid: nd-test-ph-1
+    hardware_id: esp32-sim-ph-baseline
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: ph
+    mode: configured
+    config_report_on_start: true
+    initial_sensors:
+      ph_sensor: 7.0
+    channels:
+      - ph_sensor
+    actuators:
+      - pump_acid
+      - pump_base
+      - system
+
+  - node_uid: nd-test-ec-1
+    hardware_id: esp32-sim-ec-baseline
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: ec
+    mode: configured
+    config_report_on_start: true
+    # Низкий EC «водопроводной» воды перед fill / Ca dose (pump_b).
+    initial_sensors:
+      ec_sensor: 0.45
+    channels:
+      - ec_sensor
+    actuators:
+      - pump_a
+      - pump_b
+      - pump_c
+      - pump_d
+      - system
+
+  - node_uid: nd-test-irrig-1
+    hardware_id: esp32-sim-irrig-1
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: irrig
+    mode: configured
+    channels:
+      - level_clean_min
+      - level_clean_max
+      - level_solution_min
+      - level_solution_max
+      - flow_present
+    actuators:
+      - pump_main
+      - valve_clean_fill
+      - valve_clean_supply
+      - valve_solution_fill
+      - valve_solution_supply
+      - valve_irrigation
+
+# Overshoot seed (для проверки dilute):
+# Отправьте MQTT command на nd-test-irrig-1/storage_state:
+#   cmd=set_fault_mode, params={ec_value: 2.4, ph_value: 5.9}
+# Затем AE3/recirc открывает valve_clean_supply → EC падает к water_ec_baseline.
+#
+# Equivalent HIL seed (firmware/test_node или test_node_profile):
+#   storage_state/set_fault_mode {ec_value: 0.45}   # baseline
+#   storage_state/set_fault_mode {ec_value: 2.4}    # overshoot before dilute

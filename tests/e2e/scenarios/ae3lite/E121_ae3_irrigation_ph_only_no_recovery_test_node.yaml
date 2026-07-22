@@ -1,0 +1,69 @@
+# E121: stub — irrigation pH-only, stop → ready (no irrig_recirc / irrigation_recovery)
+# Status: stub (contract-only; NOT in realhw suite).
+# Live path: E109 (pH-only inline) + E107 (stop→ready + no EC dose asserts).
+
+name: E121_ae3_irrigation_ph_only_no_recovery_test_node
+status: stub
+description: |
+  Contract stub for irrigation chemistry canon after sequential nutrient migration:
+  needs_ec=false, only pH doses, stop → ready (no post-irrigation nutrient recovery).
+
+actions:
+  - step: set_stub_context
+    type: set
+    stub: true
+    skip_live: true
+    scenario: irrigation_ph_only_no_recovery
+    status: stub
+    needs_ec: false
+    allowed_dose_channels:
+      - pump_acid
+      - pump_base
+    forbidden_dose_channels:
+      - pump_a
+      - pump_b
+      - pump_c
+      - pump_d
+    expected_events:
+      - CORRECTION
+      - CORRECTION_DECISION_MADE
+    expected_terminal_phase: ready
+    expected_stop_transition: stop_to_ready
+    forbidden_workflow_phases:
+      - irrig_recirc
+    forbidden_stages:
+      - irrigation_recovery
+      - irrigation_recovery_check
+      - irrigation_recovery_start
+    forbidden_prepare_owners:
+      - npk_ec_share
+      - target_ec_prepare
+    forbidden_irrigation_ec_dose: true
+    calcium_actuator: pump_b
+
+assertions:
+  - name: stub_forbids_irrig_recirc
+    type: custom_assert
+    condition: "'irrig_recirc' in (context.get('forbidden_workflow_phases') or [])"
+
+  - name: stub_irrigation_is_ph_only
+    type: custom_assert
+    condition: >
+      context.get('needs_ec') is False
+      and context.get('forbidden_irrigation_ec_dose') is True
+      and set(context.get('allowed_dose_channels') or []) == {'pump_acid', 'pump_base'}
+      and 'pump_a' in (context.get('forbidden_dose_channels') or [])
+
+  - name: stub_stop_goes_to_ready
+    type: custom_assert
+    condition: >
+      context.get('expected_terminal_phase') == 'ready'
+      and context.get('expected_stop_transition') == 'stop_to_ready'
+      and 'irrigation_recovery' in (context.get('forbidden_stages') or [])
+      and 'irrigation_recovery_check' in (context.get('forbidden_stages') or [])
+
+  - name: stub_expects_correction_events
+    type: custom_assert
+    condition: >
+      'CORRECTION' in (context.get('expected_events') or [])
+      and 'CORRECTION_DECISION_MADE' in (context.get('expected_events') or [])

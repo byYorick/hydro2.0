@@ -600,6 +600,11 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("min_interval_sec"), 10)
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ec") or {}).get("max_dose_ml"), 30.0)
         self.assertEqual(((tank_recirc.get("controllers") or {}).get("ph") or {}).get("max_dose_ml"), 16.0)
+        recirc = tank_recirc.get("recirc") or {}
+        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 15)
+        self.assertEqual(recirc.get("dilute_pulse_sec"), 10)
+        self.assertEqual(recirc.get("dilute_max_attempts"), 3)
+        self.assertEqual(recirc.get("dilute_settle_sec"), 30)
 
         clamp_condition = str(clamp_assertion.get("condition") or "")
         self.assertIn("<= 30.0", clamp_condition)
@@ -667,40 +672,84 @@ class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
         ]:
             self.assertIn(fragment, text)
 
-    def test_inline_irrigation_scenario_waits_for_dual_gap_decision_not_legacy_event(self) -> None:
+    def test_inline_irrigation_scenario_waits_for_ph_only_decision(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
 
         self.assertNotIn("IRRIGATION_CORRECTION_STARTED", text)
         self.assertNotIn("wait_zone_event", text)
-        self.assertIn("wait_correction_decision_for_dual_gap", text)
+        self.assertNotIn("irrig_recirc", text)
+        self.assertNotIn("irrigation_recovery", text)
+        self.assertIn("wait_correction_decision_for_ph_only", text)
         self.assertIn("type = 'CORRECTION_DECISION_MADE'", text)
-        self.assertIn("COALESCE(details, payload_json)->>'selected_action' = 'ec'", text)
-        self.assertIn("COALESCE(details, payload_json)->>'needs_ec' = 'true'", text)
-        self.assertIn("COALESCE(details, payload_json)->>'needs_ph_down' = 'true'", text)
-        self.assertIn("COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')", text)
+        self.assertIn("COALESCE(details, payload_json)->>'needs_ec' IN ('false', '0', 'f')", text)
+        self.assertIn("COALESCE(details, payload_json)->>'workflow_phase' = 'irrigating'", text)
 
-    def test_inline_irrigation_scenario_asserts_ec_dose_with_active_main_pump(self) -> None:
+    def test_inline_irrigation_scenario_asserts_ph_dose_with_active_main_pump(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("type = 'EC_DOSING'", text)
-        self.assertIn("COALESCE(details, payload_json)->>'channel' = 'pump_a'", text)
+        self.assertIn("wait_ph_dose_command_during_irrigation", text)
+        self.assertIn("COALESCE(details, payload_json)->>'channel' IN ('pump_acid', 'pump_base')", text)
         self.assertIn("snapshot_event_id", text)
-        self.assertIn("wait_main_pump_snapshot_before_ec_dose", text)
+        self.assertIn("wait_main_pump_snapshot_before_ph_dose", text)
         self.assertIn("type = 'IRR_STATE_SNAPSHOT'", text)
         self.assertIn("COALESCE(snap.details, snap.payload_json)", text)
-        # Timed run_pump: prove irrigation via open valves + prior pump_main start cmd.
         self.assertIn("valve_irrigation", text)
         self.assertIn("run_pump", text)
         self.assertIn("snap.id = CAST(:snapshot_event_id AS bigint)", text)
+        self.assertIn("wait_no_ec_dose_during_irrigation", text)
 
-    def test_inline_irrigation_scenario_asserts_ec_first_for_dual_gap(self) -> None:
+    def test_inline_irrigation_scenario_asserts_ph_only_not_ec_first(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("inline_correction_decision_keeps_dual_gap_and_ec_first", text)
-        self.assertIn("decision_reason", text)
-        self.assertIn("ec_first_in_window", text)
-        self.assertIn("needs_ph_down", text)
-        self.assertNotIn("wait_ph_dose_command_during_irrigation", text)
+        self.assertIn("inline_correction_decision_is_ph_only", text)
+        self.assertIn("inline_correction_has_no_ec_dose", text)
+        self.assertNotIn("ec_first_in_window", text)
+        self.assertNotIn("wait_ec_dose_command_during_irrigation", text)
+
+
+class TestAe3LiteStartIrrigationRuntimeScenarioContract(unittest.TestCase):
+    """E107 smart-irrigation runtime: pH-only inline + stop→ready hardening."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = START_IRRIGATION_SCENARIO_PATH.read_text(encoding="utf-8")
+        with START_IRRIGATION_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
+            cls.scenario = yaml.safe_load(fh)
+
+    def test_documents_ph_only_irrigation_canon(self) -> None:
+        self.assertIn("pH-only", self.text)
+        self.assertIn("wait_no_ec_dose_during_irrigation", self.text)
+        self.assertIn("inline_correction_has_no_ec_dose", self.text)
+        self.assertIn("task_run_forbids_irrig_recirc_and_recovery", self.text)
+        self.assertIn("assert_no_irrig_recirc_or_recovery_stages", self.text)
+        self.assertIn("channel IN ('pump_acid', 'pump_base')", self.text)
+        self.assertIn("stop → ready", self.text)
+
+    def test_dose_ec_channel_is_documented_as_non_irrigation(self) -> None:
+        # Schema residual may remain pump_a, but must not imply irrig EC dosing.
+        self.assertIn("dose_ec_channel: pump_a", self.text)
+        self.assertIn("Do NOT treat this as permission for EC dosing on irrig", self.text)
+        self.assertIn("channel IN ('pump_a', 'pump_b', 'pump_c', 'pump_d')", self.text)
+        self.assertIn("type = 'EC_DOSING'", self.text)
+
+    def test_forbids_irrig_recirc_and_recovery_chemistry(self) -> None:
+        assertion_names = {item.get("name") for item in self.scenario.get("assertions") or []}
+        self.assertIn("inline_correction_has_no_ec_dose", assertion_names)
+        self.assertIn("task_run_forbids_irrig_recirc_and_recovery", assertion_names)
+        self.assertIn("irrig_recirc", self.text)
+        self.assertIn("irrigation_recovery", self.text)
+        # Positive path must still land ready after task run.
+        self.assertIn("wait_ready_after_task_run", self.text)
+        self.assertIn("workflow_phase = 'ready'", self.text)
+
+    def test_does_not_list_sequential_stubs_as_live_actions(self) -> None:
+        for stub_name in (
+            "E118_ae3_water_baseline_and_ca_fill_test_node",
+            "E119_ae3_prepare_pipeline_sequence_test_node",
+            "E120_ae3_recirc_dilute_overshoot_test_node",
+            "E121_ae3_irrigation_ph_only_no_recovery_test_node",
+        ):
+            self.assertNotIn(stub_name, self.text)
 
 
 class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
@@ -715,10 +764,10 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
                 return item
         self.fail(f"Step '{step_name}' is missing in section '{section}'")
 
-    def test_seeds_recirculation_solution_before_piggyback_waits(self) -> None:
+    def test_seeds_recirculation_solution_before_pipeline_waits(self) -> None:
         seed_step = self._find_step("actions", "seed_recirculation_sensor_values")
         seed_wait_step = self._find_step("actions", "wait_seeded_recirculation_telemetry")
-        recirc_ec_step = self._find_step("actions", "wait_recirculation_ec_correction_command")
+        recirc_ca_step = self._find_step("actions", "wait_recirculation_calcium_correction_command")
         recirc_ph_step = self._find_step("actions", "wait_recirculation_ph_correction_command")
 
         seed_command = seed_step.get("command") or {}
@@ -726,18 +775,19 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
         self.assertEqual(seed_command.get("channel"), "storage_state")
         self.assertEqual(seed_command.get("cmd"), "set_fault_mode")
         self.assertEqual(seed_params.get("ph_value"), 5.68)
-        self.assertEqual(seed_params.get("ec_value"), 1.92)
+        self.assertEqual(seed_params.get("ec_value"), 0.70)
 
         seed_wait_query = str(seed_wait_step.get("query") or "")
         self.assertIn("ph.last_value BETWEEN 5.63 AND 5.73", seed_wait_query)
-        self.assertIn("ec.last_value BETWEEN 1.87 AND 1.97", seed_wait_query)
+        self.assertIn("ec.last_value BETWEEN 0.65 AND 0.75", seed_wait_query)
 
-        recirc_ec_query = str(recirc_ec_step.get("query") or "")
+        recirc_ca_query = str(recirc_ca_step.get("query") or "")
         recirc_ph_query = str(recirc_ph_step.get("query") or "")
-        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", recirc_ec_query)
+        self.assertIn("channel = 'pump_b'", recirc_ca_query)
+        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", recirc_ca_query)
         self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", recirc_ph_query)
         self.assertEqual(
-            recirc_ec_step.get("params", {}).get("after_seeded_at"),
+            recirc_ca_step.get("params", {}).get("after_seeded_at"),
             "${seed_recirculation_command_row.0.created_at}",
         )
         self.assertEqual(
@@ -745,7 +795,7 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
             "${seed_recirculation_command_row.0.created_at}",
         )
 
-    def test_piggyback_uses_sample_history_for_ec_peak_and_decay_before_ph(self) -> None:
+    def test_pipeline_uses_sample_history_for_ec_peak_and_decay_before_ph(self) -> None:
         observe_step = self._find_step("actions", "wait_recirculation_ec_peak_decay_pair")
 
         query = str(observe_step.get("query") or "")
@@ -753,6 +803,9 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
         self.assertIn("channel IN ('pump_acid', 'pump_base')", query)
         self.assertIn("decay.value <= peak.value - 0.003", query)
         self.assertIn("decay.ts < ph.ph_created_at", query)
+        text = PIGGYBACK_SCENARIO_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("irrig_recirc", text)
+        self.assertIn("ec_overshoot_dilute_pct", text)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Regression tests for AE3-Lite piggyback real-hardware scenario contract.
+Regression tests for AE3-Lite sequential nutrient pipeline real-hardware scenario contract.
+(Legacy filename: piggyback — scenario now asserts Ca→pH pipeline, not EC→pH batch.)
 """
 
 import sys
@@ -37,19 +38,20 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
 
     def test_recirculation_commands_are_anchored_to_stage_start(self) -> None:
         stage_step = self._find_step("actions", "wait_prepare_recirculation_stage")
-        ec_step = self._find_step("actions", "wait_recirculation_ec_correction_command")
+        ca_step = self._find_step("actions", "wait_recirculation_calcium_correction_command")
         ph_step = self._find_step("actions", "wait_recirculation_ph_correction_command")
 
         stage_query = str(stage_step.get("query") or "")
         self.assertIn("updated_at AS stage_started_at", stage_query)
 
-        ec_query = str(ec_step.get("query") or "")
-        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", ec_query)
+        ca_query = str(ca_step.get("query") or "")
+        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", ca_query)
         self.assertEqual(
-            ec_step.get("params", {}).get("after_seeded_at"),
-            "${seed_recirculation_command_row.0.created_at}",
+            ca_step.get("params", {}).get("after_seeded_at"),
+            "${reseed_recirculation_command_row.0.created_at}",
         )
-        self.assertIn("payload->>'cmd' = 'dose'", ec_query)
+        self.assertIn("channel = 'pump_b'", ca_query)
+        self.assertIn("payload->>'cmd' = 'dose'", ca_query)
 
         ph_query = str(ph_step.get("query") or "")
         self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", ph_query)
@@ -59,11 +61,11 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         )
         self.assertEqual(
             ph_step.get("params", {}).get("after_seeded_at"),
-            "${seed_recirculation_command_row.0.created_at}",
+            "${reseed_recirculation_command_row.0.created_at}",
         )
         self.assertIn("payload->>'cmd' = 'dose'", ph_query)
 
-    def test_post_piggyback_checks_require_live_targets_not_just_status(self) -> None:
+    def test_post_pipeline_checks_require_live_targets_not_just_status(self) -> None:
         task_step = self._find_step("actions", "wait_task_not_failed_after_sequential_loop")
         force_step = self._find_step("actions", "force_near_target_band_after_sequential_loop")
         targets_step = self._find_step("actions", "wait_targets_reached_on_node_after_sequential_loop")
@@ -74,7 +76,6 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertIn("status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')", task_query)
         self.assertNotIn("current_stage = 'prepare_recirculation_check'", task_query)
 
-        # Force near-target must run before the live-band wait (post complete_ready).
         action_names = [item.get("step") for item in self.scenario.get("actions", [])]
         self.assertLess(
             action_names.index("force_near_target_band_after_sequential_loop"),
@@ -97,18 +98,63 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         targets_condition = str(targets_assert.get("condition") or "")
         self.assertIn("len(context.get('targets_reached_after_sequential_loop_row', [])) == 1", targets_condition)
 
-    def test_fixture_profile_does_not_embed_legacy_startup_or_correction_runtime(self) -> None:
+    def test_fixture_profile_uses_calcium_fill_and_recirc_dilute(self) -> None:
         profile_step = self._find_step("actions", "apply_test_node_correction_preset")
         payload = (profile_step.get("payload") or {}).get("payload") or {}
         phase_overrides = payload.get("phase_overrides") or {}
         solution_fill = phase_overrides.get("solution_fill") or {}
         tank_recirc = phase_overrides.get("tank_recirc") or {}
 
-        for phase in (solution_fill, tank_recirc):
-            dosing = phase.get("dosing") or {}
-            self.assertEqual(dosing.get("dose_ec_channel"), "pump_a")
-            self.assertEqual(dosing.get("dose_ph_up_channel"), "pump_base")
-            self.assertEqual(dosing.get("dose_ph_down_channel"), "pump_acid")
+        fill_dosing = solution_fill.get("dosing") or {}
+        self.assertEqual(fill_dosing.get("dose_ec_channel"), "pump_b")
+        self.assertEqual(fill_dosing.get("dose_ph_up_channel"), "pump_base")
+        self.assertEqual(fill_dosing.get("dose_ph_down_channel"), "pump_acid")
+
+        recirc = tank_recirc.get("recirc") or {}
+        self.assertEqual(recirc.get("ec_overshoot_dilute_pct"), 15)
+        self.assertEqual(recirc.get("dilute_pulse_sec"), 10)
+        self.assertEqual(recirc.get("dilute_max_attempts"), 3)
+        self.assertEqual(recirc.get("dilute_settle_sec"), 30)
+
+        text = SCENARIO_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("irrig_recirc", text)
+        self.assertNotIn("irrigation_recovery", text)
+        self.assertNotIn("target_ec_prepare", text)
+        self.assertNotIn("npk_ec_share", text)
+        # Sequential nutrient stubs stay contract-only; live coverage remains E106/E104.
+        for stub_id in ("E118", "E119", "E120", "E121"):
+            self.assertNotIn(f"{stub_id}_", text)
+
+    def test_fill_ca_dose_requires_tank_not_full(self) -> None:
+        """In-flow fill Ca (pump_b) needs solution_max=false; max=true skips to prepare."""
+        hold_step = self._find_step("actions", "hold_solution_tank_filling_for_ca_dose")
+        seed_step = self._find_step("actions", "seed_solution_fill_sensor_baseline")
+        wait_dose = self._find_step("actions", "wait_fill_ec_correction_command")
+        complete_step = self._find_step("actions", "complete_solution_fill_after_ec_correction")
+
+        hold_params = ((hold_step.get("command") or {}).get("params") or {})
+        self.assertIs(hold_params.get("level_solution_max_override"), False)
+        self.assertIs(hold_params.get("level_solution_min_override"), True)
+
+        seed_params = ((seed_step.get("command") or {}).get("params") or {})
+        self.assertIs(seed_params.get("level_solution_max_override"), False)
+        self.assertEqual(seed_params.get("ec_value"), 0.45)
+
+        dose_query = str(wait_dose.get("query") or "")
+        self.assertIn("channel = 'pump_b'", dose_query)
+
+        complete_params = ((complete_step.get("command") or {}).get("params") or {})
+        self.assertIs(complete_params.get("level_solution_max_override"), True)
+
+        action_names = [item.get("step") for item in self.scenario.get("actions", [])]
+        self.assertLess(
+            action_names.index("hold_solution_tank_filling_for_ca_dose"),
+            action_names.index("wait_fill_ec_correction_command"),
+        )
+        self.assertLess(
+            action_names.index("wait_fill_ec_correction_command"),
+            action_names.index("complete_solution_fill_after_ec_correction"),
+        )
 
 
 if __name__ == "__main__":

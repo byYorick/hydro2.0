@@ -55,6 +55,15 @@ CORRECTION_OPTIONAL_FIELDS = (
     "snapshot_created_at",
     "snapshot_cmd_id",
     "snapshot_source_event_type",
+    "pipeline_phase",
+    "active_component",
+    "water_ec",
+    "water_ph",
+    "nutrient_budget",
+    "component_targets_json",
+    "dilute_attempts",
+    "ec_pid_frozen",
+    "baseline_id",
 )
 
 class PgAutomationTaskRepository:
@@ -73,20 +82,48 @@ class PgAutomationTaskRepository:
     def _task_from_row(self, row: asyncpg.Record | None) -> AutomationTask | None:
         return AutomationTask.from_row(row) if row is not None else None
 
+    @staticmethod
+    def _db_axis_max_attempts(value: Any) -> int | None:
+        """Map domain max-attempts to DB CHECK (NULL OR >= 1).
+
+        Domain uses ``0`` for a disabled correction axis (irrigation pH-only →
+        ``ec_max_attempts=0``, fill Ca-only → ``ph_max_attempts=0``). PostgreSQL
+        rejects ``0`` via ``ae_tasks_corr_{ec,ph}_max_attempts_check``; persist
+        ``NULL`` instead. Readers map NULL → 0 via ``int(... or 0)``.
+        """
+        if value is None:
+            return None
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return None
+        return None if n <= 0 else n
+
     def _correction_values(self, correction: CorrectionState | None) -> tuple[Any, ...]:
         if correction is None:
             # Поддерживать согласованность NOT NULL колонок коррекции, когда коррекция неактивна.
             # Некоторые поля БД, например `corr_ec_current_seq_index`, имеют NOT NULL и default.
             values: list[Any] = [None] * len(CORRECTION_OPTIONAL_FIELDS)
-            try:
-                idx = CORRECTION_OPTIONAL_FIELDS.index("ec_current_seq_index")
-                values[idx] = 0
-            except ValueError:
-                pass
+            for field_name, default in (
+                ("ec_current_seq_index", 0),
+                ("dilute_attempts", 0),
+                ("ec_pid_frozen", False),
+            ):
+                try:
+                    idx = CORRECTION_OPTIONAL_FIELDS.index(field_name)
+                    values[idx] = default
+                except ValueError:
+                    pass
             return (*tuple(values), False)
 
-        values = tuple(getattr(correction, field_name) for field_name in CORRECTION_OPTIONAL_FIELDS)
-        return (*values, bool(correction.limit_policy_logged))
+        values_list: list[Any] = []
+        for field_name in CORRECTION_OPTIONAL_FIELDS:
+            raw = getattr(correction, field_name)
+            if field_name in {"ec_max_attempts", "ph_max_attempts"}:
+                values_list.append(self._db_axis_max_attempts(raw))
+            else:
+                values_list.append(raw)
+        return (*tuple(values_list), bool(correction.limit_policy_logged))
 
     @asynccontextmanager
     async def _connection(self, conn: asyncpg.Connection | None = None) -> AsyncIterator[asyncpg.Connection]:
@@ -837,7 +874,7 @@ class PgAutomationTaskRepository:
                 stage_entered_at      = $7,
                 clean_fill_cycle      = $8,
                 pending_manual_step   = CASE
-                    WHEN $45::boolean THEN pending_manual_step
+                    WHEN $54::boolean THEN pending_manual_step
                     ELSE $9
                 END,
                 control_mode_snapshot = $10,
@@ -872,9 +909,18 @@ class PgAutomationTaskRepository:
                 corr_snapshot_created_at  = $39,
                 corr_snapshot_cmd_id      = $40,
                 corr_snapshot_source_event_type = $41,
-                corr_limit_policy_logged  = $42,
-                due_at     = $43,
-                updated_at = $44
+                corr_pipeline_phase       = $42,
+                corr_active_component     = $43,
+                corr_water_ec             = $44,
+                corr_water_ph             = $45,
+                corr_nutrient_budget      = $46,
+                corr_component_targets_json = $47,
+                corr_dilute_attempts      = $48,
+                corr_ec_pid_frozen        = $49,
+                corr_baseline_id          = $50,
+                corr_limit_policy_logged  = $51,
+                due_at     = $52,
+                updated_at = $53
             WHERE id = $1
               AND claimed_by = $2
               AND status IN ('claimed', 'running', 'waiting_command')

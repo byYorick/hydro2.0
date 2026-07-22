@@ -213,18 +213,19 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
      (`correction_config...retry.solution_fill_correction_slack_sec`, default `900`);
    - `prepare_recirculation_check`: `prepare_recirculation_timeout_sec + prepare_recirculation_correction_slack_sec`
      (default `900`);
-   - `irrigation_recovery_check`: `irrigation_recovery.timeout_sec + irrigation_recovery_correction_slack_sec`
-     (`correction_config...retry.irrigation_recovery_correction_slack_sec`, default `900`);
    - верхняя граница slack `7200`, суммарный cap stage `86400`
-7. `subsystems.irrigation.recovery.enabled` (default `true`) гейтит post-irrigation recovery:
-   при `enabled=false` и недостигнутых targets `irrigation_check` / stage-deadline в correction
-   переходят в `irrigation_stop_to_ready`, а не в `irrigation_stop_to_recovery`
-8. `subsystems.irrigation.recovery.max_continue_attempts` (default `5`) — максимум окон
-   correction внутри `irrigation_recovery_check` (`stage_retry_count` = число исчерпанных окон);
-   при достижении лимита → `irrigation_recovery_stop_failed`
-9. `subsystems.irrigation.recovery.auto_replay_after_setup` (default `true`) — на
-   `complete_ready` для `irrigation_start` при `irrigation_replay_count > 0` разрешает
-   автоповтор `irrigation_start`; при `false` задача завершается без replay
+7. **Post-irrigation chemistry recovery removed (2026-07-22):** stages
+   `irrigation_recovery_*` / phase `irrig_recirc` / config
+   `retry.irrigation_recovery_correction_slack_sec` и
+   `subsystems.irrigation.recovery.*` **не канон**. После полива →
+   `irrigation_stop_to_ready`. На поливе допускается только pH-correction.
+8. **Dilute-on-overshoot (recirc):** при
+   `current_ec > T_step * (1 + recirc.ec_overshoot_dilute_pct/100)` —
+   импульс через `valve_clean_supply` (`dilute_pulse_sec` /
+   `dilute_max_attempts` / `dilute_settle_sec`), затем continue текущего
+   pipeline step (см. `CORRECTION_CYCLE_SPEC.md` §3.7.4).
+9. ~~`subsystems.irrigation.recovery.auto_replay_after_setup`~~ — legacy;
+   replay irrigation после setup без chemistry recovery window.
 10. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает deadline;
    stage deadline сохраняется до terminal transition из stage
 11. runtime обязан передавать stage timeout в `pump_main/set_relay` start-команде как `params.timeout_ms` + `params.stage`; timed-start исполняется по `ACK -> DONE/ERROR`, при этом gateway резюмирует batch уже на `ACK`
@@ -244,12 +245,13 @@ Correction runtime invariants:
     `solution_fill_timeout_sec + solution_fill_correction_slack_sec` и останавливает коррекцию только по
     `no-effect` fail-closed или по stage timeout; текущая canonical fail-closed реализация для
     `no-effect` — переход в `solution_fill_timeout_stop` без повторного входа в correction.
-12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = `target ± prepare_tolerance`; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия (prepare-tolerance **и** phase-ready), **кроме** irrigation short-circuit: pH/EC в полном irrigation-band **и** `current_ec > target_ec_prepare` → AE3 завершает prepare/solution_fill → ready (EC planner не дозирует вниз; иначе post-irrigation `DIAGNOSTICS_TICK` зависает в `prepare_recirculation_check`). Short-circuit не подменяет семантику `workflow_ready` phase-band. Stale/unavailable telemetry остаётся fail-closed.
-13. partial EC batch failure MVP (`EC_BATCH_PARTIAL_FAILURE` + fail correction window + metric) — **implemented**; auto-enqueue `irrigation_recovery` / infra-alert компенсации — **not in MVP** (см. `CORRECTION_CYCLE_SPEC.md` §6.2).
+12. `workflow_ready` (`_workflow_ready_reached`) строже correction-success (`CorrectionPlanner.is_within_tolerance` / `_targets_reached`): correction success = active `T_step` / `target_ph` ± prepare_tolerance; workflow ready = explicit `target_*_min/max` band если заданы, иначе тот же tolerance. В `prepare_recirculation_check` выход из correction sub-FSM требует **оба** условия (prepare-tolerance **и** phase-ready / pipeline complete). Legacy short-circuit на `target_ec_prepare` / `npk_ec_share` — **removed** (канон: water-baseline + `T_*`, см. `EFFECTIVE_TARGETS_SPEC.md` §9). Stale/unavailable telemetry остаётся fail-closed.
+13. partial EC batch failure MVP (`EC_BATCH_PARTIAL_FAILURE` + fail correction window + metric) — **implemented** для batch multi; prepare owner — sequential pipeline (не batch split полного gap). Auto-enqueue `irrigation_recovery` — **removed from canon**.
 14. при `task_type=solution_change` completion `solution_fill` (включая interrupt из correction) обязан
     идти в `solution_fill_stop_to_refill_confirm` (operator gate G2), а не в `*_stop_to_ready/prepare`.
 15. `expected_effect` для no-effect использует `effective_process_gain` (тот же auth⊕learned blend, что planner); adaptive observations не инфлейтятся без learning update (см. `PID_CONFIG_REFERENCE.md`).
 16. PID integral не накапливается за hold/observe dead time; при saturation дозы ΔI тика не персистится. Legacy `utils/adaptive_pid.py` / `services/pid_config_service.py` / `correction_cooldown.py` **удалены** (2026-07-20); канон — `CorrectionPlanner` + `pid_state` + `zone.pid` / `zone.correction` (см. `PID_CONFIG_REFERENCE.md` §0).
+17. Sequential nutrient PID: gap=`T_step`; reset I на смене компонента/dilute; freeze EC на pH-gate (`corr_ec_pid_frozen`); per-component `ec_component_gains`; fill_ca→recirc_ca без reset I; irrigation только pH (см. `PID_CONFIG_REFERENCE.md` §11).
 #### `PlannedCommand`
 
 Execution record внутри task:
@@ -312,12 +314,17 @@ Terminal:
 2. `tank_filling`
 3. `tank_recirc`
 4. `irrigating`
-5. `irrig_recirc`
-6. `ready`
+5. `ready`
+
+> `irrig_recirc` — **removed from canon** (2026-07-22, sequential nutrient:
+> post-irrigation chemistry recovery удалён). Legacy rows/check constraints
+> мигрируют на `ready` после `irrigation_stop_to_ready`.
 
 `zone_workflow_state` мутируется только каноническими AE3 task-ами:
 1. `cycle_start` управляет переходами `idle -> tank_filling -> tank_recirc -> ready`
-2. `irrigation_start` управляет переходами `ready -> irrigating -> irrig_recirc -> ready`
+   (`solution_fill` = Ca-only после water-baseline; `tank_recirc` = sequential pipeline + dilute)
+2. `irrigation_start` управляет переходами `ready -> irrigating -> ready`
+   (только pH-correction inline; без `irrig_recirc` / `irrigation_recovery_*`)
 3. `solution_change` управляет переходами `ready -> (drain + refill substages) -> tank_recirc -> ready`; не переводит зону в `irrigating`
 
 `startup` как отдельная `workflow_phase` не существует: возврат в startup кодируется как
@@ -479,25 +486,29 @@ OR COALESCE(n.last_seen_at, n.last_heartbeat_at, n.updated_at)
    должно приводить к fail-closed, без silent fallback на catalog defaults или устаревшие
    `diagnostics.execution.*`.
 
-### 5.4 Per-phase EC и day/night в runtime spec (2026-04-13)
+### 5.4 Water-baseline EC + sequential nutrient в runtime spec (2026-07-22)
 
-Two-tank `cycle_start` runtime spec (`backend/services/automation-engine/ae3lite/config/runtime_plan_builder.py`) расширен полями, которые AE3 handlers обязан использовать вместо сырых `target_ec`:
+Two-tank `cycle_start` runtime spec расширен полями water-baseline / cumulative
+targets. Legacy prepare owner `target_ec_prepare` / `npk_ec_share` — **deprecated**.
 
-| Поле runtime spec | Источник | Назначение |
-|-------------------|----------|------------|
-| `target_ec_prepare` | `target_ec * npk_ec_share` | EC target для prepare-фаз (`solution_fill`, `tank_recirc`) — только NPK-доля. |
-| `target_ec_prepare_min` / `target_ec_prepare_max` | `phase.ec_min/ec_max * npk_ec_share` | Диапазон prepare-target. |
-| `npk_ec_share` | `nutrient_npk_ratio_pct / Σratios` | Коэффициент NPK от полного EC; `1.0` если ratios отсутствуют (legacy phase). |
-| `day_night_enabled` | `phase.day_night_enabled` | Включает late-binding override pH/EC по локальному времени. |
-| `day_night_config` | `phase.extensions.day_night` (нормализованный) | `{enabled, lighting, ph, ec}` — готовый для handler. |
+| Поле runtime / baseline | Источник | Назначение |
+|-------------------------|----------|------------|
+| `water_ec`, `water_ph` | capture на `solution_fill` → `zone_prepare_baselines` | Baseline чистой воды |
+| `nutrient_budget` | `target_ec − water_ec` | Бюджет EC на нутриенты |
+| `component_targets` (`T_*`) | budget × cumulative ratios | Active EC target по pipeline step |
+| `target_ec` / `target_ph` | recipe phase (+ day/night) | Полный EC / pH |
+| `day_night_enabled` / `day_night_config` | phase snapshot | Late-binding override |
+| `recirc.ec_overshoot_dilute_*` | `zone.correction.recirc` | Dilute-on-overshoot |
 
-Handler-уровневые accessors (`backend/services/automation-engine/ae3lite/application/handlers/base.py:1107..1245`):
-- `_effective_ec_target/min/max(task, runtime)` — выбирает prepare vs full target по `task.workflow_phase`;
-- `_effective_ph_target/min/max(task, runtime)` — применяет day/night override;
-- `_is_day_now(day_night_config)` — late-binding, использует `datetime.now()` локального процесса AE3;
-- `_day_night_override_scaled` сохраняет NPK-долю при night-override для prepare-фаз.
+Handler/planner:
+- active EC target = `T_step` текущего pipeline step (не NPK share);
+- `solution_fill`: только calcium (`pump_b`), без pH;
+- `prepare_recirculation`: `Ca → pH → Mg → pH → NPK → pH → Micro → final pH`;
+- `irrigation`: `needs_ec=false`, только pH;
+- PID invariants — `PID_CONFIG_REFERENCE.md` §11.
 
-Полная семантика — `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 (per-phase EC) и §10 (day/night).
+Полная семантика — `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` §9 и
+`CORRECTION_CYCLE_SPEC.md` §3.7.
 
 ---
 

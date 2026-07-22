@@ -92,7 +92,6 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
     const diagnosticsRefill = asDict(diagnosticsExecution.refill);
     const diagnosticsStartup = asDict(diagnosticsExecution.startup);
     const diagnosticsCorrection = asDict(diagnosticsExecution.correction);
-    const diagnosticsRecovery = asDict(diagnosticsExecution.irrigation_recovery);
     const failSafeGuards = asDict(diagnosticsExecution.fail_safe_guards);
 
     const lighting = asDict(subsystems.lighting);
@@ -212,18 +211,6 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
             irrigationDecisionSpreadAlertThresholdPct: asNumber(
                 irrigationDecisionConfig.spread_alert_threshold_pct,
                 0,
-            ),
-            irrigationRecoveryMaxContinueAttempts: asNumber(
-                irrigationRecovery.max_continue_attempts ?? diagnosticsRecovery.max_continue_attempts,
-                0,
-            ),
-            irrigationRecoveryTimeoutSeconds: asNumber(
-                irrigationRecovery.timeout_sec ?? diagnosticsRecovery.timeout_sec,
-                0,
-            ),
-            irrigationRecoveryEnabled: asBool(
-                irrigationRecovery.enabled ?? diagnosticsRecovery.enabled,
-                true,
             ),
             irrigationAutoReplayAfterSetup: asBool(irrigationRecovery.auto_replay_after_setup, false),
             irrigationMaxSetupReplays: asNumber(irrigationRecovery.max_setup_replays, 0),
@@ -372,9 +359,6 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             irrigationDecisionStaleAfterSeconds: asNumber(decision.stale_after_sec, 0),
             irrigationDecisionHysteresisPct: asNumber(decision.hysteresis_pct, 0),
             irrigationDecisionSpreadAlertThresholdPct: asNumber(decision.spread_alert_threshold_pct, 0),
-            irrigationRecoveryMaxContinueAttempts: asNumber(recovery.max_continue_attempts, 0),
-            irrigationRecoveryTimeoutSeconds: asNumber(recovery.timeout_seconds, 0),
-            irrigationRecoveryEnabled: asBool(recovery.enabled, true),
             irrigationAutoReplayAfterSetup: asBool(recovery.auto_replay_after_setup, false),
             irrigationMaxSetupReplays: asNumber(recovery.max_setup_replays, 0),
             stopOnSolutionMin: asBool(water.stop_on_solution_min, fb.water_irrigation_stop_on_solution_min),

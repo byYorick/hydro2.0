@@ -6,6 +6,8 @@ use App\Services\ZoneCorrectionConfigCatalog;
 
 final class RecipeNutritionRuntimeConfigResolver
 {
+    private const EC_COMPONENT_ORDER = ['calcium', 'magnesium', 'npk', 'micro'];
+
     /**
      * @param  array<string, mixed>  $resolvedConfig
      * @param  array<string, mixed>|null  $nutrition
@@ -37,35 +39,9 @@ final class RecipeNutritionRuntimeConfigResolver
 
         $componentRatios = $this->extractComponentRatios($nutrition['components'] ?? null);
         if (in_array($mode, ['ratio_ec_pid', 'delta_ec_by_k'], true) && $componentRatios !== []) {
-            foreach (ZoneCorrectionConfigCatalog::PHASES as $phase) {
-                data_set($resolved, "phases.{$phase}.ec_component_ratios", $componentRatios);
-            }
-
-            $irrigationRatios = array_filter(
-                $componentRatios,
-                static fn (float $weight, string $component): bool => $component !== 'npk' && $weight > 0,
-                ARRAY_FILTER_USE_BOTH
-            );
-
-            if ($irrigationRatios !== []) {
-                $recipeEcDosingMode = strtolower(trim((string) ($nutrition['ec_dosing_mode'] ?? '')));
-                $irrigationEcDosingMode = $recipeEcDosingMode === 'parallel' ? 'multi_parallel' : 'multi_sequential';
-                data_set($resolved, 'phases.irrigation.ec_dosing_mode', $irrigationEcDosingMode);
-                data_set($resolved, 'phases.irrigation.ec_component_ratios', $componentRatios);
-                data_set(
-                    $resolved,
-                    'phases.irrigation.ec_excluded_components',
-                    $this->mergeExcludedComponents(
-                        data_get($resolved, 'phases.irrigation.ec_excluded_components'),
-                        ['npk']
-                    )
-                );
-
-                $policy = data_get($resolved, 'phases.irrigation.ec_component_policy');
-                $policy = is_array($policy) && ! array_is_list($policy) ? $policy : [];
-                $policy['irrigation'] = $irrigationRatios;
-                data_set($resolved, 'phases.irrigation.ec_component_policy', $policy);
-            }
+            $this->applySolutionFillCalciumOnly($resolved, $componentRatios);
+            $this->applyTankRecircSequentialPipeline($resolved, $componentRatios, $nutrition);
+            $this->applyIrrigationEcExcluded($resolved, $componentRatios);
         }
 
         $meta = data_get($resolved, 'meta');
@@ -89,6 +65,103 @@ final class RecipeNutritionRuntimeConfigResolver
         data_set($resolved, 'meta', $meta);
 
         return $resolved;
+    }
+
+    /**
+     * solution_fill: only calcium dosing (no full multi / no pH from nutrition policy).
+     *
+     * @param  array<string, mixed>  $resolved
+     * @param  array<string, float>  $componentRatios
+     */
+    private function applySolutionFillCalciumOnly(array &$resolved, array $componentRatios): void
+    {
+        $calciumRatio = $componentRatios['calcium'] ?? null;
+        if ($calciumRatio === null) {
+            return;
+        }
+
+        data_set($resolved, 'phases.solution_fill.ec_dosing_mode', 'single');
+        data_set($resolved, 'phases.solution_fill.ec_component_ratios', ['calcium' => $calciumRatio]);
+        data_set(
+            $resolved,
+            'phases.solution_fill.ec_excluded_components',
+            $this->mergeExcludedComponents(
+                data_get($resolved, 'phases.solution_fill.ec_excluded_components'),
+                array_values(array_filter(
+                    array_keys($componentRatios),
+                    static fn (string $component): bool => $component !== 'calcium'
+                ))
+            )
+        );
+
+        $policy = data_get($resolved, 'phases.solution_fill.ec_component_policy');
+        $policy = is_array($policy) && ! array_is_list($policy) ? $policy : [];
+        $policy['solution_fill'] = ['calcium' => $calciumRatio];
+        $policy['active_component'] = 'calcium';
+        data_set($resolved, 'phases.solution_fill.ec_component_policy', $policy);
+    }
+
+    /**
+     * tank_recirc: sequential pipeline ratios (Ca→Mg→NPK→Micro), not irrigation exclude-npk model.
+     *
+     * @param  array<string, mixed>  $resolved
+     * @param  array<string, float>  $componentRatios
+     * @param  array<string, mixed>  $nutrition
+     */
+    private function applyTankRecircSequentialPipeline(array &$resolved, array $componentRatios, array $nutrition): void
+    {
+        $recipeEcDosingMode = strtolower(trim((string) ($nutrition['ec_dosing_mode'] ?? '')));
+        $recircEcDosingMode = $recipeEcDosingMode === 'parallel' ? 'multi_parallel' : 'multi_sequential';
+
+        data_set($resolved, 'phases.tank_recirc.ec_dosing_mode', $recircEcDosingMode);
+        data_set($resolved, 'phases.tank_recirc.ec_component_ratios', $componentRatios);
+        data_set($resolved, 'phases.tank_recirc.ec_excluded_components', []);
+
+        $pipelineRatios = [];
+        foreach (self::EC_COMPONENT_ORDER as $component) {
+            if (($componentRatios[$component] ?? 0.0) > 0) {
+                $pipelineRatios[$component] = $componentRatios[$component];
+            }
+        }
+        foreach ($componentRatios as $component => $ratio) {
+            if (! array_key_exists($component, $pipelineRatios) && $ratio > 0) {
+                $pipelineRatios[$component] = $ratio;
+            }
+        }
+
+        $policy = data_get($resolved, 'phases.tank_recirc.ec_component_policy');
+        $policy = is_array($policy) && ! array_is_list($policy) ? $policy : [];
+        unset($policy['irrigation']);
+        $policy['tank_recirc'] = $pipelineRatios;
+        $policy['pipeline'] = array_keys($pipelineRatios);
+        data_set($resolved, 'phases.tank_recirc.ec_component_policy', $policy);
+    }
+
+    /**
+     * irrigation: no EC dosing — all recipe EC components excluded.
+     *
+     * @param  array<string, mixed>  $resolved
+     * @param  array<string, float>  $componentRatios
+     */
+    private function applyIrrigationEcExcluded(array &$resolved, array $componentRatios): void
+    {
+        data_set($resolved, 'phases.irrigation.ec_component_ratios', []);
+        data_set(
+            $resolved,
+            'phases.irrigation.ec_excluded_components',
+            $this->mergeExcludedComponents(
+                data_get($resolved, 'phases.irrigation.ec_excluded_components'),
+                array_keys($componentRatios)
+            )
+        );
+        data_set($resolved, 'phases.irrigation.ec_dosing_mode', 'single');
+
+        $policy = data_get($resolved, 'phases.irrigation.ec_component_policy');
+        $policy = is_array($policy) && ! array_is_list($policy) ? $policy : [];
+        unset($policy['irrigation']);
+        $policy['irrigation'] = [];
+        $policy['needs_ec'] = false;
+        data_set($resolved, 'phases.irrigation.ec_component_policy', $policy);
     }
 
     /**
@@ -139,7 +212,7 @@ final class RecipeNutritionRuntimeConfigResolver
         }
 
         foreach ($extra as $component) {
-            $normalized = strtolower(trim($component));
+            $normalized = strtolower(trim((string) $component));
             if ($normalized !== '') {
                 $items[] = $normalized;
             }

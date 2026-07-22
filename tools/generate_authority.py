@@ -74,6 +74,9 @@ def format_constraints(defn: dict[str, Any]) -> str:
     if "default" in defn:
         v = defn["default"]
         parts.append(f"default={v if isinstance(v, (int, float, str, bool)) else json.dumps(v)}")
+    description = str(defn.get("description") or "")
+    if "DEPRECATED" in description.upper() or "deprecated" in description.lower():
+        parts.append("removed/deprecated-compat only (не active catalog)")
     return ", ".join(parts)
 
 

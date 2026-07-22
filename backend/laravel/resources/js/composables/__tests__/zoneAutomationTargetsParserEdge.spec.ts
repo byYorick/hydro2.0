@@ -64,8 +64,6 @@ function createForms(): ZoneAutomationForms {
       irrigationDecisionStaleAfterSeconds: 600,
       irrigationDecisionHysteresisPct: 2,
       irrigationDecisionSpreadAlertThresholdPct: 12,
-      irrigationRecoveryMaxContinueAttempts: 5,
-      irrigationRecoveryTimeoutSeconds: 600,
       irrigationAutoReplayAfterSetup: true,
       irrigationMaxSetupReplays: 1,
       stopOnSolutionMin: true,

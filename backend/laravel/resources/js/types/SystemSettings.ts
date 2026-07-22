@@ -121,13 +121,6 @@ export interface AutomationDefaultsSettings {
   water_solution_fill_solution_min_check_delay_ms: number
   water_recirculation_stop_on_solution_min: boolean
   water_estop_debounce_ms: number
-  water_irrigation_recovery_max_continue_attempts: number
-  water_irrigation_recovery_timeout_sec: number
-  water_irrigation_recovery_enabled: boolean
-  water_irrigation_recovery_target_tolerance_ec_pct: number
-  water_irrigation_recovery_target_tolerance_ph_pct: number
-  water_irrigation_recovery_degraded_tolerance_ec_pct: number
-  water_irrigation_recovery_degraded_tolerance_ph_pct: number
   water_irrigation_decision_strategy: 'task' | 'smart_soil_v1'
   water_irrigation_decision_lookback_sec: number
   water_irrigation_decision_min_samples: number

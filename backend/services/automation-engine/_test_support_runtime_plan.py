@@ -200,7 +200,7 @@ def make_runtime_plan_dict(**overrides: Any) -> dict:
             },
         },
         "irrigation_recovery": {
-            "enabled": True,
+            "enabled": False,
             "max_continue_attempts": 5, "timeout_sec": 600,
             "auto_replay_after_setup": True, "max_setup_replays": 1,
         },

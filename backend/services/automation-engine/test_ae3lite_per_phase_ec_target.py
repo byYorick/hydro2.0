@@ -1,8 +1,7 @@
-"""Тесты per-phase EC target для двухбакового контура.
+"""Тесты deprecated prepare EC share (теперь calcium share / T_ca pre-estimate).
 
-При подготовке раствора (solution_fill / tank_recirc) дозируется только NPK,
-поэтому EC target = full_ec × npk_share.
-При поливе (irrigation) — полный EC target (кумулятивно: NPK уже в растворе).
+Канон 2026-07-22: prepare owner = water baseline + cumulative T_*.
+`_compute_prepare_ec_share` / `target_ec_prepare` — deprecated aliases (calcium share).
 """
 from __future__ import annotations
 
@@ -16,24 +15,22 @@ from ae3lite.config.runtime_plan_builder import (
 )
 
 
-# ── _compute_prepare_ec_share ────────────────────────────────────────────────
+# ── _compute_prepare_ec_share (calcium share) ────────────────────────────────
 
 
 class TestComputePrepareEcShare:
 
     def test_basic_4_component(self) -> None:
         ratios = {"npk": 44.0, "calcium": 36.0, "magnesium": 14.0, "micro": 8.0}
-        # 44/(44+36+14+8) = 44/102? Нет, тут в процентах = 100 суммарно,
-        # npk/total = 44/102 = 0.4314. Но типичный кейс: сумма = 100.
         cfg = {"ec_component_ratios": ratios}
         share = _compute_prepare_ec_share(cfg, {})
-        assert share == pytest.approx(0.4314, abs=0.001)
+        assert share == pytest.approx(36.0 / 102.0, abs=0.001)
 
     def test_ratios_sum_to_100(self) -> None:
         ratios = {"npk": 44.0, "calcium": 36.0, "magnesium": 12.0, "micro": 8.0}
         cfg = {"ec_component_ratios": ratios}
         share = _compute_prepare_ec_share(cfg, {})
-        assert share == pytest.approx(0.44, abs=0.001)
+        assert share == pytest.approx(0.36, abs=0.001)
 
     def test_no_ratios_returns_1(self) -> None:
         share = _compute_prepare_ec_share({}, {})
@@ -43,13 +40,13 @@ class TestComputePrepareEcShare:
         share = _compute_prepare_ec_share({"ec_component_ratios": {}}, {})
         assert share == 1.0
 
-    def test_npk_zero_returns_1(self) -> None:
-        ratios = {"npk": 0, "calcium": 50.0, "micro": 50.0}
+    def test_calcium_zero_returns_1(self) -> None:
+        ratios = {"npk": 50.0, "calcium": 0, "micro": 50.0}
         share = _compute_prepare_ec_share({"ec_component_ratios": ratios}, {})
         assert share == 1.0
 
-    def test_npk_missing_returns_1(self) -> None:
-        ratios = {"calcium": 60.0, "micro": 40.0}
+    def test_calcium_missing_returns_1(self) -> None:
+        ratios = {"npk": 60.0, "micro": 40.0}
         share = _compute_prepare_ec_share({"ec_component_ratios": ratios}, {})
         assert share == 1.0
 
@@ -57,10 +54,10 @@ class TestComputePrepareEcShare:
         """Если в solution_fill нет ratios, берём из base."""
         ratios = {"npk": 44.0, "calcium": 36.0, "magnesium": 12.0, "micro": 8.0}
         share = _compute_prepare_ec_share({}, {"ec_component_ratios": ratios})
-        assert share == pytest.approx(0.44, abs=0.001)
+        assert share == pytest.approx(0.36, abs=0.001)
 
     def test_3_component_model(self) -> None:
-        """Старая 3-компонентная модель: npk + calcium + micro."""
+        """3-компонентная модель: calcium share."""
         ratios = {"npk": 44.0, "calcium": 44.0, "micro": 12.0}
         cfg = {"ec_component_ratios": ratios}
         share = _compute_prepare_ec_share(cfg, {})
@@ -70,7 +67,7 @@ class TestComputePrepareEcShare:
         ratios = {"npk": 44.0, "calcium": "bad", "micro": -5}
         cfg = {"ec_component_ratios": ratios}
         share = _compute_prepare_ec_share(cfg, {})
-        # total = 44 (only npk valid), npk/total = 1.0
+        # calcium invalid → share falls back to 1.0
         assert share == pytest.approx(1.0, abs=0.001)
 
     def test_non_mapping_ratios_returns_1(self) -> None:
@@ -227,7 +224,7 @@ def _snapshot(
 class TestRuntimePerPhaseEcTarget:
 
     def test_prepare_target_with_ratios(self) -> None:
-        """target_ec_prepare = ec_target × npk_share."""
+        """Deprecated: target_ec_prepare = ec_target × calcium_share."""
         runtime = resolve_two_tank_runtime(
             _snapshot(
                 ec_target=1.5,
@@ -235,8 +232,10 @@ class TestRuntimePerPhaseEcTarget:
             )
         )
         assert runtime["target_ec"] == pytest.approx(1.5)
-        assert runtime["target_ec_prepare"] == pytest.approx(1.5 * 0.44, abs=0.01)
-        assert runtime["npk_ec_share"] == pytest.approx(0.44, abs=0.001)
+        assert runtime["target_ec_prepare"] == pytest.approx(1.5 * 0.36, abs=0.01)
+        assert runtime["npk_ec_share"] == pytest.approx(0.36, abs=0.001)
+        assert "recirc" in runtime
+        assert runtime["recirc"]["ec_overshoot_dilute_pct"] == pytest.approx(15.0)
 
     def test_prepare_target_without_ratios_equals_full(self) -> None:
         """Без ratios: target_ec_prepare = target_ec (backward compat)."""
@@ -246,7 +245,7 @@ class TestRuntimePerPhaseEcTarget:
         assert runtime["npk_ec_share"] == pytest.approx(1.0)
 
     def test_prepare_min_max_scaled(self) -> None:
-        """Явные ec_min/max масштабируются тем же npk_share."""
+        """Явные ec_min/max масштабируются calcium_share (deprecated alias)."""
         runtime = resolve_two_tank_runtime(
             _snapshot(
                 ec_target=2.0,
@@ -255,7 +254,7 @@ class TestRuntimePerPhaseEcTarget:
                 ec_component_ratios={"npk": 50.0, "calcium": 30.0, "magnesium": 10.0, "micro": 10.0},
             )
         )
-        share = 0.5
+        share = 0.3
         assert runtime["target_ec_prepare"] == pytest.approx(2.0 * share, abs=0.01)
         assert runtime["target_ec_prepare_min"] == pytest.approx(1.5 * share, abs=0.01)
         assert runtime["target_ec_prepare_max"] == pytest.approx(2.5 * share, abs=0.01)

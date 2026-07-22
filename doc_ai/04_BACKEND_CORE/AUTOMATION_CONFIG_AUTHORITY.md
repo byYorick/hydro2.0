@@ -1,9 +1,9 @@
 # AUTOMATION_CONFIG_AUTHORITY.md
 # Единый authority automation/runtime-конфигов
 
-**Версия:** 1.3  
-**Дата обновления:** 2026-04-17  
-**Статус:** Канонично для Laravel runtime, AE3 read-model и web-admin (+ §6.4 config modes Phase 5; автогенерируемые таблицы обновляются `python3 tools/generate_authority.py`)
+**Версия:** 1.4  
+**Дата обновления:** 2026-07-22  
+**Статус:** Канонично для Laravel runtime, AE3 read-model и web-admin (+ §6.4 config modes Phase 5; автогенерируемые таблицы обновляются `python3 tools/generate_authority.py`; sequential nutrient: `recirc.ec_overshoot_dilute_*`, deprecate recovery slack)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: прежние automation config endpoints, Inertia authority props и старые authority-таблицы не входят в runtime read-path; обратная совместимость не поддерживается.
@@ -384,6 +384,36 @@ Config modes (Phase 5):
 
 **Правило:** при изменении default-значения — обновить `zone_correction_defaults.json` **и** `ZoneCorrectionConfigCatalog::defaults()` одновременно. Тест не пройдёт при рассинхронизации.
 
+### Sequential nutrient — keys changelog (2026-07-22)
+
+**Новые (`zone.correction`):**
+
+| Path | Default | Назначение |
+|------|---------|------------|
+| `recirc.ec_overshoot_dilute_pct` | `15` | Порог EC overshoot относительно `T_step` (%) |
+| `recirc.dilute_pulse_sec` | `10` | Длительность импульса чистой воды |
+| `recirc.dilute_max_attempts` | `3` | Max попыток dilute за окно recirc |
+| `recirc.dilute_settle_sec` | `30` | Settle/observe после dilute |
+
+**Новые (`zone.process_calibration.*`):**
+
+| Path | Назначение |
+|------|------------|
+| `ec_component_gains.{calcium\|magnesium\|npk\|micro}.ec_gain_per_ml` | Per-component process gain для pipeline |
+
+**Удалённые / deprecated (не читать в AE3, убрать из catalog/UI):**
+
+| Path / scope | Статус |
+|--------------|--------|
+| `retry.irrigation_recovery_correction_slack_sec` | **deprecated/removed** из required + defaults |
+| `diagnostics.execution.irrigation_recovery.*` / `irrigationRecovery*` | removed (post-irrigation chemistry) |
+| `irrigation.execution.correction_during_irrigation` (EC) | семантика → **только pH** |
+| `system` water_irrigation_recovery_* / water_correction_during_irrigation | removed |
+| prepare owner `npk_ec_share` / `target_ec_prepare` | deprecated (см. `EFFECTIVE_TARGETS_SPEC.md` §9) |
+
+После правки `schemas/*.v1.json` перегенерировать таблицы ниже:
+`python3 tools/generate_authority.py`.
+
 <!-- BEGIN:generated-parameters -->
 
 ## Автогенерируемые таблицы параметров
@@ -415,8 +445,14 @@ Config modes (Phase 5):
 | `ec_component_ratios` | object | — |  |
 | `ec_dosing_mode` | enum: `single` \| `multi_parallel` \| `multi_sequential` | — |  |
 | `ec_excluded_components` | array | — |  |
+| `recirc` | object | — | ✓ |
+| `recirc.dilute_max_attempts` | integer | minimum=1, maximum=20 | ✓ |
+| `recirc.dilute_pulse_sec` | integer | minimum=1, maximum=600 | ✓ |
+| `recirc.dilute_settle_sec` | integer | minimum=0, maximum=3600 | ✓ |
+| `recirc.ec_overshoot_dilute_pct` | number | minimum=1.0, maximum=100.0 | ✓ |
 | `retry` | object | — | ✓ |
 | `retry.decision_window_retry_sec` | integer | minimum=1, maximum=3600 | ✓ |
+| `retry.irrigation_recovery_correction_slack_sec` | integer | minimum=0, maximum=7200, removed/deprecated-compat only (не active catalog) |  |
 | `retry.low_water_retry_sec` | integer | minimum=1, maximum=3600 | ✓ |
 | `retry.max_ec_correction_attempts` | integer | minimum=1, maximum=500 | ✓ |
 | `retry.max_ph_correction_attempts` | integer | minimum=1, maximum=500 | ✓ |
@@ -425,7 +461,6 @@ Config modes (Phase 5):
 | `retry.prepare_recirculation_max_correction_attempts` | integer | minimum=1, maximum=500 | ✓ |
 | `retry.prepare_recirculation_timeout_sec` | integer | minimum=30, maximum=7200 | ✓ |
 | `retry.solution_fill_correction_slack_sec` | integer | minimum=0, maximum=7200 | ✓ |
-| `retry.irrigation_recovery_correction_slack_sec` | integer | minimum=0, maximum=7200 | ✓ |
 | `retry.telemetry_stale_retry_sec` | integer | minimum=1, maximum=3600 | ✓ |
 | `runtime` | object | — | ✓ |
 | `runtime.clean_fill_retry_cycles` | integer | minimum=0, maximum=20 | ✓ |
@@ -487,6 +522,15 @@ Config modes (Phase 5):
 | Path | Type | Constraints | Required |
 | --- | --- | --- | --- |
 | `confidence` | number | minimum=0.0, maximum=1.0 | ✓ |
+| `ec_component_gains` | object | — |  |
+| `ec_component_gains.calcium` | object | — |  |
+| `ec_component_gains.calcium.ec_gain_per_ml` | number | minimum=0.0, maximum=10.0 | ✓ |
+| `ec_component_gains.magnesium` | object | — |  |
+| `ec_component_gains.magnesium.ec_gain_per_ml` | number | minimum=0.0, maximum=10.0 | ✓ |
+| `ec_component_gains.micro` | object | — |  |
+| `ec_component_gains.micro.ec_gain_per_ml` | number | minimum=0.0, maximum=10.0 | ✓ |
+| `ec_component_gains.npk` | object | — |  |
+| `ec_component_gains.npk.ec_gain_per_ml` | number | minimum=0.0, maximum=10.0 | ✓ |
 | `ec_gain_per_ml` | number | minimum=0.0, maximum=10.0 | ✓ |
 | `ec_per_ph_ml` | number | minimum=-1.0, maximum=1.0 | ✓ |
 | `is_active` | boolean | — |  |

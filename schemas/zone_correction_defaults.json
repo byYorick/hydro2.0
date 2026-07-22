@@ -80,7 +80,6 @@
     "prepare_recirculation_timeout_sec": 900,
     "prepare_recirculation_correction_slack_sec": 0,
     "solution_fill_correction_slack_sec": 900,
-    "irrigation_recovery_correction_slack_sec": 900,
     "prepare_recirculation_max_attempts": 4,
     "prepare_recirculation_max_correction_attempts": 40,
     "telemetry_stale_retry_sec": 30,
@@ -96,5 +95,11 @@
   "safety": {
     "safe_mode_on_no_effect": true,
     "block_on_active_no_effect_alert": true
+  },
+  "recirc": {
+    "ec_overshoot_dilute_pct": 15,
+    "dilute_pulse_sec": 10,
+    "dilute_max_attempts": 3,
+    "dilute_settle_sec": 30
   }
 }

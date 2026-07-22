@@ -75,10 +75,8 @@ class CorrectionTransitionPolicy:
         Returns ``None`` for stages that should fall back to
         ``transition_to_deactivate_or_return(success=False)``.
 
-        For ``irrigation_recovery_check``, ``max_continue_attempts`` caps how many
-        correction windows may be opened (``stage_retry_count`` = exhausted windows).
-        When the next count reaches the cap, fail-closed to
-        ``irrigation_recovery_stop_failed``.
+        ``max_continue_attempts`` is accepted for call-site compatibility but
+        unused: post-irrigation chemistry recovery stages were removed.
         """
         stage = (current_stage or "").strip().lower()
         if stage == "irrigation_check":
@@ -86,23 +84,6 @@ class CorrectionTransitionPolicy:
                 kind="transition",
                 next_stage="irrigation_check",
                 stage_retry_count=stage_retry_count + 1,
-                due_delay_sec=int(level_poll_interval_sec),
-            )
-        if stage == "irrigation_recovery_check":
-            next_count = int(stage_retry_count) + 1
-            continue_cap = int(max_continue_attempts) if max_continue_attempts is not None else 5
-            if continue_cap < 1:
-                continue_cap = 1
-            if next_count >= continue_cap:
-                return StageOutcome(
-                    kind="transition",
-                    next_stage="irrigation_recovery_stop_failed",
-                    stage_retry_count=next_count,
-                )
-            return StageOutcome(
-                kind="transition",
-                next_stage="irrigation_recovery_check",
-                stage_retry_count=next_count,
                 due_delay_sec=int(level_poll_interval_sec),
             )
         if stage == "prepare_recirculation_check":
@@ -161,12 +142,12 @@ class CorrectionTransitionPolicy:
     ) -> Optional[StageOutcome]:
         """Decide what to do when the stage deadline fires inside correction.
 
-        ``targets_reached`` is only consulted for irrigation_check; pass
-        ``None`` when it's not applicable. For terminal correction steps we
-        decline so the FSM can finish its own deactivation.
-
-        ``recovery_enabled`` gates post-irrigation recovery: when False and
-        targets are not reached, irrigation goes to ``irrigation_stop_to_ready``.
+        ``targets_reached`` / ``recovery_enabled`` are accepted for call-site
+        compatibility but unused for irrigation: post-irrigation chemistry
+        recovery was removed, so deadline always goes to
+        ``irrigation_stop_to_ready``. Pass ``None`` for ``targets_reached``
+        when not applicable. For terminal correction steps we decline so the
+        FSM can finish its own deactivation.
         """
         if corr.corr_step in {"corr_deactivate", "corr_done"}:
             return None
@@ -186,19 +167,10 @@ class CorrectionTransitionPolicy:
                 next_stage="solution_fill_timeout_stop",
             )
         if stage == "irrigation_check":
-            if targets_reached or not recovery_enabled:
-                return StageOutcome(
-                    kind="transition",
-                    next_stage="irrigation_stop_to_ready",
-                )
+            # Post-irrigation chemistry removed: always stop → ready.
             return StageOutcome(
                 kind="transition",
-                next_stage="irrigation_stop_to_recovery",
-            )
-        if stage == "irrigation_recovery_check":
-            return StageOutcome(
-                kind="transition",
-                next_stage="irrigation_recovery_stop_failed",
+                next_stage="irrigation_stop_to_ready",
             )
         return None
 

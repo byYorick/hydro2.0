@@ -273,7 +273,9 @@ import Button from '@/Components/Button.vue'
 import { Chip, Field, Stat } from '@/Components/Shared/Primitives'
 import Ic from '@/Components/Icons/Ic.vue'
 import {
+  buildEcComponentGainsPayload,
   documentToZoneProcessCalibration,
+  extractEcComponentGainValue,
   isSavedProcessCalibration,
   PROCESS_CALIBRATION_MODES,
   processCalibrationNamespace,
@@ -442,6 +444,57 @@ const sections: Section[] = [
         min: 0.001,
         max: 5,
         placeholder: 'например, 0.07',
+      },
+    ],
+  },
+  {
+    key: 'ec_components',
+    title: 'EC gains по компонентам',
+    desc: 'Переопределение process gain для sequential pipeline (Ca/Mg/NPK/Micro)',
+    fields: [
+      {
+        key: 'ec_component_gain_calcium',
+        label: 'Calcium (pump_b)',
+        description: 'EC gain per ml для calcium. Пусто = общий ec_gain_per_ml.',
+        hint: '0..10',
+        type: 'number',
+        step: '0.001',
+        min: 0,
+        max: 10,
+        placeholder: 'опционально',
+      },
+      {
+        key: 'ec_component_gain_magnesium',
+        label: 'Magnesium (pump_c)',
+        description: 'EC gain per ml для magnesium.',
+        hint: '0..10',
+        type: 'number',
+        step: '0.001',
+        min: 0,
+        max: 10,
+        placeholder: 'опционально',
+      },
+      {
+        key: 'ec_component_gain_npk',
+        label: 'NPK (pump_a)',
+        description: 'EC gain per ml для NPK.',
+        hint: '0..10',
+        type: 'number',
+        step: '0.001',
+        min: 0,
+        max: 10,
+        placeholder: 'опционально',
+      },
+      {
+        key: 'ec_component_gain_micro',
+        label: 'Micro (pump_d)',
+        description: 'EC gain per ml для micro.',
+        hint: '0..10',
+        type: 'number',
+        step: '0.001',
+        min: 0,
+        max: 10,
+        placeholder: 'опционально',
       },
     ],
   },
@@ -673,6 +726,30 @@ function hydrateForm(mode: ProcessCalibrationMode): void {
           parseNumeric(source.confidence as string | number | null | undefined),
           '0.01',
         ),
+        ec_component_gain_npk: formatNumeric(
+          extractEcComponentGainValue(
+            (source.ec_component_gains as Record<string, unknown> | undefined)?.npk,
+          ),
+          '0.001',
+        ),
+        ec_component_gain_calcium: formatNumeric(
+          extractEcComponentGainValue(
+            (source.ec_component_gains as Record<string, unknown> | undefined)?.calcium,
+          ),
+          '0.001',
+        ),
+        ec_component_gain_magnesium: formatNumeric(
+          extractEcComponentGainValue(
+            (source.ec_component_gains as Record<string, unknown> | undefined)?.magnesium,
+          ),
+          '0.001',
+        ),
+        ec_component_gain_micro: formatNumeric(
+          extractEcComponentGainValue(
+            (source.ec_component_gains as Record<string, unknown> | undefined)?.micro,
+          ),
+          '0.001',
+        ),
       }
     : createDefaultProcessCalibrationForm(processCalibrationDefaults.value)
 
@@ -876,6 +953,7 @@ async function save(): Promise<void> {
     transport_delay_sec: parseNumeric(form.value.transport_delay_sec),
     settle_sec: parseNumeric(form.value.settle_sec),
     confidence: parseNumeric(form.value.confidence),
+    ec_component_gains: buildEcComponentGainsPayload(form.value),
     source: 'manual',
     valid_from: new Date().toISOString(),
     valid_to: null,

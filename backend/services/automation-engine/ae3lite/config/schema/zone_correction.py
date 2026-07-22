@@ -312,12 +312,62 @@ class Retry(_DictShim, BaseModel):
     prepare_recirculation_timeout_sec: Annotated[int, Field(ge=30, le=7200)]
     prepare_recirculation_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     solution_fill_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
-    irrigation_recovery_correction_slack_sec: Annotated[int, Field(ge=0, le=7200)] = 900
+    irrigation_recovery_correction_slack_sec: Annotated[
+        int | None,
+        Field(
+            default=None,
+            ge=0,
+            le=7200,
+            description=(
+                "DEPRECATED (2026-07-22): post-irrigation chemistry recovery removed; "
+                "ignored by AE3. Optional for payload compat only."
+            ),
+        ),
+    ] = None
     prepare_recirculation_max_attempts: Annotated[int, Field(ge=1, le=10)]
     prepare_recirculation_max_correction_attempts: PositiveCount
     telemetry_stale_retry_sec: Annotated[int, Field(ge=1, le=3600)]
     decision_window_retry_sec: Annotated[int, Field(ge=1, le=3600)]
     low_water_retry_sec: Annotated[int, Field(ge=1, le=3600)]
+
+
+class Recirc(_DictShim, BaseModel):
+    """Dilute-on-overshoot controls for prepare_recirculation / tank_recirc."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ec_overshoot_dilute_pct: Annotated[
+        float,
+        Field(
+            ge=1.0,
+            le=100.0,
+            description="Trigger dilute when current_ec > T_step * (1 + pct/100). Default 15.",
+        ),
+    ]
+    dilute_pulse_sec: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=600,
+            description="Clean-water pulse duration via valve_clean_supply. Default 10.",
+        ),
+    ]
+    dilute_max_attempts: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=20,
+            description="Max dilute attempts per recirc window. Default 3.",
+        ),
+    ]
+    dilute_settle_sec: Annotated[
+        int,
+        Field(
+            ge=0,
+            le=3600,
+            description="Settle/observe pause after dilute pulse. Default 30.",
+        ),
+    ]
 
 
 class PrepareTolerance(_DictShim, BaseModel):
@@ -366,6 +416,7 @@ class ZoneCorrection(_DictShim, BaseModel):
     retry: Retry
     tolerance: Tolerance
     safety: Safety
+    recirc: Recirc
     ec_component_ratios: dict[str, Annotated[float, Field(ge=0.0, le=100.0)]] | None = None
     ec_excluded_components: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = None
     system_type: Annotated[str, Field(min_length=1, max_length=64)] | None = None

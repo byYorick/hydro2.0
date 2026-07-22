@@ -1,17 +1,18 @@
-# E112: Per-phase EC target — при подготовке раствора target = full_ec × npk_share
+# E112: Water-baseline + cumulative T_* EC targets on real test_node
 # DoD:
 # - рецепт содержит nutrient_mode=ratio_ec_pid и 4 компонента (npk=44%, ca=36%, mg=12%, micro=8%)
-# - при подготовке (solution_fill / tank_recirc) AE целит в target_ec_prepare = 2.33 × 0.44 ≈ 1.025
-# - EC correction доводит раствор до ~1.0 mS/cm (NPK share), а не до полного 2.33
-# - pH correction работает как раньше (полный target)
-# - task не падает, correction loop завершается когда EC в prepare tolerance band
+# - prepare использует water-baseline + кумулятивные T_* (не target_ec_prepare / npk_ec_share)
+# - solution_fill → только calcium к T_ca; recirc pipeline доводит до T_full = recipe EC 2.33
+# - pH correction работает на recipe target_ph
+# - task не падает, correction loop завершается в prepare tolerance band у полного target
 
 name: E112_ae3_per_phase_ec_target_realhw
 description: |
-  Per-phase EC target тест на реальной test_node.
+  Water-baseline / cumulative T_* тест на реальной test_node.
   Рецепт содержит nutrition ratios (npk=44%, calcium=36%, magnesium=12%, micro=8%).
-  При подготовке раствора AE3 использует target_ec_prepare = ec_target * npk_share = 2.33 * 0.44 = 1.025.
-  EC correction доводит раствор до ~1.0 mS/cm (NPK share), а не до полного 2.33 mS/cm.
+  AE3 снимает water_ec/water_ph, считает nutrient_budget = target_ec − water_ec и
+  кумулятивные T_ca / T_ca_mg / T_ca_mg_npk / T_full. Legacy npk_share prepare target
+  (2.33 × 0.44 ≈ 1.025) больше не owner — финальный prepare target = full recipe EC.
 
 actions:
   - step: set_test_context
@@ -146,7 +147,7 @@ actions:
     timeout: 60.0
     expected_rows: 1
 
-  - step: load_ec_pump_channel
+  - step: load_ec_pump_a_channel
     type: database_query
     query: |
       SELECT id AS node_channel_id
@@ -157,7 +158,46 @@ actions:
     params:
       node_id: ${ec_node_id}
     expected_rows: 1
-    save: ec_pump_channel_row
+    save: ec_pump_a_channel_row
+
+  - step: load_ec_pump_b_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_b'
+      LIMIT 1
+    params:
+      node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_pump_b_channel_row
+
+  - step: load_ec_pump_c_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_c'
+      LIMIT 1
+    params:
+      node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_pump_c_channel_row
+
+  - step: load_ec_pump_d_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_d'
+      LIMIT 1
+    params:
+      node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_pump_d_channel_row
 
   - step: load_ph_up_channel
     type: database_query
@@ -187,7 +227,11 @@ actions:
 
   - step: set_correction_channel_ids
     type: set
-    ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
+    ec_pump_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_row.0.node_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_row.0.node_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_row.0.node_channel_id}
     ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
     ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
 
@@ -415,7 +459,7 @@ actions:
                   no_effect_consecutive_limit: 4
             dosing:
               solution_volume_l: 20.0
-              dose_ec_channel: pump_a
+              dose_ec_channel: pump_b
               dose_ph_up_channel: pump_base
               dose_ph_down_channel: pump_acid
               max_ec_dose_ml: 20.0
@@ -510,11 +554,17 @@ actions:
                   no_effect_consecutive_limit: 4
             dosing:
               solution_volume_l: 20.0
-              dose_ec_channel: pump_a
+              # Sequential nutrient: fill + first recirc EC step = calcium on pump_b.
+              dose_ec_channel: pump_b
               dose_ph_up_channel: pump_base
               dose_ph_down_channel: pump_acid
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
+            recirc:
+              ec_overshoot_dilute_pct: 15
+              dilute_pulse_sec: 10
+              dilute_max_attempts: 3
+              dilute_settle_sec: 30
             timing:
               sensor_mode_stabilization_time_sec: 20
               stabilization_sec: 10
@@ -534,7 +584,7 @@ actions:
     type: database_execute
     query: |
       DELETE FROM channel_bindings
-      WHERE role IN ('pump_a', 'pump_base', 'pump_acid')
+      WHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')
         AND node_channel_id IN (
           SELECT nc.id
           FROM node_channels nc
@@ -550,7 +600,15 @@ actions:
       DELETE FROM infrastructure_instances
       WHERE owner_type = 'zone'
         AND owner_id = :zone_id
-        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
+        AND label IN (
+          'AE3 E2E EC NPK',
+          'AE3 E2E EC Calcium',
+          'AE3 E2E EC Magnesium',
+          'AE3 E2E EC Micro',
+          'AE3 E2E EC Dose',
+          'AE3 E2E PH Up',
+          'AE3 E2E PH Down'
+        )
     params:
       zone_id: ${zone_id}
 
@@ -560,12 +618,18 @@ actions:
       DELETE FROM pump_calibrations
       WHERE source = 'e2e_realhw_setup_ready'
         AND node_channel_id IN (
-          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ec_pump_a_channel_id AS bigint),
+          CAST(:ec_pump_b_channel_id AS bigint),
+          CAST(:ec_pump_c_channel_id AS bigint),
+          CAST(:ec_pump_d_channel_id AS bigint),
           CAST(:ph_up_channel_id AS bigint),
           CAST(:ph_down_channel_id AS bigint)
         )
     params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
+      ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+      ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+      ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+      ec_pump_d_channel_id: ${ec_pump_d_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
@@ -582,7 +646,10 @@ actions:
         updated_at
       )
       VALUES
-        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Dose', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC NPK', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Calcium', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Magnesium', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Micro', TRUE, NOW(), NOW()),
         ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Up', TRUE, NOW(), NOW()),
         ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Down', TRUE, NOW(), NOW())
     params:
@@ -602,7 +669,10 @@ actions:
       SELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()
       FROM (
         VALUES
-          ('AE3 E2E EC Dose', CAST(:ec_pump_channel_id AS bigint), 'pump_a'),
+          ('AE3 E2E EC NPK', CAST(:ec_pump_a_channel_id AS bigint), 'pump_a'),
+          ('AE3 E2E EC Calcium', CAST(:ec_pump_b_channel_id AS bigint), 'pump_b'),
+          ('AE3 E2E EC Magnesium', CAST(:ec_pump_c_channel_id AS bigint), 'pump_c'),
+          ('AE3 E2E EC Micro', CAST(:ec_pump_d_channel_id AS bigint), 'pump_d'),
           ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'pump_base'),
           ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'pump_acid')
       ) AS mapping(label, node_channel_id, role)
@@ -612,7 +682,10 @@ actions:
        AND ii.label = mapping.label
     params:
       zone_id: ${zone_id}
-      ec_pump_channel_id: ${ec_pump_channel_id}
+      ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+      ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+      ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+      ec_pump_d_channel_id: ${ec_pump_d_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
@@ -623,6 +696,7 @@ actions:
         node_channel_id,
         ml_per_sec,
         k_ms_per_ml_l,
+        component,
         source,
         quality_score,
         sample_count,
@@ -632,11 +706,17 @@ actions:
         updated_at
       )
       VALUES
-        (CAST(:ec_pump_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_up_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_down_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
+        (CAST(:ec_pump_a_channel_id AS bigint), 1.0, 1.0, 'npk', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ec_pump_b_channel_id AS bigint), 1.0, 1.0, 'calcium', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ec_pump_c_channel_id AS bigint), 1.0, 1.0, 'magnesium', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ec_pump_d_channel_id AS bigint), 1.0, 1.0, 'micro', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
     params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
+      ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+      ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+      ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+      ec_pump_d_channel_id: ${ec_pump_d_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
@@ -1416,6 +1496,38 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
+  - step: seed_solution_fill_sensor_baseline
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        # Water-baseline seed: fill doses only calcium (pump_b) toward T_ca.
+        level_clean_min_override: true
+        level_clean_max_override: true
+        level_solution_min_override: true
+        level_solution_max_override: false
+        ph_value: 7.0
+        ec_value: 0.45
+    save: seed_solution_fill_sensor_baseline_response
+
+  - step: wait_seed_solution_fill_sensor_baseline_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
   - step: wait_fill_ec_correction_command
     type: db.wait
     query: |
@@ -1423,7 +1535,7 @@ actions:
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel = 'pump_a'
+        AND channel = 'pump_b'
         AND payload->>'cmd' = 'dose'
       ORDER BY id DESC
       LIMIT 1
@@ -1638,7 +1750,7 @@ actions:
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel = 'pump_a'
+        AND channel = 'pump_b'
         AND payload->>'cmd' = 'dose'
         AND created_at >= CAST(:after_seeded_at AS timestamptz)
       ORDER BY id ASC
@@ -1752,7 +1864,7 @@ actions:
       cmd: set_fault_mode
       params:
         ph_value: 5.10
-        ec_value: 1.02
+        ec_value: 2.33
     save: force_near_target_after_loop_response
 
   - step: wait_force_near_target_after_loop_done
@@ -1790,7 +1902,7 @@ actions:
         AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
         AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
         AND ph.last_value BETWEEN 5.00 AND 5.15
-        AND ec.last_value BETWEEN 0.85 AND 1.20
+        AND ec.last_value BETWEEN 2.30 AND 2.38
       LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
@@ -1862,9 +1974,14 @@ actions:
         )::int AS prepare_recirculation_start_cnt,
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
-            AND channel = 'pump_a'
+            AND channel IN ('pump_a', 'pump_b', 'pump_c', 'pump_d')
             AND payload->>'cmd' = 'dose'
         )::int AS ec_correction_cnt,
+        COUNT(*) FILTER (
+          WHERE publish_status = 'accepted'
+            AND channel = 'pump_b'
+            AND payload->>'cmd' = 'dose'
+        )::int AS calcium_correction_cnt,
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
             AND channel IN ('pump_acid', 'pump_base')
@@ -2001,9 +2118,9 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('prepare_recirculation_start_cnt', 0)) >= 1"
 
-  - name: ec_correction_logged_twice
+  - name: calcium_correction_logged_twice
     type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
+    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('calcium_correction_cnt', 0)) >= 2"
 
   - name: sequential_ph_correction_logged
     type: custom_assert
@@ -2047,12 +2164,18 @@ cleanup:
       DELETE FROM pump_calibrations
       WHERE source = 'e2e_realhw_setup_ready'
         AND node_channel_id IN (
-          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ec_pump_a_channel_id AS bigint),
+          CAST(:ec_pump_b_channel_id AS bigint),
+          CAST(:ec_pump_c_channel_id AS bigint),
+          CAST(:ec_pump_d_channel_id AS bigint),
           CAST(:ph_up_channel_id AS bigint),
           CAST(:ph_down_channel_id AS bigint)
         )
     params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
+      ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+      ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+      ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+      ec_pump_d_channel_id: ${ec_pump_d_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
@@ -2067,14 +2190,20 @@ cleanup:
     optional: true
     query: |
       DELETE FROM channel_bindings
-      WHERE role IN ('pump_a', 'pump_base', 'pump_acid')
+      WHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')
         AND node_channel_id IN (
-          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ec_pump_a_channel_id AS bigint),
+          CAST(:ec_pump_b_channel_id AS bigint),
+          CAST(:ec_pump_c_channel_id AS bigint),
+          CAST(:ec_pump_d_channel_id AS bigint),
           CAST(:ph_up_channel_id AS bigint),
           CAST(:ph_down_channel_id AS bigint)
         )
     params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
+      ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+      ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+      ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+      ec_pump_d_channel_id: ${ec_pump_d_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
@@ -2085,7 +2214,15 @@ cleanup:
       DELETE FROM infrastructure_instances
       WHERE owner_type = 'zone'
         AND owner_id = :zone_id
-        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
+        AND label IN (
+          'AE3 E2E EC NPK',
+          'AE3 E2E EC Calcium',
+          'AE3 E2E EC Magnesium',
+          'AE3 E2E EC Micro',
+          'AE3 E2E EC Dose',
+          'AE3 E2E PH Up',
+          'AE3 E2E PH Down'
+        )
     params:
       zone_id: ${zone_id}
 

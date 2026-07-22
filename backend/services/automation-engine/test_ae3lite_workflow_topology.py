@@ -80,8 +80,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 52, (
-            f"Expected 52 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 47, (
+            f"Expected 47 stages (recovery removed), got {len(TWO_TANK)}"
         )
 
 
@@ -105,11 +105,11 @@ class TestTopologyRegistryLookup:
         assert sdef.on_corr_success == "solution_fill_check"
         assert sdef.on_corr_fail == "solution_fill_check"
 
-    def test_irrigation_recovery_correction_fail_is_fail_closed(self, registry: TopologyRegistry):
-        sdef = registry.get("two_tank", "irrigation_recovery_check")
-        assert sdef.has_correction is True
-        assert sdef.on_corr_success == "irrigation_recovery_stop_to_ready"
-        assert sdef.on_corr_fail == "irrigation_recovery_stop_failed"
+    def test_irrigation_recovery_stages_removed(self, registry: TopologyRegistry):
+        stages = registry.stages("two_tank")
+        assert "irrigation_recovery_check" not in stages
+        assert "irrigation_stop_to_recovery" not in stages
+        assert "irrigation_stop_to_ready" in stages
 
     def test_get_terminal_stage(self, registry: TopologyRegistry):
         sdef = registry.get("two_tank", "clean_fill_timeout_stop")
@@ -127,11 +127,12 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 52
+        assert len(stages) == 47
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages
-        assert "irrigation_recovery_stop_failed" in stages
+        assert "irrigation_recovery_stop_failed" not in stages
+        assert "irrigation_stop_to_ready" in stages
         assert "clean_fill_source_empty_stop" in stages
         assert "solution_fill_source_empty_stop" in stages
         assert "solution_fill_leak_stop" in stages
@@ -240,7 +241,8 @@ class TestStageDefImmutability:
 class TestWorkflowPhases:
     """Validates that workflow_phase values in TWO_TANK are consistent."""
 
-    EXPECTED_PHASES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
+    # Live TWO_TANK phases (irrig_recirc removed with post-irrigation chemistry).
+    EXPECTED_PHASES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating"}
 
     def test_all_phases_are_expected(self):
         phases = {sdef.workflow_phase for sdef in TWO_TANK.values()}
@@ -278,6 +280,6 @@ class TestWorkflowPhases:
     def test_irrigation_stages_use_expected_transition_phases(self):
         for name, sdef in TWO_TANK.items():
             if name.startswith("irrigation_"):
-                assert sdef.workflow_phase in {"tank_filling", "irrigating", "irrig_recirc", "ready"}, (
+                assert sdef.workflow_phase in {"tank_filling", "irrigating", "ready"}, (
                     f"{name} has unexpected phase {sdef.workflow_phase}"
                 )

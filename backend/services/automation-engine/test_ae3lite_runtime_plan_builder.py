@@ -275,14 +275,15 @@ def test_resolve_two_tank_runtime_rejects_unknown_active_phase() -> None:
         resolve_two_tank_runtime(snap)
 
 
-def test_default_irrigation_recovery_stop_closes_irrigation_valve() -> None:
-    plan = default_two_tank_command_plan("irrigation_recovery_stop")
-
-    assert plan[-1] == {
-        "channel": "valve_irrigation",
-        "cmd": "set_relay",
-        "params": {"state": False},
-    }
+def test_default_recirc_dilute_plans_use_valve_clean_supply() -> None:
+    start = default_two_tank_command_plan("recirc_dilute_start")
+    stop = default_two_tank_command_plan("recirc_dilute_stop")
+    assert start == [
+        {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": True}},
+    ]
+    assert stop == [
+        {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": False}},
+    ]
 
 
 def test_resolve_two_tank_runtime_preserves_unknown_irrigation_strategy_for_fail_closed_runtime() -> None:

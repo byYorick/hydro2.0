@@ -1,4 +1,6 @@
 # E107: AE3-Lite irrigation runtime on test_node
+# Canon: irrigation = pH-only inline correction; stop → ready (no irrig_recirc / recovery chemistry).
+# EC actuator map (`dose_ec_channel`) may exist in zone.correction schema, but must NOT fire during irrig.
 name: E107_ae3_irrigation_runtime_test_node
 auth_role: admin
 description: |
@@ -6,6 +8,8 @@ description: |
   - подготавливает AE3 runtime и фиксирует `workflow_phase=ready` непосредственно
     перед `start-irrigation` (AE3 fail-closed при `idle`);
   - проверяет запуск полива по времени (`task`);
+  - inline correction во время irrig — только pH (`pump_acid`/`pump_base`), без EC dose;
+  - stop → ready (без `irrig_recirc` / `irrigation_recovery`);
   - переключает decision-controller на `smart_soil_v1`;
   - проверяет `skip` при высокой влажности почвы;
   - проверяет `run` при низкой влажности почвы.
@@ -396,6 +400,9 @@ actions:
                   no_effect_consecutive_limit: 4
             dosing:
               solution_volume_l: 20.0
+              # Zone actuator map residual (schema). Irrigation runtime is pH-only —
+              # see wait_no_ec_dose_during_irrigation / task_run_has_no_ec_dose.
+              # Do NOT treat this as permission for EC dosing on irrig.
               dose_ec_channel: pump_a
               dose_ph_up_channel: pump_base
               dose_ph_down_channel: pump_acid
@@ -584,10 +591,9 @@ actions:
                     hysteresis_pct: 2.0
                     spread_alert_threshold_pct: 12.0
                 recovery:
-                  max_continue_attempts: 2
-                  # Inline EC/pH correction during irrig + recovery needs headroom
-                  # beyond requested_duration_sec (90s); 90s stage deadline races dose poll.
-                  timeout_sec: 420
+                  max_continue_attempts: 0
+                  # Post-irrigation chemistry removed: stop → ready (no recovery stages).
+                  timeout_sec: 120
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:
@@ -1276,7 +1282,7 @@ actions:
       FROM ae_commands, pump_on
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel IN ('pump_a', 'pump_acid', 'pump_base')
+        AND channel IN ('pump_acid', 'pump_base')
         AND payload->>'cmd' = 'dose'
         AND pump_on.pump_on_at IS NOT NULL
         AND created_at >= pump_on.pump_on_at
@@ -1287,8 +1293,8 @@ actions:
     timeout: 120.0
     expected_rows: 1
 
-  # After first inline dose is observed, snap sensors to target so irrig/recovery
-  # can finish within stage deadline instead of oscillating EC↔pH until timeout.
+  # After first inline pH dose is observed, snap sensors to target so irrig
+  # can finish (stop → ready) without oscillating until timeout.
   - step: force_near_target_after_inline_dose
     type: hardware_set_fault_mode
     zone_id: ${zone_id}
@@ -1331,7 +1337,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_run_id}
-    # Inline correction (EC→observe→pH) может занять существенно дольше длительности полива
+    # Inline pH-only correction during irrig; stop → ready (no recovery stages)
     timeout: 300.0
     expected_rows: 1
     save: task_run_row
@@ -1379,6 +1385,63 @@ actions:
       zone_id: ${zone_id}
     timeout: 20.0
     expected_rows: 1
+
+  # Post-run hard checks: irrigation remains pH-only; no irrig_recirc / recovery chemistry.
+  - step: wait_no_ec_dose_during_irrigation
+    type: database_query
+    query: |
+      SELECT
+        (
+          SELECT COUNT(*)::int
+          FROM ae_commands
+          WHERE task_id = CAST(:task_id AS bigint)
+            AND publish_status = 'accepted'
+            AND payload->>'cmd' = 'dose'
+            AND channel IN ('pump_a', 'pump_b', 'pump_c', 'pump_d')
+        ) AS ec_cmd_cnt,
+        (
+          SELECT COUNT(*)::int
+          FROM zone_events
+          WHERE zone_id = :zone_id
+            AND type = 'EC_DOSING'
+            AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+            AND COALESCE(details, payload_json)->>'workflow_phase' = 'irrigating'
+        ) AS ec_event_cnt
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_run_id}
+    expected_rows: 1
+    save: irrig_ec_dose_count_row
+
+  - step: assert_no_irrig_recirc_or_recovery_stages
+    type: database_query
+    query: |
+      SELECT
+        (
+          SELECT COUNT(*)::int
+          FROM ae_tasks
+          WHERE id = CAST(:task_id AS bigint)
+            AND (
+              COALESCE(workflow_phase, '') = 'irrig_recirc'
+              OR COALESCE(current_stage, '') ILIKE '%%irrigation_recovery%%'
+              OR COALESCE(current_stage, '') = 'irrig_recirc'
+            )
+        ) AS forbidden_task_cnt,
+        (
+          SELECT COUNT(*)::int
+          FROM zone_events
+          WHERE zone_id = :zone_id
+            AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+            AND (
+              COALESCE(details, payload_json)->>'workflow_phase' = 'irrig_recirc'
+              OR COALESCE(type, '') ILIKE '%%IRRIGATION_RECOVERY%%'
+            )
+        ) AS forbidden_event_cnt
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_run_id}
+    expected_rows: 1
+    save: irrig_forbidden_stage_row
 
   - step: capture_smart_profile_update_window
     type: database_query
@@ -1522,8 +1585,8 @@ actions:
                     hysteresis_pct: 2.0
                     spread_alert_threshold_pct: 12.0
                 recovery:
-                  max_continue_attempts: 2
-                  timeout_sec: 420
+                  max_continue_attempts: 0
+                  timeout_sec: 120
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:
@@ -1948,6 +2011,18 @@ assertions:
       - field: irrigation_decision_strategy
         operator: equals
         value: task
+
+  - name: inline_correction_has_no_ec_dose
+    type: custom_assert
+    condition: >
+      int(context.get('irrig_ec_dose_count_row', [{}])[0].get('ec_cmd_cnt', 1)) == 0
+      and int(context.get('irrig_ec_dose_count_row', [{}])[0].get('ec_event_cnt', 1)) == 0
+
+  - name: task_run_forbids_irrig_recirc_and_recovery
+    type: custom_assert
+    condition: >
+      int(context.get('irrig_forbidden_stage_row', [{}])[0].get('forbidden_task_cnt', 1)) == 0
+      and int(context.get('irrig_forbidden_stage_row', [{}])[0].get('forbidden_event_cnt', 1)) == 0
 
   - name: smart_soil_high_skips_irrigation
     type: database_query

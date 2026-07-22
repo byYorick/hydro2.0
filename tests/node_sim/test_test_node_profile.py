@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from node_sim.test_node_profile import (
     PendingCommand,
     CommandKind,
@@ -382,3 +384,82 @@ def test_set_fault_mode_updates_ph_and_ec_snapshot():
     assert payload["details"]["ec_value"] == 1.4
     assert sim.state.ph_value == 5.8
     assert sim.state.ec_value == 1.4
+    assert sim.state.water_ec_baseline == 1.4
+
+
+def test_ec_pump_b_maps_to_calcium_with_distinct_delta():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+    sim.state.ec_sensor_mode_active = True
+    sim.state.ec_value = 1.0
+
+    asyncio.run(
+        sim.execute_pending_command(
+            PendingCommand(
+                node_uid="nd-test-ec-1",
+                channel="pump_b",
+                cmd_id="cmd-ec-ca-1",
+                cmd="dose",
+                kind=CommandKind.ACTUATOR,
+                params={"ml": 12.0},
+                execute_delay_ms=0,
+            )
+        )
+    )
+
+    _, payload, _, _ = mqtt.messages[-1]
+    assert payload["status"] == "DONE"
+    assert payload["details"]["channel"] == "pump_b"
+    assert payload["details"]["component"] == "calcium"
+    assert payload["details"]["base_delta_ec"] == pytest.approx(0.055)
+    assert sim.state.ec_value > 1.0
+
+    sim_a = TestNodeSimulator(_DummyMqtt())
+    sim_a.state.ec_sensor_mode_active = True
+    sim_a.state.ec_value = 1.0
+    asyncio.run(
+        sim_a.execute_pending_command(
+            PendingCommand(
+                node_uid="nd-test-ec-1",
+                channel="pump_a",
+                cmd_id="cmd-ec-npk-1",
+                cmd="dose",
+                kind=CommandKind.ACTUATOR,
+                params={"ml": 12.0},
+                execute_delay_ms=0,
+            )
+        )
+    )
+    assert sim_a.state.ec_value > sim.state.ec_value
+
+
+def test_dilute_path_lowers_ec_toward_water_baseline():
+    sim = TestNodeSimulator(_DummyMqtt())
+    sim.state.ec_value = 2.0
+    sim.state.water_ec_baseline = 0.45
+    sim.state.main_pump_on = True
+    sim.state.valve_clean_supply_on = True
+    sim.state.valve_solution_fill_on = True
+    sim.state.ec_drift_hold_ticks = 100  # suppress passive EC drift
+
+    before = sim.state.ec_value
+    for _ in range(5):
+        sim.apply_passive_drift()
+
+    assert sim.state.ec_value < before
+    assert sim.state.ec_value >= sim.state.water_ec_baseline
+
+
+def test_ec_ph_telemetry_publishes_stub_false():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+    sim.state.ec_sensor_mode_active = True
+    sim.state.ph_sensor_mode_active = True
+
+    assert sim.publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", 1.2)
+    assert sim.publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", 6.1)
+
+    ec_payload = next(p for t, p, *_ in mqtt.messages if t.endswith("/ec_sensor/telemetry"))
+    ph_payload = next(p for t, p, *_ in mqtt.messages if t.endswith("/ph_sensor/telemetry"))
+    assert ec_payload["stub"] is False
+    assert ph_payload["stub"] is False

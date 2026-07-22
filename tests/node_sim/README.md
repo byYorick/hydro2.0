@@ -31,7 +31,10 @@ python -m node_sim.cli run --config config/test_node.yaml
 - общий state водного контура, staged level-switches и drift;
 - `node_hello`, `status`, `heartbeat`, `config_report`, `event`;
 - strict `command`/`config` обработка, namespace auto-bind, `reset_binding`, `reboot`;
-- sensor-mode gating для pH/EC и сервисные команды `storage_state/system`.
+- sensor-mode gating для pH/EC и сервисные команды `storage_state/system`;
+- EC per-pump deltas (`pump_a=npk` … `pump_d=micro`) и dilute через `valve_clean_supply`.
+
+Пример seed baseline/overshoot для correction без железа: `correction.example.yaml`.
 
 ### Запуск сценария
 

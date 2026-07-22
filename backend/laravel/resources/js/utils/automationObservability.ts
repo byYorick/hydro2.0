@@ -207,7 +207,72 @@ function normalizeCorrection(raw: unknown): AutomationObservabilityCorrection | 
     last_dose: Object.keys(lastDose).length > 0 ? lastDose : undefined,
     latest_skip: latestSkip,
     readiness,
+    prepare_baseline: normalizePrepareBaseline(source.prepare_baseline),
+    pipeline: normalizeCorrectionPipeline(source.pipeline),
   }
+}
+
+function normalizePrepareBaseline(raw: unknown): AutomationObservabilityCorrection['prepare_baseline'] {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+  const source = raw as Record<string, unknown>
+  return {
+    id: normalizePositiveId(source.id),
+    grow_cycle_id: normalizePositiveId(source.grow_cycle_id),
+    ae_task_id: normalizePositiveId(source.ae_task_id),
+    water_ec: source.water_ec != null && Number.isFinite(Number(source.water_ec)) ? Number(source.water_ec) : null,
+    water_ph: source.water_ph != null && Number.isFinite(Number(source.water_ph)) ? Number(source.water_ph) : null,
+    target_ec: source.target_ec != null && Number.isFinite(Number(source.target_ec)) ? Number(source.target_ec) : null,
+    nutrient_ec_budget: source.nutrient_ec_budget != null && Number.isFinite(Number(source.nutrient_ec_budget))
+      ? Number(source.nutrient_ec_budget)
+      : null,
+    ratios: normalizeNumberMap(source.ratios),
+    component_targets: normalizeNumberMap(source.component_targets),
+    captured_at: typeof source.captured_at === 'string' ? source.captured_at : null,
+    source: typeof source.source === 'string' ? source.source : null,
+  }
+}
+
+function normalizeCorrectionPipeline(raw: unknown): AutomationObservabilityCorrection['pipeline'] {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+  const source = raw as Record<string, unknown>
+  return {
+    task_id: normalizePositiveId(source.task_id),
+    pipeline_phase: typeof source.pipeline_phase === 'string' ? source.pipeline_phase : null,
+    active_component: typeof source.active_component === 'string' ? source.active_component : null,
+    water_ec: source.water_ec != null && Number.isFinite(Number(source.water_ec)) ? Number(source.water_ec) : null,
+    water_ph: source.water_ph != null && Number.isFinite(Number(source.water_ph)) ? Number(source.water_ph) : null,
+    nutrient_budget: source.nutrient_budget != null && Number.isFinite(Number(source.nutrient_budget))
+      ? Number(source.nutrient_budget)
+      : null,
+    component_targets: normalizeNumberMap(source.component_targets),
+    dilute_attempts: source.dilute_attempts != null && Number.isFinite(Number(source.dilute_attempts))
+      ? Number(source.dilute_attempts)
+      : null,
+    ec_pid_frozen: typeof source.ec_pid_frozen === 'boolean' ? source.ec_pid_frozen : null,
+    baseline_id: normalizePositiveId(source.baseline_id),
+  }
+}
+
+function normalizeNumberMap(raw: unknown): Record<string, number> | null {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+  const result: Record<string, number> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key !== 'string' || key.trim() === '') {
+      continue
+    }
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) {
+      continue
+    }
+    result[key] = numeric
+  }
+  return Object.keys(result).length > 0 ? result : null
 }
 
 function normalizePositiveId(value: unknown): number | null {

@@ -1,5 +1,13 @@
 export type ProcessCalibrationMode = 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation'
 
+export type EcComponentKey = 'npk' | 'calcium' | 'magnesium' | 'micro'
+
+export interface EcComponentGainEntry {
+  ec_gain_per_ml: number
+}
+
+export type EcComponentGains = Partial<Record<EcComponentKey, EcComponentGainEntry>>
+
 export interface ProcessCalibrationMetaObserve {
   telemetry_period_sec?: number | null
   window_min_samples?: number | null
@@ -33,6 +41,8 @@ export interface ZoneProcessCalibration {
   valid_from: string | null
   valid_to: string | null
   is_active: boolean
+  /** Nested schema shape: `{ calcium: { ec_gain_per_ml: 0.25 }, ... }`. */
+  ec_component_gains?: EcComponentGains | null
   meta?: ZoneProcessCalibrationMeta | null
 }
 
@@ -45,4 +55,8 @@ export interface ZoneProcessCalibrationForm {
   transport_delay_sec: string
   settle_sec: string
   confidence: string
+  ec_component_gain_npk: string
+  ec_component_gain_calcium: string
+  ec_component_gain_magnesium: string
+  ec_component_gain_micro: string
 }

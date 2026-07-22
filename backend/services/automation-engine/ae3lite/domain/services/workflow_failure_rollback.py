@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+# irrig_recirc in sets below: legacy compat only for old tasks/DB rows.
 _SCHEDULABLE_PHASES = frozenset({"ready", "irrig_recirc"})
 _ACTIVE_WORKFLOW_PHASES = frozenset({"tank_filling", "tank_recirc", "irrigating", "irrig_recirc"})
 
