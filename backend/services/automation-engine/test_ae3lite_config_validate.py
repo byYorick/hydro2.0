@@ -59,6 +59,9 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         lease_heartbeat_max_failures=3,
         lease_heartbeat_transient_retries=1,
         intent_sync_max_retries=2,
+        correction_interrupt_verify_grace_sec=120,
+        correction_interrupt_irr_state_max_age_sec=90,
+        correction_interrupt_replay_irrigation=True,
     )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)

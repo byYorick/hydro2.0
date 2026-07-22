@@ -20,9 +20,11 @@ MANUAL_HOLD_STAGE = "manual_hold"
 MANUAL_HOLD_RETURN_PREFIX = "__mh_return:"
 MANUAL_HOLD_STEP_PREFIX = "__mh_step:"
 
-_CORRECTION_DOSE_STEPS = frozenset(
+CORRECTION_DOSE_STEPS = frozenset(
     {"corr_dose_ec", "corr_dose_ph", "corr_wait_ec", "corr_wait_ph"},
 )
+# Backward-compatible alias for internal callers.
+_CORRECTION_DOSE_STEPS = CORRECTION_DOSE_STEPS
 
 
 @dataclass(frozen=True)
@@ -289,7 +291,7 @@ async def emit_correction_interrupted_hardware_risk(
     if correction is None:
         return
     corr_step = str(getattr(correction, "corr_step", "") or "").strip().lower()
-    if corr_step not in _CORRECTION_DOSE_STEPS:
+    if corr_step not in CORRECTION_DOSE_STEPS:
         return
 
     stage = str(task.current_stage or "").strip()
@@ -397,6 +399,7 @@ async def _emit_flow_stop_failed(
 
 
 __all__ = [
+    "CORRECTION_DOSE_STEPS",
     "FlowStopOutcome",
     "MANUAL_HOLD_RETURN_PREFIX",
     "MANUAL_HOLD_STAGE",

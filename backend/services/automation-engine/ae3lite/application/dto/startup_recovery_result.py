@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -28,3 +29,4 @@ class StartupRecoveryResult:
     recovered_waiting_command_tasks: int
     terminal_outcomes: tuple[StartupRecoveryTerminalOutcome, ...] = field(default_factory=tuple)
     skipped_due_to_lock: bool = False
+    pending_correction_safety_checks: tuple[Any, ...] = field(default_factory=tuple)

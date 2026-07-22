@@ -122,6 +122,7 @@ def build_ae3_runtime_bundle(
         alert_repository=alert_repository,
         worker_owner=config.worker_owner,
         foreign_lease_skip_escalate_sec=config.foreign_lease_skip_escalate_sec,
+        correction_interrupt_verify_grace_sec=config.correction_interrupt_verify_grace_sec,
     )
     waiting_command_reconcile_use_case = WaitingCommandReconcileUseCase(
         task_repository=task_repository,
@@ -190,6 +191,10 @@ def build_ae3_runtime_bundle(
         command_repository=command_repository,
         zone_lease_repository=zone_lease_repository,
         zone_intent_repository=zone_intent_repository,
+        create_task_from_intent_use_case=create_task_from_intent_use_case,
+        runtime_monitor=runtime_monitor,
+        correction_interrupt_irr_state_max_age_sec=config.correction_interrupt_irr_state_max_age_sec,
+        correction_interrupt_replay_irrigation=config.correction_interrupt_replay_irrigation,
         spawn_background_task_fn=spawn_background_task_fn,
         now_fn=now_fn,
         logger=logger,

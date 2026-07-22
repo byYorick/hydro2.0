@@ -28,7 +28,13 @@ from ae3lite.infrastructure.metrics import (
     STARTUP_RECOVERY_SKIPPED,
     STARTUP_RECOVERY_TASK,
 )
-from ae3lite.application.handlers.flow_path_guard import emit_correction_interrupted_hardware_risk
+from ae3lite.application.services.correction_interrupt_safety import (
+    DEFAULT_VERIFY_GRACE_SEC,
+    CorrectionInterruptPendingCheck,
+    build_pending_check_from_task,
+    emit_correction_interrupt_pending_verify,
+    is_dose_correction_step,
+)
 from common.db import create_zone_event
 from common.service_logs import send_service_log
 
@@ -38,7 +44,7 @@ _STARTUP_RECOVERY_OUTCOME_EVENT = "AE_STARTUP_RECOVERY_OUTCOME"
 
 
 class StartupRecoveryUseCase:
-    """Reconcilе'ит сохранённые in-flight задачи без новой публикации команды.
+    """Reconcilе'ит сохранённые in-flight tasks без новой публикации команды.
 
     В v2 использует topology registry для маршрутизации done-transition вместо payload keys.
     """
@@ -55,6 +61,7 @@ class StartupRecoveryUseCase:
         use_startup_recovery_lock: bool = True,
         worker_owner: str | None = None,
         foreign_lease_skip_escalate_sec: int = 300,
+        correction_interrupt_verify_grace_sec: int = DEFAULT_VERIFY_GRACE_SEC,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
@@ -65,6 +72,11 @@ class StartupRecoveryUseCase:
         self._use_startup_recovery_lock = bool(use_startup_recovery_lock)
         self._worker_owner = str(worker_owner or "").strip() or None
         self._foreign_lease_skip_escalate_sec = max(1, int(foreign_lease_skip_escalate_sec))
+        self._correction_interrupt_verify_grace_sec = max(
+            15,
+            int(correction_interrupt_verify_grace_sec or DEFAULT_VERIFY_GRACE_SEC),
+        )
+        self._pending_correction_safety_checks: list[CorrectionInterruptPendingCheck] = []
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
         STARTUP_RECOVERY_RUN.inc()
@@ -114,6 +126,7 @@ class StartupRecoveryUseCase:
         waiting_command_tasks = 0
         recovered_waiting_command_tasks = 0
         terminal_outcomes: list[StartupRecoveryTerminalOutcome] = []
+        self._pending_correction_safety_checks = []
 
         for task in tasks:
             foreign_action, foreign_ctx = await self._resolve_foreign_owned_task(
@@ -197,6 +210,7 @@ class StartupRecoveryUseCase:
             failed_tasks=failed_tasks,
             waiting_command_tasks=waiting_command_tasks,
             recovered_waiting_command_tasks=recovered_waiting_command_tasks,
+            pending_correction_safety_checks=tuple(self._pending_correction_safety_checks),
             terminal_outcomes=tuple(terminal_outcomes),
         )
 
@@ -360,8 +374,17 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str,
     ) -> tuple[str, StartupRecoveryTerminalOutcome | None, AutomationTask | None]:
-        # Если коррекция прервалась внутри command batch, безопасно продолжать дозирование нельзя
+        # Коррекцию mid-dose не resume'им (fail-closed), но critical по железу
+        # откладываем: после power-loss узлы часто ещё offline, актуаторы уже OFF.
         if task.correction is not None:
+            pending_check = None
+            if is_dose_correction_step(getattr(task.correction, "corr_step", None)):
+                pending_check = build_pending_check_from_task(
+                    task=task,
+                    now=now,
+                    recovery_source=recovery_source,
+                    verify_grace_sec=self._correction_interrupt_verify_grace_sec,
+                )
             failed_task = await self._fail_task(
                 task=task,
                 error_code="startup_recovery_correction_interrupted",
@@ -371,11 +394,9 @@ class StartupRecoveryUseCase:
                 now=now,
                 recovery_source=recovery_source,
             )
-            await emit_correction_interrupted_hardware_risk(
-                task=failed_task,
-                now=now,
-                recovery_source=recovery_source,
-            )
+            if pending_check is not None:
+                await emit_correction_interrupt_pending_verify(check=pending_check, now=now)
+                self._pending_correction_safety_checks.append(pending_check)
             return "failed", self._build_terminal_outcome(task=failed_task), failed_task
 
         try:

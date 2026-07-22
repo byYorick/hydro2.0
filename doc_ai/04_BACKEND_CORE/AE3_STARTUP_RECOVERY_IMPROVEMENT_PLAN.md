@@ -273,12 +273,26 @@ try recover_waiting_command (для claimed|running|waiting_command)
 
 ---
 
-## 6. Не входит в scope
+## Не входит в scope
 
 - Изменение MQTT payload / топиков.
 - Автоматический republish «застрявших» команд.
-- Resume correction dosing после interrupt (остаётся fail-closed).
+- Resume mid-dose коррекции после interrupt (остаётся fail-closed для dosing step).
+  После interrupt: deferred hardware verify + optional irrigation replay (см. § ниже).
 - Переписывание FSM на event sourcing.
+
+### Дополнение (2026-07-22) — power-loss / correction interrupt
+
+После `startup_recovery_correction_interrupted` на dose-step:
+1. Task fail-closed (без resume дозирования).
+2. Workflow rollback (irrigation → `ready`).
+3. **Deferred verify** (grace `AE_CORRECTION_INTERRUPT_VERIFY_GRACE_SEC`, default 120s):
+   ждать online `irrig/ph/ec` + свежий `IRR_STATE_SNAPSHOT` OFF для stage.
+4. Safe → event `AE_CORRECTION_INTERRUPT_HARDWARE_SAFE`; для `irrigation_start`
+   auto-replay intent (`AE_CORRECTION_INTERRUPT_REPLAY_IRRIGATION=1`).
+5. Unsafe / timeout → critical `biz_flow_stop_failed_hardware_may_be_active`.
+
+Это закрывает ложные critical после brownout, когда AE поднимается раньше узлов.
 
 ---
 

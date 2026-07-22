@@ -56,6 +56,9 @@ class Ae3RuntimeConfig:
     lease_heartbeat_max_failures: int
     lease_heartbeat_transient_retries: int
     intent_sync_max_retries: int
+    correction_interrupt_verify_grace_sec: int
+    correction_interrupt_irr_state_max_age_sec: int
+    correction_interrupt_replay_irrigation: bool
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -190,6 +193,18 @@ class Ae3RuntimeConfig:
             lease_heartbeat_max_failures=max(1, int(os.getenv("AE_LEASE_HEARTBEAT_MAX_FAILURES", "3"))),
             lease_heartbeat_transient_retries=max(0, int(os.getenv("AE_LEASE_HEARTBEAT_TRANSIENT_RETRIES", "1"))),
             intent_sync_max_retries=max(0, int(os.getenv("AE_INTENT_SYNC_MAX_RETRIES", "2"))),
+            correction_interrupt_verify_grace_sec=max(
+                15,
+                int(os.getenv("AE_CORRECTION_INTERRUPT_VERIFY_GRACE_SEC", "120")),
+            ),
+            correction_interrupt_irr_state_max_age_sec=max(
+                5,
+                int(os.getenv("AE_CORRECTION_INTERRUPT_IRR_STATE_MAX_AGE_SEC", "90")),
+            ),
+            correction_interrupt_replay_irrigation=_env_true(
+                "AE_CORRECTION_INTERRUPT_REPLAY_IRRIGATION",
+                "1",
+            ),
         )
 
     @staticmethod

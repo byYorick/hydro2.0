@@ -46,6 +46,10 @@ class Ae3RuntimeWorker:
         command_repository: Any | None = None,
         zone_lease_repository: Any,
         zone_intent_repository: Any,
+        create_task_from_intent_use_case: Any | None = None,
+        runtime_monitor: Any | None = None,
+        correction_interrupt_irr_state_max_age_sec: int = 90,
+        correction_interrupt_replay_irrigation: bool = True,
         spawn_background_task_fn: Callable[..., Any],
         now_fn: Callable[[], datetime],
         logger: Any,
@@ -75,6 +79,14 @@ class Ae3RuntimeWorker:
         self._command_repository = command_repository
         self._zone_lease_repository = zone_lease_repository
         self._zone_intent_repository = zone_intent_repository
+        self._create_task_from_intent_use_case = create_task_from_intent_use_case
+        self._runtime_monitor = runtime_monitor
+        self._correction_interrupt_irr_state_max_age_sec = max(
+            5,
+            int(correction_interrupt_irr_state_max_age_sec),
+        )
+        self._correction_interrupt_replay_irrigation = bool(correction_interrupt_replay_irrigation)
+        self._pending_correction_safety_checks: list[Any] = []
         self._spawn_background_task_fn = spawn_background_task_fn
         self._now_fn = now_fn
         self._logger = logger
@@ -174,6 +186,13 @@ class Ae3RuntimeWorker:
                 error_message=getattr(outcome, "error_message", None),
                 task_id=int(getattr(outcome, "task_id", 0) or 0) or None,
             )
+        pending_checks = getattr(result, "pending_correction_safety_checks", ()) or ()
+        if pending_checks:
+            self._pending_correction_safety_checks.extend(list(pending_checks))
+            self._logger.info(
+                "AE3 startup recovery: queued %s correction-interrupt safety checks",
+                len(pending_checks),
+            )
         self._ensure_waiting_command_reconcile_loop()
         return result
 
@@ -232,6 +251,7 @@ class Ae3RuntimeWorker:
         while not self._shutting_down:
             try:
                 await self._run_waiting_command_reconcile_once()
+                await self._maybe_run_correction_interrupt_safety_once()
                 await self._maybe_run_stale_task_reconcile_once()
                 await self._maybe_run_orphan_intent_reconcile_once()
                 await self._maybe_refresh_active_task_age_metrics_once()
@@ -306,6 +326,173 @@ class Ae3RuntimeWorker:
                 self._spawn_drain_task()
             else:
                 self._arm_respawn_on_done(drain)
+
+    async def _maybe_run_correction_interrupt_safety_once(self) -> None:
+        if not self._pending_correction_safety_checks:
+            return
+        if self._runtime_monitor is None:
+            return
+
+        from ae3lite.application.services.correction_interrupt_safety import (
+            emit_correction_interrupt_hardware_safe,
+            escalate_correction_interrupt_hardware_risk,
+            evaluate_correction_interrupt_safety,
+        )
+
+        now = self._now_fn()
+        remaining: list[Any] = []
+        kick_needed = False
+        for check in list(self._pending_correction_safety_checks):
+            try:
+                verdict = await evaluate_correction_interrupt_safety(
+                    check=check,
+                    now=now,
+                    runtime_monitor=self._runtime_monitor,
+                    irr_state_max_age_sec=self._correction_interrupt_irr_state_max_age_sec,
+                )
+            except Exception:
+                self._logger.warning(
+                    "AE3 correction-interrupt safety evaluate failed zone_id=%s task_id=%s",
+                    getattr(check, "zone_id", None),
+                    getattr(check, "task_id", None),
+                    exc_info=True,
+                )
+                remaining.append(check)
+                continue
+
+            status = str(getattr(verdict, "status", "") or "").strip().lower()
+            if status == "pending":
+                remaining.append(check)
+                continue
+            if status == "safe":
+                await emit_correction_interrupt_hardware_safe(
+                    check=check,
+                    now=now,
+                    reason=str(getattr(verdict, "reason", "") or "safe"),
+                    snapshot=getattr(verdict, "snapshot", None),
+                )
+                if self._correction_interrupt_replay_irrigation:
+                    replayed = await self._replay_irrigation_after_correction_interrupt(
+                        check=check,
+                        now=now,
+                    )
+                    kick_needed = kick_needed or replayed
+                continue
+            # unsafe
+            await escalate_correction_interrupt_hardware_risk(
+                check=check,
+                now=now,
+                reason=str(getattr(verdict, "reason", "") or "unconfirmed"),
+            )
+
+        self._pending_correction_safety_checks = remaining
+        if kick_needed and not self._shutting_down:
+            self.kick()
+
+    async def _replay_irrigation_after_correction_interrupt(
+        self,
+        *,
+        check: Any,
+        now: datetime,
+    ) -> bool:
+        if str(getattr(check, "task_type", "") or "").strip().lower() != "irrigation_start":
+            return False
+        if self._create_task_from_intent_use_case is None:
+            return False
+        upsert = getattr(self._zone_intent_repository, "upsert_irrigation_replay_intent", None)
+        claim = getattr(self._zone_intent_repository, "claim_pending_intent_by_id", None)
+        if not callable(upsert) or not callable(claim):
+            return False
+
+        zone_id = int(getattr(check, "zone_id", 0) or 0)
+        failed_task_id = int(getattr(check, "task_id", 0) or 0)
+        if zone_id <= 0 or failed_task_id <= 0:
+            return False
+
+        # Не стартуем, если зона уже занята другой задачей.
+        get_active = getattr(self._task_repository, "get_active_for_zone", None)
+        if callable(get_active):
+            try:
+                active = await get_active(zone_id=zone_id)
+            except Exception:
+                active = None
+            if active is not None:
+                self._logger.info(
+                    "AE3 correction-interrupt irrigation replay skipped: zone busy zone_id=%s",
+                    zone_id,
+                )
+                return False
+
+        idempotency_key = f"ae3-recovery-irr-replay-{failed_task_id}"
+        try:
+            intent_id = await upsert(
+                zone_id=zone_id,
+                idempotency_key=idempotency_key,
+                topology=str(getattr(check, "topology", "") or "two_tank_drip_substrate_trays"),
+                now=now,
+                mode=str(getattr(check, "irrigation_mode", None) or "normal"),
+                requested_duration_sec=getattr(check, "irrigation_requested_duration_sec", None),
+                source="ae3_startup_recovery",
+                failed_task_id=failed_task_id,
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 correction-interrupt irrigation replay upsert failed zone_id=%s task_id=%s",
+                zone_id,
+                failed_task_id,
+                exc_info=True,
+            )
+            return False
+        if intent_id is None:
+            return False
+
+        try:
+            claim_result = await claim(zone_id=zone_id, intent_id=int(intent_id), now=now)
+        except Exception:
+            self._logger.warning(
+                "AE3 correction-interrupt irrigation replay claim failed zone_id=%s intent_id=%s",
+                zone_id,
+                intent_id,
+                exc_info=True,
+            )
+            return False
+        if str(claim_result.get("decision") or "") != "claimed":
+            self._logger.info(
+                "AE3 correction-interrupt irrigation replay not claimed zone_id=%s intent_id=%s decision=%s",
+                zone_id,
+                intent_id,
+                claim_result.get("decision"),
+            )
+            return False
+
+        intent_row = dict(claim_result.get("intent") or {})
+        try:
+            creation = await self._create_task_from_intent_use_case.run(
+                zone_id=zone_id,
+                source="ae3_startup_recovery",
+                idempotency_key=idempotency_key,
+                intent_row=intent_row,
+                now=now,
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 correction-interrupt irrigation replay create-task failed zone_id=%s intent_id=%s",
+                zone_id,
+                intent_id,
+                exc_info=True,
+            )
+            return False
+
+        created = bool(getattr(creation, "created", False))
+        task = getattr(creation, "task", None)
+        self._logger.info(
+            "AE3 correction-interrupt irrigation replay dispatched zone_id=%s intent_id=%s task_id=%s created=%s",
+            zone_id,
+            intent_id,
+            getattr(task, "id", None),
+            created,
+        )
+        return True
 
     async def _maybe_run_stale_task_reconcile_once(self) -> None:
         if self._stale_task_reconcile_use_case is None:
