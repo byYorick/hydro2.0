@@ -1,4 +1,6 @@
 import type {
+  AutomationActiveDose,
+  AutomationActiveDoseKind,
   AutomationHangHint,
   AutomationObservability,
   AutomationObservabilityCorrection,
@@ -209,7 +211,70 @@ function normalizeCorrection(raw: unknown): AutomationObservabilityCorrection | 
     readiness,
     prepare_baseline: normalizePrepareBaseline(source.prepare_baseline),
     pipeline: normalizeCorrectionPipeline(source.pipeline),
+    active_doses: normalizeActiveDoses(source.active_doses),
   }
+}
+
+export function normalizeActiveDoses(raw: unknown): AutomationActiveDose[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  const doses: AutomationActiveDose[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') {
+      continue
+    }
+    const source = item as Record<string, unknown>
+    const channel = typeof source.channel === 'string' ? source.channel.trim().toLowerCase() : ''
+    if (!channel) {
+      continue
+    }
+    const kindRaw = typeof source.kind === 'string' ? source.kind.trim() : ''
+    if (kindRaw !== 'ec' && kindRaw !== 'ph_up' && kindRaw !== 'ph_down') {
+      continue
+    }
+    const kind = kindRaw as AutomationActiveDoseKind
+    const component = typeof source.component === 'string' && source.component.trim() !== ''
+      ? source.component.trim().toLowerCase()
+      : null
+    const nodeUid = typeof source.node_uid === 'string' && source.node_uid.trim() !== ''
+      ? source.node_uid.trim()
+      : null
+    const amountMl = source.amount_ml != null && Number.isFinite(Number(source.amount_ml))
+      ? Number(source.amount_ml)
+      : null
+    const durationMs = source.duration_ms != null && Number.isFinite(Number(source.duration_ms))
+      ? Number(source.duration_ms)
+      : null
+    doses.push({
+      kind,
+      channel,
+      component,
+      node_uid: nodeUid,
+      amount_ml: amountMl,
+      duration_ms: durationMs,
+    })
+  }
+  return doses
+}
+
+function formatActiveDosesSummary(doses: AutomationActiveDose[]): string | null {
+  if (doses.length === 0) {
+    return null
+  }
+  return doses.map((dose) => {
+    const kindLabel = dose.kind === 'ph_up'
+      ? 'pH↑'
+      : dose.kind === 'ph_down'
+        ? 'pH↓'
+        : (dose.component ? `EC/${dose.component}` : 'EC')
+    return `${dose.channel} · ${kindLabel}`
+  }).join(', ')
+}
+
+export function formatActiveDosesLabel(doses: AutomationActiveDose[] | null | undefined): string {
+  return formatActiveDosesSummary(doses ?? []) ?? ''
 }
 
 function normalizePrepareBaseline(raw: unknown): AutomationObservabilityCorrection['prepare_baseline'] {
@@ -481,6 +546,7 @@ export function resolveCorrectionDosingDiagnostics(
   } else if (isDosingActive) {
     reason = 'Дозирование выполняется'
     severity = 'info'
+    // Детали насосов — в dedicated поле activeDoses / UI «Активные насосы», не дублируем в detail.
   } else if (controlMode !== 'auto' && (corrStep || activeCorrectionProcess)) {
     reason = controlMode === 'manual'
       ? 'Ручной режим — автодозирование заблокировано'
@@ -530,6 +596,9 @@ export function resolveCorrectionDosingDiagnostics(
     workflowReady: readiness?.workflow_ready ?? null,
     severity,
     isDosingActive,
+    activeDoses: correction?.active_doses?.length
+      ? correction.active_doses
+      : (state?.active_processes?.active_doses ?? []),
   }
 }
 

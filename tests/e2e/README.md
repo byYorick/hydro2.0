@@ -180,10 +180,12 @@ sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются чер
 - `E114_ae3_reactive_solution_topup_level_switch_realhw` — реактивный `solution_topup` по edge `level_solution_max`.
 - `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 `solution_change`.
 - `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
+- `E118_ae3_water_baseline_and_ca_fill_realhw` — live-short: `WATER_BASELINE_CAPTURED` + Ca fill (`pump_b`), zero pH doses in fill-window.
+- `E120_ae3_recirc_dilute_overshoot_realhw` — live-short: seed EC overshoot → `RECIRC_DILUTE_*` + `valve_clean_supply` pulse.
 - `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path (stop → ready, **pH-only** inline, без EC dose / irrig_recirc / recovery chemistry).
 - `E108_ae3_soil_moisture_telemetry_contract` — soil-moisture ingest contract.
 - `E109_ae3_irrigation_inline_correction_test_node` — inline **pH-only** correction во время полива.
-- `E118`–`E121` — **contract stubs only** (`status: stub`, не в realhw suite): water baseline / prepare pipeline / dilute / irrigation pH-only. Live fragments: E104/E106/E107/E109.
+- `E119`/`E121` (+ stub `E120_*_test_node`) — **contract stubs** (`status: stub`, не в realhw suite): prepare pipeline / irrigation pH-only. Live dilute: E120 realhw.
 - `calibration/E110` — create/cancel session.
 - `calibration/E111` — `force_invalid` → `INVALID` (negative).
 - `calibration/E117` — happy-path point1→point2→`completed`.

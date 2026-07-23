@@ -227,7 +227,14 @@ class ZoneAutomationObservabilityService
                 $runtimeTaskId = null;
             }
         }
-        $observability['correction'] = $this->buildCorrectionContext($zoneId, $runtimeTaskId);
+        $activeProcesses = is_array($payload['active_processes'] ?? null)
+            ? $payload['active_processes']
+            : [];
+        $observability['correction'] = $this->buildCorrectionContext(
+            $zoneId,
+            $runtimeTaskId,
+            $this->normalizeActiveDoses($activeProcesses['active_doses'] ?? null),
+        );
 
         $payload['observability'] = $observability;
         $payload = $this->backfillTimelineIfEmpty($zoneId, $payload);
@@ -897,7 +904,11 @@ class ZoneAutomationObservabilityService
     /**
      * @return array<string,mixed>
      */
-    private function buildCorrectionContext(int $zoneId, ?int $activeTaskId = null): array
+    /**
+     * @param  array<int, array<string, mixed>>  $activeDoses
+     * @return array<string,mixed>
+     */
+    private function buildCorrectionContext(int $zoneId, ?int $activeTaskId = null, array $activeDoses = []): array
     {
         return [
             'last_dose' => $this->fetchPidStateLastDoses($zoneId),
@@ -905,7 +916,67 @@ class ZoneAutomationObservabilityService
             'readiness' => $this->fetchLatestCorrectionReadiness($zoneId, $activeTaskId),
             'prepare_baseline' => $this->fetchLatestPrepareBaseline($zoneId),
             'pipeline' => $this->fetchCorrectionPipelineState($zoneId, $activeTaskId),
+            'active_doses' => $activeDoses,
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeActiveDoses(mixed $raw): array
+    {
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $doses = [];
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $channel = isset($item['channel']) && is_string($item['channel'])
+                ? strtolower(trim($item['channel']))
+                : '';
+            if ($channel === '') {
+                continue;
+            }
+            $kind = isset($item['kind']) && is_string($item['kind'])
+                ? trim($item['kind'])
+                : '';
+            if (! in_array($kind, ['ec', 'ph_up', 'ph_down'], true)) {
+                continue;
+            }
+            $component = isset($item['component']) && is_string($item['component'])
+                ? strtolower(trim($item['component']))
+                : null;
+            if ($component === '') {
+                $component = null;
+            }
+            $nodeUid = isset($item['node_uid']) && is_string($item['node_uid'])
+                ? trim($item['node_uid'])
+                : null;
+            if ($nodeUid === '') {
+                $nodeUid = null;
+            }
+            $amountMl = null;
+            if (isset($item['amount_ml']) && is_numeric($item['amount_ml'])) {
+                $amountMl = (float) $item['amount_ml'];
+            }
+            $durationMs = null;
+            if (isset($item['duration_ms']) && is_numeric($item['duration_ms'])) {
+                $durationMs = (int) $item['duration_ms'];
+            }
+            $doses[] = [
+                'kind' => $kind,
+                'channel' => $channel,
+                'component' => $component,
+                'node_uid' => $nodeUid,
+                'amount_ml' => $amountMl,
+                'duration_ms' => $durationMs,
+            ];
+        }
+
+        return $doses;
     }
 
     /**

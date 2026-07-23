@@ -58,6 +58,19 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"',
             self.script,
         )
+        self.assertIn(
+            '"scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"',
+            self.script,
+        )
+        # E118 before E120: launcher exits on first failure; dilute must not block baseline.
+        self.assertLess(
+            self.script.index('"scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"'),
+            self.script.index('"scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"'),
+        )
         self.assertNotIn("E102_ae3_two_tank_realhw_ready_during_recirculation", self.script)
         self.assertNotIn("E102_ae3_recirculation_retry_limit_alert_reset", self.script)
         self.assertNotIn("AUTOMATION_SCENARIOS=(", self.script)

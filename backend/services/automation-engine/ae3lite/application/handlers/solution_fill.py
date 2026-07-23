@@ -462,12 +462,16 @@ class SolutionFillCheckHandler(BaseStageHandler):
 
         try:
             repo = PgPrepareBaselineRepository()
-            row = await repo.fetch_latest_baseline(
-                zone_id=int(task.zone_id),
-                ae_task_id=int(getattr(task, "id", 0) or 0) or None,
-            )
-            if row is None:
-                row = await repo.fetch_latest_baseline(zone_id=int(task.zone_id))
+            task_id = int(getattr(task, "id", 0) or 0) or None
+            # Only reuse baseline for THIS task. Zone-wide fallback skips
+            # WATER_BASELINE_CAPTURED on a new task and reuses stale water_ec
+            # from prior cycles (breaks E118 live and dilute math).
+            row = None
+            if task_id is not None:
+                row = await repo.fetch_latest_baseline(
+                    zone_id=int(task.zone_id),
+                    ae_task_id=task_id,
+                )
             if row is None:
                 return None
             baseline_id = int(row["id"]) if row.get("id") is not None else None
@@ -580,9 +584,10 @@ class SolutionFillCheckHandler(BaseStageHandler):
         current_ph = float(ph_win["value"])
         # Prefer full recipe target_ec (not T_step) for budget math
         target_ec = float(self._irrigation_ec_target(runtime=runtime))
-        ratios = getattr(runtime, "ec_component_ratios", None) or {}
-        if not ratios:
-            ratios = correction_cfg.get("ec_component_ratios") or {}
+        # Cumulative T_* must use FULL recipe ratios (tank_recirc), not the
+        # fill-phase calcium-only map. Calcium-only → T_ca==T_full and breaks
+        # dilute-on-overshoot (seed above T_ca never exceeds T_full*(1+pct)).
+        ratios = self._full_ec_component_ratios(runtime=runtime, correction_cfg=correction_cfg)
         targets = compute_component_targets(
             water_ec=float(current_ec),
             water_ph=float(current_ph),

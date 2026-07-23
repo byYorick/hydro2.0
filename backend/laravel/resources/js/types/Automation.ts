@@ -87,6 +87,7 @@ export interface AutomationState {
     circulation_pump: boolean
     ph_correction: boolean
     ec_correction: boolean
+    active_doses: AutomationActiveDose[]
   }
   timeline: AutomationTimelineEvent[]
   next_state: AutomationStateType | null
@@ -198,6 +199,18 @@ export interface AutomationObservabilityCorrection {
   readiness?: AutomationObservabilityCorrectionReadiness | null
   prepare_baseline?: AutomationObservabilityPrepareBaseline | null
   pipeline?: AutomationObservabilityCorrectionPipeline | null
+  active_doses?: AutomationActiveDose[]
+}
+
+export type AutomationActiveDoseKind = 'ec' | 'ph_up' | 'ph_down'
+
+export interface AutomationActiveDose {
+  kind: AutomationActiveDoseKind
+  channel: string
+  component?: string | null
+  node_uid?: string | null
+  amount_ml?: number | null
+  duration_ms?: number | null
 }
 
 export interface AutomationObservabilityPrepareBaseline {
@@ -254,6 +267,7 @@ export interface CorrectionDosingDiagnostics {
   workflowReady: boolean | null
   severity: CorrectionDosingBlockSeverity
   isDosingActive: boolean
+  activeDoses: AutomationActiveDose[]
 }
 
 export interface HoveredElement {

@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-"""Contract stubs for sequential nutrient E118–E121 scenarios.
+"""Contract stubs for sequential nutrient E119–E121 scenarios.
 
-These YAML files are status=stub / skip_live and must NOT appear in realhw suites.
-They pin expected events, forbidden phases, and config keys until dedicated live
-realhw paths exist (or remain covered by E104/E106/E107/E109 fragments).
+E118 graduated to live-short realhw:
+`E118_ae3_water_baseline_and_ca_fill_realhw.yaml` (see
+`test_ae3lite_water_baseline_ca_fill_realhw_contract.py`).
+
+E120 live companion (stub remains for contract keys):
+`E120_ae3_recirc_dilute_overshoot_realhw.yaml` (see
+`test_ae3lite_realhw_scenario_contract.py::TestAe3LiteDiluteOvershootRealHwScenarioContract`).
+
+Remaining YAML stubs are status=stub / skip_live and must NOT appear in realhw suites
+(except the live `*_realhw.yaml` companions). They pin expected events, forbidden
+phases, and config keys; shared coverage also: E104/E106/E107/E109.
 """
 
 from __future__ import annotations
@@ -20,11 +28,15 @@ if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
 
 STUBS = {
-    "E118": E2E_ROOT / "scenarios" / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_test_node.yaml",
     "E119": E2E_ROOT / "scenarios" / "ae3lite" / "E119_ae3_prepare_pipeline_sequence_test_node.yaml",
     "E120": E2E_ROOT / "scenarios" / "ae3lite" / "E120_ae3_recirc_dilute_overshoot_test_node.yaml",
     "E121": E2E_ROOT / "scenarios" / "ae3lite" / "E121_ae3_irrigation_ph_only_no_recovery_test_node.yaml",
 }
+
+LIVE_E118 = E2E_ROOT / "scenarios" / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_realhw.yaml"
+LEGACY_E118_STUB = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_test_node.yaml"
+)
 
 FORBIDDEN_SHARED = (
     "irrig_recirc",
@@ -33,7 +45,6 @@ FORBIDDEN_SHARED = (
 )
 
 EXPECTED_EVENTS_BY_STUB = {
-    "E118": ("WATER_BASELINE_CAPTURED", "PIPELINE_STEP_CHANGED", "CORRECTION"),
     "E119": ("PIPELINE_STEP_CHANGED", "CORRECTION", "RECIRC_DILUTE_STARTED", "RECIRC_DILUTE_COMPLETED"),
     "E120": ("RECIRC_DILUTE_STARTED", "RECIRC_DILUTE_COMPLETED", "PIPELINE_STEP_CHANGED", "CORRECTION"),
     "E121": ("CORRECTION", "CORRECTION_DECISION_MADE"),
@@ -78,6 +89,20 @@ class TestAe3LiteSequentialNutrientStubContract(unittest.TestCase):
                 msg=f"{key} must not be listed in realhw launcher",
             )
 
+    def test_e118_live_is_in_realhw_and_legacy_stub_gone(self) -> None:
+        self.assertTrue(LIVE_E118.exists(), msg=f"E118 live missing: {LIVE_E118}")
+        self.assertFalse(
+            LEGACY_E118_STUB.exists(),
+            msg="legacy E118 stub must be removed after live graduation",
+        )
+        data = yaml.safe_load(LIVE_E118.read_text(encoding="utf-8"))
+        self.assertEqual(data.get("name"), "E118_ae3_water_baseline_and_ca_fill_realhw")
+        self.assertNotEqual(data.get("status"), "stub")
+        suite_py = (E2E_ROOT / "runner" / "suite.py").read_text(encoding="utf-8")
+        launcher = (E2E_ROOT / "run_automation_engine_real_hardware.sh").read_text(encoding="utf-8")
+        self.assertIn(LIVE_E118.name, suite_py)
+        self.assertIn(LIVE_E118.name, launcher)
+
     def test_all_stubs_share_forbidden_canon(self) -> None:
         for key, path in STUBS.items():
             text = path.read_text(encoding="utf-8")
@@ -95,17 +120,6 @@ class TestAe3LiteSequentialNutrientStubContract(unittest.TestCase):
             documented = ctx.get("expected_events") or []
             for event in events:
                 self.assertIn(event, documented, msg=f"{key} missing expected event {event}")
-
-    def test_e118_documents_calcium_fill(self) -> None:
-        data = yaml.safe_load(STUBS["E118"].read_text(encoding="utf-8"))
-        ctx = _stub_context(data)
-        self.assertEqual(ctx.get("expected_fill_channel"), "pump_b")
-        self.assertEqual(ctx.get("expected_active_component"), "calcium")
-        self.assertEqual(ctx.get("calcium_actuator"), "pump_b")
-        self.assertIn("WATER_BASELINE_CAPTURED", ctx.get("expected_events") or [])
-        assertion_names = {item.get("name") for item in data.get("assertions") or []}
-        self.assertIn("stub_expects_water_baseline_event", assertion_names)
-        self.assertIn("stub_forbids_irrig_recirc_and_npk_prepare_owner", assertion_names)
 
     def test_e119_documents_pipeline_order(self) -> None:
         data = yaml.safe_load(STUBS["E119"].read_text(encoding="utf-8"))

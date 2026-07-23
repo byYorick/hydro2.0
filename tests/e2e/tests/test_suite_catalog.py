@@ -92,7 +92,15 @@ class TestSuiteCatalog(unittest.TestCase):
             realhw_core,
             "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml",
         )
-        self.assertEqual(len(realhw_core), 12)
+        self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            realhw_core,
+            "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml",
+        )
+        self.assertEqual(len(realhw_core), 14)
         self.assert_contains_scenario(
             realhw_irrigation,
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
@@ -141,7 +149,16 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         )
-        self.assertEqual(len(scenarios), 18)
+        # ae3lite realhw (+E118/E120) ∪ smart_irrigation ∪ calibration
+        self.assertEqual(len(scenarios), 20)
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml",
+        )
 
     def test_discover_by_suite_alias_supports_ae3_suites(self) -> None:
         discovered = self.suite.discover_scenarios(["ae3lite_v1", "ae3lite_realhw"])

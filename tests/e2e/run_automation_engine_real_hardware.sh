@@ -149,6 +149,8 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E114_ae3_reactive_solution_topup_level_switch_realhw.yaml"
   "scenarios/ae3lite/E115_ae3_solution_change_operator_gate_realhw.yaml"
   "scenarios/ae3lite/E116_ae3_estop_failsafe_events_realhw.yaml"
+  "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml"
+  "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml"
 )
 SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"

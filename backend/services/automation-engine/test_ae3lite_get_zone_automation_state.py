@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -567,6 +568,7 @@ async def test_state_marks_ec_correction_active_during_solution_fill() -> None:
     assert result["active_processes"]["pump_in"] is True
     assert result["active_processes"]["ec_correction"] is True
     assert result["active_processes"]["ph_correction"] is False
+    assert result["active_processes"]["active_doses"] == []
 
 
 async def test_state_marks_ph_correction_active_during_solution_fill() -> None:
@@ -625,6 +627,378 @@ async def test_state_marks_ph_correction_active_during_solution_fill() -> None:
     assert result["active_processes"]["pump_in"] is True
     assert result["active_processes"]["ec_correction"] is False
     assert result["active_processes"]["ph_correction"] is True
+    assert result["active_processes"]["active_doses"] == []
+
+
+async def test_state_exposes_active_ph_dose_pump_during_corr_dose_ph() -> None:
+    task = SimpleNamespace(
+        id=23,
+        status="waiting_command",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="solution_fill_check",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=CorrectionState(
+            corr_step="corr_dose_ph",
+            attempt=2,
+            max_attempts=5,
+            ec_attempt=2,
+            ec_max_attempts=5,
+            ph_attempt=2,
+            ph_max_attempts=5,
+            activated_here=False,
+            stabilization_sec=60,
+            return_stage_success="solution_fill_stop_to_ready",
+            return_stage_fail="solution_fill_stop_to_prepare",
+            outcome_success=None,
+            needs_ec=False,
+            ec_node_uid=None,
+            ec_channel=None,
+            ec_duration_ms=None,
+            needs_ph_up=False,
+            needs_ph_down=True,
+            ph_node_uid="nd-test-ph-1",
+            ph_channel="pump_acid",
+            ph_duration_ms=40000,
+            wait_until=None,
+            ph_amount_ml=1.5,
+        ),
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["active_processes"]["ph_correction"] is True
+    assert result["active_processes"]["active_doses"] == [
+        {
+            "kind": "ph_down",
+            "channel": "pump_acid",
+            "component": None,
+            "node_uid": "nd-test-ph-1",
+            "amount_ml": 1.5,
+            "duration_ms": 40000,
+        }
+    ]
+
+
+async def test_state_exposes_active_ec_dose_pump_during_corr_dose_ec() -> None:
+    task = SimpleNamespace(
+        id=24,
+        status="waiting_command",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="prepare_recirculation_check",
+            workflow_phase="tank_recirc",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=CorrectionState(
+            corr_step="corr_dose_ec",
+            attempt=1,
+            max_attempts=5,
+            ec_attempt=1,
+            ec_max_attempts=5,
+            ph_attempt=0,
+            ph_max_attempts=5,
+            activated_here=False,
+            stabilization_sec=60,
+            return_stage_success="prepare_recirculation_stop_to_ready",
+            return_stage_fail="prepare_recirculation_stop_to_setup",
+            outcome_success=None,
+            needs_ec=True,
+            ec_node_uid="nd-test-ec-1",
+            ec_channel="pump_b",
+            ec_duration_ms=2500,
+            needs_ph_up=False,
+            needs_ph_down=False,
+            ph_node_uid=None,
+            ph_channel=None,
+            ph_duration_ms=None,
+            wait_until=None,
+            ec_component="calcium",
+            ec_amount_ml=2.5,
+        ),
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["active_processes"]["ec_correction"] is True
+    assert result["active_processes"]["active_doses"] == [
+        {
+            "kind": "ec",
+            "channel": "pump_b",
+            "component": "calcium",
+            "node_uid": "nd-test-ec-1",
+            "amount_ml": 2.5,
+            "duration_ms": 2500,
+        }
+    ]
+
+
+async def test_state_exposes_all_ec_pumps_for_multi_parallel_dose() -> None:
+    sequence = [
+        {
+            "component": "calcium",
+            "node_uid": "nd-ec",
+            "channel": "pump_b",
+            "amount_ml": 1.0,
+            "duration_ms": 1000,
+        },
+        {
+            "component": "magnesium",
+            "node_uid": "nd-ec",
+            "channel": "pump_c",
+            "amount_ml": 0.8,
+            "duration_ms": 800,
+        },
+        {
+            "component": "micro",
+            "node_uid": "nd-ec",
+            "channel": "pump_d",
+            "amount_ml": 0.5,
+            "duration_ms": 500,
+        },
+    ]
+    task = SimpleNamespace(
+        id=25,
+        status="waiting_command",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="prepare_recirculation_check",
+            workflow_phase="tank_recirc",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=CorrectionState(
+            corr_step="corr_dose_ec",
+            attempt=1,
+            max_attempts=5,
+            ec_attempt=1,
+            ec_max_attempts=5,
+            ph_attempt=0,
+            ph_max_attempts=5,
+            activated_here=False,
+            stabilization_sec=60,
+            return_stage_success="prepare_recirculation_stop_to_ready",
+            return_stage_fail="prepare_recirculation_stop_to_setup",
+            outcome_success=None,
+            needs_ec=True,
+            ec_node_uid="nd-ec",
+            ec_channel="pump_b",
+            ec_duration_ms=1000,
+            needs_ph_up=False,
+            needs_ph_down=False,
+            ph_node_uid=None,
+            ph_channel=None,
+            ph_duration_ms=None,
+            wait_until=None,
+            ec_component="multi_parallel",
+            ec_amount_ml=1.0,
+            ec_dose_sequence_json=json.dumps(sequence),
+            ec_current_seq_index=0,
+        ),
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    channels = [d["channel"] for d in result["active_processes"]["active_doses"]]
+    assert channels == ["pump_b", "pump_c", "pump_d"]
+    assert all(d["kind"] == "ec" for d in result["active_processes"]["active_doses"])
+
+
+async def test_state_exposes_active_ph_up_dose_pump() -> None:
+    task = SimpleNamespace(
+        id=26,
+        status="waiting_command",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="prepare_recirculation_check",
+            workflow_phase="tank_recirc",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=CorrectionState(
+            corr_step="corr_dose_ph",
+            attempt=1,
+            max_attempts=5,
+            ec_attempt=1,
+            ec_max_attempts=5,
+            ph_attempt=1,
+            ph_max_attempts=5,
+            activated_here=False,
+            stabilization_sec=60,
+            return_stage_success="prepare_recirculation_stop_to_ready",
+            return_stage_fail="prepare_recirculation_stop_to_setup",
+            outcome_success=None,
+            needs_ec=False,
+            ec_node_uid=None,
+            ec_channel=None,
+            ec_duration_ms=None,
+            needs_ph_up=True,
+            needs_ph_down=False,
+            ph_node_uid="nd-ph",
+            ph_channel="Pump_Base",
+            ph_duration_ms=1500,
+            wait_until=None,
+            ph_amount_ml=0.8,
+        ),
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["active_processes"]["active_doses"] == [
+        {
+            "kind": "ph_up",
+            "channel": "pump_base",
+            "component": None,
+            "node_uid": "nd-ph",
+            "amount_ml": 0.8,
+            "duration_ms": 1500,
+        }
+    ]
+
+
+async def test_state_exposes_current_sequential_ec_dose_by_index() -> None:
+    sequence = [
+        {
+            "component": "calcium",
+            "node_uid": "nd-ec",
+            "channel": "pump_b",
+            "amount_ml": 1.0,
+            "duration_ms": 1000,
+        },
+        {
+            "component": "magnesium",
+            "node_uid": "nd-ec",
+            "channel": "pump_c",
+            "amount_ml": 0.8,
+            "duration_ms": 800,
+        },
+    ]
+    task = SimpleNamespace(
+        id=27,
+        status="waiting_command",
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="prepare_recirculation_check",
+            workflow_phase="tank_recirc",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=CorrectionState(
+            corr_step="corr_dose_ec",
+            attempt=1,
+            max_attempts=5,
+            ec_attempt=1,
+            ec_max_attempts=5,
+            ph_attempt=0,
+            ph_max_attempts=5,
+            activated_here=False,
+            stabilization_sec=60,
+            return_stage_success="prepare_recirculation_stop_to_ready",
+            return_stage_fail="prepare_recirculation_stop_to_setup",
+            outcome_success=None,
+            needs_ec=True,
+            ec_node_uid="nd-ec",
+            ec_channel="pump_b",
+            ec_duration_ms=1000,
+            needs_ph_up=False,
+            needs_ph_down=False,
+            ph_node_uid=None,
+            ph_channel=None,
+            ph_duration_ms=None,
+            wait_until=None,
+            ec_component="magnesium",
+            ec_amount_ml=0.8,
+            ec_dose_sequence_json=json.dumps(sequence),
+            ec_current_seq_index=1,
+        ),
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["active_processes"]["active_doses"] == [
+        {
+            "kind": "ec",
+            "channel": "pump_c",
+            "component": "magnesium",
+            "node_uid": "nd-ec",
+            "amount_ml": 0.8,
+            "duration_ms": 800,
+        }
+    ]
 
 
 async def test_state_returns_irrigation_decision_metadata() -> None:

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatObservabilityDuration,
+  normalizeActiveDoses,
   normalizeObservability,
   observabilityHealthLabel,
   resolveCorrectionDosingDiagnostics,
@@ -91,7 +92,7 @@ describe('automationObservability', () => {
       current_stage: 'clean_fill_check',
       system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
       current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: null, ec: null },
-      active_processes: { pump_in: true, circulation_pump: false, ph_correction: false, ec_correction: false },
+      active_processes: { pump_in: true, circulation_pump: false, ph_correction: false, ec_correction: false, active_doses: [] },
       timeline: [],
       next_state: null,
       estimated_completion_sec: null,
@@ -112,7 +113,7 @@ describe('automationObservability', () => {
       current_stage: 'clean_fill_check',
       system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
       current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: null, ec: null },
-      active_processes: { pump_in: true, circulation_pump: false, ph_correction: false, ec_correction: false },
+      active_processes: { pump_in: true, circulation_pump: false, ph_correction: false, ec_correction: false, active_doses: [] },
       timeline: [],
       next_state: null,
       estimated_completion_sec: null,
@@ -162,7 +163,7 @@ describe('automationObservability', () => {
         state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
         system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
         current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
-        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true, active_doses: [] },
         timeline: [],
         next_state: null,
         estimated_completion_sec: null,
@@ -200,7 +201,22 @@ describe('automationObservability', () => {
         state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
         system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
         current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
-        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        active_processes: {
+          pump_in: false,
+          circulation_pump: true,
+          ph_correction: false,
+          ec_correction: true,
+          active_doses: [
+            {
+              kind: 'ec',
+              channel: 'pump_b',
+              component: 'calcium',
+              node_uid: 'nd-ec',
+              amount_ml: 2.5,
+              duration_ms: 2500,
+            },
+          ],
+        },
         timeline: [],
         next_state: null,
         estimated_completion_sec: null,
@@ -212,6 +228,16 @@ describe('automationObservability', () => {
           workflow_phase: 'irrigating',
         },
         correction: {
+          active_doses: [
+            {
+              kind: 'ec',
+              channel: 'pump_b',
+              component: 'calcium',
+              node_uid: 'nd-ec',
+              amount_ml: 2.5,
+              duration_ms: 2500,
+            },
+          ],
           latest_skip: {
             event_type: 'CORRECTION_SKIPPED_COOLDOWN',
             age_sec: 5,
@@ -224,6 +250,35 @@ describe('automationObservability', () => {
     expect(diagnostics?.reason).toBe('Дозирование выполняется')
     expect(diagnostics?.isDosingActive).toBe(true)
     expect(diagnostics?.severity).toBe('info')
+    expect(diagnostics?.detail).toBeNull()
+    expect(diagnostics?.activeDoses).toHaveLength(1)
+    expect(diagnostics?.activeDoses[0]?.channel).toBe('pump_b')
+  })
+
+  it('normalizes active_doses and drops invalid entries', () => {
+    expect(normalizeActiveDoses([
+      { kind: 'ph_down', channel: 'Pump_Acid', amount_ml: 1.2, duration_ms: 1200 },
+      { kind: 'invalid', channel: 'pump_x' },
+      { kind: 'ec', channel: '' },
+      { kind: 'ec', channel: 'pump_a', component: 'NPK' },
+    ])).toEqual([
+      {
+        kind: 'ph_down',
+        channel: 'pump_acid',
+        component: null,
+        node_uid: null,
+        amount_ml: 1.2,
+        duration_ms: 1200,
+      },
+      {
+        kind: 'ec',
+        channel: 'pump_a',
+        component: 'npk',
+        node_uid: null,
+        amount_ml: null,
+        duration_ms: null,
+      },
+    ])
   })
 
   it('hides dosing card on idle even with stale skip/readiness', () => {
@@ -237,7 +292,7 @@ describe('automationObservability', () => {
         state_details: { started_at: null, elapsed_sec: 0, progress_percent: 0, failed: false },
         system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
         current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: null, ec: null },
-        active_processes: { pump_in: false, circulation_pump: false, ph_correction: false, ec_correction: false },
+        active_processes: { pump_in: false, circulation_pump: false, ph_correction: false, ec_correction: false, active_doses: [] },
         timeline: [],
         next_state: null,
         estimated_completion_sec: null,
@@ -269,7 +324,7 @@ describe('automationObservability', () => {
         state_details: { started_at: null, elapsed_sec: 10, progress_percent: 0, failed: false },
         system_config: { tanks_count: 2, system_type: 'drip', clean_tank_capacity_l: null, nutrient_tank_capacity_l: null },
         current_levels: { clean_tank_level_percent: 0, nutrient_tank_level_percent: 0, ph: 6.0, ec: 1.5 },
-        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true },
+        active_processes: { pump_in: false, circulation_pump: true, ph_correction: false, ec_correction: true, active_doses: [] },
         timeline: [],
         next_state: null,
         estimated_completion_sec: null,

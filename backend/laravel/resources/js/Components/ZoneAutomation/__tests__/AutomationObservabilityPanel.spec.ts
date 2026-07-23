@@ -57,6 +57,7 @@ function buildState(overrides: Partial<AutomationState> = {}): AutomationState {
       circulation_pump: false,
       ph_correction: false,
       ec_correction: false,
+      active_doses: [],
     },
     timeline: [],
     next_state: 'TANK_RECIRC',

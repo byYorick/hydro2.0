@@ -189,10 +189,21 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
     # Legacy prepare-share fields kept for RuntimePlan loader parity only.
     # Prepare EC owner is water-baseline + cumulative T_* (see nutrient_pipeline).
+    # Fill phase may carry calcium-only ratios; T_* / baseline math needs the FULL
+    # recipe ratios from tank_recirc (Ca/Mg/NPK/Micro). Otherwise T_ca collapses
+    # to T_full and dilute-on-overshoot never triggers on a Ca-step seed.
     ratios_for_share = _to_mapping(solution_fill_cfg.get("ec_component_ratios")) or _to_mapping(
         resolved_base_cfg.get("ec_component_ratios")
     )
-    calcium_share = _compute_component_share(ratios_for_share, component="calcium")
+    full_component_ratios = (
+        _to_mapping(tank_recirc_cfg.get("ec_component_ratios"))
+        or _to_mapping(resolved_base_cfg.get("ec_component_ratios"))
+        or ratios_for_share
+    )
+    calcium_share = _compute_component_share(
+        full_component_ratios or ratios_for_share,
+        component="calcium",
+    )
     # Deprecated alias: historically NPK share; now calcium share for fill T_ca pre-estimate.
     npk_ec_share = calcium_share
     target_ec_prepare = round(target_ec * calcium_share, 4)
@@ -351,7 +362,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec) * calcium_share, 4
         ),
         "npk_ec_share": npk_ec_share,
-        "ec_component_ratios": dict(ratios_for_share),
+        "ec_component_ratios": dict(full_component_ratios),
         "recirc": recirc_dilute_cfg,
         "day_night_enabled": day_night_cfg["enabled"],
         "day_night_config": day_night_cfg,

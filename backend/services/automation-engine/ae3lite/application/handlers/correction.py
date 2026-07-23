@@ -2272,6 +2272,7 @@ class CorrectionHandler(BaseStageHandler):
             if self._pid_state_repository is not None:
                 await self._persist_pid_state_updates(
                     zone_id=int(task.zone_id),
+                    now=now,
                     updates={
                         "ec": {
                             "integral": 0.0,

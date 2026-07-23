@@ -121,9 +121,11 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertNotIn("irrigation_recovery", text)
         self.assertNotIn("target_ec_prepare", text)
         self.assertNotIn("npk_ec_share", text)
-        # Sequential nutrient stubs stay contract-only; live coverage remains E106/E104.
-        for stub_id in ("E118", "E119", "E120", "E121"):
+        # Remaining sequential nutrient stubs stay contract-only (E119–E121).
+        # E118 lives as dedicated realhw short-run, not embedded in E106 text.
+        for stub_id in ("E119", "E120", "E121"):
             self.assertNotIn(f"{stub_id}_", text)
+        self.assertNotIn("E118_ae3_water_baseline_and_ca_fill_test_node", text)
 
     def test_fill_ca_dose_requires_tank_not_full(self) -> None:
         """In-flow fill Ca (pump_b) needs solution_max=false; max=true skips to prepare."""

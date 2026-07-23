@@ -85,7 +85,8 @@ describe('AutomationProcessPanel', () => {
             circulation_pump: true,
             ph_correction: true,
             ec_correction: true,
-          },
+          active_doses: [],
+    },
           timeline: [
             {
               event: 'SCHEDULE_TASK_ACCEPTED',
@@ -156,7 +157,8 @@ describe('AutomationProcessPanel', () => {
             circulation_pump: false,
             ph_correction: true,
             ec_correction: true,
-          },
+          active_doses: [],
+    },
           timeline: [
             {
               event: 'TASK_STARTED',
@@ -216,7 +218,8 @@ describe('AutomationProcessPanel', () => {
           circulation_pump: false,
           ph_correction: true,
           ec_correction: true,
-        },
+        active_doses: [],
+    },
         timeline: [
           {
             event: 'COMMAND_DISPATCHED',
@@ -270,7 +273,8 @@ describe('AutomationProcessPanel', () => {
           circulation_pump: true,
           ph_correction: false,
           ec_correction: false,
-        },
+        active_doses: [],
+    },
         timeline: [
           {
             event: 'WORKFLOW_RECOVERY_STALE_STOPPED',

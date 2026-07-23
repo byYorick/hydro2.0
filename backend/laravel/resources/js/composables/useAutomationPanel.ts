@@ -31,7 +31,7 @@ import {
   resolveStageHeadline,
   shouldShowProgressPercent,
 } from '@/utils/automationStatusDisplay'
-import { normalizeObservability } from '@/utils/automationObservability'
+import { normalizeActiveDoses, normalizeObservability } from '@/utils/automationObservability'
 import { automationIndicatesActiveFailure } from '@/utils/automationFailureState'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -436,6 +436,7 @@ export function useAutomationPanel(
         circulation_pump: Boolean(source.active_processes?.circulation_pump),
         ph_correction: Boolean(source.active_processes?.ph_correction),
         ec_correction: Boolean(source.active_processes?.ec_correction),
+        active_doses: normalizeActiveDoses(source.active_processes?.active_doses),
       },
       timeline: Array.isArray(source.timeline) ? source.timeline : [],
       next_state: source.next_state ?? null,
@@ -741,6 +742,9 @@ export function useAutomationPanel(
   const isCirculationActive = computed(() => Boolean(automationState.value?.active_processes.circulation_pump))
   const isPhCorrectionActive = computed(() => Boolean(automationState.value?.active_processes.ph_correction))
   const isEcCorrectionActive = computed(() => Boolean(automationState.value?.active_processes.ec_correction))
+  const activeDoseChannels = computed(() => (
+    automationState.value?.active_processes?.active_doses ?? []
+  ).map((dose) => dose.channel).filter(Boolean))
   const progressPercent = computed(() => clampPercent(automationState.value?.state_details.progress_percent ?? 0))
 
   const currentStageKey = computed(() =>
@@ -1077,6 +1081,7 @@ export function useAutomationPanel(
     isCirculationActive,
     isPhCorrectionActive,
     isEcCorrectionActive,
+    activeDoseChannels,
     isWaterInletActive,
     isCleanSupplyActive,
     isSolutionSupplyActive,

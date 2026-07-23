@@ -241,6 +241,11 @@ resources/js/Pages/
 - заголовок процесса (`AutomationStatusHeader.stateVariant`) наследует `critical` → danger и `warning` → warning из `observability.overall_health`;
 - список `hang_hints[]` показывает `message`, `recommendation`, `details` (intent_id, age_sec, stage, nodes…) и технический `code`;
 - `runtime`: `task_id`, `topology`, `pending_manual_step`, `correction_step`;
+- карточка «Коррекция / дозирование»: `corr_step`, `active_doses[]` (live насосы
+  `pump_acid|pump_base|pump_a..d` во время `corr_dose_*`), skip/last_dose/readiness;
+- **Process diagram (`AutomationProcessDiagram`)**: блок коррекции — два чипа **pH** (acid/base)
+  и **EC** (A/B/C/D). Подсветка блока по `active_processes.ph_correction|ec_correction`;
+  pulse насоса по `active_processes.active_doses[].channel`;
 - **`SchedulerDispatchMetricsStrip`**: polling `GET /api/system/scheduler/metrics` (15 с) — глобальные pending/oldest age/cycle overrun;
 - блок «Планировщик» — из `observability.scheduler` (`pending_count`, `latest_intent`);
 - offline required nodes — из `observability.nodes.offline_required`;

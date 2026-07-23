@@ -90,6 +90,17 @@
         {{ correctionDosing.detail }}
       </p>
       <dl class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+        <div
+          v-if="correctionDosing.activeDoses.length > 0"
+          data-testid="automation-correction-active-doses"
+        >
+          <dt class="uppercase tracking-wide opacity-70">
+            Активные насосы
+          </dt>
+          <dd class="mt-0.5 font-mono">
+            {{ activeDosesLabel }}
+          </dd>
+        </div>
         <div v-if="correctionDosing.corrStepLabel">
           <dt class="uppercase tracking-wide opacity-70">
             Шаг AE3
@@ -474,6 +485,7 @@ import Badge from '@/Components/Badge.vue'
 import SchedulerDispatchMetricsStrip from '@/Components/ZoneAutomation/SchedulerDispatchMetricsStrip.vue'
 import type { AutomationObservability, AutomationState } from '@/types/Automation'
 import {
+  formatActiveDosesLabel,
   formatObservabilityDuration,
   observabilityHealthLabel,
   isSkipStillBlocking,
@@ -625,6 +637,8 @@ const correctionDosing = computed(() => resolveCorrectionDosingDiagnostics(
   props.automationState,
   observability.value,
 ))
+
+const activeDosesLabel = computed(() => formatActiveDosesLabel(correctionDosing.value?.activeDoses))
 
 const prepareBaseline = computed(() => observability.value?.correction?.prepare_baseline ?? null)
 const correctionPipeline = computed(() => observability.value?.correction?.pipeline ?? null)

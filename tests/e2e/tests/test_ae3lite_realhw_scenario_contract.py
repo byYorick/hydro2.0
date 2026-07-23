@@ -412,15 +412,27 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
                 return item
         self.fail(f"Step '{step_name}' is missing in section '{section}'")
 
-    def test_fill_and_recirc_ph_commands_are_optional_in_cold_start_setup_ready(self) -> None:
-        fill_step = self._find_step("actions", "load_fill_ph_correction_commands_if_any")
+    def test_fill_is_ca_only_recirc_ph_remains_optional_in_setup_ready(self) -> None:
+        """Fill chemistry = Ca-only; fill pH load is diagnostic, not a success norm.
+
+        Recirc pH doses stay legitimate/optional. Scenario must not require fill pH.
+        """
+        fill_ec_step = self._find_step("actions", "wait_fill_ec_correction_command")
+        fill_ph_step = self._find_step("actions", "load_fill_ph_correction_commands_if_any")
         recirc_stage_step = self._find_step("actions", "wait_prepare_recirculation_stage")
         recirc_ph_step = self._find_step("actions", "load_recirculation_ph_correction_commands_if_any")
 
-        self.assertEqual(fill_step.get("type"), "database_query")
-        fill_query = str(fill_step.get("query") or "")
-        self.assertIn("channel IN ('pump_acid', 'pump_base')", fill_query)
-        self.assertNotIn("expected_rows", fill_step)
+        fill_ec_query = str(fill_ec_step.get("query") or "")
+        self.assertEqual(fill_ec_step.get("type"), "db.wait")
+        self.assertIn("channel = 'pump_b'", fill_ec_query)
+        self.assertIn("payload->>'cmd' = 'dose'", fill_ec_query)
+        self.assertEqual(fill_ec_step.get("expected_rows"), 1)
+
+        self.assertEqual(fill_ph_step.get("type"), "database_query")
+        fill_ph_query = str(fill_ph_step.get("query") or "")
+        self.assertIn("channel IN ('pump_acid', 'pump_base')", fill_ph_query)
+        # No expected_rows: fill pH is non-canonical; query is diagnostic only.
+        self.assertNotIn("expected_rows", fill_ph_step)
 
         recirc_stage_query = str(recirc_stage_step.get("query") or "")
         self.assertIn("updated_at AS stage_started_at", recirc_stage_query)
@@ -433,6 +445,10 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
             recirc_ph_step.get("params", {}).get("after_command_id"),
             "${recirc_ec_correction_row.0.id}",
         )
+
+        header = SETUP_READY_SCENARIO_PATH.read_text(encoding="utf-8")[:1200]
+        self.assertIn("Ca-only", header)
+        self.assertIn("pH doses on fill are NOT canonical", header)
 
     def test_process_observe_windows_match_default_real_hardware_contract(self) -> None:
         for step_name in [
@@ -468,8 +484,16 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
             if item.get("name") == "targets_reached_near_completion"
         )
 
+        # After sequential fill/recirc, force_near brings PH/EC into band; wait is
+        # required (not optional) with a short post-force timeout.
+        force_step = self._find_step("actions", "force_near_target_band_before_ready_assert")
+        self.assertEqual(force_step.get("type"), "ae_test_hook")
+        self.assertEqual(
+            (force_step.get("command") or {}).get("cmd"),
+            "set_fault_mode",
+        )
         self.assertEqual(step.get("type"), "db.wait")
-        self.assertTrue(step.get("optional"))
+        self.assertFalse(bool(step.get("optional")))
         query = str(step.get("query") or "")
         self.assertIn("ph.last_value BETWEEN 4.80 AND 5.20", query)
         self.assertIn("ec.last_value BETWEEN 2.20 AND 2.60", query)
@@ -481,7 +505,7 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
         self.assertNotIn("ABS(ph.last_value - 5.0)", query)
         self.assertNotIn("ABS(ec.last_value - 2.4)", query)
         self.assertEqual(step.get("params", {}).get("task_id"), "${task_id}")
-        self.assertEqual(float(step.get("timeout", 0.0)), 330.0)
+        self.assertEqual(float(step.get("timeout", 0.0)), 60.0)
 
         self.assertEqual(snapshot_step.get("type"), "database_query")
         snapshot_query = str(snapshot_step.get("query") or "")
@@ -744,12 +768,13 @@ class TestAe3LiteStartIrrigationRuntimeScenarioContract(unittest.TestCase):
 
     def test_does_not_list_sequential_stubs_as_live_actions(self) -> None:
         for stub_name in (
-            "E118_ae3_water_baseline_and_ca_fill_test_node",
             "E119_ae3_prepare_pipeline_sequence_test_node",
             "E120_ae3_recirc_dilute_overshoot_test_node",
             "E121_ae3_irrigation_ph_only_no_recovery_test_node",
         ):
             self.assertNotIn(stub_name, self.text)
+        # E118 graduated to live-short realhw; must not appear as legacy stub name here.
+        self.assertNotIn("E118_ae3_water_baseline_and_ca_fill_test_node", self.text)
 
 
 class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
@@ -786,13 +811,14 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
         self.assertIn("channel = 'pump_b'", recirc_ca_query)
         self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", recirc_ca_query)
         self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", recirc_ph_query)
+        # Peak/decay path re-seeds for stability; waits anchor on reseed timestamp.
         self.assertEqual(
             recirc_ca_step.get("params", {}).get("after_seeded_at"),
-            "${seed_recirculation_command_row.0.created_at}",
+            "${reseed_recirculation_command_row.0.created_at}",
         )
         self.assertEqual(
             recirc_ph_step.get("params", {}).get("after_seeded_at"),
-            "${seed_recirculation_command_row.0.created_at}",
+            "${reseed_recirculation_command_row.0.created_at}",
         )
 
     def test_pipeline_uses_sample_history_for_ec_peak_and_decay_before_ph(self) -> None:
@@ -806,6 +832,67 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
         text = PIGGYBACK_SCENARIO_PATH.read_text(encoding="utf-8")
         self.assertNotIn("irrig_recirc", text)
         self.assertIn("ec_overshoot_dilute_pct", text)
+
+
+DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E120_ae3_recirc_dilute_overshoot_realhw.yaml"
+)
+
+
+class TestAe3LiteDiluteOvershootRealHwScenarioContract(unittest.TestCase):
+    """E120 live-short: overshoot seed → RECIRC_DILUTE_* + valve_clean_supply."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH.read_text(encoding="utf-8")
+        with DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
+            cls.scenario = yaml.safe_load(fh)
+
+    def _find_step(self, section: str, step_name: str) -> dict:
+        for item in self.scenario.get(section, []):
+            if item.get("step") == step_name:
+                return item
+        self.fail(f"Step '{step_name}' is missing in section '{section}'")
+
+    def test_is_live_not_stub(self) -> None:
+        self.assertEqual(self.scenario.get("name"), "E120_ae3_recirc_dilute_overshoot_realhw")
+        self.assertNotEqual(self.scenario.get("status"), "stub")
+        self.assertNotIn("skip_live: true", self.text)
+
+    def test_seeds_ec_above_dilute_overshoot_threshold(self) -> None:
+        seed_step = self._find_step("actions", "seed_recirculation_sensor_values")
+        seed_params = (seed_step.get("command") or {}).get("params") or {}
+        self.assertEqual(seed_params.get("ph_value"), 5.68)
+        # Must exceed T_full*(1+15%)≈2.68 when fill ratios collapse T_ca→T_full,
+        # and still exceed correct T_ca≈1.01 after AE rebuild with full ratios.
+        self.assertGreater(float(seed_params.get("ec_value")), 2.68)
+
+    def test_waits_dilute_events_and_clean_supply_pulse(self) -> None:
+        started = self._find_step("actions", "wait_recirc_dilute_started_event")
+        completed = self._find_step("actions", "wait_recirc_dilute_completed_event")
+        valve = self._find_step("actions", "wait_dilute_valve_clean_supply_command")
+        self.assertIn("RECIRC_DILUTE_STARTED", str(started.get("query") or ""))
+        self.assertIn("RECIRC_DILUTE_COMPLETED", str(completed.get("query") or ""))
+        valve_query = str(valve.get("query") or "")
+        self.assertIn("channel = 'valve_clean_supply'", valve_query)
+        self.assertIn("set_relay", valve_query)
+
+    def test_documents_recirc_dilute_config_and_calcium_pump_b(self) -> None:
+        self.assertIn("ec_overshoot_dilute_pct", self.text)
+        self.assertIn("dilute_pulse_sec", self.text)
+        self.assertIn("valve_clean_supply", self.text)
+        self.assertIn("pump_b", self.text)
+        self.assertIn("calcium", self.text)
+        assertion_names = {item.get("name") for item in self.scenario.get("assertions") or []}
+        self.assertIn("recirc_dilute_started", assertion_names)
+        self.assertIn("dilute_uses_valve_clean_supply", assertion_names)
+        self.assertIn("recirc_dilute_completed", assertion_names)
+        self.assertIn("pump_b_calibration_is_calcium", assertion_names)
+
+    def test_does_not_require_full_sequential_pipeline_waits(self) -> None:
+        steps = {item.get("step") for item in self.scenario.get("actions") or []}
+        self.assertNotIn("wait_recirculation_calcium_correction_command", steps)
+        self.assertNotIn("wait_recirculation_ph_correction_command", steps)
 
 
 if __name__ == "__main__":

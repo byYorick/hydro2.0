@@ -560,4 +560,72 @@ class ZoneAutomationObservabilityServiceTest extends TestCase
 
         $this->assertSame($existing, $payload['timeline'] ?? null);
     }
+
+    public function test_enrich_payload_mirrors_active_doses_into_correction_context(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'active_processes' => [
+                'pump_in' => false,
+                'circulation_pump' => true,
+                'ph_correction' => false,
+                'ec_correction' => true,
+                'active_doses' => [
+                    [
+                        'kind' => 'ec',
+                        'channel' => 'pump_b',
+                        'component' => 'calcium',
+                        'node_uid' => 'nd-ec-1',
+                        'amount_ml' => 2.5,
+                        'duration_ms' => 2500,
+                    ],
+                    [
+                        'kind' => 'invalid',
+                        'channel' => 'pump_x',
+                    ],
+                    [
+                        'kind' => 'ph_down',
+                        'channel' => '',
+                    ],
+                ],
+            ],
+            'observability' => [
+                'runtime' => ['task_is_active' => true, 'source' => 'ae3'],
+                'hang_hints' => [],
+                'overall_health' => 'active',
+            ],
+        ]);
+
+        $this->assertSame(
+            [
+                [
+                    'kind' => 'ec',
+                    'channel' => 'pump_b',
+                    'component' => 'calcium',
+                    'node_uid' => 'nd-ec-1',
+                    'amount_ml' => 2.5,
+                    'duration_ms' => 2500,
+                ],
+            ],
+            $payload['observability']['correction']['active_doses'] ?? null
+        );
+    }
+
+    public function test_enrich_payload_tolerates_missing_active_processes(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $service = app(ZoneAutomationObservabilityService::class);
+        $payload = $service->enrichPayload($zone->id, [
+            'observability' => [
+                'runtime' => ['task_is_active' => false],
+                'hang_hints' => [],
+                'overall_health' => 'idle',
+            ],
+        ]);
+
+        $this->assertSame([], $payload['observability']['correction']['active_doses'] ?? null);
+    }
 }

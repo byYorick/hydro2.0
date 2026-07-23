@@ -7,19 +7,24 @@ import { computed, type ComputedRef, type Ref } from 'vue'
  * дозирование pH/EC → тройник → рециркуляция (V4) / полив (V5).
  */
 export const DIAGRAM_LAYOUT = {
-  view: { w: 520, h: 188 },
+  view: { w: 540, h: 196 },
   tank: { top: 28, h: 84, w: 82, radius: 10 },
   cleanX: 26,
   solutionX: 124,
   inlet: { top: 12, valveY: 16 },
-  busY: 150,
-  drainValveY: 118,
-  titleY: 170,
+  busY: 156,
+  drainValveY: 124,
+  titleY: 178,
   pump: { cx: 252, r: 17 },
-  dosing: { x: 298, y: 130, w: 84, h: 40 },
-  teeX: 408,
+  /** Два блока коррекции: pH (acid/base) и EC (A–D). */
+  dosing: {
+    y: 122,
+    ph: { x: 270, w: 58, h: 48 },
+    ec: { x: 334, w: 96, h: 48 },
+  },
+  teeX: 448,
   recirc: { topY: 24, valveY: 78 },
-  irr: { valveX: 442, endX: 488 },
+  irr: { valveX: 482, endX: 528 },
 } as const
 
 const T = DIAGRAM_LAYOUT
@@ -30,7 +35,8 @@ export const DIAGRAM_GEO = {
   tankBottom: T.tank.top + T.tank.h,
   pumpInletX: T.pump.cx - T.pump.r,
   pumpOutletX: T.pump.cx + T.pump.r,
-  dosingRight: T.dosing.x + T.dosing.w,
+  dosingLeft: T.dosing.ph.x,
+  dosingRight: T.dosing.ec.x + T.dosing.ec.w,
 } as const
 
 export interface DiagramFlowPoints {
@@ -68,7 +74,7 @@ export function createDiagramFlow(flowOffset: Ref<number>): DiagramFlowPoints {
   )
 
   const pumpOutletFlowX = computed(
-    () => DIAGRAM_GEO.pumpOutletX + (T.dosing.x - DIAGRAM_GEO.pumpOutletX) * flowOffset.value,
+    () => DIAGRAM_GEO.pumpOutletX + (DIAGRAM_GEO.dosingLeft - DIAGRAM_GEO.pumpOutletX) * flowOffset.value,
   )
 
   const recircFlowX = computed(() => {

@@ -22,6 +22,7 @@
         :fallback-tanks-count="waterForm.tanksCount"
         :fallback-system-type="waterForm.systemType"
         :automation-state-refresh-seq="automationStateRefreshSeq ?? 0"
+        :pump-calibration-save-seq="props.pumpCalibrationSaveSeq ?? 0"
         @state-snapshot="handleProcessStateSnapshot"
       />
 

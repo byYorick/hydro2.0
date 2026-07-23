@@ -84,6 +84,8 @@
             :is-circulation-active="isCirculationActive"
             :is-ph-correction-active="isPhCorrectionActive"
             :is-ec-correction-active="isEcCorrectionActive"
+            :active-dose-channels="activeDoseChannels"
+            :pump-hover-by-channel="pumpHoverByChannel"
             :is-water-inlet-active="isWaterInletActive"
             :is-clean-supply-active="isCleanSupplyActive"
             :is-solution-supply-active="isSolutionSupplyActive"
@@ -116,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import AutomationStatusHeader from '@/Components/AutomationStatusHeader.vue'
 import AutomationProcessDiagram from '@/Components/AutomationProcessDiagram.vue'
 import AutomationTimeline from '@/Components/AutomationTimeline.vue'
@@ -126,6 +128,7 @@ import AutomationObservabilityPanel from '@/Components/ZoneAutomation/Automation
 import Badge from '@/Components/Badge.vue'
 import { useAutomationPanel } from '@/composables/useAutomationPanel'
 import { useAutomationRuntimeMeta } from '@/composables/useAutomationRuntimeMeta'
+import { useCorrectionPumpHoverData } from '@/composables/useCorrectionPumpHoverData'
 import type { AutomationState, AutomationStateType } from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 
@@ -134,12 +137,14 @@ interface Props {
   fallbackTanksCount?: number
   fallbackSystemType?: IrrigationSystem
   automationStateRefreshSeq?: number
+  pumpCalibrationSaveSeq?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   fallbackTanksCount: 2,
   fallbackSystemType: 'drip',
   automationStateRefreshSeq: 0,
+  pumpCalibrationSaveSeq: 0,
 })
 
 const emit = defineEmits<{
@@ -172,6 +177,7 @@ const {
   isCirculationActive,
   isPhCorrectionActive,
   isEcCorrectionActive,
+  activeDoseChannels,
   isWaterInletActive,
   isCleanSupplyActive,
   isSolutionSupplyActive,
@@ -183,6 +189,11 @@ const {
   timelineEvents,
   irrNodeState,
 } = useAutomationPanel(props, emit)
+
+const { pumpHoverByChannel } = useCorrectionPumpHoverData(
+  toRef(props, 'zoneId'),
+  toRef(props, 'pumpCalibrationSaveSeq'),
+)
 
 const runtimeMeta = useAutomationRuntimeMeta(automationState)
 

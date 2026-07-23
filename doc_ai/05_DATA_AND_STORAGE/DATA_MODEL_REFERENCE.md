@@ -1280,6 +1280,9 @@ stage_retry_count SMALLINT NOT NULL DEFAULT 0
 stage_entered_at TIMESTAMPTZ NULL
 clean_fill_cycle SMALLINT NOT NULL DEFAULT 0
 corr_step VARCHAR(32) NULL
+-- Allowed: corr_activate|corr_wait_stable|corr_check|corr_dose_ec|corr_wait_ec|
+-- corr_dose_ph|corr_wait_ph|corr_dose_ph_piggyback|corr_wait_ph_piggyback|
+-- corr_dilute_pulse|corr_dilute_settle|corr_deactivate|corr_done
 corr_attempt SMALLINT NULL
 corr_max_attempts SMALLINT NULL
 corr_activated_here BOOLEAN NULL

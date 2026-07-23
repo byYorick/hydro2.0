@@ -2,14 +2,15 @@
 # Status: stub (contract-only; NOT in realhw suite).
 # Config keys: recirc.ec_overshoot_dilute_pct / dilute_pulse_sec /
 # dilute_max_attempts / dilute_settle_sec. Hydraulics: valve_clean_supply pulse.
-# Hot-reload of dilute fields: E104. Dedicated dilute realhw path = live-only / TBD.
+# Live path: E120_ae3_recirc_dilute_overshoot_realhw.yaml (AE3LITE_SCENARIOS).
+# Hot-reload of dilute fields: E104.
 
 name: E120_ae3_recirc_dilute_overshoot_test_node
 status: stub
 description: |
   Contract stub for dilute-on-overshoot in prepare_recirculation.
-  Pins event names, config keys, and clean-supply channel without a dedicated
-  overshoot realhw scenario.
+  Pins event names, config keys, and clean-supply channel.
+  Live companion: E120_ae3_recirc_dilute_overshoot_realhw.yaml.
 
 actions:
   - step: set_stub_context

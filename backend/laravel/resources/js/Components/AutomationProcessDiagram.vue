@@ -382,7 +382,7 @@
         <line
           :x1="G.pumpOutletX"
           :y1="T.busY"
-          :x2="T.dosing.x"
+          :x2="G.dosingLeft"
           :y2="T.busY"
           class="pipe-line"
           :class="{ 'pipe-line--active': isMainLineActive }"
@@ -395,54 +395,96 @@
           :cy="T.busY"
         />
 
-        <!-- ── Дозирование pH / EC ── -->
+        <!-- ── Дозирование: блоки pH и EC ── -->
         <g
           class="correction-node"
           @mouseenter="handleHover('correction', $event)"
           @mousemove="handleMouseMove('correction', $event)"
           @mouseleave="handleLeave"
         >
+          <!-- pH block -->
           <rect
-            :x="T.dosing.x"
+            :x="T.dosing.ph.x"
             :y="T.dosing.y"
-            :width="T.dosing.w"
-            :height="T.dosing.h"
+            :width="T.dosing.ph.w"
+            :height="T.dosing.ph.h"
             rx="7"
-            class="equipment-chip correction-body"
-            :class="{ 'correction-body--active': isCorrectionNodeActive }"
+            class="equipment-chip correction-block"
+            :class="{ 'correction-block--active': isPhCorrectionActive }"
           />
           <text
-            :x="T.dosing.x + T.dosing.w / 2"
-            :y="T.dosing.y + 14"
+            :x="T.dosing.ph.x + T.dosing.ph.w / 2"
+            :y="T.dosing.y + 12"
             class="equipment-label"
             text-anchor="middle"
           >
-            Дозирование
+            pH
           </text>
-          <g :transform="`translate(${T.dosing.x + 26}, ${T.dosing.y + 28})`">
+          <g
+            v-for="(pump, idx) in phPumps"
+            :key="pump.channel"
+            class="dose-pump-hit"
+            :transform="`translate(${phPumpX(idx)}, ${T.dosing.y + 32})`"
+            @mouseenter="handlePumpHover(pump.channel, pump.title, $event)"
+            @mousemove="handlePumpMouseMove(pump.channel, pump.title, $event)"
+            @mouseleave="handlePumpLeave($event)"
+          >
             <circle
-              r="9"
-              class="dose-indicator"
-              :class="{ 'dose-indicator--ph': isPhCorrectionActive }"
+              r="8"
+              class="dose-pump"
+              :class="{
+                'dose-pump--ph': isPhCorrectionActive,
+                'dose-pump--running': isDoseChannelActive(pump.channel),
+              }"
             />
             <text
               y="3"
               class="dose-text"
             >
-              pH
+              {{ pump.label }}
             </text>
           </g>
-          <g :transform="`translate(${T.dosing.x + T.dosing.w - 26}, ${T.dosing.y + 28})`">
+
+          <!-- EC block -->
+          <rect
+            :x="T.dosing.ec.x"
+            :y="T.dosing.y"
+            :width="T.dosing.ec.w"
+            :height="T.dosing.ec.h"
+            rx="7"
+            class="equipment-chip correction-block"
+            :class="{ 'correction-block--active': isEcCorrectionActive }"
+          />
+          <text
+            :x="T.dosing.ec.x + T.dosing.ec.w / 2"
+            :y="T.dosing.y + 12"
+            class="equipment-label"
+            text-anchor="middle"
+          >
+            EC
+          </text>
+          <g
+            v-for="(pump, idx) in ecPumps"
+            :key="pump.channel"
+            class="dose-pump-hit"
+            :transform="`translate(${ecPumpX(idx)}, ${T.dosing.y + 32})`"
+            @mouseenter="handlePumpHover(pump.channel, pump.title, $event)"
+            @mousemove="handlePumpMouseMove(pump.channel, pump.title, $event)"
+            @mouseleave="handlePumpLeave($event)"
+          >
             <circle
-              r="9"
-              class="dose-indicator"
-              :class="{ 'dose-indicator--ec': isEcCorrectionActive }"
+              r="7.5"
+              class="dose-pump"
+              :class="{
+                'dose-pump--ec': isEcCorrectionActive,
+                'dose-pump--running': isDoseChannelActive(pump.channel),
+              }"
             />
             <text
               y="3"
               class="dose-text"
             >
-              EC
+              {{ pump.label }}
             </text>
           </g>
         </g>
@@ -577,7 +619,7 @@
         </li>
         <li>
           <span class="legend-dot legend-dot--dose" />
-          Дозирование pH/EC
+          Активный дозатор
         </li>
         <li>
           <span class="legend-dot legend-dot--idle" />
@@ -651,6 +693,10 @@ import {
   DIAGRAM_LAYOUT,
   createDiagramFlow,
 } from '@/composables/automationDiagramLayout'
+import {
+  buildCorrectionPumpHoverData,
+  type CorrectionPumpHoverInfo,
+} from '@/composables/useCorrectionPumpHoverData'
 
 interface Props {
   flowOffset: number
@@ -661,6 +707,8 @@ interface Props {
   isCirculationActive: boolean
   isPhCorrectionActive: boolean
   isEcCorrectionActive: boolean
+  activeDoseChannels?: string[]
+  pumpHoverByChannel?: Record<string, CorrectionPumpHoverInfo>
   isWaterInletActive: boolean
   isCleanSupplyActive: boolean
   isSolutionSupplyActive: boolean
@@ -671,7 +719,10 @@ interface Props {
   irrNodeState: IrrNodeState | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  activeDoseChannels: () => [],
+  pumpHoverByChannel: () => ({}),
+})
 
 const T = DIAGRAM_LAYOUT
 const G = DIAGRAM_GEO
@@ -680,6 +731,38 @@ const flow = createDiagramFlow(toRef(props, 'flowOffset'))
 const uid = Math.random().toString(36).slice(2, 8)
 
 const hoveredElement = ref<HoveredElement | null>(null)
+
+const phPumps = [
+  { channel: 'pump_acid', label: 'acid', title: 'pump_acid · pH↓' },
+  { channel: 'pump_base', label: 'base', title: 'pump_base · pH↑' },
+] as const
+
+const ecPumps = [
+  { channel: 'pump_a', label: 'A', title: 'pump_a · NPK' },
+  { channel: 'pump_b', label: 'B', title: 'pump_b · Ca' },
+  { channel: 'pump_c', label: 'C', title: 'pump_c · Mg' },
+  { channel: 'pump_d', label: 'D', title: 'pump_d · Micro' },
+] as const
+
+const activeDoseChannelSet = computed(() => new Set(
+  (props.activeDoseChannels ?? []).map((channel) => String(channel).trim().toLowerCase()).filter(Boolean),
+))
+
+function isDoseChannelActive(channel: string): boolean {
+  return activeDoseChannelSet.value.has(channel)
+}
+
+function phPumpX(index: number): number {
+  const { x, w } = T.dosing.ph
+  const step = w / (phPumps.length + 1)
+  return x + step * (index + 1)
+}
+
+function ecPumpX(index: number): number {
+  const { x, w } = T.dosing.ec
+  const step = w / (ecPumps.length + 1)
+  return x + step * (index + 1)
+}
 
 const isCleanSupplyActive = computed(() => props.isCleanSupplyActive)
 const isSolutionSupplyActive = computed(() => props.isSolutionSupplyActive)
@@ -694,7 +777,6 @@ const isMainLineActive = computed(() =>
   || props.isEcCorrectionActive
   || isPumpInletBusActive.value,
 )
-const isCorrectionNodeActive = computed(() => props.isPhCorrectionActive || props.isEcCorrectionActive)
 /** V4 — только возврат в бак раствора (valve_solution_fill / circulation). */
 const isRecircActive = computed(() => props.isTankRefillActive || props.isCirculationActive)
 const isInletValveOpen = computed(() => props.isWaterInletActive)
@@ -751,9 +833,16 @@ function elementData(element: string): Record<string, string> {
     }
   }
   if (element === 'correction') {
+    const activeChannels = (props.activeDoseChannels ?? [])
+      .map((channel) => String(channel).trim().toLowerCase())
+      .filter(Boolean)
+    const pumpTitles = [...phPumps, ...ecPumps]
+      .filter((pump) => activeChannels.includes(pump.channel))
+      .map((pump) => pump.title)
     return {
       'Коррекция pH': props.isPhCorrectionActive ? 'Да' : 'Нет',
       'Коррекция EC': props.isEcCorrectionActive ? 'Да' : 'Нет',
+      'Насосы': pumpTitles.length > 0 ? pumpTitles.join(', ') : '—',
     }
   }
   if (element === 'valve_in') {
@@ -803,6 +892,39 @@ function handleMouseMove(_element: string, event: MouseEvent): void {
 
 function handleLeave(): void {
   hoveredElement.value = null
+}
+
+function handlePumpHover(channel: string, title: string, event: MouseEvent): void {
+  event.stopPropagation()
+  const info = props.pumpHoverByChannel?.[channel] ?? null
+  hoveredElement.value = {
+    title,
+    data: {
+      ...buildCorrectionPumpHoverData(info),
+      'Сейчас': isDoseChannelActive(channel) ? 'Дозирует' : 'Простой',
+    },
+    x: event.clientX + 2,
+    y: event.clientY + 20,
+  }
+}
+
+function handlePumpMouseMove(channel: string, title: string, event: MouseEvent): void {
+  event.stopPropagation()
+  if (!hoveredElement.value || hoveredElement.value.title !== title) {
+    handlePumpHover(channel, title, event)
+    return
+  }
+  hoveredElement.value = {
+    ...hoveredElement.value,
+    x: event.clientX + 2,
+    y: event.clientY + 20,
+  }
+}
+
+function handlePumpLeave(event: MouseEvent): void {
+  event.stopPropagation()
+  // Вернуться к сводке блока коррекции, если курсор ещё над correction-node.
+  handleHover('correction', event)
 }
 </script>
 
@@ -941,7 +1063,7 @@ function handleLeave(): void {
   fill: var(--accent-cyan, #0891b2);
 }
 
-.correction-body--active {
+.correction-block--active {
   fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 12%, var(--surface-card, #f8fafc));
   stroke: var(--accent-violet, #7c3aed);
 }
@@ -969,24 +1091,40 @@ function handleLeave(): void {
   fill: var(--text-muted, #64748b);
 }
 
-.dose-indicator {
+.dose-pump-hit {
+  cursor: help;
+}
+
+.dose-pump {
   fill: color-mix(in srgb, var(--surface-card) 80%, transparent);
   stroke: var(--border-muted);
   stroke-width: 1.5;
   transition: fill 0.25s ease, stroke 0.25s ease;
 }
 
-.dose-indicator--ph,
-.dose-indicator--ec {
+.dose-pump--ph {
+  stroke: color-mix(in srgb, var(--accent-violet, #7c3aed) 55%, var(--border-muted));
+}
+
+.dose-pump--ec {
+  stroke: color-mix(in srgb, var(--accent-cyan, #0891b2) 55%, var(--border-muted));
+}
+
+.dose-pump--running {
   fill: color-mix(in srgb, var(--accent-violet, #7c3aed) 45%, transparent);
   stroke: var(--accent-violet, #7c3aed);
   animation: dose-pulse 1.2s ease-in-out infinite;
 }
 
+.dose-pump--ec.dose-pump--running {
+  fill: color-mix(in srgb, var(--accent-cyan, #0891b2) 45%, transparent);
+  stroke: var(--accent-cyan, #0891b2);
+}
+
 .dose-text {
   text-anchor: middle;
   fill: var(--text-primary, #0f172a);
-  font-size: 8px;
+  font-size: 6.5px;
   font-weight: 700;
 }
 
@@ -1165,8 +1303,7 @@ function handleLeave(): void {
 @media (prefers-reduced-motion: reduce) {
   .flow-dot,
   .pump-rotor--active,
-  .dose-indicator--ph,
-  .dose-indicator--ec {
+  .dose-pump--running {
     animation: none;
   }
 }

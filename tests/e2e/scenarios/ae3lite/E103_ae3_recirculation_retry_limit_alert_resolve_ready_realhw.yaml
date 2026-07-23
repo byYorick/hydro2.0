@@ -123,14 +123,57 @@ actions:
     irrig_node_id: ${irrig_node_id}
   timeout: 60.0
   expected_rows: 1
-- step: load_ec_pump_channel
+- step: load_ec_pump_a_channel
   type: database_query
-  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n\
-    \  AND channel = 'pump_a'\nLIMIT 1\n"
+  query: |
+    SELECT id AS node_channel_id
+    FROM node_channels
+    WHERE node_id = :node_id
+    AND channel = 'pump_a'
+    LIMIT 1
   params:
     node_id: ${ec_node_id}
   expected_rows: 1
-  save: ec_pump_channel_row
+  save: ec_pump_a_channel_row
+
+- step: load_ec_pump_b_channel
+  type: database_query
+  query: |
+    SELECT id AS node_channel_id
+    FROM node_channels
+    WHERE node_id = :node_id
+    AND channel = 'pump_b'
+    LIMIT 1
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_b_channel_row
+
+- step: load_ec_pump_c_channel
+  type: database_query
+  query: |
+    SELECT id AS node_channel_id
+    FROM node_channels
+    WHERE node_id = :node_id
+    AND channel = 'pump_c'
+    LIMIT 1
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_c_channel_row
+
+- step: load_ec_pump_d_channel
+  type: database_query
+  query: |
+    SELECT id AS node_channel_id
+    FROM node_channels
+    WHERE node_id = :node_id
+    AND channel = 'pump_d'
+    LIMIT 1
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_d_channel_row
 - step: load_ph_up_channel
   type: database_query
   query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n\
@@ -149,7 +192,11 @@ actions:
   save: ph_down_channel_row
 - step: set_correction_channel_ids
   type: set
-  ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
+  ec_pump_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+  ec_pump_a_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+  ec_pump_b_channel_id: ${ec_pump_b_channel_row.0.node_channel_id}
+  ec_pump_c_channel_id: ${ec_pump_c_channel_row.0.node_channel_id}
+  ec_pump_d_channel_id: ${ec_pump_d_channel_row.0.node_channel_id}
   ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
   ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
 - step: wait_zone_ae_runtime_idle_before_cleanup
@@ -335,7 +382,7 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: pump_a
+            dose_ec_channel: pump_b
             dose_ph_up_channel: pump_base
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 20.0
@@ -443,7 +490,7 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: pump_a
+            dose_ec_channel: pump_b
             dose_ph_up_channel: pump_base
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 8.0
@@ -464,64 +511,136 @@ actions:
   save: correction_config_update_response
 - step: cleanup_existing_correction_bindings
   type: database_execute
-  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_base',\
-    \ 'pump_acid')\n  AND node_channel_id IN (\n    SELECT nc.id\n    FROM node_channels\
-    \ nc\n    JOIN nodes n ON n.id = nc.node_id\n    WHERE n.zone_id = :zone_id\n\
-    \  )\n"
+  query: |
+    DELETE FROM channel_bindings
+    WHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')
+      AND node_channel_id IN (
+        SELECT nc.id
+        FROM node_channels nc
+        JOIN nodes n ON n.id = nc.node_id
+        WHERE n.zone_id = :zone_id
+      )
   params:
     zone_id: ${zone_id}
 - step: cleanup_existing_correction_infra
   type: database_execute
-  query: "DELETE FROM infrastructure_instances\nWHERE owner_type = 'zone'\n  AND owner_id\
-    \ = :zone_id\n  AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH\
-    \ Down')\n"
+  query: |
+    DELETE FROM infrastructure_instances
+    WHERE owner_type = 'zone'
+      AND owner_id = :zone_id
+      AND label IN (
+        'AE3 E2E EC NPK',
+        'AE3 E2E EC Calcium',
+        'AE3 E2E EC Magnesium',
+        'AE3 E2E EC Micro',
+        'AE3 E2E EC Dose',
+        'AE3 E2E PH Up',
+        'AE3 E2E PH Down'
+      )
   params:
     zone_id: ${zone_id}
 - step: cleanup_existing_e2e_calibrations
   type: database_execute
-  query: "DELETE FROM pump_calibrations\nWHERE source = 'e2e_realhw_setup_ready'\n\
-    \  AND node_channel_id IN (\n    CAST(:ec_pump_channel_id AS bigint),\n    CAST(:ph_up_channel_id\
-    \ AS bigint),\n    CAST(:ph_down_channel_id AS bigint)\n  )\n"
+  query: |
+    DELETE FROM pump_calibrations
+    WHERE source = 'e2e_realhw_setup_ready'
+      AND node_channel_id IN (
+        CAST(:ec_pump_a_channel_id AS bigint),
+        CAST(:ec_pump_b_channel_id AS bigint),
+        CAST(:ec_pump_c_channel_id AS bigint),
+        CAST(:ec_pump_d_channel_id AS bigint),
+        CAST(:ph_up_channel_id AS bigint),
+        CAST(:ph_down_channel_id AS bigint)
+      )
   params:
-    ec_pump_channel_id: ${ec_pump_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
 - step: insert_correction_infrastructure
   type: database_execute
-  query: "INSERT INTO infrastructure_instances (\n  owner_type,\n  owner_id,\n  asset_type,\n\
-    \  label,\n  required,\n  created_at,\n  updated_at\n)\nVALUES\n  ('zone', :zone_id,\
-    \ 'PUMP', 'AE3 E2E EC Dose', TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP',\
-    \ 'AE3 E2E PH Up', TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP', 'AE3 E2E\
-    \ PH Down', TRUE, NOW(), NOW())\n"
+  query: |
+    INSERT INTO infrastructure_instances (
+      owner_type,
+      owner_id,
+      asset_type,
+      label,
+      required,
+      created_at,
+      updated_at
+    )
+    VALUES
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E EC NPK', TRUE, NOW(), NOW()),
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Calcium', TRUE, NOW(), NOW()),
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Magnesium', TRUE, NOW(), NOW()),
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Micro', TRUE, NOW(), NOW()),
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Up', TRUE, NOW(), NOW()),
+      ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Down', TRUE, NOW(), NOW())
   params:
     zone_id: ${zone_id}
 - step: insert_correction_bindings
   type: database_execute
-  query: "INSERT INTO channel_bindings (\n  infrastructure_instance_id,\n  node_channel_id,\n\
-    \  direction,\n  role,\n  created_at,\n  updated_at\n)\nSELECT ii.id, mapping.node_channel_id,\
-    \ 'actuator', mapping.role, NOW(), NOW()\nFROM (\n  VALUES\n    ('AE3 E2E EC Dose',\
-    \ CAST(:ec_pump_channel_id AS bigint), 'pump_a'),\n    ('AE3 E2E PH Up', CAST(:ph_up_channel_id\
-    \ AS bigint), 'pump_base'),\n    ('AE3 E2E PH Down', CAST(:ph_down_channel_id\
-    \ AS bigint), 'pump_acid')\n) AS mapping(label, node_channel_id, role)\nJOIN\
-    \ infrastructure_instances ii\n  ON ii.owner_type = 'zone'\n AND ii.owner_id =\
-    \ :zone_id\n AND ii.label = mapping.label\n"
+  query: |
+    INSERT INTO channel_bindings (
+      infrastructure_instance_id,
+      node_channel_id,
+      direction,
+      role,
+      created_at,
+      updated_at
+    )
+    SELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()
+    FROM (
+      VALUES
+        ('AE3 E2E EC NPK', CAST(:ec_pump_a_channel_id AS bigint), 'pump_a'),
+        ('AE3 E2E EC Calcium', CAST(:ec_pump_b_channel_id AS bigint), 'pump_b'),
+        ('AE3 E2E EC Magnesium', CAST(:ec_pump_c_channel_id AS bigint), 'pump_c'),
+        ('AE3 E2E EC Micro', CAST(:ec_pump_d_channel_id AS bigint), 'pump_d'),
+        ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'pump_base'),
+        ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'pump_acid')
+    ) AS mapping(label, node_channel_id, role)
+    JOIN infrastructure_instances ii
+      ON ii.owner_type = 'zone'
+     AND ii.owner_id = :zone_id
+     AND ii.label = mapping.label
   params:
     zone_id: ${zone_id}
-    ec_pump_channel_id: ${ec_pump_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
 - step: insert_correction_calibrations
   type: database_execute
-  query: "INSERT INTO pump_calibrations (\n  node_channel_id,\n  ml_per_sec,\n  k_ms_per_ml_l,\n\
-    \  source,\n  quality_score,\n  sample_count,\n  valid_from,\n  is_active,\n \
-    \ created_at,\n  updated_at\n)\nVALUES\n  (CAST(:ec_pump_channel_id AS bigint),\
-    \ 2.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE,\
-    \ NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready',\
-    \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ph_down_channel_id\
-    \ AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1\
-    \ minute', TRUE, NOW(), NOW())\n"
+  query: |
+    INSERT INTO pump_calibrations (
+      node_channel_id,
+      ml_per_sec,
+      k_ms_per_ml_l,
+      component,
+      source,
+      quality_score,
+      sample_count,
+      valid_from,
+      is_active,
+      created_at,
+      updated_at
+    )
+    VALUES
+      (CAST(:ec_pump_a_channel_id AS bigint), 2.0, 1.0, 'npk', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+      (CAST(:ec_pump_b_channel_id AS bigint), 2.0, 1.0, 'calcium', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+      (CAST(:ec_pump_c_channel_id AS bigint), 2.0, 1.0, 'magnesium', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+      (CAST(:ec_pump_d_channel_id AS bigint), 2.0, 1.0, 'micro', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+      (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+      (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
   params:
-    ec_pump_channel_id: ${ec_pump_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
 - step: apply_solution_fill_process_calibration
@@ -629,7 +748,7 @@ actions:
                   ph_pct: 5
                   ec_pct: 10
                 correction:
-                  dose_ec_channel: pump_a
+                  dose_ec_channel: pump_b
                   dose_ph_up_channel: pump_base
                   dose_ph_down_channel: pump_acid
                   max_ec_dose_ml: 60.0
@@ -1112,11 +1231,41 @@ actions:
     cmd_id: ${force_solution_tank_full_response.data.cmd_id}
   timeout: 20.0
   expected_rows: 1
+- step: seed_solution_fill_sensor_baseline
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: false
+      ph_value: 7.0
+      ec_value: 0.45
+  save: seed_solution_fill_sensor_baseline_response
+
+- step: wait_seed_solution_fill_sensor_baseline_done
+  type: db.wait
+  query: |
+    SELECT id, cmd_id, status
+    FROM commands
+    WHERE cmd_id = :cmd_id
+    AND status = 'DONE'
+    ORDER BY created_at DESC
+    LIMIT 1
+  params:
+    cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_fill_ec_correction_command
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
+    \ = 'pump_b'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 120.0
@@ -1203,7 +1352,7 @@ actions:
 - step: load_recirc_command_counts_first
   type: database_query
   query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id >= CAST(:after_ec_id AS bigint)\n\
-    \      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND\
+    \      AND publish_status = 'accepted'\n      AND channel = 'pump_b'\n      AND\
     \ payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
     \ (\n    WHERE id >= CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
     \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int\
@@ -1337,7 +1486,7 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: pump_a
+            dose_ec_channel: pump_b
             dose_ph_up_channel: pump_base
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 20.0
@@ -1434,7 +1583,7 @@ actions:
                 no_effect_consecutive_limit: 4
           dosing:
             solution_volume_l: 20.0
-            dose_ec_channel: pump_a
+            dose_ec_channel: pump_b
             dose_ph_up_channel: pump_base
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 36.0
@@ -1790,7 +1939,7 @@ actions:
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
+    \ = 'pump_b'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
   timeout: 120.0
@@ -1861,7 +2010,7 @@ actions:
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND id > CAST(:after_command_id AS bigint)\n\
-    \  AND publish_status = 'accepted'\n  AND channel = 'pump_a'\n  AND payload->>'cmd'\
+    \  AND publish_status = 'accepted'\n  AND channel = 'pump_b'\n  AND payload->>'cmd'\
     \ = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
@@ -1927,6 +2076,33 @@ actions:
   timeout: 120.0
   expected_rows: 1
   save: workflow_ready_second_row
+# After complete_ready sensor mode may stop and natural PH/EC leave the
+# assertion band before samples are loaded for second_targets_reached.
+- step: force_near_target_before_second_samples_assert
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      ph_value: 5.03
+      ec_value: 2.25
+  save: force_near_target_before_second_samples_response
+- step: wait_force_near_target_before_second_samples_done
+  type: db.wait
+  query: |
+    SELECT id, cmd_id, status
+    FROM commands
+    WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
+    ORDER BY created_at DESC
+    LIMIT 1
+  params:
+    cmd_id: ${force_near_target_before_second_samples_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: load_targets_reached_from_samples_second
   type: database_query
   query: "WITH ph_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ph_node_id AS bigint)\n    AND s.type = 'PH'\n    AND s.label = 'ph_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN CAST(:ph_min AS numeric) AND CAST(:ph_max AS numeric)\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n),\nec_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ec_node_id AS bigint)\n    AND s.type = 'EC'\n    AND s.label = 'ec_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN CAST(:ec_min AS numeric) AND CAST(:ec_max AS numeric)\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n)\nSELECT\n  ph.value AS ph_value,\n  ec.value AS ec_value,\n  ph.ts AS ph_ts,\n  ec.ts AS ec_ts\nFROM ph_samples ph\nCROSS JOIN ec_samples ec\nWHERE ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 30\nORDER BY GREATEST(ph.ts, ec.ts) DESC\nLIMIT 1\n"
@@ -1942,7 +2118,7 @@ actions:
   save: targets_reached_second_row
 - step: load_recirc_command_counts_second
   type: database_query
-  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
+  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel = 'pump_b'\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
     task_id: ${task_id_2}
     after_ec_id: ${fill_ec_correction_second_row.0.id}
@@ -2062,11 +2238,22 @@ cleanup:
 - step: cleanup_e2e_calibrations
   type: database_execute
   optional: true
-  query: "DELETE FROM pump_calibrations\nWHERE source = 'e2e_realhw_setup_ready'\n\
-    \  AND node_channel_id IN (\n    CAST(:ec_pump_channel_id AS bigint),\n    CAST(:ph_up_channel_id\
-    \ AS bigint),\n    CAST(:ph_down_channel_id AS bigint)\n  )\n"
+  query: |
+    DELETE FROM pump_calibrations
+    WHERE source = 'e2e_realhw_setup_ready'
+      AND node_channel_id IN (
+        CAST(:ec_pump_a_channel_id AS bigint),
+        CAST(:ec_pump_b_channel_id AS bigint),
+        CAST(:ec_pump_c_channel_id AS bigint),
+        CAST(:ec_pump_d_channel_id AS bigint),
+        CAST(:ph_up_channel_id AS bigint),
+        CAST(:ph_down_channel_id AS bigint)
+      )
   params:
-    ec_pump_channel_id: ${ec_pump_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
 - step: cleanup_e2e_process_calibrations
@@ -2076,20 +2263,40 @@ cleanup:
 - step: cleanup_e2e_bindings
   type: database_execute
   optional: true
-  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_base',\
-    \ 'pump_acid')\n  AND node_channel_id IN (\n    CAST(:ec_pump_channel_id AS\
-    \ bigint),\n    CAST(:ph_up_channel_id AS bigint),\n    CAST(:ph_down_channel_id\
-    \ AS bigint)\n  )\n"
+  query: |
+    DELETE FROM channel_bindings
+    WHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')
+      AND node_channel_id IN (
+        CAST(:ec_pump_a_channel_id AS bigint),
+        CAST(:ec_pump_b_channel_id AS bigint),
+        CAST(:ec_pump_c_channel_id AS bigint),
+        CAST(:ec_pump_d_channel_id AS bigint),
+        CAST(:ph_up_channel_id AS bigint),
+        CAST(:ph_down_channel_id AS bigint)
+      )
   params:
-    ec_pump_channel_id: ${ec_pump_channel_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
 - step: cleanup_e2e_infrastructure
   type: database_execute
   optional: true
-  query: "DELETE FROM infrastructure_instances\nWHERE owner_type = 'zone'\n  AND owner_id\
-    \ = :zone_id\n  AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH\
-    \ Down')\n"
+  query: |
+    DELETE FROM infrastructure_instances
+    WHERE owner_type = 'zone'
+      AND owner_id = :zone_id
+      AND label IN (
+        'AE3 E2E EC NPK',
+        'AE3 E2E EC Calcium',
+        'AE3 E2E EC Magnesium',
+        'AE3 E2E EC Micro',
+        'AE3 E2E EC Dose',
+        'AE3 E2E PH Up',
+        'AE3 E2E PH Down'
+      )
   params:
     zone_id: ${zone_id}
 - step: cleanup_runtime_ae_commands

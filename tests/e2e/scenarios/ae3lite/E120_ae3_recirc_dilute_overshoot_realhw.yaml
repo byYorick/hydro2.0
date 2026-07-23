@@ -1,0 +1,1632 @@
+# E120: live-short — recirc dilute-on-overshoot via valve_clean_supply (realhw test_node)
+# DoD:
+# - seed EC > max(T_ca, T_full)*(1+ec_overshoot_dilute_pct) in prepare_recirculation_check
+#   (robust to fill calcium-only ratios collapsing T_ca→T_full until AE rebuild)
+# - zone_events: RECIRC_DILUTE_STARTED / RECIRC_DILUTE_COMPLETED (+ PID_EC_RESET reason=dilute)
+# - ae_commands: valve_clean_supply set_relay true→false pulse (recirc_dilute_*)
+# - fixtures multi-pump + calcium=pump_b as E106
+# - live-short: full ready/pipeline not required (E106 covers sequential path)
+# Stub companion remains: E120_ae3_recirc_dilute_overshoot_test_node.yaml
+# Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+#
+# Запуск:
+#   ./tests/e2e/run_automation_engine_real_hardware.sh \
+#     --set ae3lite E2E_SCENARIO_INCLUDE_REGEX='E120_ae3_recirc_dilute_overshoot_realhw'
+#   # или точечно:
+#   ./tests/e2e/run_automation_engine_real_hardware.sh \
+#     scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml
+
+name: E120_ae3_recirc_dilute_overshoot_realhw
+description: 'Live-short realhw dilute-on-overshoot в prepare_recirculation на test_node.
+
+  Путь: staged setup → prepare_recirculation_check → seed EC > T_full*(1+dilute_pct) (2.90 > 2.33*1.15) →
+
+  RECIRC_DILUTE_STARTED + valve_clean_supply pulse → RECIRC_DILUTE_COMPLETED (+ PID_EC_RESET).
+
+  Fixtures: multi-pump + calcium=pump_b как E106. Не требует полного ready/pipeline (это E106).
+
+  Stub companion: E120_ae3_recirc_dilute_overshoot_test_node.yaml.
+
+  '
+actions:
+- step: set_test_context
+  type: set
+  fixture_prefix: ae3-realhw-dilute-${TIMESTAMP_MS}
+  test_zone_uid: ${TEST_NODE_ZONE_UID}
+  test_node_uid: ${TEST_NODE_UID}
+  test_ph_node_uid: ${TEST_PH_NODE_UID}
+  test_ec_node_uid: ${TEST_EC_NODE_UID}
+  recipe_name: ae3-realhw-dilute-recipe-${TIMESTAMP_MS}
+  idempotency_key: ae3-realhw-dilute-start-cycle-${TIMESTAMP_MS}
+  scheduler_source: laravel_scheduler
+  scheduler_trace_id: ae3-realhw-dilute-trace-${TIMESTAMP_MS}
+- step: capture_scenario_window
+  type: database_query
+  query: 'SELECT NOW() AS started_at
+
+    '
+  expected_rows: 1
+  save: scenario_window
+- step: load_zone_context
+  type: database_query
+  query: 'SELECT id AS zone_id, greenhouse_id, automation_runtime
+
+    FROM zones
+
+    WHERE uid = :zone_uid
+
+    LIMIT 1
+
+    '
+  params:
+    zone_uid: ${test_zone_uid}
+  expected_rows: 1
+  save: zone_ctx
+- step: set_zone_context
+  type: set
+  zone_id: ${zone_ctx.0.zone_id}
+  greenhouse_id: ${zone_ctx.0.greenhouse_id}
+  previous_automation_runtime: ${zone_ctx.0.automation_runtime}
+- step: load_irrig_node
+  type: database_query
+  query: "SELECT id AS node_id\nFROM nodes\nWHERE uid = :node_uid\n  AND zone_id = :zone_id\nLIMIT 1\n"
+  params:
+    node_uid: ${test_node_uid}
+    zone_id: ${zone_id}
+  expected_rows: 1
+  save: irrig_node_row
+- step: load_ph_node
+  type: database_query
+  query: "SELECT n.id AS node_id, n.uid AS node_uid\nFROM nodes n\nWHERE n.zone_id = :zone_id\n  AND LOWER(COALESCE(n.type,\
+    \ '')) = 'ph'\n  AND EXISTS (\n    SELECT 1\n    FROM node_channels nc\n    WHERE nc.node_id = n.id\n      AND nc.channel\
+    \ IN ('pump_acid', 'pump_base')\n  )\nORDER BY CASE WHEN n.uid = :node_uid THEN 0 ELSE 1 END, n.id ASC\nLIMIT 1\n"
+  params:
+    node_uid: ${test_ph_node_uid}
+    zone_id: ${zone_id}
+  expected_rows: 1
+  save: ph_node_row
+- step: load_ec_node
+  type: database_query
+  query: "SELECT n.id AS node_id, n.uid AS node_uid\nFROM nodes n\nWHERE n.zone_id = :zone_id\n  AND LOWER(COALESCE(n.type,\
+    \ '')) = 'ec'\n  AND EXISTS (\n    SELECT 1\n    FROM node_channels nc\n    WHERE nc.node_id = n.id\n      AND nc.channel\
+    \ = 'pump_a'\n  )\nORDER BY CASE WHEN n.uid = :node_uid THEN 0 ELSE 1 END, n.id ASC\nLIMIT 1\n"
+  params:
+    node_uid: ${test_ec_node_uid}
+    zone_id: ${zone_id}
+  expected_rows: 1
+  save: ec_node_row
+- step: set_node_ids
+  type: set
+  irrig_node_id: ${irrig_node_row.0.node_id}
+  ph_node_id: ${ph_node_row.0.node_id}
+  ec_node_id: ${ec_node_row.0.node_id}
+  resolved_ph_node_uid: ${ph_node_row.0.node_uid}
+  resolved_ec_node_uid: ${ec_node_row.0.node_uid}
+- step: publish_irrig_node_config
+  type: api_post
+  endpoint: /api/nodes/${irrig_node_id}/config/publish
+  payload: {}
+- step: publish_ph_node_config
+  type: api_post
+  endpoint: /api/nodes/${ph_node_id}/config/publish
+  payload: {}
+- step: publish_ec_node_config
+  type: api_post
+  endpoint: /api/nodes/${ec_node_id}/config/publish
+  payload: {}
+- step: wait_irrigation_level_sensors_registered
+  type: db.wait
+  query: "SELECT COUNT(*)::int AS sensor_count\nFROM sensors\nWHERE zone_id = :zone_id\n  AND node_id = CAST(:irrig_node_id\
+    \ AS bigint)\n  AND type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')\n  AND label IN ('level_clean_max', 'level_clean_min',\
+    \ 'level_solution_max', 'level_solution_min')\nHAVING COUNT(*) = 4\n"
+  params:
+    zone_id: ${zone_id}
+    irrig_node_id: ${irrig_node_id}
+  timeout: 60.0
+  expected_rows: 1
+- step: load_ec_pump_a_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_a'\nLIMIT 1\n"
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_a_channel_row
+- step: load_ec_pump_b_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_b'\nLIMIT 1\n"
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_b_channel_row
+- step: load_ec_pump_c_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_c'\nLIMIT 1\n"
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_c_channel_row
+- step: load_ec_pump_d_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_d'\nLIMIT 1\n"
+  params:
+    node_id: ${ec_node_id}
+  expected_rows: 1
+  save: ec_pump_d_channel_row
+- step: load_ph_up_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_base'\nLIMIT 1\n"
+  params:
+    node_id: ${ph_node_id}
+  expected_rows: 1
+  save: ph_up_channel_row
+- step: load_ph_down_channel
+  type: database_query
+  query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n  AND channel = 'pump_acid'\nLIMIT 1\n"
+  params:
+    node_id: ${ph_node_id}
+  expected_rows: 1
+  save: ph_down_channel_row
+- step: set_correction_channel_ids
+  type: set
+  ec_pump_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+  ec_pump_a_channel_id: ${ec_pump_a_channel_row.0.node_channel_id}
+  ec_pump_b_channel_id: ${ec_pump_b_channel_row.0.node_channel_id}
+  ec_pump_c_channel_id: ${ec_pump_c_channel_row.0.node_channel_id}
+  ec_pump_d_channel_id: ${ec_pump_d_channel_row.0.node_channel_id}
+  ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
+  ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
+- step: wait_zone_ae_runtime_idle_before_cleanup
+  type: db.wait
+  query: "SELECT 1 AS ready\nWHERE NOT EXISTS (\n  SELECT 1\n  FROM ae_tasks\n  WHERE zone_id = :zone_id\n    AND status IN\
+    \ ('pending', 'claimed', 'running', 'waiting_command')\n)\n  AND NOT EXISTS (\n  SELECT 1\n  FROM ae_zone_leases\n  WHERE\
+    \ zone_id = :zone_id\n)\n  AND NOT EXISTS (\n  SELECT 1\n  FROM zone_automation_intents\n  WHERE zone_id = :zone_id\n\
+    \    AND status IN ('pending', 'claimed', 'running')\n)\n"
+  params:
+    zone_id: ${zone_id}
+  timeout: 120.0
+  expected_rows: 1
+- step: cleanup_zone_ae_commands
+  type: database_execute
+  query: "DELETE FROM ae_commands\nWHERE task_id IN (\n  SELECT id\n  FROM ae_tasks\n  WHERE zone_id = :zone_id\n)\n"
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_ae_tasks
+  type: database_execute
+  query: 'DELETE FROM ae_tasks
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_ae_leases
+  type: database_execute
+  query: 'DELETE FROM ae_zone_leases
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_workflow_state
+  type: database_execute
+  query: 'DELETE FROM zone_workflow_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_pid_state
+  type: database_execute
+  query: 'DELETE FROM pid_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: complete_existing_cycles
+  type: database_execute
+  query: "UPDATE grow_cycles\nSET status = 'COMPLETED',\n    updated_at = NOW()\nWHERE zone_id = :zone_id\n  AND status IN\
+    \ ('PLANNED', 'RUNNING', 'PAUSED')\n"
+  params:
+    zone_id: ${zone_id}
+- step: switch_zone_to_ae3
+  type: database_execute
+  query: "UPDATE zones\nSET automation_runtime = 'ae3',\n    updated_at = NOW()\nWHERE id = :zone_id\n"
+  params:
+    zone_id: ${zone_id}
+- step: load_test_node_correction_preset
+  type: database_query
+  query: 'SELECT id
+
+    FROM zone_correction_presets
+
+    WHERE slug = ''test-node''
+
+    LIMIT 1
+
+    '
+  expected_rows: 1
+  save: test_node_correction_preset_row
+- step: apply_test_node_correction_preset
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
+  payload:
+    payload:
+      preset_id: ${test_node_correction_preset_row.0.id}
+      base_config: {}
+      phase_overrides:
+        solution_fill:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 3
+            max_ph_correction_attempts: 3
+            prepare_recirculation_timeout_sec: 240
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 12.0
+              ki: 0.12
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.08
+              max_dose_ml: 20.0
+              max_integral: 24.0
+              min_interval_sec: 10
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 2
+                decision_window_sec: 4
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 4.0
+              ki: 0.04
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.05
+              max_dose_ml: 10.0
+              max_integral: 10.0
+              min_interval_sec: 10
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 2
+                decision_window_sec: 4
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.25
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: pump_b
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
+            max_ec_dose_ml: 20.0
+            max_ph_dose_ml: 10.0
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 10.0
+              ec_pct: 16.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
+        tank_recirc:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 10
+            max_ph_correction_attempts: 10
+            prepare_recirculation_timeout_sec: 300
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 18.0
+              ki: 0.18
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.05
+              max_dose_ml: 30.0
+              max_integral: 48.0
+              min_interval_sec: 10
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 2
+                decision_window_sec: 4
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 6.0
+              ki: 0.06
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.04
+              max_dose_ml: 16.0
+              max_integral: 16.0
+              min_interval_sec: 10
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 2
+                decision_window_sec: 4
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.25
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: pump_b
+            dose_ph_up_channel: pump_base
+            dose_ph_down_channel: pump_acid
+            max_ec_dose_ml: 30.0
+            max_ph_dose_ml: 16.0
+          recirc:
+            ec_overshoot_dilute_pct: 15
+            dilute_pulse_sec: 3
+            dilute_max_attempts: 3
+            dilute_settle_sec: 5
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 9.0
+              ec_pct: 15.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
+  save: correction_config_update_response
+- step: cleanup_existing_correction_bindings
+  type: database_execute
+  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')\n\
+    \  AND node_channel_id IN (\n    SELECT nc.id\n    FROM node_channels nc\n    JOIN nodes n ON n.id = nc.node_id\n    WHERE\
+    \ n.zone_id = :zone_id\n  )\n"
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_existing_correction_infra
+  type: database_execute
+  query: "DELETE FROM infrastructure_instances\nWHERE owner_type = 'zone'\n  AND owner_id = :zone_id\n  AND label IN (\n \
+    \   'AE3 E2E EC NPK',\n    'AE3 E2E EC Calcium',\n    'AE3 E2E EC Magnesium',\n    'AE3 E2E EC Micro',\n    'AE3 E2E EC\
+    \ Dose',\n    'AE3 E2E PH Up',\n    'AE3 E2E PH Down'\n  )\n"
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_existing_e2e_calibrations
+  type: database_execute
+  query: "DELETE FROM pump_calibrations\nWHERE source = 'e2e_realhw_setup_ready'\n  AND node_channel_id IN (\n    CAST(:ec_pump_a_channel_id\
+    \ AS bigint),\n    CAST(:ec_pump_b_channel_id AS bigint),\n    CAST(:ec_pump_c_channel_id AS bigint),\n    CAST(:ec_pump_d_channel_id\
+    \ AS bigint),\n    CAST(:ph_up_channel_id AS bigint),\n    CAST(:ph_down_channel_id AS bigint)\n  )\n"
+  params:
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
+    ph_up_channel_id: ${ph_up_channel_id}
+    ph_down_channel_id: ${ph_down_channel_id}
+- step: insert_correction_infrastructure
+  type: database_execute
+  query: "INSERT INTO infrastructure_instances (\n  owner_type,\n  owner_id,\n  asset_type,\n  label,\n  required,\n  created_at,\n\
+    \  updated_at\n)\nVALUES\n  ('zone', :zone_id, 'PUMP', 'AE3 E2E EC NPK', TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP',\
+    \ 'AE3 E2E EC Calcium', TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Magnesium', TRUE, NOW(), NOW()),\n\
+    \  ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Micro', TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Up',\
+    \ TRUE, NOW(), NOW()),\n  ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Down', TRUE, NOW(), NOW())\n"
+  params:
+    zone_id: ${zone_id}
+- step: insert_correction_bindings
+  type: database_execute
+  query: "INSERT INTO channel_bindings (\n  infrastructure_instance_id,\n  node_channel_id,\n  direction,\n  role,\n  created_at,\n\
+    \  updated_at\n)\nSELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()\nFROM (\n  VALUES\n  \
+    \  ('AE3 E2E EC NPK', CAST(:ec_pump_a_channel_id AS bigint), 'pump_a'),\n    ('AE3 E2E EC Calcium', CAST(:ec_pump_b_channel_id\
+    \ AS bigint), 'pump_b'),\n    ('AE3 E2E EC Magnesium', CAST(:ec_pump_c_channel_id AS bigint), 'pump_c'),\n    ('AE3 E2E\
+    \ EC Micro', CAST(:ec_pump_d_channel_id AS bigint), 'pump_d'),\n    ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint),\
+    \ 'pump_base'),\n    ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'pump_acid')\n) AS mapping(label, node_channel_id,\
+    \ role)\nJOIN infrastructure_instances ii\n  ON ii.owner_type = 'zone'\n AND ii.owner_id = :zone_id\n AND ii.label = mapping.label\n"
+  params:
+    zone_id: ${zone_id}
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
+    ph_up_channel_id: ${ph_up_channel_id}
+    ph_down_channel_id: ${ph_down_channel_id}
+- step: insert_correction_calibrations
+  type: database_execute
+  query: "INSERT INTO pump_calibrations (\n  node_channel_id,\n  ml_per_sec,\n  k_ms_per_ml_l,\n  component,\n  source,\n\
+    \  quality_score,\n  sample_count,\n  valid_from,\n  is_active,\n  created_at,\n  updated_at\n)\nVALUES\n  (CAST(:ec_pump_a_channel_id\
+    \ AS bigint), 1.0, 1.0, 'npk', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n \
+    \ (CAST(:ec_pump_b_channel_id AS bigint), 1.0, 1.0, 'calcium', 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute',\
+    \ TRUE, NOW(), NOW()),\n  (CAST(:ec_pump_c_channel_id AS bigint), 1.0, 1.0, 'magnesium', 'e2e_realhw_setup_ready', 1.0,\
+    \ 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ec_pump_d_channel_id AS bigint), 1.0, 1.0, 'micro', 'e2e_realhw_setup_ready',\
+    \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready',\
+    \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, NULL, 'e2e_realhw_setup_ready',\
+    \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())\n"
+  params:
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
+    ph_up_channel_id: ${ph_up_channel_id}
+    ph_down_channel_id: ${ph_down_channel_id}
+- step: apply_solution_fill_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.solution_fill
+  payload:
+    payload:
+      mode: solution_fill
+      ec_gain_per_ml: 0.0025
+      ph_up_gain_per_ml: 0.01
+      ph_down_gain_per_ml: 0.01
+      ph_per_ec_ml: -0.0015
+      ec_per_ph_ml: 0.0
+      transport_delay_sec: 2
+      settle_sec: 2
+      confidence: 0.9
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 2
+          decision_window_sec: 4
+          observe_poll_sec: 2
+          min_effect_fraction: 0.2
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_tank_recirc_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.tank_recirc
+  payload:
+    payload:
+      mode: tank_recirc
+      ec_gain_per_ml: 0.008
+      ph_up_gain_per_ml: 0.018
+      ph_down_gain_per_ml: 0.018
+      ph_per_ec_ml: -0.0025
+      ec_per_ph_ml: 0.0
+      transport_delay_sec: 2
+      settle_sec: 2
+      confidence: 0.95
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 2
+          decision_window_sec: 4
+          observe_poll_sec: 2
+          min_effect_fraction: 0.2
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_irrigation_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.irrigation
+  payload:
+    payload:
+      mode: irrigation
+      ec_gain_per_ml: 0.006
+      ph_up_gain_per_ml: 0.014
+      ph_down_gain_per_ml: 0.014
+      ph_per_ec_ml: -0.002
+      ec_per_ph_ml: 0.0
+      transport_delay_sec: 6
+      settle_sec: 2
+      confidence: 0.85
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 2
+          decision_window_sec: 4
+          observe_poll_sec: 2
+          min_effect_fraction: 0.2
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_ae3_logic_profile
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+  payload:
+    payload:
+      active_mode: working
+      profiles:
+        working:
+          mode: working
+          is_active: true
+          subsystems:
+            diagnostics:
+              execution:
+                workflow: cycle_start
+                topology: two_tank_drip_substrate_trays
+                required_node_types:
+                - irrig
+                startup:
+                  level_poll_interval_sec: 5
+                  clean_fill_timeout_sec: 120
+                  solution_fill_timeout_sec: 180
+                  prepare_recirculation_timeout_sec: 180
+                  telemetry_max_age_sec: 60
+                  irr_state_max_age_sec: 30
+                  irr_state_wait_timeout_sec: 12
+                  sensor_mode_stabilization_time_sec: 0
+                target_ph: 5.1
+                target_ec: 2.33
+                prepare_tolerance:
+                  ph_pct: 9
+                  ec_pct: 15
+                two_tank_commands:
+                  clean_fill_start:
+                  - channel: valve_clean_fill
+                    cmd: set_relay
+                    params:
+                      state: true
+                  clean_fill_stop:
+                  - channel: valve_clean_fill
+                    cmd: set_relay
+                    params:
+                      state: false
+                  solution_fill_start:
+                  - channel: valve_clean_supply
+                    cmd: set_relay
+                    params:
+                      state: true
+                  - channel: valve_solution_fill
+                    cmd: set_relay
+                    params:
+                      state: true
+                  - channel: pump_main
+                    cmd: set_relay
+                    params:
+                      state: true
+                  solution_fill_stop:
+                  - channel: pump_main
+                    cmd: set_relay
+                    params:
+                      state: false
+                  - channel: valve_solution_fill
+                    cmd: set_relay
+                    params:
+                      state: false
+                  - channel: valve_clean_supply
+                    cmd: set_relay
+                    params:
+                      state: false
+                  prepare_recirculation_start:
+                  - channel: valve_solution_supply
+                    cmd: set_relay
+                    params:
+                      state: true
+                  - channel: valve_solution_fill
+                    cmd: set_relay
+                    params:
+                      state: true
+                  - channel: pump_main
+                    cmd: set_relay
+                    params:
+                      state: true
+                  prepare_recirculation_stop:
+                  - channel: pump_main
+                    cmd: set_relay
+                    params:
+                      state: false
+                  - channel: valve_solution_fill
+                    cmd: set_relay
+                    params:
+                      state: false
+                  - channel: valve_solution_supply
+                    cmd: set_relay
+                    params:
+                      state: false
+                  recirc_dilute_start:
+                  - channel: valve_clean_supply
+                    cmd: set_relay
+                    params:
+                      state: true
+                  recirc_dilute_stop:
+                  - channel: valve_clean_supply
+                    cmd: set_relay
+                    params:
+                      state: false
+- step: create_recipe
+  type: database_execute
+  query: 'INSERT INTO recipes (name, metadata, created_at, updated_at)
+
+    VALUES (:recipe_name, ''{}''::jsonb, NOW(), NOW())
+
+    '
+  params:
+    recipe_name: ${recipe_name}
+- step: load_recipe
+  type: database_query
+  query: 'SELECT id
+
+    FROM recipes
+
+    WHERE name = :recipe_name
+
+    ORDER BY id DESC
+
+    LIMIT 1
+
+    '
+  params:
+    recipe_name: ${recipe_name}
+  expected_rows: 1
+  save: recipe_row
+- step: set_recipe_id
+  type: set
+  recipe_id: ${recipe_row.0.id}
+- step: create_recipe_revision
+  type: database_execute
+  query: 'INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
+
+    VALUES (:recipe_id, 1, ''PUBLISHED'', NOW(), NOW())
+
+    '
+  params:
+    recipe_id: ${recipe_id}
+- step: load_recipe_revision
+  type: database_query
+  query: 'SELECT id
+
+    FROM recipe_revisions
+
+    WHERE recipe_id = :recipe_id
+
+    ORDER BY id DESC
+
+    LIMIT 1
+
+    '
+  params:
+    recipe_id: ${recipe_id}
+  expected_rows: 1
+  save: recipe_revision_row
+- step: set_recipe_revision_id
+  type: set
+  recipe_revision_id: ${recipe_revision_row.0.id}
+- step: create_grow_cycle
+  type: database_execute
+  query: 'INSERT INTO grow_cycles (greenhouse_id, zone_id, recipe_revision_id, status, created_at, updated_at)
+
+    VALUES (:greenhouse_id, :zone_id, :recipe_revision_id, ''RUNNING'', NOW(), NOW())
+
+    '
+  params:
+    greenhouse_id: ${greenhouse_id}
+    zone_id: ${zone_id}
+    recipe_revision_id: ${recipe_revision_id}
+- step: load_grow_cycle
+  type: database_query
+  query: "SELECT id\nFROM grow_cycles\nWHERE zone_id = :zone_id\n  AND recipe_revision_id = :recipe_revision_id\nORDER BY\
+    \ id DESC\nLIMIT 1\n"
+  params:
+    zone_id: ${zone_id}
+    recipe_revision_id: ${recipe_revision_id}
+  expected_rows: 1
+  save: grow_cycle_row
+- step: set_grow_cycle_id
+  type: set
+  grow_cycle_id: ${grow_cycle_row.0.id}
+- step: create_phase
+  type: database_execute
+  query: |
+    INSERT INTO grow_cycle_phases (
+      grow_cycle_id,
+      phase_index,
+      name,
+      ph_target,
+      ph_min,
+      ph_max,
+      ec_target,
+      ec_min,
+      ec_max,
+      nutrient_mode,
+      nutrient_npk_ratio_pct,
+      nutrient_calcium_ratio_pct,
+      nutrient_magnesium_ratio_pct,
+      nutrient_micro_ratio_pct,
+      nutrient_solution_volume_l,
+      irrigation_mode,
+      irrigation_interval_sec,
+      irrigation_duration_sec,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      :grow_cycle_id,
+      0,
+      'VEG',
+      5.10,
+      5.00,
+      5.15,
+      2.33,
+      2.30,
+      2.38,
+      'ratio_ec_pid',
+      44.00,
+      36.00,
+      12.00,
+      8.00,
+      20.0,
+      'SUBSTRATE',
+      600,
+      45,
+      NOW(),
+      NOW()
+    )
+  params:
+    grow_cycle_id: ${grow_cycle_id}
+- step: load_phase
+  type: database_query
+  query: 'SELECT id
+
+    FROM grow_cycle_phases
+
+    WHERE grow_cycle_id = :grow_cycle_id
+
+    ORDER BY id DESC
+
+    LIMIT 1
+
+    '
+  params:
+    grow_cycle_id: ${grow_cycle_id}
+  expected_rows: 1
+  save: phase_row
+- step: set_phase_id
+  type: set
+  phase_id: ${phase_row.0.id}
+- step: activate_grow_cycle
+  type: database_execute
+  query: "UPDATE grow_cycles\nSET current_phase_id = :phase_id,\n    started_at = NOW(),\n    recipe_started_at = NOW(),\n\
+    \    updated_at = NOW()\nWHERE id = :grow_cycle_id\n"
+  params:
+    phase_id: ${phase_id}
+    grow_cycle_id: ${grow_cycle_id}
+- step: apply_cycle_start_snapshot
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot
+  payload:
+    payload:
+      cycle_id: ${grow_cycle_id}
+      zone_id: ${zone_id}
+- step: apply_cycle_phase_overrides
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+  payload:
+    payload: {}
+- step: wait_grow_cycle_bundle_ready
+  type: db.wait
+  query: "SELECT scope_type, scope_id, status, bundle_revision\nFROM automation_effective_bundles\nWHERE scope_type = 'grow_cycle'\n\
+    \  AND scope_id = CAST(:grow_cycle_id AS bigint)\n  AND status = 'valid'\nLIMIT 1\n"
+  params:
+    grow_cycle_id: ${grow_cycle_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: grow_cycle_bundle_row
+- step: reset_test_node_state
+  type: hardware_reset_state
+  zone_id: ${zone_id}
+  node_uid: ${test_node_uid}
+  channel: storage_state
+  save: reset_state_response
+- step: wait_reset_state_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${reset_state_response.data.cmd_id}
+  timeout: 30.0
+  expected_rows: 1
+  optional: true
+- step: reset_test_node_state_confirm
+  type: hardware_reset_state
+  zone_id: ${zone_id}
+  node_uid: ${test_node_uid}
+  channel: storage_state
+  save: reset_state_response_confirm
+- step: wait_reset_state_done_confirm
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${reset_state_response_confirm.data.cmd_id}
+  timeout: 30.0
+  expected_rows: 1
+- step: wait_zero_level_telemetry
+  type: db.wait
+  query: "SELECT COUNT(*)::int AS zero_levels\nFROM sensors s\nJOIN telemetry_last tl ON tl.sensor_id = s.id\nWHERE s.zone_id\
+    \ = :zone_id\n  AND LOWER(TRIM(COALESCE(s.label, ''))) IN (\n    'level_clean_min',\n    'level_clean_max',\n    'level_solution_min',\n\
+    \    'level_solution_max'\n  )\n  AND s.type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')\n  AND COALESCE(tl.last_ts, tl.updated_at)\
+    \ >= NOW() - INTERVAL '5 minutes'\n  AND COALESCE(tl.last_value, -1) <= 0.1\nHAVING COUNT(*) = 4\n"
+  params:
+    zone_id: ${zone_id}
+  timeout: 60.0
+  expected_rows: 1
+  save: zero_levels_row
+- step: insert_scheduler_like_intent
+  type: database_execute
+  query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  task_type,\n  topology,\n  intent_source,\n\
+    \  idempotency_key,\n  status,\n  not_before,\n  retry_count,\n  max_retries,\n  created_at,\n  updated_at\n)\nVALUES\
+    \ (\n  :zone_id,\n  'start_cycle',\n  'cycle_start',\n  'two_tank_drip_substrate_trays',\n  CAST(:source AS text),\n \
+    \ :idempotency_key,\n  'pending',\n  NOW() - INTERVAL '1 second',\n  0,\n  3,\n  NOW(),\n  NOW()\n)\n"
+  params:
+    zone_id: ${zone_id}
+    idempotency_key: ${idempotency_key}
+    source: ${scheduler_source}
+- step: start_cycle_http
+  type: http_request
+  method: POST
+  url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/zones/${zone_id}/start-cycle
+  headers:
+    Accept: application/json
+    Content-Type: application/json
+    X-Trace-Id: ${scheduler_trace_id}
+    X-Scheduler-Id: laravel-scheduler
+    Authorization: Bearer dev-token-12345
+  body:
+    source: ${scheduler_source}
+    idempotency_key: ${idempotency_key}
+  retries: 2
+  retry_delay_seconds: 1
+  capture_response: start_cycle_response
+- step: set_task_id
+  type: set
+  task_id: ${start_cycle_response.json.data.task_id}
+- step: wait_ae_command_accepted
+  type: db.wait
+  query: "SELECT id, task_id, external_id, payload->>'cmd_id' AS cmd_id, publish_status\nFROM ae_commands\nWHERE task_id =\
+    \ :task_id\n  AND publish_status = 'accepted'\nORDER BY id DESC\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 30.0
+  expected_rows: 1
+  save: ae_command_row
+- step: wait_startup_commands_published
+  type: db.wait
+  query: "SELECT CAST(:task_id AS bigint) AS task_id\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\nGROUP BY\
+    \ task_id\nHAVING COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'storage_state'\n    AND payload->>'cmd'\
+    \ = 'state'\n) >= 1\n   AND COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'valve_clean_fill'\n\
+    \    AND payload->>'cmd' = 'set_relay'\n    AND COALESCE(payload->'params'->>'state', 'false') = 'true'\n) >= 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 30.0
+  expected_rows: 1
+- step: wait_runtime_irr_state_snapshot
+  type: db.wait
+  query: "SELECT id, type, created_at\nFROM zone_events\nWHERE zone_id = :zone_id\n  AND type = 'IRR_STATE_SNAPSHOT'\n  AND\
+    \ created_at >= :started_at\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    zone_id: ${zone_id}
+    started_at: ${scenario_window.0.started_at}
+  timeout: 30.0
+  expected_rows: 1
+  save: irr_state_event_row
+- step: wait_task_pending_clean_fill_check
+  type: db.wait
+  query: "SELECT\n  id,\n  status,\n  topology AS mode,\n  current_stage AS stage,\n  error_code,\n  error_message\nFROM ae_tasks\n\
+    WHERE id = CAST(:task_id AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n  AND current_stage\
+    \ = 'clean_fill_check'\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: task_progress_row
+- step: wait_workflow_tank_filling
+  type: db.wait
+  query: "SELECT zone_id, workflow_phase, updated_at\nFROM zone_workflow_state\nWHERE zone_id = :zone_id\n  AND workflow_phase\
+    \ IN ('tank_filling', 'ready')\nORDER BY updated_at DESC\nLIMIT 1\n"
+  params:
+    zone_id: ${zone_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: workflow_row
+- step: force_clean_tank_full
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: -1
+      level_solution_max_override: -1
+  save: force_clean_tank_full_response
+- step: wait_force_clean_tank_full_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${force_clean_tank_full_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: wait_clean_tank_full_telemetry
+  type: db.wait
+  query: "SELECT COUNT(*)::int AS ready_cnt\nFROM sensors s\nJOIN telemetry_last tl ON tl.sensor_id = s.id\nWHERE s.zone_id\
+    \ = :zone_id\n  AND s.label IN ('level_clean_min', 'level_clean_max')\n  AND COALESCE(tl.last_ts, tl.updated_at) >= NOW()\
+    \ - INTERVAL '30 seconds'\n  AND COALESCE(tl.last_value, 0) >= 1\nHAVING COUNT(*) = 2\n"
+  params:
+    zone_id: ${zone_id}
+  timeout: 30.0
+  expected_rows: 1
+  save: clean_tank_full_row
+- step: load_task_after_clean_override
+  type: database_query
+  query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step,\n  error_code,\n  error_message\nFROM\
+    \ ae_tasks\nWHERE id = CAST(:task_id AS bigint)\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  expected_rows: 1
+  save: task_after_clean_override_row
+- step: wait_solution_fill_stage
+  type: db.wait
+  query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\nFROM ae_tasks\nWHERE id = CAST(:task_id\
+    \ AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n  AND current_stage IN (\n    'solution_fill_check',\n\
+    \    'prepare_recirculation_start',\n    'prepare_recirculation_check'\n  )\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 80.0
+  expected_rows: 1
+  save: solution_fill_stage_row
+- step: wait_solution_fill_commands
+  type: db.wait
+  query: "SELECT CAST(:task_id AS bigint) AS task_id\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\nGROUP BY\
+    \ task_id\nHAVING COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'valve_clean_supply'\n   \
+    \ AND payload->>'cmd' = 'set_relay'\n    AND COALESCE(payload->'params'->>'state', 'false') = 'true'\n) >= 1\n   AND COUNT(*)\
+    \ FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'valve_solution_fill'\n    AND payload->>'cmd' = 'set_relay'\n\
+    \    AND COALESCE(payload->'params'->>'state', 'false') = 'true'\n) >= 1\n   AND COUNT(*) FILTER (\n  WHERE publish_status\
+    \ = 'accepted'\n    AND channel = 'pump_main'\n    AND payload->>'cmd' = 'set_relay'\n    AND COALESCE(payload->'params'->>'state',\
+    \ 'false') = 'true'\n) >= 1\n   AND COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'system'\n\
+    \    AND payload->>'cmd' = 'activate_sensor_mode'\n) >= 2\n"
+  params:
+    task_id: ${task_id}
+  timeout: 40.0
+  expected_rows: 1
+- step: wait_ph_ec_telemetry_available
+  type: db.wait
+  query: "SELECT COUNT(*)::int AS metrics_ready\nFROM sensors s\nJOIN telemetry_last tl ON tl.sensor_id = s.id\nWHERE COALESCE(tl.last_ts,\
+    \ tl.updated_at) >= NOW() - INTERVAL '30 seconds'\n  AND (\n    (s.node_id = CAST(:ph_node_id AS bigint) AND s.type =\
+    \ 'PH' AND s.label = 'ph_sensor')\n    OR\n    (s.node_id = CAST(:ec_node_id AS bigint) AND s.type = 'EC' AND s.label\
+    \ = 'ec_sensor')\n  )\nHAVING COUNT(*) = 2\n"
+  params:
+    ph_node_id: ${ph_node_id}
+    ec_node_id: ${ec_node_id}
+  timeout: 30.0
+  expected_rows: 1
+- step: wait_sensor_mode_telemetry_cadence
+  type: db.wait
+  query: "SELECT\n  ph.last_ts AS ph_ts,\n  ec.last_ts AS ec_ts,\n  EXTRACT(EPOCH FROM (NOW() - ph.last_ts))::numeric(10,3)\
+    \ AS ph_age_sec,\n  EXTRACT(EPOCH FROM (NOW() - ec.last_ts))::numeric(10,3) AS ec_age_sec\nFROM telemetry_last ph\nJOIN\
+    \ sensors phs ON phs.id = ph.sensor_id\nJOIN telemetry_last ec ON true\nJOIN sensors ecs ON ecs.id = ec.sensor_id\nWHERE\
+    \ phs.node_id = CAST(:ph_node_id AS bigint)\n  AND phs.type = 'PH'\n  AND phs.label = 'ph_sensor'\n  AND ecs.node_id =\
+    \ CAST(:ec_node_id AS bigint)\n  AND ecs.type = 'EC'\n  AND ecs.label = 'ec_sensor'\n  AND ph.last_ts >= NOW() - INTERVAL\
+    \ '6 seconds'\n  AND ec.last_ts >= NOW() - INTERVAL '6 seconds'\nLIMIT 1\n"
+  params:
+    ph_node_id: ${ph_node_id}
+    ec_node_id: ${ec_node_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: sensor_mode_cadence_row
+- step: hold_solution_tank_filling_for_ca_dose
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: false
+  save: hold_solution_tank_filling_for_ca_dose_response
+- step: wait_hold_solution_tank_filling_for_ca_dose_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${hold_solution_tank_filling_for_ca_dose_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: seed_solution_fill_sensor_baseline
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: false
+      ph_value: 7.0
+      ec_value: 0.45
+  save: seed_solution_fill_sensor_baseline_response
+- step: wait_seed_solution_fill_sensor_baseline_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${seed_solution_fill_sensor_baseline_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: wait_fill_ec_correction_command
+  type: db.wait
+  query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n  AND publish_status\
+    \ = 'accepted'\n  AND channel = 'pump_b'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 120.0
+  expected_rows: 1
+  save: fill_ec_correction_row
+- step: load_fill_ph_correction_commands_if_any
+  type: database_query
+  query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n  AND publish_status\
+    \ = 'accepted'\n  AND channel IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 5\n"
+  params:
+    task_id: ${task_id}
+  save: fill_ph_correction_rows
+- step: complete_solution_fill_after_ec_correction
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: true
+  save: complete_solution_fill_after_ec_correction_response
+- step: wait_complete_solution_fill_after_ec_correction_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${complete_solution_fill_after_ec_correction_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: wait_prepare_recirculation_stage
+  type: db.wait
+  query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step,\n  updated_at AS stage_started_at\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status IN ('pending', 'claimed', 'running', 'waiting_command')\n\
+    \  AND current_stage = 'prepare_recirculation_check'\nLIMIT 1\n"
+  params:
+    task_id: ${task_id}
+  timeout: 180.0
+  expected_rows: 1
+  save: prepare_recirc_stage_row
+- step: wait_prepare_recirculation_commands
+  type: db.wait
+  query: "SELECT CAST(:task_id AS bigint) AS task_id\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\nGROUP BY\
+    \ task_id\nHAVING COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'valve_solution_supply'\n\
+    \    AND payload->>'cmd' = 'set_relay'\n    AND COALESCE(payload->'params'->>'state', 'false') = 'true'\n) >= 1\n   AND\
+    \ COUNT(*) FILTER (\n  WHERE publish_status = 'accepted'\n    AND channel = 'valve_solution_fill'\n    AND payload->>'cmd'\
+    \ = 'set_relay'\n    AND COALESCE(payload->'params'->>'state', 'false') = 'true'\n) >= 2\n   AND COUNT(*) FILTER (\n \
+    \ WHERE publish_status = 'accepted'\n    AND channel = 'pump_main'\n    AND payload->>'cmd' = 'set_relay'\n    AND COALESCE(payload->'params'->>'state',\
+    \ 'false') = 'true'\n) >= 2\n"
+  params:
+    task_id: ${task_id}
+  timeout: 40.0
+  expected_rows: 1
+- step: seed_recirculation_sensor_values
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      ph_value: 5.68
+      ec_value: 2.90
+      # Dilute pulse is fail-closed when solution_max is ON (overflow risk).
+      level_solution_max_override: false
+      level_solution_min_override: true
+  save: seed_recirculation_sensor_values_response
+- step: wait_seed_recirculation_sensor_values_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\n\
+    LIMIT 1\n"
+  params:
+    cmd_id: ${seed_recirculation_sensor_values_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+- step: load_seed_recirculation_command_row
+  type: database_query
+  query: "SELECT id, cmd_id, created_at\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at\
+    \ DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${seed_recirculation_sensor_values_response.data.cmd_id}
+  expected_rows: 1
+  save: seed_recirculation_command_row
+- step: wait_seeded_recirculation_telemetry
+  type: db.wait
+  query: "\n      SELECT\n        ph.last_value AS ph_value,\n        ec.last_value AS ec_value\n      FROM telemetry_last\
+    \ ph\n      JOIN sensors phs ON phs.id = ph.sensor_id\n      JOIN telemetry_last ec ON true\n      JOIN sensors ecs ON\
+    \ ecs.id = ec.sensor_id\n      WHERE phs.node_id = CAST(:ph_node_id AS bigint)\n        AND phs.type = 'PH'\n        AND\
+    \ phs.label = 'ph_sensor'\n        AND ecs.node_id = CAST(:ec_node_id AS bigint)\n        AND ecs.type = 'EC'\n      \
+    \  AND ecs.label = 'ec_sensor'\n        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'\n        AND ec.last_ts >= NOW()\
+    \ - INTERVAL '30 seconds'\n        AND ph.last_value BETWEEN 5.63 AND 5.73\n        AND ec.last_value BETWEEN 2.85 AND\
+    \ 2.95\n      LIMIT 1\n"
+  params:
+    ph_node_id: ${ph_node_id}
+    ec_node_id: ${ec_node_id}
+  timeout: 30.0
+  expected_rows: 1
+  save: seeded_recirculation_telemetry_row
+- step: reseed_recirculation_sensor_values_for_stability
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      ph_value: 5.68
+      ec_value: 2.90
+      level_solution_max_override: false
+      level_solution_min_override: true
+  save: reseed_recirculation_sensor_values_response
+- step: wait_reseed_recirculation_sensor_values_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status, created_at\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at\
+    \ DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${reseed_recirculation_sensor_values_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: reseed_recirculation_command_row
+- step: wait_recirculation_seed_stable_window
+  type: db.wait
+  query: "WITH ph_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id =\
+    \ tsamp.sensor_id\n  WHERE s.node_id = CAST(:ph_node_id AS bigint)\n    AND s.type = 'PH'\n    AND s.label = 'ph_sensor'\n\
+    \    AND tsamp.ts >= CAST(:after_reseed_at AS timestamptz)\n    AND tsamp.value BETWEEN 5.63 AND 5.73\n  ORDER BY tsamp.ts\
+    \ DESC\n  LIMIT 8\n),\nec_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors\
+    \ s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ec_node_id AS bigint)\n    AND s.type = 'EC'\n    AND s.label\
+    \ = 'ec_sensor'\n    AND tsamp.ts >= CAST(:after_reseed_at AS timestamptz)\n    AND tsamp.value BETWEEN 2.85 AND 2.95\n\
+    \  ORDER BY tsamp.ts DESC\n  LIMIT 8\n)\nSELECT\n  (SELECT COUNT(*) FROM ph_samples) AS ph_cnt,\n  (SELECT COUNT(*) FROM\
+    \ ec_samples) AS ec_cnt,\n  (SELECT MAX(value) - MIN(value) FROM ph_samples) AS ph_span,\n  (SELECT MAX(value) - MIN(value)\
+    \ FROM ec_samples) AS ec_span\nWHERE (SELECT COUNT(*) FROM ph_samples) >= 4\n  AND (SELECT COUNT(*) FROM ec_samples) >=\
+    \ 4\n  AND (SELECT MAX(value) - MIN(value) FROM ph_samples) <= 0.06\n  AND (SELECT MAX(value) - MIN(value) FROM ec_samples)\
+    \ <= 0.06\n"
+  params:
+    ph_node_id: ${ph_node_id}
+    ec_node_id: ${ec_node_id}
+    after_reseed_at: ${reseed_recirculation_command_row.0.created_at}
+  timeout: 45.0
+  expected_rows: 1
+  save: recirculation_seed_stable_window_row
+- step: wait_recirc_dilute_started_event
+  type: db.wait
+  query: "\n      SELECT id, type, created_at,\n             COALESCE(details, payload_json) AS payload\n      FROM zone_events\n\
+    \      WHERE zone_id = :zone_id\n        AND type = 'RECIRC_DILUTE_STARTED'\n        AND created_at >= CAST(:after_seeded_at\
+    \ AS timestamptz)\n      ORDER BY created_at ASC, id ASC\n      LIMIT 1\n    "
+  params:
+    zone_id: ${zone_id}
+    after_seeded_at: ${reseed_recirculation_command_row.0.created_at}
+  timeout: 180.0
+  expected_rows: 1
+  save: recirc_dilute_started_row
+- step: wait_dilute_valve_clean_supply_command
+  type: db.wait
+  query: "\n      SELECT id, channel, payload->>'cmd' AS cmd, created_at,\n             COALESCE(payload->'params'->>'state',\
+    \ 'false') AS relay_state\n      FROM ae_commands\n      WHERE task_id = CAST(:task_id AS bigint)\n        AND publish_status\
+    \ = 'accepted'\n        AND channel = 'valve_clean_supply'\n        AND payload->>'cmd' = 'set_relay'\n        AND COALESCE(payload->'params'->>'state',\
+    \ 'false') = 'true'\n        AND created_at >= CAST(:after_seeded_at AS timestamptz)\n      ORDER BY id ASC\n      LIMIT\
+    \ 1\n    "
+  params:
+    task_id: ${task_id}
+    after_seeded_at: ${reseed_recirculation_command_row.0.created_at}
+  timeout: 60.0
+  expected_rows: 1
+  save: dilute_valve_clean_supply_row
+- step: wait_recirc_dilute_completed_event
+  type: db.wait
+  query: "\n      SELECT id, type, created_at,\n             COALESCE(details, payload_json) AS payload\n      FROM zone_events\n\
+    \      WHERE zone_id = :zone_id\n        AND type = 'RECIRC_DILUTE_COMPLETED'\n        AND created_at >= CAST(:after_started_at\
+    \ AS timestamptz)\n      ORDER BY created_at ASC, id ASC\n      LIMIT 1\n    "
+  params:
+    zone_id: ${zone_id}
+    after_started_at: ${recirc_dilute_started_row.0.created_at}
+  timeout: 90.0
+  expected_rows: 1
+  save: recirc_dilute_completed_row
+- step: wait_pid_ec_reset_after_dilute
+  type: db.wait
+  query: "\n      SELECT id, type, created_at,\n             COALESCE(details, payload_json) AS payload\n      FROM zone_events\n\
+    \      WHERE zone_id = :zone_id\n        AND type = 'PID_EC_RESET'\n        AND created_at >= CAST(:after_started_at AS\
+    \ timestamptz)\n        AND COALESCE(details, payload_json)->>'reason' = 'dilute'\n      ORDER BY created_at ASC, id ASC\n\
+    \      LIMIT 1\n    "
+  params:
+    zone_id: ${zone_id}
+    after_started_at: ${recirc_dilute_started_row.0.created_at}
+  timeout: 60.0
+  expected_rows: 1
+  save: pid_ec_reset_dilute_row
+- step: wait_task_not_failed_after_dilute
+  type: db.wait
+  query: "\n      SELECT id, status, error_code, error_message, current_stage, workflow_phase\n      FROM ae_tasks\n     \
+    \ WHERE id = CAST(:task_id AS bigint)\n        AND status IN ('pending', 'claimed', 'running', 'waiting_command', 'completed')\n\
+    \        AND error_code IS NULL\n      LIMIT 1\n    "
+  params:
+    task_id: ${task_id}
+  timeout: 30.0
+  expected_rows: 1
+  save: task_not_failed_after_dilute_row
+- step: load_dilute_ae_command_counts
+  type: database_query
+  query: "\n      SELECT\n        COUNT(*) FILTER (\n          WHERE publish_status = 'accepted'\n            AND channel\
+    \ = 'valve_clean_supply'\n            AND payload->>'cmd' = 'set_relay'\n            AND COALESCE(payload->'params'->>'state',\
+    \ 'false') = 'true'\n            AND created_at >= CAST(:after_seeded_at AS timestamptz)\n        )::int AS dilute_open_cnt,\n\
+    \        COUNT(*) FILTER (\n          WHERE publish_status = 'accepted'\n            AND channel = 'valve_clean_supply'\n\
+    \            AND payload->>'cmd' = 'set_relay'\n            AND COALESCE(payload->'params'->>'state', 'false') = 'false'\n\
+    \            AND created_at >= CAST(:after_seeded_at AS timestamptz)\n        )::int AS dilute_close_cnt,\n        COUNT(*)\
+    \ FILTER (\n          WHERE publish_status = 'accepted'\n            AND channel = 'pump_b'\n            AND payload->>'cmd'\
+    \ = 'dose'\n        )::int AS calcium_correction_cnt\n      FROM ae_commands\n      WHERE task_id = CAST(:task_id AS bigint)\n\
+    \    "
+  params:
+    task_id: ${task_id}
+    after_seeded_at: ${reseed_recirculation_command_row.0.created_at}
+  expected_rows: 1
+  save: dilute_ae_command_counts_row
+- step: load_calcium_pump_b_calibration
+  type: database_query
+  query: "\n      SELECT id, component, node_channel_id\n      FROM pump_calibrations\n      WHERE node_channel_id = CAST(:ec_pump_b_channel_id\
+    \ AS bigint)\n        AND component = 'calcium'\n        AND is_active IS TRUE\n      ORDER BY id DESC\n      LIMIT 1\n\
+    \    "
+  params:
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+  expected_rows: 1
+  save: calcium_pump_b_calibration_row
+- step: count_task_commands
+  type: database_query
+  query: "\n      SELECT COUNT(*)::int AS cnt\n      FROM ae_commands\n      WHERE task_id = CAST(:task_id AS bigint)\n  \
+    \  "
+  params:
+    task_id: ${task_id}
+  expected_rows: 1
+  save: task_command_count_row
+- step: get_internal_task_status
+  type: http_request
+  method: GET
+  url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/internal/tasks/${task_id}
+  headers:
+    Accept: application/json
+    X-Trace-Id: ${scheduler_trace_id}
+    X-Scheduler-Id: laravel-scheduler
+    Authorization: Bearer dev-token-12345
+  capture_response: internal_task_response
+assertions:
+- name: reset_zero_level_telemetry_ready
+  type: custom_assert
+  condition: int(context.get('zero_levels_row', [{}])[0].get('zero_levels', 0)) == 4
+- name: start_cycle_http_200
+  type: custom_assert
+  condition: int(context.get('start_cycle_response', {}).get('status_code', 0)) == 200
+- name: start_cycle_response_active
+  type: json_assertion
+  source: start_cycle_response
+  path: json
+  expected:
+  - field: status
+    operator: equals
+    value: ok
+  - field: data.accepted
+    operator: equals
+    value: true
+  - field: data.runner_state
+    operator: equals
+    value: active
+- name: runtime_task_not_failed
+  type: custom_assert
+  condition: str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() != 'failed'
+- name: runtime_task_pending_clean_fill_check
+  type: custom_assert
+  condition: str(context.get('task_progress_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed', 'running',
+    'waiting_command', 'completed') and str(context.get('task_progress_row', [{}])[0].get('mode', '')).lower() == 'two_tank_drip_substrate_trays'
+- name: workflow_phase_tank_filling
+  type: custom_assert
+  condition: str(context.get('workflow_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_filling'
+- name: solution_fill_stage_reached
+  type: custom_assert
+  condition: str(context.get('solution_fill_stage_row', [{}])[0].get('current_stage', '')).lower() in ('solution_fill_check',
+    'prepare_recirculation_start', 'prepare_recirculation_check')
+- name: prepare_recirculation_stage_reached
+  type: custom_assert
+  condition: str(context.get('prepare_recirc_stage_row', [{}])[0].get('current_stage', '')).lower() == 'prepare_recirculation_check'
+    and str(context.get('prepare_recirc_stage_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_recirc'
+- name: telemetry_cadence_after_sensor_mode
+  type: custom_assert
+  condition: len(context.get('sensor_mode_cadence_row', [])) == 1 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ph_age_sec',
+    999.0)) <= 6.0 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ec_age_sec', 999.0)) <= 6.0
+- name: internal_task_not_failed
+  type: custom_assert
+  condition: str(context.get('internal_task_response', {}).get('json', {}).get('status', '')).lower() == 'ok' and str(context.get('internal_task_response',
+    {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', '')) and str(context.get('internal_task_response',
+    {}).get('json', {}).get('data', {}).get('status', '')).lower() in ('pending', 'claimed', 'running', 'waiting_command',
+    'completed')
+- name: recirc_dilute_started
+  type: custom_assert
+  condition: len(context.get('recirc_dilute_started_row', [])) == 1 and str(context.get('recirc_dilute_started_row', [{}])[0].get('type',
+    '')).upper() == 'RECIRC_DILUTE_STARTED'
+- name: dilute_uses_valve_clean_supply
+  type: custom_assert
+  condition: len(context.get('dilute_valve_clean_supply_row', [])) == 1 and str(context.get('dilute_valve_clean_supply_row',
+    [{}])[0].get('channel', '')).lower() == 'valve_clean_supply' and str(context.get('dilute_valve_clean_supply_row', [{}])[0].get('relay_state',
+    '')).lower() == 'true'
+- name: recirc_dilute_completed
+  type: custom_assert
+  condition: len(context.get('recirc_dilute_completed_row', [])) == 1 and str(context.get('recirc_dilute_completed_row', [{}])[0].get('type',
+    '')).upper() == 'RECIRC_DILUTE_COMPLETED'
+- name: pid_ec_reset_after_dilute
+  type: custom_assert
+  condition: len(context.get('pid_ec_reset_dilute_row', [])) == 1
+- name: task_not_failed_after_dilute
+  type: custom_assert
+  condition: str(context.get('task_not_failed_after_dilute_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed',
+    'running', 'waiting_command', 'completed') and not context.get('task_not_failed_after_dilute_row', [{}])[0].get('error_code')
+- name: dilute_open_and_close_logged
+  type: custom_assert
+  condition: int(context.get('dilute_ae_command_counts_row', [{}])[0].get('dilute_open_cnt', 0)) >= 1 and int(context.get('dilute_ae_command_counts_row',
+    [{}])[0].get('dilute_close_cnt', 0)) >= 1
+- name: pump_b_calibration_is_calcium
+  type: custom_assert
+  condition: len(context.get('calcium_pump_b_calibration_row', [])) == 1 and str(context.get('calcium_pump_b_calibration_row',
+    [{}])[0].get('component', '')).lower() == 'calcium'
+- name: at_least_ten_ae_commands_logged
+  type: custom_assert
+  condition: int(context.get('task_command_count_row', [{}])[0].get('cnt', 0)) >= 10
+- name: forbids_irrig_recirc_phase_after_dilute
+  type: custom_assert
+  condition: str(context.get('task_not_failed_after_dilute_row', [{}])[0].get('workflow_phase', '')).lower() != 'irrig_recirc'
+cleanup:
+- step: reset_test_node_after_run
+  type: ae_test_hook
+  optional: true
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: reset_state
+    params: {}
+- step: cleanup_runtime_events
+  type: database_execute
+  optional: true
+  query: "DELETE FROM zone_events\nWHERE zone_id = :zone_id\n  AND created_at >= :started_at\n"
+  params:
+    zone_id: ${zone_id}
+    started_at: ${scenario_window.0.started_at}
+- step: cleanup_e2e_calibrations
+  type: database_execute
+  optional: true
+  query: "DELETE FROM pump_calibrations\nWHERE source = 'e2e_realhw_setup_ready'\n  AND node_channel_id IN (\n    CAST(:ec_pump_a_channel_id\
+    \ AS bigint),\n    CAST(:ec_pump_b_channel_id AS bigint),\n    CAST(:ec_pump_c_channel_id AS bigint),\n    CAST(:ec_pump_d_channel_id\
+    \ AS bigint),\n    CAST(:ph_up_channel_id AS bigint),\n    CAST(:ph_down_channel_id AS bigint)\n  )\n"
+  params:
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
+    ph_up_channel_id: ${ph_up_channel_id}
+    ph_down_channel_id: ${ph_down_channel_id}
+- step: cleanup_e2e_process_calibrations
+  type: database_execute
+  optional: true
+  query: 'SELECT 1;
+
+    '
+- step: cleanup_e2e_bindings
+  type: database_execute
+  optional: true
+  query: "DELETE FROM channel_bindings\nWHERE role IN ('pump_a', 'pump_b', 'pump_c', 'pump_d', 'pump_base', 'pump_acid')\n\
+    \  AND node_channel_id IN (\n    CAST(:ec_pump_a_channel_id AS bigint),\n    CAST(:ec_pump_b_channel_id AS bigint),\n\
+    \    CAST(:ec_pump_c_channel_id AS bigint),\n    CAST(:ec_pump_d_channel_id AS bigint),\n    CAST(:ph_up_channel_id AS\
+    \ bigint),\n    CAST(:ph_down_channel_id AS bigint)\n  )\n"
+  params:
+    ec_pump_a_channel_id: ${ec_pump_a_channel_id}
+    ec_pump_b_channel_id: ${ec_pump_b_channel_id}
+    ec_pump_c_channel_id: ${ec_pump_c_channel_id}
+    ec_pump_d_channel_id: ${ec_pump_d_channel_id}
+    ph_up_channel_id: ${ph_up_channel_id}
+    ph_down_channel_id: ${ph_down_channel_id}
+- step: cleanup_e2e_infrastructure
+  type: database_execute
+  optional: true
+  query: "DELETE FROM infrastructure_instances\nWHERE owner_type = 'zone'\n  AND owner_id = :zone_id\n  AND label IN (\n \
+    \   'AE3 E2E EC NPK',\n    'AE3 E2E EC Calcium',\n    'AE3 E2E EC Magnesium',\n    'AE3 E2E EC Micro',\n    'AE3 E2E EC\
+    \ Dose',\n    'AE3 E2E PH Up',\n    'AE3 E2E PH Down'\n  )\n"
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_runtime_ae_commands
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM ae_commands
+
+    WHERE task_id = CAST(:task_id AS bigint)
+
+    '
+  params:
+    task_id: ${task_id}
+- step: cleanup_runtime_ae_task
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM ae_tasks
+
+    WHERE id = CAST(:task_id AS bigint)
+
+    '
+  params:
+    task_id: ${task_id}
+- step: cleanup_runtime_ae_leases
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM ae_zone_leases
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_runtime_intent
+  type: database_execute
+  optional: true
+  query: "DELETE FROM zone_automation_intents\nWHERE zone_id = :zone_id\n  AND idempotency_key = :idempotency_key\n"
+  params:
+    zone_id: ${zone_id}
+    idempotency_key: ${idempotency_key}
+- step: cleanup_created_phase
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM grow_cycle_phases
+
+    WHERE id = CAST(:phase_id AS bigint)
+
+    '
+  params:
+    phase_id: ${phase_id}
+- step: cleanup_created_cycle
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM grow_cycles
+
+    WHERE id = CAST(:grow_cycle_id AS bigint)
+
+    '
+  params:
+    grow_cycle_id: ${grow_cycle_id}
+- step: cleanup_created_recipe_revision
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM recipe_revisions
+
+    WHERE id = CAST(:recipe_revision_id AS bigint)
+
+    '
+  params:
+    recipe_revision_id: ${recipe_revision_id}
+- step: cleanup_created_recipe
+  type: database_execute
+  optional: true
+  query: 'DELETE FROM recipes
+
+    WHERE id = CAST(:recipe_id AS bigint)
+
+    '
+  params:
+    recipe_id: ${recipe_id}
+- step: cleanup_created_profile
+  type: database_execute
+  optional: true
+  query: "DELETE FROM automation_config_documents\nWHERE namespace = 'zone.logic_profile'\n  AND scope_type = 'zone'\n  AND\
+    \ scope_id = :zone_id\n"
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_e2e_ph_ec_sensors
+  type: database_execute
+  optional: true
+  query: "DELETE FROM sensors\nWHERE (node_id = CAST(:ph_node_id AS bigint) AND type = 'PH' AND label = 'ph_sensor')\n   OR\
+    \ (node_id = CAST(:ec_node_id AS bigint) AND type = 'EC' AND label = 'ec_sensor')\n"
+  params:
+    ph_node_id: ${ph_node_id}
+    ec_node_id: ${ec_node_id}
+- step: restore_previous_profile_state
+  type: database_execute
+  optional: true
+  query: 'SELECT 1;
+
+    '
+- step: restore_previous_zone_runtime
+  type: database_execute
+  optional: true
+  query: "UPDATE zones\nSET automation_runtime = :automation_runtime,\n    updated_at = NOW()\nWHERE id = :zone_id\n"
+  params:
+    zone_id: ${zone_id}
+    automation_runtime: ${previous_automation_runtime}

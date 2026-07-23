@@ -12,7 +12,8 @@ describe('automationDiagramLayout', () => {
     expect(DIAGRAM_GEO.tankBottom).toBe(T.tank.top + T.tank.h)
     expect(DIAGRAM_GEO.pumpInletX).toBe(T.pump.cx - T.pump.r)
     expect(DIAGRAM_GEO.pumpOutletX).toBe(T.pump.cx + T.pump.r)
-    expect(DIAGRAM_GEO.dosingRight).toBe(T.dosing.x + T.dosing.w)
+    expect(DIAGRAM_GEO.dosingRight).toBe(T.dosing.ec.x + T.dosing.ec.w)
+    expect(DIAGRAM_GEO.dosingLeft).toBe(T.dosing.ph.x)
   })
 
   it('интерполирует каплю входа и магистрали по flowOffset', () => {

@@ -647,6 +647,12 @@ authority-документ `zone.logic_profile` через API `/api/automation-
     Для AE3 `nutrient_tank_level_percent` является coarse-level индикатором
     `0 | 50 | 100`, собранным из канонической пары `solution_min/solution_max`.
   - `active_processes.pump_in|circulation_pump|ph_correction|ec_correction`
+  - `active_processes.active_doses[]` — live dosing pumps during `corr_dose_ec|corr_dose_ph`
+    (empty on wait/idle). Каждый элемент: `kind` (`ec|ph_up|ph_down`), `channel`
+    (`pump_acid|pump_base|pump_a..d`), `component` (EC nutrient или `null`), `node_uid`,
+    `amount_ml`, `duration_ms`. Для `multi_parallel` — несколько элементов одновременно.
+  - `observability.correction.active_doses` — зеркало тех же доз для observability panel
+    (Laravel enrich из AE `active_processes`, без отдельного SQL).
   - `irr_node_state.clean_level_max|clean_level_min|solution_level_max|solution_level_min`
   - `irr_node_state.valve_clean_fill|valve_clean_supply|valve_solution_fill|valve_solution_supply|valve_irrigation|pump_main`
   - `irr_node_state.updated_at`

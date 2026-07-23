@@ -1956,6 +1956,37 @@ class BaseStageHandler:
             f"Отсутствует обязательный correction runtime для phase={self._runtime_phase_key(task=task)}",
         )
 
+    def _full_ec_component_ratios(
+        self,
+        *,
+        runtime: RuntimePlan,
+        correction_cfg: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        """Full recipe Ca/Mg/NPK/Micro ratios for cumulative T_* / dilute math.
+
+        Prefer tank_recirc ratios over fill calcium-only and runtime fallback.
+        """
+        by_phase = getattr(runtime, "correction_by_phase", None) or {}
+        tank_recirc = by_phase.get("tank_recirc") if isinstance(by_phase, Mapping) else None
+        if tank_recirc is not None:
+            ratios = getattr(tank_recirc, "ec_component_ratios", None)
+            if isinstance(tank_recirc, Mapping):
+                ratios = tank_recirc.get("ec_component_ratios")
+            if isinstance(ratios, Mapping) and ratios:
+                return ratios
+            view = self._mapping_view(tank_recirc)
+            ratios = view.get("ec_component_ratios") if isinstance(view, Mapping) else None
+            if isinstance(ratios, Mapping) and ratios:
+                return ratios
+        ratios = getattr(runtime, "ec_component_ratios", None) or {}
+        if isinstance(ratios, Mapping) and ratios:
+            return ratios
+        if isinstance(correction_cfg, Mapping):
+            ratios = correction_cfg.get("ec_component_ratios") or {}
+            if isinstance(ratios, Mapping) and ratios:
+                return ratios
+        return {}
+
     def _process_cfg_for_task(self, *, task: Any, runtime: RuntimePlan) -> Any:
         process_calibrations = runtime.process_calibrations
         phase_key = self._runtime_phase_key(task=task)
