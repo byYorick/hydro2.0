@@ -55,6 +55,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `backend/services/AGENTS.md` solution_* ingress | ✅ |
 | IMPLEMENTATION_STATUS relay_node | ✅ |
 | Docs legacy cleanup 2026-08-02 | ✅ удалены `11_LEGACY_ARCHIVES` zip; superseded/plans → `00_ARCHIVE/{SUPERSEDED,PLANS}` + stubs |
+| HL API + Android/firmware status audit 2026-08-02 | ✅ `HISTORY_LOGGER_API` webhook/DLQ/health/ingest/idempotency; `IMPLEMENTATION_STATUS` firmware+Android; `QUICK_START` HL metrics `:9300` |
 
 ---
 

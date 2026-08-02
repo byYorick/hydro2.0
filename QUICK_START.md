@@ -45,7 +45,7 @@ make refresh
 - Laravel: http://localhost:8080
 - mqtt-bridge: http://localhost:9000
 - history-logger REST: http://localhost:9300
-- history-logger metrics: http://localhost:9301/metrics
+- history-logger metrics: http://localhost:9300/metrics
 - automation-engine REST: http://localhost:9405
 - automation-engine metrics: http://localhost:9405/metrics
 - Laravel scheduler-dispatch metrics: http://localhost:8080/api/system/scheduler/metrics

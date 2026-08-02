@@ -51,7 +51,7 @@
 - [x] Калибровка (2 этапа) — **MVP_DONE** (поддержка калибровки реализована)
 - [x] Отправка телеметрии по MQTT — **MVP_DONE** (через `mqtt_manager`)
 - [x] Экран состояния и ошибок — **MVP_DONE** (компонент `oled_ui`)
-- [x] Обработка команд (run_pump, stop_pump, dose, calibrate) — **MVP_DONE**
+- [x] Обработка команд (`run_pump`, `dose`, `calibrate` / `calibrate_ph`) — **MVP_DONE** (отдельного `stop_pump` handler нет)
 - [ ] MVP-тест на стенде — **IN_PROGRESS** (требуется тестирование на реальном оборудовании)
 
 ### 2.3. EC-node
@@ -61,14 +61,14 @@
 - [x] Компенсация по температуре — **MVP_DONE** (реализована в драйвере)
 - [x] Отправка телеметрии по MQTT — **MVP_DONE** (через `mqtt_manager`)
 - [x] Обработка команд (run_pump, calibrate) — **MVP_DONE**
-- [ ] OLED-интерфейс — **PLANNED** (компонент доступен, но не интегрирован)
+- [x] OLED-интерфейс — **MVP_DONE** (`ec_node_init_step_oled` / `oled_ui_init`)
 - [ ] MVP-тест — **IN_PROGRESS** (требуется тестирование на реальном оборудовании)
 
 ### 2.4. Climate-node
 
 - [x] `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — **SPEC_READY**
 - [x] Поддержка основных сенсоров (температура, влажность через SHT3x) — **MVP_DONE** (компонент `sht3x`)
-- [ ] Поддержка CO₂ сенсоров (CCS811/SGP30) — **PLANNED**
+- [x] Поддержка CO₂ (CCS811) — **MVP_DONE** (канал `co2`; stub fallback при отсутствии HW)
 - [x] Телеметрия по MQTT — **MVP_DONE** (структура реализована)
 - [x] Обработка команд (set_relay, set_pwm) — **MVP_DONE**
 - [ ] Аварии и пороги — **PLANNED**
@@ -78,7 +78,8 @@
 
 - [x] Проект `firmware/nodes/pump_node` + MQTT/framework — **MVP_DONE**
 - [x] Получение/исполнение команд по MQTT — **MVP_DONE**
-- [ ] INA209 / ток / dry-run guards — **IN_PROGRESS** (компонент есть, HW-валидация)
+- [x] INA209 / ток / overcurrent health — **MVP_DONE** (код интегрирован; HW-стенд отдельно)
+- [ ] Dry-run guards — **PLANNED**
 - [ ] MVP-тест на стенде — **IN_PROGRESS**
 
 ### 2.5.1. Storage irrigation node
@@ -97,6 +98,10 @@
 
 - [x] Проект `firmware/nodes/relay_node` + MQTT/framework — **MVP_DONE**
 - [ ] MVP-тест на стенде — **IN_PROGRESS**
+
+### 2.8. test_node (HIL)
+
+- [x] Проект `firmware/test_node` (multi-virtual nodes, контрактные сценарии) — **MVP_DONE** (HIL, не production)
 
 ---
 
@@ -234,11 +239,15 @@
 
 ## 8. Android-приложение
 
-- [x] Архитектура приложения (`ANDROID_APP_ARCH.md`, `ANDROID_APP_SCREENS.md`) — **SPEC_READY**
-- [ ] Авторизация и выбор фермы/теплицы/зоны — **PLANNED**
-- [ ] Просмотр текущих параметров зон — **PLANNED**
-- [ ] Просмотр аварий и уведомлений — **PLANNED**
-- [ ] Минимальное управление (вкл/выкл полив, свет, пауза рецепта) — **PLANNED**
+Код: `mobile/app/android/` (см. `doc_ai/12_ANDROID_APP/`).
+
+- [x] Архитектура приложения (`ANDROID_APP_ARCH.md`, `ANDROID_APP_SCREENS.md`, `ANDROID_APP_API_INTEGRATION.md`) — **SPEC_READY** / частично реализовано
+- [x] Авторизация и выбор теплицы/зоны — **IN_PROGRESS** (`LoginScreen`, `GreenhousesScreen`, `ZonesScreen`)
+- [x] Просмотр текущих параметров зон — **IN_PROGRESS** (`ZoneDetailsScreen` + телеметрия)
+- [x] Просмотр аварий и ack — **IN_PROGRESS** (`AlertsScreen`)
+- [x] Минимальное управление (команды с zone details) — **IN_PROGRESS** (`sendCommand`)
+- [x] Provisioning scaffold — **IN_PROGRESS** (`ProvisioningScreen`)
+- [ ] Полный Clean Architecture / node-details / MQTT-клиент — **PLANNED** (сейчас REST + WebSocket/polling)
 - [ ] Публикация тестовой сборки (internal testing) — **PLANNED**
 
 ---

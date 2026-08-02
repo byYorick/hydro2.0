@@ -2,6 +2,7 @@
 
 Этот раздел содержит документацию по Android-приложению для управления системой hydro 2.0.
 
+**Код (SoT):** [`mobile/app/android/`](../../mobile/app/android/) — не корневой `android/`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.

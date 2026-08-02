@@ -25,7 +25,7 @@ Breaking-change: обратная совместимость со старыми
 - Архитектура: **MVVM + Clean Architecture** (слои: data, domain, presentation)
 - DI: **Hilt**
 - Сетевое API: **Retrofit + OkHttp**
-- WebSocket/MQTT: клиент поверх MQTT-брокера или WebSocket-bridge backend’а
+- Realtime: **OkHttp WebSocket** (+ polling fallback) к Laravel/Reverb; прямой MQTT-клиент в app **не** реализован (`PLANNED`)
 - Хранение:
  - локальный кэш: Room / DataStore
  - secure-хранилище токенов (Android Keystore)

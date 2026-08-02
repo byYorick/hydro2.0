@@ -68,7 +68,7 @@ cd firmware/nodes/ph_node && idf.py build
 | `ec_node` | ✅ production | trema_ec, pump_driver |
 | `storage_irrigation_node` | ✅ production | two-tank, level_switch events, fail-safe |
 | `climate_node` | ✅ production | sht3x, ccs811, relay + local PWM |
-| `relay_node` | ⚠️ средняя | GPIO map — проверить под плату |
-| `pump_node` | ⚠️ средняя | иной bootstrap в `main.c` |
+| `relay_node` | ✅ MVP code / ⚠️ HW | код MVP_DONE; GPIO map — проверить на плате |
+| `pump_node` | ✅ MVP code / ⚠️ HW | INA209 в коде; полный стенд + dry-run — открыты |
 | `light_node` | ⚠️ сенсорная | trema_light, без актуаторов света |
 | `test_node` | ✅ HIL | эталон контрактов, не production |

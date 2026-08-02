@@ -3,7 +3,7 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
-**Дата обновления:** 2026-08-02 (device `cmd` catalog vs legacy high-level labels; `SEND_FAILED` вместо `failed`; metrics `:9300/metrics` подтверждён).
+**Дата обновления:** 2026-08-02 (code-first audit: webhook HMAC/body, DLQ replay paths, `zone_id` required, health/ingest/metrics sync).
 
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
@@ -46,7 +46,7 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 
 ## 2. Endpoints
 
-### Полный список endpoints (sync с кодом 2026-05-28)
+### Полный список endpoints (sync с кодом 2026-08-02)
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
@@ -54,7 +54,7 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 | POST | `/zones/{zone_id}/commands` | Zone-scoped публикация команды (см. §2.1.1) — используется Laravel `PythonBridgeService` |
 | POST | `/nodes/{node_uid}/commands` | Node-scoped публикация команды (см. §2.1.2) |
 | POST | `/nodes/{node_uid}/config` | Push NodeConfig в MQTT (см. §2.1.3) |
-| POST | `/ingest/telemetry` | HTTP-ingest телеметрии (для нод без MQTT, см. §2.1.4) |
+| POST | `/ingest/telemetry` | HTTP-ingest телеметрии (batch, см. §2.1.4) |
 | GET | `/health` | Health check (см. §2.2) |
 | GET | `/metrics` | Prometheus metrics (см. §6.1) |
 | POST | `/internal/metrics/command-latency` | Internal metrics ingest (см. §2.3) |
@@ -62,11 +62,11 @@ Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300)
 | POST | `/internal/metrics/ws-broadcast` | WebSocket broadcast metrics |
 | POST | `/internal/metrics/ws-auth` | WebSocket auth metrics |
 | POST | `/internal/metrics/ws-event` | WebSocket event metrics |
-| GET | `/api/dlq/alerts` | DLQ alerts list (см. §2.5) |
-| POST | `/api/dlq/alerts/replay` | Replay alerts из DLQ |
+| GET | `/api/dlq/alerts` | DLQ alerts list (см. §2.1.5) |
+| POST | `/api/dlq/alerts/{dlq_id}/replay` | Replay одного alert из DLQ |
 | DELETE | `/api/dlq/alerts/{id}` | Удаление alert из DLQ |
 | GET | `/api/dlq/status-updates` | DLQ status updates list |
-| POST | `/api/dlq/status-updates/replay` | Replay status updates |
+| POST | `/api/dlq/status-updates/{dlq_id}/replay` | Replay одного status update |
 | DELETE | `/api/dlq/status-updates/{id}` | Удаление status update из DLQ |
 | GET | `/api/dlq/metrics` | DLQ summary metrics |
 
@@ -100,10 +100,10 @@ Content-Type: application/json
 
 **Поля:**
 - `greenhouse_uid` (string, required) — UID теплицы
-- `zone_id` (integer, optional) — ID зоны (для контекста)
+- `zone_id` (integer, **required**) — ID зоны (без него HL отвечает `400`)
 - `node_uid` (string, required) — UID ноды
-- `channel` (string, required) — канал ноды
-- `cmd` (string, required) — команда для ноды
+- `channel` (string, required) — канал ноды (всегда сегмент topic; для system-команд — `"system"`)
+- `cmd` (string, required) — device-level команда; HL проверяет наличие `cmd` и отвергает legacy `type`, **не** валидирует enum-каталог §3
 - `params` (object, required) — параметры команды
 - `source` (string, optional) — источник команды (`automation-engine`, `laravel_scheduler`, `api`, …)
 - `cmd_id` (string, optional) — внешний command id, который будет сохранён в `commands.cmd_id`
@@ -113,11 +113,10 @@ Content-Type: application/json
 - backend публикует её через этот же `POST /commands` с `cmd="calibrate"`;
 - для pH используются `params = { "stage": 1|2, "known_ph": number }`;
 - для EC используются `params = { "stage": 1|2, "tds_value": integer }`.
-- pump calibration также не имеет поддерживаемого orchestration endpoint в `history-logger`;
-- canonical flow для pump calibration идёт через Laravel `POST /api/zones/{id}/calibrate-pump`,
-  где backend/automation владеет `run_token`, `zone_events` и `pump_calibrations`;
-- `history-logger` в этом сценарии принимает только transport publish на `POST /commands`;
-- `POST /zones/{zone_id}/calibrate-pump` считается удалённым из контракта и возвращает `410 Gone`.
+- pump calibration также не имеет orchestration endpoint в `history-logger`;
+- canonical flow для pump calibration — Laravel `POST /api/zones/{id}/calibrate-pump`
+  (backend/AE владеет `run_token`, `zone_events`, `pump_calibrations`); HL — только transport `POST /commands`;
+- устаревший HL-path `POST /zones/{zone_id}/calibrate-pump` **удалён** (ответ `404`, не `410`);
 - **`set_position`** (roof vent, 0..100%): greenhouse climate tick; обязательный `params.position_pct`, опционально `params.max_step_pct` (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`).
 
 **Response (200 OK):**
@@ -158,9 +157,10 @@ Content-Type: application/json
 
 #### Идемпотентность по `cmd_id` (контракт PR5)
 
-History-logger **идемпотентен по `cmd_id`** при повторной публикации (`history-logger/commands/lifecycle.py`):
-- если запись `commands` с тем же `cmd_id` уже существует и payload совпадает — повторный `POST /commands` **безопасен** (не создаёт вторую MQTT-публикацию для terminal/in-progress статусов);
-- при статусе `SEND_FAILED` / `PENDING` / `QUEUED` допускается re-drive publish (AE3 retry после crash между publish и accept);
+History-logger **идемпотентен по `cmd_id`** при повторной публикации (`history-logger/commands/lifecycle.py`, `REPUBLISH_ALLOWED_STATUSES`):
+- новая команда создаётся со статусом **`QUEUED`** (не `PENDING`);
+- если запись с тем же `cmd_id` уже существует и payload совпадает — повторный `POST /commands` **безопасен** (не создаёт вторую MQTT-публикацию для `SENT`/`ACK`/terminal);
+- re-drive publish допускается **только** при `QUEUED` или `SEND_FAILED`;
 - при коллизии `cmd_id` с другим `(zone_id, node_uid, channel, cmd, params)` — `409 Conflict`;
 - AE3-Lite стабилизирует `cmd_id` через `ae_commands.planner_step` + переиспользование `step_no`, чтобы retry handler'а не приводил к повторной дозе.
 
@@ -206,7 +206,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 **URL:** `POST /nodes/{node_uid}/commands`
 
-Payload как у `POST /commands`, но `node_uid` берётся из URL. Если `channel` не указан, команда публикуется в node-level topic (`hydro/{gh}/{zone}/{node}/{type}` без сегмента channel) — это используется для `restart`, `state`, и system команд `activate_sensor_mode`/`deactivate_sensor_mode` (`channel="system"`).
+Payload как у `POST /commands`, но `node_uid` берётся из URL. Поле **`channel` обязательно** (HL topic всегда включает сегмент channel). Для `restart`/`state` и system-команд (`activate_sensor_mode` / `deactivate_sensor_mode`) передавайте `channel="system"` (или иной channel из NodeConfig), а не опускайте поле.
 
 ### 2.1.3. POST /nodes/{node_uid}/config
 
@@ -239,37 +239,53 @@ Payload как у `POST /commands`, но `node_uid` берётся из URL. Е�
 
 ### 2.1.4. POST /ingest/telemetry
 
-**Описание:** HTTP fallback для приёма телеметрии от нод, у которых нет прямого MQTT-канала (например, тестовый прогон или edge-кейсы). Сохраняет в `telemetry_samples` и обновляет `telemetry_last`.
+**Описание:** HTTP fallback для приёма телеметрии (batch). Валидирует samples, ставит в очередь записи; пишет в `telemetry_samples` / `telemetry_last` асинхронно.
 
 **URL:** `POST /ingest/telemetry`
 
 **Request Body:**
 ```json
 {
-  "greenhouse_uid": "gh-1",
-  "zone_id": 1,
-  "node_uid": "nd-ph-1",
-  "channel": "ph_sensor",
-  "metric_type": "PH",
-  "value": 6.2,
-  "ts": 1737355112,
-  "unit": "pH"
+  "samples": [
+    {
+      "greenhouse_uid": "gh-1",
+      "zone_id": 1,
+      "node_uid": "nd-ph-1",
+      "channel": "ph_sensor",
+      "metric_type": "PH",
+      "value": 6.2,
+      "ts": 1737355112,
+      "unit": "pH"
+    }
+  ]
 }
 ```
 
-Внимание: `ts` декодируется как **секунды** через `datetime.fromtimestamp(ts_value)`. Не передавайте миллисекунды (известный edge-case, ts > 10^10 будет интерпретирован как далёкое будущее).
+Ограничения: max **1000** samples за запрос; пустой `samples` → `200` `{status:"ok", count:0, dropped:0}`.
+
+**Response (202 Accepted):**
+```json
+{
+  "status": "accepted",
+  "count": 1,
+  "dropped": 0,
+  "total": 1
+}
+```
+
+Внимание: `ts` — **секунды** (`datetime.fromtimestamp`). Не передавайте миллисекунды.
 
 ### 2.1.5. DLQ endpoints (`/api/dlq/*`)
 
-Управление dead-letter queue для alerts и status updates:
+Управление dead-letter queue для alerts и status updates (`system_routes.py`):
 
 | Метод | Путь | Назначение |
 |-------|------|-----------|
 | GET | `/api/dlq/alerts` | List failed alert ingest |
-| POST | `/api/dlq/alerts/replay` | Перенос обратно в `pending_alerts` для повторной обработки |
+| POST | `/api/dlq/alerts/{dlq_id}/replay` | Replay **одного** alert обратно в обработку |
 | DELETE | `/api/dlq/alerts/{id}` | Hard delete из DLQ |
 | GET | `/api/dlq/status-updates` | List failed status updates |
-| POST | `/api/dlq/status-updates/replay` | Replay status updates |
+| POST | `/api/dlq/status-updates/{dlq_id}/replay` | Replay **одного** status update |
 | DELETE | `/api/dlq/status-updates/{id}` | Hard delete |
 | GET | `/api/dlq/metrics` | Summary (queue depth, failure rate, oldest entry age) |
 
@@ -277,36 +293,24 @@ Payload как у `POST /commands`, но `node_uid` берётся из URL. Е�
 
 ### 2.2. GET /health
 
-**Описание:** Health check endpoint для проверки работоспособности сервиса.
+**Описание:** Health check с проверкой компонентов (`system_routes.health`).
 
 **URL:** `GET /health`
 
 **Response (200 OK):**
 ```json
 {
-  "status": "healthy",
-  "service": "history-logger",
-  "version": "3.0.0",
-  "mqtt_connected": true,
-  "db_connected": true,
-  "uptime_seconds": 3600,
-  "commands_published_total": 1234,
-  "last_telemetry_received_ago_sec": 5
+  "status": "ok",
+  "components": {
+    "db": "ok",
+    "mqtt": "ok",
+    "redis": "ok",
+    "queues": "ok"
+  }
 }
 ```
 
-**Response (503 Service Unavailable):**
-```json
-{
-  "status": "unhealthy",
-  "service": "history-logger",
-  "mqtt_connected": false,
-  "db_connected": true,
-  "errors": [
-    "MQTT broker connection lost"
-  ]
-}
-```
+При сбое компонента `status` становится `"degraded"` (HTTP всё ещё 200 в текущей реализации). Поля `version` / `uptime_seconds` / `commands_published_total` **не** возвращаются.
 
 **Пример:**
 ```bash
@@ -370,7 +374,7 @@ curl http://localhost:9300/health
 
 ### 2.7. Webhook callback (HL → Laravel)
 
-**Описание:** History-logger вызывает Laravel webhook при terminal-статусе команды, чтобы Scheduler Cockpit получил causal chain update.
+**Описание:** History-logger шлёт в Laravel шаги causal chain (`chain_webhook.emit_execution_step`) — в т.ч. `DISPATCH` при publish, далее `RUNNING` / `COMPLETE` / `FAIL` и др. Нужен Scheduler Cockpit.
 
 **Endpoint Laravel:** `POST {LARAVEL_URL}/api/internal/webhooks/history-logger/execution-event`
 
@@ -380,23 +384,27 @@ curl http://localhost:9300/health
 - `HISTORY_LOGGER_WEBHOOK_DEBOUNCE_MS` — debounce окно (default 250 ms).
 
 **Headers:**
-- `X-HL-Signature: hmac-sha256=<hex>` — подпись body
-- `X-HL-Timestamp: <unix>` — для replay-protection
+- `X-Hydro-Signature: <hex>` — `hex(hmac_sha256(secret, "{timestamp}.{raw_body}"))`
+- `X-Hydro-Timestamp: <unix>` — replay-protection
 
 **Body:**
 ```json
 {
-  "event_type": "command_terminal",
-  "cmd_id": "cmd-123",
   "zone_id": 1,
-  "task_id": 42,
-  "terminal_status": "DONE",
-  "ack_received_at": "2026-05-28T10:00:00Z",
-  "terminal_at": "2026-05-28T10:00:05Z"
+  "step": "DISPATCH",
+  "ref": "cmd-123",
+  "status": "ok",
+  "cmd_id": "cmd-123",
+  "detail": "",
+  "at": "2026-08-02T10:00:00Z",
+  "live": true
 }
 ```
 
-Laravel middleware: `VerifyHistoryLoggerWebhook` (alias `verify.history-logger.webhook`) проверяет HMAC и timestamp tolerance. После приёма Laravel эмитит broadcast event `ExecutionChainUpdated` на канал `hydro.zone.executions.{zoneId}`.
+Обязательны `zone_id`, `step`, `ref`, `status`; плюс **либо** `execution_id` (= `ae_tasks.id`), **либо** `cmd_id`.  
+`step` ∈ `SNAPSHOT|DECISION|TASK|DISPATCH|RUNNING|COMPLETE|FAIL|SKIP`; `status` ∈ `ok|err|skip|run|warn`.
+
+Laravel middleware: `VerifyHistoryLoggerWebhook` (alias `verify.history-logger.webhook`) проверяет HMAC и timestamp. После приёма — broadcast `ExecutionChainUpdated` на `hydro.zone.executions.{zoneId}`.
 
 ---
 
@@ -411,7 +419,7 @@ High-level product labels (`FORCE_IRRIGATION`, `LIGHT_ON`, `VENT_ON`, `REBOOT`, 
 | `cmd` | Назначение | Типичные `params` |
 |-------|------------|-------------------|
 | `run_pump` | Насос / полив / recirculation | `duration_ms`, опционально volume/flow hints |
-| `dose` | Дозирование pH/EC | `ml` (обязателен), `duration_ms` (optional) |
+| `dose` | Дозирование pH/EC | `ml` (доменный must — AE3/Laravel; HL sanity при наличии), `duration_ms` (optional) |
 | `set_relay` | Реле on/off | `state` / `on` |
 | `set_pwm` | PWM / яркость / скорость | `duty` / `brightness` / `percent` (по каналу) |
 | `set_position` | Позиционный привод | позиция / угол (по каналу) |
@@ -422,7 +430,8 @@ High-level product labels (`FORCE_IRRIGATION`, `LIGHT_ON`, `VENT_ON`, `REBOOT`, 
 
 ### 3.1. Дозирование (AE3 → HL → MQTT)
 
-Канон для pH/EC насосов — **`cmd: "dose"`** с обязательным **`params.ml`**.
+Канон для pH/EC насосов — **`cmd: "dose"`** с **`params.ml`**.
+Обязательность `ml` enforce на стороне AE3/Laravel; HL проверяет bounds **если** `ml` передан.
 Прошивка ph_node/ec_node исполняет дозу по `ml`; `params.duration_ms` опционален
 (observability / audit в `commands.duration_ms`).
 
@@ -529,39 +538,34 @@ CREATE TABLE commands (
 
 **Endpoint:** `GET http://history-logger:9300/metrics`
 
-Канонические имена метрик (из `backend/services/history-logger/metrics.py`):
+Канон имён — `backend/services/history-logger/metrics.py` (+ shared `common/pipeline_metrics` для части health). Ключевые:
 
 ```
-# Команды
-commands_sent_total{cmd, zone_id, source}
-commands_failed_total{cmd, reason}
-commands_publish_duration_seconds{cmd, le}
+# Команды / publish
+commands_sent_total{zone_id, metric}
+mqtt_publish_errors_total{error_type}
+commands_published_unconfirmed_total
+command_response_received_total
+command_response_error_total
+command_queue_drain_*_total
+command_status_delivery_dropped_total
+command_status_dlq_moved_total
+command_status_dlq_size
+alert_dlq_size
 
-# Телеметрия
-telemetry_received_total{node_uid, channel}
-telemetry_processed_total{result}
-telemetry_processing_duration_seconds{le}
-telemetry_batch_size{le}
+# Телеметрия / ingest
+telemetry_received_total / telemetry_processed_total / telemetry_batch_size
+telemetry_processing_duration_seconds
+telemetry_dropped_total{reason}
+ingest_requests_total / ingest_auth_failed_total / ingest_rate_limited_total
 
-# MQTT
-mqtt_connected
-mqtt_messages_received_total{topic_kind}
-mqtt_reconnects_total
-
-# База данных
-db_operations_total{operation, table}
-db_errors_total{operation, table}
-
-# DLQ
-dlq_size{queue}                              # pending_alerts, pending_status_updates
-dlq_replay_total{queue, result}
-
-# Webhook
-hl_webhook_calls_total{event_type, result}
-hl_webhook_duration_seconds{event_type, le}
+# Прочее
+node_hello_* / config_report_* / heartbeat_received_total
+database_errors_total
+ws_broadcast_total / ws_auth_total
 ```
 
-Старый префикс `history_logger_*` (например `history_logger_commands_published_total`) **deprecated** — оставлен только в части legacy dashboards.
+Отдельных `hl_webhook_*` Prometheus-метрик в коде нет. Старый префикс `history_logger_*` — только legacy dashboards.
 
 ### 6.2. Логи
 
@@ -596,21 +600,22 @@ hl_webhook_duration_seconds{event_type, le}
 
 | Код | HTTP Status | Описание |
 |-----|-------------|----------|
-| `validation_failed` | 400 | Невалидные данные команды |
-| `unknown_command_type` | 400 | Неизвестная команда `cmd` |
-| `missing_required_params` | 400 | Отсутствуют обязательные параметры |
-| `invalid_param_value` | 400 | Невалидное значение параметра |
+| `validation_failed` | 400 | Невалидные данные команды / отсутствует `cmd` / запрещён `type` |
+| `missing_required_params` | 400 | Отсутствуют обязательные параметры (напр. `zone_id`, `channel`) |
+| `invalid_param_value` | 400 | Невалидное значение параметра (sanity bounds) |
 | `unauthorized` | 401 | Отсутствует/некорректен токен |
 | `mqtt_publish_failed` | 500 | Ошибка публикации в MQTT |
 | `db_insert_failed` | 500 | Ошибка записи в БД |
 | `service_unavailable` | 503 | Сервис недоступен |
 
+HL **не** возвращает `unknown_command_type` — enum `cmd` из §3 не enforce на транспорте (каталог — контракт AE3/firmware/MQTT).
+
 ### 7.2. Retry логика
 
-History-logger использует retry логику для MQTT публикаций:
-- Максимум 3 попытки
-- Экспоненциальная задержка: 100ms, 200ms, 400ms
-- После 3 неудачных попыток команда помечается как `SEND_FAILED` в БД (canonical status enum; lowercase `failed` запрещён)
+History-logger использует retry для MQTT publish (`MQTT_PUBLISH_RETRY_DELAYS_SEC`, `MAX_PUBLISH_RETRIES=3`):
+- максимум 3 попытки;
+- задержки: **500ms / 1s / 2s**;
+- после исчерпания — статус `SEND_FAILED` (lowercase `failed` запрещён).
 
 ---
 
