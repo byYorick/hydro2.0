@@ -103,6 +103,11 @@
 
 - [x] Проект `firmware/test_node` (multi-virtual nodes, контрактные сценарии) — **MVP_DONE** (HIL, не production)
 
+### 2.9. OTA
+
+- [x] Schema `firmware_files` + storage path `storage/app/ota` — **SPEC_READY** (seeder only)
+- [ ] OTA pipeline (Laravel `/api/ota/*`, HL MQTT publish, firmware `ota_engine`) — **PLANNED** (`OTA_UPDATE_PROTOCOL.md`)
+
 ---
 
 ## 3. Python-сервисы

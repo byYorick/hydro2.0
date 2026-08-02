@@ -217,31 +217,25 @@ Breaking-change: обратная совместимость со старыми
    - Скорость обработки зон (зон/минуту)
    - Время последней успешной проверки
 
-2. **Обработка зон:**
-   - График `zone_checks_total` (rate) — частота проверок
-   - График `zone_check_seconds` (p50, p95, p99) — время обработки
-   - График `automation_commands_sent_total` по зонам — активность по зонам
-   - График `automation_commands_sent_total` по метрикам — типы команд
+2. **Tasks / drain (AE3):**
+   - `ae3_task_*` / `ae3_tick_duration_seconds` — создание задач и длительность drain tick
+   - `ae3_intent_claimed_total` / `ae3_intent_terminal_total` — lifecycle intents
 
-3. **Конфигурация:**
-   - `config_fetch_success_total` — успешные загрузки конфигурации
-   - `config_fetch_errors_total` по типам ошибок — проблемы с конфигурацией
-   - Время между загрузками конфигурации
+3. **Конфигурация / snapshot:**
+   - `ae3_config_hot_reload_total` — hot-reload
+   - `infra_ae3_snapshot_retry_*` — snapshot gaps
 
-4. **Команды и публикация:**
-   - `automation_commands_sent_total` по зонам — распределение команд
-   - `automation_commands_sent_total` по метрикам (pH, EC, irrigation, climate, light)
-   - `mqtt_publish_errors_total` по типам ошибок — проблемы с MQTT
+4. **Команды (через HL):**
+   - `ae3_command_dispatched_total` / `ae3_command_terminal_total{status}`
+   - `ae3_command_send_retry_total` — transient HL publish retries
 
-5. **Ошибки:**
-   - `automation_loop_errors_total` по типам ошибок — ошибки в цикле
-   - `error_handler_errors_total` по зонам (из error_handler.py) — общие ошибки обработки
-   - График ошибок во времени
+5. **Ошибки / failsafe:**
+   - `ae3_tick_errors_total` (если экспортируется) / fail-closed: `ae3_fail_safe_transition_total`
+   - dashboard JSON: `backend/configs/dev/grafana/dashboards/automation-engine.json`
 
 6. **Производительность:**
-   - Время обработки зон (`zone_check_seconds`)
-   - Параллелизм обработки (количество зон, обрабатываемых одновременно)
-   - Задержка между циклами обработки
+   - p99 `ae3_tick_duration_seconds`
+   - `ae3_start_irrigation_blocked_total` — ingress guards
 
 **Алерты (AE3-каноничные):**
 - `rate(ae3_intent_terminal_total{status="failed"}[5m]) > 0.1` — рост частоты failed intents

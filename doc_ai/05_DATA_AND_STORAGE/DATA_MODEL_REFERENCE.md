@@ -2162,6 +2162,9 @@ INDEX(zone_id, user_id)
 # 10. OTA прошивки
 
 ## 10.1. firmware_files
+
+**Status:** schema + test seeder only; **нет** API/runtime OTA pipeline (см. `OTA_UPDATE_PROTOCOL.md`).
+
 ```
 id PK
 node_type VARCHAR
@@ -2171,6 +2174,8 @@ checksum_sha256 VARCHAR
 release_notes TEXT
 created_at
 ```
+
+Storage path (backup scripts): `storage/app/ota/`.
 
 ---
 

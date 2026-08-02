@@ -75,7 +75,6 @@ echo ""
 # History Logger health + metrics
 echo "--- History Logger ---"
 check_endpoint "History Logger /health" "http://localhost:9300/health" || ERRORS=$((ERRORS + 1))
-check_endpoint "History Logger :9301/metrics" "http://localhost:9301/metrics" || echo -e "${YELLOW}WARNING: HL metrics on :9301 may be unavailable (fallback /metrics on :9300)${NC}"
 check_endpoint "History Logger /metrics" "http://localhost:9300/metrics" || ERRORS=$((ERRORS + 1))
 echo ""
 

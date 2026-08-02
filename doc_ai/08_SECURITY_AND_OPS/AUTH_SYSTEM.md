@@ -204,12 +204,15 @@ POST /api/zones/{zone}/commands
 | engineer | ✔ |
 | viewer | ✖ |
 
-### 8.2. OTA
+### 8.2. OTA — **planned / not implemented**
+
+Целевой endpoint (ещё нет в `routes/api.php`):
+
 ```
 POST /api/ota/push
 ```
 
-| Роль | Доступ |
+| Роль | Доступ (target) |
 |--------|--------|
 | admin | ✔ |
 | operator | частично |

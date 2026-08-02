@@ -149,16 +149,18 @@ find /wal_archive -type f -mtime +7
 # Выбрать старый тестовый бэкап (не последний!)
 TEST_BACKUP=/backups/postgres/$(ls -t /backups/postgres | tail -1)
 
-# Восстановить в тестовую БД
-docker-compose exec db psql -U hydro -c "CREATE DATABASE test_restore;"
-./scripts/restore/postgres_restore.sh $TEST_BACKUP/*.dump \
-  --db-name test_restore
+# Восстановить в тестовую БД (DB_NAME через env; флага --db-name в скрипте нет)
+docker compose -f backend/docker-compose.dev.yml exec db \
+  psql -U hydro -c "CREATE DATABASE test_restore;"
+DB_NAME=test_restore backend/scripts/restore/postgres_restore.sh "$TEST_BACKUP"/*.dump
 
 # Проверить целостность
-docker-compose exec db psql -U hydro -d test_restore -c "\dt"
+docker compose -f backend/docker-compose.dev.yml exec db \
+  psql -U hydro -d test_restore -c "\dt"
 
 # Удалить тестовую БД
-docker-compose exec db psql -U hydro -c "DROP DATABASE test_restore;"
+docker compose -f backend/docker-compose.dev.yml exec db \
+  psql -U hydro -c "DROP DATABASE test_restore;"
 ```
 
 **Критерии успеха:**

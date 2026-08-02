@@ -301,7 +301,7 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 - `config_report_processed_total` - количество успешно сохранённых config_report
 - `config_report_error_total{node_uid}` - ошибки обработки config_report
 
-**Endpoint:** http://localhost:9301/metrics
+**Endpoint:** http://localhost:9300/metrics
 
 ## Текущее состояние системы
 

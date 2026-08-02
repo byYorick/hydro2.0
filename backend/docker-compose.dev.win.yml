@@ -223,7 +223,7 @@ services:
       - redis
     ports:
       - "9300:9300"
-      - "9301:9301"  # Prometheus metrics
+      # metrics на том же :9300/metrics (отдельного :9301 нет)
     volumes:
       - ./services/history-logger:/app
       - ./services/common:/app/common

@@ -164,17 +164,10 @@ pytest -q test_ae3lite_execute_task.py
 
 ## 📊 Метрики Prometheus
 
-Метрики доступны через встроенный ASGI endpoint `http://localhost:9405/metrics/`:
+Метрики доступны через встроенный ASGI endpoint `http://localhost:9405/metrics/`.
 
-- `automation_loop_errors_total` - ошибки в главном цикле
-- `config_fetch_errors_total` - ошибки получения конфигурации
-- `config_fetch_success_total` - успешные получения конфигурации
-- `zone_checks_total` - количество проверок зон
-- `zone_check_seconds` - длительность проверки зоны
-- `automation_commands_sent_total{zone_id, metric}` - отправленные команды
-- `rest_command_errors_total{error_type}` - ошибки REST запросов к history-logger
-- `command_rest_latency_seconds` - задержка REST запросов
-- `automation_errors_total` - общие ошибки автоматизации
+AE2 names (`zone_checks_total`, `automation_loop_errors_total`, `automation_commands_sent_total`, …) **удалены**.  
+Канон AE3: `ae3_intent_*`, `ae3_command_*`, `ae3_tick_*`, `ae3_task_*`, … — см. `doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md` и Grafana `automation-engine.json`.
 
 ## 🔧 Использование
 

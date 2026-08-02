@@ -307,8 +307,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "9300:9300"
-      - "9301:9301"  # Prometheus metrics
+      - "9300:9300"  # REST + /metrics (отдельного :9301 нет)
     volumes:
       - ./services/history-logger:/app
       - ./services/common:/app/common

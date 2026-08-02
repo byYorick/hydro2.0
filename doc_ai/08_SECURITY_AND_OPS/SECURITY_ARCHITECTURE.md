@@ -246,11 +246,13 @@ NODE_SECRET_PATH=/secrets/nodes.json
 
 ## 6.1. Защита OTA
 
-Проверяется:
+**Status: planned / not implemented** (нет firmware OTA engine, нет `/api/ota/*`).
+
+Target checks:
 - SHA256,
 - версия,
-- подпись URL,
-- HMAC запроса.
+- signed URL,
+- HMAC запроса / команды (dispatch через history-logger).
 
 ## 6.2. Защита команд
 
@@ -348,7 +350,8 @@ NODE_SECRET_PATH=/secrets/nodes.json
 2. Узлы имеют уникальные node_secret? 
 3. Все команды подписаны HMAC с timestamp? 
 4. Config HMAC — **planned** (§2.3.2); verify в firmware ещё не реализован 
-5. OTA проверяет sha256 и подпись? 
+5. OTA sha256/подпись — **planned** (§6.1); runtime не реализован 
+
 6. Laravel API защищён Sanctum? 
 7. Tokens имеют роли? 
 8. Rate limiting настроен для всех критичных эндпоинтов? 

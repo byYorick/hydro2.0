@@ -70,7 +70,7 @@ POST http://localhost:9000/bridge/zones/{zone_id}/commands
 - `GET /health/ready` - readiness
 
 ### Prometheus metrics
-- history-logger: `http://localhost:9301/metrics`
+- history-logger: `http://localhost:9300/metrics`
 - automation-engine: `http://localhost:9405/metrics/`
 
 ## Архитектура команд

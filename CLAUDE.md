@@ -535,7 +535,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 ### Безопасность
 
 - Каждый узел имеет уникальный `node_secret` (32 байта) для HMAC.
-- OTA защищена: SHA256, версия, signed URL, HMAC запроса.
+- OTA: **planned** (SHA256 / signed URL / HMAC — target; runtime API/firmware engine нет).
 - MQTT должен быть закрыт для внешних сетей; Wi-Fi — скрытый, WPA2/WPA3.
 - Pessimistic locking (`SELECT FOR UPDATE`) при публикации конфигов; PostgreSQL advisory lock для дедупликации; кэш-дедупликация 60 сек.
 - Rate limiting: конфиг **120 req/min/IP** (`API_THROTTLE`); на auth API-группе часто **двойной** throttle → effective ≈60; system/health — 300/min; auth API — 10/min/IP (**без** LoginRequest lockout — lockout 5/email|IP только web Breeze); регистрация узлов — `throttle:node_register` + IP whitelist (`services.node_registration.allowed_ips`).

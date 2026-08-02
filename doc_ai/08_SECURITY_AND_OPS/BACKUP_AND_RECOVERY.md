@@ -47,7 +47,8 @@ Breaking-change: обратная совместимость со старыми
 
 ### Полный dump (ежедневно)
 ```
-pg_dump -Fc -U postgres hydro2 > backup/full_2025_01_01.dump
+pg_dump -Fc -U hydro hydro_dev > backup/full_2025_01_01.dump
+# (prod: свои DB_USER/DB_NAME; канон скриптов — backend/scripts/backup/postgres_backup.sh)
 ```
 
 ### Инкрементальный WAL архив (каждые 15 мин)
@@ -159,7 +160,7 @@ DATE=$(date +%Y-%m-%d_%H-%M)
 mkdir -p /backups/$DATE
 
 # PostgreSQL
-pg_dump -Fc -U postgres hydro2 > /backups/$DATE/db.dump
+pg_dump -Fc -U hydro hydro_dev > /backups/$DATE/db.dump
 
 # WAL
 cp -r /wal_archive /backups/$DATE/wal/
@@ -184,7 +185,8 @@ tar czf /backups/$DATE/docker_pgdata.tar.gz /var/lib/docker/volumes/pgdata/
 ## 9.1. Постгрес восстановление
 
 ```
-pg_restore -U postgres -d hydro2 backup.dump
+pg_restore -U hydro -d hydro_dev backup.dump
+# или: DB_NAME=… backend/scripts/restore/postgres_restore.sh backup.dump
 ```
 
 Если нужны WAL журналы:
@@ -235,9 +237,8 @@ systemctl restart mosquitto
 esptool write_flash 0x0 firmware.bin
 ```
 
-2. OTA:
-- добавить прошивку в Laravel OTA storage
-- инициировать OTA из UI
+2. OTA (**planned** — UI/API нет): после реализации — `storage/app/ota` + push через history-logger.  
+   Сейчас — только USB/`esptool` (выше).
 
 ---
 

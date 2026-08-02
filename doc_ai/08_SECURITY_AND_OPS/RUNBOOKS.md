@@ -395,7 +395,7 @@ docker-compose restart mqtt
 
 ### 15.1. Ежедневные проверки
 - Проверка успешности бэкапов: `php artisan backup:list`
-- Проверка логов бэкапов: `tail -f /var/log/backup.log`
+- Проверка логов бэкапов: stdout `backup:full` / `docker compose -f backend/docker-compose.dev.yml logs laravel | rg -i backup` (отдельного `/var/log/backup.log` нет)
 - Проверка свободного места: `df -h /backups`
 
 ### 15.2. Еженедельные проверки

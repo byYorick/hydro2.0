@@ -10,50 +10,48 @@
 - безопасный откат при неудаче;
 - минимальное влияние на работу теплицы.
 
-Текущий runtime-статус:
-- в текущем production baseline (`firmware/nodes/*`, `firmware/test_node`) OTA-команды и OTA-download flow
-  по этому документу не реализованы как активный runtime-контракт;
-- документ задаёт целевую спецификацию для последующего внедрения OTA-пайплайна.
-
+Текущий runtime-статус (**planned**):
+- в baseline (`firmware/nodes/*`, `firmware/test_node`) OTA-команды и download flow **не** реализованы;
+- Laravel: схема `firmware_files` + model/seeder; **нет** `/api/ota/*`, UI, jobs;
+- документ = целевая спецификация для внедрения.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
-## 1. Общая схема
+## 1. Общая схема (target)
 
 Участники:
 
 - **Backend (Laravel)** — хранит бинарники, версии и историю обновлений.
-- **Python-сервис** — инициирует обновления, следит за статусами.
+- **Orchestrator (Laravel/AE)** — инициирует обновления, следит за статусами.
+- **history-logger** — **единственная** точка публикации OTA-команды в MQTT (как и прочих device/system commands).
 - **ESP32-ноды** — принимают команды и скачивают прошивку.
 
-Поток:
+Поток (target):
 
-1. Оператор в UI создаёт новую запись прошивки и загружает бинарник.
-2. Backend сохраняет файл (например, в `storage/app/firmware/`) и создаёт запись в таблице `firmware_images`.
-3. Python-сервис получает сигнал (webhook/endpoint), что доступна новая версия.
-4. Python-сервис публикует команду OTA в MQTT для выбранных узлов.
-5. Узел ESP32:
- - получает команду;
- - скачивает бинарник по HTTPS/HTTP с backend;
- - выполняет OTA;
- - отправляет результат через MQTT.
+1. Оператор в UI создаёт запись прошивки и загружает бинарник.
+2. Backend сохраняет файл в `storage/app/ota/` и запись в таблице **`firmware_files`** (не `firmware_images`).
+3. Orchestrator получает сигнал (webhook/endpoint), что доступна новая версия.
+4. Публикация OTA в MQTT — **только через history-logger** (`POST /commands` или dedicated system-publish API HL), **не** прямой MQTT publish из Python/Laravel.
+5. Узел ESP32: получает команду → скачивает бинарник (signed URL — target) → OTA → результат в MQTT.
 
 ---
 
 ## 2. Идентификаторы прошивок
 
-Таблица `firmware_images` (пример):
+Таблица **`firmware_files`** (as-is schema; runtime API — planned):
 
 - `id` — PK;
-- `uid` — человекочитаемый идентификатор (например, `esp32-ph-v1.0.3`);
-- `node_type` — тип узла (`ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown`);
+- `node_type` — тип узла (`ph`, `ec`, `climate`, `irrig`, `light`, `relay`, …);
 - `version` — семантическая версия (`1.0.3`);
-- `file_path` — путь до бинарника;
+- `file_path` — путь до бинарника (канон storage: `storage/app/ota/`);
 - `checksum_sha256` — контрольная сумма;
-- `created_at`, `updated_at`.
+- `release_notes` — TEXT;
+- `created_at`.
+
+Target-поля (ещё не в миграции): человекочитаемый `uid` / `firmware_uid` для MQTT payload.
 
 Узел хранит у себя:
 
@@ -80,19 +78,18 @@ Payload (пример):
 {
  "cmd": "OTA_UPDATE",
  "firmware_uid": "esp32-ph-v1.0.3",
- "file_url": "https://backend/firmware/esp32-ph-v1.0.3.bin",
- "checksum_sha256": "abc123 ",
+ "file_url": "https://backend/…/ota/…signed…",
+ "checksum_sha256": "abc123…",
  "ttl_ms": 600000,
  "request_id": "ota-2025-01-01-12-00-00-001"
 }
 ```
 
-Требования:
+Target security (см. `SECURITY_ARCHITECTURE.md` §6.1 — **planned**): signed URL, HMAC команды/запроса, verify SHA256 + version на узле.
 
-- Узел обязан проверить:
- - TTL команды;
- - корректность формата URL;
- - контрольную сумму после загрузки.
+Требования (target):
+
+- Узел обязан проверить TTL, URL, checksum после загрузки; HMAC/signed URL — при реализации firmware OTA.
 
 ---
 

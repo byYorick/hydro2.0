@@ -232,11 +232,12 @@ rate(telemetry_received_total[5m])
 # Размер очереди
 telemetry_queue_size
 
-# Количество проверок зон
-rate(zone_checks_total[5m])
+# AE3: создание задач / terminal intents
+rate(ae3_task_created_total[5m])
+rate(ae3_intent_terminal_total{status="failed"}[5m])
 
-# Ошибки автоматизации
-rate(automation_loop_errors_total[5m])
+# AE3: ошибки drain (см. dashboard automation-engine.json)
+rate(ae3_tick_errors_total[5m])
 ```
 
 ### Прямой доступ к метрикам сервисов
