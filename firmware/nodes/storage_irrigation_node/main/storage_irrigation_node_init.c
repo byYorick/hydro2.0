@@ -43,7 +43,8 @@ static esp_err_t init_i2c_bus_if_needed(void) {
         .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
         .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
         .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
-        .pullup_enable = false
+        /* На шине I2C внешних PU нет — нужны internal. */
+        .pullup_enable = true
     };
 
     esp_err_t err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
@@ -157,10 +158,26 @@ void storage_irrigation_node_mqtt_connection_cb(bool connected, void *user_ctx) 
 }
 
 void storage_irrigation_node_wifi_connection_cb(bool connected, void *user_ctx) {
+    (void)user_ctx;
+
     if (connected) {
         ESP_LOGI(TAG, "Wi-Fi connected");
+        // Wi-Fi может подняться до mqtt_manager_init — тогда старт сделает finalize.
+        if (mqtt_manager_is_initialized() && !mqtt_manager_is_started()) {
+            esp_err_t err = mqtt_manager_start();
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "MQTT start after Wi-Fi connect failed: %s", esp_err_to_name(err));
+            }
+        }
     } else {
         ESP_LOGW(TAG, "Wi-Fi disconnected");
+        // Без Wi-Fi не долбимся в брокер: останавливаем MQTT-клиент и его auto-reconnect
+        if (mqtt_manager_is_initialized() && mqtt_manager_is_started()) {
+            esp_err_t err = mqtt_manager_stop();
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "MQTT stop after Wi-Fi disconnect failed: %s", esp_err_to_name(err));
+            }
+        }
     }
     
     // Обновление OLED UI через общий компонент

@@ -119,7 +119,8 @@ esp_err_t storage_irrigation_node_init_step_i2c(storage_irrigation_node_init_con
             .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
             .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
             .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = false
+            /* На шине I2C внешних PU нет — нужны internal. */
+            .pullup_enable = true
         };
         err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (err != ESP_OK) {
@@ -336,17 +337,21 @@ esp_err_t storage_irrigation_node_init_step_finalize(storage_irrigation_node_ini
         result->component_initialized = true;
     }
     
-    // Запускаем MQTT после регистрации callbacks (которые происходят в storage_irrigation_node_init.c)
-    // Это гарантирует, что ранние входящие команды/config не будут дропнуты
-    esp_err_t err = mqtt_manager_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
-        if (result) {
-            result->err = err;
+    // MQTT стартуем только при активном Wi-Fi. Без сети клиент только спамит
+    // Host is unreachable; старт произойдёт из wifi_connection_cb.
+    if (wifi_manager_is_connected()) {
+        esp_err_t err = mqtt_manager_start();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
+            if (result) {
+                result->err = err;
+            }
+            return err;
         }
-        return err;
+        ESP_LOGI(TAG, "MQTT client started (callbacks already registered)");
+    } else {
+        ESP_LOGW(TAG, "Wi-Fi not connected — MQTT start deferred until Wi-Fi connects");
     }
-    ESP_LOGI(TAG, "MQTT client started (callbacks already registered)");
     
     // Останавливаем анимацию шагов инициализации и переводим OLED в нормальный режим
     if (ctx && ctx->show_oled_steps && oled_ui_is_initialized()) {

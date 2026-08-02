@@ -783,6 +783,14 @@ bool mqtt_manager_is_connected(void) {
     return s_is_connected;
 }
 
+bool mqtt_manager_is_started(void) {
+    return s_client_started;
+}
+
+bool mqtt_manager_is_initialized(void) {
+    return s_mqtt_client != NULL;
+}
+
 esp_err_t mqtt_manager_get_broker(char *host, size_t host_size, uint16_t *port) {
     if (host == NULL || host_size == 0 || port == NULL) {
         return ESP_ERR_INVALID_ARG;

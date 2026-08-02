@@ -210,6 +210,25 @@ esp_err_t mqtt_manager_publish_diagnostics(const char *data);
 bool mqtt_manager_is_connected(void);
 
 /**
+ * @brief Проверка, запущен ли MQTT-клиент (esp_mqtt_client_start выполнен)
+ *
+ * Отличается от mqtt_manager_is_connected(): клиент может быть started,
+ * но ещё не connected к брокеру.
+ *
+ * @return true если клиент запущен
+ */
+bool mqtt_manager_is_started(void);
+
+/**
+ * @brief Проверка, инициализирован ли MQTT-менеджер (после mqtt_manager_init)
+ *
+ * Нужна, чтобы не вызывать start/stop из Wi-Fi callback до Step MQTT init.
+ *
+ * @return true если клиент создан
+ */
+bool mqtt_manager_is_initialized(void);
+
+/**
  * @brief Текущий broker из конфигурации mqtt_manager_init (без парсинга NVS JSON).
  *
  * Для OLED/UI; не вызывает блокировок и не трогает MQTT-сессию.

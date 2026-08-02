@@ -169,11 +169,28 @@ esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
 
     for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
         const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+        // GPIO34/35 (и др. input-only) не имеют внутренних PU/PD — gpio_pullup_en() иначе
+        // логирует ERROR. Для них нужен внешний pull-up на плате.
+        const bool want_pullup = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP;
+        const bool can_internal_pull = GPIO_IS_VALID_OUTPUT_GPIO((gpio_num_t)sensor->gpio);
+        const bool enable_pullup = want_pullup && can_internal_pull;
+        const bool enable_pulldown = (!want_pullup) && can_internal_pull;
+
+        if (want_pullup && !can_internal_pull) {
+            // GPIO34/35: только внешний PU (на плате есть), internal недоступен
+            ESP_LOGI(
+                TAG,
+                "level-switch channel=%s gpio=%d input-only: using external pull-up",
+                sensor->name,
+                sensor->gpio
+            );
+        }
+
         gpio_config_t io_conf = {
             .pin_bit_mask = (1ULL << (uint32_t)sensor->gpio),
             .mode = GPIO_MODE_INPUT,
-            .pull_up_en = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-            .pull_down_en = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
+            .pull_up_en = enable_pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+            .pull_down_en = enable_pulldown ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
 
@@ -185,11 +202,12 @@ esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
         }
         ESP_LOGI(
             TAG,
-            "level-switch config channel=%s gpio=%d active_low=%d pullup=%d debounce_ms=%lu",
+            "level-switch config channel=%s gpio=%d active_low=%d pullup=%d (internal=%d) debounce_ms=%lu",
             sensor->name,
             sensor->gpio,
             sensor->active_low ? 1 : 0,
-            STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_PULLUP ? 1 : 0,
+            want_pullup ? 1 : 0,
+            enable_pullup ? 1 : 0,
             (unsigned long)STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_MS
         );
     }
