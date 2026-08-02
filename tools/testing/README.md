@@ -7,15 +7,11 @@
 ### One-command запуск
 
 ```bash
-./tools/testing/run_e2e.sh
+./tools/testing/run_e2e.sh smoke   # или default `all` — infra + короткий smoke
+./tools/testing/run_e2e.sh test    # YAML-suite (~35 сценариев из SCENARIOS)
 ```
 
-Этот скрипт:
-1. Поднимает все сервисы через Docker Compose
-2. Дожидается readiness всех сервисов
-3. Запускает обязательные E2E сценарии
-4. Генерирует отчёты
-5. Выводит summary с результатами
+`all`/`smoke` ≠ полный YAML. Для suite используйте `test`.
 
 ### Runtime cleanup guard
 
@@ -36,9 +32,9 @@ Guard используется в CI и валит сборку, если в р�
 ```
 E2E Test Summary
 ==========================================
-Total scenarios: 5
-Passed: 5
-Failed: 0
+Total scenarios: <N from SCENARIOS / smoke>
+Passed: …
+Failed: …
 
 All scenarios passed! ✓
 

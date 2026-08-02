@@ -9,7 +9,7 @@
 | Suite | Где | Команда | Порты / окружение |
 |-------|-----|---------|-------------------|
 | **Python workflow E2E** | `tests/e2e/` (корень репо) | `python -m runner.e2e_runner …` + `docker-compose.e2e.yml` | Laravel **8081**, PG **5433**, MQTT **1884**, Reverb **6002** |
-| **Playwright (Laravel app)** | `backend/laravel/` → `playwright.config.ts` → обычно `tests/E2E/` | из `backend/laravel/`: `npm run e2e` / `npm run e2e:ci` | Dev Laravel **8080** (см. config) |
+| **Playwright (Laravel app)** | `backend/laravel/` → `playwright.config.ts` → обычно `tests/E2E/` | из `backend/laravel/`: `npm run e2e` / `npm run e2e:ci` | baseURL **8010** (`php artisan serve --port=8010`, см. `playwright.config.ts`) |
 | **Playwright browser smoke** | `backend/laravel/tests/e2e/browser/` | `npm run e2e:browser` | Отдельный `playwright.config.ts`; часто baseURL **8081** |
 
 Этот документ — про **Python workflow E2E** (`tests/e2e/`). Frontend Playwright — см. `doc_ai/07_FRONTEND/FRONTEND_TESTING.md`.

@@ -25,6 +25,17 @@ python -m node_sim.cli run --config sim.example.yaml
 python -m node_sim.cli run --config sim.example.yaml --log-level DEBUG
 ```
 
+### Профиль `test_node` (HIL / multi-virtual)
+
+Эталон контрактов (несколько виртуальных нод): `tests/node_sim/config/test_node.yaml`  
+(см. также `tests/node_sim/README.md`, профиль `test_node_multi_v1`).
+
+```bash
+python -m node_sim.cli run --config config/test_node.yaml
+```
+
+**Порты MQTT:** для dev compose обычно **1883**; для Python E2E compose с хоста — **`${MQTT_PORT:-1884}`** (`tests/e2e/docker-compose.e2e.yml`).
+
 ## Конфигурация
 
 ### Структура конфигурационного файла

@@ -30,7 +30,18 @@ Zone Simulation Engine (ZSE) позволяет:
 
 ## 3. Интерфейс модуля
 
-Пример REST-интерфейса (может быть gRPC):
+As-is REST в `backend/services/digital-twin/` (порт **8003**).
+
+Помимо offline-симуляции:
+
+| Путь | Назначение |
+|------|------------|
+| `POST /simulate/zone` | Batch/offline сценарий |
+| `POST /simulations/live/start` | Live sim → запись `zone_simulations`, telemetry через node-sim-manager |
+| `POST /simulations/live/stop` | Останов live sim |
+| `POST /v1/simulate/replay` | Replay по истории |
+
+Laravel client: `App\Services\DigitalTwinClient`.
 
 ### POST /simulate/zone
 

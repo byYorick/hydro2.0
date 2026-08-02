@@ -73,6 +73,21 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 
 README: `backend/services/mqtt-bridge/README.md`.
 
+### 2.5 `digital-twin`
+
+Назначение: solvers pH/EC/climate, калибровка → `zone_dt_params`, offline/live sim, replay.
+
+Порты (dev): REST `8003`, metrics `9403`.
+
+Канон калибровки: `POST /v1/calibrate/zone/{zone_id}?persist=true` (не legacy `/calibrate/zone/...`).  
+Live: `/simulations/live/start|stop` (связь с `node-sim-manager` `:9100`).  
+Доки: `doc_ai/09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md`, `backend/services/digital-twin/README.md`.
+
+### 2.6 `feature-builder` / `node-sim-manager`
+
+- `feature-builder` — skeleton ML feature pipeline (порт **9410** health/metrics); фазы — `ML_FEATURE_PIPELINE.md`.
+- `node-sim-manager` — управление node_sim для live-sim / HIL (порт **9100**).
+
 ---
 
 ## 3. Канонические потоки

@@ -5,15 +5,15 @@
 ### 1. Запуск E2E окружения
 
 ```bash
+# Smoke (default `all`): infra + короткий набор — НЕ полный YAML-suite
 ./tools/testing/run_e2e.sh
+# или: ./tools/testing/run_e2e.sh smoke
+
+# Полный YAML-suite (~35 сценариев из SCENARIOS)
+./tools/testing/run_e2e.sh test
 ```
 
-Скрипт автоматически:
-- Поднимает все сервисы через Docker Compose
-- Дожидается readiness всех компонентов
-- Запускает миграции и seeders
-- Прогоняет все обязательные сценарии
-- Генерирует отчеты
+Скрипт поднимает Docker Compose, ждёт readiness; `test` гоняет YAML, `all`/`smoke` — короткий smoke.
 
 ### 2. Структура E2E контура
 
@@ -123,7 +123,7 @@ docker compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub 
 
 ### 8. Автофикс до GREEN
 
-Скрипт `run_e2e.sh` запускает все сценарии и выводит результаты.
+YAML-suite: `./tools/testing/run_e2e.sh test`. Default/`all` = smoke, не полный набор.
 При падении теста:
 1. Проверьте отчеты в `tests/e2e/reports/`
 2. Изучите timeline.json для понимания последовательности событий

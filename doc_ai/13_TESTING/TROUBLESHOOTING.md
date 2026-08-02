@@ -113,7 +113,8 @@ mqtt:
 
 2. Проверьте доступность брокера:
 ```bash
-mosquitto_pub -h localhost -p 1883 -t test -m "test"
+# Dev stack: 1883. Python E2E compose с хоста: обычно 1884 (${MQTT_PORT}).
+mosquitto_pub -h localhost -p ${MQTT_PORT:-1883} -t test -m "test"
 ```
 
 3. Если используется Docker, используйте имя сервиса:

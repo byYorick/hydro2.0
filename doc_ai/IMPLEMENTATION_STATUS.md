@@ -231,7 +231,7 @@
 - [x] Виртуализация списков для производительности — **MVP_DONE**
 - [x] Обработка ошибок API с логированием — **MVP_DONE**
 - [ ] Переключатель темы (Dark/Light) — **PLANNED** (текущая реализация: только dark тема)
-- [ ] AI Panel (рекомендации, прогнозы, чат) — **PLANNED**
+- [x] AI Prediction card в automation tab — **MVP_DONE** (линейный прогноз; полный AI Panel/чат — **PLANNED**)
 - [ ] Горячие клавиши для навигации (Shift+Z, Shift+D и т.д.) — **PLANNED**
 - [ ] Избранные зоны (pin zones) — **PLANNED**
 
@@ -284,8 +284,8 @@
 - [x] Общая концепция AI/digital twin (`09_AI_AND_DIGITAL_TWIN/AI_ARCH_FULL.md` или аналог) — **SPEC_READY**
 - [x] Базовые гайды для ИИ-разработки (`10_AI_DEV_GUIDES`) — **SPEC_READY**
 - [x] Сервис `backend/services/digital-twin` (solvers, calibrators, live sim, `zone_dt_params`) — **MVP_DONE** (код есть; не путать с «полная agro-autonomy»)
-- [ ] Первая модель прогноза параметров (например, pH/EC) в UI — **PLANNED**
-- [ ] Интеграция AI-подсказок в UI — **PLANNED**
+- [x] Первая модель прогноза параметров в UI — **MVP_DONE** (`PredictionService` linear regression + `AIPredictionCard` / ZoneAutomationTab; не ML pipeline из `ML_FEATURE_PIPELINE`)
+- [ ] Полный AI Panel (чат, advanced recommend) — **PLANNED**
 
 ---
 

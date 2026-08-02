@@ -2,7 +2,7 @@
 # План внедрения ML feature pipeline для hydro2.0
 # Прогноз дрейфа pH/EC • Детекция аномалий • Обучение модели дозирования
 
-**Статус:** DRAFT · предложение к внедрению
+**Статус:** Phase 1 + 2A — **DONE** (см. §15); Phase 2B/3 — TODO. Не целиком «предложение к внедрению».
 **Целевое размещение:** `doc_ai/09_AI_AND_DIGITAL_TWIN/ML_FEATURE_PIPELINE.md`
 **Compatible-With:** Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 **Breaking-change:** нет (только additive DDL, новые сервисы)
@@ -65,7 +65,7 @@
 | События коррекций | `zone_events` с типами `CORRECTION_COMPLETE`, `CORRECTION_SKIPPED_*`, `CORRECTION_NO_EFFECT` | `§8.1` |
 | Команды дозирования | `commands`, `command_tracking`, `command_audit` (последняя содержит `telemetry_snapshot`, `decision_context`, `pid_state`) | `§6.1–6.3` |
 | Циклы роста | `grow_cycles` (якорь «эпизода») | `§6.1 Recipes` |
-| Симуляция | `digital-twin/main.py` + `models.py` (простые pH/EC-модели с фикс. параметрами) | `backend/services/digital-twin/` |
+| Симуляция | modular solvers + calibrators + `zone_dt_params` + `/v1/calibrate` | `backend/services/digital-twin/` |
 | Retention | raw 30 дней, 1m 30 дней, 1h 365 дней, daily ∞ | `doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md` |
 
 ### Что уже правильно и не трогаем

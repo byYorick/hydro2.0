@@ -1,9 +1,11 @@
 # DIGITAL_TWIN_ENGINE.md
 # Архитектура Digital Twin для зоны/теплицы 2.0
 
-Digital Twin (цифровой двойник) — это математическая/программная модель зоны,
-которая позволяет прогнозировать реакцию системы на различные воздействия.
+**Статус:** `SPEC_READY` + **MVP в коде** (`backend/services/digital-twin/`).  
+Не путать с CHARTER-целями в `DIGITAL_TWIN_SIMULATOR_CHARTER.md` (отдельный `dt-runner` / `simulation_runs` — target).
 
+Digital Twin (цифровой двойник) — математическая/программная модель зоны,
+которая позволяет прогнозировать реакцию системы на различные воздействия.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -50,12 +52,27 @@ Breaking-change: обратная совместимость со старыми
 
 ---
 
-## 4. Архитектура модуля Digital Twin
+## 4. Архитектура модуля Digital Twin (as-is MVP)
 
-- Сервис (Python) с API:
- - `/simulate/zone` — запустить симуляцию сценария;
- - `/calibrate/zone` — калибровка параметров модели по историческим данным.
-- Хранение конфигурации моделей — в БД (например, таблицы `zone_models`, `zone_model_params`).
+Сервис: `backend/services/digital-twin/` (dev: REST **8003**, metrics **9403**).
+
+**Хранение параметров:** таблица **`zone_dt_params`** (не `zone_models` / `zone_model_params` — legacy имена не использовать).
+
+### 4.1. Канонические endpoints
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| POST | `/simulate/zone` | Оффлайн/batch симуляция сценария |
+| POST | `/v1/calibrate/zone/{zone_id}?persist=true` | **Канон калибровки** → пишет `zone_dt_params` (Laravel `DigitalTwinCalibrateAll`, replay) |
+| GET | `/v1/zone-dt-params/{zone_id}` | Чтение DT-параметров |
+| POST | `/v1/drift/...` | Drift checks (см. `calibration_api.py`) |
+| POST | `/v1/simulate/replay` | Replay по истории |
+| POST | `/simulations/live/start` | Live sim start → `zone_simulations` (+ node-sim-manager) |
+| POST | `/simulations/live/stop` | Live sim stop |
+
+**Deprecated / no-persist:** `POST /calibrate/zone/{zone_id}` (legacy в `main.py`) — **не** канон для persist; для записи параметров всегда `/v1/calibrate/...&persist=true`.
+
+Подробнее: `backend/services/digital-twin/README.md`, `ZONE_SIMULATION_ENGINE.md`.
 
 ---
 

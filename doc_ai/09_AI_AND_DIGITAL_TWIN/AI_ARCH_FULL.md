@@ -1,10 +1,10 @@
 # AI_ARCH_FULL.md
 # Полная архитектура AI‑слоя 2.0 (аналитика, рекомендации, диагностика, автокоррекция)
 
-Этот документ описывает все компоненты и логику **AI‑слоя системы управления теплицами 2.0**.
+**Статус:** `SPEC_READY` / **partial MVP** в Laravel (`AiService`, `PredictionService`, `AIPredictionCard`) — линейная регрессия/эвристики, **не** полный Analytics/Reasoning Engine из диаграммы ниже (диаграмма = target).
+
 AI‑слой не управляет оборудованием напрямую — он расширяет Backend интеллектуальными функциями:
 аналитикой, рекомендациями, прогнозами, авто‑диагностикой и высокоуровневым пояснением действий.
-
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -169,13 +169,15 @@ PH последние 2 часа медленно растёт +0.15/час.
 
 ### 7.1. POST /api/ai/explain_zone
 ```json
-{ "zone_id": "zn-3" }
+{ "zone_id": 3 }
 ```
+
+(`zone_id` — integer PK `zones.id`, не `zone_uid` string.)
 
 ### 7.2. POST /api/ai/recommend
 ```json
 {
- "zone_id": "zn-3",
+ "zone_id": 3,
  "context": "ph_high"
 }
 ```

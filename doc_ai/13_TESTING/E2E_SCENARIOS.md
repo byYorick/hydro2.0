@@ -255,36 +255,19 @@
 
 ## AUTOMATION ENGINE
 
-### E60_climate_control_happy.yaml
-**DoD:** telemetry → AE → команды fan/vent/heater
+Канон YAML: `tests/e2e/scenarios/automation_engine/` и `ae3lite/`.  
+Устаревшие E60/E62/E63 в репозитории **отсутствуют**.
 
-Проверяет автоматическое управление климатом:
-- Дается telemetry (t/rh/co2)
-- Targets из active stage
-- AE формирует команду (fan/vent/heater)
-- node-sim выполняет
-- Команды → terminal `DONE` + WS
+### E64 / E65 / E74 (automation_engine)
+См. актуальные файлы в `tests/e2e/scenarios/automation_engine/` (`E64_*`, `E65_*`, `E74_*`).
 
 ### E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml
 **DoD:** missing actuator plan → AE3 fail-closed до MQTT (realhw)
 
-Канонический fail-closed сценарий на реальной test_node. Исторический
-`E61_fail_closed_corrections` (alias на E100 smoke) удалён.
+Канонический fail-closed на реальной test_node. Исторический
+`E61_fail_closed_corrections` удалён. Realhw matrix — `tests/e2e/README.md`.
 
-### E62_controller_fault_isolation.yaml
-**DoD:** исключение в контроллере → остальные работают
-
-Проверяет изоляцию ошибок:
-- Принудительно вызывается исключение в одном контроллере
-- Остальные контроллеры работают
-- zone_event controller_failed
-
-### E63_backoff_on_errors.yaml
-**DoD:** серия ошибок → degraded mode
-
-Проверяет механизм backoff:
-- Серия ошибок → AE увеличивает интервал/переходит в degraded
-- Подтверждение через метрики/лог/zone_events
+Дополнительно: категории `ae3lite/`, `scheduler/`, `workflow/`, `calibration/` — см. дерево `tests/e2e/scenarios/`.
 
 ## SIMULATION
 
@@ -343,9 +326,14 @@
 ./tools/testing/run_e2e_core.sh
 ```
 
-### Полный набор (без CHAOS)
+### YAML-suite (без CHAOS)
 ```bash
-./tools/testing/run_e2e.sh
+./tools/testing/run_e2e.sh test
+```
+
+### Smoke (infra + короткий набор)
+```bash
+./tools/testing/run_e2e.sh smoke   # или default `all`
 ```
 
 ### Хаос-тесты

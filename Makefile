@@ -33,7 +33,7 @@ help:
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
-	@echo "  protocol-check - run protocol contract tests (incl. schemas-validate)"
+	@echo "  protocol-check - local schemas/authority/ae3-lint/i18n/ae-crash (MQTT/WS contracts: CI protocol-check.yml)"
 	@echo "  test-ae-crash-windows - AE3 startup recovery crash-window contract (§9.2)"
 	@echo "  ae3-config-lint - check inline numeric literals in AE3 handlers"
 	@echo "  schemas-validate - validate JSON Schemas under schemas/ against meta-schema"

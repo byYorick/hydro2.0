@@ -125,8 +125,9 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 # Запуск тестов (требует запущенной инфраструктуры)
 ./tools/testing/run_e2e.sh test
 
-# Полный цикл: запуск инфраструктуры + тесты
+# Smoke: infra + короткий набор (не полный YAML-suite)
 ./tools/testing/run_e2e.sh all
+# YAML-suite: ./tools/testing/run_e2e.sh test
 
 # Просмотр логов
 ./tools/testing/run_e2e.sh logs [service_name]

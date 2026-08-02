@@ -51,10 +51,20 @@ docker compose -f docker-compose.e2e.yml ps
 cd tests/node_sim
 python -m node_sim.cli run --config sim.example.yaml
 
-# E2E тест (пример)
+# E2E тест (пример — путь с категорией)
 cd ../e2e
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
+
+### Карта команд (не смешивать)
+
+| Команда | Что делает |
+|---------|------------|
+| `make smoke` | `tools/smoke-test.sh` (узкий suite, напр. E01+E10) |
+| `./tools/testing/run_e2e.sh` / `… smoke` / `… all` | Infra + **smoke** (не полный YAML) |
+| `./tools/testing/run_e2e.sh test` | YAML-suite из SCENARIOS (~35) |
+| `cd backend/laravel && npm run e2e` | Playwright app suite (**8010**) |
+| `make protocol-check` | Локально: schemas/authority/ae3-lint/…; **MQTT/WS contract pytest — в CI** `.github/workflows/protocol-check.yml` |
 
 ## Компоненты системы тестирования
 
@@ -86,18 +96,12 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
 
 Набор критичных сценариев для проверки инвариантов пайплайна.
 
-**Доступные сценарии:**
-- `core/` — bootstrap и auth
-- `commands/` — команды (happy/failed/timeout/duplicate)
-- `alerts/` — алерты (error → alert, dedup, unassigned, DLQ)
-- `snapshot/` — snapshot и replay
-- `infrastructure/` — readiness и bindings
-- `grow_cycle/` — циклы выращивания
-- `automation_engine/` — автоматизация
-- `chaos/` — хаос‑тесты
+**Категории (подкаталоги `tests/e2e/scenarios/`):**
+- `core/`, `commands/`, `alerts/`, `snapshot/`, `infrastructure/`, `grow_cycle/`
+- `automation_engine/`, `ae3lite/`, `scheduler/`, `workflow/`, `calibration/`, `simulation/`
+- `chaos/` (+ realhw — см. `tests/e2e/README.md`)
 
-**Расположение:** `tests/e2e/scenarios/`  
-**Полный список и DoD:** `E2E_SCENARIOS.md`
+**DoD / выбранные сценарии:** `E2E_SCENARIOS.md` (не полный inventory всех YAML).
 
 ## Переменные окружения
 
@@ -161,13 +165,12 @@ tests/
 │
 ├── e2e/                      # E2E тесты
 │   ├── runner/              # Фреймворк для запуска тестов
-│   ├── scenarios/           # YAML сценарии тестов
-│   ├── docker-compose.e2e.yml  # Docker Compose для тестового окружения
-│   └── requirements.txt     # Зависимости
+│   ├── scenarios/<category>/  # YAML сценарии (не flat E*.yaml)
+│   ├── docker-compose.e2e.yml
+│   └── requirements.txt
 │
-└── integration_tests/        # Интеграционные тесты (Python)
-    ├── setup_test_data.py
-    └── test_error_reporting.py
+# Интеграционные Python-тесты — в сервисах:
+# backend/services/**/pytest, make test-ae (не tests/integration_tests/)
 ```
 
 ## Типовые сценарии использования
@@ -187,30 +190,20 @@ python -m node_sim.cli run --config sim.example.yaml --log-level DEBUG
 python -m node_sim.cli multi --config multi.example.yaml
 ```
 
-### Запуск всех E2E сценариев
+### Запуск YAML E2E suite
 
 ```bash
-# Запуск всех сценариев последовательно
+./tools/testing/run_e2e.sh test
+# или точечно:
 cd tests/e2e
-for scenario in scenarios/E*.yaml; do
-    python -m runner.e2e_runner "$scenario"
-done
-```
-
-### Запуск конкретного E2E сценария
-
-```bash
-# Запуск одного сценария
-cd tests/e2e
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ### Отладка E2E теста
 
 ```bash
-# Запуск с подробным логированием
 export LOG_LEVEL=DEBUG
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
+python -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml --verbose
 ```
 
 ## Отчеты и результаты
