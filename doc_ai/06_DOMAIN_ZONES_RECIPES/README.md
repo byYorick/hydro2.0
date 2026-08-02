@@ -84,8 +84,8 @@ Dispatch не-полива для AE3 (`canonical` для lighting/diagnostics p
 
 - [PER_PHASE_EC_TARGET_PLAN.md](PER_PHASE_EC_TARGET_PLAN.md) — `plan`
 - [GREENHOUSE_CLIMATE_CONTROL_PLAN.md](GREENHOUSE_CLIMATE_CONTROL_PLAN.md) — `plan` (см. также блок основных)
-- [GLOBAL_SCHEDULER_ENGINE.md](GLOBAL_SCHEDULER_ENGINE.md) — `superseded` → канон: `SCHEDULER_ENGINE.md`
-- [HYDROPONIC_RECIPES_ENGINE.md](HYDROPONIC_RECIPES_ENGINE.md) — `superseded` → канон: `RECIPE_ENGINE_FULL.md`
+- [GLOBAL_SCHEDULER_ENGINE.md](GLOBAL_SCHEDULER_ENGINE.md) — stub `superseded` → полный текст [`../00_ARCHIVE/SUPERSEDED/`](../00_ARCHIVE/SUPERSEDED/); канон: `SCHEDULER_ENGINE.md`
+- [HYDROPONIC_RECIPES_ENGINE.md](HYDROPONIC_RECIPES_ENGINE.md) — stub `superseded` → [`../00_ARCHIVE/SUPERSEDED/`](../00_ARCHIVE/SUPERSEDED/); канон: `RECIPE_ENGINE_FULL.md`
 
 ---
 

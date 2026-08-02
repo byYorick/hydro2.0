@@ -90,17 +90,20 @@ Breaking-change: несовместимые изменения в защищён
 #### [LARAVEL_AE3_READ_MODEL_CONTRACT.md](LARAVEL_AE3_READ_MODEL_CONTRACT.md)
 Snapshot-контракт read-model Laravel↔AE3 (`canonical`)
 
-### Планы (`plan`)
+### Living plans (`plan`)
 
 - [AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md](AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md)
 - [AE3_NODE_AVAILABILITY_DETECTION_PLAN.md](AE3_NODE_AVAILABILITY_DETECTION_PLAN.md)
 - [AE3_SETUP_BEFORE_IRRIGATION_PLAN.md](AE3_SETUP_BEFORE_IRRIGATION_PLAN.md)
+
+### Архив plans (`archive` stubs → [`../00_ARCHIVE/PLANS/`](../00_ARCHIVE/PLANS/))
+
 - [AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md](AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md)
 - [AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md](AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md)
 - [BACKEND_REFACTOR_PLAN.md](BACKEND_REFACTOR_PLAN.md)
 - [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
 
-Норматив runtime AE3 — `ae3lite.md` (+ IRR/event contracts); планы выше его не переопределяют.
+Норматив runtime AE3 — `ae3lite.md` (+ IRR/event contracts); plans его не переопределяют.
 
 ---
 

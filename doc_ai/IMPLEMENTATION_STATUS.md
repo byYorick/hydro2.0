@@ -20,7 +20,7 @@
 - [x] `DATAFLOW_FULL.md` — **SPEC_READY**
 - [x] `NODE_LIFECYCLE_AND_PROVISIONING.md` — **SPEC_READY**
 - [x] `REPO_MAPPING.md` — **SPEC_READY**
-- [x] `MIGRATION_PLAN_FROM_MESH_HYDRO.md` — **SPEC_READY**
+- [x] Миграция с mesh_hydro 1.x завершена в продукте; план — `archive` stub → `00_ARCHIVE/PLANS/MIGRATION_PLAN_FROM_MESH_HYDRO.md`
 - [ ] `DEV_CONVENTIONS.md` — **SPEC_READY** (создан в рамках текущего шага)
 - [ ] `ROADMAP_2.0.md` — **SPEC_READY** (создан в рамках текущего шага)
 - [ ] Регулярный аудит документации и синхронизация с кодом — **PLANNED**
@@ -76,20 +76,27 @@
 
 ### 2.5. Pump-node
 
-- [x] `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — **SPEC_READY**
-- [x] Базовая структура проекта — **MVP_DONE** (скелет создан)
-- [ ] Управление помпами через INA209 — **IN_PROGRESS** (компонент `ina209` доступен, интеграция в процессе)
-- [ ] Подтверждение команд через ток — **IN_PROGRESS**
-- [ ] Обработка аварий (сухой ход, overcurrent) — **IN_PROGRESS**
-- [ ] Получение команд по MQTT — **IN_PROGRESS**
-- [ ] MVP-тест — **PLANNED**
+- [x] Проект `firmware/nodes/pump_node` + MQTT/framework — **MVP_DONE**
+- [x] Получение/исполнение команд по MQTT — **MVP_DONE**
+- [ ] INA209 / ток / dry-run guards — **IN_PROGRESS** (компонент есть, HW-валидация)
+- [ ] MVP-тест на стенде — **IN_PROGRESS**
 
-### 2.6. Lighting-node
+### 2.5.1. Storage irrigation node
 
-- [x] `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` — **SPEC_READY**
-- [ ] Управление мощностью/каналами света — **PLANNED**
-- [ ] Работа по расписанию/рецептам — **PLANNED**
-- [ ] MVP-тест — **PLANNED**
+- [x] Проект `firmware/nodes/storage_irrigation_node` (two-tank, level_switch, failsafe, `run_pump`) — **MVP_DONE**
+- [x] Prod spec `STORAGE_IRRIGATION_NODE_PROD_SPEC.md` — **SPEC_READY**
+- [ ] Полный HW acceptance на реальном стенде — **IN_PROGRESS**
+
+### 2.6. Lighting-node (sensor)
+
+- [x] Проект `firmware/nodes/light_node` — **сенсорная** нода (`trema_light`, metric `LIGHT`) — **MVP_DONE**
+- [ ] Actuator PWM/WS2811 управление светом — **PLANNED** (не в текущей прошивке; `ws2811_driver` только guide)
+- [ ] MVP-тест на стенде — **IN_PROGRESS**
+
+### 2.7. Relay-node
+
+- [x] Проект `firmware/nodes/relay_node` + MQTT/framework — **MVP_DONE**
+- [ ] MVP-тест на стенде — **IN_PROGRESS**
 
 ---
 
@@ -98,13 +105,13 @@
 - [x] Общая архитектура Python-сервисов описана (`PYTHON_SERVICES_ARCH.md`) — **SPEC_READY** (создан в `doc_ai/04_BACKEND_CORE/` и `backend/services/`)
 - [x] Telemetry ingestor (`history-logger`: приём и запись данных из MQTT, батчинг, upsert в `telemetry_last`) — **MVP_DONE**
 - [x] Zone controller (`automation-engine`: проверка targets, публикация команд корректировки pH/EC) — **MVP_DONE**
-- [x] Scheduler (`scheduler`: расписания поливов/света из recipe phases, публикация команд на MQTT) — **MVP_DONE**
-- [x] Integration bridge (`mqtt-bridge`: FastAPI для отправки команд через MQTT) — **MVP_DONE**
+- [x] Scheduler ownership — **Laravel** `automation:dispatch-schedules` → intents → AE3 wake-up (`start-irrigation` / `start-lighting-tick` / `start-solution-topup` / `start-solution-change` / `start-cycle`); отдельный Python-контейнер `scheduler` **не** в compose и **не** публикует MQTT — **MVP_DONE**
+- [x] Integration bridge (`mqtt-bridge`: FastAPI REST→MQTT / ops) — **MVP_DONE** (каноническая публикация **команд** к узлам — только `history-logger`)
 - [x] Обработка `node_hello` в `history-logger` (регистрация узлов через MQTT) — **MVP_DONE**
 - [x] Обработка `heartbeat` в `history-logger` (uptime, free_heap, rssi) — **MVP_DONE**
-- [x] Публикация `NodeConfig` через MQTT в `mqtt-bridge` — **MVP_DONE**
-- [x] Тесты (pytest) для automation-engine и scheduler — **MVP_DONE**
-- [ ] Интеграционные тесты в docker-compose стенде — **PLANNED**
+- [x] Публикация `NodeConfig`: Laravel `PublishNodeConfigJob` → history-logger → MQTT — **MVP_DONE**
+- [x] Тесты (pytest) для automation-engine / history-logger / mqtt-bridge — **MVP_DONE**
+- [x] Интеграционные AE3-тесты (`make test-ae` → `hydro_test`) — **MVP_DONE**
 
 ---
 
@@ -267,8 +274,8 @@
 
 - [x] Общая концепция AI/digital twin (`09_AI_AND_DIGITAL_TWIN/AI_ARCH_FULL.md` или аналог) — **SPEC_READY**
 - [x] Базовые гайды для ИИ-разработки (`10_AI_DEV_GUIDES`) — **SPEC_READY**
-- [ ] Первая модель прогноза параметров (например, pH/EC) — **PLANNED**
-- [ ] Базовый digital twin для одной зоны — **PLANNED**
+- [x] Сервис `backend/services/digital-twin` (solvers, calibrators, live sim, `zone_dt_params`) — **MVP_DONE** (код есть; не путать с «полная agro-autonomy»)
+- [ ] Первая модель прогноза параметров (например, pH/EC) в UI — **PLANNED**
 - [ ] Интеграция AI-подсказок в UI — **PLANNED**
 
 ---

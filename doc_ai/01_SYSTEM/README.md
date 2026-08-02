@@ -57,19 +57,13 @@ Breaking-change: обратная совместимость со старыми
 #### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
 Реализация отвязки узлов от зон (NodeConfig temp namespace через HL; unbind ≠ отсутствие bind-publish) (`canonical`)
 
-### Планы и proposal (`plan`)
+### Архив plans (`archive` stubs)
 
-#### [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
-**Системный план унификации имён насосов** (`plan`)
-- Один canonical pump id во всех слоях
-- Удаление legacy alias из runtime и UI
-- Rewrite `channel_bindings.role` и authority-configs
+Полные тексты в [`../00_ARCHIVE/PLANS/`](../00_ARCHIVE/PLANS/). На месте — короткие stubs:
 
-#### [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
-Предложение/черновик эволюции архитектуры (`plan`; не подменяет `SYSTEM_ARCH_FULL.md` / `LOGIC_ARCH.md`)
-
-#### [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
-План миграции с mesh_hydro 1.x (`plan`)
+- [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
+- [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
+- [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
 
 ---
 
@@ -97,9 +91,9 @@ Breaking-change: обратная совместимость со старыми
 |----------|--------|
 | `LOGIC_ARCH.md`, `DATAFLOW_FULL.md`, `NODE_*`, `01_PROJECT_STRUCTURE_PROD.md` | `canonical` |
 | `REPO_MAPPING.md` | `guide` |
-| `PUMP_NAMING_UNIFICATION_PLAN.md`, `FULL_SYSTEM_ARCH_PROPOSAL.md`, `MIGRATION_PLAN_FROM_MESH_HYDRO.md` | `plan` |
+| stubs `PUMP_NAMING_*`, `FULL_SYSTEM_ARCH_PROPOSAL`, `MIGRATION_PLAN_*` | `archive` → `00_ARCHIVE/PLANS/` |
 
-Не утверждать, что «все документы раздела SPEC_READY»: в разделе есть активные планы и proposal.
+Canonical-документы раздела — SoT; архивные plans не подменяют их.
 
 ---
 

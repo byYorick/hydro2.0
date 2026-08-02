@@ -80,7 +80,7 @@ Breaking-change: обратная совместимость со старыми
 ### 1.4. Channel (канал узла)
 
 - Логический порт узла: сенсор или актуатор.
-- Идентификатор: `channels.key` → сегмент `{channel}` в MQTT.
+- Идентификатор: `channels.name` / `channels.channel` (NodeConfig) → сегмент `{channel}` в MQTT; в БД — `node_channels.channel`. Поле `channels.key` не используется.
 - Типы:
  - `SENSOR` — pH, EC, температура, влажность, освещённость и т.п.;
  - `ACTUATOR` — насосы, клапаны, освещение, вентиляторы и т.п.;
@@ -152,8 +152,7 @@ Breaking-change: обратная совместимость со старыми
  - приоритет bundle compilation: `system.* -> zone.* -> cycle.*`;
  - cycle snapshot привязывается через `grow_cycles.settings.bundle_revision`;
  - без runtime HTTP-запросов к Laravel internal API.
-5. Python-сервис синхронизирует NodeConfig с узлами:
- - через MQTT-команды и/или REST provisioning (см. `NODE_LIFECYCLE_AND_PROVISIONING.md`).
+5. Laravel публикует NodeConfig на узлы (канон: `PublishNodeConfigJob` → history-logger → MQTT); узел ACK через `config_report` (см. `NODE_LIFECYCLE_AND_PROVISIONING.md`, `CONFIG_REPORT_HANDLING.md`).
 
 ### 3.2. Телеметрия
 
@@ -309,9 +308,9 @@ payload (пример):
 - **Теплица → Зоны → Циклы выращивания → Рецепты → Узлы → Каналы** — новая иерархия.
 - **GrowCycle — центр истины** для агрономической логики.
 - **RecipeRevision** обеспечивает версионирование рецептов.
-- **Effective targets** — единый контракт через Laravel API.
+- **Effective targets** — Laravel API для UI/diagnostics; AE3 runtime читает SQL compiled bundle (без HTTP к Laravel).
 - ESP32 — минимальные исполнительные устройства без бизнес-логики.
-- Python-сервис — контроллер циклов, получает данные через Laravel API.
-- Backend — конфигурация, история, пользователи, API с новыми эндпоинтами.
+- Python AE3 — контроллер циклов/коррекций; команды только через history-logger → MQTT.
+- Backend (Laravel) — конфигурация, scheduler-dispatch, история, пользователи, API.
 - UI/Android — визуализация и ручное управление циклами.
 - **Все решения по pH/EC/климату/поливу принимаются в цикле выращивания, а не в зоне.**

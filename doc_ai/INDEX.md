@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
 **Версия:** 2.4
-**Дата обновления:** 2026-08-02 (навигация/статусы: INDEX + README_STRUCTURE + section README; архив `00_ARCHIVE`; разделы 12/13)
+**Дата обновления:** 2026-08-02 (code-first docs sync: P0–P2 hot-path; см. `SYNC_PLAN.md`)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 
@@ -28,11 +28,11 @@ Breaking-change: обратная совместимость со старыми
 
 ### Планы и roadmap (корень, `plan`)
 - `ROADMAP_2.0.md`, `DEVELOPMENT_PRIORITIES.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`
-- `SYNC_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`
-- `AUDIT_2026_05_28_BUGFIX_PLAN.md`, `AUDIT_2026_07_07_RELIABILITY_PLAN.md`
+- `SYNC_PLAN.md` (code-first drift backlog), `FIRMWARE_OPTIMIZATION_PLAN.md`
 
 ### Архив
-- **[00_ARCHIVE/](00_ARCHIVE/)** — исторические отчёты (`archive`); не SoT. См. [00_ARCHIVE/README.md](00_ARCHIVE/README.md)
+- **[00_ARCHIVE/](00_ARCHIVE/)** — отчёты, superseded-полные тексты, закрытые plans (`archive`); не SoT. См. [00_ARCHIVE/README.md](00_ARCHIVE/README.md)
+- Audit plans (`AUDIT_2026_*`) — stubs в корне → полные тексты в `00_ARCHIVE/PLANS/`
 
 ---
 
@@ -50,9 +50,7 @@ Breaking-change: обратная совместимость со старыми
 - `01_SYSTEM/NODE_DETACH_IMPLEMENTATION.md` — detach/unbind через NodeConfig temp namespace (`canonical`)
 - `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта (`canonical`)
 - `01_SYSTEM/REPO_MAPPING.md` — маппинг репозиториев (`guide`)
-- `01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md` — план унификации имён насосов (`plan`)
-- `01_SYSTEM/FULL_SYSTEM_ARCH_PROPOSAL.md` — proposal архитектуры (`plan`)
-- `01_SYSTEM/MIGRATION_PLAN_FROM_MESH_HYDRO.md` — план миграции с mesh_hydro 1.x (`plan`)
+- Исторические plans (stubs → `00_ARCHIVE/PLANS/`): `PUMP_NAMING_UNIFICATION_PLAN`, `FULL_SYSTEM_ARCH_PROPOSAL`, `MIGRATION_PLAN_FROM_MESH_HYDRO`
 
 **См. также:** [README](01_SYSTEM/README.md)
 
@@ -119,7 +117,8 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md` — архитектура real-time обновлений
 - `04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md` — деплой стека через Docker
 - `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
-- Планы (`plan`): `AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`, `AE3_NODE_AVAILABILITY_DETECTION_PLAN.md`, `AE3_SETUP_BEFORE_IRRIGATION_PLAN.md`, `AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md`, `AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md`, `BACKEND_REFACTOR_PLAN.md`, `REFACTORING_PLAN.md`
+- Living plans (`plan`): `AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`, `AE3_NODE_AVAILABILITY_DETECTION_PLAN.md`, `AE3_SETUP_BEFORE_IRRIGATION_PLAN.md`
+- Архив plans (stubs → `00_ARCHIVE/PLANS/`): `AE3_RELIABILITY_AUDIT_*`, `AE3_REFACTORING_PLAN_*`, `BACKEND_REFACTOR_PLAN`, `REFACTORING_PLAN`
 
 **См. также:** [README](04_BACKEND_CORE/README.md)
 
@@ -156,8 +155,7 @@ Breaking-change: обратная совместимость со старыми
 - `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты
 - `06_DOMAIN_ZONES_RECIPES/ALERTS_AND_NOTIFICATIONS_CHANNELS.md` — каналы алертов/уведомлений
 - `06_DOMAIN_ZONES_RECIPES/PER_PHASE_EC_TARGET_PLAN.md` — план per-phase EC targets (`plan`)
-- `06_DOMAIN_ZONES_RECIPES/GLOBAL_SCHEDULER_ENGINE.md` — legacy global scheduler vision (`superseded` → `SCHEDULER_ENGINE.md`)
-- `06_DOMAIN_ZONES_RECIPES/HYDROPONIC_RECIPES_ENGINE.md` — legacy recipes draft (`superseded` → `RECIPE_ENGINE_FULL.md`)
+- Superseded stubs → полные тексты в `00_ARCHIVE/SUPERSEDED/`: `GLOBAL_SCHEDULER_ENGINE`, `HYDROPONIC_RECIPES_ENGINE` (канон: `SCHEDULER_ENGINE` / `RECIPE_ENGINE_FULL`)
 
 **См. также:** [README](06_DOMAIN_ZONES_RECIPES/README.md)
 
@@ -173,7 +171,8 @@ Breaking-change: обратная совместимость со старыми
 - `07_FRONTEND/API_MAPPING.md` — маппинг frontend → backend API
 - `07_FRONTEND/FRONTEND_TESTING.md` — стратегия тестирования фронтенда (`guide`)
 - `07_FRONTEND/ui_refs/` — референсы UI/UX (изображения)
-- Планы (`plan`): `UI_UX_IMPROVEMENT_PLAN.md`, `FRONTEND_REWORK_PLAN.md`, `LAUNCH_REDESIGN.md`, `LAUNCH_LEGACY_CLEANUP_PLAN.md`, `AUTOMATION_WIZARD_UNIFICATION_PLAN.md`, `ZONE_AUTOMATION_PRESETS_PLAN.md`, `SCHEDULER_COCKPIT_REDESIGN.md`, `SCHEDULER_COCKPIT_IMPLEMENTATION.md`, `SCHEDULER_COCKPIT_MONITORING.md`
+- Living plans (`plan`): `LAUNCH_REDESIGN.md`, `AUTOMATION_WIZARD_UNIFICATION_PLAN.md`, `ZONE_AUTOMATION_PRESETS_PLAN.md`, `SCHEDULER_COCKPIT_REDESIGN.md`, `SCHEDULER_COCKPIT_IMPLEMENTATION.md`, `SCHEDULER_COCKPIT_MONITORING.md`
+- Архив plans (stubs → `00_ARCHIVE/PLANS/`): `UI_UX_IMPROVEMENT_PLAN`, `FRONTEND_REWORK_PLAN`, `LAUNCH_LEGACY_CLEANUP_PLAN`
 
 **См. также:** [README](07_FRONTEND/README.md)
 

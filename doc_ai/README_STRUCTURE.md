@@ -35,17 +35,22 @@ Breaking-change: обратная совместимость со старыми
 - `11_WEBSOCKET_ARCHITECTURE.md` — WebSocket/Reverb и real-time UI (`canonical`)
 - `IMPLEMENTATION_STATUS.md` — сводный статус реализации (`guide`)
 - `README_STRUCTURE.md` — это описание структуры папок
-- Планы в корне (`plan`): `ROADMAP_2.0.md`, `DEVELOPMENT_PRIORITIES.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`, `SYNC_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`, audit-планы `AUDIT_*.md`
+- Планы в корне (`plan`): `ROADMAP_2.0.md`, `DEVELOPMENT_PRIORITIES.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`, `SYNC_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`
+- Закрытые audit-plans: stubs `AUDIT_*.md` → полные тексты в `00_ARCHIVE/PLANS/`
 
 ## 00_ARCHIVE
-Исторические отчёты и промежуточные материалы (**статус `archive`**). Не являются source of truth для текущей разработки.
+Исторические отчёты, superseded-полные тексты и закрытые plans (**статус `archive`**). Не SoT.
 
-Структура (~57 markdown-файлов):
+Структура:
 - `REPORTS/` — аудиты кода/документации, cleanup, gaps, backend/python отчёты;
 - `PHASE_REPORTS/` — промежуточные отчёты фаз рефакторинга backend;
-- `FRONTEND_REPORTS/` — аудиты и доработки frontend.
+- `FRONTEND_REPORTS/` — аудиты и доработки frontend;
+- `SUPERSEDED/` — полные тексты документов, заменённых каноном (stubs остаются в рабочих разделах);
+- `PLANS/` — закрытые audit/refactor/UI plans (stubs на старых путях).
 
-Точка входа: [00_ARCHIVE/README.md](00_ARCHIVE/README.md). Актуальный статус реализации — `IMPLEMENTATION_STATUS.md` в корне `doc_ai/`.
+Точка входа: [00_ARCHIVE/README.md](00_ARCHIVE/README.md). Актуальный статус — `IMPLEMENTATION_STATUS.md`.
+
+> `11_LEGACY_ARCHIVES/` (zip-дампы) удалён 2026-08-02.
 
 ## 01_SYSTEM
 Высокоуровневая системная архитектура и потоки данных:
