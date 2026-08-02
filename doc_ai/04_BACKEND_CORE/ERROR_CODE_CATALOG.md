@@ -268,6 +268,7 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `solution_change_zone_not_ready` | `ae3_ingress` | `workflow_phase != ready` | `Подмена раствора доступна только когда зона в фазе «готова».` |
 | `solution_change_active_irrigation` | `ae3_ingress` | Активный полив | `Дождитесь завершения полива перед подменой раствора.` |
 | `solution_change_disabled` | `ae3_config` | `subsystems.solution_change.enabled=false` | `Подмена раствора отключена в настройках зоны/рецепта.` |
+| `solution_change_drain_channel_missing` | `ae3_config` | На irrig-ноде нет канала `valve_drain` | `Подмена раствора недоступна: на ноде полива нет канала слива.` |
 | `solution_change_topology_unsupported` | `ae3_config` | Не two-tank / нет IRR | `Контур зоны не поддерживает автоматическую подмену раствора.` |
 | `solution_drain_timeout_stop` | `solution_drain_check` | Слив не завершён за `solution_drain_timeout_sec` | `Слив раствора не завершился в отведённое время.` |
 | `solution_drain_incomplete_stop` | `solution_drain_check` | Уровень не подтверждён empty после drain | `Бак раствора не опустошён — подмена остановлена.` |

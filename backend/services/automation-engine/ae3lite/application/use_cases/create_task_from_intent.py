@@ -608,6 +608,35 @@ class CreateTaskFromIntentUseCase:
                 details={"zone_id": zone_id},
             )
 
+        # Current storage_irrigation_node firmware map has no valve_drain GPIO.
+        # Fail-closed until irrig node exposes the channel (test_node / future HW).
+        has_drain_channel = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM nodes n
+                JOIN node_channels nc ON nc.node_id = n.id
+                WHERE n.zone_id = $1
+                  AND LOWER(COALESCE(n.type, '')) = 'irrig'
+                  AND LOWER(COALESCE(nc.channel, '')) = 'valve_drain'
+                  AND UPPER(COALESCE(nc.type, '')) IN ('ACTUATOR', 'SERVICE')
+                  AND COALESCE(nc.is_active, TRUE) = TRUE
+            )
+            """,
+            zone_id,
+        )
+        if not bool(has_drain_channel):
+            raise TaskCreateError(
+                "solution_change_drain_channel_missing",
+                "Подмена раствора требует канал valve_drain на irrig-ноде; "
+                "в текущем firmware map storage_irrigation_node канал отсутствует",
+                details={
+                    "zone_id": zone_id,
+                    "required_channel": "valve_drain",
+                    "node_type": "irrig",
+                },
+            )
+
     async def _resolve_solution_change_enabled_from_bundle(self, *, zone_id: int, conn: Any) -> bool:
         row = await conn.fetchrow(
             """

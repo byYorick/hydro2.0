@@ -21,8 +21,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## Канонический контракт
 
 - `node_type` в runtime и `node_hello`: `irrig`.
-- Канальный профиль: `6 actuator + 4 level-switch`.
+- Канальный профиль: `6 actuator + 4 level-switch` + сервисный `storage_state`.
 - Сервисный channel без GPIO: `storage_state`.
+- `valve_drain` в production map отсутствует (нет GPIO); AE3 `solution_change`/`solution_drain`
+  fail-closed с `solution_change_drain_channel_missing`, пока канал не добавлен в firmware.
 - Основная команда актуатора: `set_relay` с `params.state`.
 - Timed irrigation: `pump_main/run_pump {duration_ms}` (alias поверх `set_relay` + `duration_ms`, cap `3600000`).
 - Сервисный канал two-tank: `storage_state/state` (возвращает `details.snapshot` + `details.state` + freshness-поля).
@@ -35,7 +37,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_fill + valve_solution_supply` и публикует `recirculation_solution_low`.
   - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
 - Каждый `level_*` канал дополнительно публикует собственный MQTT event на оба перехода (`0 -> 1`, `1 -> 0`) после debounce; первая публикация после boot/reconnect помечается `initial=true`.
-- На `GPIO23` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания нода восстанавливает снимок состояний, который был до нажатия.
+- На `GPIO15` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания нода восстанавливает снимок состояний, который был до нажатия.
 - Терминальные статусы: latched `set_relay` / stage-arm → сразу `DONE`; transient `duration_ms` / `run_pump` → `ACK` → `DONE`/`ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
@@ -46,22 +48,22 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `I2C SDA` (INA209 + OLED): `GPIO21`
 - `I2C SCL` (INA209 + OLED): `GPIO22`
 - `Factory reset button`: `GPIO0` (active-low, hold 10s)
-- `E-Stop button`: `GPIO23` (active-low, pull-up)
+- `E-Stop button`: `GPIO15` (active-low, pull-up)
 
 ### GPIO каналов IRR
 
 Каналы, GPIO и default-параметры зашиты в прошивке (`main/storage_irrigation_node_config.c`) и не принимаются извне:
 
-- `pump_main` -> `GPIO25`
-- `valve_clean_fill` -> `GPIO26`
-- `valve_clean_supply` -> `GPIO32`
-- `valve_solution_fill` -> `GPIO33`
-- `valve_solution_supply` -> `GPIO14`
-- `valve_irrigation` -> `GPIO27`
-- `level_clean_min` -> `GPIO16`
-- `level_clean_max` -> `GPIO17`
-- `level_solution_min` -> `GPIO18`
-- `level_solution_max` -> `GPIO19`
+- `pump_main` -> `GPIO13`
+- `valve_clean_fill` -> `GPIO12`
+- `valve_clean_supply` -> `GPIO14`
+- `valve_solution_fill` -> `GPIO27`
+- `valve_solution_supply` -> `GPIO26`
+- `valve_irrigation` -> `GPIO25`
+- `level_clean_min` -> `GPIO33`
+- `level_clean_max` -> `GPIO32`
+- `level_solution_min` -> `GPIO35`
+- `level_solution_max` -> `GPIO34`
 
 Логика level-switch:
 - входы подтянуты к `VCC` (`pull-up`)

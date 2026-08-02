@@ -36,9 +36,12 @@ class _FakeConn:
         self.fetchval_calls: list[tuple[str, tuple[object, ...]]] = []
         self.fetchrow_calls: list[tuple[str, tuple[object, ...]]] = []
         self.fetchrow_results: list[object] = []
+        self.fetchval_results: list[object] = []
 
     async def fetchval(self, query: str, *args):
         self.fetchval_calls.append((query, args))
+        if self.fetchval_results:
+            return self.fetchval_results.pop(0)
         return True
 
     async def fetchrow(self, query: str, *args):
@@ -374,3 +377,39 @@ async def test_ensure_solution_change_preconditions_allows_when_no_active_irriga
     ]
 
     await use_case._ensure_solution_change_preconditions(zone_id=7, meta=meta, conn=conn)
+
+
+@pytest.mark.asyncio
+async def test_ensure_solution_change_preconditions_rejects_missing_valve_drain() -> None:
+    conn = _FakeConn()
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=_TaskRepo(conn),
+        zone_lease_repository=_LeaseRepo(conn),
+        zone_intent_repository=PgZoneIntentRepository(),
+        zone_alert_repository=_AlertRepo(conn),
+    )
+    meta = SimpleNamespace(task_type="solution_change", topology="two_tank")
+    conn.fetchrow_results = [
+        {"workflow_phase": "ready"},
+        None,
+        {
+            "config": {
+                "zone": {
+                    "logic_profile": {
+                        "active_profile": {
+                            "subsystems": {
+                                "solution_change": {"enabled": True},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    ]
+    conn.fetchval_results = [False]
+
+    with pytest.raises(TaskCreateError) as exc:
+        await use_case._ensure_solution_change_preconditions(zone_id=7, meta=meta, conn=conn)
+
+    assert exc.value.code == "solution_change_drain_channel_missing"
+    assert exc.value.details["required_channel"] == "valve_drain"

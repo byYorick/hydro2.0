@@ -2,7 +2,7 @@
 # Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
 
 **Версия:** 1.3
-**Дата обновления:** 2026-04-09
+**Дата обновления:** 2026-07-31
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -38,17 +38,23 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 3.1. Поддерживаемые каналы
 
-- `pump_main` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO25`)
-- `valve_clean_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO26`)
-- `valve_clean_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO32`)
-- `valve_solution_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO33`)
-- `valve_solution_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO14`)
-- `valve_irrigation` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO27`)
-- `level_clean_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO16`)
-- `level_clean_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO17`)
-- `level_solution_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO18`)
-- `level_solution_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO19`)
+- `pump_main` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO13`)
+- `valve_clean_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO12`)
+- `valve_clean_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO14`)
+- `valve_solution_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO27`)
+- `valve_solution_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO26`)
+- `valve_irrigation` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO25`)
+- `level_clean_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO33`)
+- `level_clean_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO32`)
+- `level_solution_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO35`)
+- `level_solution_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO34`)
 - сервисный командный канал `storage_state` (без отдельного GPIO, для `state`/`event`)
+
+Вне текущего firmware map:
+- `valve_drain` — **не реализован** на production `storage_irrigation_node` (нет GPIO в HW-карте).
+  AE3 `solution_change` / `solution_drain_*` требуют этот канал и fail-closed с
+  `solution_change_drain_channel_missing`, пока канал не появится на irrig-ноде
+  (есть в `test_node` для HIL).
 
 Для всех 4 `level_*` датчиков:
 - вход подтянут к `VCC` (`pull-up`);
@@ -107,7 +113,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   по `level_solution_min=0` с событием `recirculation_solution_low`;
 - при включённом `irrigation_solution_min_guard_enabled` нода завершает `irrigation`
   по `level_solution_min=0` с событием `irrigation_solution_low`;
-- отдельная физическая кнопка `E-Stop` на `GPIO23` (active-low, pull-up) пока удерживается в нажатом состоянии
+- отдельная физическая кнопка `E-Stop` на `GPIO15` (active-low, pull-up) пока удерживается в нажатом состоянии
   принудительно выключает все 6 актуаторов и отклоняет MQTT `set_relay {state:true}` с
   `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
   На нажатие нода публикует `emergency_stop_activated`, на отпускание локально восстанавливает
@@ -163,7 +169,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - I2C SDA: `GPIO21`
 - I2C SCL: `GPIO22`
 - Factory reset button: `GPIO0` (active-low)
-- E-Stop button: `GPIO23` (active-low, pull-up)
+- E-Stop button: `GPIO15` (active-low, pull-up)
 
 Примечание:
 - `GPIO21/22` используются для INA209 и OLED;

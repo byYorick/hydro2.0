@@ -11,7 +11,7 @@
       "name": "pump_main",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
-      "gpio": 25,
+      "gpio": 13,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -21,7 +21,7 @@
       "name": "valve_clean_fill",
       "type": "ACTUATOR",
       "actuator_type": "VALVE",
-      "gpio": 26,
+      "gpio": 12,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -31,7 +31,7 @@
       "name": "valve_clean_supply",
       "type": "ACTUATOR",
       "actuator_type": "VALVE",
-      "gpio": 27,
+      "gpio": 14,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -41,7 +41,7 @@
       "name": "valve_solution_fill",
       "type": "ACTUATOR",
       "actuator_type": "VALVE",
-      "gpio": 32,
+      "gpio": 27,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -51,7 +51,7 @@
       "name": "valve_solution_supply",
       "type": "ACTUATOR",
       "actuator_type": "VALVE",
-      "gpio": 33,
+      "gpio": 26,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -61,7 +61,7 @@
       "name": "valve_irrigation",
       "type": "ACTUATOR",
       "actuator_type": "VALVE",
-      "gpio": 14,
+      "gpio": 25,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -73,7 +73,7 @@
       "metric": "WATER_LEVEL_SWITCH",
       "poll_interval_ms": 5000,
       "unit": "bool",
-      "gpio": 16,
+      "gpio": 33,
       "active_low": false
     },
     {
@@ -82,7 +82,7 @@
       "metric": "WATER_LEVEL_SWITCH",
       "poll_interval_ms": 5000,
       "unit": "bool",
-      "gpio": 17,
+      "gpio": 32,
       "active_low": false
     },
     {
@@ -91,7 +91,7 @@
       "metric": "WATER_LEVEL_SWITCH",
       "poll_interval_ms": 5000,
       "unit": "bool",
-      "gpio": 18,
+      "gpio": 35,
       "active_low": false
     },
     {
@@ -100,8 +100,13 @@
       "metric": "WATER_LEVEL_SWITCH",
       "poll_interval_ms": 5000,
       "unit": "bool",
-      "gpio": 19,
+      "gpio": 34,
       "active_low": false
+    },
+    {
+      "name": "storage_state",
+      "type": "ACTUATOR",
+      "actuator_type": "SYSTEM"
     }
   ],
   "fail_safe_guards": {
