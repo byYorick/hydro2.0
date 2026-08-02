@@ -538,8 +538,8 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 - OTA защищена: SHA256, версия, signed URL, HMAC запроса.
 - MQTT должен быть закрыт для внешних сетей; Wi-Fi — скрытый, WPA2/WPA3.
 - Pessimistic locking (`SELECT FOR UPDATE`) при публикации конфигов; PostgreSQL advisory lock для дедупликации; кэш-дедупликация 60 сек.
-- Rate limiting: **120 req/min/IP стандартно** (production; `API_THROTTLE` env override); 300 req/min для system/health endpoints; auth endpoints — 10 req/min/IP + 5 неудачных попыток per email/IP; регистрация узлов — 10 req/min/node_uid + burst 120/min/IP; IP whitelist (`services.node_registration.allowed_ips`, массив CIDR/IP-строк после миграции 2026-05-28).
-- Docker network — `internal: true` для отключения внешней доступности.
+- Rate limiting: конфиг **120 req/min/IP** (`API_THROTTLE`); на auth API-группе часто **двойной** throttle → effective ≈60; system/health — 300/min; auth API — 10/min/IP (**без** LoginRequest lockout — lockout 5/email|IP только web Breeze); регистрация узлов — `throttle:node_register` + IP whitelist (`services.node_registration.allowed_ips`).
+- Docker network: **prod target** — изолированная сеть; **dev compose** — bridge + published ports (не `internal: true`).
 - **Роли/авторизацию (`auth/roles`) не менять** без явной необходимости и тестов.
 
 ### Локальные AGENTS.md (обязательно читать при работе в подкаталоге)
