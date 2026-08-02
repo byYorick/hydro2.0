@@ -38,33 +38,39 @@
 
 ## COMMANDS
 
+Канон статусов (см. `MQTT_SPEC_FULL.md` §8, `COMMAND_VALIDATION_ENGINE.md` §6):
+- node `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`
+- HL/DB: `QUEUED → SENT → ACK → DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT`, либо `SEND_FAILED` при publish fail
+- `ACCEPTED`/`FAILED` запрещены
+- Acceptance: mutating success = terminal `DONE`; fail = `ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`
+
 ### E10_command_happy.yaml
-**DoD:** команда → DONE + WS событие + zone_events запись
+**DoD:** команда → terminal `DONE` + WS событие + zone_events запись
 
 Проверяет успешный путь выполнения команды:
 - Отправка команды через API
-- Узел получает команду и отвечает ACK
-- Узел выполняет команду и отвечает DONE
-- Статус команды обновляется в БД
+- Узел получает команду и отвечает `ACK`
+- Узел выполняет команду и отвечает terminal `DONE` (mutating success)
+- Статус команды обновляется в БД до `DONE`
 - WebSocket событие CommandStatusUpdated отправляется
 - Запись в zone_events создается
 
 ### E11_command_failed.yaml
-**DoD:** node-sim отвечает FAILED, DB status=FAILED + WS
+**DoD:** node-sim отвечает terminal fail (`ERROR` — типичный кейс), DB status = тот же terminal fail + WS
 
 Проверяет обработку неуспешной команды:
 - Команда отправляется узлу
-- Узел отвечает FAILED
-- Статус команды в БД = FAILED
+- Узел отвечает terminal fail: обычно `ERROR` (также допустимы `INVALID`/`BUSY`/`NO_EFFECT` по сценарию)
+- Статус команды в БД = соответствующий terminal fail (не `FAILED`)
 - WebSocket событие отправляется
 
 ### E12_command_timeout.yaml
-**DoD:** node-sim не отвечает, проверка TIMEOUT
+**DoD:** node-sim не отвечает, проверка `TIMEOUT`
 
 Проверяет обработку команды с таймаутом:
 - Команда отправляется узлу
 - Узел не отвечает
-- Система устанавливает статус TIMEOUT
+- Система устанавливает статус `TIMEOUT` (HL/backend timeout; не путать с `SEND_FAILED`)
 - При необходимости создается alert или zone_event
 
 ### E13_command_duplicate_response.yaml
@@ -72,16 +78,30 @@
 
 Проверяет устойчивость к дублирующимся ответам:
 - Команда отправляется
-- Узел отправляет DONE ответ дважды
-- Статус команды остается DONE (не нарушается)
+- Узел отправляет `DONE` ответ дважды
+- Статус команды остается `DONE` (не нарушается; монотонность)
 
 ### E14_command_response_before_sent.yaml
 **DoD:** быстрый response, stub/UPSERT не ломает финал
 
 Проверяет обработку быстрого ответа:
-- Узел отвечает на команду до того, как она была помечена как SENT
+- Узел отвечает на команду до того, как она была помечена как `SENT`
 - Система корректно обрабатывает такой ответ (stub/UPSERT)
-- Финальный статус команды остается корректным
+- Финальный статус команды остаётся каноничным (`DONE` или terminal fail)
+
+### E15_command_ack_flow.yaml
+**DoD:** явный путь `ACK` → terminal `DONE` (или fail) без пропуска промежуточного статуса
+
+### E16_command_timeout_flow.yaml
+**DoD:** расширенный timeout-flow (вариация E12); финал = `TIMEOUT`, не `SEND_FAILED` / не `FAILED`
+
+### E17_command_failed_flow.yaml
+**DoD:** расширенный fail-flow (вариация E11); DB/WS = каноничный terminal fail (`ERROR`/`INVALID`/…)
+
+### E18_command_duplicate_response.yaml
+**DoD:** duplicate `DONE` (вариация E13); монотонность статуса сохраняется
+
+Фактические файлы: `tests/e2e/scenarios/commands/E10_*.yaml` … `E18_*.yaml`.
 
 ## ALERTS
 
@@ -243,7 +263,7 @@
 - Targets из active stage
 - AE формирует команду (fan/vent/heater)
 - node-sim выполняет
-- Команды DONE + WS
+- Команды → terminal `DONE` + WS
 
 ### E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml
 **DoD:** missing actuator plan → AE3 fail-closed до MQTT (realhw)

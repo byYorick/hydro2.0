@@ -191,7 +191,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Поля:**
 - `name` (string, обязательное) — имя канала
 - `type` (string, обязательное) — `"ACTUATOR"`
-- `actuator_type` (string, обязательное) — тип актуатора: `PUMP`, `PERISTALTIC_PUMP`, `RELAY`, `VALVE`, `DRIVE`, `FAN`, `HEATER`, `LED`, `PWM`
+- `actuator_type` (string, обязательное) — тип актуатора: `PUMP`, `PERISTALTIC_PUMP`, `RELAY`, `VALVE`, `DRIVE`, `FAN`, `HEATER`, `LED`, `PWM`, `SYSTEM`
+  - `SYSTEM` — firmware-locked service channel без GPIO (irrig: `storage_state`; см. `STORAGE_IRRIGATION_NODE_PROD_SPEC.md`)
 - `safe_limits` (object, необязательное) — безопасные лимиты:
   - `max_duration_ms` — максимальная длительность работы в мс
   - `min_off_ms` — минимальное время простоя в мс

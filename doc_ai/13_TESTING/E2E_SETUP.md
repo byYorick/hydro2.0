@@ -48,14 +48,20 @@ tests/e2e/
 | Код | Сценарий | DoD |
 |-----|----------|-----|
 | E01 | core/E01_bootstrap | telemetry в БД + online статус |
-| E10 | commands/E10_command_happy | команда → DONE + WS событие |
+| E10 | commands/E10_command_happy | команда → terminal `DONE` + WS событие |
+
+Acceptance criteria (commands):
+- mutating success = terminal `DONE`;
+- fail = `ERROR` | `INVALID` | `BUSY` | `NO_EFFECT` | `TIMEOUT` | `SEND_FAILED` (последний — HL/transport, не от ноды).
 
 Полный список сценариев и DoD: `E2E_SCENARIOS.md`.
 
 ### 4. Инварианты пайплайна
 
 #### Команды
-- Статусы: `QUEUED → SENT → ACCEPTED → DONE/FAILED/TIMEOUT`
+- HL/DB lifecycle: `QUEUED → SENT → ACK → DONE` (или terminal fail: `NO_EFFECT` | `ERROR` | `INVALID` | `BUSY` | `TIMEOUT`; publish fail без ACK: `SEND_FAILED`)
+- Node `command_response.status` (MQTT-канон): `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`
+- Статусы `ACCEPTED`/`FAILED` **запрещены**
 - Без откатов (монотонность)
 - Идемпотентность по `cmd_id`
 
@@ -86,7 +92,7 @@ tests/e2e/
 #### Node Simulator (node-sim)
 - Поддержка `normal` и `temp` (preconfig) топиков
 - Публикация: telemetry, status, heartbeat, error
-- Прием команд и ответы: ACCEPTED → DONE/FAILED
+- Прием команд и ответы: `ACK` → terminal `DONE` (success) или `ERROR`/`INVALID`/`BUSY`/`NO_EFFECT`/`TIMEOUT` (fail)
 - Идемпотентность по `cmd_id` (LRU cache)
 - Режимы отказов: overcurrent, no_flow, duplicate response, delayed response
 

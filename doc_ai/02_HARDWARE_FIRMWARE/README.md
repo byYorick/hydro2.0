@@ -109,7 +109,17 @@ Production-спецификация `storage_irrigation_node`:
 ### Стандарты кодирования
 
 #### [ESP32_C_CODING_STANDARDS.md](ESP32_C_CODING_STANDARDS.md)
-Стандарты кодирования для ESP32
+Стандарты кодирования для ESP32 (`canonical` для C naming)
+
+### Аудиты и задачи
+
+#### [MEMORY_SAFETY_AUDIT.md](MEMORY_SAFETY_AUDIT.md)
+Аудит memory safety прошивок (`guide`)
+
+#### [TASK_INA209_PUMP_NODE.md](TASK_INA209_PUMP_NODE.md)
+Задача по INA209 на pump_node (`plan`)
+
+> `CONFIG_RESPONSE_HANDLING.md` — `superseded` stub; канон ACK — `CONFIG_REPORT_HANDLING.md`.
 
 ## 🔗 Связанные разделы
 

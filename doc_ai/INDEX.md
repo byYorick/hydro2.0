@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
-**Версия:** 2.3
-**Дата обновления:** 2026-05-28 (большая sync-итерация: AE3 runtime, NOTIFY каналы, error codes, MQTT message types, frontend Unified Dashboard, firmware lifecycle, security HMAC tolerance, scheduler chain, Laravel роли, IP whitelist fix)
+**Версия:** 2.4
+**Дата обновления:** 2026-08-02 (навигация/статусы: INDEX + README_STRUCTURE + section README; архив `00_ARCHIVE`; разделы 12/13)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 
@@ -9,19 +9,30 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
+**Статусы в навигации:** `canonical` · `guide` · `plan` · `superseded` · `archive` — см. [README_STRUCTURE.md](README_STRUCTURE.md).
+
 ---
 
 ## 🗺️ Быстрая навигация
 
 ### Начало работы
-- **[SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md)** — главный входной документ по архитектуре
-- **[ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md)** — защищённые pipeline и инварианты AE3
+- **[SYSTEM_ARCH_FULL.md](SYSTEM_ARCH_FULL.md)** — главный входной документ по архитектуре (`canonical`)
+- **[ARCHITECTURE_FLOWS.md](ARCHITECTURE_FLOWS.md)** — защищённые pipeline и инварианты AE3 (`canonical`)
 - **[README_STRUCTURE.md](README_STRUCTURE.md)** — описание структуры документации
-- **[DEV_CONVENTIONS.md](DEV_CONVENTIONS.md)** — конвенции разработки
-- **[11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md)** — WebSocket (Reverb) и real-time UI
+- **[DEV_CONVENTIONS.md](DEV_CONVENTIONS.md)** — конвенции разработки (`canonical`)
+- **[11_WEBSOCKET_ARCHITECTURE.md](11_WEBSOCKET_ARCHITECTURE.md)** — WebSocket (Reverb) и real-time UI (`canonical`)
+- **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)** — сводный статус реализации (`guide`)
 
 ### Работа с ИИ-агентами
-- **[TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md)** — правила постановки задач для ИИ-агентов
+- **[TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md)** — правила постановки задач для ИИ-агентов (`guide`)
+
+### Планы и roadmap (корень, `plan`)
+- `ROADMAP_2.0.md`, `DEVELOPMENT_PRIORITIES.md`, `AGRO_AUTONOMY_MASTER_PLAN.md`
+- `SYNC_PLAN.md`, `FIRMWARE_OPTIMIZATION_PLAN.md`
+- `AUDIT_2026_05_28_BUGFIX_PLAN.md`, `AUDIT_2026_07_07_RELIABILITY_PLAN.md`
+
+### Архив
+- **[00_ARCHIVE/](00_ARCHIVE/)** — исторические отчёты (`archive`); не SoT. См. [00_ARCHIVE/README.md](00_ARCHIVE/README.md)
 
 ---
 
@@ -31,14 +42,17 @@ Breaking-change: обратная совместимость со старыми
 Высокоуровневая архитектура, логика, потоки данных.
 
 **Ключевые документы:**
-- `01_SYSTEM/LOGIC_ARCH.md` — логическая модель (Теплица → Зоны → Ноды → Каналы)
-- `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config: Laravel→HL→MQTT + `config_report`)
-- `01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md` — системный план перехода к единым canonical именам насосов
-- `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md` — жизненный цикл узлов
-- `01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md` — pending bind + `PublishNodeConfigJob` + wire ACK
-- `01_SYSTEM/NODE_ADDITION_AND_ACTIVATION_FLOW.md` — добавление/активация ноды
-- `01_SYSTEM/NODE_DETACH_IMPLEMENTATION.md` — detach/unbind через NodeConfig temp namespace
-- `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта
+- `01_SYSTEM/LOGIC_ARCH.md` — логическая модель (Теплица → Зоны → Ноды → Каналы) (`canonical`)
+- `01_SYSTEM/DATAFLOW_FULL.md` — потоки данных (telemetry, commands, config: Laravel→HL→MQTT + `config_report`) (`canonical`)
+- `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md` — жизненный цикл узлов (`canonical`)
+- `01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md` — pending bind + `PublishNodeConfigJob` + wire ACK (`canonical`)
+- `01_SYSTEM/NODE_ADDITION_AND_ACTIVATION_FLOW.md` — добавление/активация ноды (`canonical`)
+- `01_SYSTEM/NODE_DETACH_IMPLEMENTATION.md` — detach/unbind через NodeConfig temp namespace (`canonical`)
+- `01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — структура проекта (`canonical`)
+- `01_SYSTEM/REPO_MAPPING.md` — маппинг репозиториев (`guide`)
+- `01_SYSTEM/PUMP_NAMING_UNIFICATION_PLAN.md` — план унификации имён насосов (`plan`)
+- `01_SYSTEM/FULL_SYSTEM_ARCH_PROPOSAL.md` — proposal архитектуры (`plan`)
+- `01_SYSTEM/MIGRATION_PLAN_FROM_MESH_HYDRO.md` — план миграции с mesh_hydro 1.x (`plan`)
 
 **См. также:** [README](01_SYSTEM/README.md)
 
@@ -63,6 +77,8 @@ Breaking-change: обратная совместимость со старыми
 - `02_HARDWARE_FIRMWARE/STORAGE_IRRIGATION_NODE_PROD_SPEC.md` — irrigation-node prod spec
 - `02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md`, `TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md` — test-node
 - `02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md` — device-node протокол
+- `02_HARDWARE_FIRMWARE/MEMORY_SAFETY_AUDIT.md` — аудит memory safety firmware (`guide`)
+- `02_HARDWARE_FIRMWARE/TASK_INA209_PUMP_NODE.md` — задача INA209 на pump_node (`plan`)
 
 **См. также:** [README](02_HARDWARE_FIRMWARE/README.md)
 
@@ -72,10 +88,12 @@ Breaking-change: обратная совместимость со старыми
 Протокол MQTT, топики, контракты, валидация.
 
 **Ключевые документы:**
-- `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — полная спецификация MQTT
-- `03_TRANSPORT_MQTT/MQTT_NAMESPACE.md` — структура топиков
-- `03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и узлами
-- `03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` — валидация команд
+- `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — полная спецификация MQTT (`canonical`)
+- `03_TRANSPORT_MQTT/MQTT_NAMESPACE.md` — структура топиков (`canonical`)
+- `03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и узлами (`canonical`)
+- `03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` — валидация команд (`canonical`)
+- `03_TRANSPORT_MQTT/STATUS_PUBLISH_IMPLEMENTATION_CHECK.md` — check-list status publish (`guide`)
+- `03_TRANSPORT_MQTT/MQTT_LOAD_BALANCING.md` — multi-broker LB (`plan`; вне текущей каноники одного брокера)
 
 **См. также:** [README](03_TRANSPORT_MQTT/README.md)
 
@@ -88,20 +106,20 @@ Breaking-change: обратная совместимость со старыми
 - `04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — архитектура backend
 - `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md` — единый authority automation/runtime-конфигов
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
-- `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state`
-- `04_BACKEND_CORE/AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md` — план улучшения startup recovery после рестарта AE
-- `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job
-- `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3
-- `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation
-- `04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` — channel-level events для level_switch
+- `04_BACKEND_CORE/ae3lite.md` — каноническая спецификация AE3-Lite (automation-engine), rollout/rollback; §9.4.1 UI `observability` в `/state` (`canonical`)
+- `04_BACKEND_CORE/LARAVEL_AE3_READ_MODEL_CONTRACT.md` — snapshot-контракт read-model Laravel↔AE3 + CI-job (`canonical`)
+- `04_BACKEND_CORE/AE3_RUNTIME_EVENT_CONTRACT.md` — runtime-event контракт AE3 (`canonical`)
+- `04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` — failsafe / E-Stop контракт irrigation (`canonical`)
+- `04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` — channel-level events для level_switch (`canonical`)
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` — API-спецификация
 - `04_BACKEND_CORE/REST_API_REFERENCE.md` — REST API справочник
-- `04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт публикации команд и ingest
-- `04_BACKEND_CORE/ERROR_CODE_CATALOG.md` — каталог кодов ошибок backend/AE3
-- `04_BACKEND_CORE/END_TO_END_WORKFLOW_GUIDE.md` — сквозные сценарии и точки интеграции
+- `04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт публикации команд и ingest (`canonical`)
+- `04_BACKEND_CORE/ERROR_CODE_CATALOG.md` — каталог кодов ошибок backend/AE3 (`canonical`)
+- `04_BACKEND_CORE/END_TO_END_WORKFLOW_GUIDE.md` — сквозные сценарии и точки интеграции (`guide`)
 - `04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md` — архитектура real-time обновлений
 - `04_BACKEND_CORE/FULL_STACK_DEPLOY_DOCKER.md` — деплой стека через Docker
 - `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
+- Планы (`plan`): `AE3_STARTUP_RECOVERY_IMPROVEMENT_PLAN.md`, `AE3_NODE_AVAILABILITY_DETECTION_PLAN.md`, `AE3_SETUP_BEFORE_IRRIGATION_PLAN.md`, `AE3_RELIABILITY_AUDIT_AND_REMEDIATION_PLAN.md`, `AE3_REFACTORING_PLAN_FOR_AI_AGENTS.md`, `BACKEND_REFACTOR_PLAN.md`, `REFACTORING_PLAN.md`
 
 **См. также:** [README](04_BACKEND_CORE/README.md)
 
@@ -132,10 +150,14 @@ Breaking-change: обратная совместимость со старыми
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` — dispatch не-полива для AE3 (lighting реализован, diagnostics через compat-path)
 - `06_DOMAIN_ZONES_RECIPES/GREENHOUSE_CLIMATE_CONTROL_PLAN.md` — план общего greenhouse climate runtime и алгоритма форточек
-- `06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md` — справочник PID-конфигов
+- `06_DOMAIN_ZONES_RECIPES/PID_CONFIG_REFERENCE.md` — справочник PID-конфигов (`canonical`)
+- `06_DOMAIN_ZONES_RECIPES/CONTROL_MODES_SPEC.md` — режимы auto/semi/manual (`canonical`)
 - `06_DOMAIN_ZONES_RECIPES/WATER_FLOW_ENGINE.md` — движок водного потока
 - `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты
 - `06_DOMAIN_ZONES_RECIPES/ALERTS_AND_NOTIFICATIONS_CHANNELS.md` — каналы алертов/уведомлений
+- `06_DOMAIN_ZONES_RECIPES/PER_PHASE_EC_TARGET_PLAN.md` — план per-phase EC targets (`plan`)
+- `06_DOMAIN_ZONES_RECIPES/GLOBAL_SCHEDULER_ENGINE.md` — legacy global scheduler vision (`superseded` → `SCHEDULER_ENGINE.md`)
+- `06_DOMAIN_ZONES_RECIPES/HYDROPONIC_RECIPES_ENGINE.md` — legacy recipes draft (`superseded` → `RECIPE_ENGINE_FULL.md`)
 
 **См. также:** [README](06_DOMAIN_ZONES_RECIPES/README.md)
 
@@ -149,8 +171,9 @@ Breaking-change: обратная совместимость со старыми
 - `07_FRONTEND/FRONTEND_UI_UX_SPEC.md` — спецификация UI/UX
 - `07_FRONTEND/ROLE_BASED_UI_SPEC.md` — UI по ролям (`useRole`, dashboard'ы)
 - `07_FRONTEND/API_MAPPING.md` — маппинг frontend → backend API
-- `07_FRONTEND/FRONTEND_TESTING.md` — стратегия тестирования фронтенда
+- `07_FRONTEND/FRONTEND_TESTING.md` — стратегия тестирования фронтенда (`guide`)
 - `07_FRONTEND/ui_refs/` — референсы UI/UX (изображения)
+- Планы (`plan`): `UI_UX_IMPROVEMENT_PLAN.md`, `FRONTEND_REWORK_PLAN.md`, `LAUNCH_REDESIGN.md`, `LAUNCH_LEGACY_CLEANUP_PLAN.md`, `AUTOMATION_WIZARD_UNIFICATION_PLAN.md`, `ZONE_AUTOMATION_PRESETS_PLAN.md`, `SCHEDULER_COCKPIT_REDESIGN.md`, `SCHEDULER_COCKPIT_IMPLEMENTATION.md`, `SCHEDULER_COCKPIT_MONITORING.md`
 
 **См. также:** [README](07_FRONTEND/README.md)
 
@@ -170,7 +193,8 @@ Breaking-change: обратная совместимость со старыми
 - `08_SECURITY_AND_OPS/OPERATIONS_GUIDE.md` — руководство по эксплуатации
 - `08_SECURITY_AND_OPS/RUNBOOKS.md` — процедуры восстановления
 - `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` — стратегия тестирования и CI/CD
-- `08_SECURITY_AND_OPS/MIGRATION_SQUASH_PROCEDURE.md` — процедура squash миграций (отложена из-за TimescaleDB)
+- `08_SECURITY_AND_OPS/MIGRATION_SQUASH_PROCEDURE.md` — процедура squash миграций (отложена из-за TimescaleDB) (`plan`)
+- `08_SECURITY_AND_OPS/SECURITY_AND_SYNC_ISSUES.md` — найденные sync/race issues (исторический audit-notes; сверять с актуальным AE3) (`plan`)
 
 **См. также:** [README](08_SECURITY_AND_OPS/README.md)
 
@@ -188,6 +212,7 @@ AI-архитектура, оптимизация, симуляция, цифр�
 - `09_AI_AND_DIGITAL_TWIN/DIGITAL_TWIN_ENGINE.md` — движок цифрового двойника
 - `09_AI_AND_DIGITAL_TWIN/ZONE_SIMULATION_ENGINE.md` — симуляция зон
 - `09_AI_AND_DIGITAL_TWIN/AI_OPTIMIZATION_ENGINE.md` — оптимизация
+- `09_AI_AND_DIGITAL_TWIN/ENERGY_OPTIMIZATION_ENGINE.md` — энергооптимизация (`plan` / engine draft)
 
 **См. также:** [README](09_AI_AND_DIGITAL_TWIN/README.md)
 
@@ -207,7 +232,9 @@ AI-архитектура, оптимизация, симуляция, цифр�
 - `10_AI_DEV_GUIDES/AI_TASK_TEMPLATES_AND_PATTERNS.md` — шаблоны задач для ИИ
 - `10_AI_DEV_GUIDES/DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md` — спецификация постановки задач
 - `10_AI_DEV_GUIDES/OPERATOR_TASKS_FOR_AI_SPEC.md` — задачи оператора для ИИ
-- `10_AI_DEV_GUIDES/TASK_UNIFIED_DASHBOARD.md` — единый дашборд задач
+- `10_AI_DEV_GUIDES/TASK_UNIFIED_DASHBOARD.md` — единый дашборд задач (`guide`)
+- `10_AI_DEV_GUIDES/ZONE_CONTROLLERS_AI_GUIDE.md` — гайд по контроллерам зон для ИИ (`guide`)
+- Планы (`plan`): `AI_AGENTS_DETAILED_PLAN.md`, `AI_IMPLEMENTATION_ROADMAP.md`
 - домен контроллеров зон: `06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md`, `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`
 
 **См. также:** [README](10_AI_DEV_GUIDES/README.md)
@@ -294,7 +321,9 @@ E2E-сценарии, симулятор узлов, troubleshooting.
 - Документация в `doc_ai/` является **единственным source of truth** и редактируется только здесь
 - Все ссылки в документации должны быть относительными от корня `doc_ai/`
 - Папка `docs/` удалена; уникальные материалы по тестированию перенесены в `13_TESTING/`, mobile UI — в `12_ANDROID_APP/`, UI-референсы — в `07_FRONTEND/ui_refs/`
+- Исторические отчёты — в `00_ARCHIVE/` (`archive`); не использовать как SoT
+- Планы (`plan`) и `superseded` документы остаются в рабочих разделах для discoverability, но не подменяют `canonical`
 
 ---
 
-**Последнее обновление:** 2026-04-10
+**Последнее обновление:** 2026-08-02

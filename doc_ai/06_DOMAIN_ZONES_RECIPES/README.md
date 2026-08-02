@@ -72,7 +72,20 @@ Breaking-change: обратная совместимость со старыми
 Effective targets для контроллеров и authority bundles
 
 #### [PID_CONFIG_REFERENCE.md](PID_CONFIG_REFERENCE.md)
-Справочник настроек PID / калибровок в контрактах зоны
+Справочник настроек PID / калибровок в контрактах зоны (`canonical`)
+
+#### [CONTROL_MODES_SPEC.md](CONTROL_MODES_SPEC.md)
+Режимы управления зоной auto / semi / manual (`canonical`)
+
+#### [SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md](SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md)
+Dispatch не-полива для AE3 (`canonical` для lighting/diagnostics path)
+
+### Планы и superseded
+
+- [PER_PHASE_EC_TARGET_PLAN.md](PER_PHASE_EC_TARGET_PLAN.md) — `plan`
+- [GREENHOUSE_CLIMATE_CONTROL_PLAN.md](GREENHOUSE_CLIMATE_CONTROL_PLAN.md) — `plan` (см. также блок основных)
+- [GLOBAL_SCHEDULER_ENGINE.md](GLOBAL_SCHEDULER_ENGINE.md) — `superseded` → канон: `SCHEDULER_ENGINE.md`
+- [HYDROPONIC_RECIPES_ENGINE.md](HYDROPONIC_RECIPES_ENGINE.md) — `superseded` → канон: `RECIPE_ENGINE_FULL.md`
 
 ---
 

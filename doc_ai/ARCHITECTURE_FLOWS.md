@@ -1,8 +1,8 @@
 # ARCHITECTURE_FLOWS.md
 # Ключевые архитектурные потоки hydro 2.0 (AE3 authority runtime)
 
-**Версия:** 3.3  
-**Дата обновления:** 2026-03-30  
+**Версия:** 3.4  
+**Дата обновления:** 2026-08-02  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -31,16 +31,21 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 
 ---
 
-## 3. AE3 запуск цикла
+## 3. AE3 запуск задач (ingress)
 
-`Laravel scheduler (insert intent) -> POST /zones/{id}/start-cycle -> ZoneRunner`
+`Laravel scheduler (insert intent) -> POST wake-up -> AE3 worker / ZoneRunner`
+
+Канонические внешние ingress (см. `ae3lite.md` / `AGENT.md`):
+- `POST /zones/{id}/start-cycle` — diagnostics / cycle_start / compat non-irrigation;
+- `POST /zones/{id}/start-irrigation` — штатный полив по расписанию;
+- `POST /zones/{id}/start-lighting-tick` — lighting tick для `automation_runtime='ae3'`;
+- `POST /greenhouses/{id}/start-climate-tick` — greenhouse climate tick.
 
 Правила:
-- внешний wake-up endpoint только один: `POST /zones/{id}/start-cycle`;
-- Laravel scheduler-dispatch передаёт намерение через `zone_automation_intents`;
-- workflow шаги выполняются последовательно: `send -> await terminal -> next`.
-- single-writer на уровне зоны: одновременно допускается только один активный `start-cycle` runner на зону;
-- при активном intent/active task endpoint возвращает `409 start_cycle_zone_busy`.
+- Laravel scheduler-dispatch пишет намерение в `zone_automation_intents` и будит соответствующий ingress;
+- workflow шаги: `send -> await terminal (poll commands) -> next`;
+- single-writer на уровне зоны: одна активная execution task / lease;
+- при busy — `409 start_cycle_zone_busy` (или эквивалентный conflict ingress).
 
 Single-writer policy:
 - runtime работает fail-closed: при недоступной проверке writer-state
@@ -51,16 +56,20 @@ Single-writer policy:
 
 ## 4. Feedback и телеметрия для AE3
 
-`PostgreSQL LISTEN/NOTIFY + reconcile polling`
+`PostgreSQL LISTEN/NOTIFY (fast-path) + reconcile polling (SoT)`
 
-Каналы:
-- `ae_command_status`
-- `ae_signal_update`
+Канон подписок AE3 (`PYTHON_SERVICES_ARCH.md`, `ae3lite` `NOTIFY_CHANNELS`):
+- `scheduler_intent_terminal` — terminal lifecycle intent → `IntentStatusListener` → `worker.kick()`;
+- `ae_zone_event` — node runtime events (`LEVEL_SWITCH_CHANGED`, storage/e-stop, …) после записи HL → `ZoneEventListener` → `worker.kick()`.
+
+AE3 **не** подписан на:
+- `ae_command_status` — остаётся для scheduler cockpit / других потребителей; terminal команд AE3 **poll-ит** из `commands` / `ae_commands`;
+- `ae_signal_update` — не используется AE3 runtime (historical / reserved).
 
 Правила:
-- `NOTIFY` — fast-path;
-- polling — обязательный fallback;
-- stale critical signals -> fail-closed + `zone_events`.
+- `NOTIFY` — только fast-path wake-up;
+- polling (`commands`, `telemetry_last`, `zone_events`) — обязательный fallback; DB = source of truth;
+- stale critical signals → fail-closed + `zone_events`.
 
 ---
 
@@ -126,14 +135,16 @@ Routing:
 - автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3 runtime не используются.
 
 Compatibility path:
-- ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;
-- status migration идёт через canonical `GET /internal/tasks/{task_id}`;
+- zone ingress — через `start-cycle` / `start-irrigation` / `start-lighting-tick` + `zone_automation_intents`;
+- greenhouse climate — `start-climate-tick`;
+- status — canonical `GET /internal/tasks/{task_id}`;
 - dual-run shadow, зеркала статусов вне канона и `root_intent_id` bridge в canonical v1 не требуются.
 
 AE3 fast-path / fallback:
-- terminal transition intent-а публикует `scheduler_intent_terminal`, который будит Laravel listener и AE3 worker fast-path;
+- `scheduler_intent_terminal` и `ae_zone_event` будят AE3 worker (`worker.kick()`);
+- terminal статусы команд AE3 получает polling'ом (не через `ae_command_status`);
 - fast-path не заменяет canonical PostgreSQL state и reconcile polling;
-- ожидание terminal статуса в `commands` использует bounded backoff, а не фиксированный sleep.
+- ожидание terminal в `commands` — bounded backoff, не фиксированный sleep.
 
 AE3 timeout invariants:
 - whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`);

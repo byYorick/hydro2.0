@@ -42,6 +42,9 @@ Breaking-change: обратная совместимость со старыми
 - Оптимизация параметров
 - Рекомендации по улучшению
 
+#### [ENERGY_OPTIMIZATION_ENGINE.md](ENERGY_OPTIMIZATION_ENGINE.md)
+**Энергооптимизация** (`plan` / engine draft; charter — `ENERGY_OPTIMIZATION_CHARTER.md`)
+
 #### [AI_ROADMAP.md](AI_ROADMAP.md)
 **Дорожная карта AI/ML слоя**
 - Очередность внедрения pipeline'ов

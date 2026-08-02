@@ -290,8 +290,9 @@ jobs:
 - [NODE_SIM.md](./NODE_SIM.md) - Детальная документация по симулятору узлов
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Решение типовых проблем
-- [MQTT_SPEC_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
-- [BACKEND_NODE_CONTRACT_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
+- [MQTT_SPEC_FULL.md](../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
+- [COMMAND_VALIDATION_ENGINE.md](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md) - Канонические статусы команд
+- [BACKEND_NODE_CONTRACT_FULL.md](../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
 
 ## Поддержка
 

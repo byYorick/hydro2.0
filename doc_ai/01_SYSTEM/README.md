@@ -29,13 +29,6 @@ Breaking-change: обратная совместимость со старыми
 - Events Flow
 - WebSocket Flow
 
-#### [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
-**Системный план унификации имён насосов**
-- Один canonical pump id во всех слоях
-- Удаление legacy alias из runtime и UI
-- Rewrite `channel_bindings.role` и authority-configs
-- План rollout по firmware / backend / AE3 / frontend
-
 #### [NODE_LIFECYCLE_AND_PROVISIONING.md](NODE_LIFECYCLE_AND_PROVISIONING.md)
 **Жизненный цикл узла**
 - Состояния узла (MANUFACTURED → ACTIVE → DECOMMISSIONED)
@@ -50,19 +43,33 @@ Breaking-change: обратная совместимость со старыми
 - Конфигурационные файлы
 - Инструменты и утилиты
 
-### Вспомогательные документы
+### Вспомогательные документы (`canonical` / `guide`)
 
 #### [REPO_MAPPING.md](REPO_MAPPING.md)
-Маппинг репозиториев и компонентов
+Маппинг репозиториев и компонентов (`guide`)
 
 #### [NODE_ASSIGNMENT_LOGIC.md](NODE_ASSIGNMENT_LOGIC.md)
-Логика привязки узлов к зонам
+Логика привязки узлов к зонам (`canonical`)
 
 #### [NODE_ADDITION_AND_ACTIVATION_FLOW.md](NODE_ADDITION_AND_ACTIVATION_FLOW.md)
-Добавление и активация узла в системе
+Добавление и активация узла в системе (`canonical`)
 
 #### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
-Реализация отвязки узлов от зон (NodeConfig temp namespace через HL; unbind ≠ отсутствие bind-publish)
+Реализация отвязки узлов от зон (NodeConfig temp namespace через HL; unbind ≠ отсутствие bind-publish) (`canonical`)
+
+### Планы и proposal (`plan`)
+
+#### [PUMP_NAMING_UNIFICATION_PLAN.md](PUMP_NAMING_UNIFICATION_PLAN.md)
+**Системный план унификации имён насосов** (`plan`)
+- Один canonical pump id во всех слоях
+- Удаление legacy alias из runtime и UI
+- Rewrite `channel_bindings.role` и authority-configs
+
+#### [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
+Предложение/черновик эволюции архитектуры (`plan`; не подменяет `SYSTEM_ARCH_FULL.md` / `LOGIC_ARCH.md`)
+
+#### [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
+План миграции с mesh_hydro 1.x (`plan`)
 
 ---
 
@@ -86,7 +93,13 @@ Breaking-change: обратная совместимость со старыми
 
 ## 📊 Статус документов
 
-Все документы в этом разделе имеют статус **SPEC_READY** — спецификации готовы для реализации.
+| Документ | Статус |
+|----------|--------|
+| `LOGIC_ARCH.md`, `DATAFLOW_FULL.md`, `NODE_*`, `01_PROJECT_STRUCTURE_PROD.md` | `canonical` |
+| `REPO_MAPPING.md` | `guide` |
+| `PUMP_NAMING_UNIFICATION_PLAN.md`, `FULL_SYSTEM_ARCH_PROPOSAL.md`, `MIGRATION_PLAN_FROM_MESH_HYDRO.md` | `plan` |
+
+Не утверждать, что «все документы раздела SPEC_READY»: в разделе есть активные планы и proposal.
 
 ---
 

@@ -66,10 +66,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `level_solution_max` -> `GPIO34`
 
 Логика level-switch:
-- входы подтянуты к `VCC` (`pull-up`)
+- входы должны быть подтянуты к `VCC` (`pull-up`)
 - замкнутый геркон означает нижнее положение поплавка / воды нет и даёт `LOW`
 - при наполнении поплавок поднимается, геркон размыкается, вход становится `HIGH`
 - активное состояние датчика (`WATER_LEVEL_SWITCH=1`): `HIGH` (`active_low=false`)
+- **GPIO34/GPIO35** на классическом ESP32 — input-only без внутренних pull-up: нужны **внешние pull-up** на плате
+- **GPIO15 (E-Stop)** — strapping pin; зажатый E-Stop (`LOW`) при power-on/reset может сорвать boot
 
 При получении внешнего `.../config` секция `channels` принудительно заменяется на firmware map.
 То же выполняется при старте ноды: сохраненный в NVS `channels` нормализуется к прошивочному набору.

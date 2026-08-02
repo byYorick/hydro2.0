@@ -5,7 +5,7 @@
 Здесь указаны форматы топиков, JSON‑payload, правила QoS, LWT, NodeConfig, Telemetry,
 Command, Responses и системные события.
 
-**Дата обновления:** 2026-05-28 (sync с кодом history-logger и firmware: полный список message types, telemetry_last на PostgreSQL, QoS таблица расширена).
+**Дата обновления:** 2026-08-02 (status после time sync; stage-arm immediate DONE; NodeConfig v3 + config push; HL точечные подписки).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -20,13 +20,14 @@ MQTT используется как **единая шина данных** ме
 - Backend — главный мозг. Узлы — исполнители.
 - Модель: pub/sub, JSON‑payload.
 - Все топики строго стандартизированы.
-- Узлы используют только:
+- Узлы используют:
  - Telemetry → НАВЕРХ
  - Status/LWT → НАВЕРХ
  - Config_report → НАВЕРХ
  - Command → ВНИЗ
-- Backend слушает всё.
-- Узлы подписываются только на свои command (config — опционально, вне основного канона подписки).
+ - Config (NodeConfig push) → ВНИЗ (bind/rebind/unbind через history-logger)
+- Backend слушает точечными wildcard-подписками (не `hydro/#`).
+- Узлы подписываются на свои `command` и на `.../config` (provisioning / bind / update NodeConfig).
 
 ---
 
@@ -69,7 +70,7 @@ hydro/{gh}/{zone}/{node}/{type}
 
 **Backend → узел:**
 - `command` — команда на канал
-- `config` — push NodeConfig (опционально, сервисный сценарий)
+- `config` — push NodeConfig (Laravel → history-logger → MQTT; bind/rebind/unbind, обновление mirror)
 - `system/command` — system-level команда без `{channel}` (`activate_sensor_mode`, `deactivate_sensor_mode`)
 
 **Системные / broadcast:**
@@ -171,6 +172,7 @@ payload: "offline"
 ## 4.2. Online status
 
 **ОБЯЗАТЕЛЬНО:** Узел публикует `status` только после успешной синхронизации времени через `hydro/time/response`.
+Публикация `status` сразу после `MQTT_EVENT_CONNECTED` (до time sync) **запрещена**.
 
 **Топик:**
 ```
@@ -192,13 +194,13 @@ hydro/{gh}/{zone}/{node}/status
 - Поле `ts` содержит Unix timestamp в секундах (время публикации)
 - Backend использует этот статус для обновления `nodes.status` и `nodes.last_seen_at`
 
-**Последовательность действий при подключении:**
-1. Установка LWT (Last Will and Testament) — выполняется при инициализации MQTT клиента
-2. Подключение к брокеру
-3. Подписка на `hydro/time/response` и рабочие топики ноды (`command`, опционально `config`)
+**Каноническая последовательность при подключении:**
+1. Установка LWT (Last Will and Testament) — при инициализации MQTT клиента
+2. Подключение к брокеру (`MQTT_EVENT_CONNECTED`)
+3. Подписка на `hydro/time/response`, `.../+/command` и `.../config`
 4. Публикация `hydro/time/request`
-5. Вызов connection callback (если зарегистрирован)
-6. После получения `hydro/time/response` разрешается публикация `status`/`telemetry`/`event` с полем `ts`
+5. Получение `hydro/time/response` (time sync)
+6. Только после time sync: публикация `status` / `telemetry` / `event` (и прочих сообщений с полем `ts`)
 
 ## 4.3. Offline
 Отправляется брокером автоматически (LWT):
@@ -214,19 +216,23 @@ payload: "offline"
 
 ---
 
-# 5. NodeConfig (узлы → backend)
+# 5. NodeConfig (config_report вверх + config push вниз)
 
 ## 5.1. Топик
 ```
 hydro/{gh}/{zone}/{node}/config_report
 ```
 
-## 5.2. Пример полного NodeConfig:
+## 5.2. Пример полного NodeConfig (v3, обязательные поля):
 ```json
 {
  "node_id": "nd-ph-1",
  "version": 3,
  "fw_version": "1.0.0",
+ "type": "ph",
+ "gh_uid": "gh-1",
+ "zone_uid": "zn-3",
+ "node_secret": "CHANGE_ME_32_PLUS_CHARS_XXXXXXXXX",
  "channels": [
  {
  "name": "ph_sensor",
@@ -256,12 +262,31 @@ hydro/{gh}/{zone}/{node}/config_report
 }
 ```
 
+Обязательные поля верхнего уровня v3: `node_id`, `version`, `type`, `gh_uid`, `zone_uid`,
+`channels`, `wifi`, `mqtt` (см. `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`).
+`node_secret` обязателен для HMAC команд (длина ≥ 32 символа/байта).
+
 ## 5.3. Requirements
 - QoS = 1
 - Retain = false
 - Узел сохраняет конфиг в NVS
-- Узел отправляет `config_report` при подключении
+- Узел отправляет `config_report` при подключении и после успешного apply MQTT `.../config`
 - `fw_version` — версия прикладной прошивки, сформированная самой нодой; это не версия ESP-IDF SDK. Backend сохраняет её в `nodes.fw_version`.
+
+## 5.4. Config push (backend → node)
+
+Канонический provisioning/bind flow публикует целевой NodeConfig **вниз** на топик:
+
+```
+hydro/{gh}/{zone}/{node}/config
+```
+
+(часто temp namespace `hydro/gh-temp/zn-temp/{node}/config` при bind, пока нода ещё не в целевой зоне).
+
+Путь: Laravel (`PublishNodeConfigJob` / unbind services) → history-logger `POST /nodes/{uid}/config` → MQTT.
+Нода применяет конфиг, сохраняет в NVS и подтверждает `config_report` из актуального namespace.
+Подробности: `../01_SYSTEM/NODE_ASSIGNMENT_LOGIC.md`, `../01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md`,
+`../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`.
 
 ---
 
@@ -982,12 +1007,15 @@ Backend никогда не остаётся "в неизвестности": п
    - если вернуть канал в `OFF` не удалось, нода публикует terminal `ERROR`.
    - для `pump_main` bypass interlock разрешён только при `duration_ms<=3000` и только для manual dry-run smoke path;
      обычный `pump_main ON` без открытого flow path остаётся `ERROR/pump_interlock_blocked`.
-2. `pump_main/set_relay {state:true, timeout_ms, stage}` используется для stage-level guard:
+2. `pump_main/set_relay {state:true, timeout_ms, stage}` используется для stage-level guard (stage-arm):
    - поддерживаются только `stage="solution_fill"` и `stage="prepare_recirculation"`;
-   - immediate ответ на timed-start: `ACK`;
-   - нода держит flow-path включённым до явного `pump_main OFF` или до истечения `timeout_ms`;
-   - при timeout нода локально останавливает stage-path и публикует terminal `ERROR`
-     по исходному `cmd_id` с `error_code=stage_timeout`.
+   - immediate terminal ответ: `DONE` (AE3 ждёт `DONE`; `complete_on_ack` deprecated);
+   - guard остаётся armed: нода держит flow-path до явного `pump_main OFF`, fail-safe stop или истечения `timeout_ms`;
+   - при timeout / fail-safe stop нода останавливает stage-path, снимает guard и публикует
+     `storage_state/event` (`solution_fill_timeout` / `prepare_recirculation_timeout` или fail-safe code)
+     **без** второго terminal по arm-`cmd_id`;
+   - явный `pump_main OFF` (другой `cmd_id`) снимает guard и может дополнительно опубликовать
+     `DONE` для arm-`cmd_id` с `details.reason_code=stage_stopped_by_command`.
 3. Для `clean_fill` проверка `level_clean_min` / публикация `clean_fill_source_empty` **не применяется**
    (поле `clean_fill_min_check_delay_ms` deprecated, mirror-only). Пустой источник определяется AE3
    через `clean_fill_timeout_sec` + `clean_fill_retry_cycles`.
@@ -1320,16 +1348,15 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 
 Узел **ОБЯЗАН** подписаться на:
 - `hydro/{gh}/{zone}/{node}/+/command` — для получения команд по всем каналам (wildcard)
-
-Опционально (сервисный сценарий):
-- `hydro/{gh}/{zone}/{node}/config` — получение конфигурации с сервера, если она публикуется вручную
+- `hydro/{gh}/{zone}/{node}/config` — получение NodeConfig push (bind/rebind/unbind, обновление mirror)
+- `hydro/time/response` — синхронизация времени перед публикацией `status`/`telemetry`/`event` с `ts`
 
 ## 13.2. Публикации (обязательные)
 
 Узел **ОБЯЗАН** публиковать:
 
-### При подключении к MQTT брокеру:
-- **status** (`hydro/{gh}/{zone}/{node}/status`) — **ОБЯЗАТЕЛЬНО** сразу после `MQTT_EVENT_CONNECTED` (см. раздел 4.2)
+### После time sync (канон §4.2: connect → time request/response → status):
+- **status** (`hydro/{gh}/{zone}/{node}/status`) — **ОБЯЗАТЕЛЬНО** после `hydro/time/response`, не сразу после `MQTT_EVENT_CONNECTED`
 
 ### Регулярно:
 - **telemetry** (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`) — по расписанию из NodeConfig
@@ -1362,6 +1389,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 - хранение команд
 - таймаут команд (если нет ACK)
 - хранить NodeConfig из `config_report` и использовать его для команд/телеметрии
+- публиковать целевой NodeConfig на `.../config` через history-logger (`PublishNodeConfigJob` и related)
 - обработка node_hello для регистрации узлов (✅ реализовано в history-logger)
 - обработка heartbeat для мониторинга узлов (✅ реализовано в history-logger)
 - алерты при offline / telemetry out of range

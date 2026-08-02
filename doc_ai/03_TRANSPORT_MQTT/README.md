@@ -39,7 +39,13 @@ Breaking-change: обратная совместимость со старыми
 ### Специализированные документы
 
 #### [COMMAND_VALIDATION_ENGINE.md](COMMAND_VALIDATION_ENGINE.md)
-Валидация команд перед отправкой
+Валидация команд перед отправкой (`canonical`)
+
+#### [STATUS_PUBLISH_IMPLEMENTATION_CHECK.md](STATUS_PUBLISH_IMPLEMENTATION_CHECK.md)
+Check-list реализации status publish (`guide`)
+
+#### [MQTT_LOAD_BALANCING.md](MQTT_LOAD_BALANCING.md)
+Multi-broker load balancing (`plan`; **не** текущая каноника — один брокер на среду)
 
 ---
 

@@ -151,7 +151,7 @@ make logs SERVICE=<имя>  # произвольный сервис
 |--------|----------|---------|
 | Laravel | http://localhost:8080 | — |
 | mqtt-bridge | http://localhost:9000 | — |
-| history-logger | http://localhost:9300 | http://localhost:9301/metrics |
+| history-logger | http://localhost:9300 | http://localhost:9300/metrics |
 | automation-engine | http://localhost:9405 | http://localhost:9401/metrics |
 | Laravel (метрики scheduler-dispatch) | http://localhost:8080 | http://localhost:8080/api/system/scheduler/metrics |
 | Grafana | http://localhost:3000 | — |
@@ -211,10 +211,10 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 ### Хранение данных
 
 - **PostgreSQL + TimescaleDB** для телеметрии временных рядов
-- **Политики хранения:**
-  - Сырые данные: 7-30 дней (настраивается)
-  - Агрегированные (1m, 1h, daily): до 12 месяцев
-- **Автоматическая агрегация:** Laravel команды `telemetry:cleanup-raw` и `telemetry:aggregate`
+- **Политики хранения (SoT):** `doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md`
+  - Сырая телеметрия hot: **30 дней** (`TELEMETRY_RETENTION_DAYS` / `RETENTION_SAMPLES_DAYS`)
+  - Агрегаты warm: 6–12 месяцев; cold archive: 5 лет
+- **Автоматическая агрегация:** Laravel `telemetry:cleanup-raw` / `telemetry:aggregate` (+ Python aggregator)
 
 ### Стек мониторинга
 
@@ -415,23 +415,25 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ### AE3 (automation-engine) — критичные инварианты
 
-- **Канонический runtime — `ae3lite/`**, монолитный AE удалён; `ae2lite` удалён. См. `doc_ai/04_BACKEND_CORE/ae3lite.md`.
-- Прямой MQTT-publish из AE или Laravel **запрещён** — только через `history-logger` `POST /commands`.
-- **Одна активная execution task на зону** — гарантируется partial unique index + `ZoneLease`.
-- Единственный внешний ingress AE3: `POST /zones/{id}/start-cycle` (+ `POST /zones/{id}/start-irrigation` для штатного полива).
-- Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.
-- Runtime AE3 читает zone state **напрямую из PostgreSQL read-model** — никаких runtime HTTP-запросов к Laravel.
-- Успешный terminal outcome mutating-команды — только `DONE`; `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` = fail для v1.
-- Task FSM: `pending → claimed → running → waiting_command → completed/failed`. Two-tank requeue: `running → pending` через `requeue_pending`.
-- Переключение `zones.automation_runtime='ae3'` **запрещено** при активной task или active lease.
-- Hardcoded default targets **запрещены** — отсутствие target во фразе рецепта = `PlannerConfigurationError` (fail-closed).
+Кратко; полный канон — `doc_ai/04_BACKEND_CORE/ae3lite.md`, локальный контракт — `backend/services/automation-engine/AGENT.md`, коды — `ERROR_CODE_CATALOG.md`.
+
+- **Канонический runtime — `ae3lite/`** (`ae2lite`/монолит удалены).
+- Прямой MQTT-publish из AE или Laravel **запрещён** — только `history-logger` `POST /commands`.
+- **Одна активная execution task на зону** — partial unique index + `ZoneLease`.
+- Внешние ingress: `POST /zones/{id}/start-cycle`, `start-irrigation`, `start-lighting-tick`; greenhouse climate — `POST /greenhouses/{id}/start-climate-tick`. Internal status: `GET /internal/tasks/{task_id}`.
+- Runtime читает zone state из **PostgreSQL SQL read-model** (compiled bundle) — без runtime HTTP к Laravel.
+- Успешный terminal mutating-команды — только `DONE`; `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` = fail для v1.
+- Task FSM: `pending → claimed → running → waiting_command → completed/failed` (также `cancelled`). Stage requeue (two-tank): атомарный `update_stage` (`(claimed|running|waiting_command) → pending`); метод `requeue_pending` снят.
+- LISTEN/NOTIFY fast-path: `scheduler_intent_terminal`, `ae_zone_event`; terminal команд AE3 **poll-ит** (не подписан на `ae_command_status` / `ae_signal_update`).
+- Переключение `zones.automation_runtime='ae3'` **запрещено** при active task/lease.
+- Hardcoded default targets **запрещены** — отсутствие phase target = `PlannerConfigurationError` (fail-closed).
 - `ae3lite/*` **не импортирует** legacy runtime пакеты.
-- Error codes: `ae3_task_create_conflict`, `ae3_lease_claim_failed`, `ae3_complete_transition_failed`, `ae3_requeue_failed`, `cycle_start_blocked_nodes_unavailable`, `irr_state_unavailable`, `two_tank_prepare_targets_unavailable`.
+- Частые error codes: `start_cycle_zone_busy`, `start_cycle_idempotency_key_conflict`, `ae3_task_create_failed`, `ae3_complete_transition_failed`, `ae3_transition_apply_failed` / `ae3_poll_apply_failed` / `ae3_correction_apply_failed`, `ae3_snapshot_required_node_type_missing`, `irr_state_unavailable`. Deprecated aliases (`ae3_requeue_failed`, `ae3_task_create_conflict`, …) — см. каталог.
 
 ### Команды к узлам и валидация
 
-- Канонические `cmd` значения: `run_pump`, `dose`, `set_relay`, `set_pwm`, `calibrate`, `test_sensor`, `restart`, `state`.
-- Статусы команд: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`. Статусы `ACCEPTED`/`FAILED` **запрещены**.
+- Канонические device `cmd`: `run_pump`, `dose`, `set_relay`, `set_pwm`, `set_position`, `calibrate`, `test_sensor`, `restart`, `state`.
+- Статусы команд: `QUEUED|SENT|ACK|DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED`. Статусы `ACCEPTED`/`FAILED` (и lowercase `failed`) **запрещены**.
 - Timestamp валидация: `abs(now - ts) < 10 секунд` на всех уровнях.
 - HMAC-SHA256: canonical JSON с lexicographic sort ключей, порядок массивов сохранён, без whitespace, числа в формате cJSON, UTF-8, unescaped slashes. `node_secret` — 32 байта на узел.
 - `command_response.ts` — в **миллисекундах**.
@@ -465,17 +467,19 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ### Политика хранения данных
 
+**SoT:** `doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md` (не дублировать сроки в других сводках).
+
 | Категория | Hot (online) | Warm/agg | Cold archive |
 |-----------|--------------|----------|--------------|
-| Сырая телеметрия | 30 дней (Laravel `telemetry:cleanup-raw`) / 90 дней (Python `RETENTION_SAMPLES_DAYS`) | agg_1m, agg_1h, daily 6-12 мес | 5 лет S3 |
-| Команды | 90 дней | — | 3 года |
-| События | 180 дней | — | 5 лет |
+| Сырая телеметрия | 30 дней (Laravel + Python, оба default 30) | agg_1m / agg_1h / daily 6–12 мес | 5 лет S3 |
+| Команды | 365 дней | — | 3 года (`commands_archive`) |
+| События (`zone_events`) | 365 дней | — | 5 лет |
 | Алерты | 365 дней | — | автоудаление resolved/acknowledged/TTL |
-| Логи | 7-30 дней | 1 год (gz) | 5 лет cold |
+| Логи | 7–30 дней | ~1 год (gz) | до 5 лет |
 
-- `telemetry:aggregate` — каждые 15 мин (Laravel, `ON CONFLICT DO NOTHING`); Python — `ON CONFLICT DO UPDATE`.
+- `telemetry:aggregate` — каждые 15 мин (Laravel `ON CONFLICT DO NOTHING`); Python aggregator — `ON CONFLICT DO UPDATE`.
 - При удалении зоны: `telemetry_last`/raw удаляются; agg/daily **анонимизируются**; events/logs **архивируются**.
-- Обновлять retention одновременно в `routes/console.php` (Laravel) и `.env` (Python).
+- Менять сроки — только через DATA_RETENTION_POLICY.md + compose/env + миграции/cron.
 
 ### Backend / Laravel — специфика
 

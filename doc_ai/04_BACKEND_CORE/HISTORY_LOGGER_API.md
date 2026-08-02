@@ -3,7 +3,7 @@
 
 Документ описывает REST API endpoints history-logger сервиса — **единственной точки публикации команд в MQTT** в архитектуре hydro2.0.
 
-**Дата обновления:** 2026-05-28 (sync с FastAPI routes: добавлены `/zones/.../commands`, `/nodes/.../commands`, `/nodes/.../config`, `/ingest/telemetry`, DLQ endpoints, webhook callback; порт `/metrics` исправлен на 9300; canonical имена метрик).
+**Дата обновления:** 2026-08-02 (device `cmd` catalog vs legacy high-level labels; `SEND_FAILED` вместо `failed`; metrics `:9300/metrics` подтверждён).
 
 **Связанные документы:**
 - `PYTHON_SERVICES_ARCH.md` — общая архитектура Python-сервисов
@@ -25,7 +25,7 @@ Breaking-change: обратная совместимость со старыми
 **Порты:**
 - **9300**: REST API **+** Prometheus metrics (`/metrics` mount на тот же FastAPI app, не отдельный порт)
 
-Status: **historical** — README/часть документации упоминала «metrics на :9301». Это устарело: uvicorn слушает только `SERVICE_PORT=9300`, Prometheus scrape настроен на `history-logger:9300/metrics` (`configs/dev/prometheus.yml`). Порт 9301 в коде не открывается.
+Status: **historical** — README/часть документации/`docker-compose` publish `9301:9301` упоминали «metrics на :9301». Это устарело: uvicorn слушает только `SERVICE_PORT=9300`, Prometheus scrape — `history-logger:9300/metrics` (`backend/configs/dev/prometheus.yml`). Отдельный metrics-порт в коде не открывается.
 
 **Назначение:**
 - Централизованная публикация команд в MQTT
@@ -402,74 +402,64 @@ Laravel middleware: `VerifyHistoryLoggerWebhook` (alias `verify.history-logger.w
 
 ## 3. Типы команд
 
-История-logger поддерживает все типы команд из MQTT спецификации. Основные типы:
+В MQTT / `POST /commands` поле **`cmd`** — это **device-level** команда узла.
+High-level product labels (`FORCE_IRRIGATION`, `LIGHT_ON`, `VENT_ON`, `REBOOT`, …)
+**не** являются значениями `cmd` и не публикуются в MQTT как есть.
 
-### 3.1. Команды управления насосами
+Канонический enum device `cmd` (см. MQTT/node contract, `command_service`):
 
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `FORCE_IRRIGATION` | Принудительный полив | `duration_sec`, `volume_ml` (optional) |
-| `FORCE_PUMP_ON` | Включить насос | `duration_sec`, `target_ml_per_sec` (optional) |
-| `FORCE_PUMP_OFF` | Выключить насос | - |
-| `PUMP_CALIBRATE` | Калибровка насоса | `expected_ml`, `duration_sec` |
+| `cmd` | Назначение | Типичные `params` |
+|-------|------------|-------------------|
+| `run_pump` | Насос / полив / recirculation | `duration_ms`, опционально volume/flow hints |
+| `dose` | Дозирование pH/EC | `ml` (обязателен), `duration_ms` (optional) |
+| `set_relay` | Реле on/off | `state` / `on` |
+| `set_pwm` | PWM / яркость / скорость | `duty` / `brightness` / `percent` (по каналу) |
+| `set_position` | Позиционный привод | позиция / угол (по каналу) |
+| `calibrate` | Калибровка сенсора/насоса | `stage`, `known_ph` / `tds_value` / … |
+| `test_sensor` | Тест SENSOR-канала | по контракту канала |
+| `restart` | Перезагрузка ноды (device) | — |
+| `state` | Запрос/установка state snapshot | по контракту узла |
 
-### 3.2. Команды дозирования (AE3 → HL → MQTT)
+### 3.1. Дозирование (AE3 → HL → MQTT)
 
-Канонический device-level контракт для pH/EC насосов — **`cmd: "dose"`** с обязательным **`params.ml`** (объём в миллилитрах). Прошивка ph_node/ec_node исполняет дозу по `ml`; `params.duration_ms` опционален (observability / audit в `commands.duration_ms`, firmware может игнорировать).
+Канон для pH/EC насосов — **`cmd: "dose"`** с обязательным **`params.ml`**.
+Прошивка ph_node/ec_node исполняет дозу по `ml`; `params.duration_ms` опционален
+(observability / audit в `commands.duration_ms`).
 
 | `cmd` | Канал | Обязательные `params` | Опциональные `params` |
 |-------|-------|----------------------|------------------------|
 | `dose` | actuator pump (pH+/pH-/EC) | `ml` (float, > 0) | `duration_ms` (int, > 0) |
 
 Transport-layer sanity bounds (`command_service._validate_command_params`):
-- `params.ml` ∈ `(0, 500]` — защита от интеграционных ошибок; доменные caps — `max_ec_dose_ml` / `max_ph_dose_ml` в AE3 CorrectionPlanner.
+- `params.ml` ∈ `(0, 500]` — защита от интеграционных ошибок; доменные caps — в AE3 CorrectionPlanner.
 - `params.duration_ms` ∈ `(0, 300_000]` — при наличии.
 
-**Deprecated (legacy high-level intent labels, не публиковать в MQTT):**
+### 3.2. Калибровка сенсоров
 
-| Legacy label | Замена |
-|--------------|--------|
-| `DOSE_PH_UP` / `DOSE_PH_DOWN` / `DOSE_EC_A` / `DOSE_EC_B` | `cmd: "dose"` + соответствующий actuator `channel` |
-| `duration_sec` в dose payload | не используется; AE3 передаёт `ml`, опционально `duration_ms` |
-
-### 3.3. Команды управления освещением
-
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `LIGHT_ON` | Включить освещение | `brightness` (0-100, optional) |
-| `LIGHT_OFF` | Выключить освещение | - |
-| `LIGHT_SET_BRIGHTNESS` | Установить яркость | `brightness` (0-100) |
-| `LIGHT_SCHEDULE` | Установить расписание | `on_time`, `off_time` |
-
-### 3.4. Команды управления климатом
-
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `VENT_ON` | Включить вентиляцию | `speed` (0-100, optional) |
-| `VENT_OFF` | Выключить вентиляцию | - |
-| `HEATER_ON` | Включить обогрев | `target_temp` (optional) |
-| `HEATER_OFF` | Выключить обогрев | - |
-
-### 3.5. Системные команды
-
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `SET_CONFIG` | Установить конфигурацию | `key`, `value` |
-| `REBOOT` | Перезагрузка ноды | - |
-| `SAFE_MODE` | Переход в safe mode | - |
-| `GET_STATUS` | Запрос статуса | - |
-
-### 3.6. Команды калибровки сенсоров
-
-| Тип команды | Описание | Параметры |
-|------------|----------|-----------|
-| `calibrate` | Stage-based калибровка pH/EC сенсора | `stage`, `known_ph` или `tds_value` |
+| `cmd` | Описание | Параметры |
+|-------|----------|-----------|
+| `calibrate` | Stage-based калибровка pH/EC | `stage`, `known_ph` или `tds_value` |
 
 Контракт:
 - `stage=1` и `stage=2` публикуются отдельными командами;
 - `cmd_id` приходит из Laravel и затем используется в `POST /api/python/commands/ack`;
-- terminal status `DONE` трактуется Laravel как успешное завершение этапа;
-- terminal status `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED` трактуются как failed stage на стороне Laravel.
+- terminal `DONE` — успех этапа; `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` — fail stage.
+
+### 3.3. Legacy high-level labels (не device `cmd`)
+
+Status: **historical / non-normative** — product/intent labels старых черновиков.
+В MQTT публикуется только device `cmd` из таблицы выше (+ корректный `channel`).
+
+| Legacy label | Каноническая замена |
+|--------------|---------------------|
+| `FORCE_IRRIGATION` / `FORCE_PUMP_ON` / `FORCE_PUMP_OFF` | штатный полив — AE3 `start-irrigation`; device — `run_pump` на pump/irrig channel |
+| `PUMP_CALIBRATE` | `calibrate` (или отдельный calibration flow Laravel → HL) |
+| `DOSE_PH_UP` / `DOSE_PH_DOWN` / `DOSE_EC_*` | `cmd: "dose"` + actuator `channel` |
+| `LIGHT_ON` / `LIGHT_OFF` / `LIGHT_SET_BRIGHTNESS` / `LIGHT_SCHEDULE` | lighting tick / AE3 → `set_pwm` (или реле) на light channel; расписание — Laravel scheduler, не MQTT `cmd` |
+| `VENT_ON` / `VENT_OFF` / `HEATER_ON` / `HEATER_OFF` | climate tick → `set_pwm` / `set_relay` на соответствующий channel |
+| `REBOOT` | device `cmd: "restart"` |
+| `SET_CONFIG` / `SAFE_MODE` / `GET_STATUS` | не MQTT device `cmd` из этого каталога (`config` / `state` / node framework flows) |
+| `duration_sec` в dose payload | не используется; AE3 передаёт `ml`, опционально `duration_ms` |
 
 ---
 
@@ -483,8 +473,8 @@ History-logger выполняет следующую валидацию пере
    - Корректность типов данных
 
 2. **Проверка типа команды:**
-   - Тип команды должен быть в списке поддерживаемых
-   - Тип команды должен соответствовать каналу (например, `FORCE_IRRIGATION` только для `pump_*` каналов)
+   - `cmd` должен быть из канонического device-каталога (§3)
+   - `cmd` должен соответствовать типу канала (например, `run_pump` / `dose` — для actuator pump-каналов)
 
 3. **Проверка параметров:**
    - Наличие обязательных параметров для данного типа команды
@@ -587,7 +577,7 @@ hl_webhook_duration_seconds{event_type, le}
   "command_id": "cmd-123456",
   "node_uid": "nd-pump-1",
   "channel": "pump_in",
-  "command_type": "FORCE_IRRIGATION",
+  "cmd": "run_pump",
   "mqtt_topic": "hydro/gh-1/zone-1/nd-pump-1/pump_in/command"
 }
 ```
@@ -620,7 +610,7 @@ hl_webhook_duration_seconds{event_type, le}
 History-logger использует retry логику для MQTT публикаций:
 - Максимум 3 попытки
 - Экспоненциальная задержка: 100ms, 200ms, 400ms
-- После 3 неудачных попыток команда помечается как `failed` в БД
+- После 3 неудачных попыток команда помечается как `SEND_FAILED` в БД (canonical status enum; lowercase `failed` запрещён)
 
 ---
 

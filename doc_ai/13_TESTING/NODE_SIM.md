@@ -202,25 +202,36 @@ python -m node_sim.cli scenario --config sim.example.yaml --name S_overcurrent
 
 ### Обработка команд
 
-Симулятор подписывается на топик команд и обрабатывает их:
+Симулятор подписывается на топик команд и обрабатывает их.
 
+Канонические `command_response.status` (MQTT, UPPERCASE):
+`ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.
+Статусы `ACCEPTED`/`FAILED` **запрещены**.
+`SEND_FAILED` — backend/HL transport-level (ошибка publish), в `command_response` от ноды/симулятора **не** публикуется.
+
+Lifecycle:
 1. **Получение команды** из топика: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command`
 2. **Дедупликация** по `cmd_id`
-3. **Отправка ACCEPTED** в топик: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command_response`
+3. **Отправка `ACK`** в топик: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command_response`
 4. **Выполнение команды** (симуляция)
-5. **Отправка DONE/FAILED** в тот же топик ответов
+5. **Terminal ответ** в тот же топик:
+   - success (mutating): `DONE`
+   - fail: `ERROR` | `INVALID` | `BUSY` | `NO_EFFECT` | `TIMEOUT`
 
-Пример ответа:
+Пример успешного terminal ответа:
 
 ```json
 {
   "cmd_id": "cmd-123",
   "status": "DONE",
-  "result_code": 0,
-  "duration_ms": 8500,
+  "details": {
+    "duration_ms": 8500
+  },
   "ts": 1699123456789
 }
 ```
+
+Поле `ts` в `command_response` — Unix timestamp в **миллисекундах** (см. `MQTT_SPEC_FULL.md` §8).
 
 ### Режимы отказов
 
@@ -393,11 +404,12 @@ tests/node_sim/
 
 ## Типовые проблемы
 
-См. [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#node-sim) для решения типовых проблем с node_sim.
+См. [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#node-simulator) для решения типовых проблем с node_sim.
 
 ## Дополнительные ресурсы
 
 - [TESTING_OVERVIEW.md](./TESTING_OVERVIEW.md) - Общий обзор тестирования
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
-- [MQTT_SPEC_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
-- [BACKEND_NODE_CONTRACT_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
+- [MQTT_SPEC_FULL.md](../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
+- [COMMAND_VALIDATION_ENGINE.md](../03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md) - Канонические статусы команд и HL lifecycle
+- [BACKEND_NODE_CONTRACT_FULL.md](../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами

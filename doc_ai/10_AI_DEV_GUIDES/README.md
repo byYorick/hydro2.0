@@ -77,6 +77,17 @@ Breaking-change: обратная совместимость со старыми
 - Автоматизация задач
 - Интеграция с ИИ
 
+#### [ZONE_CONTROLLERS_AI_GUIDE.md](ZONE_CONTROLLERS_AI_GUIDE.md)
+Гайд по контроллерам зон для ИИ (`guide`; норматив домена — `06_DOMAIN_ZONES_RECIPES/`)
+
+#### [TASK_UNIFIED_DASHBOARD.md](TASK_UNIFIED_DASHBOARD.md)
+Единый дашборд задач (`guide`)
+
+### Планы (`plan`)
+
+- [AI_AGENTS_DETAILED_PLAN.md](AI_AGENTS_DETAILED_PLAN.md)
+- [AI_IMPLEMENTATION_ROADMAP.md](AI_IMPLEMENTATION_ROADMAP.md)
+
 ---
 
 ## 🔗 Связанные разделы

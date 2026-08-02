@@ -82,6 +82,14 @@ Breaking-change: обратная совместимость со старыми
 - CI/CD конвейер
 - Стратегия деплоя
 
+### Планы и audit-notes
+
+#### [MIGRATION_SQUASH_PROCEDURE.md](MIGRATION_SQUASH_PROCEDURE.md)
+Процедура squash миграций (отложена из-за TimescaleDB) (`plan`)
+
+#### [SECURITY_AND_SYNC_ISSUES.md](SECURITY_AND_SYNC_ISSUES.md)
+Найденные sync/race issues (`plan` / исторические audit-notes; сверять с актуальным AE3/`ae3lite.md`)
+
 ---
 
 ## 🔗 Связанные разделы

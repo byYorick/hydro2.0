@@ -4,7 +4,7 @@
   "version": 3,
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
-  "node_secret": "CHANGE_ME_32_PLUS_CHARS",
+  "node_secret": "CHANGE_ME_32_PLUS_CHARS_XXXXXXXXX",
   "allow_legacy_hmac": false,
   "channels": [
     {

@@ -1,8 +1,8 @@
 # STORAGE_IRRIGATION_NODE_PROD_SPEC.md
 # Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
 
-**Версия:** 1.3
-**Дата обновления:** 2026-07-31
+**Версия:** 1.4
+**Дата обновления:** 2026-08-02
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -48,7 +48,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `level_clean_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO32`)
 - `level_solution_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO35`)
 - `level_solution_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO34`)
-- сервисный командный канал `storage_state` (без отдельного GPIO, для `state`/`event`)
+- сервисный командный канал `storage_state` (`ACTUATOR`, `actuator_type=SYSTEM`, без GPIO;
+  только `state`/`event`, не физический актуатор)
 
 Вне текущего firmware map:
 - `valve_drain` — **не реализован** на production `storage_irrigation_node` (нет GPIO в HW-карте).
@@ -57,10 +58,19 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   (есть в `test_node` для HIL).
 
 Для всех 4 `level_*` датчиков:
-- вход подтянут к `VCC` (`pull-up`);
+- логика входа: ожидается подтяжка к `VCC` (`pull-up`);
 - геркон замкнут при нижнем положении поплавка (воды нет) и замыкает вход на `GND`;
 - при наполнении поплавок поднимается, геркон размыкается, вход уходит в `HIGH`;
-- активное состояние `WATER_LEVEL_SWITCH=1` означает «уровень достигнут / вода есть» и определяется по `HIGH` (`active_low=false`).
+- активное состояние `WATER_LEVEL_SWITCH=1` означает «уровень достигнут / вода есть» и определяется по `HIGH` (`active_low=false`);
+- **GPIO34 / GPIO35** (`level_solution_max` / `level_solution_min`) на классическом ESP32 —
+  input-only без внутренних pull-up/pull-down: **обязательны внешние pull-up** на плате
+  (программный `pull-up` в firmware map их не обеспечивает).
+
+Сервисный канал `storage_state`:
+- `type=ACTUATOR`, `actuator_type=SYSTEM` — firmware-locked service channel без GPIO;
+- используется только для `cmd=state` и публикации `storage_state/event`;
+- `SYSTEM` — irrig service channel (firmware `storage_irrigation_node_config.c`);
+  перечислен в общем `actuator_type` в `NODE_CONFIG_SPEC.md`.
 
 ## 3.2. Поддерживаемые команды
 
@@ -70,15 +80,18 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Ожидаемая модель ответа:
 - `state`: immediate terminal `DONE`/`ERROR`.
-- `set_relay`: по умолчанию immediate terminal `DONE`/`ERROR`.
+- `set_relay` (latched ON/OFF, без `duration_ms`): immediate terminal `DONE`/`ERROR`.
 - `set_relay {state:true, duration_ms}` для diagnostic/test path отвечает `ACK`, удерживает канал включённым
   `duration_ms`, затем нода обязана локально вернуть канал в `OFF` и отправить terminal `DONE`
   по тому же `cmd_id`.
 - специальный dry-run path для `pump_main`: `set_relay {state:true, duration_ms<=3000}` допускается
   без открытого flow path и должен использоваться только для ручного smoke/test;
-- Исключение: `pump_main/set_relay {state:true, timeout_ms, stage}` для stage-level guard отвечает `ACK`,
-  а поздний terminal `DONE`/`ERROR` по тому же `cmd_id` публикуется нодой после явного `pump_main OFF`
-  или по локальному stage-timeout.
+- `pump_main/set_relay {state:true, timeout_ms, stage}` (stage-arm): immediate terminal `DONE`
+  (AE3 ждёт `DONE`; `complete_on_ack` deprecated). Guard остаётся armed после ответа.
+  Повторный terminal по тому же arm-`cmd_id` при fail-safe stop / stage-timeout **не** публикуется;
+  исход stage передаётся через `storage_state/event`.
+  Явный `pump_main OFF` (другой `cmd_id`) снимает guard и может дополнительно опубликовать
+  `DONE` для arm-`cmd_id` с `details.reason_code=stage_stopped_by_command`.
 
 Дополнительные правила:
 - `set_relay {state:true}` для actuator-каналов IRR-профиля работает как latched `ON/OFF` semantics:
@@ -90,8 +103,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - dry-run `pump_main/set_relay {state:true, duration_ms<=3000}` является единственным разрешённым bypass
   interlock для ручного теста "на сухую"; любой другой `pump_main ON` без flow path остаётся запрещён;
 - по истечении `timeout_ms` нода обязана локально остановить весь соответствующий flow-path,
-  вернуть terminal `ERROR` для исходного timed-start с `error_code=stage_timeout`
-  и опубликовать событие `storage_state/event` (`solution_fill_timeout` или `prepare_recirculation_timeout`);
+  снять stage-guard и опубликовать `storage_state/event`
+  (`solution_fill_timeout` или `prepare_recirculation_timeout`) **без** второго terminal
+  `ERROR`/`DONE` по arm-`cmd_id` (arm уже завершён immediate `DONE`);
 - interlock `pump_main`: включение запрещено без открытых supply-клапанов (`valve_clean_supply|valve_solution_supply`)
   и target-клапанов (`valve_solution_fill|valve_irrigation`);
 - при попытке нарушения interlock возвращается `ERROR` + `error_code=pump_interlock_blocked`;
@@ -118,6 +132,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
   На нажатие нода публикует `emergency_stop_activated`, на отпускание локально восстанавливает
   предыдущий снимок actuator-состояний.
+  **Hardware caveat:** `GPIO15` — strapping pin ESP32; если E-Stop зажат (вход в `LOW`) в момент
+  power-on/reset, возможен сбой/нестандартный boot — не держать E-Stop нажатым при старте;
 - firmware terminal stop path (`clean_fill_completed`, `solution_fill_*`, `prepare_recirculation`,
   `irrigation`) снимает активный stage-timeout guard соответствующего stage, чтобы уже завершённый
   stage не породил поздний ложный timeout-event;
@@ -169,11 +185,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - I2C SDA: `GPIO21`
 - I2C SCL: `GPIO22`
 - Factory reset button: `GPIO0` (active-low)
-- E-Stop button: `GPIO15` (active-low, pull-up)
+- E-Stop button: `GPIO15` (active-low, pull-up; strapping pin — см. §3.1)
 
 Примечание:
 - `GPIO21/22` используются для INA209 и OLED;
-- эти линии не должны одновременно использоваться как насосные GPIO.
+- эти линии не должны одновременно использоваться как насосные GPIO;
+- `GPIO34`/`GPIO35` требуют внешние pull-up на классическом ESP32 (см. §3.1).
 
 ## 5.2. Каналы/GPIO зашиты в прошивке
 

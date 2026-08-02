@@ -4,6 +4,7 @@
 Документ описывает формальную спецификацию **effective-targets** — структурированных целевых значений и параметров управления для зон выращивания.
 
 Актуализация authority / AE3 (2026-03-24):
+- **разведение authority:** Laravel effective-targets = UI / diagnostics / business-model canon; AE3 runtime = SQL read-model + compiled bundle only (без runtime HTTP к `/api/internal/effective-targets/*`);
 - effective-targets остаются канонической бизнес-моделью Laravel;
 - automation-engine в runtime использует direct SQL read-model и не зависит от runtime вызовов `/api/internal/effective-targets/*`;
 - структура effective-targets используется как эталон семантики для SQL parity.
@@ -701,114 +702,81 @@ interface CorrectionTimingsTarget {
 
 ## 5. Примеры использования
 
-### 5.1. Automation-Engine получает targets
+### 5.1. AE3 runtime: SQL read-model + compiled bundle (канон)
+
+AE3 **не** вызывает Laravel `/api/internal/effective-targets/*` в runtime.
+Канонический путь — `PgZoneSnapshotReadModel.load(zone_id=...)`:
+
+1. читает active grow cycle + current phase columns (`ph_target|min|max`, `ec_target|min|max`, …);
+2. сверяет `grow_cycles.settings.bundle_revision` с `automation_effective_bundles.bundle_revision`;
+3. собирает `phase_targets` через `build_base_targets(phase_row)` (**recipe-only** для pH/EC);
+4. operational/execution настройки (PID, correction controllers, timings) приходят из compiled bundle / zone authority — **не** из `zone.default_targets` как chemical setpoints.
 
 ```python
-from repositories.laravel_api_repository import LaravelApiRepository
+# ae3lite/infrastructure/read_models/zone_snapshot_read_model.py (схема)
+snapshot = await zone_snapshot_rm.load(zone_id=zone_id)
 
-repo = LaravelApiRepository()
+# Chemical setpoints — только из phase columns / phase snapshot
+ph = (snapshot.phase_targets or {}).get("ph")  # {target, min, max} или отсутствует
+if ph is None:
+    # fail-closed: PlannerConfigurationError / ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL
+    raise PlannerConfigurationError("ph.target missing from active recipe phase")
 
-# Получить targets для нескольких зон
-targets = await repo.get_effective_targets_batch([1, 2, 3])
-
-# Для зоны 1
-zone_1_targets = targets["1"]
-
-if zone_1_targets["cycle_id"] is None:
-    # Нет активного цикла - пропускаем зону
-    return
-
-# Проверяем pH
-ph_target = zone_1_targets["targets"].get("ph")
-if ph_target:
-    current_ph = await get_current_telemetry(zone_id=1, metric="PH")
-
-    if current_ph < ph_target["min"]:
-        # pH слишком низкий - дозировать pH+
-        dose_ml = calculate_dose(current_ph, ph_target["target"])
-        await send_command_dose_ph_up(zone_id=1, ml=dose_ml)
+current_ph = await telemetry_rm.get_last(zone_id=zone_id, metric="PH")
+if current_ph is not None and current_ph < ph["min"]:
+    # dose через history-logger POST /commands, cmd="dose"
+    ...
 ```
 
-### 5.1b. Automation-Engine использует correction_timings
+Псевдо-SQL (семантика, не полный query):
 
-```python
-from repositories.laravel_api_repository import LaravelApiRepository
-from correction_cycle import CorrectionStateMachine
+```sql
+-- pH/EC target|min|max: только grow_cycle_phases / recipe phase snapshot
+SELECT gcp.ph_target, gcp.ph_min, gcp.ph_max,
+       gcp.ec_target, gcp.ec_min, gcp.ec_max
+FROM grow_cycles gc
+JOIN grow_cycle_phases gcp ON gcp.id = gc.current_phase_id
+WHERE gc.zone_id = :zone_id AND gc.status = 'active';
 
-repo = LaravelApiRepository()
-
-# Получить targets для зоны
-targets = await repo.get_effective_targets(zone_id=1)
-
-# Извлечь параметры стабилизации и таймингов
-correction_timings = targets["targets"].get("correction_timings", {
-    "tank_fill_stabilization_sec": 90,
-    "tank_recirc_stabilization_sec": 30,
-    "irrigation_stabilization_sec": 30,
-    "irrig_recirc_stabilization_sec": 30,
-    "npk_mix_time_sec": 120,
-    "ph_mix_time_sec": 60,
-    "ca_mg_mix_time_sec": 90,
-    "min_correction_interval_sec": 300,
-    "max_tank_recirc_attempts": 5,
-    "max_irrig_recirc_attempts": 2,
-    "tank_fill_timeout_sec": 1800,
-    "tank_recirc_timeout_sec": 3600,
-    "irrigation_timeout_sec": 600
-})
-
-# Инициализация state machine
-state_machine = CorrectionStateMachine(
-    zone_id=1,
-    correction_timings=correction_timings
-)
-
-# Переход IDLE → TANK_FILLING
-await state_machine.transition_to_tank_filling()
-
-# Активация pH/EC нод с параметром стабилизации для TANK_FILLING
-await send_command_activate_sensor_mode(
-    zone_id=1,
-    node_uid="nd-ph-1",
-    stabilization_time_sec=correction_timings["tank_fill_stabilization_sec"]
-)
-
-# Control loop проверяет телеметрию
-telemetry = await get_current_telemetry(zone_id=1, metric="PH")
-
-# Проверяем флаги перед коррекцией
-if telemetry.get("corrections_allowed") and telemetry.get("stable"):
-    ph_target = targets["targets"]["ph"]
-
-    if telemetry["value"] < ph_target["min"]:
-        # Проверяем, прошло ли min_interval_sec с последней коррекции
-        if state_machine.can_correct():
-            dose_ml = calculate_dose(telemetry["value"], ph_target["target"])
-            await send_command_dose_ph_up(zone_id=1, ml=dose_ml)
-            state_machine.record_correction_time()
-else:
-    # Ещё стабилизируется - ждём
-    current_state = state_machine.get_current_state()
-    stabilization_param = f"{current_state.lower()}_stabilization_sec"
-    expected_time = correction_timings.get(stabilization_param, 60)
-
-    logger.info(f"Zone {zone_id} pH sensor stabilizing in {current_state}: "
-                f"{telemetry.get('stabilization_progress_sec')}s / {expected_time}s")
+-- compiled bundle (operational config), revision из cycle settings
+SELECT aeb.bundle_revision, aeb.config
+FROM automation_effective_bundles aeb
+WHERE aeb.scope_type = 'grow_cycle' AND aeb.scope_id = :cycle_id;
+-- ожидаемый revision: grow_cycles.settings->>'bundle_revision'
 ```
 
-### 5.2. Integration tooling использует targets
+### 5.1b. AE3 correction timings / controllers
+
+Stabilization / mix / timeout параметры и PID **не** берутся из hardcoded defaults
+и **не** из Laravel effective-targets HTTP. Runtime читает их из compiled bundle /
+`zone.correction.*` / `zone.pid.*` (см. актуализацию PID authority в шапке документа
+и `PID_CONFIG_REFERENCE.md` §0). Chemical setpoints остаются recipe-only.
 
 ```python
-# Получить targets для зоны вне runtime path automation-engine
-targets = await repo.get_effective_targets(zone_id=1)
+snapshot = await zone_snapshot_rm.load(zone_id=zone_id)
+bundle = snapshot.bundle_config  # automation_effective_bundles.config
 
-# Проверяем расписание полива
+# operational — из bundle / zone authority (не chemical setpoints)
+correction = bundle.get("zone", {}).get("correction", {})
+controllers = correction.get("controllers", {})
+ph_ctrl = controllers.get("ph", {})  # min_interval_sec, max_dose_ml, …
+
+ph_target = (snapshot.phase_targets or {})["ph"]["target"]  # recipe phase only
+# дальше — correction sub-machine (ae3lite/.../correction.py), команды через HL
+```
+
+### 5.2. Integration tooling использует targets (вне AE3 runtime)
+
+Laravel internal API допустим для diagnostics/UI/tooling, **не** для AE3 runtime path:
+
+```python
+# Вне runtime path automation-engine (diagnostics / integration)
+targets = await laravel_internal.get_effective_targets(zone_id=1)
+
 irrigation = targets["targets"].get("irrigation")
 if irrigation and irrigation["mode"] == "SCHEDULE":
     schedule = irrigation.get("schedule", [])
-
     for time_str in schedule:
-        # Запланировать задачу полива на указанное время
         await create_scheduler_task({
             "type": "IRRIGATION",
             "zone_id": 1,
@@ -819,6 +787,9 @@ if irrigation and irrigation["mode"] == "SCHEDULE":
             }
         })
 ```
+
+> Status: **historical / non-normative for AE3** — примеры с `LaravelApiRepository`
+> и runtime HTTP к effective-targets API удалены; они не описывают AE3 path.
 
 ### 5.3. Frontend отображает targets
 
@@ -861,36 +832,43 @@ Laravel вычисляет effective targets на основе:
 
 ### 6.2. Алгоритм
 
+Канон для **chemical setpoints (pH/EC target|min|max)** — recipe phase only.
+`zone.default_targets`, `cycle.phase_overrides`, `cycle.manual_overrides`, `zone.logic_profile`
+**не** переопределяют pH/EC. Merge допустим только для operational/execution подсистем
+(irrigation mode params, lighting schedule UI, climate request и т.п. — см. §1).
+
 ```php
 function computeEffectiveTargets(Zone $zone): array
 {
-    // 1. Найти активный grow cycle
     $cycle = $zone->activeGrowCycle();
     if (!$cycle) {
-        return [
-            'cycle_id' => null,
-            'phase' => null,
-            'targets' => []
-        ];
+        return ['cycle_id' => null, 'phase' => null, 'targets' => []];
     }
 
-    // 2. Получить текущую фазу
     $phase = $cycle->currentPhase();
     if (!$phase) {
-        return [...];
+        return ['cycle_id' => $cycle->id, 'phase' => null, 'targets' => []];
     }
 
-    // 3. Загрузить recipe revision
-    $revision = $cycle->recipeRevision;
+    // Chemical setpoints — ТОЛЬКО из active recipe phase / phase snapshot columns.
+    // Нельзя: array_merge($zone->default_targets, ...) поверх ph/ec.
+    $targets = [
+        'ph' => [
+            'target' => $phase->ph_target,
+            'min' => $phase->ph_min,
+            'max' => $phase->ph_max,
+        ],
+        'ec' => [
+            'target' => $phase->ec_target,
+            'min' => $phase->ec_min,
+            'max' => $phase->ec_max,
+        ],
+        // operational subsystems — из phase + zone/cycle authority documents
+        // (не chemical setpoints); compile → automation_effective_bundles
+    ];
 
-    // 4. Извлечь targets из phase column
-    $phaseData = $revision->{$phase->name . '_phase'};  // veg_phase, flower_phase и т.д.
-
-    // 5. Merge с default значениями зоны
-    $targets = array_merge(
-        $zone->default_targets ?? [],
-        $phaseData['targets'] ?? []
-    );
+    // AE3 runtime-паритет: PgZoneSnapshotReadModel.build_base_targets(phase_row)
+    // + bundle по grow_cycles.settings.bundle_revision.
 
     return [
         'cycle_id' => $cycle->id,
@@ -899,21 +877,23 @@ function computeEffectiveTargets(Zone $zone): array
             'started_at' => $phase->started_at,
             'due_at' => $phase->due_at,
             'days_elapsed' => $phase->days_elapsed,
-            'days_remaining' => $phase->days_remaining
+            'days_remaining' => $phase->days_remaining,
         ],
-        'targets' => $targets
+        'targets' => $targets,
     ];
 }
 ```
 
+> Status: **historical / non-normative** — прежний псевдокод с безусловным
+> `array_merge($zone->default_targets, $phaseData['targets'])` (включая pH/EC)
+> и hardcoded defaults в AE **запрещён** и не является каноном.
+
 ### 6.3. Кэширование
 
-**Важно:** Effective targets **НЕ кэшируются** постоянно, так как они могут меняться:
-- При смене фазы grow cycle
-- При обновлении recipe revision
-- При изменении базовых параметров зоны
-
-Python сервисы должны регулярно обновлять targets (например, каждые 15-60 секунд).
+**Важно:** Effective targets **НЕ кэшируются** постоянно как единственный SoT:
+- при смене фазы / update recipe / compile bundle revision меняется;
+- AE3 читает snapshot + bundle на загрузке task/stage (SQL read-model), без runtime HTTP к Laravel;
+- Laravel/UI пересчитывает при phase/recipe/authority изменениях (см. `AutomationConfigCompiler`).
 
 ---
 

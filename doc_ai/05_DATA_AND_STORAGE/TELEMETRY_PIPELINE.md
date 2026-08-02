@@ -4,6 +4,8 @@
 Документ описывает путь телеметрии от узла ESP32 до UI/Android.
 
 
+**Дата обновления:** 2026-08-02
+
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
@@ -55,7 +57,12 @@ Payload (пример):
 ## 3. MQTT Broker
 
 - Используется единый брокер MQTT (Mosquitto/EMQX и т.п.).
-- Python-сервис подписывается на `hydro/#` и обрабатывает сообщения.
+- `history-logger` (и связанные Python-подписчики) используют **точечные** wildcard-подписки
+  по канону `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`, **без** широкого `hydro/#`:
+  - `hydro/+/+/+/+/{telemetry|command_response|event}`
+  - `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello}`
+  - `hydro/+/+/+/storage_state/event` (aggregate events irrig-нод)
+  - плюс системные `hydro/time/request` / обработка time sync на стороне backend.
 
 ---
 
