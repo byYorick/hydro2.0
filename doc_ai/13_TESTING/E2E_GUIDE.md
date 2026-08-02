@@ -14,6 +14,13 @@
 
 Этот документ — про **Python workflow E2E** (`tests/e2e/`). Frontend Playwright — см. `doc_ai/07_FRONTEND/FRONTEND_TESTING.md`.
 
+### Realhw vs HIL lab
+
+| Контур | Compose | Типичные порты | Запуск |
+|--------|---------|----------------|--------|
+| **Realhw / test_node YAML** | `tests/e2e/docker-compose.e2e.yml` | Laravel 8081, MQTT 1884, AE 9505, HL 9302 | `tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite\|full` |
+| **HIL ESP32 lab** | `infra/hil/docker-compose.hil.yml` | 8080 / 1883 / AE **9405** | `docker compose -f infra/hil/docker-compose.hil.yml --profile automation up -d` |
+
 ## Быстрый старт
 
 ### 1. Установка зависимостей

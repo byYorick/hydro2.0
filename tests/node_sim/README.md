@@ -27,7 +27,7 @@ python -m node_sim.cli run --config config/test_node.yaml
 ```
 
 Этот профиль повторяет логику `firmware/test_node`:
-- 5 виртуальных нод в одном процессе;
+- 6 виртуальных нод в одном процессе (climate/light могут быть optional для telemetry batch);
 - общий state водного контура, staged level-switches и drift;
 - `node_hello`, `status`, `heartbeat`, `config_report`, `event`;
 - strict `command`/`config` обработка, namespace auto-bind, `reset_binding`, `reboot`;

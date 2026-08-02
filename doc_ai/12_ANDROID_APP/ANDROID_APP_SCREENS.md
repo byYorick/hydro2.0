@@ -3,6 +3,9 @@
 
 Документ описывает ключевые экраны приложения и флоу пользователя.
 
+**Код:** `mobile/app/android/`.  
+**Реализовано (v0.1):** `login`, `greenhouses`, `zones`, `zone_details`, `alerts`, `provisioning` (`MainActivity` Routes).  
+**PLANNED (ниже без пометки — target UX):** Welcome/Onboarding, Node Details, Alert Details, Settings.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -11,14 +14,14 @@ Breaking-change: обратная совместимость со старыми
 
 ## 1. Онбординг и логин
 
-### 1.1. Welcome / Onboarding
+### 1.1. Welcome / Onboarding — **PLANNED**
 
 - Краткое описание системы Hydro 2.0.
 - Кнопки:
  - «Войти»
  - «Создать аккаунт» (если поддерживается).
 
-### 1.2. Login
+### 1.2. Login — **MVP**
 
 - Поля: email/телефон + пароль (или иной метод).
 - Кнопки:

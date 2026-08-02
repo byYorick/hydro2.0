@@ -369,7 +369,7 @@ Transient-overlap правило для `pump_main`:
 ## 5.4. Режим reboot/reset
 
 - `restart`/`reboot`:
-  - публикуется `RESTARTING` для всех 5 нод;
+  - публикуется `RESTARTING` для всех 6 виртуальных нод;
   - terminal `command_response` (`DONE`);
   - аппаратный `esp_restart()`.
 - `reset_state`:
@@ -383,7 +383,7 @@ Transient-overlap правило для `pump_main`:
 Канонический launcher: `tests/e2e/run_automation_engine_real_hardware.sh`
 (`--set=ae3lite|smart_irrigation|inline_irrigation|calibration|full`).
 
-Two-tank core (`--set=ae3lite`, 12 сценариев):
+Two-tank core (`--set=ae3lite`, **14** сценариев):
 
 - `E100_ae3_two_tank_realhw_smoke` — быстрый smoke до `clean_fill_check`.
 - `E101_ae3_two_tank_realhw_setup_ready` — каноничный сценарий, который доводит two-tank систему до `workflow_phase=ready`; после этого полив разрешён.
@@ -397,9 +397,12 @@ Two-tank core (`--set=ae3lite`, 12 сценариев):
 - `E114_ae3_reactive_solution_topup_level_switch_realhw` — реактивный `solution_topup` по edge `level_solution_max`.
 - `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 (`await_operator_drain_confirm`).
 - `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
+- `E118_ae3_water_baseline_and_ca_fill_realhw` — water baseline + Ca fill.
+- `E120_ae3_recirc_dilute_overshoot_realhw` — dilute overshoot path.
 
 Irrigation (`--set=smart_irrigation`): `E107`, `E108` (soil-moisture telemetry contract), `E109` (inline correction).
 Calibration (`--set=calibration`): `E110` create/cancel, `E111` `force_invalid`→`INVALID`, `E117` happy-path → `completed`.
+`full` = 14 + 3 + 3 = **20** сценариев.
 
 Удалены как дубли/legacy (без потери покрытия):
 
@@ -597,7 +600,7 @@ SCENARIO_SET=ae3lite tests/e2e/run_automation_engine_real_hardware.sh
 Runtime wrapper поведения:
 
 1. `tests/e2e/run_automation_engine_real_hardware.sh` auto-discover'ит live UID по heartbeat-топикам,
-   используя `E2E_NODE_UID_REGEX` (default: `^nd-`).
+   используя `E2E_NODE_UID_REGEX` (default: `^nd-test-`).
 2. Явные `TEST_NODE_UID`, `TEST_WORKFLOW_NODE_UID`, `TEST_PH_NODE_UID`, `TEST_EC_NODE_UID`
    остаются override-механизмом; default режим для них — `auto`.
 3. После `config -> gh-temp/zn-temp` wrapper сначала ждёт temp heartbeat namespace.
@@ -624,7 +627,7 @@ Runtime wrapper поведения:
 - Heartbeat/telemetry tick: `5s`
 - Config-report periodic: `30s`
 - Публикация node_hello: `hydro/node_hello`
-- Virtual nodes: `5`
+- Virtual nodes: `6`
 - Default base namespace: `gh-test-1/zn-test-1`
 - Temp namespace: `gh-temp/zn-temp`
 

@@ -36,44 +36,21 @@ Breaking-change: обратная совместимость со старыми
 
 ### 2.1. Presentation (UI + ViewModel)
 
-- Экраны Compose:
- - Provisioning flow
- - Список теплиц/зон
- - Детальный экран зоны
- - Экран узла
- - Экран алертов/журнала событий
- - Настройки пользователя
+- Экраны Compose (**as-is**): Login, Greenhouses, Zones, ZoneDetails, Alerts, Provisioning.  
+  **PLANNED:** Node Details, Settings, Welcome/Onboarding.
 
-- ViewModel’ы:
- - `ProvisioningViewModel`
- - `GreenhousesViewModel`
- - `ZoneDetailsViewModel`
- - `NodeDetailsViewModel`
- - `AlertsViewModel`
+- ViewModel’ы: as-is — `ZoneDetailsViewModel`, `AlertsViewModel`, provisioning/greenhouses/zones VMs; **PLANNED** — `NodeDetailsViewModel`.
 
 ### 2.2. Domain
 
-- Use case’ы:
- - `StartProvisioningUseCase`
- - `CompleteProvisioningUseCase`
- - `GetGreenhousesUseCase`
- - `GetZoneDetailsUseCase`
- - `GetNodeDetailsUseCase`
- - `AcknowledgeAlertUseCase`
- - `UpdateNodeConfigUseCase`
+- Use case’ы: многие из списка ниже — **target Clean Architecture**; as-is часто inline в ViewModel.
+ - `GetZoneDetailsUseCase` / ack alerts — частично as-is
+ - `GetNodeDetailsUseCase`, `UpdateNodeConfigUseCase` — **PLANNED**
 
 ### 2.3. Data
 
-- Репозитории:
- - `NodesRepository`
- - `ZonesRepository`
- - `AlertsRepository`
- - `UserSettingsRepository`
-
-- Источники данных:
- - REST API (backend)
- - WebSocket/SignalR/MQTT-bridge
- - локальная БД (Room) и кэш.
+- Репозитории: Zones/Alerts as-is; `UserSettingsRepository` / full Nodes — **PLANNED**.
+- Источники: REST + OkHttp WebSocket (+ polling); MQTT-клиент в app — **PLANNED**.
 
 ---
 

@@ -144,7 +144,7 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 # Показать, какие сценарии будут запущены
 tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
 
-# Каноничный AE3-Lite two-tank набор на реальной test-node (12 сценариев)
+# Каноничный AE3-Lite two-tank набор на реальной test-node (14 сценариев, вкл. E118/E120)
 tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
 
 # Только smart-irrigation real-hardware tranche (E107–E109)
@@ -159,13 +159,16 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=calibration
 # Точечный wrapper над real-hardware harness для smart-irrigation
 tests/e2e/run_smart_irrigation_pipeline.sh
 
-# Полный канонический real-hardware набор (~18 сценариев)
+# Полный канонический real-hardware набор (20 сценариев: 14+3+3)
 tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
 По умолчанию `SCENARIO_SET=full` = `ae3lite` ∪ `smart_irrigation` ∪ `calibration`.
 Legacy sets `automation`/`workflow` (aliases на E100) удалены из launcher;
 sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются через `tools/testing/run_e2e.sh`.
+
+**Стеки:** realhw harness → `tests/e2e/docker-compose.e2e.yml` (Laravel **8081**, MQTT **1884**, AE **9505**, HL **9302**).  
+ESP32 HIL lab → `infra/hil/docker-compose.hil.yml --profile automation` (порты **8080**/**1883**/AE **9405**).
 
 Ключевые AE3 real-hardware сценарии:
 

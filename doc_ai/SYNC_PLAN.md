@@ -59,6 +59,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | mqtt-bridge / NodeConfig / AUTH / retention audit 2026-08-02 | ✅ mqtt-bridge README+§2.4; NODE_CONFIG version/mqtt/HMAC; AUTH lockout/middleware/abilities; alerts retention planned; warm agg table; Docker internal=prod target |
 | digital-twin + E2E/testing audit 2026-08-02 | ✅ DT `/v1/calibrate`+`zone_dt_params`; PYTHON §2.5–2.6; AI MVP status; `run_e2e.sh test` vs smoke; protocol-check local≠CI |
 | OTA + monitoring/ops audit 2026-08-02 | ✅ OTA planned (HL publish, `firmware_files`); AE3 PromQL; HL `:9300` only; restore `DB_NAME=`; backup user `hydro` |
+| HIL/realhw + DATAFLOW audit 2026-08-02 | ✅ HIL AE URL `:9405`+profile note; realhw 14/20; DATAFLOW via HL; Android as-is/planned screens |
 
 ---
 

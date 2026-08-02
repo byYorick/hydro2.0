@@ -272,7 +272,8 @@ python3 firmware/tests/test_node_compatibility.py \
     --mqtt-port 1884 \
     --gh-uid gh-test-1 \
     --zone-uid zn-test-1 \
-    --node-uid nd-test-001
+    --node-uid nd-test-irrig-1
+# MQTT 1884 = e2e compose; hil/dev обычно 1883. UID канон: nd-test-irrig-1 / nd-test-ph-1 / …
 ```
 
 ## Форматы сообщений

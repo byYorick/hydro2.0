@@ -39,11 +39,16 @@ Breaking-change: обратная совместимость со старыми
  │ Websocket/REST
  ▼
  ┌─────────────────┐
- │ Backend │
+ │ Backend / AE3 │
  │ Logic + DB/TSDB │
  └───────┬─────────┘
- │
- │ MQTT publish/subscribe
+ │ REST commands / SQL
+ ▼
+ ┌─────────────────┐
+ │ history-logger │
+ │ ingest + единств. MQTT cmd publish │
+ └───────┬─────────┘
+ │ MQTT pub/sub
  ▼
  ┌───────────────┐
  │ MQTT Broker │
@@ -109,11 +114,11 @@ Backend отправляет команды:
 
 ## 4.2. Шаги
 
-1. Backend создаёт Command.
-2. Публикует MQTT → узел.
+1. Laravel/AE3 создаёт intent/команду (device-level `cmd`).
+2. Публикация **только** через history-logger (`POST /commands`) → MQTT → узел.
 3. Узел исполняет команду.
 4. Узел публикует command_response.
-5. Backend обновляет статус команды.
+5. history-logger/backend обновляет статус команды.
 
 ## 4.3. Топик команды
 ```
@@ -342,17 +347,17 @@ pH_sensor → telemetry
  ↓
  backend анализирует value
  ↓
- ZoneNutrientController решает → нужно корректировать
+ AE3 correction planner решает → нужно корректировать
  ↓
- backend создаёт команду run_pump
+ AE3 → history-logger POST /commands (cmd=dose|run_pump)
  ↓
- mqtt publish → node pump_acid/command
+ HL mqtt publish → node …/command
  ↓
  node выполняет → pump ON
  ↓
- node → command_response (ACK)
+ node → command_response (DONE/…)
  ↓
- backend обновляет состояние и пишет Event
+ HL/backend обновляет состояние и пишет Event
  ↓
  frontend получает WS обновление
 ```
@@ -393,7 +398,7 @@ pH_sensor → telemetry
  ▼
 [TELEMETRY MANAGER] → telemetry JSON → MQTT → backend → DB → WS → UI
 
-[BACKEND CONTROLLER] → decision → command JSON → MQTT → node → execute → command_response → backend → UI
+[AE3 / Laravel] → decision → HL POST /commands → MQTT → node → execute → command_response → HL/backend → UI
 
 [NODE CONFIG] → config_report JSON → MQTT → backend → DB/Channels
 

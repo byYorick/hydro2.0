@@ -16,7 +16,7 @@ Breaking-change: обратная совместимость со старыми
 - Масштабироваться от одной маленькой теплицы до фермы с десятками зон.
 - Иметь чёткую разделённую архитектуру:
  - ESP32-ноды — «железо»;
- - Python — логика зон и MQTT;
+ - Python — AE3/ingest/ops; единственный MQTT command publisher — `history-logger`;
  - Laravel — конфигурация, пользователи, API;
  - Frontend/Android — UI и мобильный доступ;
  - AI/Digital Twin — анализ и оптимизация.
@@ -127,7 +127,7 @@ Breaking-change: обратная совместимость со старыми
 
 1. **Чёткие границы между слоями** 
  - ESP32 — только железо;
- - Python — телеметрия, автоматизация зон, MQTT (несколько сервисов, см. `PYTHON_SERVICES_ARCH.md`);
+ - Python — телеметрия (HL), автоматизация зон (AE3), ops (mqtt-bridge/DT); MQTT command publish — только HL (`PYTHON_SERVICES_ARCH.md`);
  - Laravel — конфиг/история/пользователи;
  - UI — отображение и UX;
  - AI — рекомендации и аналитика.
