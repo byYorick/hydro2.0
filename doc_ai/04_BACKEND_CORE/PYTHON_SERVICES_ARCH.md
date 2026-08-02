@@ -56,8 +56,22 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 
 ### 2.3 Прочие Python-сервисы
 
-- `mqtt-bridge`, `digital-twin`, `telemetry-aggregator` (и прочие вспомогательные сервисы из `docker-compose`) работают в своих доменах.
+- `digital-twin`, `telemetry-aggregator` (и прочие вспомогательные сервисы из `docker-compose`) работают в своих доменах.
 - Никакой сервис, кроме `history-logger`, не публикует device-команды напрямую в MQTT.
+
+### 2.4 `mqtt-bridge` (ops / probe)
+
+Порт: `9000` (REST + `/metrics`).
+
+| Метод | Путь | Статус |
+|-------|------|--------|
+| GET | `/metrics` | active |
+| GET | `/bridge/nodes/{node_uid}/live-status` | active — MQTT live probe |
+| POST | `/bridge/nodes/{node_uid}/config` | legacy/ops — **канон NodeConfig publish:** HL `POST /nodes/{uid}/config` (`PublishNodeConfigJob`) |
+| POST | `/bridge/zones/{zone_id}/commands` | **410** deprecated → history-logger |
+| POST | `/bridge/nodes/{node_uid}/commands` | **410** deprecated → history-logger |
+
+README: `backend/services/mqtt-bridge/README.md`.
 
 ---
 

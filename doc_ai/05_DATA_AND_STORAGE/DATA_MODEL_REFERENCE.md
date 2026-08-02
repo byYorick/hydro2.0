@@ -10,6 +10,8 @@
 #   (AE3 читает `zone_bundle.process_calibration`, не SQL-таблицу zone_process_*)
 # - `laravel_scheduler_missed_windows_totals` / `laravel_scheduler_lock_skipped_totals` — ACTIVE (§8.5.4–8.5.5)
 # - Timescale `telemetry_samples` retention aligned to 30d (`2026_08_02_120000_*`)
+# - Inventory таблиц без отдельного § schema: plants/plant_zone, grow_stage_templates,
+#   zone_simulations, infrastructure_instances, channel_bindings, *_logs, personal_access_tokens (§14.9)
 
 Документ описывает всю структуру данных системы 2.0:
 таблицы, связи, ключи, индексы, правила и использование.
@@ -2731,6 +2733,24 @@ created_at
 Архивная таблица `unassigned_node_errors_archive` хранит исторические записи с `archived_at TIMESTAMP`. Миграции: `2025_12_15_*`, `2025_12_12_*`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+---
+
+# 14.9. Таблицы без dedicated schema-секции (inventory)
+
+Активны в миграциях; полный DDL — в Laravel migrations. Краткий индекс:
+
+| Таблица | Назначение | Retention / notes |
+|--------|------------|-------------------|
+| `plants`, `plant_zone` | справочник культур / M2M зона | domain |
+| `grow_stage_templates` | шаблоны стадий роста | domain |
+| `zone_simulations` | digital-twin / sim runs | domain |
+| `infrastructure_instances` | infra registry | ops |
+| `channel_bindings` | привязки каналов | domain |
+| `system_logs`, `node_logs`, `ai_logs` (+ related) | операционные логи | `logs:cleanup` (см. DATA_RETENTION_POLICY §7) |
+| `personal_access_tokens` | Sanctum PAT | auth |
+
+При расширении контракта — добавить полноценный §2.x/§8.x, не только inventory.
 
 ---
 

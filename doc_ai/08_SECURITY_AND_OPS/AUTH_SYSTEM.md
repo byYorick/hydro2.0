@@ -2,7 +2,7 @@
 # Полная система авторизации и аутентификации 2.0
 # Laravel Sanctum • Roles • Permissions • Tokens • API Security • UI Restrictions
 
-**Дата обновления:** 2026-08-02 (sync: session.lifetime 120, Sanctum expiration null, Password::defaults min 8, throttle SoT bootstrap/config).
+**Дата обновления:** 2026-08-02 (API login без LoginRequest lockout; middleware `role`/`admin`; PAT abilities `*`; dual throttle note).
 
 Документ описывает всю модель авторизации (Auth System) в системе 2.0:
 от входа пользователя до распределения прав, токенов и API-доступа.
@@ -125,22 +125,21 @@ POST /api/auth/login
 }
 ```
 
-## 4.2. Токен хранит роль
+## 4.2. Роль не в token abilities
 
-```
-token->abilities = ["admin"]
-```
+`AuthController::login` создаёт PAT через `createToken('api')` **без** scoped abilities → Sanctum default `['*']`.  
+Авторизация — по `users.role` + middleware `role`/`admin` + Policy classes.  
+Scoped Sanctum abilities (`zones:read`, …) — **planned**, не production contract.
 
-## 4.3. Токены могут иметь список возможностей
+## 4.3. Ответ login/me
 
-Пример:
-```
-abilities = ["zones:read", "commands:write"]
-```
+Роль отдаётся в JSON пользователя (`role`), не как `token->abilities`.
 
 ---
 
-# 5. Permissions (разрешения)
+# 5. Role capabilities (logical)
+
+Логическая матрица возможностей по роли (UI + Policies). **Не** Sanctum token abilities — enforcement через `EnsureUserHasRole` / `EnsureAdmin` и `*Policy`.
 
 ТОП‑уровень:
 
@@ -159,21 +158,19 @@ abilities = ["zones:read", "commands:write"]
 
 # 6. Middleware (Laravel)
 
-## 6.1. `CheckRole:admin`
+Aliases в `bootstrap/app.php`:
 
-Изоляция системных эндпоинтов.
+## 6.1. `admin` → `EnsureAdmin`
 
-## 6.2. `CheckRole:operator`
+Изоляция системных/admin эндпоинтов: `middleware('admin')`.
 
-Ограничение операций полива/дозирования.
+## 6.2. `role` → `EnsureUserHasRole`
 
-## 6.3. `CheckTokenAbility`
+Проверка роли: `middleware('role:admin,operator')` и т.п.
 
-Опциональная проверка токенного разрешения:
+## 6.3. Token ability middleware
 
-```
-$token->can('commands:write')
-```
+`CheckTokenAbility` / `$token->can('…')` — **не зарегистрированы** (planned). Сейчас ability-checks не используются.
 
 ---
 
@@ -281,9 +278,10 @@ SoT throttle defaults:
 
 Значения:
 
-- **Auth endpoints** (`POST /api/auth/login`, `/logout`, `/me`): **10 запросов/мин по IP** (защита от брутфорса).
-- **LoginRequest**: дополнительно **5 неудачных попыток** per `email|IP`, затем lockout.
-- **Стандартные API endpoints**: **120 запросов/мин** (production); 1000 (testing/e2e); 2000 (local); override через `API_THROTTLE`.
+- **Auth API** (`POST /api/auth/login`, `/logout`, `/me`): **10 запросов/мин по IP** (`throttle:10,1`).  
+  Lockout **5 неудач per email|IP** (`LoginRequest`) — **только web Breeze** (`AuthenticatedSessionController`).  
+  API `AuthController::login` использует inline `validate` + `Auth::attempt` **без** этого lockout.
+- **Стандартные authenticated API**: конфиг **120/min** (`API_THROTTLE`), но группа часто имеет **двойной** throttle (prepend в `bootstrap/app.php` + route `throttle:` в `routes/api.php`) → effective ≈ **~60 req/min/IP** на один hit, пока дубль не снят.
 - **System endpoints** (`GET /api/system/health`, `/api/system/scheduler/metrics`): **300 запросов/мин** — выше для polling мониторинга.
 - **Регистрация узлов** (`/api/nodes/register`): `throttle:node_register` + `ip.whitelist` (см. `services.node_registration.allowed_ips`).
 

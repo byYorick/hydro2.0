@@ -271,18 +271,9 @@ NODE_SECRET_PATH=/secrets/nodes.json
 
 ## 7.1. Сетевые ограничения
 
-В docker-compose:
+**Target prod posture:** изолированная Docker-сеть (`internal: true` / без publish лишних портов) + reverse-proxy только для UI/API.
 
-```
-networks:
- hydro_net:
- driver: bridge
- internal: true
-```
-
-Это отключает всю внешнюю доступность.
-
-Для UI — отдельный nginx proxy.
+**Текущий dev** (`backend/docker-compose.dev.yml`): обычный `bridge`, сервисы с `ports:` (8080, 5432, 9300, …) — **не** `internal: true`. Не описывать local-dev как закрытую сеть.
 
 ## 7.2. Разделение контейнеров
 
@@ -356,7 +347,7 @@ networks:
 1. MQTT закрыт для внешних сетей? 
 2. Узлы имеют уникальные node_secret? 
 3. Все команды подписаны HMAC с timestamp? 
-4. Все конфигурации подписаны HMAC с timestamp? 
+4. Config HMAC — **planned** (§2.3.2); verify в firmware ещё не реализован 
 5. OTA проверяет sha256 и подпись? 
 6. Laravel API защищён Sanctum? 
 7. Tokens имеют роли? 

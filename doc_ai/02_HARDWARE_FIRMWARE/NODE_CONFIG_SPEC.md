@@ -59,19 +59,22 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | Поле | Тип | Обязательное | Описание |
 |------|-----|--------------|----------|
 | `node_id` | string | Да | Уникальный идентификатор узла (UID) |
-| `version` | integer | Да | Версия формата конфигурации |
+| `version` | integer | Да | Версия формата конфигурации (**канон формата = 3** в шаблонах `configs/nodes/*`; Laravel `NodeConfigService` при пустом DB-config может выставить `1` — это revision/default scaffold, не отдельный wire-format) |
 | `fw_version` | string | Нет | Версия прикладной прошивки, которую сообщает сама нода в `config_report`/`heartbeat`; backend только сохраняет последнее полученное значение в `nodes.fw_version`. Не использовать версию ESP-IDF SDK как версию прошивки. |
 | `type` | string | Да | Тип узла: `ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
 | `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы) из текущего NodeConfig устройства; отправляется нодой на сервер в `config_report`. |
-| `wifi` | object | Да | Параметры Wi-Fi подключения |
-| `mqtt` | object | Да | Параметры MQTT подключения |
+| `wifi` | object | Да* | Параметры Wi-Fi; server-push может прислать `{"configured": true}` или опустить (см. §3.7) |
+| `mqtt` | object | Да* | Параметры MQTT; firmware **требует** секцию `mqtt` (полный объект или `{"configured": true}`) |
+| `node_secret` | string | Нет | 32-байтный secret (hex/base) — **только server-push** из Laravel; не эхоить в `config_report` |
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
 | `fail_safe_guards` | object | Нет | Локальные fail-safe guard-параметры узла; для `irrig` используются как mirror от `zone.logic_profile` |
 | `link_loss_timeout_sec` | integer | Нет | Таймаут (сек) после потери MQTT, по истечении которого нода переводит актуаторы в safe state. Дублируется в `fail_safe_guards.link_loss_timeout_sec` (mirror). `0` = отключено |
 | `allow_legacy_hmac` | boolean | Нет | Разрешить команды без `ts`/`sig` (только dev). В production-сборке игнорируется, если `CONFIG_HYDRO_ALLOW_LEGACY_HMAC=n` |
+
+\* На устройстве после provisioning `wifi`/`mqtt` обязательны как полные объекты. При **server-push** из Laravel допустимы placeholders `{"configured": true}` (сохранить NVS). Пустой `nodes.config` в БД не обязан содержать `wifi`/`mqtt` до merge с шаблоном — перед publish Laravel должен обеспечить валидный `mqtt` для firmware.
 
 ---
 
@@ -91,9 +94,11 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 
 ### 3.2. `version`
 
-Версия формата конфигурации. При изменении структуры версия увеличивается.
+Версия **формата** конфигурации. При breaking-изменении структуры формата увеличивается.
 
-**Текущая версия:** `3`
+**Канон формата:** `3` (шаблоны `configs/nodes/*_template.json`).
+
+Laravel `NodeConfigService` при отсутствии сохранённого config может подставлять `version: 1` как scaffold revision — не трактовать это как отдельный wire-format; целевые шаблоны и firmware ожидают format **3**.
 
 ### 3.3. `type`
 
@@ -278,6 +283,12 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - `user` (string, необязательное) — имя пользователя для аутентификации
 - `pass` (string, необязательное) — пароль для аутентификации
 - `tls` (boolean, необязательное) — использование TLS (по умолчанию: `false`)
+
+**Server-push:** допускается `mqtt: {"configured": true}` — сохранить текущие MQTT credentials в NVS (аналогично `wifi`). Firmware отклоняет config **без** секции `mqtt`.
+
+**HMAC config:** подпись `ts`/`sig` на config-push — **planned** (см. `SECURITY_ARCHITECTURE.md` §2.3.2); в актуальной прошивке `node_config_handler` **не** verify HMAC config.
+
+**Temp binding:** пока узел в temp-namespace (`gh-temp` / `zn-temp`), повторный temp→temp config может быть ACK без apply; полный apply — после user binding в реальную зону (`CONFIG_REPORT_HANDLING.md`).
 
 ### 3.9. `limits`
 

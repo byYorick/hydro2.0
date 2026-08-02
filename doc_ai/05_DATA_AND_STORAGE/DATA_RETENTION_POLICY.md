@@ -90,11 +90,13 @@ telemetry_raw   (= telemetry_samples — актуальное имя табли�
 - min/max per interval,
 - дневные суммарные показатели.
 
-Срок хранения:
+Срок хранения (фактический, не «6–12 месяцев» как единый срок):
 
-```
-6–12 месяцев
-```
+| Таблица | Retention |
+|--------|-----------|
+| `telemetry_agg_1m` | **30 дней** (Timescale / aggregator) |
+| `telemetry_agg_1h` | **365 дней** |
+| `telemetry_daily` | **без авто-retention** (cold archive — planned) |
 
 > **Реализация (двойной механизм агрегации):**
 > - Laravel `telemetry:aggregate` — каждые 15 минут, использует `ON CONFLICT DO NOTHING`
@@ -102,14 +104,6 @@ telemetry_raw   (= telemetry_samples — актуальное имя табли�
 >
 > Данные не дублируются: Python-сервис перезаписывает агрегаты при конфликте, Laravel пропускает.
 > При наличии Python-сервиса Laravel-команда избыточна, но безопасна.
-
-Таблицы:
-
-```
-telemetry_agg_1m      -- hypertable, retention 30 дней
-telemetry_agg_1h      -- hypertable, retention 365 дней
-telemetry_daily       -- обычная таблица (НЕ hypertable), без авторетеншена
-```
 
 Имя `telemetry_agg_daily` встречалось в старых черновиках; **актуальное имя в миграциях — `telemetry_daily`** (`2025_11_16_184939_create_telemetry_aggregated_tables.php`). В коде Laravel и Python используется только `telemetry_daily`.
 
@@ -191,17 +185,12 @@ zone_events_archive: 5 лет
 
 Alerts важны для истории безопасности.
 
-Срок:
+**Целевой срок (planned):** `alerts` ≈ 365 дней.
 
-```
-alerts: 365 дней
-```
-
-Удаляются автоматически, если:
-
-- resolved,
-- acknowledged,
-- older than retention limit.
+**Факт 2026-08-02:** отдельного Schedule/`alerts:cleanup` / Timescale policy на таблице `alerts` **нет**.  
+Lifecycle: создание через Laravel `AlertService`; ack/resolve → статус **`RESOLVED`** (отдельного статуса `acknowledged` нет).  
+Рост таблицы — до ручной очистки или будущей команды purge.  
+`alerts:dlq-replay` относится к `pending_alerts`, не к retention `alerts`.
 
 ---
 
