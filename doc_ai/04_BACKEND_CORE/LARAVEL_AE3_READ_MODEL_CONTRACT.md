@@ -1,7 +1,7 @@
 # Laravel ↔ AE3 Read-Model Contract
 
 **Версия:** 1.0
-**Дата:** 2026-04-18
+**Дата:** 2026-08-02
 **Статус:** Active
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0.
@@ -32,7 +32,7 @@ AE3 (automation-engine, Python) читает состояние зоны **на�
                                    └──────────────────────────────────────────┘
 ```
 
-**Snapshot** — дамп `information_schema.columns` по 24 таблицам, от которых зависит AE3. Хранится в [`schemas/automation_read_model_schema.json`](../../schemas/automation_read_model_schema.json).
+**Snapshot** — дамп `information_schema.columns` по 29 таблицам, от которых зависит AE3 (`ALL_TABLES` в manifest). Хранится в [`schemas/automation_read_model_schema.json`](../../schemas/automation_read_model_schema.json).
 
 **Python manifest** — декларация в [`ae3lite/infrastructure/read_models/laravel_schema_contract.py`](../../backend/services/automation-engine/ae3lite/infrastructure/read_models/laravel_schema_contract.py) о том, какие таблицы / колонки / enum-значения AE3 ждёт найти.
 
@@ -106,13 +106,13 @@ AE3 manifest требует колонку, которую Laravel-миграц�
 - Либо **добавь миграцию**, создающую колонку (если AE3 действительно должен её читать).
 - Либо **убери колонку из manifest**, если от неё отказались.
 
-## Отслеживаемые таблицы (24)
+## Отслеживаемые таблицы (29)
 
-AE3-owned (AE3 primary writer): `ae_tasks`, `ae_commands`, `ae_stage_transitions`, `ae_zone_leases`, `pid_state`, `zone_workflow_state`.
+AE3-owned (AE3 primary writer, 6): `ae_tasks`, `ae_commands`, `ae_stage_transitions`, `ae_zone_leases`, `pid_state`, `zone_workflow_state`.
 
-Laravel-owned, AE3 reads: `zone_automation_intents`, `zones`, `greenhouses`, `grow_cycles`, `grow_cycle_phases`, `automation_effective_bundles`, `automation_config_documents`, `sensors`, `telemetry_last`, `telemetry_samples`, `zone_events`, `nodes`, `node_channels`, `channel_bindings`, `pump_calibrations`, `alerts`, `commands`, `unassigned_node_errors`.
+Laravel-owned, AE3 reads (23): `zone_automation_intents`, `zones`, `greenhouses`, `grow_cycles`, `grow_cycle_phases`, `automation_effective_bundles`, `automation_config_documents`, `sensors`, `telemetry_last`, `telemetry_samples`, `zone_events`, `nodes`, `node_channels`, `channel_bindings`, `pump_calibrations`, `alerts`, `commands`, `unassigned_node_errors`, `greenhouse_automation_intents`, `greenhouse_automation_leases`, `greenhouse_automation_tasks`, `greenhouse_automation_state`, `greenhouse_manual_overrides`.
 
-Полный список и источники SQL-запросов: см. manifest и Explore-отчёт в истории commit-ов (от 2026-04-18).
+Полный список колонок/enum: `ALL_TABLES` в [`laravel_schema_contract.py`](../../backend/services/automation-engine/ae3lite/infrastructure/read_models/laravel_schema_contract.py) (sync 2026-08-02).
 
 ## NOTIFY-каналы
 

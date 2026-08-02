@@ -17,8 +17,8 @@
 - добавлен internal AE endpoint `POST /zones/{id}/start-irrigation`;
 - `FORCE_IRRIGATION` сохраняет внешний контракт, но внутри маршрутизируется в AE3
   `start-irrigation`, а не в direct device command path;
-- canonical `ae_tasks` расширены typed irrigation runtime columns и фазами
-  `irrigating|irrig_recirc`.
+- canonical `ae_tasks` расширены typed irrigation runtime columns; активная фаза полива — `irrigating`
+  (`irrig_recirc` — legacy compat, не канон AE3).
 
 Актуализация scheduler workspace (2026-03-27):
 - public operator-contract `scheduler-tasks` удалён;
@@ -105,15 +105,28 @@ Breaking-change: обратная совместимость со старыми
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
 | POST | /api/zones/{id}/start-irrigation | auth:sanctum (operator/admin/agronomist/engineer) | Канонический запуск AE3 irrigation workflow (`mode=normal|force`) |
+| POST | /api/zones/{id}/start-cycle | auth:sanctum (operator/admin/agronomist/engineer) | Публичный wake-up / start-cycle зоны (Laravel → AE `POST /zones/{id}/start-cycle`) |
+| POST | /api/zones/{id}/start-solution-topup | auth:sanctum (operator/admin/agronomist/engineer) | Запуск solution top-up workflow |
+| POST | /api/zones/{id}/start-solution-change | auth:sanctum (operator/admin/agronomist/engineer) | Запуск solution change workflow |
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`, `observability`, `state_meta`) |
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
-| POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
-| POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
+| POST | /api/zones/{id}/control-mode | auth:sanctum (operator/admin/agronomist/engineer) | Переключить режим управления автоматикой (`auto|semi|manual`) |
+| POST | /api/zones/{id}/manual-step | auth:sanctum (operator/admin/agronomist/engineer) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
 | GET | /api/zones/{id}/schedule-workspace | auth:sanctum | Scheduler workspace зоны: `control + capabilities + plan + execution`, query `horizon=24h|7d` |
+| GET | /api/zones/{id}/manual-schedules | auth:sanctum (agronomist/admin) | Список ручных расписаний зоны |
+| POST | /api/zones/{id}/manual-schedules | auth:sanctum (agronomist/admin) | Создать ручное расписание |
+| PUT | /api/zones/{id}/manual-schedules/{manualSchedule} | auth:sanctum (agronomist/admin) | Обновить ручное расписание |
+| DELETE | /api/zones/{id}/manual-schedules/{manualSchedule} | auth:sanctum (agronomist/admin) | Удалить ручное расписание |
+| GET | /api/zones/{id}/config-mode | auth:sanctum | Текущий `config_mode` (`locked|live`) + TTL |
+| PATCH | /api/zones/{id}/config-mode | auth:sanctum (operator+) | Переключить config mode |
+| PATCH | /api/zones/{id}/config-mode/extend | auth:sanctum (operator+) | Продлить live TTL |
+| GET | /api/zones/{id}/effective-targets | auth:sanctum | Effective targets зоны (UI/diagnostics; AE3 runtime читает SQL bundle) |
+| POST | /api/effective-targets/batch | auth:sanctum | Batch effective targets для нескольких зон |
+| GET | /api/zones/{id}/snapshot | auth:sanctum | Снимок зоны для UI/diagnostics |
 | GET | /api/zones/{id}/executions/{executionId} | auth:sanctum | Детали одного execution run по canonical `ae_tasks.id` |
 | GET | /api/zones/{id}/scheduler-diagnostics | auth:sanctum (admin/engineer) | Инженерный diagnostics path: dispatcher state + historical `scheduler_logs`, вне operator flow |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
-| GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
+| GET | /api/zones/{id}/telemetry/history | auth:sanctum | История телеметрии по метрикам |
 
 Контракт `PATCH /api/zones/{id}`:
 - допускает `automation_runtime: "ae3"`
@@ -152,7 +165,7 @@ Breaking-change: обратная совместимость со старыми
 - `current_levels.nutrient_tank_level_percent` для AE3 строится по канонической level-semantics:
   `100` при активном `solution_max`, `50` при активном `solution_min` без `solution_max`, `0` если `solution_min` не активен;
 - если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
-- для irrigation workflow endpoint обязан честно отражать `IRRIGATING` и `IRRIG_RECIRC`,
+- для irrigation workflow endpoint обязан честно отражать `IRRIGATING` (и legacy `IRRIG_RECIRC` только как compat),
   а также last decision metadata (`strategy`, `config`, `bundle_revision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
 - `state_meta.source` (`live|cache`) и `state_meta.is_stale` обязательны; при cache fallback UI должен считать snapshot устаревшим.
 - блок `observability` обогащается Laravel (`ZoneAutomationObservabilityService`): полная схема, hint-коды и merge-правила live/stale — `API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.7.
@@ -174,7 +187,7 @@ Breaking-change: обратная совместимость со старыми
 - `execution.active_run` / `recent_runs[]` для irrigation могут содержать locked decision snapshot (`decision_strategy`, `decision_config`, `decision_bundle_revision`) текущего task;
 - `execution.counters.failed_24h` и `execution.latest_failure` учитывают failed/cancelled `zone_automation_intents`, если для них не было `ae_task`;
 - `horizon` принимает только `24h` и `7d`, остальные значения приводятся к `24h`;
-- `capabilities.executable_task_types` честно отражает runtime-ready lanes; в canonical AE3 compat-path сейчас это `irrigation`, `lighting`, `diagnostics`;
+- `capabilities.executable_task_types` зеркалит dispatcher: `irrigation`, `lighting`, `solution_topup`, `solution_change`, `diagnostics`;
 - `capabilities.ae3_irrigation_only_dispatch` и `capabilities.non_executable_planned_task_types` объясняют, какие окна плана не получают Laravel dispatch при AE3.
 
 Контракт `GET /api/zones/{id}/executions/{executionId}`:
@@ -213,10 +226,11 @@ Breaking-change: обратная совместимость со старыми
 | Метод | Путь | Auth | Описание |
 |-------|----------------------|------|-----------------------------------------------|
 | GET | /api/nodes | auth:sanctum | Список узлов |
-| POST | /api/nodes | auth:sanctum (operator/admin/agronomist/engineer) | Зарегистрировать узел |
+| POST | /api/nodes | auth:sanctum (operator/admin/agronomist/engineer) | Создать/зарегистрировать узел оператором (UI/API) |
 | GET | /api/nodes/{id} | auth:sanctum | Детали узла |
 | PATCH | /api/nodes/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить метаданные узла (name, zone_id) |
 | DELETE| /api/nodes/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить узел |
+| POST | /api/nodes/register | `throttle:node_register` + `ip.whitelist` (без sanctum) | Device/self-registration ESP32 (отдельный путь от `POST /api/nodes`) |
 
 Доп. действия:
 
@@ -225,6 +239,10 @@ Breaking-change: обратная совместимость со старыми
 | GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправка низкоуровневых команд |
+| POST | /api/nodes/{id}/detach | auth:sanctum (operator+) | Detach/unbind узла от зоны (NodeConfig temp namespace) |
+| POST | /api/nodes/{id}/swap | auth:sanctum (operator+) | Замена узла (swap hardware) |
+| GET | /api/nodes/{id}/lifecycle/allowed-transitions | auth:sanctum | Допустимые lifecycle transitions |
+| POST | /api/nodes/{id}/lifecycle/transition | auth:sanctum (operator+) | Выполнить lifecycle transition |
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
 | POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация zonal bindings внутри шага `4. Автоматика зоны` |
 | POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод внутри блоков шага `4. Автоматика зоны` |
@@ -387,11 +405,27 @@ Authority-конфиги больше не публикуются в Inertia pro
 | PUT/PATCH | /api/automation-presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить custom preset |
 | DELETE | /api/automation-presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить custom preset |
 | POST | /api/automation-presets/{id}/duplicate | auth:sanctum (operator/admin/agronomist/engineer) | Дублировать preset в custom copy |
+| GET | /api/zone-automation-presets | auth:sanctum | Список zone automation presets |
+| GET | /api/zone-automation-presets/{preset} | auth:sanctum | Детали zone automation preset |
+| POST | /api/zone-automation-presets | auth:sanctum (agronomist/admin) | Создать zone automation preset |
+| PUT/PATCH | /api/zone-automation-presets/{preset} | auth:sanctum (agronomist/admin) | Обновить |
+| DELETE | /api/zone-automation-presets/{preset} | auth:sanctum (agronomist/admin) | Удалить |
+| POST | /api/zone-automation-presets/{preset}/duplicate | auth:sanctum (agronomist/admin) | Дублировать |
 
 Preset rules:
 - system preset read-only;
 - custom preset editable;
 - preset не является runtime authority, пока payload не сохранён в authority document.
+
+### 10.1 Launch flow / mobile sync
+
+| Метод | Путь | Auth | Описание |
+|-------|------|------|----------|
+| GET | /api/launch-flow/manifest | auth:sanctum | Манифест шагов launch wizard (UI `/launch`) |
+| GET | /api/sync/telemetry | auth:sanctum | Delta sync telemetry (mobile/offline) |
+| GET | /api/sync/commands | auth:sanctum | Delta sync commands |
+| GET | /api/sync/alerts | auth:sanctum | Delta sync alerts |
+| GET | /api/sync/full | auth:sanctum | Full sync bundle |
 
 ---
 
@@ -580,8 +614,12 @@ Laravel публикует `ExecutionChainUpdated` на приватный ка�
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------|------|----------------------------------------------------|
-| POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
+| POST | /zones/{id}/start-cycle | internal | Wake-up diagnostics / cycle_start (scheduler/manual) |
 | POST | /zones/{id}/start-irrigation | internal | Wake-up irrigation workflow зоны (`normal|force|replay`) |
+| POST | /zones/{id}/start-lighting-tick | internal | Wake-up lighting tick (`automation_runtime='ae3'`) |
+| POST | /zones/{id}/start-solution-topup | internal | Wake-up solution top-up |
+| POST | /zones/{id}/start-solution-change | internal | Wake-up solution change (semi-auto) |
+| POST | /greenhouses/{id}/start-climate-tick | internal | Wake-up greenhouse climate tick |
 | GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций (включая `observability`) |
 | GET | /zones/{id}/control-mode | internal | Текущий `control_mode`, `current_stage`, `pending_manual_step` и public manual-step список |
 | POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
@@ -724,8 +762,7 @@ Response (solution tank guard failed):
 
 ### 18.3 Scheduler intents lifecycle (DB contract)
 
-`POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation` работают только как wake-up endpoints.
-Фактическое выполнение берется из `zone_automation_intents`.
+Канонические zone wake-up: `start-cycle`, `start-irrigation`, `start-lighting-tick`, `start-solution-topup`, `start-solution-change` (плюс greenhouse `start-climate-tick`). Фактическое действие берётся из `zone_automation_intents` / greenhouse intents.
 
 Lifecycle intents:
 - `pending`
@@ -736,7 +773,7 @@ Lifecycle intents:
 - `cancelled`
 
 Правила:
-- scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle` или `start-irrigation`;
+- scheduler сначала пишет intent (`pending`) в БД, затем вызывает соответствующий wake-up endpoint;
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
 - при повторном `idempotency_key` для active intent endpoint возвращает
   `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;

@@ -1,7 +1,7 @@
 # AE3 IRR Fail-Safe And E-Stop Contract
 
 **Версия:** 1.0
-**Дата:** 2026-04-09
+**Дата:** 2026-08-02
 **Статус:** Детализирующий контракт для AE3 / Laravel / firmware mirror
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -66,6 +66,9 @@ NodeConfig.fail_safe_guards
           "clean_fill_min_check_delay_ms": 5000,
           "solution_fill_clean_min_check_delay_ms": 5000,
           "solution_fill_solution_min_check_delay_ms": 60000,
+          "solution_topup_clean_min_check_delay_ms": 5000,
+          "solution_topup_solution_min_check_delay_ms": 60000,
+          "solution_topup_enabled": true,
           "recirculation_stop_on_solution_min": true,
           "irrigation_stop_on_solution_min": true,
           "estop_debounce_ms": 80
@@ -80,6 +83,9 @@ NodeConfig.fail_safe_guards
 - `clean_fill_min_check_delay_ms` — **deprecated для `clean_fill`**: ранее использовался для проверки `level_clean_min`, но при пустом баке давал ложный `clean_fill_source_empty`; поле сохранено в конфиге для совместимости;
 - `solution_fill_clean_min_check_delay_ms` — задержка перед проверкой `level_clean_min` после старта `solution_fill`;
 - `solution_fill_solution_min_check_delay_ms` — задержка перед leak-check по `level_solution_min` после старта `solution_fill`;
+- `solution_topup_clean_min_check_delay_ms` — то же для stage `solution_topup_check` (default = `solution_fill_clean_min_check_delay_ms`);
+- `solution_topup_solution_min_check_delay_ms` — leak-check delay для `solution_topup` (default = `solution_fill_solution_min_check_delay_ms`);
+- `solution_topup_enabled` — enable автодолива; в runtime_plan также читается из `execution.startup.solution_topup_enabled` (приоритетнее guards). Доменный consumer — `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` §7.5;
 - `recirculation_stop_on_solution_min` — включать ли stop-guard `prepare_recirculation` по `level_solution_min=0`;
 - `irrigation_stop_on_solution_min` — включать ли stop-guard `irrigation` по `level_solution_min=0`;
 - `estop_debounce_ms` — debounce физической кнопки `E-Stop`.
@@ -214,6 +220,9 @@ AE3 обязан дублировать те же stop-решения на ур�
 AE3 обязан знать те же guard-конфиги (кроме `clean_fill_min_check_delay_ms` — для `clean_fill` не применяется):
 - `solution_fill_clean_min_check_delay_ms`
 - `solution_fill_solution_min_check_delay_ms`
+- `solution_topup_clean_min_check_delay_ms`
+- `solution_topup_solution_min_check_delay_ms`
+- `solution_topup_enabled` (runtime_plan; source `startup` / `fail_safe_guards`)
 - `recirculation_stop_on_solution_min`
 - `irrigation_stop_on_solution_min`
 
@@ -223,6 +232,7 @@ AE3 обязан применять те же бизнес-решения:
 - `solution_fill_source_empty`
 - `solution_fill_leak_detected`
 - `solution_fill_completed`
+- `solution_topup_source_empty` / `solution_topup_leak_detected` (AE3 handler path; см. LEVEL_SWITCH §7.5)
 - `recirculation_solution_low`
 - `irrigation_solution_low`
 - `emergency_stop_activated`

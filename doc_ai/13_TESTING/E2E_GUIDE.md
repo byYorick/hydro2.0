@@ -2,13 +2,29 @@
 
 Руководство по написанию и запуску end-to-end тестов для системы Hydro 2.0.
 
+**Дата обновления:** 2026-08-02
+
+## Три разных E2E suite (не смешивать)
+
+| Suite | Где | Команда | Порты / окружение |
+|-------|-----|---------|-------------------|
+| **Python workflow E2E** | `tests/e2e/` (корень репо) | `python -m runner.e2e_runner …` + `docker-compose.e2e.yml` | Laravel **8081**, PG **5433**, MQTT **1884**, Reverb **6002** |
+| **Playwright (Laravel app)** | `backend/laravel/` → `playwright.config.ts` → обычно `tests/E2E/` | из `backend/laravel/`: `npm run e2e` / `npm run e2e:ci` | Dev Laravel **8080** (см. config) |
+| **Playwright browser smoke** | `backend/laravel/tests/e2e/browser/` | `npm run e2e:browser` | Отдельный `playwright.config.ts`; часто baseURL **8081** |
+
+Этот документ — про **Python workflow E2E** (`tests/e2e/`). Frontend Playwright — см. `doc_ai/07_FRONTEND/FRONTEND_TESTING.md`.
+
 ## Быстрый старт
 
 ### 1. Установка зависимостей
 
+На хосте с PEP 668 предпочтительно `uv` / venv (голый `pip install` часто блокируется):
+
 ```bash
 cd tests/e2e
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# или: uv pip install -r requirements.txt
 ```
 
 ### 2. Запуск тестового окружения

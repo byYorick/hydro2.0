@@ -39,38 +39,30 @@ UI должен быть:
 
 ```
 resources/js/Pages/
- Dashboard/Index.vue (ролевые дашборды)
- Dashboard/Dashboards/
+ Dashboard/Index.vue          ← production entry (UnifiedDashboardController)
+ Dashboard/Dashboards/        ← planned/unwired ролевые варианты (не production entry)
    - AgronomistDashboard.vue
    - AdminDashboard.vue
    - EngineerDashboard.vue
    - OperatorDashboard.vue
    - ViewerDashboard.vue
  Zones/Index.vue
- Zones/Show.vue
-   - Zones/Tabs/ZoneSchedulerTab.vue
- Zones/ZoneCard.vue
- Zones/ZoneTelemetryChart.vue
- Devices/Index.vue
- Devices/Show.vue
- Devices/Add.vue
- Devices/DeviceChannelsTable.vue
- Recipes/Index.vue
- Recipes/Show.vue
- Recipes/Edit.vue
+ Zones/Show.vue + Zones/Tabs/*
+ Devices/Index.vue, Show.vue, Add.vue
+ Recipes/Index.vue, Show.vue, Edit.vue
  Alerts/Index.vue
  Settings/Index.vue
- Admin/Index.vue
- Admin/Zones.vue
- Admin/Recipes.vue
- Greenhouses/Create.vue
- Profile/Edit.vue
+ Admin/…
+ Greenhouses/…
  Launch/Index.vue
- Auth/ (Login, Register, etc.)
+ Profile/Edit.vue
+ Auth/…
 ```
 
 ### Правило для ИИ:
-- каждая новая страница должна быть создана в Pages и входить через Inertia.
+- каждая новая страница — в `Pages/` через Inertia;
+- production Dashboard = `Dashboard/Index.vue` (Unified); ролевые `Dashboards/*` не подключать как entry без явной задачи;
+- тема: `document.documentElement.dataset.theme` + CSS tokens (`useTheme`), не обязательные Tailwind `dark:`.
 
 ---
 

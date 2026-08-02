@@ -565,13 +565,16 @@ interface DosingTarget {
 
 **ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Эти параметры управляют жизненным циклом активации/деактивации сенсорных нод и частотой коррекций.
 
+> **Legacy:** `irrig_recirc_stabilization_sec` / `max_irrig_recirc_attempts` относятся к снятому post-irrigation `IRRIG_RECIRC` path (AE3 canon — без отдельной фазы `irrig_recirc`). Поля могут оставаться в JSON/UI для совместимости, runtime AE3 их не требует.
+
 ```typescript
 interface CorrectionTimingsTarget {
   // Время стабилизации после активации (для разных состояний)
   tank_fill_stabilization_sec: number;     // По умолчанию: 90
   tank_recirc_stabilization_sec: number;   // По умолчанию: 30
   irrigation_stabilization_sec: number;    // По умолчанию: 30
-  irrig_recirc_stabilization_sec: number;  // По умолчанию: 30
+  /** @deprecated legacy IRRIG_RECIRC — не канон AE3 */
+  irrig_recirc_stabilization_sec?: number;
 
   // Время ожидания после дозирования (mixing time)
   npk_mix_time_sec: number;                // По умолчанию: 120
@@ -583,7 +586,8 @@ interface CorrectionTimingsTarget {
 
   // Максимальные попытки рециркуляции
   max_tank_recirc_attempts: number;        // По умолчанию: 5
-  max_irrig_recirc_attempts: number;       // По умолчанию: 2
+  /** @deprecated legacy IRRIG_RECIRC — не канон AE3 */
+  max_irrig_recirc_attempts?: number;
 
   // Timeout режимов (макс. время выполнения)
   tank_fill_timeout_sec: number;           // По умолчанию: 1800 (30 мин)
@@ -640,7 +644,7 @@ interface CorrectionTimingsTarget {
 - `tank_fill_stabilization_sec` — время стабилизации при активации в TANK_FILLING (обычно больше, т.к. идет заливка)
 - `tank_recirc_stabilization_sec` — время стабилизации в TANK_RECIRC (меньше, т.к. раствор уже смешан)
 - `irrigation_stabilization_sec` — время стабилизации при активации для IRRIGATING
-- `irrig_recirc_stabilization_sec` — время стабилизации в IRRIG_RECIRC
+- `irrig_recirc_stabilization_sec` — **legacy**, не используется каноном AE3 (снятый IRRIG_RECIRC)
 
 **Mixing time (время перемешивания):**
 - `npk_mix_time_sec` — время ожидания после дозирования NPK для перемешивания
@@ -650,7 +654,7 @@ interface CorrectionTimingsTarget {
 **Интервалы и ограничения:**
 - `min_correction_interval_sec` — минимальный интервал между коррекциями (предотвращает передозировку)
 - `max_tank_recirc_attempts` — максимальное количество попыток достичь целей в TANK_RECIRC
-- `max_irrig_recirc_attempts` — максимальное количество попыток в IRRIG_RECIRC
+- `max_irrig_recirc_attempts` — **legacy**, не канон AE3
 
 **Timeouts:**
 - `tank_fill_timeout_sec` — максимальное время режима TANK_FILLING

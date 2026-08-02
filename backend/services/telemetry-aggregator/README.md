@@ -20,7 +20,7 @@
 
 - `AGGREGATION_INTERVAL_SECONDS` - интервал запуска агрегации (по умолчанию 300 секунд = 5 минут)
 - `CLEANUP_INTERVAL_SECONDS` - интервал запуска очистки старых данных (по умолчанию 86400 секунд = 24 часа)
-- `RETENTION_SAMPLES_DAYS` - retention для telemetry_samples (по умолчанию 90 дней)
+- `RETENTION_SAMPLES_DAYS` - retention для telemetry_samples (по умолчанию 30 дней; см. `DATA_RETENTION_POLICY.md`)
 - `RETENTION_1M_DAYS` - retention для telemetry_agg_1m (по умолчанию 30 дней)
 - `RETENTION_1H_DAYS` - retention для telemetry_agg_1h (по умолчанию 365 дней)
 
@@ -28,7 +28,7 @@
 
 Сервис автоматически удаляет старые данные согласно retention policy:
 
-- **telemetry_samples**: 90 дней (raw данные хранятся 3 месяца)
+- **telemetry_samples**: 30 дней (raw hot; Timescale policy в старой миграции может ещё быть 90 — см. policy)
 - **telemetry_agg_1m**: 30 дней (минутные агрегаты хранятся 1 месяц)
 - **telemetry_agg_1h**: 365 дней (часовые агрегаты хранятся 1 год)
 - **telemetry_daily**: бессрочно (дневные агрегаты хранятся всегда)

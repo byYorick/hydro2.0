@@ -39,6 +39,8 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - `POST /zones/{id}/start-cycle` — diagnostics / cycle_start / compat non-irrigation;
 - `POST /zones/{id}/start-irrigation` — штатный полив по расписанию;
 - `POST /zones/{id}/start-lighting-tick` — lighting tick для `automation_runtime='ae3'`;
+- `POST /zones/{id}/start-solution-topup` — автодолив раствора (`solution_topup`);
+- `POST /zones/{id}/start-solution-change` — полуавто смена раствора (`solution_change`);
 - `POST /greenhouses/{id}/start-climate-tick` — greenhouse climate tick.
 
 Правила:
@@ -135,7 +137,7 @@ Routing:
 - автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3 runtime не используются.
 
 Compatibility path:
-- zone ingress — через `start-cycle` / `start-irrigation` / `start-lighting-tick` + `zone_automation_intents`;
+- zone ingress — через `start-cycle` / `start-irrigation` / `start-lighting-tick` / `start-solution-topup` / `start-solution-change` + `zone_automation_intents`;
 - greenhouse climate — `start-climate-tick`;
 - status — canonical `GET /internal/tasks/{task_id}`;
 - dual-run shadow, зеркала статусов вне канона и `root_intent_id` bridge в canonical v1 не требуются.

@@ -47,7 +47,7 @@ make refresh
 - history-logger REST: http://localhost:9300
 - history-logger metrics: http://localhost:9301/metrics
 - automation-engine REST: http://localhost:9405
-- automation-engine metrics: http://localhost:9401/metrics
+- automation-engine metrics: http://localhost:9405/metrics
 - Laravel scheduler-dispatch metrics: http://localhost:8080/api/system/scheduler/metrics
 
 Поток команд к узлам (инвариант): `Laravel scheduler-dispatch → automation-engine → history-logger (POST /commands) → MQTT → ESP32` — см. `doc_ai/ARCHITECTURE_FLOWS.md`.

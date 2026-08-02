@@ -5,7 +5,7 @@
 Документ описывает полную архитектуру проверки команд (Command Validation)
 в системе 2.0. Это критический слой безопасности на пути **backend/Python-сервисы → MQTT → ESP32**.
 
-**Дата обновления:** 2026-05-28 (sync с кодом: реальные bounds, canonical статусы ACK/DONE, intervals из controllers config).
+**Дата обновления:** 2026-08-02 (HMAC/timestamp fail → status ERROR; sync с firmware `node_command_handler.c` и MQTT_SPEC §8.2.1).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -166,6 +166,8 @@ abs(now - ts) < 10 секунд
 
 Где `now` и `ts` — Unix timestamp в секундах.
 
+При провале проверки firmware отвечает `command_response` со **`status=ERROR`**, `error_code=timestamp_expired` (не `INVALID`). См. `node_command_handler.c`, `MQTT_SPEC_FULL.md` §8.2.1.
+
 ## 5.2. HMAC-подпись
 
 ```
@@ -177,6 +179,8 @@ sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 - `canonical_json` — каноническая JSON-строка команды без `sig` (см. выше)
 - Подпись в hex формате (64 символа, нижний регистр)
 - Сравнение регистронезависимое
+
+При провале проверки firmware отвечает `command_response` со **`status=ERROR`**, `error_code=invalid_signature` (не `INVALID`). См. `node_command_handler.c`, `MQTT_SPEC_FULL.md` §8.2.1.
 
 ## 5.3. Параметры
 
@@ -223,8 +227,8 @@ ESP32 отвечает `command_response` (см. `MQTT_SPEC_FULL.md` §8). **К�
 
 - `ACK` — команда принята и будет выполнена;
 - `DONE` — команда выполнена успешно (terminal success);
-- `ERROR` — команда не выполнена / выполнена с ошибкой;
-- `INVALID` — команда невалидна (params, HMAC, timestamp);
+- `ERROR` — команда не выполнена / выполнена с ошибкой; также HMAC/timestamp fail на firmware (`error_code`: `invalid_signature`, `timestamp_expired`);
+- `INVALID` — команда невалидна по params / неподдерживаемый канал/`cmd` (не HMAC и не timestamp — те идут как `ERROR`);
 - `BUSY` — узел занят, команда не может быть выполнена сейчас;
 - `NO_EFFECT` — команда не оказала эффекта (idempotent skip);
 - `TIMEOUT` — device-level timeout на стороне ноды.

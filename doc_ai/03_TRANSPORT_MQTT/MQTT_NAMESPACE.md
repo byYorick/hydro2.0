@@ -9,6 +9,7 @@
 
 Frontend и Android **не** обращаются к MQTT напрямую.
 
+**Дата обновления:** 2026-08-02 (`{channel}` = name/channel; `hydro/system/*` planned; topic ids `ph_sensor`/`ec_sensor`).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -34,7 +35,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 - `{gh}` — UID теплицы (`greenhouses.uid`),
 - `{zone}` — UID зоны (`zones.uid`). Для **greenhouse-only** приводов (например крышные форточки), когда физически нет «своей» зоны, в топике используется UID **anchor-зоны**, выбранной в `greenhouse.logic_profile` (DD-9, см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`); иерархия сегментов топика не меняется.
 - `{node}` — UID узла (`nodes.uid`),
-- `{channel}` — ключ канала (`channels.key`), используется только для channel-level сообщений,
+- `{channel}` — имя канала: в NodeConfig — `channels.name` / `channels.channel` (одинаковое значение, напр. `ph_sensor`, `system`, `storage_state`); в БД — `node_channels.channel`. Поле `channels.key` **не используется**. Сегмент нужен только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 
  `telemetry`, `command`, `status`, `event`, `config` и т.п.
 
@@ -170,20 +171,24 @@ production `storage_irrigation_node` публикует channel-level событ
 
 ## 3. Системный namespace
 
-Для служебных задач вводится отдельная ветка:
+> **Status: planned / not implemented** для ветки `hydro/system/{ota,announce,health,metrics}` —
+> в текущем firmware/`history-logger` подписок и publish на эти топики нет.
+> Не путать с **channel-level** `…/{node}/system/command` (service channel `channel=system` — реализован).
+
+Для будущих служебных задач зарезервирована ветка:
 
 ```text
 hydro/system/{subtopic}
 ```
 
-Примеры:
+Примеры (planned):
 
 - `hydro/system/ota/{node_uid}` — управление OTA;
 - `hydro/system/announce/{node_uid}` — объявление новых узлов;
 - `hydro/system/health/{node_uid}` — отчёт о состоянии узла;
 - `hydro/system/metrics/{service}` — метрики Python-сервиса и backend.
 
-Отдельно от `hydro/system/*` используется глобальный сервисный канал синхронизации времени:
+**Реализовано** отдельно от `hydro/system/*` — глобальный канал синхронизации времени:
 
 ```text
 hydro/time/request
@@ -203,23 +208,22 @@ hydro/time/response
 
 ## 4. Правила именования каналов
 
-Ключи каналов (`{channel}`) соответствуют полю `channels.key` и описаны в
+Имена каналов (`{channel}`) соответствуют `channels.name` / `channels.channel` (NodeConfig)
+и `node_channels.channel` (БД); описаны в
 `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.
 
-Примеры:
+Примеры MQTT topic ids (firmware `channels.channel` / `node_channels.channel`):
 
-- `ph_main`;
-- `ec_main`;
-- `temp_air`, `temp_water`;
-- `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`;
-- `pump_main`;
+- `ph_sensor`, `ec_sensor` (не domain-ключи `ph_main`/`ec_main` — те для UI/bindings);
+- `temp_air`, `temp_water`, `solution_temp_c`;
+- `pump_acid`, `pump_base`, `pump_a`…`pump_d`;
+- `pump_main` (IRR production); `pump_in` — legacy/catalog, не production IRR map;
 - `level_clean_min`, `level_clean_max`, `level_solution_min`, `level_solution_max`;
 - `valve_clean_fill`, `valve_clean_supply`, `valve_solution_fill`, `valve_solution_supply`, `valve_irrigation`;
-- `soil_moisture`, `soil_temp`;
-- `wind_speed`, `outside_temp`;
 - `storage_state` (service/event channel для 2-бакового контура);
-- `fan_in`, `fan_out`;
-- `light_main`.
+- `system` (service commands: sensor mode и т.п.);
+- `light` (сенсор light_node);
+- `fan_in`, `fan_out`.
 
 **Запрещается**:
 

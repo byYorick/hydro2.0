@@ -578,7 +578,7 @@ async def cleanup_old_data():
     Очистка старых данных согласно retention policy.
     
     Retention policy:
-    - telemetry_samples: 90 дней (храним raw данные 3 месяца)
+    - telemetry_samples: 30 дней (канон DATA_RETENTION_POLICY / compose RETENTION_SAMPLES_DAYS)
     - telemetry_agg_1m: 30 дней (храним минутные агрегаты 1 месяц)
     - telemetry_agg_1h: 365 дней (храним часовые агрегаты 1 год)
     - telemetry_daily: бессрочно (дневные агрегаты храним всегда)
@@ -589,7 +589,7 @@ async def cleanup_old_data():
             s = get_settings()
             
             # Retention periods (в днях)
-            retention_samples_days = int(os.getenv('RETENTION_SAMPLES_DAYS', '90'))
+            retention_samples_days = int(os.getenv('RETENTION_SAMPLES_DAYS', '30'))
             retention_1m_days = int(os.getenv('RETENTION_1M_DAYS', '30'))
             retention_1h_days = int(os.getenv('RETENTION_1H_DAYS', '365'))
             

@@ -135,7 +135,7 @@ npm run test && npm run typecheck && npm run lint
 | Laravel | http://localhost:8080 |
 | mqtt-bridge | http://localhost:9000 |
 | history-logger | http://localhost:9300 (metrics :9301) |
-| automation-engine | http://localhost:9405 (metrics :9401) |
+| automation-engine | http://localhost:9405 (metrics :9405/metrics) |
 | Grafana | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
 | MQTT | localhost:1883 |

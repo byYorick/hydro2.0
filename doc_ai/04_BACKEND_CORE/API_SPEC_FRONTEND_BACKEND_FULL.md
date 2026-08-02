@@ -714,7 +714,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - Для восстановления использовать:
   - `POST /api/zones/{id}/control-mode`
   - `POST /api/zones/{id}/manual-step`
-  - `POST /zones/{id}/start-cycle` (внутренний wake-up).
+  - `POST /api/zones/{id}/start-cycle` (Laravel public proxy) или `POST /zones/{id}/start-cycle` (internal AE wake-up).
 
 ### 3.5.9. POST /api/zones/{id}/start-irrigation
 
@@ -754,7 +754,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 ### 3.5.11. POST /api/zones/{id}/control-mode
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Описание:** Переключение режима управления автоматикой зоны.
 - **Поведение:** Laravel выступает proxy к `automation-engine /zones/{zone_id}/control-mode`.
 - **Семантика AE3:** 
@@ -771,7 +771,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 ### 3.5.12. POST /api/zones/{id}/manual-step
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Описание:** Запрос public manual-step для активной canonical AE3 task.
 - **Поведение:** Laravel выступает proxy к `automation-engine /zones/{zone_id}/manual-step`.
 - **Ограничение:** в `control_mode=auto` endpoint возвращает конфликт (`manual_step_forbidden_in_auto_mode`).
@@ -792,7 +792,26 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 }
 ```
 
-### 3.5.10. POST /zones/{id}/start-cycle (internal AE wake-up)
+### 3.5.13. POST /api/zones/{id}/start-cycle (Laravel public proxy)
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
+- **Описание:** Публичный Laravel proxy wake-up зоны → AE `POST /zones/{id}/start-cycle`.
+- **Поведение:** Laravel вызывает automation-engine start-cycle; ответ проксирует canonical `task_id` / status.
+- См. также internal AE endpoint ниже (используется scheduler/service path).
+
+### 3.5.14. POST /api/zones/{id}/start-solution-topup
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
+- **Описание:** Запуск solution top-up workflow через Laravel → AE.
+- **Поведение:** Laravel proxy к automation-engine start-solution-topup.
+
+### 3.5.15. POST /api/zones/{id}/start-solution-change
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
+- **Описание:** Запуск solution change workflow через Laravel → AE.
+- **Поведение:** Laravel proxy к automation-engine start-solution-change.
+
+### 3.5.16. POST /zones/{id}/start-cycle (internal AE wake-up)
 
 - **Аутентификация:** internal service token (`SCHEDULER_API_TOKEN` / `PY_INGEST_TOKEN`)
 - **Описание:** Каноничный wake-up endpoint automation-engine / AE3 для запуска цикла зоны.
@@ -907,7 +926,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 ### 3.9.1. POST /api/nodes
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
-- Регистрация нового узла ESP32.
+- Создание/регистрация узла оператором через UI/API.
+- **Не путать** с device self-registration `POST /api/nodes/register` (см. §13).
 
 ### 3.9.2. PATCH /api/nodes/{id}
 
@@ -1776,16 +1796,16 @@ level (info|warning|error)
 
 ### 13.1. POST /api/nodes/register
 
-- **Аутентификация:** Требуется service token (Bearer token) или IP whitelist
-- **Rate Limiting:** Максимум 10 запросов в минуту по IP
-- **IP Whitelist:** Настраивается через `services.node_registration.allowed_ips` (поддержка CIDR)
-- **Валидация:** Используется `RegisterNodeRequest` для валидации входных данных
+- **Аутентификация:** **без** `auth:sanctum`; middleware `throttle:node_register` + `ip.whitelist`
+- **Отличие от** `POST /api/nodes`: этот путь — device/self-registration ESP32; операторский CRUD — через sanctum `POST /api/nodes`
+- **Rate Limiting:** `throttle:node_register` (см. AppServiceProvider / RateLimiter)
+- **IP Whitelist:** `services.node_registration.allowed_ips` (поддержка CIDR)
+- **Валидация:** `RegisterNodeRequest`
 - Регистрация нового узла ESP32 в системе.
 
 **Безопасность:**
-- Обязательная проверка токена (если настроен)
-- Rate limiting по IP (10 запросов/минуту)
-- IP whitelist (если настроен)
+- Rate limiting `throttle:node_register`
+- IP whitelist (`ip.whitelist`)
 - Защита от дублирования через уникальные ограничения в БД
 
 Тело запроса (node_hello):

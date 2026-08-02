@@ -1,12 +1,14 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-05-28 (sync с runtime кодом: `update_stage`, error codes, file tree)
+Обновлено: 2026-08-02 (sync: solution_topup/solution_change ingress + task types)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
 
-Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`, `irrigation_start`, `lighting_tick` и `greenhouse_climate_tick`.
+Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для
+`cycle_start`, `irrigation_start`, `lighting_tick`, `solution_topup`,
+`solution_change` и `greenhouse_climate_tick`.
 Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
 Прежний monolithic automation runtime удалён. Рабочий пакет автоматики — `ae3lite/`.
@@ -25,7 +27,11 @@ Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 7. Переключение `zones.automation_runtime` на `ae3` запрещено при активной task или lease.
 8. Runtime читает zone state напрямую из PostgreSQL read-model, без HTTP к Laravel.
 9. Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.
-10. Внешние ingress AE3-Lite: `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`, `POST /greenhouses/{id}/start-climate-tick` (плюс internal `GET /internal/tasks/{task_id}`).
+10. Внешние ingress AE3-Lite: `POST /zones/{id}/start-cycle`,
+    `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`,
+    `POST /zones/{id}/start-solution-topup`, `POST /zones/{id}/start-solution-change`,
+    `POST /greenhouses/{id}/start-climate-tick`
+    (плюс internal `GET /internal/tasks/{task_id}`).
 11. Hardcoded default targets запрещены (spec §5.3.4); отсутствие target → `PlannerConfigurationError`.
 12. CAS-промах в `zone_workflow_state.upsert_phase` → `Ae3LiteError` (не silent None).
 

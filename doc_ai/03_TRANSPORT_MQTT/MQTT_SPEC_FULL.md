@@ -5,7 +5,7 @@
 Здесь указаны форматы топиков, JSON‑payload, правила QoS, LWT, NodeConfig, Telemetry,
 Command, Responses и системные события.
 
-**Дата обновления:** 2026-08-02 (status после time sync; stage-arm immediate DONE; NodeConfig v3 + config push; HL точечные подписки).
+**Дата обновления:** 2026-08-02 (sensor-mode channel=`system`; HMAC→ERROR; storage_state channel-level; HL `+/event`).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
@@ -56,7 +56,8 @@ hydro/{gh}/{zone}/{node}/{type}
 **Узел → backend (channel-level):**
 - `telemetry` — измерения с канала
 - `command_response` — ответ на команду
-- `event` — channel-level node event (`level_switch_changed`, ...)
+- `event` — channel-level node event (`level_switch_changed`, `storage_state/event`, …)
+- `storage_state/event` — aggregate state event контура 2 бака (`channel=storage_state`, только `irrig`)
 
 **Узел → backend (node-level, без `{channel}`):**
 - `status` — online/offline status (retained)
@@ -66,12 +67,10 @@ hydro/{gh}/{zone}/{node}/{type}
 - `node_hello` — первая регистрация (доп. также безсегментный `hydro/node_hello`)
 - `diagnostics` — опциональный engineering snapshot
 - `error` — узловые ошибки
-- `storage_state/event` — aggregate state event (только для `irrig` нод)
 
 **Backend → узел:**
-- `command` — команда на канал
+- `command` — команда на канал (в т.ч. `channel=system` для `activate_sensor_mode` / `deactivate_sensor_mode`)
 - `config` — push NodeConfig (Laravel → history-logger → MQTT; bind/rebind/unbind, обновление mirror)
-- `system/command` — system-level команда без `{channel}` (`activate_sensor_mode`, `deactivate_sensor_mode`)
 
 **Системные / broadcast:**
 - `hydro/time/request` (узел → backend)
@@ -123,7 +122,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - Retain = false
 - Узел публикует telemetry только после time sync через `hydro/time/response`
 - `history-logger` сохраняет запись в hypertable `telemetry_samples` (Timescale, chunk 1 day) и обновляет кэш последнего значения в PostgreSQL `telemetry_last` (PK по `sensor_id`).
-- `history-logger` использует точечные подписки MQTT — `hydro/+/+/+/+/{telemetry|command_response|event}` и `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello|storage_state/event}`, без подписки на широкий wildcard `hydro/#`.
+- `history-logger` использует точечные подписки MQTT — `hydro/+/+/+/+/{telemetry|command_response|event}` и `hydro/+/+/+/{status|lwt|config_report|heartbeat|diagnostics|error|node_hello}`, без подписки на широкий wildcard `hydro/#`. Aggregate `storage_state/event` — **channel-level** (`channel=storage_state`) и попадает в подписку `hydro/+/+/+/+/event` (отдельная node-level подписка на `storage_state/event` не нужна и в коде HL отсутствует).
 - `history-logger` также пишет business-trigger в `zone_events` и эмитит `AlertService` ingest при выходе за пороги/freshness.
 - Last-value хранится в **PostgreSQL** (`telemetry_last`), Redis для последних значений **не используется** (исторический паттерн ранних версий, removed).
 
@@ -597,13 +596,13 @@ POST http://history-logger:9300/commands
 - `../04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python сервисов
 - `BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и нодами
 
-## 7.5. Системные команды активации/деактивации нод (Correction Cycle)
+## 7.5. Команды sensor mode на канале `system` (Correction Cycle)
 
-**ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Automation-Engine управляет жизненным циклом сенсорных нод через системные команды активации/деактивации.
+**ВАЖНО:** Automation-Engine управляет флагом sensor mode pH/EC нод через команды `activate_sensor_mode` / `deactivate_sensor_mode`. Эти команды — обычные channel-level команды с `channel=system` (service channel в NodeConfig), а не отдельный node-level формат «без канала».
 
-### 7.5.1. Топик системных команд
+### 7.5.1. Топик команд sensor mode
 
-В отличие от канальных команд, системные команды публикуются в топик **без указания канала**:
+Топик совпадает с канальным паттерном `hydro/{gh}/{zone}/{node}/{channel}/command`, где `{channel}=system`:
 
 ```
 hydro/{gh}/{zone}/{node}/system/command
@@ -615,39 +614,36 @@ hydro/gh-1/zn-1/nd-ph-1/system/command
 hydro/gh-1/zn-1/nd-ec-1/system/command
 ```
 
+`system` — это **channel-level** сегмент (как `ph_sensor` или `pump_acid`), а не «системный топик без канала». Firmware принимает эти команды только при `channel == "system"` (`ph_node_is_system_channel` / аналог на EC).
+
 ### 7.5.2. Команда activate_sensor_mode
 
-**Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
+**Назначение:** Включить sensor mode (разрешить коррекции / выставить flow-флаги) перед циклом коррекции.
 
 **Топик:** `hydro/{gh}/{zone}/{node}/system/command`
 
-**Payload:**
+**Payload (фактический контракт firmware):**
 ```json
 {
   "cmd": "activate_sensor_mode",
-  "params": {
-    "stabilization_time_sec": 60
-  },
+  "params": {},
   "cmd_id": "cmd-activate-123",
   "ts": 1710001234,
   "sig": "a1b2c3d4e5f6..."
 }
 ```
 
-**Параметры:**
-- `stabilization_time_sec` (integer, обязательно) — время стабилизации сенсора в секундах. После активации нода ждет это время перед разрешением коррекций.
+**Параметры:** пустой объект. Поле `stabilization_time_sec` в firmware **не реализовано / planned** — handler его не читает и таймер стабилизации не запускает.
 
-**Поведение ноды при получении activate_sensor_mode:**
-1. Переход из режима IDLE в режим ACTIVE
-2. Запуск таймера стабилизации (`stabilization_time_sec`)
-3. Начало измерений и публикации телеметрии
-4. Установка флагов в телеметрии:
-   - `flow_active: true` (есть поток)
-   - `stable: false` (пока идет стабилизация)
-   - `corrections_allowed: false` (коррекции запрещены до окончания стабилизации)
-5. По истечении `stabilization_time_sec`:
-   - `stable: true`
-   - `corrections_allowed: true` (коррекции разрешены)
+**Фактическое поведение ноды при `activate_sensor_mode`:**
+1. Устанавливает внутренний bool `sensor_mode_active = true` (идемпотентно: повторный activate → `DONE` + `note=sensor_mode_already_active_treated_as_done`).
+2. Измерения и публикация telemetry **уже идут** независимо от sensor mode; activate их не «стартует».
+3. В telemetry выставляются флаги:
+   - `flow_active` = `sensor_mode_active` (true)
+   - `corrections_allowed` = `sensor_mode_active` (true)
+   - `stable` — значение стабильности **с датчика** (driver/cache), при `sensor_mode_active=false` публикуется `stable=false`
+
+Status: **не реализовано / planned** — таймер стабилизации по `stabilization_time_sec`, поля `stabilization_progress_sec`, поэтапный переход `stable`/`corrections_allowed` по истечении таймера.
 
 **Command Response:**
 ```json
@@ -655,16 +651,17 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
   "cmd_id": "cmd-activate-123",
   "status": "DONE",
   "details": {
-    "mode": "ACTIVE",
-    "stabilization_time_sec": 60
+    "sensor_mode_active": true
   },
   "ts": 1710001235000
 }
 ```
 
+(Не `mode: ACTIVE|IDLE` и не `stabilization_time_sec` — firmware отдаёт bool `sensor_mode_active`.)
+
 ### 7.5.3. Команда deactivate_sensor_mode
 
-**Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
+**Назначение:** Сбросить sensor mode после завершения цикла (запретить коррекции через flow-флаги).
 
 **Топик:** `hydro/{gh}/{zone}/{node}/system/command`
 
@@ -679,13 +676,12 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
 }
 ```
 
-**Параметры:** Пустой объект (команда не требует параметров).
+**Параметры:** пустой объект.
 
-**Поведение ноды при получении deactivate_sensor_mode:**
-1. Переход из режима ACTIVE в режим IDLE
-2. Остановка измерений
-3. Прекращение публикации телеметрии
-4. Публикация только heartbeat и LWT (status)
+**Фактическое поведение ноды при `deactivate_sensor_mode`:**
+1. Устанавливает `sensor_mode_active = false` (идемпотентно: повторный deactivate → `DONE` + `note=sensor_mode_already_inactive_treated_as_done`).
+2. **Не** останавливает измерения и **не** прекращает публикацию telemetry — сбрасываются только sensor-mode флаги (`flow_active`/`corrections_allowed` → false, `stable` → false в publish path).
+3. Heartbeat / LWT / status продолжают публиковаться как обычно.
 
 **Command Response:**
 ```json
@@ -693,32 +689,19 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
   "cmd_id": "cmd-deactivate-456",
   "status": "DONE",
   "details": {
-    "mode": "IDLE"
+    "sensor_mode_active": false
   },
   "ts": 1710002235000
 }
 ```
 
-### 7.5.4. Расширенная телеметрия при активации
+### 7.5.4. Расширенная телеметрия при sensor mode
 
-При активированном режиме ACTIVE, pH/EC ноды публикуют расширенную телеметрию с дополнительными флагами:
+pH/EC ноды публикуют telemetry с flow-флагами постоянно (и при active, и при inactive sensor mode):
 
 **Топик:** `hydro/{gh}/{zone}/{node}/{channel}/telemetry`
 
-**Payload (во время стабилизации):**
-```json
-{
-  "metric_type": "PH",
-  "value": 5.86,
-  "ts": 1710001250,
-  "flow_active": true,
-  "stable": false,
-  "stabilization_progress_sec": 15,
-  "corrections_allowed": false
-}
-```
-
-**Payload (после стабилизации):**
+**Payload (`sensor_mode_active=true`, датчик считает значение стабильным):**
 ```json
 {
   "metric_type": "PH",
@@ -726,20 +709,32 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
   "ts": 1710001300,
   "flow_active": true,
   "stable": true,
-  "stabilization_progress_sec": 60,
   "corrections_allowed": true
 }
 ```
 
-**Новые поля телеметрии:**
-- `flow_active` (boolean) — индикатор наличия потока через сенсор
-- `stable` (boolean) — true после истечения `stabilization_time_sec`
-- `stabilization_progress_sec` (integer) — прогресс стабилизации (секунды с момента активации)
-- `corrections_allowed` (boolean) — разрешение на коррекции (true после стабилизации + min_interval_sec)
+**Payload (`sensor_mode_active=false`):**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001300,
+  "flow_active": false,
+  "stable": false,
+  "corrections_allowed": false
+}
+```
+
+**Поля телеметрии (фактический контракт):**
+- `flow_active` (boolean) — зеркало `sensor_mode_active`
+- `corrections_allowed` (boolean) — зеркало `sensor_mode_active`
+- `stable` (boolean) — стабильность с датчика при `sensor_mode_active=true`, иначе `false`
+
+Status: **не реализовано / planned** — `stabilization_time_sec`, `stabilization_progress_sec`, таймер стабилизации на ноде.
 
 ### 7.5.5. Применение в Correction Cycle State Machine
 
-Системные команды активации/деактивации используются automation-engine для управления state machine коррекции:
+Команды sensor mode используются automation-engine для управления state machine коррекции:
 
 | Переход состояний | Команда | Ноды |
 |------------------|---------|------|
@@ -762,55 +757,36 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
 
 ### 7.5.6. Требования к реализации на прошивке
 
-**pH/EC ноды должны:**
-1. Подписаться на топик `hydro/{gh}/{zone}/{node}/system/command` при подключении
-2. Поддерживать два режима работы:
-   - **IDLE:** Нет измерений, только heartbeat и LWT
-   - **ACTIVE:** Активные измерения и публикация телеметрии
-3. Реализовать таймер стабилизации для постепенного перехода к разрешению коррекций
-4. Публиковать расширенную телеметрию с флагами `flow_active`, `stable`, `corrections_allowed`
-5. Обрабатывать команды `activate_sensor_mode` и `deactivate_sensor_mode` с отправкой `command_response`
+**pH/EC ноды (фактическое поведение `mqtt_manager` + node handlers):**
+1. Подписаться на `hydro/{gh}/{zone}/{node}/+/command` при подключении — этого **достаточно**: MQTT single-level `+` матчит любой один сегмент канала, **включая** `system`.
+2. Хранить bool `sensor_mode_active`; команды `activate_sensor_mode` / `deactivate_sensor_mode` принимаются **только** на `channel=system`.
+3. Публиковать telemetry с флагами `flow_active`, `stable`, `corrections_allowed` (см. §7.5.4); измерения **не** останавливаются на deactivate.
+4. В `command_response.details` отдавать `sensor_mode_active: bool` (опционально `note` при идемпотентном повторном вызове).
 
-**ВАЖНО про подписку на топики:**
-
-Узлы должны подписаться на системный топик **отдельно** от канальных команд:
+**Подписка (как в firmware `mqtt_manager.c`):**
 
 ```c
-// Подписка на канальные команды (wildcard для всех каналов)
+// Одна подписка покрывает и ph_sensor/command, и system/command
 mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/+/command");
-
-// Подписка на системные команды (отдельная подписка!)
-mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/system/command");
 ```
 
-**Почему нужна отдельная подписка:**
+Wildcard `+/command` **захватывает** `system/command`: сегмент `system` — обычный `{channel}` одного уровня.
 
-Wildcard `+/command` **НЕ захватывает** топик без канала между `{node}` и `command`.
+- `hydro/.../nd-ph-1/+/command` → матчит `ph_sensor/command`, `pump_ph_up/command`, **`system/command`** и т.д.
+- Отдельная подписка на `.../system/command` **не требуется** (в production firmware её нет).
 
-- `hydro/.../nd-ph-1/+/command` — подписывается на `ph_main/command`, `pump_ph_up/command` и т.д.
-- `hydro/.../nd-ph-1/system/command` — **НЕ** соответствует wildcard `+/command`, так как `system` находится на месте канала, но топик заканчивается на `system/command` без дополнительного уровня
-
-**Правильная инициализация подписок при подключении:**
+**Инициализация подписки при подключении:**
 
 ```c
 void mqtt_on_connected(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-    // 1. Подписка на канальные команды
     char topic_channels[128];
     snprintf(topic_channels, sizeof(topic_channels),
              "hydro/%s/%s/%s/+/command",
              config->greenhouse_uid, config->zone_uid, config->node_uid);
     esp_mqtt_client_subscribe(mqtt_client, topic_channels, 1);
 
-    // 2. Подписка на системные команды (отдельно!)
-    char topic_system[128];
-    snprintf(topic_system, sizeof(topic_system),
-             "hydro/%s/%s/%s/system/command",
-             config->greenhouse_uid, config->zone_uid, config->node_uid);
-    esp_mqtt_client_subscribe(mqtt_client, topic_system, 1);
-
-    ESP_LOGI(TAG, "Subscribed to channel commands: %s", topic_channels);
-    ESP_LOGI(TAG, "Subscribed to system commands: %s", topic_system);
+    ESP_LOGI(TAG, "Subscribed to channel commands (incl. system): %s", topic_channels);
 }
 ```
 
@@ -1267,10 +1243,10 @@ hydro/{node}/debug
 | node_hello | 1 | false |
 | heartbeat | 1 | false |
 | event (channel-level) | 1 | false |
-| storage_state/event | 1 | false |
+| storage_state/event (`channel=storage_state`) | 1 | false |
 | diagnostics | 1 | false |
 | error | 1 | false |
-| system/command | 1 | false |
+| system/command (`channel=system`) | 1 | false |
 | hydro/time/request | 1 | false |
 | hydro/time/response | 1 | false |
 

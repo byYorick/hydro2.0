@@ -335,11 +335,13 @@ systemctl status nginx php8.2-fpm postgresql redis-server mosquitto
 
 ### Метрики Prometheus (если настроен)
 
-Доступны на портах:
-- Automation Engine: `http://localhost:9401/metrics`
-- History Logger: `http://localhost:9301/metrics`
-- Digital Twin: `http://localhost:9403/metrics`
-- Telemetry Aggregator: `http://localhost:9404/metrics`
+Доступны на портах (dev compose; AE/HL metrics на том же API-порту):
+- Automation Engine: `http://localhost:9405/metrics`
+- History Logger: `http://localhost:9300/metrics`
+- Digital Twin: `http://localhost:9403/metrics` (если сервис поднят)
+- Telemetry Aggregator: см. compose сервиса (не путать с AE)
+
+> HIL-стек (`infra/hil/docker-compose.hil.yml`) может по-прежнему публиковать AE на **9401** — это отдельное окружение, не dev.
 
 ## Устранение неполадок
 

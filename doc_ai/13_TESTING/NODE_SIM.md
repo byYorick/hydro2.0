@@ -6,9 +6,13 @@
 
 ### Установка
 
+На хосте с PEP 668 — через venv или `uv` (системный `pip` часто заблокирован):
+
 ```bash
 cd tests/node_sim
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+# или: uv pip install -r requirements.txt
 ```
 
 ### Простой запуск

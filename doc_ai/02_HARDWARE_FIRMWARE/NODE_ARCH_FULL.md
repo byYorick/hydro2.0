@@ -439,7 +439,7 @@ payload: "offline"
 - `ec_node` — EC/TDS-нода + nutrient pumps (`pump_a..pump_d`)
 - `climate_node` — climate sensors/actuators (temp/humidity/co2, fan/heater/light)
 - `storage_irrigation_node` (`node_type="irrig"`) — production two-tank irrigation runtime
-- `light_node` — управление освещением (PWM/адресные светодиоды)
+- `light_node` — **сенсорная** нода освещённости (`trema_light`, metric `LIGHT`); PWM/WS2811 actuator — planned, не в текущей прошивке
 - `relay_node` — универсальное управление реле
 - `pump_node` — отдельная насосная нода
 - `test_node` — тестовый проект (не для production)

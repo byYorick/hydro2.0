@@ -2,7 +2,7 @@
 # Полная система авторизации и аутентификации 2.0
 # Laravel Sanctum • Roles • Permissions • Tokens • API Security • UI Restrictions
 
-**Дата обновления:** 2026-05-28 (sync с `User::AVAILABLE_ROLES`: 5 ролей — admin, operator, viewer, agronomist, engineer).
+**Дата обновления:** 2026-08-02 (sync: session.lifetime 120, Sanctum expiration null, Password::defaults min 8, throttle SoT bootstrap/config).
 
 Документ описывает всю модель авторизации (Auth System) в системе 2.0:
 от входа пользователя до распределения прав, токенов и API-доступа.
@@ -247,10 +247,10 @@ USER_ACTION
 
 # 10. Безопасность паролей
 
-- bcrypt 
-- минимальная длина 10 
-- проверка через Laravel Validation 
-- запрет простых паролей 
+- bcrypt
+- минимальная длина **8** (`Password::defaults()`; кастомный override в AppServiceProvider отсутствует)
+- проверка через Laravel Validation (`PasswordController`, registration/reset)
+- дополнительные правила сложности — только если явно настроены через `Password::defaults()`
 
 ---
 
@@ -266,30 +266,35 @@ USER_ACTION
 
 # 12. Session Security
 
-- истечение сессии: 24 часа 
-- истечение API-токена: 90 дней 
-- автоматический выход при смене пароля 
+- истечение сессии: **120 минут** idle (`config/session.php` → `env('SESSION_LIFETIME', 120)`)
+- истечение API-токена Sanctum: **`null`** (no auto-expire), пока не задано иное в published `config/sanctum.php` / env
+- logout всех токенов при смене пароля: **не реализовано** (`PasswordController` только обновляет hash; revoke tokens — planned)
 
 ---
 
 # 13. Лимитирование запросов (Rate Limiting)
 
-Laravel throttle (источник: `backend/laravel/routes/api.php`):
+SoT throttle defaults:
+
+- **API middleware default:** `bootstrap/app.php` (`env('API_THROTTLE', …)`) + `config/services.php` (`services.api.throttle_default` / `throttle_internal`)
+- **Route-level overrides:** `backend/laravel/routes/api.php` (auth, system, node_register и т.д.)
+
+Значения:
 
 - **Auth endpoints** (`POST /api/auth/login`, `/logout`, `/me`): **10 запросов/мин по IP** (защита от брутфорса).
 - **LoginRequest**: дополнительно **5 неудачных попыток** per `email|IP`, затем lockout.
-- **Стандартные API endpoints**: **120 запросов/мин** (production); 1000 (testing/e2e); 2000 (local).
+- **Стандартные API endpoints**: **120 запросов/мин** (production); 1000 (testing/e2e); 2000 (local); override через `API_THROTTLE`.
 - **System endpoints** (`GET /api/system/health`, `/api/system/scheduler/metrics`): **300 запросов/мин** — выше для polling мониторинга.
-- **Регистрация узлов** (`/api/nodes/register`): 10 req/min per `node_uid` + burst 120/min/IP.
+- **Регистрация узлов** (`/api/nodes/register`): `throttle:node_register` + `ip.whitelist` (см. `services.node_registration.allowed_ips`).
 
 ---
 
 # 14. Запрет доступа снаружи (Network Rules)
 
-- UI доступен только по HTTPS 
-- API доступен только из LAN 
-- MQTT закрыт для WAN 
-- Python и ESP32 общаются через внутреннюю сеть Docker/LAN 
+- UI HTTPS-only: **planned/prod**; local docker dev — **HTTP** `http://localhost:8080`
+- API доступен только из LAN (prod network posture)
+- MQTT закрыт для WAN
+- Python и ESP32 общаются через внутреннюю сеть Docker/LAN
 
 ---
 

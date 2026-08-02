@@ -33,9 +33,11 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 |------------------------------|---------------------|------------|
 | `irrigation` | `POST /zones/{id}/start-irrigation` | intent/task `irrigation_start`, опционально `requested_duration_sec` из payload расписания |
 | `lighting` | `POST /zones/{id}/start-lighting-tick` | только при `zones.automation_runtime='ae3'`; intent/task `lighting_tick` (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`, C1) |
+| `solution_topup` | `POST /zones/{id}/start-solution-topup` | AE3 only; intent `SOLUTION_TOPUP_TICK`, task `solution_topup` (см. `WATER_FLOW_ENGINE.md` §19) |
+| `solution_change` | `POST /zones/{id}/start-solution-change` | AE3 only; intent `SOLUTION_CHANGE_TICK`, task `solution_change` (semi-auto; см. `CORRECTION_CYCLE_SPEC.md` §10) |
 | greenhouse climate (крыша) | `POST /greenhouses/{id}/start-climate-tick` | после tick `automation:dispatch-schedules` вызывает `GreenhouseClimateDispatchService` → `greenhouse_automation_intents` + `greenhouse_automation_state.next_scheduled_tick_at`; не использовать `start-cycle` зоны (см. `GREENHOUSE_CLIMATE_CONTROL_PLAN.md`) |
 | `diagnostics` | `POST /zones/{id}/start-cycle` | на AE3 идёт через compat-path `diagnostics / cycle_start`; intent `DIAGNOSTICS_TICK`, task `cycle_start` |
-| прочие зональные (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
+| прочие зональные (`climate`, `mist`, `ventilation`, …) | — | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (`ScheduleDispatcher::isSchedulerTaskTypeDispatchableForAe3`; остаются в `non_executable_planned_task_types`) |
 
 Для **`automation_runtime ≠ ae3`** по-прежнему используется прежняя матрица endpoint-ов (в т.ч. `start-cycle` для типов вне полива — см. код `ScheduleDispatcher`).
 
@@ -57,7 +59,7 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 - UI оператора: schedule workspace и timeline строятся из канонического состояния автоматизации, а не из удалённого Python task API.
 - **Watchdog AE3 (`ae3:reap-stale-tasks`, каждую минуту):** помечает `failed` задачи с истёкшим `stage_deadline_at`, `claim_stale` (claimed без deadline), `task_progress_stale` (`running`/`waiting_command` без прогресса по `updated_at`), orphan pending intents планировщика (`scheduler_intent_orphan_pending` без active `ae_task`); синхронизирует `zone_automation_intents` через `ZoneAutomationIntentService::syncIntentFailedFromAeTask`.
 - **Retryable dispatch failure:** при `connection_error` / `http_error` / отсутствии `task_id` в ответе AE3 Laravel инкрементирует `retry_count` intent (`intent_source=laravel_scheduler`); terminal `failed` intent — после `max_retries` (default 3). **Не** применяется к `409 *_zone_busy` (backpressure).
-- Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **полив, освещение и diagnostics**; остальные запланированные типы перечисляются как non-executable, пока не реализован отдельный compat-path.
+- Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **`irrigation`, `lighting`, `solution_topup`, `solution_change`, `diagnostics`** (зеркало `ScheduleDispatcher`); остальные запланированные типы — non-executable.
 
 ### 3.1. Ручные расписания зоны (`zone_manual_schedules`)
 
@@ -65,7 +67,7 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 
 | Поле | Тип | Описание |
 |------|-----|----------|
-| `task_type` | string | `irrigation`, `lighting`, `diagnostics`, `ventilation`, `mist`, `solution_change` |
+| `task_type` | string | `irrigation`, `lighting`, `diagnostics`, `ventilation`, `mist`, `solution_topup`, `solution_change` |
 | `schedule_kind` | string | `time` (HH:MM UTC), `interval` (≥60 с), `window` (start–end UTC), `once` (разово) |
 | `days_of_week` | jsonb | ISO 1=Пн … 7=Вс; `null`/`[]` = каждый день (для time/interval/window) |
 | `run_at` | timestamptz | Момент для `once` |

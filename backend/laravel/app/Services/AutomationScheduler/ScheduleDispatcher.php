@@ -888,7 +888,7 @@ class ScheduleDispatcher
 
     /**
      * AE3: Laravel scheduler диспатчит только поддержанные compat-path типы.
-     * Сейчас это `irrigation`, `lighting` и `diagnostics`.
+     * Сейчас: irrigation, lighting, solution_topup, solution_change, diagnostics.
      */
     private function isSchedulerTaskTypeDispatchableForAe3(int $zoneId, string $taskType): bool
     {

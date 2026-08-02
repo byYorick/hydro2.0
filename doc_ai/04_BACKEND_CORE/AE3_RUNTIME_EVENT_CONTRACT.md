@@ -1,6 +1,6 @@
 # AE3 Runtime Event Contract
 
-**Дата:** 2026-07-09  
+**Дата:** 2026-08-02  
 **Статус:** SOURCE OF TRUTH  
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
@@ -75,7 +75,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ### 3.2 Downstream events
 
 Для следующих событий `snapshot_event_id` обязателен, если correction decision/dose
-происходит в `workflow_phase in ('irrigating', 'irrig_recirc')`:
+происходит в `workflow_phase = 'irrigating'`:
 
 1. `IRRIGATION_CORRECTION_STARTED`
 2. `CORRECTION_DECISION_MADE`
@@ -84,6 +84,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Если `snapshot_event_id` присутствует, `caused_by_event_id` должен указывать на
 тот же snapshot, если нет более специфичной causal-link ссылки.
+
+Legacy note: `irrig_recirc` — только compat-алиас старых `zone_workflow_state` /
+task rows; в live topology и обязательный causal contract не входит.
 
 ## 4. Event-Specific Contract
 
@@ -251,29 +254,35 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. При этом runtime возвращает `409` с `error_code=start_irrigation_setup_pending`.
 3. Для метрик используется счётчик `ae3_start_irrigation_blocked_total{reason="setup_pending"}`.
 
-### 4.9 `AE_TASK_RECLAIMED`
+### 4.10 `AE_TASK_RECLAIMED`
 
 Назначение:
-- observability фонового janitor'а (`StaleTaskReconcileUseCase`), когда stale
-  `claimed`/`running` task переводится в `requeue` или terminal `fail`.
+- observability фонового janitor'а (`StaleTaskReconcileUseCase` /
+  `stale_task_reconcile.py`), когда stale active task reclaim'ится.
 
 Обязательные поля:
 
 1. `task_id`
-2. `from_status` — `claimed` | `running`
-3. `action` — `requeue` | `fail`
+2. `from_status` — `claimed` | `running` | `waiting_command`
+3. `action` — `requeue` | `fail` | `reconcile`
 4. `age_sec` — возраст задачи в секундах на момент reclaim
 5. `recovery_source` — `stale_task_reconcile`
 
+`action=reconcile` — command-path reconcile прогрессировал задачу
+(`progressed` / вывел из stuck waiting_command без terminal fail).
+`action=requeue` — unpublished execution без `ae_commands` → `pending`.
+`action=fail` — terminal fail (в т.ч. stale `waiting_command` с
+`error_code=ae3_stale_waiting_command`).
+
 Метрика: `ae3_stale_tasks_reclaimed_total{from_status,action}`.
 
-### 4.10 `CONTROL_MODE_FLOW_STOPPED`
+### 4.11 `CONTROL_MODE_FLOW_STOPPED`
 
 Назначение: AE3 подтвердил остановку flow-path после переключения `control_mode` в `manual`/`semi` (fail-closed по умолчанию) на активном check-stage.
 
 Обязательные поля: `task_id`, `stage`, `reason`, `commands[]`, `control_mode`.
 
-### 4.11 `FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE`
+### 4.12 `FLOW_STOP_FAILED_HARDWARE_MAY_BE_ACTIVE`
 
 Назначение: stop-команда и/или post-stop probe не подтвердили OFF; оборудование может оставаться активным.
 
@@ -281,7 +290,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Метрика: `ae3_flow_stop_failed_total{stage}`; biz-alert `biz_flow_stop_failed_hardware_may_be_active` (critical).
 
-### 4.12 `EC_BATCH_PARTIAL_FAILURE` (CORRECTION_CYCLE_SPEC §6.2 MVP)
+### 4.13 `EC_BATCH_PARTIAL_FAILURE` (CORRECTION_CYCLE_SPEC §6.2 MVP)
 
 Назначение:
 - зафиксировать частичный сбой multi-component EC dose batch (шаги `0..N-1` DONE, шаг `N` failed);
@@ -303,7 +312,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. `node_uid` / `channel` failed step
 4. `error_message`
 5. `task_id` / `stage` / `workflow_phase` (через runtime event contract logger)
-6. `snapshot_event_id` / `caused_by_event_id` — если correction path в irrigating/irrig_recirc
+6. `snapshot_event_id` / `caused_by_event_id` — если correction path в `irrigating` (legacy `irrig_recirc` — только compat)
 
 Метрика: `ae3_correction_ec_batch_partial_failure_total{mode=...}`.
 

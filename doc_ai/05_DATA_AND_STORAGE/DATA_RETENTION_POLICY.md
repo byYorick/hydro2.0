@@ -61,12 +61,13 @@ Telemetry хранится в двух формах:
 30 дней (фактический)
 ```
 
-> **Реализация (двойной механизм, синхронизировано):**
+> **Реализация (двойной механизм app-level):**
 > - Laravel `telemetry:cleanup-raw` — env `TELEMETRY_RETENTION_DAYS` (дефолт **30**), ежедневно в 02:00
-> - Python `telemetry-aggregator` — env `RETENTION_SAMPLES_DAYS` (дефолт **30**)
+> - Python `telemetry-aggregator` — env `RETENTION_SAMPLES_DAYS` (compose default **30**; fallback в `main.py` должен совпадать)
 >
 > Оба дефолта заданы в `docker-compose.dev.yml` / `docker-compose.prod.yml`.
-> При изменении срока — обновлять env в compose **и** этот документ.
+> **Timescale:** миграция `2026_08_02_120000_align_telemetry_samples_timescale_retention_to_30_days.php` снимает старый policy 90d (`2025_01_27_000007_*`) и ставит **30 days** на hypertable `telemetry_samples`.
+> При изменении срока — обновлять env в compose, fallback Python, Timescale policy **и** этот документ.
 
 Частота данных:
 
@@ -143,7 +144,9 @@ commands: 365 дней hot (retention_policy_commands функция + pg_cron j
 commands_archive: 3 года
 ```
 
-Источник: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php`.
+Источник hot retention: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php` (Timescale/pg_cron, **365 дней**).
+
+> **Secondary path (не в Schedule):** artisan `commands:archive --days=90` копирует/чистит в `commands_archive`. Дефолт **90** ≠ hot policy 365; команда ручная/опциональная, не заменяет Timescale retention. Архивные таблицы восстановлены миграцией `2026_04_30_195000_restore_archive_tables_*`.
 
 Команды включают:
 
@@ -169,7 +172,9 @@ zone_events: 365 дней hot (retention_policy_zone_events функция + pg_
 zone_events_archive: 5 лет
 ```
 
-Источник: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php`.
+Источник hot retention: миграция `2025_12_25_152231_add_partitioning_and_retention_for_commands_and_zone_events.php` (**365 дней**).
+
+> **Secondary path (не в Schedule):** artisan `zone-events:archive --days=180` — дефолт **180** ≠ hot policy 365; ручная/опциональная архивация в `zone_events_archive`, не заменяет Timescale retention.
 
 Типы:
 
@@ -197,6 +202,20 @@ alerts: 365 дней
 - resolved,
 - acknowledged,
 - older than retention limit.
+
+---
+
+# 6.1. AE3 runtime tables (`ae_tasks`, intents)
+
+Операционные таблицы automation-engine (не hypertables):
+
+| Таблица / сущность | Hot retention | Реализация |
+|-------------------|---------------|------------|
+| `ae_tasks` / связанные terminal AE rows | **90 дней** | `ae3:cleanup-old-tasks --days=90` ежедневно (`routes/console.php`) |
+| `zone_automation_intents` (terminal) | следует lifecycle cleanup AE3 / sync из task | не отдельный Timescale policy |
+| `ae_zone_leases` | только live lease | без archive retention |
+
+При изменении срока AE3 cleanup — обновлять команду Schedule, `DATA_MODEL_REFERENCE.md` §6.11.3 и этот раздел.
 
 ---
 

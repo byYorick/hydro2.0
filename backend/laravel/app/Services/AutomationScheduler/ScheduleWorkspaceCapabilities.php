@@ -17,8 +17,9 @@ final class ScheduleWorkspaceCapabilities
     public static function build(Zone $zone, array $plannedTaskTypes): array
     {
         $isAe3 = $zone->automation_runtime === 'ae3';
+        // Зеркало ScheduleDispatcher::isSchedulerTaskTypeDispatchableForAe3
         $executable = $isAe3
-            ? ['irrigation', 'lighting', 'diagnostics']
+            ? ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics']
             : array_values($plannedTaskTypes);
         $nonExecutablePlanned = array_values(array_diff($plannedTaskTypes, $executable));
 

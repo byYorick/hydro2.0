@@ -2,7 +2,14 @@
 # Полный справочник моделей данных системы 2.0
 # PostgreSQL • Laravel Models • Python ORM • Связи • Ограничения
 # **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
-# **СИНХРОНИЗИРОВАНО С МИГРАЦИЯМИ 2026-05-28** (поля commands, NOTIFY каналы, новые таблицы DLQ/ACK/ae_stage_transitions/zone_correction_*)
+# **СИНХРОНИЗИРОВАНО С МИГРАЦИЯМИ 2026-08-02**
+# Уточнено vs stamp 2026-05-28:
+# - `greenhouse_types`, `zone_dt_params` — ACTIVE (секции ниже)
+# - `zone_process_calibrations` / `system_automation_settings` — **dropped** после authority cutover;
+#   runtime process_calibration / system policy → `automation_config_documents` + effective bundles
+#   (AE3 читает `zone_bundle.process_calibration`, не SQL-таблицу zone_process_*)
+# - `laravel_scheduler_missed_windows_totals` / `laravel_scheduler_lock_skipped_totals` — ACTIVE (§8.5.4–8.5.5)
+# - Timescale `telemetry_samples` retention aligned to 30d (`2026_08_02_120000_*`)
 
 Документ описывает всю структуру данных системы 2.0:
 таблицы, связи, ключи, индексы, правила и использование.
@@ -38,7 +45,8 @@ id BIGSERIAL PK
 uid VARCHAR(64) UNIQUE
 name VARCHAR
 timezone VARCHAR
-type VARCHAR (GREENHOUSE, ROOM, FARM)
+type VARCHAR                    -- legacy string label (GREENHOUSE/ROOM/FARM и т.п.)
+greenhouse_type_id BIGINT NULL FK -> greenhouse_types ON DELETE SET NULL
 coordinates JSONB
 description TEXT
 provisioning_token VARCHAR(64) UNIQUE NOT NULL  -- DEPRECATED / pending drop (legacy column; NOT a node bind mechanism)
@@ -48,6 +56,7 @@ updated_at
 
 Связи:
 
+- belongsTo greenhouse_types (optional)
 - hasMany zones
 - hasMany nodes (через zones или напрямую в будущем, если потребуется)
 
@@ -55,7 +64,25 @@ updated_at
 
 - `uid` используется в MQTT как сегмент `{gh}`.
 - В Backend/AI `greenhouse.uid` — основной внешний идентификатор теплицы.
+- Канонический справочник типа — `greenhouse_types`; `type` остаётся legacy-строкой.
 - `provisioning_token`: **deprecated, pending drop**. Колонка остаётся NOT NULL unique ради seeders/AE/e2e inserts; значение генерируется при create только для constraint, **скрыто в API** (`Greenhouse::$hidden`) и **не используется** для bind узлов (привязка только через UI).
+
+---
+
+## 2.1.1. greenhouse_types
+
+Справочник типов теплиц. Миграция: `2026_02_07_100000_create_greenhouse_types_table.php`.
+
+```
+id BIGSERIAL PK
+code VARCHAR(64) UNIQUE NOT NULL   -- seed: indoor|greenhouse|outdoor
+name VARCHAR(255) NOT NULL
+description TEXT NULL
+is_active BOOLEAN NOT NULL DEFAULT TRUE
+sort_order SMALLINT NOT NULL DEFAULT 0
+created_at
+updated_at
+```
 
 ---
 
@@ -122,6 +149,43 @@ updated_at
 ```
 
 Индексы: `zone_manual_schedules_zone_enabled_idx`, `zone_manual_schedules_zone_task_idx`.
+
+## 2.2.2. zone_dt_params
+
+Версионируемые параметры digital-twin модели зоны. Пишет/читает сервис `backend/services/digital-twin`.
+Миграция: `2026_04_25_120000_create_zone_dt_params_table.php`.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones ON DELETE CASCADE
+param_group VARCHAR(32) NOT NULL
+  -- CHECK IN ('tank','ph','ec','climate','substrate','uptake','actuator')
+params JSONB NOT NULL
+calibrated_at TIMESTAMPTZ NOT NULL
+calibrated_from_start TIMESTAMPTZ NOT NULL
+calibrated_from_end TIMESTAMPTZ NOT NULL
+calibration_mae JSONB NULL
+n_samples_used INT NULL
+version SMALLINT NOT NULL DEFAULT 1
+superseded_at TIMESTAMPTZ NULL          -- NULL = активная версия группы
+created_at
+updated_at
+UNIQUE (zone_id, param_group, version)
+```
+
+Индексы: `zone_dt_params_active_idx (zone_id, param_group, superseded_at)`.
+
+### 2.2.3. process_calibration (authority, не отдельная SQL-таблица)
+
+Таблицы `zone_process_calibrations` / `system_automation_settings` **удалены** после
+`AUTOMATION_CONFIG_AUTHORITY` cutover. Канон:
+
+- документы `automation_config_documents` (+ versions/bundles);
+- в AE3 snapshot: `process_calibrations` из compiled `zone_bundle.process_calibration`
+  (`zone_snapshot_read_model._bundle_process_calibration_rows`);
+- Eloquent `ZoneProcessCalibration` в Laravel — legacy model без живой таблицы (не использовать).
+
+См. `AUTOMATION_CONFIG_AUTHORITY.md`, `PID_CONFIG_REFERENCE.md`.
 
 ## 2.3. zone_config_changes (Phase 5)
 
@@ -292,7 +356,7 @@ metadata JSONB
 created_at
 ```
 
-Hypertable: Timescale с chunk 1 day, retention 90 дней (см. `DATA_RETENTION_POLICY.md`). В CI/testing hypertable пропускается (`$withinTransaction=false` миграции отключены).
+Hypertable: Timescale с chunk 1 day. **Hot retention = 30 дней** (см. `DATA_RETENTION_POLICY.md`: Laravel `telemetry:cleanup-raw` + Python `RETENTION_SAMPLES_DAYS` + Timescale policy через `2026_08_02_120000_align_telemetry_samples_timescale_retention_to_30_days.php`; ранее 90d в `2025_01_27_000007_*`). В CI/testing hypertable может пропускаться.
 
 Индексы:
 ```
@@ -1477,10 +1541,10 @@ leased_until TIMESTAMPTZ NOT NULL
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
-Retention (операционный минимум для AE3-Lite):
-- `ae_tasks`, `ae_commands`: hot retention 30 дней для terminal-данных;
+Retention (операционный минимум для AE3-Lite; код = SoT):
+- `ae_tasks`, `ae_commands`: hot retention **90 дней** для terminal-данных (`ae3:cleanup-old-tasks --days=90` в `routes/console.php`);
 - `ae_zone_leases`: только operational текущего runtime состояния;
-- purge выполняется batched job в off-peak окнах.
+- purge выполняется batched job в off-peak окнах. См. также `DATA_RETENTION_POLICY.md` § AE3 runtime tables.
 
 ---
 
@@ -1828,6 +1892,35 @@ ls_cycle_duration_bucket_mode_idx (dispatch_mode)
 - хранение cumulative bucket counts для фиксированного набора `le` bucket-ов;
 - exporter строит `_bucket{le="+Inf"}` из `sample_count` таблицы
   `laravel_scheduler_cycle_duration_aggregates`.
+
+---
+
+## 8.5.4. laravel_scheduler_missed_windows_totals (ACTIVE)
+
+Персистентные totals пропущенных окон расписания по зоне/типу.
+Миграция: `2026_07_07_120000_create_laravel_scheduler_reliability_metric_totals_tables.php`.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT NOT NULL
+task_type VARCHAR(64) NOT NULL
+total BIGINT NOT NULL DEFAULT 0
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+UNIQUE (zone_id, task_type)  -- ls_missed_windows_unique
+```
+
+## 8.5.5. laravel_scheduler_lock_skipped_totals (ACTIVE)
+
+Глобальный counter пропусков tick из‑за busy lock (`withoutOverlapping` / Cache lock).
+Та же миграция `2026_07_07_120000_*`.
+
+```
+id BIGSERIAL PK
+total BIGINT NOT NULL DEFAULT 0
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
 
 ---
 

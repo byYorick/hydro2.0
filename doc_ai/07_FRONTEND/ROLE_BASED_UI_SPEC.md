@@ -1,12 +1,12 @@
 # Спецификация ролевых интерфейсов UI/UX
 
 **Дата создания:** 2025-01-27
-**Дата обновления:** 2026-05-28 (status sync с реальной реализацией)
-**Версия:** 1.1
+**Дата обновления:** 2026-08-02 (DefaultDashboard в примерах — hypothetical; production = Unified Index)
+**Версия:** 1.2
 **Статус:** Спецификация для будущего редизайна. Большая часть отдельных ролевых дашбордов и ролевых меню **не реализована** в production — см. блок Status ниже.
 
 > **Status: planned / not implemented (полный set ролевых dashboards):**
-> Отдельные ролевые компоненты `AgronomistDashboard.vue`, `AdminDashboard.vue`, `EngineerDashboard.vue`, `OperatorDashboard.vue`, `ViewerDashboard.vue` существуют в `resources/js/Pages/Dashboard/Dashboards/`, но **не подключены к маршрутам**. Production-UI — единый Unified Dashboard (`Pages/Dashboard/Index.vue`) для всех ролей.
+> Отдельные ролевые компоненты `AgronomistDashboard.vue`…`ViewerDashboard.vue` существуют в `Dashboards/`, но **не подключены к маршрутам**. Файла `DefaultDashboard.vue` **нет** — примеры ниже с ним hypothetical. Production-UI — Unified Dashboard (`Pages/Dashboard/Index.vue`) для всех ролей.
 >
 > **Status: partially implemented (роль-based access):**
 > Реально работают:
@@ -534,11 +534,8 @@ Breaking-change: обратная совместимость со старыми
         :dashboard="dashboard"
       />
       
-      <!-- По умолчанию -->
-      <DefaultDashboard 
-        v-else
-        :dashboard="dashboard"
-      />
+      <!-- Fallback: в production используйте Unified Index.vue; DefaultDashboard.vue отсутствует -->
+      <div v-else class="p-6 text-sm opacity-70">Unsupported role — use Unified Dashboard</div>
     </template>
   </AppLayout>
 </template>
@@ -551,7 +548,7 @@ import AdminDashboard from './Dashboards/AdminDashboard.vue'
 import EngineerDashboard from './Dashboards/EngineerDashboard.vue'
 import OperatorDashboard from './Dashboards/OperatorDashboard.vue'
 import ViewerDashboard from './Dashboards/ViewerDashboard.vue'
-import DefaultDashboard from './Dashboards/DefaultDashboard.vue'
+// Hypothetical future wiring only — production entry is Dashboard/Index.vue
 
 const page = usePage()
 const user = computed(() => page.props.auth?.user)

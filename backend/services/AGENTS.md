@@ -19,6 +19,7 @@
   - будит `automation-engine` по типу задачи (не всё идёт в `start-cycle`):
     - полив — `POST /zones/{id}/start-irrigation`;
     - lighting tick (AE3) — `POST /zones/{id}/start-lighting-tick`;
+    - solution topup/change — `POST /zones/{id}/start-solution-topup` / `start-solution-change`;
     - greenhouse climate — `POST /greenhouses/{id}/start-climate-tick`;
     - diagnostics / cycle_start / остальные compat non-irrigation — `POST /zones/{id}/start-cycle`
       (см. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`, `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`);
@@ -37,7 +38,8 @@
 ## 3) Контракты и совместимость
 
 - Внешние ingress AE3: `start-cycle`, `start-irrigation`, `start-lighting-tick`,
-  `start-climate-tick` (+ internal `GET /internal/tasks/{task_id}`).
+  `start-solution-topup`, `start-solution-change`, `start-climate-tick`
+  (+ internal `GET /internal/tasks/{task_id}`).
   Полный канон — `doc_ai/04_BACKEND_CORE/ae3lite.md` и `automation-engine/AGENT.md`.
 - Runtime источник данных AE3: direct SQL read-model (PostgreSQL) + compiled bundles,
   без runtime-зависимости от Laravel effective-targets API.

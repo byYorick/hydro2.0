@@ -2,7 +2,7 @@
 # Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
 
 **Версия:** 1.4
-**Дата обновления:** 2026-08-02
+**Дата обновления:** 2026-08-02 (команды `run_pump` / `test_sensor` / `probe_sensor` в §3.2)
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -75,6 +75,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 3.2. Поддерживаемые команды
 
 - `set_relay` (канальный, для всех 6 actuator-каналов IRR профиля)
+- `run_pump` (только `pump_main`; обёртка над `set_relay {state:true, duration_ms}` — см. `storage_irrigation_fw_commands.c`)
+- `test_sensor` (только `level_*` WATER_LEVEL_SWITCH каналы; возвращает текущий `value`/`raw`)
+- `probe_sensor` (alias `test_sensor` на тех же `level_*` каналах)
 - `state` (только на сервисном канале `storage_state`, возвращает `snapshot/state` для two-tank guard)
 - built-in через `node_command_handler`: `set_time`, `restart`
 

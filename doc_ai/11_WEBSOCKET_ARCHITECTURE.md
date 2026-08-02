@@ -2,8 +2,8 @@
 
 **Stack:** Laravel Reverb (self-hosted Pusher-compatible, port 6001) + Laravel Echo (Pusher.js) on frontend.
 **Queue:** All broadcasts use Redis queue `broadcasts`.
-**Auth:** Большинство каналов — `private` (требуют `POST /broadcasting/auth` с Sanctum session или Bearer token). Public: `hydro.alerts`; Conditionally public: `hydro.devices` (application-level role-gate `admin`/`agronomist`).
-**Дата обновления:** 2026-05-28 (sync с реальным кодом: добавлен `hydro.zone.executions.*`, уточнены auth-уровни каналов, Laravel class-name event listeners).
+**Auth:** Все каналы ниже — `PrivateChannel` (требуют `POST /broadcasting/auth` с Sanctum session или Bearer token). Server-side authorization в `backend/laravel/routes/channels.php`.
+**Дата обновления:** 2026-08-02 (sync: `hydro.alerts` и `hydro.devices` — PrivateChannel + server-side auth, не public).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -18,14 +18,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `hydro.commands.{zoneId}` | Private | `commands.{zoneId}` *(deprecated alias)* | CommandStatusUpdated, CommandFailed | Users with zone access |
 | `hydro.commands.global` | Private | `commands.global` *(deprecated alias)* | CommandStatusUpdated, CommandFailed (no zone) | All authenticated users |
 | `hydro.events.global` | Private | `events.global` *(deprecated alias)* | EventCreated (global) | All authenticated users |
-| `hydro.alerts` | Public | — | AlertCreated, AlertUpdated | Any (no auth needed) |
-| `hydro.devices` | Public + app-gate | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | `admin`, `agronomist` |
+| `hydro.alerts` | Private | — | AlertCreated, AlertUpdated | Authenticated roles: `viewer`, `operator`, `admin`, `agronomist`, `engineer` |
+| `hydro.devices` | Private | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | Authenticated roles: `admin`, `agronomist` (server-side) |
 
 **Authorization** (`backend/laravel/routes/channels.php`):
 - Zone channels (`hydro.zones.{id}`, `hydro.zone.executions.{id}`, `hydro.commands.{id}`) check `ZoneAccessHelper::canAccessZone()` + role in `['viewer', 'operator', 'admin', 'agronomist', 'engineer']`
-- `hydro.devices` — public канал на уровне broadcasting, но клиент применяет role-check `admin`/`agronomist` (несёт unassigned device snapshot)
+- `hydro.devices` — **PrivateChannel**; server-side role-gate `admin|agronomist` (unassigned device snapshot). Не public и не client-only filter.
 - Global private channels (`hydro.events.global`, `hydro.commands.global`) require authenticated user + valid role
-- `hydro.alerts` — public, без auth, любой клиент может подписаться
+- `hydro.alerts` — **PrivateChannel**; server-side auth для любой валидной роли (`viewer|operator|admin|agronomist|engineer`)
 - Auth failures return `false` (403), DB errors return `false` instead of throwing
 
 ---

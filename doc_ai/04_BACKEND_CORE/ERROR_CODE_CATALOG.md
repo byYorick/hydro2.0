@@ -1,9 +1,9 @@
 # ERROR_CODE_CATALOG.md
 # Канонический каталог кодов ошибок automation/runtime
 
-**Версия:** 1.5
-**Дата:** 2026-06-29
-**Статус:** Актуально (фаза 5: прошивки/MQTT command_response; фаза 4: UI fallback)
+**Версия:** 1.6
+**Дата:** 2026-08-02
+**Статус:** Актуально (фаза 5: прошивки/MQTT command_response; фаза 4: UI fallback; solution_topup/solution_change runtime codes)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -188,6 +188,8 @@ make i18n-catalog-check   # включает audit_phase4_i18n_coverage.py
 | `irr_state_stale` | `ae3_irr_probe` | Snapshot получен, но `age > irr_state_max_age_sec`. Семантика как у `irr_state_unavailable` (deferred в polling-стейджах) | `Снимок состояния IRR-ноды устарел.` |
 | `irr_state_mismatch` | `ae3_irr_probe` | Snapshot пришёл, но hardware state не совпал с `expected` (valve/pump). **Не** оборачивается backoff'ом — это safety boundary, fail-closed немедленно | `Состояние IRR-ноды не совпало с ожиданиями автоматики.` |
 | `irrigation_recovery_probe_exhausted` | `ae3_irr_probe` | В `irrigation_recovery_check` исчерпан streak подряд идущих deferred probes (`_IRR_PROBE_FAILURE_STREAK_LIMIT=5`) — нода долго недоступна | `IRR-нода недоступна: исчерпан лимит подряд идущих probe-deferrals.` |
+| `irrigation_wait_ready_timeout` | `await_ready` | Зона не вышла в `workflow_phase='ready'` за `AE_IRRIGATION_WAIT_READY_SEC` | `Ожидание готовности зоны к поливу превысило лимит.` |
+| `emergency_stop_activated` | `ae3_failsafe` | E-stop активирован; reconcile не подтвердил безопасное состояние актуаторов | `Аварийный стоп активен — автоматика остановлена до безопасного состояния.` |
 | `ae3_prepare_recirculation_max_attempts_missing` | `ae3_config` | В bundle коррекции для prepare-recirculation отсутствует обязательный `prepare_recirculation_max_attempts` (Phase 3.1 B-7 fail-closed) | `В конфигурации коррекции отсутствует обязательный параметр числа повторов prepare-recirculation.` |
 
 ## Таблица кодов AE3 ingress / task creation
@@ -258,13 +260,17 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `prepare_recirculation_attempt_limit_reached` | `prepare_recirc_*` | Исчерпан `prepare_recirculation_max_attempts`. |
 | `irrigation_decision_strategy_unknown` | `decision_gate` | Неизвестная irrigation strategy в конфиге. |
 
-## Таблица кодов solution_change (черновик, этап D.1)
+## Таблица кодов solution_change
 
-> **Статус:** doc-first; коды фиксируются при реализации runtime. Семантика — `CORRECTION_CYCLE_SPEC.md` §10.7, `ae3lite.md` §7.2.3.
+> Семантика — `CORRECTION_CYCLE_SPEC.md` §10.7, `ae3lite.md` §7.2.3. Коды в runtime (`compat_endpoints`, `create_task_from_intent`, handlers).
 
 | code | Домен | Когда возникает | Что видит пользователь |
 | --- | --- | --- | --- |
 | `start_solution_change_zone_busy` | `ae3_ingress` | Active task/lease при `POST /zones/{id}/start-solution-change` | `Зона занята — подмену раствора нельзя начать сейчас.` |
+| `start_solution_change_rate_limited` | `ae3_ingress` | Rate-limit на `start-solution-change` | `Слишком частые запросы подмены раствора — повторите позже.` |
+| `start_solution_change_intent_not_found` | `ae3_ingress` | Intent для start-solution-change не найден | `Intent для подмены раствора не найден.` |
+| `start_solution_change_intent_claim_unavailable` | `ae3_ingress` | Intent нельзя claim (занят/недоступен) | `Intent подмены раствора недоступен для захвата.` |
+| `start_solution_change_intent_terminal` | `ae3_ingress` | Intent уже в terminal status | `Intent подмены раствора уже завершён.` |
 | `solution_change_zone_not_ready` | `ae3_ingress` | `workflow_phase != ready` | `Подмена раствора доступна только когда зона в фазе «готова».` |
 | `solution_change_active_irrigation` | `ae3_ingress` | Активный полив | `Дождитесь завершения полива перед подменой раствора.` |
 | `solution_change_disabled` | `ae3_config` | `subsystems.solution_change.enabled=false` | `Подмена раствора отключена в настройках зоны/рецепта.` |
@@ -275,9 +281,25 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | `solution_change_operator_timeout` | `await_operator_*` | Истёк `solution_change_operator_confirm_timeout_sec` на gate | `Ожидание подтверждения оператора превысило лимит — задача остановлена.` |
 | `solution_change_aborted_by_operator` | `solution_change` | Manual step `solution_change_abort` | `Подмена раствора отменена оператором.` |
 | `solution_change_gate_invalid_step` | `ae3_manual` | Неверный manual step для текущего gate stage | `Недопустимое действие для текущего этапа подмены раствора.` |
-| `irrigation_wait_ready_timeout` | `await_ready` | Зона не вышла в `workflow_phase='ready'` за `AE_IRRIGATION_WAIT_READY_SEC`. |
-| `irrigation_recovery_probe_exhausted` | `irrigation_recovery_check` | Исчерпан streak deferred probes IRR-ноды. |
-| `emergency_stop_activated` | любая | E-stop активирован, reconcile не подтвердил безопасное состояние. |
+
+## Таблица кодов solution_topup
+
+> Семантика — `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` §7.5, `ae3lite.md` §7.2.4. Источник: `compat_endpoints`, `create_task_from_intent`, `workflow_topology`, `trigger_solution_topup_from_level_event`.
+
+| code | Домен | Когда возникает | Что видит пользователь |
+| --- | --- | --- | --- |
+| `start_solution_topup_zone_busy` | `ae3_ingress` | Active task/lease при `POST /zones/{id}/start-solution-topup` | `Зона занята — автодолив нельзя начать сейчас.` |
+| `start_solution_topup_not_ready` | `ae3_ingress` | `workflow_phase != ready` | `Автодолив доступен только когда зона в фазе «готова».` |
+| `start_solution_topup_rate_limited` | `ae3_ingress` | Rate-limit на `start-solution-topup` | `Слишком частые запросы автодолива — повторите позже.` |
+| `start_solution_topup_intent_not_found` | `ae3_ingress` | Intent для start-solution-topup не найден | `Intent для автодолива не найден.` |
+| `start_solution_topup_intent_claim_unavailable` | `ae3_ingress` | Intent нельзя claim | `Intent автодолива недоступен для захвата.` |
+| `start_solution_topup_intent_terminal` | `ae3_ingress` | Intent уже terminal | `Intent автодолива уже завершён.` |
+| `start_solution_topup_level_not_low` | `ae3_ingress` | Нет need-topup (`solution_min=true` и `solution_max=false`) | `Уровень раствора не требует автодолива.` |
+| `start_solution_topup_cooldown_active` | `ae3_ingress` | Cooldown после предыдущего topup ещё активен | `Подождите окончания паузы после предыдущего автодолива.` |
+| `solution_topup_disabled` | `ae3_config` | `solution_topup_enabled=false` | `Автодолив отключён в настройках зоны.` |
+| `solution_topup_source_empty` | `solution_topup_*` | Чистый бак пуст во время topup | `Автодолив остановлен: нет воды в баке чистой воды.` |
+| `solution_topup_leak_detected` | `solution_topup_*` | `solution_min` пропал во время fill | `Автодолив остановлен: возможна утечка раствора.` |
+| `solution_topup_timeout` | `solution_topup_check` | Истёк `solution_topup_timeout_sec` | `Автодолив не завершился за отведённое время.` |
 
 ## Deprecated коды
 

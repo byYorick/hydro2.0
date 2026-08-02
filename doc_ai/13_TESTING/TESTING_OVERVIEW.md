@@ -14,14 +14,21 @@
 
 ### 1. Установка зависимостей
 
+Предпочтительно venv/`uv` (PEP 668). Три suite не смешивать — см. таблицу в `E2E_GUIDE.md`.
+
 ```bash
-# Установка зависимостей для node_sim
+# node_sim
 cd tests/node_sim
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Установка зависимостей для E2E тестов
+# Python workflow E2E
 cd ../e2e
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Frontend Playwright (отдельно, из Laravel):
+# cd backend/laravel && npm run e2e
 ```
 
 ### 2. Запуск тестового окружения
