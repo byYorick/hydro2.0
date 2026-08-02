@@ -1,20 +1,40 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
-      <header class="ui-hero p-5 space-y-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.4em] text-[color:var(--text-dim)]">
-              {{ greenhouse.type || 'Теплица' }}
-            </p>
-            <h1 class="text-2xl font-semibold text-[color:var(--text-primary)]">
+    <div class="space-y-5">
+      <section class="ui-hero p-5 md:p-6 space-y-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="min-w-0 space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]">
+                {{ greenhouse.type || 'Теплица' }}
+              </p>
+              <span
+                v-if="greenhouse.timezone"
+                class="rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[color:var(--text-muted)]"
+              >
+                {{ greenhouse.timezone }}
+              </span>
+              <span
+                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
+                :class="greenhouseClimateEnabled
+                  ? 'border-[color:var(--accent-green)]/35 bg-[color:var(--accent-green)]/10 text-[color:var(--accent-green)]'
+                  : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'"
+              >
+                <span
+                  class="ui-state-dot"
+                  :class="greenhouseClimateEnabled ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
+                />
+                Климат {{ greenhouseClimateEnabled ? 'вкл' : 'выкл' }}
+              </span>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
               {{ greenhouse.name }}
             </h1>
-            <p class="mt-1 max-w-2xl text-sm text-[color:var(--text-muted)]">
-              {{ greenhouse.description || 'Информационная панель по текущему состоянию теплицы и прикреплённым зонам.' }}
+            <p class="max-w-2xl text-sm text-[color:var(--text-muted)]">
+              {{ greenhouse.description || 'Состояние теплицы, зон и оборудования в одном месте.' }}
             </p>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
             <Link href="/zones">
               <Button
                 size="sm"
@@ -23,105 +43,6 @@
                 Все зоны
               </Button>
             </Link>
-          </div>
-        </div>
-        <div class="grid gap-3 xs:grid-cols-2 md:grid-cols-4">
-          <MetricCard
-            label="Зоны"
-            :value="zones.length"
-            color="var(--accent-cyan)"
-            status="success"
-            subtitle="Общее количество зон"
-          />
-          <MetricCard
-            label="Активные циклы"
-            :value="activeCyclesCount"
-            color="var(--accent-green)"
-            status="info"
-            subtitle="С привязанными рецептами"
-          />
-          <MetricCard
-            label="Узлы онлайн"
-            :value="nodeSummary.online"
-            color="var(--accent-cyan)"
-            status="success"
-            subtitle="Работает"
-          />
-          <MetricCard
-            label="Оповещения"
-            :value="activeAlerts"
-            color="var(--accent-red)"
-            status="danger"
-            subtitle="Активных"
-          />
-        </div>
-      </header>
-
-      <section class="space-y-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 class="text-base font-semibold">
-              Управление теплицей
-            </h2>
-            <p class="text-xs text-[color:var(--text-dim)]">
-              Общий климат теплицы и обслуживание оборудования.
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="!canConfigureGreenhouse || maintenanceEnterTargets.length === 0 || maintenanceSubmitting"
-              @click="openMaintenanceModal('MAINTENANCE')"
-            >
-              В обслуживание
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              :disabled="!canConfigureGreenhouse || maintenanceExitTargets.length === 0 || maintenanceSubmitting"
-              @click="openMaintenanceModal('ACTIVE')"
-            >
-              Завершить обслуживание
-            </Button>
-          </div>
-        </div>
-
-        <GreenhouseClimateConfiguration
-          v-model:enabled="greenhouseClimateEnabled"
-          :climate-form="climateForm"
-          :bindings="greenhouseClimateBindings"
-          :available-nodes="availableNodes"
-          :can-configure="canOperateGreenhouse"
-          :applying="climateSubmitting"
-          :show-apply-button="true"
-          apply-label="Сохранить климат теплицы"
-          @apply="saveGreenhouseClimate"
-        />
-
-        <div class="text-xs text-[color:var(--text-dim)]">
-          <span v-if="lastClimateSavedAt">Профиль обновлён: {{ formatTime(lastClimateSavedAt) }}</span>
-          <span v-else>Профиль климата ещё не сохранён</span>
-          <span class="ml-3">Runtime dispatcher климата теплицы пока в разработке, но profile и bindings уже сохраняются.</span>
-        </div>
-
-        <div class="text-xs text-[color:var(--text-dim)]">
-          В обслуживании сейчас {{ maintenanceExitTargets.length }} / {{ climateNodes.length }} climate/weather нод.
-        </div>
-      </section>
-
-      <section class="space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-base font-semibold">
-              Зоны теплицы
-            </h2>
-            <p class="text-xs text-[color:var(--text-dim)]">
-              Панель наблюдения и управления.
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-[color:var(--text-dim)]">{{ zones.length }} зон</span>
             <Button
               v-if="canConfigureGreenhouse"
               size="sm"
@@ -144,112 +65,341 @@
             </Button>
           </div>
         </div>
-        <div class="grid gap-3 md:grid-cols-2">
-          <ZoneCard
-            v-for="zone in zones"
-            :key="zone.id"
-            :zone="zone"
-            :telemetry="zone.telemetry"
-            :alerts-count="zone.alerts_count"
-            :nodes-online="zone.nodes_online"
-            :nodes-total="zone.nodes_total"
-          />
+
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-3">
+          <div
+            class="ui-kpi-card"
+            data-testid="greenhouse-kpi-zones"
+          >
+            <div class="ui-kpi-label">
+              Зоны
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ zones.length }}
+            </div>
+            <div class="ui-kpi-hint">
+              Всего в теплице
+            </div>
+          </div>
+          <div
+            class="ui-kpi-card"
+            data-testid="greenhouse-kpi-nodes"
+          >
+            <div class="ui-kpi-label">
+              Узлы онлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ nodeSummary.online }}<span class="text-base font-semibold text-[color:var(--text-muted)]">/{{ nodeSummary.total ?? nodes.length }}</span>
+            </div>
+            <div class="ui-kpi-hint">
+              Offline: {{ nodeSummary.offline }}
+            </div>
+          </div>
+          <div
+            class="ui-kpi-card"
+            data-testid="greenhouse-kpi-alerts"
+            :class="activeAlerts > 0 ? 'border-[color:var(--accent-red)]/45' : ''"
+          >
+            <div class="ui-kpi-label">
+              Оповещения
+            </div>
+            <div
+              class="ui-kpi-value"
+              :class="activeAlerts > 0 ? 'text-[color:var(--accent-red)]' : ''"
+            >
+              {{ activeAlerts }}
+            </div>
+            <div class="ui-kpi-hint">
+              {{ activeAlerts > 0 ? 'Требуют внимания' : 'Активных нет' }}
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="activeAlerts > 0"
+          class="flex flex-col gap-2 rounded-xl border border-[color:var(--accent-red)]/35 bg-[color:var(--accent-red)]/8 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="flex items-start gap-2 text-sm text-[color:var(--text-primary)]">
+            <svg
+              class="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--accent-red)]"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span>
+              Активных оповещений: <strong class="tabular-nums">{{ activeAlerts }}</strong>. Проверьте зоны и узлы перед запуском циклов.
+            </span>
+          </div>
+          <Link
+            href="/alerts"
+            class="text-xs font-medium text-[color:var(--accent-red)] hover:underline shrink-0"
+          >
+            Открыть оповещения
+          </Link>
         </div>
       </section>
 
       <section class="space-y-4">
-        <div class="flex items-center justify-between">
+        <div class="ui-section-header !mb-0">
           <div>
-            <h2 class="text-base font-semibold">
-              Циклы
+            <h2 class="ui-section-title">
+              Управление теплицей
             </h2>
-            <p class="text-xs text-[color:var(--text-dim)]">
-              Отслеживание фаз и прогресса рецептов.
+            <p class="ui-section-subtitle mt-0.5">
+              Климат теплицы и обслуживание climate/weather оборудования.
             </p>
           </div>
-          <span class="text-xs text-[color:var(--text-dim)]">{{ cycles.length }} активных</span>
         </div>
-        <div class="grid gap-3 md:grid-cols-2">
-          <Card
-            v-for="cycle in cycles"
-            :key="cycle.zone_id"
-            class="space-y-3"
-          >
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="text-sm font-semibold">
-                  {{ cycle.zone?.name }}
+
+        <div class="grid gap-4 xl:grid-cols-12">
+          <aside class="surface-card flex flex-col gap-4 rounded-2xl border border-[color:var(--border-muted)] p-4 xl:col-span-4">
+            <div class="space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  Обслуживание
+                </h3>
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] tabular-nums"
+                  :class="maintenanceExitTargets.length > 0
+                    ? 'border-[color:var(--accent-amber)]/40 bg-[color:var(--accent-amber)]/10 text-[color:var(--accent-amber)]'
+                    : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)]'"
+                >
+                  <span
+                    class="h-1.5 w-1.5 rounded-full"
+                    :class="maintenanceExitTargets.length > 0 ? 'bg-[color:var(--accent-amber)]' : 'bg-[color:var(--accent-green)]'"
+                  />
+                  {{ maintenanceExitTargets.length > 0 ? 'Есть в maintenance' : 'Нет в maintenance' }}
+                </span>
+              </div>
+              <p class="text-xs text-[color:var(--text-muted)]">
+                Lifecycle <code class="text-[color:var(--text-primary)]">MAINTENANCE</code> для узлов теплицы.
+              </p>
+            </div>
+
+            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/35 px-3 py-2.5 text-xs text-[color:var(--text-muted)] space-y-1.5">
+              <div class="font-medium text-[color:var(--text-primary)]">
+                Что входит
+              </div>
+              <ul class="list-disc space-y-1 pl-4">
+                <li>Все узлы зон теплицы: pH, EC, irrig, climate, light, relay и др.</li>
+                <li>Перевод в <code>MAINTENANCE</code>: статус offline, телеметрия не принимается как рабочая.</li>
+                <li>Для калибровки, ремонта, замены датчиков/насосов без списания узла.</li>
+                <li>Привязка к зоне и циклы выращивания не снимаются автоматически.</li>
+                <li>Выход возвращает узлы в <code>ACTIVE</code>.</li>
+              </ul>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40 px-3 py-2.5">
+                <div class="text-[11px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+                  Можно ввести
                 </div>
-                <div class="text-xs text-[color:var(--text-muted)]">
-                  {{ cycle.recipe?.name }}
+                <div class="mt-1 text-xl font-semibold tabular-nums text-[color:var(--text-primary)]">
+                  {{ maintenanceEnterTargets.length }}
                 </div>
               </div>
-              <Badge :variant="cycle.progress >= 85 ? 'success' : cycle.progress >= 45 ? 'warning' : 'info'">
-                {{ cycle.statusLabel }}
-              </Badge>
+              <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40 px-3 py-2.5">
+                <div class="text-[11px] uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+                  В maintenance
+                </div>
+                <div
+                  class="mt-1 text-xl font-semibold tabular-nums"
+                  :class="maintenanceExitTargets.length > 0 ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-primary)]'"
+                >
+                  {{ maintenanceExitTargets.length }}
+                </div>
+              </div>
             </div>
+
             <div class="text-xs text-[color:var(--text-muted)]">
-              Фаза {{ cycle.phaseIndex }} · Прогресс {{ cycle.progress.toFixed(1) }}%
+              Узлов теплицы:
+              <span class="tabular-nums text-[color:var(--text-primary)]">{{ maintenanceCandidateNodes.length }}</span>
+              · в обслуживании
+              <span class="tabular-nums text-[color:var(--text-primary)]">{{ maintenanceExitTargets.length }}/{{ maintenanceCandidateNodes.length }}</span>
             </div>
-            <div class="h-2 overflow-hidden rounded-full bg-[color:var(--border-muted)]">
+
+            <div
+              v-if="maintenanceCandidateNodes.length > 0"
+              class="max-h-36 space-y-1 overflow-y-auto rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/25 p-2"
+            >
               <div
-                class="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-green),var(--accent-cyan))] transition-all"
-                :style="{ width: `${Math.min(Math.max(cycle.progress, 0), 100)}%` }"
-              ></div>
+                v-for="node in maintenanceCandidateNodes"
+                :key="node.id"
+                class="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs"
+              >
+                <span class="min-w-0 truncate text-[color:var(--text-primary)]">
+                  {{ node.name || node.uid }}
+                  <span class="text-[color:var(--text-muted)]">· {{ node.type || '—' }}</span>
+                </span>
+                <Badge :variant="node.lifecycle_state === 'MAINTENANCE' ? 'warning' : 'neutral'">
+                  {{ node.lifecycle_state || '—' }}
+                </Badge>
+              </div>
             </div>
-          </Card>
-        </div>
-        <div
-          v-if="cycles.length === 0"
-          class="text-xs text-[color:var(--text-dim)]"
-        >
-          Нет активных циклов
+            <div
+              v-else
+              class="rounded-xl border border-dashed border-[color:var(--border-muted)] px-3 py-3 text-center text-xs text-[color:var(--text-muted)]"
+            >
+              Нет узлов теплицы для обслуживания.
+            </div>
+
+            <div class="mt-auto flex flex-col gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                class="w-full justify-center"
+                :disabled="!canConfigureGreenhouse || maintenanceSubmitting"
+                @click="openMaintenanceModal('MAINTENANCE')"
+              >
+                В обслуживание
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                class="w-full justify-center"
+                :disabled="!canConfigureGreenhouse || maintenanceSubmitting"
+                @click="openMaintenanceModal('ACTIVE')"
+              >
+                Завершить обслуживание
+              </Button>
+            </div>
+
+            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/35 px-3 py-2 text-xs text-[color:var(--text-muted)]">
+              <span v-if="lastClimateSavedAt">Профиль климата: {{ formatTime(lastClimateSavedAt) }}</span>
+              <span v-else>Профиль климата ещё не сохранён</span>
+            </div>
+          </aside>
+
+          <div class="xl:col-span-8">
+            <GreenhouseClimateConfiguration
+              v-model:enabled="greenhouseClimateEnabled"
+              :climate-form="climateForm"
+              :bindings="greenhouseClimateBindings"
+              :available-nodes="availableNodes"
+              :can-configure="canOperateGreenhouse"
+              :applying="climateSubmitting"
+              :show-apply-button="true"
+              apply-label="Сохранить климат теплицы"
+              @apply="saveGreenhouseClimate"
+            />
+          </div>
         </div>
       </section>
 
-      <section class="space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-base font-semibold">
-              Узлы
-            </h2>
-            <p class="text-xs text-[color:var(--text-dim)]">
-              Состояние оборудования.
-            </p>
+      <div class="grid gap-5 xl:grid-cols-12">
+        <section class="space-y-4 xl:col-span-8">
+          <div class="ui-section-header !mb-0">
+            <div>
+              <h2 class="ui-section-title">
+                Зоны теплицы
+              </h2>
+              <p class="ui-section-subtitle mt-0.5">
+                Панель наблюдения и управления. Циклы и фазы — внутри зоны.
+              </p>
+            </div>
+            <span class="rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs tabular-nums text-[color:var(--text-muted)]">
+              {{ zones.length }} {{ zonesWord }}
+            </span>
           </div>
-          <span class="text-xs text-[color:var(--text-dim)]">{{ nodes.length }} устройств</span>
-        </div>
-        <div class="grid gap-3 md:grid-cols-2">
-          <Card
-            v-for="node in nodes"
-            :key="node.id"
+
+          <div
+            v-if="zones.length > 0"
+            class="grid gap-3 md:grid-cols-2"
+          >
+            <ZoneCard
+              v-for="zone in zones"
+              :key="zone.id"
+              :zone="zone"
+              :telemetry="zone.telemetry"
+              :alerts-count="zone.alerts_count"
+              :nodes-online="zone.nodes_online"
+              :nodes-total="zone.nodes_total"
+            />
+          </div>
+          <div
+            v-else
+            class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--border-muted)] px-6 py-12 text-center"
+          >
+            <p class="text-sm text-[color:var(--text-primary)]">
+              В теплице пока нет зон
+            </p>
+            <p class="mt-1 max-w-sm text-xs text-[color:var(--text-muted)]">
+              Создайте зону, чтобы подключить узлы и запустить цикл выращивания.
+            </p>
+            <Button
+              v-if="canConfigureGreenhouse"
+              class="mt-4"
+              size="sm"
+              @click="openZoneWizardGuarded()"
+            >
+              Новая зона
+            </Button>
+          </div>
+        </section>
+
+        <section class="surface-card space-y-3 rounded-2xl border border-[color:var(--border-muted)] p-4 xl:col-span-4">
+          <div class="ui-section-header !mb-0">
+            <div>
+              <h2 class="ui-section-title">
+                Узлы
+              </h2>
+              <p class="ui-section-subtitle mt-0.5">
+                Состояние оборудования.
+              </p>
+            </div>
+            <span class="text-xs tabular-nums text-[color:var(--text-muted)]">
+              {{ nodes.length }} устройств
+            </span>
+          </div>
+
+          <div
+            v-if="nodes.length > 0"
             class="space-y-2"
           >
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="text-sm font-semibold">
-                  {{ node.name || node.uid }}
+            <div
+              v-for="node in nodes"
+              :key="node.id"
+              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40 px-3 py-2.5 transition-colors hover:border-[color:var(--border-strong)]"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-semibold text-[color:var(--text-primary)]">
+                    {{ node.name || node.uid }}
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-[color:var(--text-muted)]">
+                    {{ node.zone?.name || 'Без зоны' }}
+                    <span v-if="node.type"> · {{ node.type }}</span>
+                  </div>
                 </div>
-                <div class="text-xs text-[color:var(--text-muted)]">
-                  {{ node.zone?.name }}
-                </div>
+                <Badge :variant="node.status === 'online' ? 'success' : 'danger'">
+                  {{ node.status }}
+                </Badge>
               </div>
-              <Badge :variant="node.status === 'online' ? 'success' : 'danger'">
-                {{ node.status }}
-              </Badge>
+              <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
+                <span>Ф/В: {{ node.fw_version || '—' }}</span>
+                <span>{{ node.lifecycle_state || 'Неизвестно' }}</span>
+                <span>Отклик: {{ formatTime(node.last_seen_at) }}</span>
+              </div>
             </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Ф/В: {{ node.fw_version || '—' }}
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Жизненный цикл: {{ node.lifecycle_state || 'Неизвестно' }}
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Последний отклик: {{ formatTime(node.last_seen_at) }}
-            </div>
-          </Card>
-        </div>
-      </section>
+          </div>
+          <div
+            v-else
+            class="rounded-xl border border-dashed border-[color:var(--border-muted)] px-4 py-8 text-center"
+          >
+            <p class="text-sm text-[color:var(--text-primary)]">
+              Узлы ещё не подключены
+            </p>
+            <p class="mt-1 text-xs text-[color:var(--text-muted)]">
+              После регистрации устройства появятся в этом списке.
+            </p>
+          </div>
+        </section>
+      </div>
     </div>
 
     <ZoneCreateWizard
@@ -269,7 +419,21 @@
       :confirm-disabled="maintenanceTargets.length === 0"
       @close="closeMaintenanceModal"
       @confirm="confirmMaintenance"
-    />
+    >
+      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+        <p>{{ maintenanceModalMessage }}</p>
+        <ul class="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40 p-3 text-xs">
+          <li
+            v-for="node in maintenanceTargets"
+            :key="node.id"
+            class="flex justify-between gap-2"
+          >
+            <span class="truncate text-[color:var(--text-primary)]">{{ node.name || node.uid }}</span>
+            <span>{{ node.type || '—' }} · {{ node.lifecycle_state || '—' }}</span>
+          </li>
+        </ul>
+      </div>
+    </ConfirmModal>
   </AppLayout>
 </template>
 
@@ -279,10 +443,8 @@ import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import Card from '@/Components/Card.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
-import MetricCard from '@/Components/MetricCard.vue'
 import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -304,7 +466,6 @@ import {
   validateGreenhouseClimateForm,
 } from '@/composables/zoneAutomationProfilePayload'
 import { formatTime } from '@/utils/formatTime'
-import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
 import type { Zone } from '@/types'
 import type { Device } from '@/types'
@@ -605,80 +766,42 @@ function onZoneCreated(_zone: Zone): void {
   router.reload({ only: ['zones'] })
 }
 
-const cycles = computed(() => {
-  if (!props.zones || !Array.isArray(props.zones)) {
-    return []
-  }
-
-  return props.zones
-    .filter((zone) => zone.activeGrowCycle || (zone.cycles && zone.cycles.length > 0))
-    .map((zone) => {
-      const activeGrowCycle = (zone as any).activeGrowCycle
-      const legacyCycle = zone.cycles?.find(cycle => cycle.status === 'RUNNING')
-      const cycle = activeGrowCycle || legacyCycle
-
-      if (cycle) {
-        const currentPhase = activeGrowCycle?.currentPhase
-        const phaseIndex = activeGrowCycle
-          ? (currentPhase?.phase_index ?? 0) + 1
-          : (legacyCycle?.current_phase_index ?? 0) + 1
-
-        let progress = 0
-        const phaseDurationHours = activeGrowCycle
-          ? (currentPhase?.duration_hours ?? ((currentPhase?.duration_days || 0) * 24))
-          : (legacyCycle?.recipe?.phases?.[legacyCycle?.current_phase_index ?? 0]?.duration_hours ?? 0)
-
-        const phaseStartCandidate = activeGrowCycle?.phase_started_at || activeGrowCycle?.started_at || legacyCycle?.started_at
-
-        if (phaseDurationHours && phaseStartCandidate) {
-          progress = calculateProgressFromDuration(phaseStartCandidate, phaseDurationHours, null) ?? 0
-        }
-
-        return {
-          zone_id: zone.id,
-          zone,
-          recipe: activeGrowCycle?.recipeRevision?.recipe ?? legacyCycle?.recipe ?? null,
-          phaseIndex,
-          statusLabel: progress >= 85 ? 'Старт' : progress >= 45 ? 'В процессе' : 'Начало',
-          progress,
-        }
-      }
-
-      return {
-        zone_id: zone.id,
-        zone,
-        recipe: null,
-        phaseIndex: 0,
-        statusLabel: 'Нет данных',
-        progress: 0,
-      }
-    })
-})
-
-const activeCyclesCount = computed(() => cycles.value.length)
 const nodes = computed(() => props.nodes || [])
 const zones = computed(() => props.zones || [])
 const nodeSummary = computed(() => props.nodeSummary || { online: 0, offline: 0, total: 0 })
 const activeAlerts = computed(() => props.activeAlerts ?? 0)
 
-const climateNodes = computed(() => {
-  return managedGreenhouseNodes.value.filter((node) => {
-    const type = String(node.type ?? '').toLowerCase()
-    return type === 'climate' || type === 'weather'
-  })
+const zonesWord = computed(() => {
+  const count = zones.value.length % 100
+  const last = count % 10
+  if (count > 10 && count < 20) return 'зон'
+  if (last === 1) return 'зона'
+  if (last >= 2 && last <= 4) return 'зоны'
+  return 'зон'
 })
 
+const maintenanceCandidateNodes = computed(() => {
+  const byId = new Map<number, GreenhouseNodeOption>()
+  for (const node of nodes.value) {
+    byId.set(node.id, node as GreenhouseNodeOption)
+  }
+  for (const node of managedGreenhouseNodes.value) {
+    byId.set(node.id, node)
+  }
+  return Array.from(byId.values())
+})
+
+/** FSM: ASSIGNED_TO_ZONE | ACTIVE | DEGRADED → MAINTENANCE */
 const maintenanceEnterTargets = computed(() => {
-  const allowedStates = new Set(['ASSIGNED_TO_ZONE', 'ACTIVE', 'DEGRADED', 'REGISTERED_BACKEND'])
-  return climateNodes.value.filter((node) => {
-    if (!node.lifecycle_state || node.lifecycle_state === 'MAINTENANCE') {
-      return false
-    }
-    return allowedStates.has(node.lifecycle_state)
+  const allowedStates = new Set(['ASSIGNED_TO_ZONE', 'ACTIVE', 'DEGRADED'])
+  return maintenanceCandidateNodes.value.filter((node) => {
+    return Boolean(node.lifecycle_state && allowedStates.has(node.lifecycle_state))
   })
 })
 
-const maintenanceExitTargets = computed(() => climateNodes.value.filter((node) => node.lifecycle_state === 'MAINTENANCE'))
+const maintenanceExitTargets = computed(() => {
+  return maintenanceCandidateNodes.value.filter((node) => node.lifecycle_state === 'MAINTENANCE')
+})
 
 const maintenanceTargets = computed(() => {
   return maintenanceModal.targetState === 'MAINTENANCE'
@@ -695,10 +818,10 @@ const maintenanceModalTitle = computed(() => {
 const maintenanceModalMessage = computed(() => {
   const total = maintenanceTargets.value.length
   if (maintenanceModal.targetState === 'MAINTENANCE') {
-    return `Перевести в обслуживание ${total} climate/weather нод теплицы?`
+    return `Перевести в MAINTENANCE ${total} узлов теплицы? Узлы станут offline, рабочая телеметрия не принимается; привязка к зоне сохранится.`
   }
 
-  return `Завершить обслуживание для ${total} climate/weather нод и вернуть их в активный режим?`
+  return `Завершить обслуживание для ${total} узлов и вернуть их в ACTIVE?`
 })
 
 const maintenanceModalConfirmText = computed(() => maintenanceModal.targetState === 'MAINTENANCE' ? 'В обслуживание' : 'Завершить')
@@ -706,14 +829,17 @@ const maintenanceModalConfirmVariant = computed(() => maintenanceModal.targetSta
 
 function openMaintenanceModal(targetState: MaintenanceTargetState): void {
   if (!canConfigureGreenhouse.value) {
-    showToast('Режим обслуживания доступен только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    showToast('Режим обслуживания доступен агроному и админу.', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 
   maintenanceModal.targetState = targetState
 
   if (maintenanceTargets.value.length === 0) {
-    showToast('Нет узлов, доступных для выбранного действия.', 'warning', TOAST_TIMEOUT.NORMAL)
+    const hint = targetState === 'MAINTENANCE'
+      ? 'Нет узлов в состояниях ASSIGNED_TO_ZONE / ACTIVE / DEGRADED.'
+      : 'Нет узлов в состоянии MAINTENANCE.'
+    showToast(hint, 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 

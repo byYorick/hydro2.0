@@ -4,6 +4,7 @@
     title="Создать новый рецепт"
     size="large"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <RecipeEditor
       v-model:form="form"

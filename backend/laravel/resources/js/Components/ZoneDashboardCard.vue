@@ -1,10 +1,9 @@
 <template>
   <div
-    class="zone-dashboard-card surface-card flex flex-col rounded-2xl border transition-all duration-150 cursor-pointer"
+    class="zone-dashboard-card group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-[color:var(--bg-surface)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]"
     :class="[
-      dense ? 'p-3 gap-3' : 'p-4 gap-4',
+      dense ? 'gap-3 p-3 pl-4' : 'gap-4 p-4 pl-5',
       cardBorderClass,
-      'hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
     ]"
     data-testid="zone-dashboard-card"
     role="link"
@@ -13,22 +12,28 @@
     @keydown.enter.prevent="goToZone"
     @keydown.space.prevent="goToZone"
   >
-    <!-- ── Header: зона, статусы, счётчик алертов ── -->
+    <div
+      class="absolute inset-y-0 left-0 w-1"
+      :class="accentBarClass"
+    />
+
     <header class="flex items-start justify-between gap-3">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 flex-wrap">
+      <div class="min-w-0 flex-1 space-y-2">
+        <div class="flex min-w-0 items-center gap-2">
           <span
-            class="w-2 h-2 rounded-full shrink-0"
+            class="h-2 w-2 shrink-0 rounded-full"
             :class="dotClass"
-          ></span>
+          />
           <Link
             :href="`/zones/${zone.id}`"
-            class="text-lg font-semibold truncate text-[color:var(--text-primary)] no-underline hover:underline"
+            class="truncate text-lg font-semibold tracking-tight text-[color:var(--text-primary)] no-underline hover:underline"
             @click.stop
           >
             {{ zone.name }}
           </Link>
-          <!-- Текущий операционный статус (workflow AE3), не lifecycle RUNNING -->
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5">
           <Badge
             v-if="currentZoneStatusLabel"
             :variant="currentZoneStatusVariant"
@@ -49,18 +54,24 @@
           >
             {{ getCycleStatusLabel(zone.cycle.status, 'short') }}
           </Badge>
+          <span
+            v-if="zone.devices?.total"
+            class="inline-flex items-center rounded-full border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/60 px-2 py-0.5 text-[11px] tabular-nums text-[color:var(--text-muted)]"
+          >
+            Устр: {{ zone.devices.online }}/{{ zone.devices.total }}
+          </span>
         </div>
-        <div class="text-xs text-[color:var(--text-dim)] mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[color:var(--text-muted)]">
           <span v-if="zone.greenhouse">{{ zone.greenhouse.name }}</span>
           <span
             v-if="zone.recipe"
             class="truncate"
           >· {{ zone.recipe.name }}</span>
-          <span v-if="zone.devices?.total">· Устр: {{ zone.devices.online }}/{{ zone.devices.total }}</span>
         </div>
       </div>
 
-      <div class="flex flex-col items-end gap-1 shrink-0">
+      <div class="flex shrink-0 flex-col items-end gap-1">
         <div
           v-if="automationBlock"
           class="status-chip status-chip--alarm shrink-0 animate-pulse"
@@ -111,17 +122,16 @@
         </div>
         <div
           v-if="automationBlock && zone.alerts_count > 0"
-          class="text-[10px] text-[color:var(--text-dim)]"
+          class="text-[10px] text-[color:var(--text-muted)]"
         >
           Алертов: {{ zone.alerts_count }}
         </div>
       </div>
     </header>
 
-    <!-- Подсказка о причине блокировки автоматики -->
     <div
       v-if="automationBlock"
-      class="rounded-md border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]/10 px-2.5 py-1.5 text-[11px] leading-snug text-[color:var(--accent-red)]"
+      class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]/15 px-3 py-2 text-[11px] leading-snug text-[color:var(--accent-red)]"
       data-testid="zone-card-automation-block-reason"
     >
       <div class="font-medium">
@@ -129,16 +139,13 @@
       </div>
       <div
         v-if="automationBlockMessageText"
-        class="text-[color:var(--text-secondary)] truncate"
+        class="mt-0.5 truncate text-[color:var(--text-muted)]"
         :title="automationBlockMessageText"
       >
         {{ automationBlockMessageText }}
       </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         DENSE MODE: исходный вертикальный layout
-         ═══════════════════════════════════════════════════════ -->
     <template v-if="dense">
       <CycleProgressStack
         :has-cycle="Boolean(zone.cycle)"
@@ -147,7 +154,7 @@
         :status-label="cycleStatusLabel"
         :phase="phaseStrip"
       />
-      <div class="grid grid-cols-3 gap-3">
+      <div class="grid grid-cols-3 gap-2">
         <MetricPillBar
           label="pH"
           :value="zone.telemetry.ph"
@@ -196,14 +203,12 @@
       />
     </template>
 
-    <!-- ═══════════════════════════════════════════════════════
-         NON-DENSE: двухколонный layout (Вариант C)
-         ═══════════════════════════════════════════════════════ -->
     <template v-else>
-      <!-- Два столбца: метрики (лево) + цикл и система (право) -->
-      <div class="grid grid-cols-2 gap-3 items-start">
-        <!-- Левый столбец: метрики стопкой -->
-        <div class="flex flex-col gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-stretch">
+        <section class="flex flex-col gap-2.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/25 p-2.5">
+          <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+            Телеметрия
+          </div>
           <MetricPillBar
             label="pH"
             :value="zone.telemetry.ph"
@@ -235,10 +240,9 @@
             :decimals="1"
             :offline="telemetryOffline"
           />
-        </div>
+        </section>
 
-        <!-- Правый столбец: цикл + состояние системы -->
-        <div class="flex flex-col gap-2.5">
+        <section class="flex flex-col gap-2.5">
           <CycleProgressStack
             :has-cycle="Boolean(zone.cycle)"
             :overall-pct="cycleOverallPct"
@@ -255,16 +259,14 @@
             :automation-blocked="Boolean(automationBlock)"
             :automation-block-reason="automationBlockLabelText"
           />
-        </div>
+        </section>
       </div>
 
-      <!-- Телеметрия с переключателем метрики -->
-      <div class="flex flex-col gap-1.5">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] uppercase tracking-wider text-[color:var(--text-muted)]">
-            Телеметрия · 24ч
+      <div class="flex flex-col gap-1.5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/20 p-2.5">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] font-medium uppercase tracking-[0.14em] text-[color:var(--text-muted)]">
+            Тренд · 24ч
           </span>
-          <!-- Переключатель: pH / EC / T°C  (click.stop чтобы не триггерить Link) -->
           <div
             class="flex items-center gap-1"
             @click.stop
@@ -273,7 +275,7 @@
               v-for="m in metricOptions"
               :key="m.key"
               type="button"
-              class="metric-tab px-2 py-0.5 rounded text-[10px] font-medium transition-colors"
+              class="metric-tab rounded px-2 py-0.5 text-[10px] font-medium transition-colors"
               :class="selectedMetric === m.key ? activeMetricClass(m.key) : inactiveMetricClass"
               @click.stop.prevent="selectedMetric = m.key"
             >
@@ -290,20 +292,26 @@
       </div>
     </template>
 
-    <!-- Алерты (до 3 строк) -->
     <AlertPreviewList
       v-if="alertPreviewItems.length > 0"
       :alerts="alertPreviewItems"
       :limit="3"
     />
 
-    <!-- Футер: время обновления -->
-    <div
-      v-if="zone.telemetry.updated_at"
-      class="text-[10px] text-[color:var(--text-dim)] pt-1 border-t border-[color:var(--border-muted)]"
-    >
-      Обновление: {{ formatTime(zone.telemetry.updated_at) }}
-    </div>
+    <footer class="mt-auto flex items-center justify-between gap-3 border-t border-[color:var(--border-muted)] pt-2.5 text-[11px] text-[color:var(--text-muted)]">
+      <span v-if="zone.telemetry.updated_at">
+        Обновление: {{ formatTime(zone.telemetry.updated_at) }}
+      </span>
+      <span
+        v-else
+        class="text-[color:var(--text-dim)]"
+      >
+        Нет свежей телеметрии
+      </span>
+      <span class="font-medium text-[color:var(--accent-cyan)] opacity-0 transition-opacity group-hover:opacity-100">
+        Открыть →
+      </span>
+    </footer>
   </div>
 </template>
 
@@ -694,10 +702,19 @@ function getZoneStatusVariant(status: string): 'success' | 'info' | 'warning' | 
 }
 
 const cardBorderClass = computed(() => {
-  if (automationBlock.value) return 'border-[color:var(--badge-danger-border)]'
-  if (props.zone.status === 'ALARM') return 'border-[color:var(--badge-danger-border)]'
-  if (props.zone.status === 'WARNING') return 'border-[color:var(--badge-warning-border)]'
-  return 'border-[color:var(--border-muted)]'
+  if (automationBlock.value) return 'border-[color:var(--accent-red)]/40 hover:border-[color:var(--accent-red)]/55'
+  if (props.zone.status === 'ALARM') return 'border-[color:var(--accent-red)]/35 hover:border-[color:var(--accent-red)]/50'
+  if (props.zone.status === 'WARNING') return 'border-[color:var(--accent-amber)]/35 hover:border-[color:var(--accent-amber)]/50'
+  if (props.zone.status === 'RUNNING') return 'border-[color:var(--border-muted)] hover:border-[color:var(--accent-green)]/40'
+  return 'border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]'
+})
+
+const accentBarClass = computed(() => {
+  if (automationBlock.value || props.zone.status === 'ALARM') return 'bg-[color:var(--accent-red)]'
+  if (props.zone.status === 'WARNING' || telemetryHealth.value === 'warn') return 'bg-[color:var(--accent-amber)]'
+  if (props.zone.status === 'RUNNING') return 'bg-[color:var(--accent-green)]'
+  if (props.zone.status === 'PAUSED') return 'bg-[color:var(--text-dim)]'
+  return 'bg-[color:var(--accent-cyan)]'
 })
 
 const dotClass = computed(() => {
@@ -736,5 +753,15 @@ function formatTime(value: string | null | undefined): string {
   border: 1px solid transparent;
   background: none;
   line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zone-dashboard-card {
+    transition: none;
+  }
+
+  .zone-dashboard-card:hover {
+    transform: none;
+  }
 }
 </style>

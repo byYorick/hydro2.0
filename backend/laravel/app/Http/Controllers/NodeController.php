@@ -643,6 +643,57 @@ class NodeController extends Controller
     }
 
     /**
+     * Выполнить lifecycle-переход узла.
+     * POST /api/nodes/{node}/lifecycle/transition
+     */
+    public function transitionLifecycle(Request $request, DeviceNode $node): JsonResponse
+    {
+        $this->authorize('update', $node);
+
+        $validated = $request->validate([
+            'target_state' => ['required', 'string', 'in:'.implode(',', NodeLifecycleState::values())],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $targetState = NodeLifecycleState::from($validated['target_state']);
+        $previousState = $node->lifecycleState();
+        $reason = $validated['reason'] ?? null;
+
+        if (! $this->lifecycleService->isTransitionAllowed($previousState, $targetState)) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'lifecycle_transition_not_allowed',
+                'message' => sprintf(
+                    'Переход %s → %s недопустим для узла %s.',
+                    $previousState->value,
+                    $targetState->value,
+                    $node->uid
+                ),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $ok = $this->lifecycleService->transition($node, $targetState, $reason);
+        if (! $ok) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'lifecycle_transition_failed',
+                'message' => 'Не удалось выполнить lifecycle-переход.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $node->refresh();
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'node' => $node,
+                'previous_state' => $previousState->value,
+                'current_state' => $node->lifecycleState()->value,
+            ],
+        ]);
+    }
+
+    /**
      * Получить разрешенные переходы для узла.
      * GET /api/nodes/{node}/lifecycle/allowed-transitions
      */

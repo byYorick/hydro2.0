@@ -535,4 +535,50 @@ class NodeControllerTest extends TestCase
                 && (float) ($q['timeout_sec'] ?? 0) === 3.0;
         });
     }
+
+    public function test_lifecycle_transition_moves_node_to_maintenance(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::ASSIGNED_TO_ZONE,
+            'status' => 'online',
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/lifecycle/transition", [
+            'target_state' => 'MAINTENANCE',
+            'reason' => 'greenhouse maintenance',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.previous_state', 'ASSIGNED_TO_ZONE')
+            ->assertJsonPath('data.current_state', 'MAINTENANCE');
+
+        $this->assertDatabaseHas('nodes', [
+            'id' => $node->id,
+            'lifecycle_state' => 'MAINTENANCE',
+            'status' => 'offline',
+        ]);
+    }
+
+    public function test_lifecycle_transition_rejects_illegal_path(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/lifecycle/transition", [
+            'target_state' => 'MAINTENANCE',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('code', 'lifecycle_transition_not_allowed');
+    }
 }

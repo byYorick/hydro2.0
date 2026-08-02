@@ -3,6 +3,7 @@
     :open="show"
     :title="title"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <form
       class="space-y-4"

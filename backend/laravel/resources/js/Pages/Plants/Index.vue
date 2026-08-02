@@ -167,6 +167,7 @@
       title="Редактирование растения"
       size="large"
       @close="resetForm"
+      hide-default-cancel
     >
       <form
         class="space-y-4"

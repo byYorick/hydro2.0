@@ -3,6 +3,7 @@
     :open="open"
     :title="title"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <slot>
       <div class="text-sm text-[color:var(--text-muted)]">

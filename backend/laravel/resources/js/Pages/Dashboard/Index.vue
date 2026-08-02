@@ -2,20 +2,20 @@
   <AppLayout>
     <template #default>
       <div class="space-y-5">
-        <section class="ui-hero p-6">
-          <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-            <div>
-              <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+        <section class="ui-hero space-y-5 p-5 md:p-6">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div class="min-w-0 space-y-1.5">
+              <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-muted)]">
                 операционный центр
               </p>
-              <h1 class="text-2xl font-semibold tracking-tight mt-1">
+              <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)]">
                 Операционный центр
               </h1>
-              <p class="text-sm text-[color:var(--text-muted)] mt-1">
-                Зоны, телеметрия, циклы и действия на одном экране.
+              <p class="max-w-2xl text-sm text-[color:var(--text-muted)]">
+                Зоны, телеметрия и состояние автоматики. Циклы и фазы — внутри карточки зоны.
               </p>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex shrink-0 flex-wrap gap-2">
               <Button
                 v-if="canConfigureCycle"
                 size="sm"
@@ -33,16 +33,23 @@
               </Button>
             </div>
           </div>
-          <div class="ui-kpi-grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mt-6">
+
+          <div
+            class="ui-kpi-grid grid-cols-2 md:grid-cols-3"
+            :class="(summary.zones_blocked ?? 0) > 0 ? 'xl:grid-cols-6' : 'xl:grid-cols-5'"
+          >
             <div
               class="ui-kpi-card"
               data-testid="dashboard-zones-count"
             >
               <div class="ui-kpi-label">
-                Зоны (всего / в работе)
+                Зоны
               </div>
               <div class="ui-kpi-value text-[color:var(--accent-green)]">
-                {{ summary.zones_total }} / {{ summary.zones_running }}
+                {{ summary.zones_total }}<span class="text-base font-semibold text-[color:var(--text-muted)]"> / {{ summary.zones_running }}</span>
+              </div>
+              <div class="ui-kpi-hint">
+                Всего / в работе
               </div>
             </div>
             <div class="ui-kpi-card">
@@ -69,28 +76,27 @@
             </div>
             <div class="ui-kpi-card">
               <div class="ui-kpi-label">
-                Циклы active
-              </div>
-              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
-                {{ summary.cycles_running }}
-              </div>
-            </div>
-            <div class="ui-kpi-card">
-              <div class="ui-kpi-label">
                 Устройства
               </div>
-              <div class="ui-kpi-value">
-                {{ summary.devices_online }}/{{ summary.devices_total }}
+              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+                {{ summary.devices_online }}<span class="text-base font-semibold text-[color:var(--text-muted)]">/{{ summary.devices_total }}</span>
+              </div>
+              <div class="ui-kpi-hint">
+                Online / всего
               </div>
             </div>
             <div
               class="ui-kpi-card"
               data-testid="dashboard-alerts-count"
+              :class="summary.alerts_active > 0 ? 'border-[color:var(--accent-red)]/40' : ''"
             >
               <div class="ui-kpi-label">
                 Алерты
               </div>
-              <div class="ui-kpi-value text-[color:var(--accent-red)]">
+              <div
+                class="ui-kpi-value"
+                :class="summary.alerts_active > 0 ? 'text-[color:var(--accent-red)]' : ''"
+              >
                 {{ summary.alerts_active }}
               </div>
             </div>
@@ -109,14 +115,14 @@
           </div>
         </section>
 
-        <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <div class="flex flex-col lg:flex-row lg:items-center gap-3">
-            <div class="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
+        <section class="surface-card rounded-2xl border border-[color:var(--border-muted)] p-3 md:p-4">
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 v-model="query"
                 class="input-field flex-1"
                 placeholder="Поиск зоны, культуры или теплицы"
-              />
+              >
               <select
                 v-model="statusFilter"
                 class="input-select w-full sm:w-44"
@@ -156,17 +162,19 @@
                 </option>
               </select>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                class="btn btn-ghost h-9 px-3 text-xs"
+                class="btn h-9 px-3 text-xs"
+                :class="showOnlyAlerts ? 'btn-outline' : 'btn-ghost'"
                 @click="showOnlyAlerts = !showOnlyAlerts"
               >
                 {{ showOnlyAlerts ? 'Показать все' : 'Только алерты' }}
               </button>
               <button
                 type="button"
-                class="btn btn-ghost h-9 px-3 text-xs"
+                class="btn h-9 px-3 text-xs"
+                :class="denseView ? 'btn-outline' : 'btn-ghost'"
                 @click="toggleDense"
               >
                 {{ denseView ? 'Стандартный вид' : 'Компактный вид' }}

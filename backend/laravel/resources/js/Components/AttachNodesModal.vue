@@ -3,6 +3,7 @@
     :open="show"
     title="Привязать узлы к зоне"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <div
       v-if="loading"

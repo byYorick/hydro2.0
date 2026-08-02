@@ -3,6 +3,7 @@
     :open="show"
     :title="'Мониторинг системы'"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <div class="space-y-4">
       <!-- Основные компоненты -->

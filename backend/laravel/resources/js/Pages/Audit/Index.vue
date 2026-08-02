@@ -140,6 +140,7 @@
       :open="selectedLog !== null"
       :title="`Детали лога #${selectedLog?.id}`"
       @close="selectedLog = null"
+      hide-default-cancel
     >
       <div
         v-if="selectedLog"

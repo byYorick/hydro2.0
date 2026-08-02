@@ -3,6 +3,7 @@
     :open="show"
     :title="`Редактирование конфига ноды`"
     @close="handleClose"
+    hide-default-cancel
   >
     <div
       v-if="loading"

@@ -33,20 +33,12 @@ vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
 }))
 
-vi.mock('@/Components/Card.vue', () => ({
-  default: { name: 'Card', template: '<div class="card"><slot /></div>' },
-}))
-
 vi.mock('@/Components/Button.vue', () => ({
   default: { name: 'Button', props: ['size', 'variant', 'disabled'], template: '<button :disabled="disabled"><slot /></button>' },
 }))
 
 vi.mock('@/Components/Badge.vue', () => ({
   default: { name: 'Badge', props: ['variant'], template: '<span><slot /></span>' },
-}))
-
-vi.mock('@/Components/MetricCard.vue', () => ({
-  default: { name: 'MetricCard', props: ['label', 'value'], template: '<div class="metric">{{ label }}{{ value }}</div>' },
 }))
 
 vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
@@ -81,7 +73,7 @@ vi.mock('@/Components/ZoneActionModal.vue', () => ({
 }))
 
 vi.mock('@/Components/ConfirmModal.vue', () => ({
-  default: { name: 'ConfirmModal', props: ['open'], template: '<div class="confirm-modal" />' },
+  default: { name: 'ConfirmModal', props: ['open'], template: '<div class="confirm-modal"><slot /></div>' },
 }))
 
 vi.mock('@/composables/useModal', () => ({
@@ -220,6 +212,24 @@ describe('Greenhouses/Show.vue', () => {
     expect(button?.element.hasAttribute('disabled')).toBe(false)
   })
 
+  it('рендерит KPI целыми числами без десятичных', () => {
+    const wrapper = mount(GreenhouseShow, {
+      props: {
+        greenhouse: baseGreenhouse,
+        zones: [baseZone],
+        nodes: [],
+        nodeSummary: { online: 1, offline: 2, total: 3 },
+        activeAlerts: 13,
+      },
+    })
+
+    expect(wrapper.get('[data-testid="greenhouse-kpi-zones"]').text()).toContain('1')
+    expect(wrapper.get('[data-testid="greenhouse-kpi-zones"]').text()).not.toContain('1.00')
+    expect(wrapper.get('[data-testid="greenhouse-kpi-nodes"]').text()).toContain('1/3')
+    expect(wrapper.get('[data-testid="greenhouse-kpi-alerts"]').text()).toContain('13')
+    expect(wrapper.get('[data-testid="greenhouse-kpi-alerts"]').text()).toContain('Требуют внимания')
+  })
+
   it('блокирует управление климатом для не агронома', () => {
     usePageMockInstance.props.auth.user.role = 'viewer'
 
@@ -238,13 +248,13 @@ describe('Greenhouses/Show.vue', () => {
     expect(button?.element.hasAttribute('disabled')).toBe(true)
   })
 
-  it('учитывает только климат-узлы для обслуживания', () => {
+  it('не открывает обслуживание без подходящих lifecycle-состояний', async () => {
     const wrapper = mount(GreenhouseShow, {
       props: {
         greenhouse: baseGreenhouse,
         zones: [baseZone],
         nodes: [
-          { id: 1, uid: 'node-1', type: 'sensor', status: 'online', lifecycle_state: 'ACTIVE' },
+          { id: 1, uid: 'node-1', type: 'ph', status: 'online', lifecycle_state: 'REGISTERED_BACKEND' },
         ],
         nodeSummary: baseNodeSummary,
         activeAlerts: 0,
@@ -253,29 +263,31 @@ describe('Greenhouses/Show.vue', () => {
 
     const maintenanceButton = findButton(wrapper, 'В обслуживание')
     expect(maintenanceButton).toBeDefined()
-    expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(true)
+    expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(false)
+    await maintenanceButton?.trigger('click')
+    expect(showToastMock).toHaveBeenCalledWith(
+      'Нет узлов в состояниях ASSIGNED_TO_ZONE / ACTIVE / DEGRADED.',
+      'warning',
+      expect.any(Number),
+    )
   })
 
-  it('разрешает обслуживание для климат-узлов', () => {
-    nodesListMock.mockResolvedValue([
-      { id: 2, uid: 'climate-1', type: 'climate', status: 'online', lifecycle_state: 'ACTIVE' },
-    ])
-
+  it('разрешает обслуживание для узлов зон теплицы', () => {
     const wrapper = mount(GreenhouseShow, {
       props: {
         greenhouse: baseGreenhouse,
         zones: [baseZone],
-        nodes: [],
+        nodes: [
+          { id: 2, uid: 'irrig-1', type: 'irrig', status: 'online', lifecycle_state: 'ASSIGNED_TO_ZONE' },
+        ],
         nodeSummary: baseNodeSummary,
         activeAlerts: 0,
       },
     })
 
-    return flushPromises().then(() => {
-      const maintenanceButton = findButton(wrapper, 'В обслуживание')
-      expect(maintenanceButton).toBeDefined()
-      expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(false)
-    })
+    const maintenanceButton = findButton(wrapper, 'В обслуживание')
+    expect(maintenanceButton).toBeDefined()
+    expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(false)
   })
 
   it('сохраняет климат теплицы через unified authority', async () => {

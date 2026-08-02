@@ -3,6 +3,7 @@
     :open="show"
     title="Создать новую зону"
     @close="$emit('close')"
+    hide-default-cancel
   >
     <div class="space-y-4">
       <!-- Шаг 1: Основная информация -->

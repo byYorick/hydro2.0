@@ -3,6 +3,7 @@
     :open="show"
     :title="`Конфигурация узла ${node?.uid || node?.id}`"
     @close="handleClose"
+    hide-default-cancel
   >
     <div class="space-y-4">
       <div class="text-xs text-[color:var(--text-muted)]">
