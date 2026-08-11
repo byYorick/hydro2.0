@@ -480,6 +480,9 @@ export function buildGrowthCycleConfigPayload(
     irrigation_batch_l: clamp(Math.round(waterForm.irrigationBatchL), 1, 500),
     valve_switching_enabled: waterForm.valveSwitching,
     correction_during_irrigation: waterForm.correctionDuringIrrigation,
+    irrigation_ec_component: waterForm.correctionDuringIrrigation
+      ? (waterForm.irrigationEcComponent === 'npk' ? 'npk' : 'calcium')
+      : (waterForm.irrigationEcComponent ?? 'none'),
     fill_temperature_c: clamp(waterForm.fillTemperatureC, 5, 35),
     schedule: [
       {

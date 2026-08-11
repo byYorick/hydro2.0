@@ -36,7 +36,7 @@ AE3 (automation-engine, Python) читает состояние зоны **на�
 
 **Python manifest** — декларация в [`ae3lite/infrastructure/read_models/laravel_schema_contract.py`](../../backend/services/automation-engine/ae3lite/infrastructure/read_models/laravel_schema_contract.py) о том, какие таблицы / колонки / enum-значения AE3 ждёт найти.
 
-**Validator** — [`test_read_model_contract.py`](../../backend/services/automation-engine/test_read_model_contract.py) сверяет manifest против snapshot. Падает, если manifest ссылается на то, чего в snapshot нет.
+**Validator** — [`test_read_model_contract.py`](../../backend/services/automation-engine/tests/unit/test_read_model_contract.py) сверяет manifest против snapshot. Падает, если manifest ссылается на то, чего в snapshot нет.
 
 ## Что именно защищено
 

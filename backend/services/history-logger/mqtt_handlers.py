@@ -85,7 +85,6 @@ from handlers.config_report import (
     _complete_binding_after_config_report,
     _complete_sensor_calibrations_after_config_report,
 )
-from handlers.node_hello import _process_pending_config_report_after_registration
 
 logger = logging.getLogger(__name__)
 _ORIG_COMPLETE_BINDING_AFTER_CONFIG_REPORT = _complete_binding_after_config_report

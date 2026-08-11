@@ -14,6 +14,7 @@ class NodeSwapService
         private readonly NodeLifecycleService $lifecycleService,
         private readonly NodeFirmwareUnbindService $firmwareUnbindService,
         private readonly NodeSecretService $nodeSecretService,
+        private readonly ZoneChannelAutoBinder $zoneChannelAutoBinder,
     ) {}
 
     /**
@@ -126,6 +127,10 @@ class NodeSwapService
             $newNode->zone_id = null;
             $newNode->pending_zone_id = (int) $targetZoneId;
             $newNode->save();
+
+            // После migrate_channels bindings уже на тех же channel_id;
+            // если роль была снята / каналы новые — добиндить.
+            $this->zoneChannelAutoBinder->bindFromNode((int) $targetZoneId, $newNode->fresh(['channels']) ?? $newNode);
 
             $migrateTelemetry = $options['migrate_telemetry'] ?? false;
             $telemetryMigrationResult = null;

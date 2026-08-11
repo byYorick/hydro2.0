@@ -145,6 +145,11 @@ function profileFromCanonicalSubsystems(subsystems: Dict): AutomationProfile {
                 irrigationExecution.correction_during_irrigation,
                 d.waterForm.correctionDuringIrrigation,
             ),
+            irrigationEcComponent: asEnum(
+                irrigationExecution.irrigation_ec_component,
+                ['none', 'calcium', 'npk'] as const,
+                d.waterForm.irrigationEcComponent ?? 'none',
+            ),
             enableDrainControl: asBool(drainControl.enabled, d.waterForm.enableDrainControl),
             drainTargetPercent: asNumber(drainControl.target_percent, d.waterForm.drainTargetPercent),
             diagnosticsEnabled: asBool(diagnostics.enabled, d.waterForm.diagnosticsEnabled),
@@ -316,6 +321,11 @@ export function zoneLogicProfileToProfile(payload: unknown): AutomationProfile {
             ecPct: asNumber(correction.ec_pct ?? water.ec_pct, d.waterForm.ecPct),
             valveSwitching: asBool(water.valve_switching, d.waterForm.valveSwitching),
             correctionDuringIrrigation: asBool(water.correction_during_irrigation, d.waterForm.correctionDuringIrrigation),
+            irrigationEcComponent: asEnum(
+                water.irrigation_ec_component,
+                ['none', 'calcium', 'npk'] as const,
+                d.waterForm.irrigationEcComponent ?? 'none',
+            ),
             enableDrainControl: asBool(water.enable_drain_control, d.waterForm.enableDrainControl),
             drainTargetPercent: asNumber(water.drain_target_percent, d.waterForm.drainTargetPercent),
             diagnosticsEnabled: asBool(diagnostics.enabled ?? water.diagnostics_enabled, d.waterForm.diagnosticsEnabled),

@@ -43,7 +43,14 @@ final class IrrigationCorrectionSummaryPresenter
                 ? $resolved['phases']['irrigation']
                 : [];
             $dosing = is_array($irrPhaseCfg['dosing'] ?? null) ? $irrPhaseCfg['dosing'] : [];
-            $ratios = is_array($irrPhaseCfg['ec_component_ratios'] ?? null) ? $irrPhaseCfg['ec_component_ratios'] : [];
+            $rawRatios = $irrPhaseCfg['ec_component_ratios'] ?? null;
+            if (is_array($rawRatios)) {
+                $ratios = $rawRatios;
+            } elseif (is_object($rawRatios)) {
+                $ratios = (array) $rawRatios;
+            } else {
+                $ratios = [];
+            }
             $policy = is_array($irrPhaseCfg['ec_component_policy'] ?? null) ? $irrPhaseCfg['ec_component_policy'] : [];
             $policyIrrigation = is_array($policy['irrigation'] ?? null) ? $policy['irrigation'] : [];
             $excludedRaw = $irrPhaseCfg['ec_excluded_components'] ?? [];
@@ -74,6 +81,15 @@ final class IrrigationCorrectionSummaryPresenter
                 'correction_during_irrigation' => array_key_exists('correction_during_irrigation', $irrigationTargets)
                     ? (bool) $irrigationTargets['correction_during_irrigation']
                     : null,
+                'irrigation_ec_component' => (static function () use ($irrigationTargets): ?string {
+                    $raw = $irrigationTargets['irrigation_ec_component'] ?? null;
+                    if (! is_string($raw)) {
+                        return null;
+                    }
+                    $normalized = strtolower(trim($raw));
+
+                    return in_array($normalized, ['none', 'calcium', 'npk'], true) ? $normalized : null;
+                })(),
             ];
         } catch (Throwable) {
             return null;

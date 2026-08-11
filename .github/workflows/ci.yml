@@ -118,7 +118,7 @@ jobs:
           PG_PASS: hydro
           PG_DB: hydro_test
           DB_DATABASE: hydro_test
-        run: pytest -q test_*.py
+        run: pytest -q
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -526,4 +526,4 @@ jobs:
         env:
           PYTHONPATH: backend/services:backend/services/automation-engine
           AE_READ_MODEL_SNAPSHOT_PATH: ${{ github.workspace }}/schemas/automation_read_model_schema.json
-        run: pytest -q backend/services/automation-engine/test_read_model_contract.py
+        run: pytest -q backend/services/automation-engine/tests/unit/test_read_model_contract.py

@@ -88,7 +88,7 @@ docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test t
 # запускает pytest против `hydro_test` (mirror schema из `hydro_dev`), не портит
 # рабочие данные. Conftest автоматически форсирует `PG_DB=hydro_test`.
 make test-ae                                                     # полный AE suite
-make test-ae PYTEST_ARGS="-q test_ae3lite_probe_backoff.py"      # один файл
+make test-ae PYTEST_ARGS="-q tests/unit/test_ae3lite_probe_backoff.py"  # один файл
 make test-ae PYTEST_ARGS="-x -k test_name"                       # фильтр
 make test-db-reset                                               # wipe test DB
 

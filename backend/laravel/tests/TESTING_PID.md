@@ -17,7 +17,7 @@ docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test t
 cd backend/laravel && npm run test -- Components/__tests__/CorrectionLiveEditCard.spec.ts Components/__tests__/PidConfigForm.spec.ts
 
 # Python AE3
-make test-ae PYTEST_ARGS="-q test_ae3lite_correction_planner.py test_ae3lite_pid_output_event.py test_ae3lite_pid_state_repository.py"
+make test-ae PYTEST_ARGS="-q tests/unit/test_ae3lite_correction_planner.py tests/unit/test_ae3lite_pid_output_event.py tests/unit/test_ae3lite_pid_state_repository.py"
 ```
 
 См. также `README_PID_TESTS.md` и `PID_CONFIG_REFERENCE.md` §0.

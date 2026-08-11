@@ -74,6 +74,16 @@ function toIrrigationSystem(value: unknown, fallback: IrrigationSystem): Irrigat
   return fallback
 }
 
+function toIrrigationEcComponent(
+  value: unknown,
+  fallback: WaterFormState['irrigationEcComponent'],
+): WaterFormState['irrigationEcComponent'] {
+  if (value === 'none' || value === 'calcium' || value === 'npk') {
+    return value
+  }
+  return fallback
+}
+
 function sanitizeClimateForm(raw: Partial<ClimateFormState> | undefined, fallback: ClimateFormState): ClimateFormState {
   return {
     enabled: toBoolean(raw?.enabled, fallback.enabled),
@@ -136,6 +146,7 @@ function sanitizeWaterForm(
     ecPct: clamp(toNumber(raw?.ecPct, fallback.ecPct), 1, 50),
     valveSwitching: toBoolean(raw?.valveSwitching, fallback.valveSwitching),
     correctionDuringIrrigation: toBoolean(raw?.correctionDuringIrrigation, fallback.correctionDuringIrrigation),
+    irrigationEcComponent: toIrrigationEcComponent(raw?.irrigationEcComponent, fallback.irrigationEcComponent),
     enableDrainControl: toBoolean(raw?.enableDrainControl, fallback.enableDrainControl),
     drainTargetPercent: clamp(toRoundedNumber(raw?.drainTargetPercent, fallback.drainTargetPercent), 0, 100),
     diagnosticsEnabled: toBoolean(raw?.diagnosticsEnabled, fallback.diagnosticsEnabled),

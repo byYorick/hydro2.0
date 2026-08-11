@@ -337,8 +337,8 @@ webhook в Laravel без токена.
 ## 11. Предусловие: закрыть reliability-хвост R3/R4
 
 В рабочем дереве уже лежат незакоммиченные тесты и правки reliability (см. git status):
-`test_ae3lite_lease_heartbeat_fail_closed.py`, `test_ae3lite_intent_sync_retry.py`,
-`test_ae3lite_reliability_metrics.py`, `history-logger/tests/test_reliability_r3.py` и
+`tests/unit/test_ae3lite_lease_heartbeat_fail_closed.py`, `tests/unit/test_ae3lite_intent_sync_retry.py`,
+`tests/unit/test_ae3lite_reliability_metrics.py`, `history-logger/tests/test_reliability_r3.py` и
 изменения в `redis_queue.py`, `worker.py`, `stale_task_reconcile.py`, `telemetry_processing.py`.
 
 **До начала этапов A–D** нужно:

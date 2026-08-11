@@ -51,8 +51,23 @@
         :model-value="waterForm.correctionDuringIrrigation"
         :label="meta('correctionDuringIrrigation').label"
         :title="meta('correctionDuringIrrigation').details"
-        @update:model-value="(v) => upd('correctionDuringIrrigation', v)"
+        @update:model-value="onCorrectionToggle"
       />
+      <Field
+        v-if="waterForm.correctionDuringIrrigation"
+        :label="meta('irrigationEcComponent').label"
+        :hint="meta('irrigationEcComponent').hint"
+      >
+        <select
+          class="block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
+          :title="meta('irrigationEcComponent').details"
+          :value="ecComponentSelectValue"
+          @change="onEcComponentChange"
+        >
+          <option value="calcium">Кальций (pump_b)</option>
+          <option value="npk">NPK (pump_a)</option>
+        </select>
+      </Field>
     </div>
 
     <template v-if="smart">
@@ -144,7 +159,8 @@
     <Hint :show="showHints">
       SMART soil v1 принимает решение о поливе по выборке датчиков
       влажности. Без сенсора используйте <span class="font-mono">task</span>
-      (по времени). На поливе допускается только pH-коррекция.
+      (по времени). Коррекция на поливе — всегда pH + EC;
+      для EC выбирается кальций или NPK.
     </Hint>
   </div>
 </template>
@@ -166,6 +182,11 @@ const smart = computed(
   () => props.waterForm.irrigationDecisionStrategy === 'smart_soil_v1',
 )
 
+const ecComponentSelectValue = computed(() => {
+  const raw = props.waterForm.irrigationEcComponent
+  return raw === 'npk' ? 'npk' : 'calcium'
+})
+
 const inputCls =
   'block w-full h-8 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-surface)] text-[var(--text-primary)] px-2.5 text-sm font-mono outline-none transition-[border-color,box-shadow,background-color] duration-150 focus:border-brand focus:ring-2 focus:ring-brand-soft focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand-soft'
 const numAttrs = { class: inputCls, type: 'number' }
@@ -182,9 +203,14 @@ const IRRIGATION_FIELD_META: Partial<Record<keyof WaterFormState, FieldMeta>> = 
     details: 'Сколько секунд длится один запуск полива.',
   },
   correctionDuringIrrigation: {
-    label: 'pH-коррекция во время полива',
-    hint: 'Только pH, без EC',
-    details: 'Если включено, во время полива допускается только pH-коррекция. EC-дозирование на irrigation path запрещено.',
+    label: 'Коррекция pH+EC во время полива',
+    hint: 'pH и один EC-компонент',
+    details: 'Во время полива корректируются pH и EC. EC-компонент выбирается отдельно: кальций или NPK.',
+  },
+  irrigationEcComponent: {
+    label: 'EC-компонент на поливе',
+    hint: 'calcium или npk',
+    details: 'Кальций (pump_b → T_ca) или NPK (pump_a → T_ca_mg_npk). pH корректируется всегда вместе с выбранным EC.',
   },
   irrigationAutoReplayAfterSetup: {
     label: 'Автоповтор полива после setup',
@@ -230,5 +256,23 @@ const meta = createMetaResolver<WaterFormState>(IRRIGATION_FIELD_META, {
 
 function upd<K extends keyof WaterFormState>(key: K, value: WaterFormState[K]) {
   emit('update:waterForm', { ...props.waterForm, [key]: value })
+}
+
+function onCorrectionToggle(enabled: boolean) {
+  const next: WaterFormState = {
+    ...props.waterForm,
+    correctionDuringIrrigation: enabled,
+  }
+  if (enabled && next.irrigationEcComponent !== 'npk' && next.irrigationEcComponent !== 'calcium') {
+    next.irrigationEcComponent = 'calcium'
+  }
+  emit('update:waterForm', next)
+}
+
+function onEcComponentChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'calcium' || value === 'npk') {
+    upd('irrigationEcComponent', value)
+  }
 }
 </script>

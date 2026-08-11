@@ -43,6 +43,13 @@ def pipeline_dose_flags(corr: CorrectionState) -> dict[str, Any]:
             "freeze_ec_pid": True,
             "active_component": None,
         }
+    if phase in {"irrigation_calcium", "irrigation_npk"}:
+        return {
+            "allow_ec": True,
+            "allow_ph": True,
+            "freeze_ec_pid": False,
+            "active_component": "calcium" if phase == "irrigation_calcium" else "npk",
+        }
     if is_ph_gate_phase(phase):
         return {
             "allow_ec": False,

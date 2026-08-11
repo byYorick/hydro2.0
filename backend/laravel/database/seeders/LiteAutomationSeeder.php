@@ -444,7 +444,8 @@ class LiteAutomationSeeder extends Seeder
         foreach ($zones as $zoneKey => $zone) {
             $assetMap = [
                 ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'pump_main', 'role' => 'pump_main', 'required' => true],
-                ['asset_type' => 'DRAIN', 'label' => 'Drain', 'node_role' => 'water', 'channel' => 'drain_main', 'role' => 'drain', 'required' => true],
+                // AE3/realhw: drain = valve_drain на irrig; legacy lite: drain_main на water
+                ['asset_type' => 'DRAIN', 'label' => 'Drain', 'node_role' => 'irrigation', 'channel' => 'valve_drain', 'role' => 'drain', 'required' => true, 'channel_fallbacks' => ['drain', 'drain_main', 'drain_valve'], 'node_role_fallback' => 'water'],
                 ['asset_type' => 'PUMP', 'label' => 'pH Acid Pump', 'node_role' => 'ph', 'channel' => 'pump_acid', 'role' => 'pump_acid', 'required' => true],
                 ['asset_type' => 'PUMP', 'label' => 'pH Base Pump', 'node_role' => 'ph', 'channel' => 'pump_base', 'role' => 'pump_base', 'required' => true],
                 ['asset_type' => 'PUMP', 'label' => 'EC NPK Pump', 'node_role' => 'ec', 'channel' => 'pump_a', 'role' => 'pump_a', 'required' => true],
@@ -456,6 +457,16 @@ class LiteAutomationSeeder extends Seeder
             ];
 
             foreach ($assetMap as $asset) {
+                $alreadyBound = ChannelBinding::query()
+                    ->where('role', $asset['role'])
+                    ->whereHas('infrastructureInstance', function ($query) use ($zone) {
+                        $query->where('owner_type', 'zone')->where('owner_id', $zone->id);
+                    })
+                    ->exists();
+                if ($alreadyBound) {
+                    continue;
+                }
+
                 $infra = InfrastructureInstance::updateOrCreate(
                     [
                         'owner_type' => 'zone',
@@ -468,27 +479,44 @@ class LiteAutomationSeeder extends Seeder
                     ]
                 );
 
-                $node = $zoneNodes[$zoneKey][$asset['node_role']] ?? null;
-                if (! $node) {
-                    continue;
-                }
+                $nodeRoles = array_values(array_filter([
+                    $asset['node_role'] ?? null,
+                    $asset['node_role_fallback'] ?? null,
+                ]));
+                $channelNames = array_values(array_unique(array_merge(
+                    [$asset['channel']],
+                    $asset['channel_fallbacks'] ?? []
+                )));
 
-                $channel = NodeChannel::query()
-                    ->where('node_id', $node->id)
-                    ->where('channel', $asset['channel'])
-                    ->first();
+                $channel = null;
+                foreach ($nodeRoles as $nodeRole) {
+                    $node = $zoneNodes[$zoneKey][$nodeRole] ?? null;
+                    if (! $node) {
+                        continue;
+                    }
+                    foreach ($channelNames as $channelName) {
+                        $channel = NodeChannel::query()
+                            ->where('node_id', $node->id)
+                            ->whereRaw('LOWER(channel) = ?', [strtolower((string) $channelName)])
+                            ->first();
+                        if ($channel) {
+                            break 2;
+                        }
+                    }
+                }
 
                 if (! $channel) {
                     continue;
                 }
 
+                $channelType = strtolower((string) ($channel->type ?? ''));
                 ChannelBinding::updateOrCreate(
                     [
                         'node_channel_id' => $channel->id,
                     ],
                     [
                         'infrastructure_instance_id' => $infra->id,
-                        'direction' => $channel->type === 'actuator' ? 'actuator' : 'sensor',
+                        'direction' => $channelType === 'actuator' ? 'actuator' : 'sensor',
                         'role' => $asset['role'],
                     ]
                 );

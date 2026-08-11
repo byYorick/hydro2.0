@@ -99,6 +99,12 @@ def _valid_base_payload() -> dict:
         },
         "tolerance": {"prepare_tolerance": {"ph_pct": 5.0, "ec_pct": 10.0}},
         "safety": {"safe_mode_on_no_effect": True, "block_on_active_no_effect_alert": True},
+        "recirc": {
+            "ec_overshoot_dilute_pct": 15.0,
+            "dilute_pulse_sec": 10,
+            "dilute_max_attempts": 3,
+            "dilute_settle_sec": 30,
+        },
     }
 
 
@@ -237,3 +243,35 @@ def test_shadow_warning_is_rate_limited_per_zone(caplog) -> None:
     assert failed_logs[0].rate_limit_window_sec == 60
     assert failed_logs[0].invalid_count == 1
     assert failed_logs[1].zone_id == 99
+
+
+def test_shadow_accepts_empty_list_ec_component_ratios(caplog) -> None:
+    """Laravel may re-encode empty irrigation ratios as JSON `[]` — coerce to {}."""
+    base = _valid_base_payload()
+    irrigation = deepcopy(base)
+    irrigation["ec_component_ratios"] = []  # PHP empty array after json round-trip
+    irrigation["ec_excluded_components"] = ["npk", "calcium", "magnesium", "micro"]
+    irrigation["ec_dosing_mode"] = "single"
+    correction_config = {
+        "base": base,
+        "phases": {
+            "solution_fill": deepcopy(base),
+            "tank_recirc": deepcopy(base),
+            "irrigation": irrigation,
+        },
+    }
+    planner = CycleStartPlanner()
+    before_ok = _counter_value("ok")
+    before_invalid = _counter_value("invalid")
+
+    with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.cycle_start_planner"):
+        planner._shadow_validate_correction(
+            snapshot=_make_snapshot(correction_config), task=_make_task(zone_id=7),
+        )
+
+    assert _counter_value("ok") == before_ok + 1
+    assert _counter_value("invalid") == before_invalid
+    assert not any(
+        rec.levelno == logging.WARNING and "ae3_shadow_config_validation_failed" in rec.message
+        for rec in caplog.records
+    )

@@ -1483,9 +1483,10 @@ class ExecuteTaskUseCase:
                 stage = str(getattr(task, "current_stage", "") or "unknown")
                 error_code = str(result.get("error_code") or "unknown")
                 logger.error(
-                    "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s error_code=%s",
+                    "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s stage=%s error_code=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
+                    stage,
                     error_code,
                 )
                 await self._emit_fail_safe_shutdown_alert(

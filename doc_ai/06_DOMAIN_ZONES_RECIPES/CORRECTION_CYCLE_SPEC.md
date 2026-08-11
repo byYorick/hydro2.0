@@ -42,7 +42,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 |------|-------|------------|
 | `solution_fill` | **только calcium** (`pump_b`) | **без pH**; после water-baseline |
 | `prepare_recirculation` / `tank_recirc` | `Ca → pH → Mg → pH → NPK → pH → Micro → финальный pH` | interleaved pipeline, не batch multi одного gap |
-| `irrigation` | **только pH** | EC-коррекция на поливе **запрещена** |
+| `irrigation` | **pH + EC** (один компонент: `calcium`\|`npk`) | `irrigation.execution.irrigation_ec_component`; Mg/Micro на поливе запрещены |
 | post-irrigation | **нет** nutrient recovery | убраны `irrig_recirc` / `irrigation_recovery_*` chemistry |
 
 **Water baseline:** при старте набора — стабильный замер EC/pH чистой воды →
@@ -1001,8 +1001,8 @@ class CorrectionStateMachine:
 
 | Уровень | Файл | Кейсы |
 |---------|------|-------|
-| Unit (`_run_dose_ec`) | `backend/services/automation-engine/test_ae3lite_correction_handler_multi_dose.py` | `test_corr_dose_ec_dispatches_sequence_ca_mg_micro`, `test_corr_dose_ec_partial_failure_emits_event_and_fails_window`, `test_corr_dose_ec_first_component_failure_raises` |
-| Integration (`CorrectionHandler.run` + `CorrectionEventLogger` + gateway `command_statuses`) | `backend/services/automation-engine/test_ae3lite_correction_handler_multi_dose_integration.py` | happy path sequential; sequential/parallel partial (`status=degraded`, enrichment, metric, `current_ec`); first-fail sequential + parallel без partial event |
+| Unit (`_run_dose_ec`) | `backend/services/automation-engine/tests/unit/test_ae3lite_correction_handler_multi_dose.py` | `test_corr_dose_ec_dispatches_sequence_ca_mg_micro`, `test_corr_dose_ec_partial_failure_emits_event_and_fails_window`, `test_corr_dose_ec_first_component_failure_raises` |
+| Integration (`CorrectionHandler.run` + `CorrectionEventLogger` + gateway `command_statuses`) | `backend/services/automation-engine/tests/unit/test_ae3lite_correction_handler_multi_dose_integration.py` | happy path sequential; sequential/parallel partial (`status=degraded`, enrichment, metric, `current_ec`); first-fail sequential + parallel без partial event |
 
 YAML E2E сценарий для partial failure **не добавлен**: полный two-tank/irrigation прогон хрупкий без node_sim; pytest AE3 даёт воспроизводимое покрытие без железа.
 
@@ -1329,17 +1329,22 @@ void handle_system_command(const char* cmd, cJSON* params) {
 
 Это требуется для Laravel/UI diagnostics и для безопасной отладки fail-closed веток без чтения raw `ae_tasks`.
 
-### 9.6. Коррекция во время полива (inline irrigation — только pH)
+### 9.6. Коррекция во время полива (inline irrigation)
 
-AE3-Lite поддерживает вход в коррекцию **во время стадии** `irrigation_check` (фаза `irrigating`), без остановки гидравлики полива, **только для pH**:
+AE3-Lite поддерживает вход в коррекцию **во время стадии** `irrigation_check` (фаза `irrigating`), без остановки гидравлики полива:
 - стадия `irrigation_check` помечена `has_correction=true` и возвращается обратно в `irrigation_check`;
-- EC на поливе: `needs_ec=false` / все EC components excluded — planner **не** планирует EC-дозы;
+- `correction_during_irrigation=true` включает inline-коррекцию **pH + EC**;
+- `irrigation_ec_component`:
+  - `calcium` (default при включённой коррекции) — pH + Ca (`pump_b`), `pipeline_phase=irrigation_calcium`, target `T_ca` из latest `zone_prepare_baselines` (иначе fallback `target_ec`);
+  - `npk` — pH + NPK (`pump_a`), `pipeline_phase=irrigation_npk`, target `T_ca_mg_npk` (или `target_ec` без baseline);
+  - legacy `none` при `correction_during_irrigation=true` **coerce → calcium** (pH-only на поливе больше не канон);
+- Mg / Micro / multi-component batch на поливе **запрещены**;
+- dilute на поливе не используется (бак обычно у `solution_max`);
 - post-irrigation nutrient recovery (`irrig_recirc`, `irrigation_recovery_*`) — **удалён из канона**;
-- после полива → `irrigation_stop_to_ready` → `ready` (без chemistry recovery window);
-- флаг `correction_during_irrigation` / `ph_correction_during_irrigation` означает **только pH**.
+- после полива → `irrigation_stop_to_ready` → `ready` (без chemistry recovery window).
 
-Multi-component EC (Ca/Mg/Micro) на поливе **не применяется**. Компонентная сборка EC —
-только в prepare (`solution_fill` Ca + `prepare_recirculation` pipeline, §3.7).
+Полная компонентная сборка EC — только в prepare (`solution_fill` Ca + `prepare_recirculation` pipeline, §3.7).
+Inline Ca/NPK на поливе — **поддерживающий** top-up, не замена prepare.
 
 ---
 

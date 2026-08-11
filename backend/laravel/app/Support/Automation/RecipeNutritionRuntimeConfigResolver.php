@@ -145,7 +145,13 @@ final class RecipeNutritionRuntimeConfigResolver
      */
     private function applyIrrigationEcExcluded(array &$resolved, array $componentRatios): void
     {
-        data_set($resolved, 'phases.irrigation.ec_component_ratios', []);
+        data_set(
+            $resolved,
+            'phases.irrigation.ec_component_ratios',
+            // Пустой object `{}` в JSON (не list `[]`) — AE schema ждёт dict.
+            // PHP `[]` после json_encode даёт `[]` и ломает shadow validation.
+            new \stdClass()
+        );
         data_set(
             $resolved,
             'phases.irrigation.ec_excluded_components',

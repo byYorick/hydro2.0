@@ -121,6 +121,11 @@ export function applyPresetToWaterForm(
     durationSeconds: cfg.irrigation.duration_sec,
     intervalMinutes: Math.round(cfg.irrigation.interval_sec / 60),
     correctionDuringIrrigation: cfg.irrigation.correction_during_irrigation,
+    irrigationEcComponent:
+      cfg.irrigation.irrigation_ec_component === 'calcium'
+      || cfg.irrigation.irrigation_ec_component === 'npk'
+        ? cfg.irrigation.irrigation_ec_component
+        : 'none',
     // Irrigation decision
     irrigationDecisionStrategy: cfg.irrigation_decision.strategy,
     irrigationDecisionLookbackSeconds: cfg.irrigation_decision.config?.lookback_sec ?? form.irrigationDecisionLookbackSeconds,
@@ -163,6 +168,7 @@ export function buildPresetFromWaterForm(
       duration_sec: form.durationSeconds,
       interval_sec: form.intervalMinutes * 60,
       correction_during_irrigation: form.correctionDuringIrrigation,
+      irrigation_ec_component: form.irrigationEcComponent ?? 'none',
       correction_slack_sec: 30,
     },
     irrigation_decision: {
@@ -232,6 +238,7 @@ export function isPresetModified(
     form.durationSeconds !== cfg.irrigation.duration_sec
     || Math.round(cfg.irrigation.interval_sec / 60) !== form.intervalMinutes
     || form.correctionDuringIrrigation !== cfg.irrigation.correction_during_irrigation
+    || (form.irrigationEcComponent ?? 'none') !== (cfg.irrigation.irrigation_ec_component ?? 'none')
     || (form.irrigationDecisionStrategy ?? 'task') !== cfg.irrigation_decision.strategy
     || form.startupCleanFillTimeoutSeconds !== cfg.startup.clean_fill_timeout_sec
     || form.startupSolutionFillTimeoutSeconds !== cfg.startup.solution_fill_timeout_sec

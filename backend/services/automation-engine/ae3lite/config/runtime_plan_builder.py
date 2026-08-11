@@ -115,7 +115,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
     _require_pid_configs(snapshot=snapshot, zone_id=zone_id)
-    resolved_meta_cfg = _to_mapping(resolved_cfg.get("meta"))
     resolved_pump_calibration_cfg = _to_mapping(resolved_cfg.get("pump_calibration"))
     solution_fill_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("solution_fill")))
     tank_recirc_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("tank_recirc")))
@@ -140,9 +139,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
 
-    base_runtime_cfg = _to_mapping(resolved_base_cfg.get("runtime"))
-    base_timing_cfg = _to_mapping(resolved_base_cfg.get("timing"))
-    base_retry_cfg = _to_mapping(resolved_base_cfg.get("retry"))
     fill_runtime_cfg = _to_mapping(solution_fill_cfg.get("runtime"))
     fill_timing_cfg = _to_mapping(solution_fill_cfg.get("timing"))
     fill_retry_cfg = _to_mapping(solution_fill_cfg.get("retry"))
@@ -979,7 +975,24 @@ def _optional_float(raw_value: Any) -> float | None:
 
 def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     irrigation = _to_mapping(_to_mapping(getattr(snapshot, "targets", None)).get("irrigation"))
-    corr_during = bool(irrigation.get("correction_during_irrigation", True))
+    # Canonical path after merge_task_execution: targets.irrigation.execution.*.
+    # Top-level irrigation.* kept as fallback for legacy snapshots.
+    execution = _to_mapping(irrigation.get("execution"))
+
+    def _exec_or_top(key: str, default: Any = None) -> Any:
+        if key in execution:
+            return execution.get(key)
+        if key in irrigation:
+            return irrigation.get(key)
+        return default
+
+    corr_during = bool(_exec_or_top("correction_during_irrigation", True))
+    ec_component = str(_exec_or_top("irrigation_ec_component") or "none").strip().lower()
+    if ec_component not in {"none", "calcium", "npk"}:
+        ec_component = "none"
+    # When inline correction is enabled, EC component is mandatory (pH+EC).
+    if corr_during and ec_component == "none":
+        ec_component = "calcium"
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
         # Для путей планирования `cycle_start` irrigation-target'ы могут отсутствовать.
         # Они обязательны только при реальном выполнении задач `irrigation_start`.
@@ -987,6 +1000,7 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
             "duration_sec": None,
             "interval_sec": None,
             "correction_during_irrigation": corr_during,
+            "irrigation_ec_component": ec_component,
             "correction_slack_sec": _resolve_bounded_int(
                 irrigation.get("correction_slack_sec"),
                 900 if corr_during else 0,
@@ -1028,6 +1042,7 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
             maximum=86400,
         ),
         "correction_during_irrigation": corr_during,
+        "irrigation_ec_component": ec_component,
         "correction_slack_sec": correction_slack_sec,
         "stage_timeout_sec": stage_timeout_sec,
     }

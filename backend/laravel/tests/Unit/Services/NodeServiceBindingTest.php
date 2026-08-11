@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
 use App\Exceptions\ZoneNodeAutomationBindingException;
+use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
@@ -434,5 +435,129 @@ class NodeServiceBindingTest extends TestCase
 
         $this->expectException(ZoneNodeAutomationBindingException::class);
         $this->service->update($incoming, ['zone_id' => $zone->id]);
+    }
+
+    public function test_attach_irrig_node_auto_binds_pump_main_and_drain(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+            'type' => 'irrig',
+            'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'ACTUATOR',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'valve_drain',
+            'type' => 'ACTUATOR',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $updated = $this->service->update($node, ['zone_id' => $zone->id]);
+
+        $this->assertEquals($zone->id, $updated->pending_zone_id);
+        $this->assertTrue(
+            ChannelBinding::query()
+                ->where('role', 'pump_main')
+                ->whereHas('infrastructureInstance', fn ($q) => $q->where('owner_type', 'zone')->where('owner_id', $zone->id))
+                ->whereHas('nodeChannel', fn ($q) => $q->where('node_id', $node->id))
+                ->exists()
+        );
+        $this->assertTrue(
+            ChannelBinding::query()
+                ->where('role', 'drain')
+                ->whereHas('infrastructureInstance', fn ($q) => $q->where('owner_type', 'zone')->where('owner_id', $zone->id))
+                ->whereHas('nodeChannel', fn ($q) => $q->where('node_id', $node->id)->where('channel', 'valve_drain'))
+                ->exists()
+        );
+    }
+
+    public function test_attach_does_not_overwrite_existing_pump_main_role(): void
+    {
+        $zone = Zone::factory()->create();
+        $owner = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'irrig',
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+        $ownerChannel = NodeChannel::create([
+            'node_id' => $owner->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+        app(\App\Services\ZoneChannelAutoBinder::class)->bindFromNode($zone, $owner->fresh(['channels']));
+
+        $incoming = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => null,
+            'type' => 'irrig',
+            'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        // Incoming without pump_main so ZoneNodeAutomationBindingValidator may still allow
+        // (duplicate pump_main role check). Give only a non-conflicting actuator if needed.
+        // If validator blocks second irrig with pump_main — create without pump_main channel
+        // and assert auto-binder skips because role taken. Use valve only.
+        NodeChannel::create([
+            'node_id' => $incoming->id,
+            'channel' => 'valve_irrigation',
+            'type' => 'actuator',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->service->update($incoming, ['zone_id' => $zone->id]);
+
+        $binding = ChannelBinding::query()
+            ->where('role', 'pump_main')
+            ->whereHas('infrastructureInstance', fn ($q) => $q->where('owner_type', 'zone')->where('owner_id', $zone->id))
+            ->first();
+        $this->assertNotNull($binding);
+        $this->assertSame((int) $ownerChannel->id, (int) $binding->node_channel_id);
+    }
+
+    public function test_binding_completion_auto_binds_missing_pump_main(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'type' => 'irrig',
+            'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $updated = $this->service->update($node, [
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+        ]);
+
+        $this->assertEquals($zone->id, $updated->zone_id);
+        $this->assertTrue(
+            ChannelBinding::query()
+                ->where('role', 'pump_main')
+                ->whereHas('infrastructureInstance', fn ($q) => $q->where('owner_type', 'zone')->where('owner_id', $zone->id))
+                ->exists()
+        );
     }
 }

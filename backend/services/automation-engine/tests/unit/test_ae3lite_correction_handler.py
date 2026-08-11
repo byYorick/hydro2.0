@@ -2045,7 +2045,10 @@ async def test_corr_wait_ec_stale_telemetry_logs_freshness_event(monkeypatch: py
     assert payload["retry_after_sec"] == 30.0
 
 
-async def test_corr_wait_ec_window_not_ready_logs_event(monkeypatch: pytest.MonkeyPatch):
+async def test_corr_wait_ec_insufficient_samples_retries_without_zone_event(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Observe poll с sample_count < min — retry без CORRECTION_SKIPPED_WINDOW_NOT_READY spam."""
     corr = _base_corr(
         corr_step="corr_wait_ec",
         attempt=2,
@@ -2078,14 +2081,7 @@ async def test_corr_wait_ec_window_not_ready_logs_event(monkeypatch: pytest.Monk
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ec"
     assert outcome.due_delay_sec == 2
-    create_event.assert_awaited_once()
-    assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"
-    payload = create_event.await_args.args[2]
-    assert payload["sensor_scope"] == "observe_window"
-    assert payload["sensor_type"] == "EC"
-    assert payload["pid_type"] == "ec"
-    assert payload["reason"] == "insufficient_samples"
-    assert payload["retry_after_sec"] == 2
+    create_event.assert_not_awaited()
 
 
 async def test_corr_check_prepare_recirc_retry_limit_transitions_window_exhausted():

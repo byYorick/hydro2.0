@@ -174,7 +174,7 @@ def prune_pending_config_reports_locked(now_ts: float) -> None:
 
             CONFIG_REPORT_BUFFER_EXPIRED.inc(len(expired_keys))
         except Exception:
-            pass
+            logger.debug("CONFIG_REPORT_BUFFER_EXPIRED metric increment failed", exc_info=True)
 
 
 async def store_pending_config_report(hardware_id: str, topic: str, payload: bytes) -> None:
@@ -199,7 +199,7 @@ async def store_pending_config_report(hardware_id: str, topic: str, payload: byt
 
                 CONFIG_REPORT_BUFFER_OVERFLOW.inc()
             except Exception:
-                pass
+                logger.debug("CONFIG_REPORT_BUFFER_OVERFLOW metric increment failed", exc_info=True)
 
 
 async def pop_pending_config_report(hardware_id: str) -> Optional[Dict[str, Any]]:

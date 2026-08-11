@@ -7,24 +7,26 @@ import { computed, type ComputedRef, type Ref } from 'vue'
  * дозирование pH/EC → тройник → рециркуляция (V4) / полив (V5).
  */
 export const DIAGRAM_LAYOUT = {
-  view: { w: 540, h: 196 },
+  view: { w: 580, h: 200 },
   tank: { top: 28, h: 84, w: 82, radius: 10 },
   cleanX: 26,
   solutionX: 124,
   inlet: { top: 12, valveY: 16 },
-  busY: 156,
+  busY: 158,
   drainValveY: 124,
-  titleY: 178,
+  titleY: 182,
   pump: { cx: 252, r: 17 },
   /** Два блока коррекции: pH (acid/base) и EC (A–D). */
   dosing: {
-    y: 122,
-    ph: { x: 270, w: 58, h: 48 },
-    ec: { x: 334, w: 96, h: 48 },
+    y: 118,
+    /** Зазор после P1 ≈ 20px (pumpOutlet=269 → ph.x=290). */
+    ph: { x: 290, w: 68, h: 54 },
+    /** Зазор между блоками ≈ 12px. */
+    ec: { x: 370, w: 112, h: 54 },
   },
-  teeX: 448,
+  teeX: 502,
   recirc: { topY: 24, valveY: 78 },
-  irr: { valveX: 482, endX: 528 },
+  irr: { valveX: 536, endX: 568 },
 } as const
 
 const T = DIAGRAM_LAYOUT

@@ -1199,7 +1199,10 @@ class PgAutomationTaskRepository:
             normalized_now,
             normalized_meta,
         )
-        if str(result).strip().endswith("0 0"):
+        # asyncpg execute() возвращает PostgreSQL CommandStatus: "INSERT oid rows".
+        # rows == 0 означает, что task row был удалён cleanup-ом (FK guard).
+        status = str(result).strip()
+        if status.startswith("INSERT") and status.split()[-1] == "0":
             logger.warning(
                 "AE3 record_transition skipped because task row was missing: task_id=%s from=%s to=%s",
                 task_id,

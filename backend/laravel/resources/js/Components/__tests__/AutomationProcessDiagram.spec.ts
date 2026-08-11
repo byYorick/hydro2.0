@@ -37,8 +37,8 @@ describe('AutomationProcessDiagram correction pumps', () => {
     expect(blocks[0].classes()).toContain('correction-block--active')
     expect(blocks[1].classes()).not.toContain('correction-block--active')
     expect(wrapper.findAll('.dose-pump--running')).toHaveLength(0)
-    expect(wrapper.text()).toContain('acid')
-    expect(wrapper.text()).toContain('base')
+    expect(wrapper.text()).toContain('↓')
+    expect(wrapper.text()).toContain('↑')
   })
 
   it('пульсирует только активные EC-насосы при corr_dose', () => {

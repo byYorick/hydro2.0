@@ -17,7 +17,6 @@ def mock_auth():
 def mock_publisher():
     publisher = Mock()
     publisher.is_ready.return_value = True
-    publisher.publish_command.return_value = True
     publisher.publish_config.return_value = True
     with patch("main.publisher", publisher):
         yield publisher

@@ -240,7 +240,7 @@ if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
 
 ### 3.6 Тесты
 
-#### 3.6.1 Новый файл `backend/services/automation-engine/test_ae3lite_zone_snapshot_freshness_fallback.py`
+#### 3.6.1 Новый файл `backend/services/automation-engine/tests/unit/test_ae3lite_zone_snapshot_freshness_fallback.py`
 
 Покрытие:
 - Узел `nodes.status='offline'`, но `last_seen_at = NOW() - 60s` → попадает в actuators.
@@ -248,14 +248,14 @@ if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
 - Узел `nodes.status='online'`, `last_seen_at IS NULL` → попадает (текущее поведение сохраняется).
 - Граница: `last_seen_at = NOW() - AE3_NODE_FRESHNESS_FALLBACK_SEC` → включительно.
 
-#### 3.6.2 Новый файл `backend/services/automation-engine/test_ae3lite_zone_snapshot_diagnostics.py`
+#### 3.6.2 Новый файл `backend/services/automation-engine/tests/unit/test_ae3lite_zone_snapshot_diagnostics.py`
 
 Покрытие:
 - При пустых actuators `SnapshotBuildError.details["zone_nodes"]` содержит все ноды зоны.
 - `persistently_offline_uids` корректно вычисляется по `AE3_NODE_PERSISTENT_DEAD_SEC`.
 - При отсутствии нод в зоне — `zone_nodes == []`, `details` всё равно присутствует.
 
-#### 3.6.3 Дополнить `backend/services/automation-engine/test_ae3lite_execute_task.py`
+#### 3.6.3 Дополнить `backend/services/automation-engine/tests/unit/test_ae3lite_execute_task.py`
 
 Сценарии:
 - `AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS` с `persistently_offline_uids=["nd-x"]` → fail-closed с `error_code=ae3_snapshot_required_node_persistently_offline`, retry НЕ запускается.
@@ -323,7 +323,7 @@ if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
 
 1. **Unit-тесты:**
    - `make test-ae` зелёный, новые тесты из §3.6 проходят.
-   - `pytest -x -q test_ae3lite_zone_snapshot_freshness_fallback.py test_ae3lite_zone_snapshot_diagnostics.py test_ae3lite_execute_task.py` — все зелёные.
+   - `pytest -x -q tests/unit/test_ae3lite_zone_snapshot_freshness_fallback.py tests/unit/test_ae3lite_zone_snapshot_diagnostics.py tests/unit/test_ae3lite_execute_task.py` — все зелёные.
 
 2. **Воспроизведение исходного инцидента (manual):**
    - Создать в dev-БД зону с реальной топологией `two_tank_drip_substrate_trays`.

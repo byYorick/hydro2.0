@@ -407,7 +407,8 @@ Config modes (Phase 5):
 |--------------|--------|
 | `retry.irrigation_recovery_correction_slack_sec` | **deprecated/removed** из required + defaults |
 | `diagnostics.execution.irrigation_recovery.*` / `irrigationRecovery*` | removed (post-irrigation chemistry) |
-| `irrigation.execution.correction_during_irrigation` (EC) | семантика → **только pH** |
+| `irrigation.execution.correction_during_irrigation` | inline correction on irrigation (pH; + optional EC) |
+| `irrigation.execution.irrigation_ec_component` | `none`\|`calcium`\|`npk` — EC pump during irrigation |
 | `system` water_irrigation_recovery_* / water_correction_during_irrigation | removed |
 | prepare owner `npk_ec_share` / `target_ec_prepare` | deprecated (см. `EFFECTIVE_TARGETS_SPEC.md` §9) |
 

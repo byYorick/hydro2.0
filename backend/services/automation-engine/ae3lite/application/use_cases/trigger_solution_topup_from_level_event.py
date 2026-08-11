@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from ae3lite.api.contracts import StartSolutionTopupRequest
 from ae3lite.application.level_monitor import (
     DEFAULT_SOLUTION_MAX_LABELS,
     level_snapshot_aliases,
@@ -204,12 +203,6 @@ class TriggerSolutionTopupFromLevelEventUseCase:
         if intent_id is None:
             return {"triggered": False, "reason": "intent_upsert_failed"}
 
-        req = StartSolutionTopupRequest(
-            source="level_event",
-            idempotency_key=idempotency_key,
-            mode="normal",
-            trigger="level_switch",
-        )
         claim: dict[str, Any] = {}
         decision = ""
         for attempt in range(3):

@@ -980,7 +980,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
 
     @app.post("/zones/{zone_id}/control-mode")
-    async def set_zone_control_mode(zone_id: int, request: Request, req: ControlModeRequest) -> dict[str, Any]:
+    async def set_zone_control_mode(zone_id: Annotated[int, Path(gt=0)], request: Request, req: ControlModeRequest) -> dict[str, Any]:
         """Сохраняет `control_mode` зоны и синхронизирует snapshot активной задачи."""
         await _validate_scheduler_security_baseline(request)
         await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
@@ -998,7 +998,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
 
     @app.post("/zones/{zone_id}/manual-step")
-    async def request_zone_manual_step(zone_id: int, request: Request, req: ManualStepRequest) -> dict[str, Any]:
+    async def request_zone_manual_step(zone_id: Annotated[int, Path(gt=0)], request: Request, req: ManualStepRequest) -> dict[str, Any]:
         """Сохраняет pending public manual step для активной задачи зоны."""
         await _validate_scheduler_security_baseline(request)
         await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
@@ -1087,7 +1087,4 @@ async def serve(config: Optional[Ae3RuntimeConfig] = None) -> None:
     await server.serve()
 
 
-app = create_app()
-
-
-__all__ = ["app", "create_app", "serve"]
+__all__ = ["create_app", "serve"]

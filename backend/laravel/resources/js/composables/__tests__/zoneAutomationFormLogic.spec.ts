@@ -48,6 +48,7 @@ function createForms(): ZoneAutomationForms {
       ecPct: 10,
       valveSwitching: true,
       correctionDuringIrrigation: true,
+      irrigationEcComponent: 'none',
       enableDrainControl: false,
       drainTargetPercent: 20,
       diagnosticsEnabled: true,

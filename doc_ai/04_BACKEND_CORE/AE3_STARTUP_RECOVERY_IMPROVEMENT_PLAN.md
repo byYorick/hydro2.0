@@ -245,7 +245,7 @@ try recover_waiting_command (для claimed|running|waiting_command)
 
 **Статус:** реализовано.
 
-Новый файл: `backend/services/automation-engine/test_ae3lite_startup_recovery_crash_windows.py`
+Новый файл: `backend/services/automation-engine/tests/unit/test_ae3lite_startup_recovery_crash_windows.py`
 
 | # | Crash window | Ожидание | Тест |
 |---|--------------|----------|------|

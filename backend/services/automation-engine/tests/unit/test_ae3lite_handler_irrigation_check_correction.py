@@ -79,6 +79,11 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
 
     monkeypatch.setattr(handler, "_probe_irr_state", _probe)
     monkeypatch.setattr(handler, "_targets_reached", _targets)
+    monkeypatch.setattr(
+        handler,
+        "_load_irrigation_nutrient_baseline",
+        AsyncMock(return_value=(None, None, None, None, None)),
+    )
     monkeypatch.setattr(handler, "_correction_config_for_task", lambda **_kwargs: {"max_ec_correction_attempts": 2, "max_ph_correction_attempts": 2, "stabilization_sec": 1})
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -106,14 +111,143 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
     assert out.kind == "enter_correction"
     assert out.correction is not None
     assert out.correction.return_stage_success == "irrigation_check"
-    assert out.correction.ec_max_attempts == 0  # pH-only; DB maps 0 → NULL
-    assert out.correction.pipeline_phase == "irrigation_ph"
-    assert out.correction.ec_pid_frozen is True
-    assert out.correction.active_component is None
+    # Legacy missing irrigation_ec_component → calcium (pH+EC, not pH-only).
+    assert out.correction.ec_max_attempts == 2
+    assert out.correction.pipeline_phase == "irrigation_calcium"
+    assert out.correction.ec_pid_frozen is False
+    assert out.correction.active_component == "calcium"
 
 
 @pytest.mark.asyncio
-async def test_irrigation_check_skips_correction_when_flag_disabled(monkeypatch) -> None:
+async def test_irrigation_check_enters_calcium_correction_when_ec_component_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handler = IrrigationCheckHandler(
+        runtime_monitor=object(),
+        command_gateway=object(),
+        task_repository=_TaskRepoStub(),
+    )
+
+    async def _probe(**_kwargs):
+        return None
+
+    async def _targets(**_kwargs):
+        return False
+
+    async def _baseline(**_kwargs):
+        return ('{"T_ca":0.8,"T_ca_mg_npk":1.2}', 11, 0.4, 7.0, 1.0)
+
+    monkeypatch.setattr(handler, "_probe_irr_state", _probe)
+    monkeypatch.setattr(handler, "_targets_reached", _targets)
+    monkeypatch.setattr(handler, "_load_irrigation_nutrient_baseline", _baseline)
+    monkeypatch.setattr(
+        handler,
+        "_correction_config_for_task",
+        lambda **_kwargs: {
+            "max_ec_correction_attempts": 4,
+            "max_ph_correction_attempts": 3,
+            "stabilization_sec": 1,
+        },
+    )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=60),
+            stage_retry_count=0,
+            stage_entered_at=now - timedelta(seconds=10),
+        ),
+    )
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={
+            "correction_during_irrigation": True,
+            "irrigation_ec_component": "calcium",
+        },
+        irrigation_safety={"stop_on_solution_min": False},
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+    out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+    assert out.kind == "enter_correction"
+    assert out.correction is not None
+    assert out.correction.pipeline_phase == "irrigation_calcium"
+    assert out.correction.active_component == "calcium"
+    assert out.correction.ec_max_attempts == 4
+    assert out.correction.ec_pid_frozen is False
+    assert out.correction.baseline_id == 11
+    assert out.correction.water_ec == pytest.approx(0.4)
+
+
+@pytest.mark.asyncio
+async def test_irrigation_check_enters_npk_correction_when_ec_component_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handler = IrrigationCheckHandler(
+        runtime_monitor=object(),
+        command_gateway=object(),
+        task_repository=_TaskRepoStub(),
+    )
+
+    async def _probe(**_kwargs):
+        return None
+
+    async def _targets(**_kwargs):
+        return False
+
+    async def _baseline(**_kwargs):
+        return (None, None, None, None, None)
+
+    monkeypatch.setattr(handler, "_probe_irr_state", _probe)
+    monkeypatch.setattr(handler, "_targets_reached", _targets)
+    monkeypatch.setattr(handler, "_load_irrigation_nutrient_baseline", _baseline)
+    monkeypatch.setattr(
+        handler,
+        "_correction_config_for_task",
+        lambda **_kwargs: {
+            "max_ec_correction_attempts": 5,
+            "max_ph_correction_attempts": 2,
+            "stabilization_sec": 1,
+        },
+    )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=2,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=60),
+            stage_retry_count=0,
+            stage_entered_at=now - timedelta(seconds=10),
+        ),
+    )
+    plan = _plan(
+        level_poll_interval_sec=5,
+        irrigation_execution={
+            "correction_during_irrigation": True,
+            "irrigation_ec_component": "npk",
+        },
+        irrigation_safety={"stop_on_solution_min": False},
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+    out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+    assert out.kind == "enter_correction"
+    assert out.correction is not None
+    assert out.correction.pipeline_phase == "irrigation_npk"
+    assert out.correction.active_component == "npk"
+    assert out.correction.ec_max_attempts == 5
+
     handler = IrrigationCheckHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
 
     async def _probe(**_kwargs):

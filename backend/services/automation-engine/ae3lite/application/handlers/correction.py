@@ -3187,23 +3187,38 @@ class CorrectionHandler(BaseStageHandler):
             stability_max_slope=float(observe_cfg["stability_max_slope"]),
         )
         if not summary["ready"]:
-            await self._log_correction_event(
-                zone_id=task.zone_id,
-                event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
-                task=task,
-                corr=corr,
-                payload={
-                    "pid_type": pid_type,
-                    "sensor_type": sensor_type,
-                    "sensor_scope": "observe_window",
-                    "reason": summary.get("reason"),
-                    "sample_count": len(window["samples"]) if isinstance(window.get("samples"), (list, tuple)) else None,
-                    "slope": summary.get("slope"),
-                    "retry_after_sec": int(observe_cfg["observe_poll_sec"]),
-                    "window_min_samples": int(observe_cfg["window_min_samples"]),
-                    "stability_max_slope": float(observe_cfg["stability_max_slope"]),
-                },
-            )
+            reason = str(summary.get("reason") or "").strip().lower()
+            # insufficient_samples во время observe_poll — штатное накопление окна
+            # (poll 2с, min_samples 3 → несколько тиков). Не пишем zone_event на каждый
+            # тик: иначе UI/логи засыпает CORRECTION_SKIPPED_WINDOW_NOT_READY.
+            if reason != "insufficient_samples":
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
+                    task=task,
+                    corr=corr,
+                    payload={
+                        "pid_type": pid_type,
+                        "sensor_type": sensor_type,
+                        "sensor_scope": "observe_window",
+                        "reason": summary.get("reason"),
+                        "sample_count": len(window["samples"]) if isinstance(window.get("samples"), (list, tuple)) else None,
+                        "slope": summary.get("slope"),
+                        "retry_after_sec": int(observe_cfg["observe_poll_sec"]),
+                        "window_min_samples": int(observe_cfg["window_min_samples"]),
+                        "stability_max_slope": float(observe_cfg["stability_max_slope"]),
+                    },
+                )
+            else:
+                _logger.debug(
+                    "zone %s: observe window accumulating samples sensor=%s count=%s min=%s "
+                    "(task_id=%s)",
+                    task.zone_id,
+                    sensor_type,
+                    len(window["samples"]) if isinstance(window.get("samples"), (list, tuple)) else None,
+                    int(observe_cfg["window_min_samples"]),
+                    getattr(task, "id", None),
+                )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,

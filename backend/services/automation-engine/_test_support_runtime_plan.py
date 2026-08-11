@@ -188,6 +188,7 @@ def make_runtime_plan_dict(**overrides: Any) -> dict:
             "duration_sec": None,
             "interval_sec": None,
             "correction_during_irrigation": True,
+            "irrigation_ec_component": "calcium",
             "correction_slack_sec": 900,
             "stage_timeout_sec": None,
         },

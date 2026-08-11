@@ -1,9 +1,9 @@
 """Sequential nutrient pipeline: water baseline, cumulative T_*, step order.
 
-Canon (2026-07-22):
+Canon (2026-07-24):
   solution_fill: calcium only → T_ca (no pH)
   prepare_recirc: Ca → pH → Mg → pH → NPK → pH → Micro → final pH
-  irrigation: pH only (needs_ec=false)
+  irrigation: pH + optional single EC component (none|calcium|npk)
 """
 
 from __future__ import annotations
@@ -263,8 +263,10 @@ def active_ec_target_for_corr(
     if targets is None:
         return float(fallback_target_ec)
     phase = str(pipeline_phase or "").strip().lower()
-    if phase in {PIPELINE_PHASE_FILL_CA, "fill_calcium", "recirc_ca", "recirc_calcium"}:
+    if phase in {PIPELINE_PHASE_FILL_CA, "fill_calcium", "recirc_ca", "recirc_calcium", "irrigation_calcium"}:
         return targets.T_ca
+    if phase in {"irrigation_npk"}:
+        return targets.T_ca_mg_npk
     idx = recirc_step_index(phase)
     if idx >= 0:
         kind, _comp, target_key = RECIRC_PIPELINE_STEPS[idx]
