@@ -98,6 +98,7 @@ class TestTopologyRegistryLookup:
         assert sdef.handler == "command"
         assert sdef.command_plans == ("clean_fill_start",)
         assert sdef.next_stage == "clean_fill_check"
+        assert sdef.timeout_key == "clean_fill_timeout_sec"
 
     def test_get_correction_enabled_stage(self, registry: TopologyRegistry):
         sdef = registry.get("two_tank", "solution_fill_check")

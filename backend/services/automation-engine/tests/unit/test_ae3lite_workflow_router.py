@@ -6,7 +6,9 @@ deadline computation — without real DB (all dependencies mocked).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -137,7 +139,9 @@ class _MockTaskRepo:
 
     async def mark_completed(self, *, task_id, owner, now):
         self.mark_completed_calls.append(task_id)
-        return self._return_task
+        if self._return_task is None:
+            return None
+        return replace(self._return_task, status="completed")
 
     async def get_by_id(self, *, task_id):
         return self._current_task
@@ -746,6 +750,37 @@ async def test_router_complete_ready_skips_replay_when_auto_replay_disabled():
     assert len(tr.update_stage_calls) == 0
 
 
+async def test_router_complete_ready_skips_replay_when_recovery_missing():
+    """recovery is None → schema default False, no auto-replay."""
+    task = _make_task(
+        stage="complete_ready",
+        phase="ready",
+        task_type="irrigation_start",
+        irrigation_replay_count=1,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    plan = _MockPlan()
+    plan.runtime = SimpleNamespace(irrigation_recovery=None)
+
+    await router.run(task=task, plan=plan, now=NOW)
+
+    assert len(tr.mark_completed_calls) == 1
+    assert len(tr.update_stage_calls) == 0
+
+
+async def test_router_complete_task_does_not_upsert_ready_when_already_failed():
+    task = _make_task(stage="complete_ready", phase="ready")
+    failed = replace(task, status="failed", error_code="ae3_complete_transition_failed")
+    tr = _MockTaskRepo(return_task=None, current_task=failed)
+    wr = _MockWorkflowRepo()
+    router, _, _ = _make_router(task_repo=tr, workflow_repo=wr)
+
+    result = await router.run(task=task, plan=_MockPlan(), now=NOW)
+
+    assert result.status == "failed"
+    assert wr.upsert_calls == []
+
+
 async def test_router_fail_outcome_raises():
     """fail outcome → raises TaskExecutionError with the given error_code."""
     fail_outcome = StageOutcome(kind="fail", error_code="sensor_unavailable",
@@ -809,8 +844,8 @@ async def test_router_computes_deadline_on_transition_to_check_stage():
     assert wf.stage_deadline_at == NOW + timedelta(seconds=7200 + 900)
 
 
-async def test_router_transition_no_deadline_for_command_stage():
-    """Transition to a command stage (no timeout_key) → stage_deadline_at is None."""
+async def test_router_transition_sets_deadline_for_clean_fill_start():
+    """clean_fill_start inherits clean_fill_timeout_sec so hung start commands expire."""
     outcome = StageOutcome(kind="transition", next_stage="clean_fill_start")
     task = _make_task(stage="startup")
     router, tr, _ = _make_router(startup_outcome=outcome, return_task=task)
@@ -818,7 +853,7 @@ async def test_router_transition_no_deadline_for_command_stage():
     await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
     wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.stage_deadline_at is None  # clean_fill_start has no timeout_key
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=1800)
 
 
 async def test_router_transition_to_irrigation_check_uses_requested_duration_for_deadline():

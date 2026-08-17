@@ -1,7 +1,7 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-08-17 (zone_busy не terminal; fail-safe до fail_for_recovery; irrigation_start `run_pump`)
+Обновлено: 2026-08-17 (E-STOP fail-closed без restore; dual-calib default fail-closed; operator cmds не обходят lease)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
@@ -74,7 +74,7 @@ ae3lite/
 main.py               # точка входа → ae3lite.main
 ```
 
-Все `common/` и `utils/` — только вспомогательные; основная логика в `ae3lite/`.
+Канон автоматики — пакет `ae3lite/`. Top-level leftover `repositories/`, `services/`, `utils/`, `common/` удалены.
 
 ## 4. Task FSM
 
@@ -146,6 +146,7 @@ Commands:
 IRR probe:
 - `irr_state_unavailable`, `irr_state_stale`, `irr_state_mismatch`.
 - `irrigation_recovery_probe_exhausted`, `irrigation_wait_ready_timeout`.
+- `emergency_stop_activated` — fail-closed при любом недавнем E-Stop event; probe success **не** продолжает stage.
 
 Two-tank stages:
 - `prepare_recirculation_attempt_limit_reached`, `clean_fill_source_empty_stop`, `solution_fill_leak_detected`, `solution_fill_timeout_stop` и др. stage-terminal коды (см. каталог).

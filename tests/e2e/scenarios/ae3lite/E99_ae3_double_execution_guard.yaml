@@ -2,7 +2,8 @@
 # DoD:
 # - первый start-cycle создаёт ровно одну active AE3 task и один ae_command
 # - второй start-cycle на той же busy zone получает 409 start_cycle_zone_busy
-# - второй intent завершается fail-closed, но второй canonical task не создаётся
+# - второй intent остаётся pending/claimed (не terminal), чтобы Laravel ретраил тот же ключ
+# - второй canonical task не создаётся
 # - single-writer lease остаётся единственной
 
 name: E99_ae3_double_execution_guard
@@ -630,22 +631,20 @@ actions:
     retry_delay_seconds: 1
     capture_response: second_start_cycle_response
 
-  - step: wait_second_intent_failed
-    type: db.wait
+  - step: load_second_intent_after_busy
+    type: database_query
     query: |
       SELECT id, status, error_code, error_message
       FROM zone_automation_intents
       WHERE zone_id = :zone_id
         AND idempotency_key = :idempotency_key
-        AND status = 'failed'
       ORDER BY id DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
       idempotency_key: ${second_idempotency_key}
-    timeout: 60.0
     expected_rows: 1
-    save: second_failed_intent_row
+    save: second_intent_row
 
   - step: count_zone_tasks
     type: database_query
@@ -771,9 +770,9 @@ assertions:
         operator: equals
         value: start_cycle_zone_busy
 
-  - name: second_intent_failed_fail_closed
+  - name: second_intent_not_terminal
     type: custom_assert
-    condition: "str(context.get('second_failed_intent_row', [{}])[0].get('status', '')).lower() == 'failed' and str(context.get('second_failed_intent_row', [{}])[0].get('error_code', '')).lower() == 'start_cycle_zone_busy'"
+    condition: "str(context.get('second_intent_row', [{}])[0].get('status', '')).lower() in ('pending', 'claimed')"
 
   - name: only_one_task_created_for_zone
     type: custom_assert

@@ -226,15 +226,19 @@ class IrrigationCheckHandler(BaseStageHandler):
                 ec_component = str(
                     getattr(execution, "irrigation_ec_component", None) or "none"
                 ).strip().lower()
-                # correction_during_irrigation ⇒ always pH + EC; choose Ca or NPK.
-                # Legacy `none` (pH-only) coerced to calcium.
                 if ec_component not in {"calcium", "npk"}:
-                    ec_component = "calcium"
+                    ec_component = "none"
 
-                pipeline_phase = f"irrigation_{ec_component}"
-                active_component = ec_component
-                allow_ec_attempts = ec_max_attempts
-                ec_pid_frozen = False
+                if ec_component == "none":
+                    pipeline_phase = "irrigation_ph"
+                    active_component = "ph"
+                    allow_ec_attempts = 0
+                    ec_pid_frozen = True
+                else:
+                    pipeline_phase = f"irrigation_{ec_component}"
+                    active_component = ec_component
+                    allow_ec_attempts = ec_max_attempts
+                    ec_pid_frozen = False
                 (
                     component_targets_json,
                     baseline_id,

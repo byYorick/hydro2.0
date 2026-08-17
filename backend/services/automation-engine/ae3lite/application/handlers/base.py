@@ -546,54 +546,37 @@ class BaseStageHandler:
         )
         if not isinstance(event, Mapping):
             return
-        event_id = int(event.get("event_id") or 0)
-        if event_id > 0 and event_id in self._reconciled_estop_event_ids:
-            return
 
+        probe_error: str | None = None
         try:
             await self._probe_irr_state(task=task, plan=plan, now=now, expected=expected)
         except TaskExecutionError as exc:
-            EMERGENCY_STOP_RECONCILE.labels(
-                topology=self._task_topology(task=task),
-                stage=self._task_stage(task=task) or "unknown",
-                outcome="failed",
-            ).inc()
-            send_service_log(
-                service="automation-engine",
-                level="error",
-                message="AE3 emergency-stop reconcile failed",
-                context={
-                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
-                    "task_id": int(getattr(task, "id", 0) or 0) or None,
-                    "topology": self._task_topology(task=task) or None,
-                    "stage": self._task_stage(task=task) or None,
-                    "error_code": "emergency_stop_activated",
-                    "error_message": str(exc),
-                },
-            )
-            raise TaskExecutionError(
-                "emergency_stop_activated",
-                f"Физический E-Stop активирован и stage не восстановил ожидаемое состояние: {exc}",
-            ) from exc
+            probe_error = str(exc)
 
         EMERGENCY_STOP_RECONCILE.labels(
             topology=self._task_topology(task=task),
             stage=self._task_stage(task=task) or "unknown",
-            outcome="restored",
+            outcome="failed",
         ).inc()
         send_service_log(
             service="automation-engine",
-            level="info",
-            message="AE3 emergency-stop reconcile restored expected state",
+            level="error",
+            message="AE3 emergency-stop fail-closed",
             context={
                 "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
                 "task_id": int(getattr(task, "id", 0) or 0) or None,
                 "topology": self._task_topology(task=task) or None,
                 "stage": self._task_stage(task=task) or None,
+                "error_code": "emergency_stop_activated",
+                "error_message": probe_error,
             },
         )
-        if event_id > 0:
-            self._reconciled_estop_event_ids.add(event_id)
+        detail = (
+            f"Физический E-Stop активирован: {probe_error}"
+            if probe_error
+            else "Физический E-Stop активирован; автоматика не продолжает stage после аварийного стопа"
+        )
+        raise TaskExecutionError("emergency_stop_activated", detail)
 
     # ── Probe IRR state (hardware safety check) ─────────────────────
 

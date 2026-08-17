@@ -1310,6 +1310,7 @@ def test_build_dose_plan_resets_pid_state_when_value_is_back_inside_window() -> 
 
 
 def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phase() -> None:
+    """Irrigation chemistry owner is pH only: EC nutrient correction is skipped."""
     planner = CorrectionPlanner()
 
     dose_plan = planner.build_dose_plan(
@@ -1346,8 +1347,8 @@ def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phas
         ph_down_actuator=None,
     )
 
-    assert dose_plan.needs_ec is True
-    assert dose_plan.ec_amount_ml == pytest.approx(5.0)
+    assert dose_plan.needs_ec is False
+    assert dose_plan.ec_amount_ml == pytest.approx(0.0)
 
 
 def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
@@ -2002,6 +2003,21 @@ def test_dose_ml_to_ms_warns_on_dual_calibration_mismatch(caplog) -> None:
     assert "dual_calibration_mismatches" in details
     assert details["dual_calibration_mismatches"][0]["field"] == "ml_per_sec"
     assert any("Dual calibration mismatch" in record.message for record in caplog.records)
+
+
+def test_dose_ml_to_ms_defaults_to_fail_closed_on_dual_calibration_mismatch() -> None:
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+    from ae3lite.domain.errors import PlannerConfigurationError
+
+    correction_config = _correction_config()
+    correction_config["pump_calibration"]["ml_per_sec_mismatch_pct"] = 5.0
+
+    with pytest.raises(PlannerConfigurationError, match="dual calibration"):
+        _dose_ml_to_ms(
+            2.0,
+            {"ml_per_sec": 2.0, "node_ml_per_second": 3.0},
+            correction_config,
+        )
 
 
 def test_dose_ml_to_ms_fail_closed_on_dual_calibration_mismatch() -> None:

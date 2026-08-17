@@ -256,6 +256,25 @@ class PgZoneIntentRepository:
                 "requested_intent": dict(requested_rows[0]) if requested_rows else {},
             }
 
+        busy_row = await self._execution_busy_row(zone_id=zone_id, now=now)
+        if busy_row is not None:
+            requested_rows = await fetch(
+                """
+                SELECT *
+                FROM zone_automation_intents
+                WHERE id = $1
+                  AND zone_id = $2
+                LIMIT 1
+                """,
+                intent_id,
+                zone_id,
+            )
+            return {
+                "decision": "zone_busy",
+                "intent": busy_row,
+                "requested_intent": dict(requested_rows[0]) if requested_rows else {},
+            }
+
         # not_before is timestamp(0): PG rounds half-up to whole seconds, so a
         # just-inserted row can have not_before = ceil(now) and fail `<= $3`.
         # Allow 1s slack so reactive claim right after upsert never misses.
@@ -273,6 +292,18 @@ class PgZoneIntentRepository:
                     OR not_before <= ($3::timestamptz + interval '1 second')
               )
               AND (status <> 'failed' OR retry_count < max_retries)
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM ae_tasks active_task
+                    WHERE active_task.zone_id = $2
+                      AND active_task.status IN ('pending', 'claimed', 'running', 'waiting_command')
+              )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM ae_zone_leases active_lease
+                    WHERE active_lease.zone_id = $2
+                      AND active_lease.leased_until > $3
+              )
             RETURNING *
             """,
             intent_id,
@@ -396,6 +427,52 @@ class PgZoneIntentRepository:
         intent_id = rows[0].get("id")
         return int(intent_id) if intent_id is not None else None
 
+    async def _execution_busy_row(self, *, zone_id: int, now: datetime) -> dict[str, Any] | None:
+        """Live ae_tasks / ae_zone_leases that must block a new intent claim."""
+        rows = await fetch(
+            """
+            SELECT kind, ref, extra
+            FROM (
+                SELECT 'task'::text AS kind,
+                       t.id::text AS ref,
+                       t.status::text AS extra
+                FROM ae_tasks t
+                WHERE t.zone_id = $1
+                  AND t.status IN ('pending', 'claimed', 'running', 'waiting_command')
+                UNION ALL
+                SELECT 'lease'::text,
+                       l.owner::text,
+                       l.leased_until::text
+                FROM ae_zone_leases l
+                WHERE l.zone_id = $1
+                  AND l.leased_until > $2
+            ) busy
+            LIMIT 1
+            """,
+            zone_id,
+            now,
+        )
+        if not rows:
+            return None
+        row = dict(rows[0])
+        kind = str(row.get("kind") or "").strip().lower()
+        if kind == "task":
+            raw_ref = str(row.get("ref") or "").strip()
+            task_id = int(raw_ref) if raw_ref.isdigit() else None
+            return {
+                "id": task_id,
+                "status": str(row.get("extra") or "").strip().lower(),
+                "blocking_kind": "ae_task",
+                "blocking_task_id": task_id,
+            }
+        return {
+            "id": None,
+            "status": "leased",
+            "blocking_kind": "ae_zone_lease",
+            "blocking_lease_owner": row.get("ref"),
+            "blocking_leased_until": row.get("extra"),
+        }
+
     async def _claim_by_idempotency_key(
         self,
         *,
@@ -431,6 +508,18 @@ class PgZoneIntentRepository:
                                 )
                                 OR (active_intent.status = 'claimed' AND (active_intent.claimed_at IS NULL OR active_intent.claimed_at > $4))
                           )
+                  )
+                  AND NOT EXISTS (
+                        SELECT 1
+                        FROM ae_tasks active_task
+                        WHERE active_task.zone_id = $1
+                          AND active_task.status IN ('pending', 'claimed', 'running', 'waiting_command')
+                  )
+                  AND NOT EXISTS (
+                        SELECT 1
+                        FROM ae_zone_leases active_lease
+                        WHERE active_lease.zone_id = $1
+                          AND active_lease.leased_until > $3
                   )
                   AND EXISTS (
                         SELECT 1
@@ -536,6 +625,14 @@ class PgZoneIntentRepository:
             return {
                 "decision": "zone_busy",
                 "intent": dict(active_zone_rows[0]),
+                "requested_intent": requested_intent,
+            }
+
+        busy_row = await self._execution_busy_row(zone_id=zone_id, now=now)
+        if busy_row is not None:
+            return {
+                "decision": "zone_busy",
+                "intent": busy_row,
                 "requested_intent": requested_intent,
             }
 

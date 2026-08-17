@@ -222,7 +222,11 @@ class WorkflowRouter:
                 if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
                     runtime = getattr(plan, "runtime", None)
                     recovery = getattr(runtime, "irrigation_recovery", None) if runtime is not None else None
-                    auto_replay = bool(getattr(recovery, "auto_replay_after_setup", True))
+                    auto_replay = (
+                        bool(getattr(recovery, "auto_replay_after_setup", False))
+                        if recovery is not None
+                        else False
+                    )
                     if auto_replay:
                         return await self._apply_transition(
                             task=task,
@@ -677,9 +681,10 @@ class WorkflowRouter:
             error_code="ae3_complete_transition_failed",
             error_message=f"Не удалось перевести задачу {task.id} в completed",
         )
-        await self._safe_upsert_workflow_phase(
-            task=resolved_task, workflow_phase="ready", now=now,
-        )
+        if str(getattr(resolved_task, "status", "") or "").strip().lower() == "completed":
+            await self._safe_upsert_workflow_phase(
+                task=resolved_task, workflow_phase="ready", now=now,
+            )
         return resolved_task
 
     async def _fail_task(

@@ -146,9 +146,10 @@ def bind_start_cycle_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
+        if decision in {"zone_busy", "claim_race"}:
             # Laravel treats 409 busy as retryable; keep requested intent pending
             # so the same idempotency_key can be reclaimed after the zone frees.
+            # claim_race is concurrent SKIP LOCKED — same retryable busy, not 503.
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_cycle_zone_busy",
@@ -184,11 +185,7 @@ def bind_start_cycle_route(
             code = str(getattr(exc, "code", "ae3_task_create_failed")).strip() or "ae3_task_create_failed"
             details = getattr(exc, "details", {})
             if code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -339,7 +336,7 @@ def bind_start_irrigation_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_irrigation_zone_busy",
@@ -381,11 +378,7 @@ def bind_start_irrigation_route(
                 code = "start_irrigation_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -501,7 +494,7 @@ def bind_start_lighting_tick_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_lighting_tick_zone_busy",
@@ -545,11 +538,7 @@ def bind_start_lighting_tick_route(
                 code = "start_lighting_tick_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -674,7 +663,7 @@ def bind_start_solution_topup_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_solution_topup_zone_busy",
@@ -718,11 +707,7 @@ def bind_start_solution_topup_route(
                 code = "start_solution_topup_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -848,7 +833,7 @@ def bind_start_solution_change_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_solution_change_zone_busy",
@@ -890,11 +875,7 @@ def bind_start_solution_change_route(
                 code = "start_solution_change_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,

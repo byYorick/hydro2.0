@@ -103,7 +103,10 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
     )
     plan = _plan(
         level_poll_interval_sec=5,
-        irrigation_execution={"correction_during_irrigation": True},
+        irrigation_execution={
+            "correction_during_irrigation": True,
+            "irrigation_ec_component": "none",
+        },
         irrigation_safety={"stop_on_solution_min": False},
     )
     stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
@@ -111,11 +114,11 @@ async def test_irrigation_check_enters_correction_when_targets_not_met_and_flag_
     assert out.kind == "enter_correction"
     assert out.correction is not None
     assert out.correction.return_stage_success == "irrigation_check"
-    # Legacy missing irrigation_ec_component → calcium (pH+EC, not pH-only).
-    assert out.correction.ec_max_attempts == 2
-    assert out.correction.pipeline_phase == "irrigation_calcium"
-    assert out.correction.ec_pid_frozen is False
-    assert out.correction.active_component == "calcium"
+    # Explicit `none` stays pH-only; not coerced to calcium.
+    assert out.correction.ec_max_attempts == 0
+    assert out.correction.pipeline_phase == "irrigation_ph"
+    assert out.correction.ec_pid_frozen is True
+    assert out.correction.active_component == "ph"
 
 
 @pytest.mark.asyncio

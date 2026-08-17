@@ -146,6 +146,7 @@ async def test_compat_start_irrigation_translates_zone_busy_to_409() -> None:
 @pytest.mark.asyncio
 async def test_compat_start_irrigation_translates_create_task_busy_error_to_409() -> None:
     app = FastAPI()
+    captured: dict[str, object] = {}
 
     async def validate_zone(_zone_id: int):
         return None
@@ -163,7 +164,7 @@ async def test_compat_start_irrigation_translates_create_task_busy_error_to_409(
         raise TaskCreateError("start_cycle_zone_busy", "busy", details={"active_task_id": 99})
 
     async def mark_intent_terminal(**kwargs):
-        return None
+        captured["marked_terminal"] = kwargs
 
     bind_start_irrigation_route(
         app,
@@ -194,6 +195,28 @@ async def test_compat_start_irrigation_translates_create_task_busy_error_to_409(
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_irrigation_zone_busy"
     assert detail["active_task_id"] == 99
+    assert "marked_terminal" not in captured
+
+
+@pytest.mark.asyncio
+async def test_compat_start_irrigation_claim_race_maps_to_409_zone_busy() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=777, zone_id=7, status="pending"), created=True),
+        decision="claim_race",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-irrigation-race"}),
+            req=StartIrrigationRequest(source="laravel_scheduler", idempotency_key="sch:z7:irrigation"),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_irrigation_zone_busy"
+    assert "marked_terminal" not in captured
+    assert "create_kwargs" not in captured
 
 
 @pytest.mark.asyncio
@@ -259,6 +282,7 @@ async def test_compat_start_irrigation_translates_intent_terminal_task_create_er
 async def test_compat_start_irrigation_zone_busy_details_with_zone_id_no_keyerror() -> None:
     """TaskCreateError.details often include zone_id; must not KeyError on api_error_detail merge."""
     app = FastAPI()
+    captured: dict[str, object] = {}
 
     async def validate_zone(_zone_id: int):
         return None
@@ -283,7 +307,7 @@ async def test_compat_start_irrigation_zone_busy_details_with_zone_id_no_keyerro
         )
 
     async def mark_intent_terminal(**kwargs):
-        return None
+        captured["marked_terminal"] = kwargs
 
     bind_start_irrigation_route(
         app,
@@ -318,6 +342,7 @@ async def test_compat_start_irrigation_zone_busy_details_with_zone_id_no_keyerro
     assert detail["error"] == "start_irrigation_zone_busy"
     assert detail["zone_id"] == 7
     assert detail["active_intent_id"] == 42
+    assert "marked_terminal" not in captured
 
 
 @pytest.mark.asyncio

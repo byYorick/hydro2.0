@@ -152,6 +152,7 @@ async def test_claim_start_cycle_stale_running_same_key_falls_back_to_deduplicat
             [],
             [stale_same_key],
             [],
+            [],
         ]
         repo = PgZoneIntentRepository()
         result = await repo.claim_start_cycle(
@@ -162,6 +163,41 @@ async def test_claim_start_cycle_stale_running_same_key_falls_back_to_deduplicat
 
     assert result["decision"] == "deduplicated"
     assert result["intent"]["id"] == 502
+
+
+@pytest.mark.asyncio
+async def test_claim_start_cycle_returns_zone_busy_when_ae_task_is_active() -> None:
+    pending_same_key = {
+        "id": 801,
+        "zone_id": 9,
+        "status": "pending",
+        "idempotency_key": "intent-key-task-busy",
+    }
+    busy_task = {
+        "kind": "task",
+        "ref": "42",
+        "extra": "running",
+    }
+
+    with patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = [
+            [],
+            [pending_same_key],
+            [],
+            [busy_task],
+        ]
+        repo = PgZoneIntentRepository()
+        result = await repo.claim_start_cycle(
+            zone_id=9,
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="intent-key-task-busy"),
+            now=NOW,
+        )
+
+    assert result["decision"] == "zone_busy"
+    assert result["intent"]["blocking_kind"] == "ae_task"
+    assert result["intent"]["blocking_task_id"] == 42
+    assert result["requested_intent"]["id"] == 801
+    assert result["requested_intent"]["status"] == "pending"
 
 
 @pytest.mark.asyncio

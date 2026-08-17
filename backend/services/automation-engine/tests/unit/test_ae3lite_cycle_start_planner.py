@@ -988,7 +988,7 @@ def test_planner_builds_lighting_tick_single_pwm_command() -> None:
         "intent_source": "laravel_scheduler",
         "intent_trigger": "lighting_tick",
         "intent_id": 1,
-        "intent_meta": {},
+        "intent_meta": {"intent_payload": {"desired_state": "on"}},
         "current_stage": "apply",
         "workflow_phase": "ready",
         "stage_deadline_at": None,
@@ -1044,6 +1044,51 @@ def test_planner_lighting_tick_off_pwm_sets_duty_zero() -> None:
     plan = planner.build(task=task, snapshot=snapshot)
     assert plan.steps[0].payload["cmd"] == "set_pwm"
     assert plan.steps[0].payload["params"]["duty"] == 0
+
+
+def test_planner_lighting_tick_invalid_desired_state_is_fail_closed() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"pwm_duty": 73}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    task = _lighting_task(intent_meta={"intent_payload": {"desired_state": "maybe"}})
+    with pytest.raises(PlannerConfigurationError, match="desired_state"):
+        planner.build(task=task, snapshot=snapshot)
+
+
+def test_planner_lighting_tick_missing_desired_state_is_fail_closed() -> None:
+    planner = CycleStartPlanner()
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"pwm_duty": 73}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    with pytest.raises(PlannerConfigurationError, match="desired_state"):
+        planner.build(task=_lighting_task(), snapshot=snapshot)
 
 
 def test_planner_lighting_tick_off_relay_sets_state_false() -> None:

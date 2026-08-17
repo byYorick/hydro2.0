@@ -46,7 +46,12 @@ def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
     })
 
 
-def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "claimed"):
+def _bind_test_route(
+    *,
+    creation_result: TaskCreationResult | None = None,
+    decision: str = "claimed",
+    create_error: Exception | None = None,
+):
     app = FastAPI()
     captured: dict[str, object] = {"worker_kicked": 0}
 
@@ -86,6 +91,9 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
     async def create_task_from_intent(**kwargs):
         captured["create_kwargs"] = kwargs
+        if create_error is not None:
+            raise create_error
+        assert creation_result is not None
         return creation_result
 
     async def mark_intent_terminal(**kwargs):
@@ -156,6 +164,59 @@ async def test_compat_start_solution_change_zone_busy_keeps_requested_intent_pen
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_solution_change_zone_busy"
     assert "marked_terminal" not in captured
+
+
+@pytest.mark.asyncio
+async def test_compat_start_solution_change_translates_busy_error_to_409() -> None:
+    endpoint, captured = _bind_test_route(
+        create_error=TaskCreateError(
+            "start_cycle_zone_busy",
+            "busy",
+            details={"active_task_id": 99},
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=5,
+            request=SimpleNamespace(headers={"authorization": "Bearer test"}),
+            req=StartSolutionChangeRequest(
+                source="laravel_scheduler",
+                idempotency_key="sched:z5:solution_change",
+                trigger="operator",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_solution_change_zone_busy"
+    assert detail["active_task_id"] == 99
+    assert "marked_terminal" not in captured
+
+
+@pytest.mark.asyncio
+async def test_compat_start_solution_change_claim_race_maps_to_409_zone_busy() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=880, zone_id=5, status="pending"), created=True),
+        decision="claim_race",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=5,
+            request=SimpleNamespace(headers={"authorization": "Bearer test"}),
+            req=StartSolutionChangeRequest(
+                source="laravel_scheduler",
+                idempotency_key="sched:z5:solution_change",
+                trigger="operator",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_solution_change_zone_busy"
+    assert "marked_terminal" not in captured
+    assert "create_kwargs" not in captured
 
 
 @pytest.mark.asyncio

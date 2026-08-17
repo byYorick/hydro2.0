@@ -49,6 +49,34 @@ def _noop_flow_path_events(monkeypatch: pytest.MonkeyPatch) -> None:
 def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     patch_fetch_zone_nodes_diagnostics(monkeypatch)
 
+
+@pytest.fixture(autouse=True)
+def _current_task_water_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """prepare_recirc fail-closed: correction needs THIS task's water baseline."""
+    from ae3lite.domain.services.nutrient_pipeline import compute_component_targets
+
+    targets = compute_component_targets(
+        water_ec=0.4,
+        water_ph=7.0,
+        target_ec=1.4,
+        ratios={"calcium": 0.36, "magnesium": 0.17, "npk": 0.44, "micro": 0.03},
+    )
+    row = {
+        "id": 7,
+        "water_ec": targets.water_ec,
+        "water_ph": targets.water_ph,
+        "target_ec": targets.target_ec,
+        "ratios_json": {"calcium": 0.36, "magnesium": 0.17, "npk": 0.44, "micro": 0.03},
+        "component_targets_json": targets.to_json(),
+        "ae_task_id": 5,
+    }
+    monkeypatch.setattr(
+        "ae3lite.infrastructure.repositories.prepare_baseline_repository"
+        ".PgPrepareBaselineRepository.fetch_latest_baseline",
+        AsyncMock(return_value=row),
+    )
+
+
 from _test_support_runtime_plan import make_runtime_plan
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.services.workflow_topology import StageDef

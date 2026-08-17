@@ -116,6 +116,12 @@ def _valid_payload() -> dict:
             "safe_mode_on_no_effect": True,
             "block_on_active_no_effect_alert": True,
         },
+        "recirc": {
+            "ec_overshoot_dilute_pct": 15,
+            "dilute_pulse_sec": 10,
+            "dilute_max_attempts": 3,
+            "dilute_settle_sec": 30,
+        },
     }
 
 
@@ -128,6 +134,8 @@ def test_canonical_payload_is_accepted() -> None:
     assert model.dosing.ec_dosing_mode == "single"
     assert model.retry.prepare_recirculation_correction_slack_sec == 0
     assert model.retry.solution_fill_correction_slack_sec == 900
+    assert model.recirc.ec_overshoot_dilute_pct == pytest.approx(15.0)
+    assert model.recirc.dilute_pulse_sec == 10
 
 
 def test_ec_dosing_mode_multi_parallel_accepted() -> None:

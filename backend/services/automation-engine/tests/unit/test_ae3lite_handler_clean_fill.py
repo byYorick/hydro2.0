@@ -412,7 +412,7 @@ async def test_clean_fill_recent_estop_reconcile_failure_raises_emergency_stop()
 
 
 @pytest.mark.asyncio
-async def test_clean_fill_recent_estop_reconcile_success_continues() -> None:
+async def test_clean_fill_recent_estop_fail_closed_even_if_probe_matches() -> None:
     monitor = _Monitor(
         recent_storage_event={
             "event_type": "EMERGENCY_STOP_ACTIVATED",
@@ -424,7 +424,8 @@ async def test_clean_fill_recent_estop_reconcile_success_continues() -> None:
     handler = CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway())
     handler._probe_irr_state = AsyncMock(return_value=None)
 
-    outcome = await handler.run(task=_task(control_mode="auto"), plan=_Plan(), stage_def=None, now=NOW)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=_task(control_mode="auto"), plan=_Plan(), stage_def=None, now=NOW)
 
-    assert outcome.kind == "poll"
+    assert exc_info.value.code == "emergency_stop_activated"
     handler._probe_irr_state.assert_awaited_once()

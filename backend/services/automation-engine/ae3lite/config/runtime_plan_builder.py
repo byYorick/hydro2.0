@@ -10,6 +10,8 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 # ── Значения по умолчанию для лимитов retry/attempt ─────────────────────────
 
 _MAX_CORRECTION_ATTEMPTS: int = 500
+# Mirror history-logger command_service._MAX_DURATION_MS_SANITY. Do not raise that ceiling here.
+HL_RUN_PUMP_MAX_DURATION_MS: int = 300_000
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
     "irrigation_pump_stop": ("pump_main",),
@@ -32,7 +34,14 @@ def default_two_tank_command_plan(
     *,
     irrigation_duration_ms: int | None = None,
 ) -> list[dict[str, Any]]:
-    pump_duration_ms = max(1000, min(3_600_000, int(irrigation_duration_ms or 120_000)))
+    requested_ms = int(irrigation_duration_ms or 120_000)
+    if plan_name == "irrigation_start" and requested_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+        raise PlannerConfigurationError(
+            "irrigation_start run_pump duration_ms="
+            f"{requested_ms} exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+            "refusing to open valves before an INVALID pump command"
+        )
+    pump_duration_ms = max(1000, min(HL_RUN_PUMP_MAX_DURATION_MS, requested_ms))
     defaults: dict[str, list[dict[str, Any]]] = {
         "irrigation_start": [
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
@@ -411,6 +420,10 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             default_node_types=runtime["required_node_types"],
         )
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
+        _assert_run_pump_duration_within_hl_ceiling(
+            plan_name=plan_name,
+            normalized_plan=runtime["command_specs"][plan_name],
+        )
         _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
 
@@ -869,7 +882,14 @@ def _irrigation_start_duration_ms(irrigation_execution: Any) -> int:
             duration_sec = max(1, min(3600, int(raw)))
         except (TypeError, ValueError):
             duration_sec = 120
-    return max(1000, min(3_600_000, int(duration_sec) * 1000))
+    duration_ms = max(1000, int(duration_sec) * 1000)
+    if duration_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+        raise PlannerConfigurationError(
+            "irrigation_start run_pump duration_ms="
+            f"{duration_ms} exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+            "refusing to open valves before an INVALID pump command"
+        )
+    return duration_ms
 
 
 def _normalize_command_plan(
@@ -944,6 +964,31 @@ def _assert_required_command_contract(*, plan_name: str, normalized_plan: Sequen
         )
 
 
+def _assert_run_pump_duration_within_hl_ceiling(
+    *,
+    plan_name: str,
+    normalized_plan: Sequence[Mapping[str, Any]],
+) -> None:
+    """Fail-closed before valve commands if run_pump exceeds HL duration sanity ceiling."""
+    for entry in normalized_plan:
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("cmd") or "").strip().lower() != "run_pump":
+            continue
+        params = entry.get("params")
+        params = params if isinstance(params, Mapping) else {}
+        try:
+            duration_ms = int(params.get("duration_ms") or 0)
+        except (TypeError, ValueError):
+            continue
+        if duration_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+            raise PlannerConfigurationError(
+                f"two_tank command plan {plan_name} run_pump duration_ms={duration_ms} "
+                f"exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+                "refusing to open valves before an INVALID pump command"
+            )
+
+
 def _normalize_controllers(raw_value: Any) -> dict[str, Any]:
     if not isinstance(raw_value, Mapping):
         return {}
@@ -1011,9 +1056,6 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     ec_component = str(_exec_or_top("irrigation_ec_component") or "none").strip().lower()
     if ec_component not in {"none", "calcium", "npk"}:
         ec_component = "none"
-    # When inline correction is enabled, EC component is mandatory (pH+EC).
-    if corr_during and ec_component == "none":
-        ec_component = "calcium"
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
         # Для путей планирования `cycle_start` irrigation-target'ы могут отсутствовать.
         # Они обязательны только при реальном выполнении задач `irrigation_start`.
@@ -1103,7 +1145,7 @@ def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
         "enabled": False,
         "max_continue_attempts": _resolve_bounded_int(recovery.get("max_continue_attempts"), 5, 1, 30),
         "timeout_sec": _resolve_bounded_int(recovery.get("timeout_sec"), 600, 30, 86400),
-        "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", True)),
+        "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", False)),
         "max_setup_replays": _resolve_bounded_int(recovery.get("max_setup_replays"), 1, 0, 10),
     }
 

@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 import pytest
 
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
-from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.errors import PlannerConfigurationError
 
 
 def _actuator(node_uid: str, channel: str, *, min_effective_ml: float = 0.1) -> dict:
@@ -52,7 +50,7 @@ def test_multi_sequential_splits_ec_gap_by_renormalized_ratios_excluding_npk() -
         "actuators": {},
     }
     process_calibrations = {
-        "irrigation": {
+        "tank_recirc": {
             "ec_gain_per_ml": 0.1,
             "ec_component_gains": {
                 "calcium": {"ec_gain_per_ml": 0.1},
@@ -75,7 +73,7 @@ def test_multi_sequential_splits_ec_gap_by_renormalized_ratios_excluding_npk() -
         ph_tolerance_pct=1.0,
         ec_tolerance_pct=1.0,
         correction_config=correction_cfg,
-        workflow_phase="irrigating",
+        workflow_phase="tank_recirc",
         process_calibrations=process_calibrations,
         ec_component_policy={},
         pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
@@ -132,7 +130,7 @@ def test_multi_sequential_reapplies_caps_after_min_effective_bump() -> None:
         },
     }
     process_calibrations = {
-        "irrigation": {
+        "tank_recirc": {
             "ec_gain_per_ml": 0.1,
             "ec_component_gains": {
                 "calcium": {"ec_gain_per_ml": 0.1},
@@ -155,7 +153,7 @@ def test_multi_sequential_reapplies_caps_after_min_effective_bump() -> None:
         ph_tolerance_pct=1.0,
         ec_tolerance_pct=1.0,
         correction_config=correction_cfg,
-        workflow_phase="irrigating",
+        workflow_phase="tank_recirc",
         process_calibrations=process_calibrations,
         ec_component_policy={},
         pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
@@ -168,7 +166,8 @@ def test_multi_sequential_reapplies_caps_after_min_effective_bump() -> None:
     assert plan.ec_amount_ml <= 1.0
 
 
-def test_multi_sequential_fail_closed_when_npk_excluded_and_no_safe_components() -> None:
+def test_multi_sequential_irrigating_skips_ec_when_npk_excluded_and_no_safe_components() -> None:
+    """Irrigation is pH-only: missing non-NPK actuators must not produce an EC dose."""
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
 
@@ -180,27 +179,29 @@ def test_multi_sequential_fail_closed_when_npk_excluded_and_no_safe_components()
         "ec_excluded_components": ("npk",),
     }
 
-    with pytest.raises(PlannerConfigurationError, match="активные EC-компоненты не настроены"):
-        planner.build_dose_plan(
-            current_ph=6.0,
-            current_ec=1.0,
-            target_ph=6.0,
-            target_ec=1.4,
-            ph_tolerance_pct=1.0,
-            ec_tolerance_pct=1.0,
-            correction_config=correction_cfg,
-            workflow_phase="irrigating",
-            process_calibrations={"irrigation": {"ec_gain_per_ml": 0.1}},
-            ec_component_policy={},
-            pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
-            pid_configs={},
-            now=now,
-            ec_actuators={},
-        )
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="irrigating",
+        process_calibrations={"irrigation": {"ec_gain_per_ml": 0.1}},
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators={},
+    )
+
+    assert plan.needs_ec is False
+    assert plan.ec_dose_sequence == ()
 
 
-@pytest.mark.asyncio
-async def test_multi_sequential_irrigating_excluded_npk_requires_active_components_fail_closed() -> None:
+def test_multi_sequential_irrigating_excluded_npk_skips_ec() -> None:
+    """Irrigation skips EC entirely; excluded-NPK config must not fail-open to a nutrient pulse."""
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
     correction_cfg = {
@@ -212,26 +213,29 @@ async def test_multi_sequential_irrigating_excluded_npk_requires_active_componen
     }
     process_calibrations = {"irrigation": {"ec_gain_per_ml": 0.1, "ec_component_gains": {}}}
 
-    with pytest.raises(PlannerConfigurationError, match="исключает NPK"):
-        planner.build_dose_plan(
-            current_ph=6.0,
-            current_ec=1.0,
-            target_ph=6.0,
-            target_ec=1.4,
-            ph_tolerance_pct=1.0,
-            ec_tolerance_pct=1.0,
-            correction_config=correction_cfg,
-            workflow_phase="irrigating",
-            process_calibrations=process_calibrations,
-            ec_component_policy={},
-            pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
-            pid_configs={},
-            now=now,
-            ec_actuators={},
-        )
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="irrigating",
+        process_calibrations=process_calibrations,
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators={},
+    )
+
+    assert plan.needs_ec is False
+    assert plan.ec_dose_sequence == ()
 
 
-def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_closed() -> None:
+def test_multi_sequential_irrigating_skips_ec_even_when_non_npk_pulses_would_be_unsafe() -> None:
+    """Irrigation is pH-only: unsafe non-NPK pulses are not planned as EC doses."""
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc).replace(tzinfo=None)
 
@@ -241,7 +245,6 @@ def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_clos
         "ec_component_ratios": {"npk": 0.6, "calcium": 0.2, "magnesium": 0.12, "micro": 0.08},
         "ec_excluded_components": ("npk",),
         "actuators": {},
-        # Extremely low cap, but min_effective_ml will be higher -> should discard all components.
         "max_ec_dose_ml": 0.01,
     }
     process_calibrations = {
@@ -260,23 +263,25 @@ def test_multi_sequential_irrigating_excluded_npk_no_effective_pulses_fails_clos
         "micro": _actuator("nd-mi", "pump_d", min_effective_ml=0.1),
     }
 
-    with pytest.raises(PlannerConfigurationError, match="не дал безопасных non-NPK доз"):
-        planner.build_dose_plan(
-            current_ph=6.0,
-            current_ec=1.0,
-            target_ph=6.0,
-            target_ec=1.4,
-            ph_tolerance_pct=1.0,
-            ec_tolerance_pct=1.0,
-            correction_config=correction_cfg,
-            workflow_phase="irrigating",
-            process_calibrations=process_calibrations,
-            ec_component_policy={},
-            pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
-            pid_configs={},
-            now=now,
-            ec_actuators=ec_actuators,
-        )
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=1.4,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=correction_cfg,
+        workflow_phase="irrigating",
+        process_calibrations=process_calibrations,
+        ec_component_policy={},
+        pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
+        pid_configs={},
+        now=now,
+        ec_actuators=ec_actuators,
+    )
+
+    assert plan.needs_ec is False
+    assert plan.ec_dose_sequence == ()
 
 
 def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
@@ -290,7 +295,7 @@ def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
         "actuators": {},
     }
     process_calibrations = {
-        "irrigation": {
+        "tank_recirc": {
             "ec_gain_per_ml": 0.1,
             "ec_component_gains": {
                 "npk": {"ec_gain_per_ml": 0.1},
@@ -317,7 +322,7 @@ def test_multi_parallel_allows_aliases_for_same_npk_pump() -> None:
         ph_tolerance_pct=1.0,
         ec_tolerance_pct=1.0,
         correction_config=correction_cfg,
-        workflow_phase="irrigating",
+        workflow_phase="tank_recirc",
         process_calibrations=process_calibrations,
         ec_component_policy={},
         pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},
@@ -355,7 +360,7 @@ def test_multi_parallel_dose_steps_sync_ml_and_duration_after_clamp() -> None:
         "actuators": {},
     }
     process_calibrations = {
-        "irrigation": {
+        "tank_recirc": {
             "ec_gain_per_ml": 0.01,
             "ec_component_gains": {
                 "calcium": {"ec_gain_per_ml": 0.01},
@@ -384,7 +389,7 @@ def test_multi_parallel_dose_steps_sync_ml_and_duration_after_clamp() -> None:
         ph_tolerance_pct=1.0,
         ec_tolerance_pct=1.0,
         correction_config=correction_cfg,
-        workflow_phase="irrigating",
+        workflow_phase="tank_recirc",
         process_calibrations=process_calibrations,
         ec_component_policy={},
         pid_state={"ec": {"integral": 0.0, "prev_error": 0.0, "prev_derivative": 0.0}},

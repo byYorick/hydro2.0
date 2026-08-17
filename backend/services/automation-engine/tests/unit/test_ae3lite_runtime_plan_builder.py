@@ -13,6 +13,7 @@ def _ae3_online_zone_nodes_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 from ae3lite.domain.errors import PlannerConfigurationError
 from ae3lite.config.runtime_plan_builder import (
+    HL_RUN_PUMP_MAX_DURATION_MS,
     default_two_tank_command_plan,
     resolve_two_tank_runtime,
 )
@@ -295,6 +296,14 @@ def test_default_irrigation_start_uses_timed_run_pump() -> None:
     assert all(item["cmd"] == "set_relay" and item["params"] == {"state": True} for item in valves)
 
 
+def test_default_irrigation_start_rejects_duration_above_hl_ceiling() -> None:
+    with pytest.raises(PlannerConfigurationError, match=str(HL_RUN_PUMP_MAX_DURATION_MS)):
+        default_two_tank_command_plan(
+            "irrigation_start",
+            irrigation_duration_ms=HL_RUN_PUMP_MAX_DURATION_MS + 1,
+        )
+
+
 def test_resolve_two_tank_runtime_default_irrigation_start_uses_runtime_duration() -> None:
     snap = _snapshot(correction={})
     snap.targets = {"irrigation": {"duration_sec": 90, "interval_sec": 3600}}
@@ -303,6 +312,43 @@ def test_resolve_two_tank_runtime_default_irrigation_start_uses_runtime_duration
     pump = next(item for item in start if item["channel"] == "pump_main")
     assert pump["cmd"] == "run_pump"
     assert pump["params"]["duration_ms"] == 90_000
+
+
+def test_resolve_two_tank_runtime_allows_irrigation_duration_at_hl_ceiling() -> None:
+    snap = _snapshot(correction={})
+    snap.targets = {"irrigation": {"duration_sec": 300, "interval_sec": 3600}}
+    runtime = resolve_two_tank_runtime(snap)
+    start = runtime["command_specs"]["irrigation_start"]
+    pump = next(item for item in start if item["channel"] == "pump_main")
+    assert pump["params"]["duration_ms"] == HL_RUN_PUMP_MAX_DURATION_MS
+
+
+def test_resolve_two_tank_runtime_rejects_irrigation_duration_above_hl_ceiling() -> None:
+    snap = _snapshot(correction={})
+    snap.targets = {"irrigation": {"duration_sec": 400, "interval_sec": 3600}}
+    with pytest.raises(PlannerConfigurationError, match=str(HL_RUN_PUMP_MAX_DURATION_MS)):
+        resolve_two_tank_runtime(snap)
+
+
+def test_resolve_two_tank_runtime_rejects_custom_run_pump_above_hl_ceiling() -> None:
+    snap = _snapshot(correction={})
+    snap.targets = {"irrigation": {"duration_sec": 90, "interval_sec": 3600}}
+    snap.diagnostics_execution = {
+        **dict(snap.diagnostics_execution),
+        "two_tank_commands": {
+            "irrigation_start": [
+                {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
+                {
+                    "channel": "pump_main",
+                    "cmd": "run_pump",
+                    "params": {"duration_ms": HL_RUN_PUMP_MAX_DURATION_MS + 1},
+                },
+            ],
+        },
+    }
+    with pytest.raises(PlannerConfigurationError, match=str(HL_RUN_PUMP_MAX_DURATION_MS)):
+        resolve_two_tank_runtime(snap)
 
 
 def test_resolve_two_tank_runtime_preserves_unknown_irrigation_strategy_for_fail_closed_runtime() -> None:

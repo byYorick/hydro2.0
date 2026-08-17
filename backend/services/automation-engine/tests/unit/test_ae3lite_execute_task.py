@@ -1767,6 +1767,95 @@ async def test_fail_safe_shutdown_publishes_when_task_already_failed() -> None:
     assert "valve_irrigation" in channels
 
 
+class _SnapshotEmptyActuators:
+    zone_id = 99
+    automation_runtime = "ae3"
+    grow_cycle_id = 19
+    current_phase_id = 29
+    phase_name = "VEG"
+    bundle_revision = "bundle-empty"
+    correction_config = {"meta": {"version": 1}}
+    pid_configs = {}
+    process_calibrations = {}
+    actuators = ()
+
+
+class _SnapshotReadModelEmptyActuators:
+    async def load(self, *, zone_id):
+        return _SnapshotEmptyActuators()
+
+
+@pytest.mark.asyncio
+async def test_execute_task_empty_snapshot_actuators_still_sends_fail_safe_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _db_actuators(*, zone_id: int):
+        assert zone_id == 99
+        return (
+            {"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "pump_main"},
+            {"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "valve_irrigation"},
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+        _db_actuators,
+    )
+    task = _make_task(stage="irrigation_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelEmptyActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_REQUIRED_NODE_TYPE_MISSING
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["method"] == "publish_only"
+    channels = [command.channel for command in gateway.calls[0]["commands"]]
+    assert channels[0] == "pump_main"
+    assert "valve_irrigation" in channels
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_task_terminal_failed_flow_path_runs_fail_safe_shutdown() -> None:
+    task = _make_task(stage="irrigation_check", topology="two_tank", task_type="irrigation_start")
+    failed = replace(task, status="failed", error_code="ae3_task_execution_failed")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterTerminalTask(task=failed),
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "failed"
+    assert finalize.calls == []
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["method"] == "publish_only"
+    channels = [command.channel for command in gateway.calls[0]["commands"]]
+    assert channels[0] == "pump_main"
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
+    assert all(command.payload.get("_ae3_fail_safe") is True for command in gateway.calls[0]["commands"])
+
+
 @pytest.mark.asyncio
 async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle(
     monkeypatch: pytest.MonkeyPatch,

@@ -10,6 +10,7 @@ from ae3lite.api import bind_start_lighting_tick_route
 from ae3lite.api.contracts import StartLightingTickRequest
 from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.entities import AutomationTask
+from ae3lite.domain.errors import TaskCreateError
 
 
 def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
@@ -44,7 +45,12 @@ def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
     })
 
 
-def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "claimed"):
+def _bind_test_route(
+    *,
+    creation_result: TaskCreationResult | None = None,
+    decision: str = "claimed",
+    create_error: Exception | None = None,
+):
     app = FastAPI()
     captured: dict[str, object] = {"worker_kicked": 0}
 
@@ -66,6 +72,9 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
     async def create_task_from_intent(**kwargs):
         captured["create_kwargs"] = kwargs
+        if create_error is not None:
+            raise create_error
+        assert creation_result is not None
         return creation_result
 
     async def mark_intent_terminal(**kwargs):
@@ -84,7 +93,7 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         kick_worker_fn=lambda: captured.__setitem__("worker_kicked", int(captured["worker_kicked"]) + 1),
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
         mark_intent_terminal_fn=mark_intent_terminal,
-        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None, error=lambda *args, **kwargs: None),
     )
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-lighting-tick")
     return endpoint, captured
@@ -151,3 +160,99 @@ async def test_compat_start_lighting_tick_zone_busy_keeps_requested_intent_pendi
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_lighting_tick_zone_busy"
     assert "marked_terminal" not in captured
+
+
+@pytest.mark.asyncio
+async def test_compat_start_lighting_tick_translates_busy_error_to_409() -> None:
+    endpoint, captured = _bind_test_route(
+        create_error=TaskCreateError(
+            "start_cycle_zone_busy",
+            "busy",
+            details={"active_task_id": 99},
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-lighting-create-busy"}),
+            req=StartLightingTickRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z7:lighting",
+                desired_state="off",
+                brightness_pct=25,
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_lighting_tick_zone_busy"
+    assert detail["active_task_id"] == 99
+    assert "marked_terminal" not in captured
+
+
+@pytest.mark.asyncio
+async def test_compat_start_lighting_tick_claim_race_maps_to_409_zone_busy() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=778, zone_id=7, status="pending"), created=True),
+        decision="claim_race",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-lighting-race"}),
+            req=StartLightingTickRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z7:lighting",
+                desired_state="off",
+                brightness_pct=25,
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_lighting_tick_zone_busy"
+    assert "marked_terminal" not in captured
+    assert "create_kwargs" not in captured
+
+
+def test_lighting_tick_planner_rejects_invalid_desired_state() -> None:
+    from dataclasses import replace
+
+    from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
+    from ae3lite.domain.errors import PlannerConfigurationError
+    from ae3lite.domain.services.cycle_start_planner import CycleStartPlanner
+
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        zone_id=7,
+        greenhouse_id=1,
+        automation_runtime="ae3",
+        grow_cycle_id=1,
+        current_phase_id=1,
+        phase_name="VEG",
+        workflow_phase="ready",
+        workflow_version=1,
+        targets={"lighting": {"pwm_duty": 73}},
+        diagnostics_execution={},
+        command_plans={},
+        telemetry_last={},
+        pid_state={},
+        pid_configs={},
+        actuators=(
+            ZoneActuatorRef(
+                node_uid="nd-light-1",
+                node_type="light",
+                channel="light_main",
+                node_channel_id=501,
+                role="main",
+            ),
+        ),
+    )
+    task = replace(
+        _task(task_id=7, zone_id=7, status="claimed"),
+        intent_meta={"intent_payload": {"desired_state": "maybe"}},
+    )
+    with pytest.raises(PlannerConfigurationError, match="desired_state"):
+        planner.build(task=task, snapshot=snapshot)
