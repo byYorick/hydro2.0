@@ -31,6 +31,7 @@ from commands import publisher as publisher_module
 from commands import resolution as resolution_module
 from commands.lifecycle import ensure_command_for_publish
 from commands.publisher import publish_command_with_retry
+from commands.lease_gate import reject_if_zone_lease_held
 from commands.resolution import (
     require_node_assigned_to_zone,
     resolve_effective_gh_uid,
@@ -239,6 +240,13 @@ async def _publish_command_core(
     node_id = await require_node_assigned_to_zone(node_uid, zone_id)
     zone_uid = await resolve_zone_uid_for_command_publish(zone_id)
     command_source = req.source or "api"
+    await reject_if_zone_lease_held(
+        zone_id=zone_id,
+        cmd=req.cmd or "",
+        params=req.params,
+        source=command_source,
+        fetch_fn=fetch,
+    )
     effective_gh_uid = await resolve_effective_gh_uid(zone_id, req.greenhouse_uid)
 
     try:

@@ -159,6 +159,7 @@ class PythonBridgeService
             'hardware_id' => $node?->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
+            'source' => 'laravel',
         ];
 
         // Подписываем команду HMAC подписью
@@ -309,6 +310,7 @@ class PythonBridgeService
             'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
+            'source' => 'laravel',
         ];
 
         // Подписываем команду HMAC подписью

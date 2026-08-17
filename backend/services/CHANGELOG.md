@@ -1,5 +1,12 @@
 # Changelog - Python Services
 
+## 2026-08-17 — E-STOP fail-closed, dual-calib default, lease gate
+
+- Firmware IRR: отпускание E-Stop **не** restore'ит актуаторы; guards disarm.
+- AE3: `emergency_stop_activated` всегда fail-closed (probe match не продолжает stage).
+- Dual calibration mismatch default `ml_per_sec_mismatch_fail_closed=true`.
+- history-logger / Laravel: operator mutating-команды при активной `ae_zone_leases` → `409 ae3_zone_lease_held` (кроме `source=automation-engine` и fail-safe OFF).
+
 ## 2026-08-17 — Дерево Python scheduler удалено
 
 - Удалено дерево `backend/services/scheduler/` (legacy MQTT publisher, в compose не было).

@@ -412,7 +412,7 @@ Terminal:
    со сбросом no-effect correction block; **не** terminal fail;
    `irrigation_solution_low` -> тот же replay/setup path, что и `solution_min=false` в `irrigation_check`
    (`irrigation_stop_to_setup` → `startup`).
-7. `emergency_stop_activated` не завершает stage автоматически: AE3 обязан сначала попытаться перепроверить ожидаемый hardware snapshot через reconcile; continuation допустим только если актуаторы вернулись в ожидаемое состояние.
+7. `emergency_stop_activated` завершает stage fail-closed. Probe `irr_state` — диагностика; совпадение с expected ON **не** продолжает stage (firmware не restore'ит актуаторы после отпускания E-Stop).
 8. Runtime обязан жёстко ограничивать tracked background tasks; переполнение registry не может игнорироваться и должно отклоняться fail-closed.
 9. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
 10. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
@@ -969,7 +969,7 @@ Prometheus runtime минимум для lifecycle intents:
 1. `AE_TASK_STARTED` включает `bundle_revision` и locked irrigation decision strategy при наличии
 2. `IRRIGATION_DECISION_SNAPSHOT_LOCKED` фиксирует strategy/config/bundle_revision для текущего irrigation task; на первом run event эмитится даже если snapshot уже был записан в `ae_tasks` на create-path
 3. fail-safe stop path обязан писать service-log `AE3 fail-safe transition selected` с `zone_id/task_id/topology/stage/reason/source/next_stage`
-4. reconcile после `EMERGENCY_STOP_ACTIVATED` обязан писать service-log с outcome `restored` или `failed`
+4. reconcile после `EMERGENCY_STOP_ACTIVATED` обязан писать service-log fail-closed (`outcome=failed`); probe match **не** даёт `restored`/continuation
 5. wake-up по node runtime event обязан инкрементировать `ae3_node_runtime_event_kick_total` и писать service-log `AE3 worker.kick by node runtime event`
 6. `IRRIGATION_CORRECTION_STARTED`, `CORRECTION_DECISION_MADE`, `EC_DOSING`, `PH_CORRECTED` обязаны нести `current_stage`; при наличии probe-context обязаны также нести `snapshot_event_id` и `caused_by_event_id`
 7. Для irrigation inline correction `snapshot_event_id` обязан ссылаться на `zone_events.id` события `IRR_STATE_SNAPSHOT`, по которому подтверждён активный irrigation path. Firmware `is_irrigation_active` = оба клапана (`valve_solution_supply` ∧ `valve_irrigation`); насос **не** обязателен (после `run_pump` DONE сифон/клапаны остаются OPEN до `irrigation_stop` / stage-guard).

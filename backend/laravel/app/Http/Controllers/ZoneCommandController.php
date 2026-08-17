@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Enums\GrowCycleStatus;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Http\Requests\StoreZoneCommandRequest;
 use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Services\Ae3IrrigationBridgeService;
+use App\Services\Ae3ZoneLeaseGuard;
 use App\Services\PythonBridgeService;
 use App\Services\ZoneLogicProfileService;
 use App\Services\ZoneReadinessService;
@@ -26,6 +27,7 @@ class ZoneCommandController extends Controller
     public function __construct(
         private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly Ae3IrrigationBridgeService $ae3IrrigationBridge,
+        private readonly Ae3ZoneLeaseGuard $ae3ZoneLeaseGuard,
     ) {}
 
     /**
@@ -133,7 +135,17 @@ class ZoneCommandController extends Controller
         $user = $request->user();
 
         try {
-            if (($data['type'] ?? '') === 'FORCE_IRRIGATION') {
+            $commandType = (string) ($data['type'] ?? '');
+            if ($this->ae3ZoneLeaseGuard->shouldBlockOperatorZoneCommand($commandType)
+                && $this->ae3ZoneLeaseGuard->isHeld((int) $zone->id)) {
+                return $this->localizedError(
+                    'ae3_zone_lease_held',
+                    'Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.',
+                    409,
+                );
+            }
+
+            if ($commandType === 'FORCE_IRRIGATION') {
                 $responsePayload = $this->dispatchForceIrrigationToAe3($zone, $data, $user?->id, $user?->name);
 
                 return response()->json($responsePayload);

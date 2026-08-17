@@ -28,7 +28,7 @@ class SystemAutomationSettingsCatalog
                     ['path' => 'age_critical_days', 'label' => 'Age critical days', 'description' => 'Критичный возраст калибровки.', 'type' => 'integer', 'min' => 7, 'max' => 365],
                     ['path' => 'default_run_duration_sec', 'label' => 'Default run sec', 'description' => 'Длительность по умолчанию для UI.', 'type' => 'integer', 'min' => 5, 'max' => 60],
                     ['path' => 'ml_per_sec_mismatch_pct', 'label' => 'ML/sec mismatch pct', 'description' => 'Порог расхождения DB pump_calibrations.ml_per_sec и NodeConfig ml_per_second для AE3 runtime check.', 'type' => 'number', 'min' => 0.1, 'max' => 100.0, 'step' => 0.1],
-                    ['path' => 'ml_per_sec_mismatch_fail_closed', 'label' => 'Mismatch fail-closed', 'description' => 'Если true, AE3 блокирует dose plan при расхождении dual calibration; иначе alert+metric.', 'type' => 'boolean'],
+                    ['path' => 'ml_per_sec_mismatch_fail_closed', 'label' => 'Mismatch fail-closed', 'description' => 'По умолчанию true: AE3 блокирует dose plan при расхождении dual calibration. false — только warning+metric (диагностика).', 'type' => 'boolean'],
                 ],
             ],
         ],
@@ -226,7 +226,7 @@ class SystemAutomationSettingsCatalog
                 'age_critical_days' => 90,
                 'default_run_duration_sec' => 20,
                 'ml_per_sec_mismatch_pct' => 10.0,
-                'ml_per_sec_mismatch_fail_closed' => false,
+                'ml_per_sec_mismatch_fail_closed' => true,
             ],
             'sensor_calibration' => [
                 'ph_point_1_value' => 4.01,

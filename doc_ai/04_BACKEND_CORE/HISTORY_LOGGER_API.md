@@ -105,8 +105,14 @@ Content-Type: application/json
 - `channel` (string, required) — канал ноды (всегда сегмент topic; для system-команд — `"system"`)
 - `cmd` (string, required) — device-level команда; HL проверяет наличие `cmd` и отвергает legacy `type`, **не** валидирует enum-каталог §3
 - `params` (object, required) — параметры команды
-- `source` (string, optional) — источник команды (`automation-engine`, `laravel_scheduler`, `api`, …)
+- `source` (string, optional) — источник команды (`automation-engine`, `laravel`, `api`, …)
 - `cmd_id` (string, optional) — внешний command id, который будет сохранён в `commands.cmd_id`
+
+**AE3 lease gate:** если у `zone_id` есть активная запись в `ae_zone_leases` (`leased_until > now()`), HL отклоняет mutating ON-команды от источников, отличных от `automation-engine`, ответом `409` `ae3_zone_lease_held`. Разрешены:
+- `source=automation-engine` (держатель lease);
+- read-only `state` / `test_sensor`;
+- fail-safe OFF (`set_relay`/`set_state` с `state=false|0`, `set_pwm` с duty ≤ 0).
+Operator `FORCE_PH_CONTROL` / `FORCE_EC_CONTROL` / `FORCE_LIGHTING` / `FORCE_CLIMATE` и device-level `dose`/`run_pump`/`set_relay true` через Laravel при активной lease не публикуются. `FORCE_IRRIGATION` идёт в AE3 ingress (там свой `*_zone_busy`).
 
 Примечание:
 - sensor calibration не имеет отдельного history-logger endpoint;
@@ -128,6 +134,16 @@ Content-Type: application/json
     "zone_id": 1,
     "node_uid": "nd-pump-1",
     "channel": "pump_in"
+  }
+}
+```
+
+**Response (409 Conflict — AE3 lease held):**
+```json
+{
+  "detail": {
+    "error": "ae3_zone_lease_held",
+    "zone_id": 1
   }
 }
 ```

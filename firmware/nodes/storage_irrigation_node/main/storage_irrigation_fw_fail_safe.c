@@ -448,6 +448,8 @@ bool storage_irrigation_node_is_estop_active(void) {
 }
 
 bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
+    /* Kept for debug/HIL only. Production E-Stop release must NOT call this:
+     * actuators stay OFF after the operator clears the button. */
     if (!g_estop_restore_valid) {
         return true;
     }
@@ -517,23 +519,22 @@ void storage_irrigation_node_handle_estop_transition(bool pressed) {
         return;
     }
 
+    /* Release: keep actuators OFF. Restoring the pre-press snapshot would
+     * re-energize pumps/valves under an operator who just cleared E-Stop. */
     g_estop_active = false;
-    bool restored = storage_irrigation_node_restore_estop_snapshot_locked();
-    storage_irrigation_node_resume_stage_guards_locked();
-    bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
-    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
-    bool recirculation_active = storage_irrigation_node_is_prepare_recirculation_active_locked();
-    bool irrigation_active = storage_irrigation_node_is_irrigation_active_locked();
-    storage_irrigation_node_update_clean_fill_guard_state(clean_fill_active, false);
-    storage_irrigation_node_update_solution_fill_guard_state(solution_fill_active, false);
-    storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, recirculation_active, false);
-    storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, irrigation_active, false);
+    (void)storage_irrigation_node_stop_all_paths_locked();
+    storage_irrigation_node_disarm_all_stage_guards_locked();
+    g_clean_fill_guard.paused_by_estop = false;
+    g_solution_fill_guard.paused_by_estop = false;
+    g_recirculation_guard.paused_by_estop = false;
+    g_irrigation_guard.paused_by_estop = false;
+    storage_irrigation_node_update_clean_fill_guard_state(false, false);
+    storage_irrigation_node_update_solution_fill_guard_state(false, false);
+    storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, false, false);
+    storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, false, false);
     g_estop_restore_valid = false;
+    memset(g_estop_restore_states, 0, sizeof(g_estop_restore_states));
     xSemaphoreGive(g_actuator_mutex);
-
-    if (!restored) {
-        node_state_manager_report_error(ERROR_LEVEL_WARNING, "emergency_stop", ESP_FAIL, "Failed to restore one or more actuators after e-stop release");
-    }
     storage_irrigation_node_update_oled_runtime();
 }
 

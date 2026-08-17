@@ -137,8 +137,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - отдельная физическая кнопка `E-Stop` на `GPIO15` (active-low, pull-up) пока удерживается в нажатом состоянии
   принудительно выключает все 6 актуаторов и отклоняет MQTT `set_relay {state:true}` с
   `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
-  На нажатие нода публикует `emergency_stop_activated`, на отпускание локально восстанавливает
-  предыдущий снимок actuator-состояний.
+  На нажатие нода публикует `emergency_stop_activated`. На отпускание актуаторы **остаются OFF**,
+  snapshot до нажатия **не** восстанавливается, stage-timeout guards disarm'ятся.
+  AE3 обязан fail-closed по `emergency_stop_activated` и не продолжать stage даже если probe совпал с expected ON.
   **Hardware caveat:** `GPIO15` — strapping pin ESP32; если E-Stop зажат (вход в `LOW`) в момент
   power-on/reset, возможен сбой/нестандартный boot — не держать E-Stop нажатым при старте;
 - firmware terminal stop path (`clean_fill_completed`, `solution_fill_*`, `prepare_recirculation`,

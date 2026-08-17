@@ -346,6 +346,19 @@ void storage_irrigation_node_resume_stage_guards_locked(void) {
     }
 }
 
+void storage_irrigation_node_disarm_all_stage_guards_locked(void) {
+    for (size_t i = 0; i < sizeof(g_stage_guards) / sizeof(g_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &g_stage_guards[i];
+        guard->active = false;
+        guard->timeout_pending = false;
+        guard->timeout_ms = 0;
+        guard->cmd_id[0] = '\0';
+        if (guard->timer) {
+            xTimerStop(guard->timer, 0);
+        }
+    }
+}
+
 const char *storage_irrigation_node_timeout_event_code_for_stage(const char *stage) {
     if (!stage) {
         return NULL;

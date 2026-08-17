@@ -206,6 +206,7 @@ bool storage_irrigation_node_stop_irrigation_path_locked(void);
 bool storage_irrigation_node_stop_all_paths_locked(void);
 void storage_irrigation_node_pause_stage_guards_locked(void);
 void storage_irrigation_node_resume_stage_guards_locked(void);
+void storage_irrigation_node_disarm_all_stage_guards_locked(void);
 void storage_irrigation_node_process_stage_timeouts(void);
 void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer);
 

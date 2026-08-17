@@ -193,10 +193,12 @@ Default AE3 `irrigation_start`: latched `set_relay true` на клапанах +
 ### 4.5. Physical E-Stop
 
 Аппаратный контракт firmware:
-- выделенный вход `GPIO23`;
+- выделенный вход `GPIO15` (`STORAGE_IRRIGATION_NODE_ESTOP_GPIO`);
 - `active_low=true`;
 - `pull-up`;
 - `debounce_ms` берётся из `fail_safe_guards.estop_debounce_ms`.
+- **Hardware caveat:** `GPIO15` — strapping pin ESP32; зажатый E-Stop (`LOW`) при
+  power-on/reset может сорвать boot — не держать кнопку нажатой при старте.
 
 Семантика:
 - пока кнопка нажата, нода обязана удерживать все 6 актуаторов в `OFF`;
@@ -204,8 +206,10 @@ Default AE3 `irrigation_start`: latched `set_relay true` на клапанах +
   immediate terminal response `ERROR` + `error_code=estop_active`;
 - MQTT `set_relay {state:false}` остаётся разрешённым как fail-safe stop-команда;
 - на фронт нажатия нода публикует `emergency_stop_activated`;
-- после отпускания нода восстанавливает snapshot actuator-state, который был до нажатия;
-- release не публикует отдельный domain event по умолчанию.
+- после отпускания актуаторы **остаются OFF**; snapshot до нажатия **не** восстанавливается;
+- stage-timeout guards disarm'ятся (не resume с оставшимся timeout);
+- release не публикует отдельный domain event по умолчанию — AE3 видит
+  `emergency_stop_activated` и обязан fail-closed, даже если probe совпал с expected ON.
 
 ---
 
@@ -271,8 +275,10 @@ Node events запрещено использовать как единстве�
   не публикует), он обязан идти в `clean_fill_retry_stop`, увеличить `clean_fill_cycle` и после
   исчерпания лимита `1 + runtime.clean_fill_retry_cycles` завершить stage через terminal
   `clean_fill_source_empty_stop` (тот же лимит, что и для AE3 timeout-retry);
-- если runtime получает `emergency_stop_activated`, он обязан сначала попытаться
-  перепроверить ожидаемый `storage_state` и может продолжить stage только при восстановленном snapshot.
+- если runtime получает `emergency_stop_activated`, он обязан завершить stage
+  fail-closed (`error_code=emergency_stop_activated`). Probe `irr_state` допустим
+  только как диагностика фактического hardware; совпадение с expected ON **не**
+  продолжает stage (firmware после отпускания E-Stop актуаторы не поднимает).
 
 ### 5.4. Manual mode на активном flow-path (PR7)
 

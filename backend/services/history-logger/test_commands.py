@@ -71,6 +71,9 @@ def mock_command_routes_db():
         if "from commands where cmd_id = $1" in normalized:
             return []
 
+        if "from ae_zone_leases" in normalized:
+            return []
+
         return []
 
     with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
@@ -649,6 +652,88 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         # Проверяем, что команда была опубликована в MQTT
         # Структура: mqtt_client._client._client.publish()
         assert mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_when_ae3_lease_held(client, auth_headers, mock_mqtt_client):
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from ae_zone_leases" in normalized:
+            return [{"ok": 1}]
+        if "from nodes where uid = $1" in normalized and "zone_id = $2" not in normalized:
+            return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+        if "from nodes where uid = $1 and zone_id = $2" in normalized:
+            return [{"id": 1}]
+        return []
+
+    with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_fetch.side_effect = _fetch
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        response = client.post(
+            "/commands",
+            json={
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "pump_main",
+                "params": {"duration_ms": 5000},
+                "source": "laravel",
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "ae3_zone_lease_held"
+    assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_allows_ae_source_when_lease_held():
+    from fastapi import HTTPException
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(*_args, **_kwargs):
+        return [{"ok": 1}]
+
+    await reject_if_zone_lease_held(
+        zone_id=1,
+        cmd="run_pump",
+        params={"duration_ms": 5000},
+        source="automation-engine",
+        fetch_fn=_fetch,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await reject_if_zone_lease_held(
+            zone_id=1,
+            cmd="run_pump",
+            params={"duration_ms": 5000},
+            source="laravel",
+            fetch_fn=_fetch,
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error"] == "ae3_zone_lease_held"
+
+
+@pytest.mark.asyncio
+async def test_lease_gate_allows_fail_safe_off_when_lease_held():
+    from commands.lease_gate import reject_if_zone_lease_held
+
+    async def _fetch(*_args, **_kwargs):
+        return [{"ok": 1}]
+
+    await reject_if_zone_lease_held(
+        zone_id=1,
+        cmd="set_relay",
+        params={"state": False},
+        source="laravel",
+        fetch_fn=_fetch,
+    )
 
 
 @pytest.mark.asyncio
