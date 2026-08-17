@@ -38,6 +38,7 @@ class ZoneScheduleItemBuilder
         $genericConfigs = [
             ['ventilation', is_array($targets['ventilation'] ?? null) ? $targets['ventilation'] : [], $targets['ventilation_schedule'] ?? null],
             ['solution_change', is_array($targets['solution_change'] ?? null) ? $targets['solution_change'] : [], $targets['solution_change_schedule'] ?? null],
+            ['solution_topup', is_array($targets['solution_topup'] ?? null) ? $targets['solution_topup'] : [], $targets['solution_topup_schedule'] ?? null],
             ['mist', is_array($targets['mist'] ?? null) ? $targets['mist'] : [], $targets['mist_schedule'] ?? null],
             ['diagnostics', is_array($targets['diagnostics'] ?? null) ? $targets['diagnostics'] : [], $targets['diagnostics_schedule'] ?? null],
         ];
@@ -109,6 +110,7 @@ class ZoneScheduleItemBuilder
             'ventilation' => 'climate',
             'diagnostics' => 'diagnostics',
             'solution_change' => 'solution_change',
+            'solution_topup' => 'solution_topup',
         ];
         $subsystemKey = $taskToSubsystem[$taskType] ?? null;
         if (is_string($subsystemKey)) {

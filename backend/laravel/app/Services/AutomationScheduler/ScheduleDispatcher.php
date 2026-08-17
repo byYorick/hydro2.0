@@ -29,6 +29,7 @@ class ScheduleDispatcher
     private const SETUP_NOT_READY_ERRORS = [
         'start_irrigation_setup_pending',
         'start_solution_topup_not_ready',
+        'solution_change_zone_not_ready',
     ];
 
     private const ZONE_SETUP_PENDING_REASON = 'zone_setup_pending';
@@ -189,7 +190,7 @@ class ScheduleDispatcher
             ];
         }
 
-        if (! $this->isSchedulerTaskTypeDispatchableForAe3($zoneId, $taskType)) {
+        if (! $this->isSchedulerTaskTypeDispatchableForAe3($taskType)) {
             $writeLog(
                 SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
                 'skipped',
@@ -253,7 +254,7 @@ class ScheduleDispatcher
             context: $context,
             zoneId: $zoneId,
         );
-        if ($this->shouldSkipIrrigationDispatchForSetupPending($zoneId, $taskType, $zoneWorkflowPhase)) {
+        if ($this->shouldSkipIrrigationDispatchForSetupPending($taskType, $zoneWorkflowPhase)) {
             $writeLog(
                 SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
                 'skipped',
@@ -307,6 +308,18 @@ class ScheduleDispatcher
             $parsedCatchupTrigger = $this->parseIsoDateTime($rawCatchupTrigger);
             if ($parsedCatchupTrigger !== null) {
                 $correlationAnchor = SchedulerRuntimeHelper::toIso($parsedCatchupTrigger);
+            }
+        } else {
+            $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
+            if ($intervalSec > 0) {
+                $intervalTaskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
+                $lastCompleted = $context->lastRunByTaskName[$intervalTaskName] ?? null;
+                $slot = SchedulerRuntimeHelper::intervalSlotAt(
+                    now: $triggerTime,
+                    intervalSec: $intervalSec,
+                    lastCompletedAt: $lastCompleted instanceof CarbonImmutable ? $lastCompleted : null,
+                );
+                $correlationAnchor = SchedulerRuntimeHelper::toIso($slot);
             }
         }
 
@@ -521,6 +534,27 @@ class ScheduleDispatcher
                     'reason' => $err,
                 ];
             }
+            if ($response->status() === 429) {
+                $extracted = $this->extractDetailError($detail);
+                $err = (is_string($extracted) && str_ends_with($extracted, '_rate_limited'))
+                    ? $extracted
+                    : 'rate_limited';
+                $writeLog($taskName, 'failed', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'error' => $err,
+                    'status_code' => $response->status(),
+                    'response' => $responseBody,
+                    'schedule_key' => $scheduleKey,
+                    'correlation_id' => $correlationId,
+                ]);
+
+                return [
+                    'dispatched' => false,
+                    'retryable' => true,
+                    'reason' => $err,
+                ];
+            }
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
@@ -549,7 +583,6 @@ class ScheduleDispatcher
         $taskIdentity = $this->resolveSubmittedTaskIdentity(
             zoneId: (int) $prepared['zone_id'],
             responseTaskId: is_array($data) ? trim((string) ($data['task_id'] ?? '')) : '',
-            intentId: isset($prepared['intent_snapshot']['intent_id']) ? (int) $prepared['intent_snapshot']['intent_id'] : null,
         );
         $taskId = $taskIdentity['task_id'];
         $apiTaskStatus = is_array($data)
@@ -768,6 +801,9 @@ class ScheduleDispatcher
                 ],
             );
             $intentId = isset($row->id) ? (int) $row->id : null;
+            if ($intentId === null || $intentId <= 0) {
+                return ['ok' => false, 'intent_id' => null];
+            }
 
             return ['ok' => true, 'intent_id' => $intentId];
         } catch (\Throwable $e) {
@@ -832,55 +868,31 @@ class ScheduleDispatcher
     /**
      * @return array{task_id: string, automation_runtime: string, error: string|null}
      */
-    public function resolveSubmittedTaskIdentity(int $zoneId, string $responseTaskId, ?int $intentId): array
+    public function resolveSubmittedTaskIdentity(int $zoneId, string $responseTaskId): array
     {
         $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
         $taskId = trim($responseTaskId);
 
-        if ($automationRuntime === 'ae3') {
-            if ($taskId === '') {
-                return [
-                    'task_id' => '',
-                    'automation_runtime' => $automationRuntime,
-                    'error' => 'ae3_task_id_missing',
-                ];
-            }
-
-            if (preg_match('/^\d+$/', $taskId) !== 1) {
-                return [
-                    'task_id' => '',
-                    'automation_runtime' => $automationRuntime,
-                    'error' => 'ae3_task_id_invalid',
-                ];
-            }
-
+        if ($taskId === '') {
             return [
-                'task_id' => $taskId,
+                'task_id' => '',
                 'automation_runtime' => $automationRuntime,
-                'error' => null,
+                'error' => 'ae3_task_id_missing',
             ];
         }
 
-        if ($taskId !== '') {
+        if (preg_match('/^\d+$/', $taskId) !== 1) {
             return [
-                'task_id' => $taskId,
+                'task_id' => '',
                 'automation_runtime' => $automationRuntime,
-                'error' => null,
-            ];
-        }
-
-        if ($intentId !== null && $intentId > 0) {
-            return [
-                'task_id' => 'intent-'.$intentId,
-                'automation_runtime' => $automationRuntime,
-                'error' => null,
+                'error' => 'ae3_task_id_invalid',
             ];
         }
 
         return [
-            'task_id' => '',
+            'task_id' => $taskId,
             'automation_runtime' => $automationRuntime,
-            'error' => 'task_id_missing',
+            'error' => null,
         ];
     }
 
@@ -931,16 +943,11 @@ class ScheduleDispatcher
     }
 
     /**
-     * AE3: Laravel scheduler диспатчит только поддержанные compat-path типы.
-     * Сейчас: irrigation, lighting, solution_topup, solution_change, diagnostics.
+     * Laravel scheduler диспатчит только поддержанные AE3 compat-path типы.
+     * Runtime в БД — только ae3 (CHECK); отдельной матрицы non-ae3 нет.
      */
-    private function isSchedulerTaskTypeDispatchableForAe3(int $zoneId, string $taskType): bool
+    private function isSchedulerTaskTypeDispatchableForAe3(string $taskType): bool
     {
-        $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
-        if ($automationRuntime !== 'ae3') {
-            return true;
-        }
-
         return in_array($taskType, ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics'], true);
     }
 
@@ -980,14 +987,11 @@ class ScheduleDispatcher
     }
 
     /**
-     * AE3: irrigation / solution_topup / solution_change не диспатчатся, пока workflow_phase !== ready.
+     * irrigation / solution_topup / solution_change не диспатчатся, пока workflow_phase !== ready.
      */
-    private function shouldSkipIrrigationDispatchForSetupPending(int $zoneId, string $taskType, ?string $workflowPhase): bool
+    private function shouldSkipIrrigationDispatchForSetupPending(string $taskType, ?string $workflowPhase): bool
     {
         if (! in_array($taskType, ['irrigation', 'solution_topup', 'solution_change'], true)) {
-            return false;
-        }
-        if ($this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch') !== 'ae3') {
             return false;
         }
 
@@ -1078,6 +1082,23 @@ class ScheduleDispatcher
         }
 
         return max(0, min(100, (int) $candidate));
+    }
+
+    private function extractDetailError(mixed $detail): ?string
+    {
+        if (is_array($detail) && is_string($detail['error'] ?? null)) {
+            $error = trim((string) $detail['error']);
+
+            return $error !== '' ? $error : null;
+        }
+
+        if (is_string($detail)) {
+            $error = trim($detail);
+
+            return $error !== '' ? $error : null;
+        }
+
+        return null;
     }
 
     private function recordRetryableDispatchFailure(

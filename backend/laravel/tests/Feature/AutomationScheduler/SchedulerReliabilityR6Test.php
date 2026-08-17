@@ -65,7 +65,7 @@ class SchedulerReliabilityR6Test extends TestCase
 
     public function test_window_boundary_schedule_without_interval_dispatches_only_on_crossing(): void
     {
-        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 08:00:30', 'UTC'));
+        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 05:00:30', 'UTC'));
         [$zone, $cycle] = $this->createZoneAndCycle();
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
             'lighting' => [

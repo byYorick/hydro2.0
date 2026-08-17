@@ -22,6 +22,14 @@ class SchedulerCycleOrchestrator
         'start_solution_change_zone_busy',
         'start_irrigation_setup_pending',
         'start_solution_topup_not_ready',
+        'solution_change_zone_not_ready',
+        'rate_limited',
+        'start_cycle_rate_limited',
+        'start_irrigation_rate_limited',
+        'start_lighting_tick_rate_limited',
+        'start_solution_topup_rate_limited',
+        'start_solution_change_rate_limited',
+        'intent_upsert_failed',
     ];
 
     /**
@@ -129,6 +137,7 @@ class SchedulerCycleOrchestrator
                 }
             }
 
+            $zoneTimezones = $this->scheduleLoader->loadZoneTimezones($zoneIds);
             $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
             $manualSchedulesByZone = $this->manualScheduleService->buildScheduleItemsForZones($zoneIds);
             $schedules = [];
@@ -319,6 +328,7 @@ class SchedulerCycleOrchestrator
 
                 $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
                 $taskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
+                $clockTimezone = $this->clockTimezoneForSchedule($schedule, $zoneTimezones);
 
                 if ($intervalSec > 0) {
                     $hasWindow = is_string($schedule->startTime)
@@ -327,25 +337,31 @@ class SchedulerCycleOrchestrator
                         && $schedule->endTime !== '';
                     $windowTransitionQueued = false;
                     if ($hasWindow) {
-                        $desiredNow = $this->finalizer->isTimeInWindow(
-                            $now->format('H:i:s'),
+                        $desiredNow = $this->finalizer->isUtcMomentInWindow(
+                            $now,
                             $schedule->startTime,
                             $schedule->endTime,
+                            $clockTimezone,
                         );
-                        $desiredLast = $this->finalizer->isTimeInWindow(
-                            $last->format('H:i:s'),
+                        $desiredLast = $this->finalizer->isUtcMomentInWindow(
+                            $last,
                             $schedule->startTime,
                             $schedule->endTime,
+                            $clockTimezone,
                         );
                         if (
                             $desiredNow !== $desiredLast
-                            && ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)
+                            && ScheduleSpecHelper::matchesDayOfWeek(
+                                $now->setTimezone($clockTimezone),
+                                $schedule->daysOfWeek,
+                            )
                         ) {
                             $batchDispatchJobs[] = $this->makeWindowTransitionDispatchJob(
                                 schedule: $schedule,
                                 last: $last,
                                 now: $now,
                                 desiredNow: $desiredNow,
+                                timezone: $clockTimezone,
                             );
                             $windowTransitionQueued = true;
                             if (count($batchDispatchJobs) >= $dispatchParallelism) {
@@ -596,15 +612,19 @@ class SchedulerCycleOrchestrator
                 $startTime = $schedule->startTime;
                 $endTime = $schedule->endTime;
                 if (is_string($startTime) && is_string($endTime) && $startTime !== '' && $endTime !== '') {
-                    $desiredNow = $this->finalizer->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
-                    $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
+                    $desiredNow = $this->finalizer->isUtcMomentInWindow($now, $startTime, $endTime, $clockTimezone);
+                    $desiredLast = $this->finalizer->isUtcMomentInWindow($last, $startTime, $endTime, $clockTimezone);
                     if ($desiredNow !== $desiredLast) {
-                        if (ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)) {
+                        if (ScheduleSpecHelper::matchesDayOfWeek(
+                            $now->setTimezone($clockTimezone),
+                            $schedule->daysOfWeek,
+                        )) {
                             $batchDispatchJobs[] = $this->makeWindowTransitionDispatchJob(
                                 schedule: $schedule,
                                 last: $last,
                                 now: $now,
                                 desiredNow: $desiredNow,
+                                timezone: $clockTimezone,
                             );
                             if (count($batchDispatchJobs) >= $dispatchParallelism) {
                                 $flushBatchDispatchJobs();
@@ -804,6 +824,20 @@ class SchedulerCycleOrchestrator
     }
 
     /**
+     * @param  array<int, string>  $zoneTimezones
+     */
+    private function clockTimezoneForSchedule(ScheduleItem $schedule, array $zoneTimezones): string
+    {
+        if ($schedule->taskType !== 'lighting' || $schedule->manualScheduleId !== null) {
+            return 'UTC';
+        }
+
+        $tz = $zoneTimezones[$schedule->zoneId] ?? null;
+
+        return SchedulerRuntimeHelper::normalizeTimezone(is_string($tz) ? $tz : null) ?? 'UTC';
+    }
+
+    /**
      * @return array{
      *     zoneId: int,
      *     schedule: ScheduleItem,
@@ -818,6 +852,7 @@ class SchedulerCycleOrchestrator
         CarbonImmutable $last,
         CarbonImmutable $now,
         bool $desiredNow,
+        string $timezone = 'UTC',
     ): array {
         $desiredState = $desiredNow ? 'on' : 'off';
         $boundaryAt = $this->finalizer->windowBoundaryAt(
@@ -826,6 +861,7 @@ class SchedulerCycleOrchestrator
             startTime: (string) $schedule->startTime,
             endTime: (string) $schedule->endTime,
             enteringWindow: $desiredNow,
+            timezone: $timezone,
         );
         $payload = array_merge($schedule->payload, [
             'desired_state' => $desiredState,

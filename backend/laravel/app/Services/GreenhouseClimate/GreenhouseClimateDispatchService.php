@@ -26,13 +26,20 @@ class GreenhouseClimateDispatchService
 
         foreach ($ids as $greenhouseId) {
             $greenhouseId = (int) $greenhouseId;
+            if ($this->isManualControl($greenhouseId)) {
+                continue;
+            }
+
             $pendingIntent = $this->pendingIntent($greenhouseId);
             if ($pendingIntent === null && ! $this->shouldDispatch($greenhouseId, $now)) {
                 continue;
             }
 
             $activeIntent = $pendingIntent ?? $this->createPendingIntent($greenhouseId, $now);
-            if ($activeIntent === null || $activeIntent->status !== 'pending') {
+            if ($activeIntent === null) {
+                continue;
+            }
+            if ($activeIntent->status !== 'pending' && ! $this->isStaleActiveIntent($activeIntent, $now)) {
                 continue;
             }
 
@@ -126,6 +133,30 @@ class GreenhouseClimateDispatchService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function isManualControl(int $greenhouseId): bool
+    {
+        $mode = DB::table('greenhouse_automation_state')
+            ->where('greenhouse_id', $greenhouseId)
+            ->value('control_mode');
+
+        return strtolower(trim((string) $mode)) === 'manual';
+    }
+
+    private function isStaleActiveIntent(object $intent, CarbonImmutable $now): bool
+    {
+        $status = strtolower(trim((string) ($intent->status ?? '')));
+        if (! in_array($status, ['claimed', 'running'], true)) {
+            return false;
+        }
+
+        $updatedAt = $intent->updated_at ?? null;
+        if ($updatedAt === null) {
+            return true;
+        }
+
+        return CarbonImmutable::parse((string) $updatedAt, 'UTC')->lte($now->subMinutes(20));
     }
 
     private function shouldDispatch(int $greenhouseId, CarbonImmutable $now): bool

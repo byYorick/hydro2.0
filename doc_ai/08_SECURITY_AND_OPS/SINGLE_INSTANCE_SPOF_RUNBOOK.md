@@ -36,7 +36,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. **Команды к узлам** — только через `history-logger` → MQTT (`POST /commands`). Не использовать deprecated `mqtt-bridge` `/bridge/.../commands` (HTTP 410).
 2. **Одна активная ae_task на зону** — partial unique index + `ZoneLease`. При split-brain: проверить `ae3_oldest_active_task_age_seconds`, `laravel_zone_hang_hints_active{code="waiting_command_stuck"}`.
 3. **Telemetry Redis queue** — при рестарте HL: processing-list reclaim; dead-list — `telemetry_dead_cli.py list|replay`.
-4. **Intent drift** — Laravel `ae3:reap-stale-tasks` + метрика `laravel_zone_hang_hints_active{code="scheduler_intent_task_drift"}`.
+4. **Intent drift** — hang-hint `scheduler_intent_task_drift`; Laravel `ae3:reap-stale-tasks` reap только orphan pending intents без `ae_task` (не fail `ae_tasks`).
 
 ---
 

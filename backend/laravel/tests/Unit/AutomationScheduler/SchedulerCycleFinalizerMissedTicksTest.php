@@ -105,4 +105,45 @@ class SchedulerCycleFinalizerMissedTicksTest extends TestCase
 
         $this->assertSame('2026-07-07 06:00:00', $boundary->format('Y-m-d H:i:s'));
     }
+
+    public function test_is_time_in_window_treats_end_boundary_as_off(): void
+    {
+        $finalizer = $this->app->make(SchedulerCycleFinalizer::class);
+
+        $this->assertTrue($finalizer->isTimeInWindow('08:00:00', '08:00:00', '18:00:00'));
+        $this->assertTrue($finalizer->isTimeInWindow('17:59:59', '08:00:00', '18:00:00'));
+        $this->assertFalse($finalizer->isTimeInWindow('18:00:00', '08:00:00', '18:00:00'));
+        $this->assertFalse($finalizer->isTimeInWindow('22:00:00', '08:00:00', '18:00:00'));
+    }
+
+    public function test_moscow_photoperiod_end_at_1500_utc_is_off_boundary(): void
+    {
+        $finalizer = $this->app->make(SchedulerCycleFinalizer::class);
+        $last = CarbonImmutable::parse('2026-08-17 14:30:00', 'UTC');
+        $now = CarbonImmutable::parse('2026-08-17 15:00:00', 'UTC');
+
+        $this->assertTrue($finalizer->isTimeInWindow('15:00:00', '08:00:00', '18:00:00'));
+        $this->assertTrue($finalizer->isUtcMomentInWindow($last, '08:00:00', '18:00:00', 'Europe/Moscow'));
+        $this->assertFalse($finalizer->isUtcMomentInWindow($now, '08:00:00', '18:00:00', 'Europe/Moscow'));
+
+        $boundary = $finalizer->windowBoundaryAt(
+            last: $last,
+            now: $now,
+            startTime: '08:00:00',
+            endTime: '18:00:00',
+            enteringWindow: false,
+            timezone: 'Europe/Moscow',
+        );
+
+        $this->assertSame('2026-08-17 15:00:00', $boundary->utc()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_moscow_photoperiod_1900_utc_is_outside_window(): void
+    {
+        $finalizer = $this->app->make(SchedulerCycleFinalizer::class);
+        $now = CarbonImmutable::parse('2026-08-17 19:00:00', 'UTC');
+
+        $this->assertFalse($finalizer->isUtcMomentInWindow($now, '08:00:00', '18:00:00', 'Europe/Moscow'));
+        $this->assertFalse($finalizer->isTimeInWindow($now->format('H:i:s'), '08:00:00', '18:00:00'));
+    }
 }

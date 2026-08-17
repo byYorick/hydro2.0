@@ -341,7 +341,7 @@ class ActiveTaskPollerTest extends TestCase
         ]);
     }
 
-    public function test_reconcile_pending_active_tasks_marks_related_intent_failed_on_local_expiry(): void
+    public function test_reconcile_pending_active_tasks_does_not_fail_intent_on_local_expiry_without_terminal_ae_task(): void
     {
         $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
         $intentId = DB::table('zone_automation_intents')->insertGetId([
@@ -386,6 +386,138 @@ class ActiveTaskPollerTest extends TestCase
         $this->assertFalse($busyness[$scheduleKey]);
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
             'task_id' => '999',
+            'status' => 'timeout',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'id' => $intentId,
+            'status' => 'running',
+        ]);
+    }
+
+    public function test_reconcile_pending_active_tasks_keeps_busy_when_related_ae_task_is_live(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-live-ae-'.$zone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinutes(20),
+            'created_at' => now()->subMinutes(21),
+            'updated_at' => now()->subMinutes(18),
+        ]);
+        $aeTaskId = (string) DB::table('ae_tasks')->insertGetId([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'running',
+            'idempotency_key' => 'intent-live-ae-'.$zone->id,
+            'scheduled_for' => now()->subMinutes(20),
+            'due_at' => now()->subMinutes(19),
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+        $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
+        DB::table('laravel_scheduler_active_tasks')->insert([
+            'task_id' => $aeTaskId,
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'schedule_key' => $scheduleKey,
+            'correlation_id' => 'corr-ae3-live',
+            'status' => 'accepted',
+            'accepted_at' => now()->subMinutes(20),
+            'due_at' => now()->subMinutes(19),
+            'expires_at' => now()->subMinute(),
+            'details' => json_encode(['task_id' => $aeTaskId, 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        $poller = new ActiveTaskPoller(new ActiveTaskStore);
+        $busyness = $poller->reconcilePendingActiveTasks(
+            cfg: [
+                'api_url' => '',
+                'expires_after_sec' => 120,
+                'hard_stale_after_sec' => 300,
+                'active_task_poll_batch' => 50,
+                'active_task_ttl_sec' => 180,
+            ],
+            writeLog: static function (string $taskName, string $status, array $details): void {},
+        );
+
+        $this->assertArrayHasKey($scheduleKey, $busyness);
+        $this->assertTrue($busyness[$scheduleKey]);
+        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+            'task_id' => $aeTaskId,
+            'status' => 'accepted',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'id' => $intentId,
+            'status' => 'running',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'id' => $aeTaskId,
+            'status' => 'running',
+        ]);
+    }
+
+    public function test_reconcile_pending_active_tasks_marks_intent_failed_when_related_ae_task_is_terminal(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-ae-failed-'.$zone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinutes(20),
+            'created_at' => now()->subMinutes(21),
+            'updated_at' => now()->subMinutes(18),
+        ]);
+        $aeTaskId = (string) DB::table('ae_tasks')->insertGetId([
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation_start',
+            'status' => 'failed',
+            'idempotency_key' => 'intent-ae-failed-'.$zone->id,
+            'scheduled_for' => now()->subMinutes(20),
+            'due_at' => now()->subMinutes(19),
+            'error_code' => 'ae3_stale_task_reclaimed',
+            'completed_at' => now()->subMinutes(2),
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+        $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
+        DB::table('laravel_scheduler_active_tasks')->insert([
+            'task_id' => $aeTaskId,
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'schedule_key' => $scheduleKey,
+            'correlation_id' => 'corr-ae3-failed',
+            'status' => 'accepted',
+            'accepted_at' => now()->subMinutes(20),
+            'due_at' => now()->subMinutes(19),
+            'expires_at' => now()->subMinute(),
+            'details' => json_encode(['task_id' => $aeTaskId, 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        $poller = new ActiveTaskPoller(new ActiveTaskStore);
+        $busyness = $poller->reconcilePendingActiveTasks(
+            cfg: [
+                'api_url' => '',
+                'expires_after_sec' => 120,
+                'hard_stale_after_sec' => 300,
+                'active_task_poll_batch' => 50,
+                'active_task_ttl_sec' => 180,
+            ],
+            writeLog: static function (string $taskName, string $status, array $details): void {},
+        );
+
+        $this->assertArrayHasKey($scheduleKey, $busyness);
+        $this->assertFalse($busyness[$scheduleKey]);
+        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+            'task_id' => $aeTaskId,
             'status' => 'timeout',
         ]);
         $this->assertDatabaseHas('zone_automation_intents', [

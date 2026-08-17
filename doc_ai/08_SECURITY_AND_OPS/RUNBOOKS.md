@@ -103,9 +103,9 @@ ORDER BY accepted_at ASC;
 1. Проверить `ae_tasks` (`status`, `current_stage`, `claimed_by`, `updated_at`).
 2. Проверить последнюю строку `ae_commands` + `commands` по `cmd_id` / `external_id` (terminal status).
 3. Если команда **уже DONE** в `commands`, а task всё ещё `waiting_command` / `running` — это инцидент recovery (см. фазу 2 плана); зафиксировать `task_id` и логи AE.
-4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание); подождать до 15 мин (watchdog `ae3:reap-stale-tasks`) или вручную fail/restart цикл после устранения причины.
+4. Если команда **ещё in-flight** — проверить связь с узлом (MQTT, питание); подождать janitor AE3 (`stale_task_reconcile`, fail-safe OFF → fail) или вручную fail/restart цикл после устранения причины. Laravel `ae3:reap-stale-tasks` **не** переводит `ae_tasks` в `failed`.
 5. Проверить `ae_zone_leases` — при stuck после fail не должно блокировать новый цикл.
-6. Прогнать `php artisan ae3:reap-stale-tasks` при подозрении на зомби-task (только если понимаете последствия fail-closed).
+6. Прогнать `php artisan ae3:reap-stale-tasks` только для orphan pending intents без `ae_task` и для лога stale tasks; зомби-task reclaim — зона ответственности AE janitor.
 
 ### 3.2.3. `startup_recovery_unconfirmed_command`
 

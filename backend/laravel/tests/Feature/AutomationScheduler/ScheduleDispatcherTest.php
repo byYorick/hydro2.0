@@ -6,6 +6,7 @@ use App\Models\Zone;
 use App\Services\AutomationScheduler\ScheduleCycleContext;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use App\Services\AutomationScheduler\ScheduleItem;
+use App\Services\AutomationScheduler\SchedulerRuntimeHelper;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -69,7 +70,8 @@ class ScheduleDispatcherTest extends TestCase
             ->where('id', $created['intent_id'])
             ->first();
 
-        $this->assertTrue($result['ok']);
+        $this->assertFalse($result['ok']);
+        $this->assertNull($result['intent_id']);
         $this->assertNotNull($after);
         $this->assertSame('completed', $after->status);
         $this->assertSame($before->updated_at, $after->updated_at);
@@ -1073,6 +1075,206 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertCount(1, $logs);
         $this->assertSame('skipped', $logs[0]['status']);
         $this->assertSame('invalid_lighting_desired_state', $logs[0]['context']['reason']);
+    }
+
+    public function test_dispatch_skips_http_when_idempotency_key_already_terminal(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-08-17 12:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            intervalSec: 1800,
+            payload: ['duration_sec' => 60],
+        );
+        $correlationId = $dispatcher->buildSchedulerCorrelationId(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            scheduledFor: SchedulerRuntimeHelper::toIso(
+                SchedulerRuntimeHelper::intervalSlotAt(
+                    now: $triggerTime,
+                    intervalSec: 1800,
+                    lastCompletedAt: null,
+                )
+            ),
+            scheduleKey: $schedule->scheduleKey,
+        );
+
+        $created = $dispatcher->upsertSchedulerIntent(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            correlationId: $correlationId,
+            triggerTime: $triggerTime,
+            payload: ['duration_sec' => 60],
+        );
+        $this->assertTrue($created['ok']);
+        DB::table('zone_automation_intents')
+            ->where('id', $created['intent_id'])
+            ->update([
+                'status' => 'completed',
+                'completed_at' => $triggerTime,
+                'updated_at' => $triggerTime,
+            ]);
+
+        Http::fake();
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $this->makeDispatchContext($triggerTime, [
+                $zone->id => 'ready',
+            ]),
+            writeLog: static function (): void {},
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'intent_upsert_failed',
+        ], $result);
+        Http::assertNothingSent();
+        $this->assertSame(1, DB::table('zone_automation_intents')->where('zone_id', $zone->id)->count());
+        $this->assertSame(
+            'completed',
+            DB::table('zone_automation_intents')->where('id', $created['intent_id'])->value('status'),
+        );
+    }
+
+    public function test_dispatch_treats_rate_limited_as_retryable_backpressure(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-lighting-tick' => Http::response([
+                'detail' => [
+                    'error' => 'start_lighting_tick_rate_limited',
+                    'zone_id' => $zone->id,
+                ],
+            ], 429),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-08-17 15:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'lighting',
+            startTime: '08:00:00',
+            endTime: '18:00:00',
+            payload: [
+                'desired_state' => 'off',
+                'catchup_original_trigger_time' => '2026-08-17T15:00:00Z',
+            ],
+        );
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $this->makeDispatchContext($triggerTime),
+            writeLog: static function (): void {},
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => true,
+            'reason' => 'start_lighting_tick_rate_limited',
+        ], $result);
+
+        $intent = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($intent);
+        $this->assertSame('pending', $intent->status);
+        $this->assertSame(0, (int) $intent->retry_count);
+    }
+
+    public function test_dispatch_treats_solution_change_zone_not_ready_as_retryable_backpressure(): void
+    {
+        $this->assertSetupNotReadyHttpBackpressure(
+            taskType: 'solution_change',
+            endpoint: '/start-solution-change',
+            error: 'solution_change_zone_not_ready',
+        );
+    }
+
+    public function test_interval_irrigation_retries_share_idempotency_key_on_zone_busy(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-irrigation' => Http::response([
+                'detail' => [
+                    'error' => 'start_irrigation_zone_busy',
+                    'zone_id' => $zone->id,
+                    'active_task_id' => 44,
+                    'active_task_status' => 'pending',
+                ],
+            ], 409),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'irrigation',
+            intervalSec: 1800,
+            payload: ['duration_sec' => 90],
+        );
+        $firstNow = CarbonImmutable::parse('2026-08-17 12:00:10', 'UTC');
+        $secondNow = CarbonImmutable::parse('2026-08-17 12:00:40', 'UTC');
+
+        $first = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $firstNow,
+            scheduleKey: $schedule->scheduleKey,
+            context: $this->makeDispatchContext($firstNow, [
+                $zone->id => 'ready',
+            ]),
+            writeLog: static function (): void {},
+        );
+        $second = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $secondNow,
+            scheduleKey: $schedule->scheduleKey,
+            context: $this->makeDispatchContext($secondNow, [
+                $zone->id => 'ready',
+            ]),
+            writeLog: static function (): void {},
+        );
+
+        $this->assertSame('start_irrigation_zone_busy', $first['reason']);
+        $this->assertSame('start_irrigation_zone_busy', $second['reason']);
+        $this->assertTrue($first['retryable']);
+        $this->assertTrue($second['retryable']);
+
+        $recorded = Http::recorded(function (\Illuminate\Http\Client\Request $request) use ($zone): bool {
+            return str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation');
+        });
+        $this->assertCount(2, $recorded);
+        $keys = $recorded
+            ->map(static fn (array $pair): string => (string) ($pair[0]->data()['idempotency_key'] ?? ''))
+            ->all();
+        $this->assertSame($keys[0], $keys[1]);
+        $this->assertNotSame('', $keys[0]);
+        $this->assertSame(1, DB::table('zone_automation_intents')->where('zone_id', $zone->id)->count());
     }
 
     /**

@@ -36,6 +36,27 @@ class LightingScheduleParserTest extends TestCase
         $this->assertSame(90, $items[0]->intervalSec);
     }
 
+    public function test_photoperiod_window_stays_local_when_utc_clock_looks_like_daytime(): void
+    {
+        $greenhouse = Greenhouse::factory()->create(['timezone' => 'Europe/Moscow']);
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+
+        $parser = new LightingScheduleParser;
+        $items = $parser->parse(
+            zoneId: $zone->id,
+            lightingConfig: [
+                'start_time' => '08:00',
+                'photoperiod_hours' => 10,
+            ],
+            lightingScheduleSpec: null,
+            nowUtc: CarbonImmutable::parse('2026-08-17 15:00:00', 'UTC'),
+        );
+
+        $this->assertCount(1, $items);
+        $this->assertSame('08:00:00', $items[0]->startTime);
+        $this->assertSame('18:00:00', $items[0]->endTime);
+    }
+
     public function test_parse_skips_photoperiod_window_when_zone_timezone_is_missing(): void
     {
         $greenhouse = Greenhouse::factory()->create(['timezone' => null]);

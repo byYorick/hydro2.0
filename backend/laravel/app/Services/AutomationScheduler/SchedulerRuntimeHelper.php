@@ -49,4 +49,45 @@ final class SchedulerRuntimeHelper
             manualScheduleId: $schedule->manualScheduleId,
         );
     }
+
+    public static function normalizeTimezone(?string $timezone): ?string
+    {
+        if ($timezone === null) {
+            return null;
+        }
+
+        $normalized = trim($timezone);
+        if ($normalized === '') {
+            return null;
+        }
+
+        try {
+            new \DateTimeZone($normalized);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    public static function intervalSlotAt(
+        CarbonImmutable $now,
+        int $intervalSec,
+        ?CarbonImmutable $lastCompletedAt,
+    ): CarbonImmutable {
+        if ($intervalSec <= 0) {
+            return $now;
+        }
+
+        if ($lastCompletedAt instanceof CarbonImmutable) {
+            $due = $lastCompletedAt->addSeconds($intervalSec)->setMicroseconds(0);
+            if ($due->lte($now)) {
+                return $due;
+            }
+        }
+
+        $bucketTs = intdiv($now->getTimestamp(), $intervalSec) * $intervalSec;
+
+        return CarbonImmutable::createFromTimestamp($bucketTs, 'UTC')->setMicroseconds(0);
+    }
 }
