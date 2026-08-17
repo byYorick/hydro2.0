@@ -69,6 +69,31 @@ def test_solution_drain_check_is_flow_path_stage() -> None:
     assert is_flow_path_check_stage("solution_drain_check") is True
 
 
+def test_solution_topup_check_is_flow_path_stage() -> None:
+    from ae3lite.application.handlers.flow_path_guard import (
+        flow_path_stage_config,
+        is_flow_path_check_stage,
+        should_fail_safe_shutdown_on_task_fail,
+    )
+
+    assert is_flow_path_check_stage("solution_topup_check") is True
+    config = flow_path_stage_config("solution_topup_check")
+    assert config is not None
+    assert config.stop_plan_names == ("solution_topup_stop",)
+    task = SimpleNamespace(
+        topology="two_tank",
+        current_stage="solution_topup_check",
+        correction=None,
+    )
+    assert should_fail_safe_shutdown_on_task_fail(task) is True
+    dose_task = SimpleNamespace(
+        topology="two_tank",
+        current_stage="irrigation_check",
+        correction=SimpleNamespace(corr_step="corr_dose_ph"),
+    )
+    assert should_fail_safe_shutdown_on_task_fail(dose_task) is False
+
+
 class _HandlerStub:
     def __init__(self, *, probe_raises: bool = False, batch_raises: bool = False) -> None:
         self._probe_raises = probe_raises
@@ -98,6 +123,7 @@ def _plan_with_stop_plans() -> SimpleNamespace:
             "solution_fill_stop": ("stop_cmd",),
             "sensor_mode_deactivate": ("deact_cmd",),
             "irr_state_probe": ("probe_cmd",),
+            "solution_topup_stop": ("topup_stop_cmd",),
         },
     )
 
@@ -221,6 +247,29 @@ async def test_handle_control_mode_interrupt_fails_when_stop_unconfirmed() -> No
     assert outcome is not None
     assert outcome.kind == "fail"
     assert outcome.error_code == "ae3_flow_stop_unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_handle_control_mode_interrupt_for_solution_topup_check() -> None:
+    handler = _HandlerStub()
+    task = SimpleNamespace(
+        id=5,
+        zone_id=9,
+        current_stage="solution_topup_check",
+        workflow=SimpleNamespace(control_mode="manual"),
+    )
+    outcome = await handle_control_mode_flow_path_interrupt(
+        handler,
+        task=task,
+        plan=_plan_with_stop_plans(),
+        now=NOW,
+        control_mode="manual",
+    )
+    assert isinstance(outcome, StageOutcome)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == MANUAL_HOLD_STAGE
+    assert outcome.flow_hold_return_stage == "solution_topup_check"
+    assert handler.batch_calls == 1
 
 
 def _make_task(*, control_mode: str = "manual", pending_manual_step: str | None = None) -> AutomationTask:

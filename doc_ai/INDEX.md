@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
 **Версия:** 2.4
-**Дата обновления:** 2026-08-02 (code-first docs sync: P0–P2 hot-path; см. `SYNC_PLAN.md`)
+**Дата обновления:** 2026-08-17 (scheduler/AE3/IRR code-first: lighting hybrid, zone_busy, irrigation `run_pump`; см. `SYNC_PLAN.md`)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 

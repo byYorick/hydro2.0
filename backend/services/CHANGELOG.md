@@ -1,5 +1,10 @@
 # Changelog - Python Services
 
+## 2026-08-17 — Дерево Python scheduler удалено
+
+- Удалено дерево `backend/services/scheduler/` (legacy MQTT publisher, в compose не было).
+- Канон расписаний — Laravel (`automation:dispatch-schedules` → intents → AE3).
+
 ## 2026-03-30 — Планировщик только в Laravel
 
 - Удалён отдельный Python-сервис `backend/services/scheduler` из боевого стека и supervisor.

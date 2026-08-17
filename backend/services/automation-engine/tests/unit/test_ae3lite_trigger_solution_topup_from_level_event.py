@@ -136,6 +136,53 @@ async def test_trigger_starts_topup_when_preconditions_met(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_trigger_zone_busy_keeps_requested_intent_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fetch_fn(query: str, *args: object):
+        if "FROM zones z" in query:
+            return [{"automation_runtime": "ae3", "workflow_phase": "ready"}]
+        if "FROM ae_tasks" in query:
+            return []
+        return []
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.trigger_solution_topup_from_level_event.load_zone_level_monitor_config",
+        AsyncMock(return_value={
+            "solution_min_sensor_labels": ("level_solution_min",),
+            "solution_max_sensor_labels": ("level_solution_max",),
+            "level_switch_on_threshold": 0.5,
+            "telemetry_max_age_sec": 60,
+        }),
+    )
+    runtime_monitor = AsyncMock()
+    runtime_monitor.read_level_switch = AsyncMock(side_effect=[
+        {"is_triggered": True, "has_level": True},
+        {"is_triggered": False, "has_level": True},
+    ])
+    zone_intent_repository = AsyncMock()
+    zone_intent_repository.upsert_solution_topup_intent = AsyncMock(return_value=91)
+    zone_intent_repository.claim_pending_intent_by_id = AsyncMock(return_value={
+        "decision": "zone_busy",
+        "intent": {"id": 7, "status": "running"},
+        "requested_intent": {"id": 91, "status": "pending"},
+    })
+    zone_intent_repository.mark_terminal = AsyncMock()
+    create_task = AsyncMock()
+    use_case = TriggerSolutionTopupFromLevelEventUseCase(
+        zone_intent_repository=zone_intent_repository,
+        create_task_from_intent_use_case=create_task,
+        runtime_monitor=runtime_monitor,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=5, event_data=_level_event(), now=NOW)
+
+    assert result["triggered"] is False
+    assert result["reason"] == "intent_claim_zone_busy"
+    zone_intent_repository.mark_terminal.assert_not_awaited()
+    create_task.run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_trigger_maps_task_create_precondition_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fetch_fn(query: str, *args: object):
         if "FROM zones z" in query:

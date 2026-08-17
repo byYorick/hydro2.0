@@ -276,12 +276,14 @@ void storage_irrigation_node_log_fail_safe_config(void) {
         "fail-safe config: clean_fill_min_check_delay_ms(deprecated)=%lu "
         "solution_fill_clean_min_check_delay_ms=%lu "
         "solution_fill_solution_min_check_delay_ms=%lu "
+        "irrigation_timeout_ms=%lu "
         "recirculation_solution_min_guard_enabled=%d "
         "irrigation_solution_min_guard_enabled=%d estop_debounce_ms=%lu "
         "level_switch_active_low=%d level_switch_pullup=%d debounce_ms=%lu",
         (unsigned long)g_fail_safe_config.clean_fill_min_check_delay_ms,
         (unsigned long)g_fail_safe_config.solution_fill_clean_min_check_delay_ms,
         (unsigned long)g_fail_safe_config.solution_fill_solution_min_check_delay_ms,
+        (unsigned long)g_fail_safe_config.irrigation_timeout_ms,
         g_fail_safe_config.recirculation_solution_min_guard_enabled ? 1 : 0,
         g_fail_safe_config.irrigation_solution_min_guard_enabled ? 1 : 0,
         (unsigned long)g_fail_safe_config.estop_debounce_ms,
@@ -296,6 +298,7 @@ void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
         .clean_fill_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
         .solution_fill_clean_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
         .solution_fill_solution_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+        .irrigation_timeout_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_TIMEOUT_MS,
         .recirculation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
         .irrigation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
         .estop_debounce_ms = STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS,
@@ -335,6 +338,24 @@ void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
             double value = cJSON_GetNumberValue(item);
             if (value >= 0.0 && value <= 3600000.0) {
                 next.solution_fill_solution_min_check_delay_ms = (uint32_t)value;
+            }
+        }
+        bool have_irrigation_timeout_ms = false;
+        item = cJSON_GetObjectItem(guards, "irrigation_timeout_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 1.0 && value <= (double)STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS) {
+                next.irrigation_timeout_ms = (uint32_t)value;
+                have_irrigation_timeout_ms = true;
+            }
+        }
+        if (!have_irrigation_timeout_ms) {
+            item = cJSON_GetObjectItem(guards, "irrigation_timeout_sec");
+            if (item && cJSON_IsNumber(item)) {
+                double value = cJSON_GetNumberValue(item);
+                if (value >= 1.0 && value <= ((double)STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS / 1000.0)) {
+                    next.irrigation_timeout_ms = (uint32_t)(value * 1000.0);
+                }
             }
         }
         item = cJSON_GetObjectItem(guards, "recirculation_solution_min_guard_enabled");

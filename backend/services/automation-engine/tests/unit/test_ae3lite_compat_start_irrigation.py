@@ -66,6 +66,12 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
     async def claim_intent(*, zone_id: int, req, now):
         captured["claim_kwargs"] = {"zone_id": zone_id, "mode": req.mode, "duration": req.requested_duration_sec}
+        if decision == "zone_busy":
+            return {
+                "decision": "zone_busy",
+                "intent": {"id": 1, "zone_id": zone_id, "status": "running"},
+                "requested_intent": {"id": 88, "zone_id": zone_id, "status": "pending"},
+            }
         return {"decision": decision, "intent": {"id": 88, "zone_id": zone_id, "status": "running"}}
 
     async def load_zone_workflow_phase(_zone_id: int) -> str | None:
@@ -119,7 +125,7 @@ async def test_compat_start_irrigation_routes_to_canonical_task_creation() -> No
 
 @pytest.mark.asyncio
 async def test_compat_start_irrigation_translates_zone_busy_to_409() -> None:
-    endpoint, _captured = _bind_test_route(
+    endpoint, captured = _bind_test_route(
         creation_result=TaskCreationResult(task=_task(task_id=777, zone_id=7, status="pending"), created=True),
         decision="zone_busy",
     )
@@ -134,6 +140,7 @@ async def test_compat_start_irrigation_translates_zone_busy_to_409() -> None:
     assert exc.value.status_code == 409
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_irrigation_zone_busy"
+    assert "marked_terminal" not in captured
 
 
 @pytest.mark.asyncio

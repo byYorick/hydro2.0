@@ -1,7 +1,7 @@
 # AGENT.md (automation-engine / AE3-Lite v1)
 
 Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
-Обновлено: 2026-08-02 (sync: solution_topup/solution_change ingress + task types)
+Обновлено: 2026-08-17 (zone_busy не terminal; fail-safe до fail_for_recovery; irrigation_start `run_pump`)
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
@@ -117,9 +117,9 @@ Stage re-enqueue (two-tank workflow): атомарный `update_stage` из `Pg
 Полный канонический реестр — `doc_ai/04_BACKEND_CORE/ERROR_CODE_CATALOG.md`. Здесь — только наиболее частые в AE3 runtime.
 
 Ingress / task creation:
-- `start_cycle_zone_busy` — у зоны уже есть active task или active lease.
+- `start_cycle_zone_busy` / `start_irrigation_zone_busy` / `start_lighting_tick_zone_busy` / `start_solution_topup_zone_busy` / `start_solution_change_zone_busy` — у зоны уже есть active task или active lease. **Не** `mark_terminal` requested intent (Laravel ретраит тот же ключ).
 - `start_cycle_idempotency_key_conflict` — другой intent уже занял тот же `(zone_id, idempotency_key)`.
-- `start_irrigation_setup_pending` — `POST /zones/{id}/start-irrigation` вызван до перехода зоны в `workflow_phase='ready'`.
+- `start_irrigation_setup_pending` / `start_solution_topup_not_ready` — wake-up до `workflow_phase='ready'`.
 - `ae3_task_create_failed` — не удалось вставить task (DB-сбой, нарушение constraints).
 
 Snapshot / topology:
@@ -175,7 +175,7 @@ Deprecated (не используются в runtime, оставлены тол�
 - **Intent sync retry:** `_safe_mark_intent_running` / `_safe_mark_intent_terminal*` retry до `AE_INTENT_SYNC_MAX_RETRIES`; при исчерпании — `ae3_intent_sync_failed_total{operation=...}`.
 - **HL publish:** default `AE_HL_MAX_RETRIES=1` (один retry на 503/transport).
 - **Command protocol:** legacy status `ACCEPTED` — fail-closed `command_protocol_violation` (не non-terminal poll).
-- **Fail-safe shutdown:** non-success batch → biz alert `biz_flow_stop_failed_hardware_may_be_active`.
+- **Fail-safe shutdown:** publish-only через HL **до** `fail_for_recovery`; не skip на already-failed/inactive task. Non-success batch → biz alert `biz_flow_stop_failed_hardware_may_be_active`. Flow-path включает `solution_topup_check`.
 - **Метрики:** `ae3_oldest_active_task_age_seconds{status}`, `ae3_command_dispatch_duration_seconds` (HL publish wall time), `ae3_reconcile_consecutive_errors`.
 - **Stale janitor:** `StaleTaskReconcileResult.kick_needed` при `requeued > 0`.
 

@@ -354,7 +354,7 @@ Stage-terminal коды используются `WorkflowRouter._fail_task` д�
 | code | Когда | Retryable |
 | --- | --- | --- |
 | `scheduler_dispatch_connection_error` | Laravel scheduler не достучался до AE3 (`connection_error`, missing response) | да (`retry_count` до `max_retries`) |
-| `scheduler_dispatch_http_error` | AE3 вернул non-success HTTP (кроме `409 zone_busy`) | да |
+| `scheduler_dispatch_http_error` | AE3 вернул non-success HTTP (кроме `409 *_zone_busy` и `409 start_*_not_ready` / `start_irrigation_setup_pending`) | да |
 | `scheduler_intent_orphan_pending` | `ae3:reap-stale-tasks`: pending intent без active `ae_task` дольше порога | нет (terminal) |
 | `stage_deadline_exceeded` | Watchdog: `stage_deadline_at` истёк | нет |
 | `claim_stale` | Watchdog: `claimed` без прогресса | нет |

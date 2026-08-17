@@ -1,7 +1,7 @@
 # SCHEDULER_AE3_NON_IRRIGATION_DISPATCH
 # Dispatch света/климата/пр. для AE3 (C1)
 
-**Статус:** реализовано для **lighting** (C1), **diagnostics** (compat `start-cycle`), **solution_topup** (`POST .../start-solution-topup`), **solution_change** (`POST .../start-solution-change`) и **greenhouse climate** (крыша). Laravel scheduler → соответствующий `POST ...` в AE3 → history-logger → MQTT. Расширение **lighting day/night ON/OFF** (этап A) — payload `desired_state` / `brightness_pct` по `AGRO_AUTONOMY_MASTER_PLAN.md` §A.2–A.3. Зональные типы `climate`/`mist`/`ventilation` **не** автодиспатчатся на AE3 (см. `SCHEDULER_ENGINE.md`); климат **теплицы** — контур `greenhouse_automation_*`.
+**Статус:** реализовано для **lighting** (C1 + этап A ON/OFF, включая гибрид окно+`interval_sec`), **diagnostics** (compat `start-cycle`), **solution_topup** (`POST .../start-solution-topup`), **solution_change** (`POST .../start-solution-change`, **не** `cycle_start`) и **greenhouse climate** (крыша). Laravel scheduler → соответствующий `POST ...` в AE3 → history-logger → MQTT. Зональные типы `climate`/`mist`/`ventilation` **не** автодиспатчатся на AE3 (см. `SCHEDULER_ENGINE.md`); климат **теплицы** — контур `greenhouse_automation_*`.
 **Связано с:** `SCHEDULER_ENGINE.md`, `ScheduleDispatcher.php`, `WATER_FLOW_ENGINE.md` §19, `ae3lite.md`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -85,15 +85,15 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 7.2. Триггер dispatch (Laravel)
 
-`SchedulerCycleOrchestrator` для schedule item с `startTime`/`endTime` (окно из `LightingScheduleParser` / effective targets):
+`SchedulerCycleOrchestrator` различает три формы lighting `ScheduleItem`:
 
-1. На каждом scheduler tick сравнивает «желаемое состояние» освещения: `desiredNow = isTimeInWindow(now, startTime, endTime)` vs `desiredLast` для предыдущего cursor.
-2. Dispatch выполняется **только при смене** `desiredNow !== desiredLast` (вход в окно или выход из него).
-3. В job payload добавляется:
-   - `desired_state`: `"on"` если `desiredNow === true`, иначе `"off"`;
-   - `brightness`: значение `targets.lighting.brightness` (для ON-tick; см. §7.4).
+| Форма | Когда dispatch | `desired_state` |
+|-------|----------------|-----------------|
+| Только окно (`startTime`/`endTime`, без `interval_sec`) | На **границе** окна (`desiredNow !== desiredLast`) | `"on"` на входе, `"off"` на выходе |
+| Только interval / point time-spec | Каждый due-тик | default `"on"` |
+| **Гибрид** окно **и** `interval_sec` в одном item | Граница окна **и** interval-тики **внутри** окна | граница: `"on"`/`"off"`; interval внутри окна: `"on"` |
 
-Для lighting **без** окна (interval / point time-spec) — поведение C1: каждый триггер считается ON-tick, `desired_state` default `"on"`.
+Гибрид обязателен: если orchestrator уходит только в interval-ветку, на `off_time` **не** уйдёт `desired_state=off` и свет останется включённым до конца следующего окна. Retryable 409 на lighting OFF **не** двигает zone cursor (`holdCursorOnRetryable`). Битый `desired_state` — fail-closed skip в `ScheduleDispatcher` (не подменять на `"on"`).
 
 ### 7.3. HTTP-контракт `POST /zones/{id}/start-lighting-tick`
 
@@ -157,9 +157,9 @@ Workflow: одношаговый `lighting_tick`, `complete_on_ack=true`. Ком
 
 ### 7.6. Критерии приёмки (этап A, dispatch-слой)
 
-1. На границе `off_time` scheduler создаёт intent с `desired_state=off` и AE3 публикует команду выключения.
+1. На границе `off_time` scheduler создаёт intent с `desired_state=off` и AE3 публикует команду выключения — в том числе при гибриде окно+`interval_sec`.
 2. На границе `on_time` — intent с `desired_state=on` и duty из `brightness` / `brightness_pct`.
-3. Повторный tick без смены состояния окна **не** dispatch'ится orchestrator'ом (инвариант C1 сохранён).
+3. Для **только-окна** повторный tick без смены состояния **не** dispatch'ится. Для гибрида interval-тики внутри окна — ON-tick (не OFF).
 4. Нет прямой MQTT-публикации из Laravel.
 
 ---

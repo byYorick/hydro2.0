@@ -26,6 +26,8 @@ final class ScheduleWorkspaceCapabilities
         return [
             'executable_task_types' => $executable,
             'planned_task_types' => $plannedTaskTypes,
+            // Историческое имя API-поля: «ограниченный набор типов под автодиспатч на AE3».
+            // Не переименовывать — контракт Vue / schedule-workspace.
             'ae3_irrigation_only_dispatch' => $isAe3,
             'non_executable_planned_task_types' => $nonExecutablePlanned,
             'diagnostics_available' => true,

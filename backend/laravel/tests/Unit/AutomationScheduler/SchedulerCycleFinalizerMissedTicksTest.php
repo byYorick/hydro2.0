@@ -77,4 +77,32 @@ class SchedulerCycleFinalizerMissedTicksTest extends TestCase
             ],
         ];
     }
+
+    public function test_window_boundary_at_uses_end_time_crossing_when_leaving_window(): void
+    {
+        $finalizer = $this->app->make(SchedulerCycleFinalizer::class);
+        $boundary = $finalizer->windowBoundaryAt(
+            last: CarbonImmutable::parse('2026-07-07 21:30:00', 'UTC'),
+            now: CarbonImmutable::parse('2026-07-07 22:00:30', 'UTC'),
+            startTime: '06:00:00',
+            endTime: '22:00:00',
+            enteringWindow: false,
+        );
+
+        $this->assertSame('2026-07-07 22:00:00', $boundary->format('Y-m-d H:i:s'));
+    }
+
+    public function test_window_boundary_at_uses_start_time_crossing_when_entering_window(): void
+    {
+        $finalizer = $this->app->make(SchedulerCycleFinalizer::class);
+        $boundary = $finalizer->windowBoundaryAt(
+            last: CarbonImmutable::parse('2026-07-07 05:50:00', 'UTC'),
+            now: CarbonImmutable::parse('2026-07-07 06:00:20', 'UTC'),
+            startTime: '06:00:00',
+            endTime: '22:00:00',
+            enteringWindow: true,
+        );
+
+        $this->assertSame('2026-07-07 06:00:00', $boundary->format('Y-m-d H:i:s'));
+    }
 }

@@ -31,6 +31,17 @@ def _affected_rows(command_tag: Any) -> int:
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _ACTIVE_STATUSES = frozenset({"claimed", "running"})
+
+
+def _is_retryable_failed_intent(existing: Mapping[str, Any]) -> bool:
+    try:
+        retry_count = int(existing.get("retry_count") or 0)
+        max_retries = int(existing.get("max_retries") or 0)
+    except (TypeError, ValueError):
+        return False
+    return retry_count < max_retries
+
+
 _TRANSIENT_RETRYABLE_ERROR_CODES = frozenset({
     ErrorCodes.AE3_REQUIRED_NODE_OFFLINE,
     "ae3_required_node_offline",
@@ -493,7 +504,12 @@ class PgZoneIntentRepository:
                 else:
                     return {"decision": "deduplicated", "intent": existing}
             if status in _TERMINAL_STATUSES:
-                return {"decision": "terminal", "intent": existing}
+                # Retryable failed must not burn the window as terminal before
+                # zone_busy: Laravel retries 409 busy with the same key.
+                # completed/cancelled (and exhausted failed) stay terminal.
+                # Stale claimed/running reclaim is handled by the CTE above.
+                if not (status == "failed" and _is_retryable_failed_intent(existing)):
+                    return {"decision": "terminal", "intent": existing}
 
         active_zone_rows = await fetch(
             """

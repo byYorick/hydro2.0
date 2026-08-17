@@ -61,6 +61,18 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
     async def claim_intent(*, zone_id: int, req, now):
         captured["claim_kwargs"] = {"zone_id": zone_id, "key": req.idempotency_key}
+        if decision == "zone_busy":
+            return {
+                "decision": "zone_busy",
+                "intent": {
+                    "id": 1,
+                    "zone_id": zone_id,
+                    "status": "running",
+                    "topology": "two_tank",
+                    "task_type": "solution_change",
+                },
+                "requested_intent": {"id": 92, "zone_id": zone_id, "status": "pending"},
+            }
         return {
             "decision": decision,
             "intent": {
@@ -76,6 +88,9 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         captured["create_kwargs"] = kwargs
         return creation_result
 
+    async def mark_intent_terminal(**kwargs):
+        captured["marked_terminal"] = kwargs
+
     bind_start_solution_change_route(
         app,
         validate_scheduler_zone_fn=validate_zone,
@@ -89,7 +104,7 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         create_task_from_intent_fn=create_task_from_intent,
         kick_worker_fn=lambda: captured.__setitem__("worker_kicked", int(captured["worker_kicked"]) + 1),
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
-        mark_intent_terminal_fn=AsyncMock(),
+        mark_intent_terminal_fn=mark_intent_terminal,
         logger=SimpleNamespace(warning=lambda *args, **kwargs: None, error=lambda *args, **kwargs: None),
     )
     endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-solution-change")
@@ -117,6 +132,30 @@ async def test_compat_start_solution_change_routes_to_canonical_task_creation() 
     create_kwargs = captured["create_kwargs"]
     assert isinstance(create_kwargs, dict)
     assert create_kwargs["zone_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_compat_start_solution_change_zone_busy_keeps_requested_intent_pending() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=880, zone_id=5, status="pending"), created=True),
+        decision="zone_busy",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=5,
+            request=SimpleNamespace(headers={"authorization": "Bearer test"}),
+            req=StartSolutionChangeRequest(
+                source="laravel_scheduler",
+                idempotency_key="sched:z5:solution_change",
+                trigger="operator",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_solution_change_zone_busy"
+    assert "marked_terminal" not in captured
 
 
 @pytest.mark.asyncio

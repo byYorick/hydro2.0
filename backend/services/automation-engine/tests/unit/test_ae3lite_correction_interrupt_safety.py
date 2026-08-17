@@ -450,6 +450,47 @@ async def test_attempt_fail_safe_stop_skips_without_gateway() -> None:
 
 
 @pytest.mark.asyncio
+async def test_attempt_task_fail_safe_shutdown_publishes_for_already_failed_task(monkeypatch) -> None:
+    from ae3lite.application.services.correction_interrupt_safety import (
+        attempt_task_fail_safe_shutdown,
+    )
+
+    async def _actuators(*, zone_id: int):
+        return (
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "pump_main"},
+            {"node_uid": "irrig-1", "node_type": "irrig", "channel": "valve_irrigation"},
+        )
+
+    monkeypatch.setattr(
+        "ae3lite.application.services.correction_interrupt_safety.load_irrig_fail_safe_actuators",
+        _actuators,
+    )
+    gateway = SimpleNamespace(run_publish_only_batch=AsyncMock(return_value={"success": True}))
+    failed_task = SimpleNamespace(
+        id=9,
+        zone_id=1,
+        topology="two_tank",
+        current_stage="irrigation_check",
+        claimed_by="w1",
+        is_active=False,
+        status="failed",
+    )
+    result = await attempt_task_fail_safe_shutdown(
+        task=failed_task,
+        now=NOW,
+        command_gateway=gateway,
+        planner_step_prefix="control_mode_fail_safe",
+    )
+    assert result.attempted is True
+    assert result.success is True
+    gateway.run_publish_only_batch.assert_awaited_once()
+    call = gateway.run_publish_only_batch.await_args
+    assert call.kwargs["task"].id == 9
+    channels = [cmd.channel for cmd in call.kwargs["commands"]]
+    assert channels[0] == "pump_main"
+
+
+@pytest.mark.asyncio
 async def test_worker_unsafe_attempts_fail_safe_before_escalate(monkeypatch) -> None:
     from ae3lite.runtime.worker import Ae3RuntimeWorker
 

@@ -847,6 +847,7 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> AutomationTask:
+        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
         if self._workflow_repository is not None:
             await self._sync_workflow_failure_state(task=task, now=now)
         failed_task = await self._task_repository.fail_for_recovery(
@@ -885,6 +886,7 @@ class StartupRecoveryUseCase:
         recovery_source: str = "startup_recovery",
     ) -> None:
         """Синхронизирует workflow/alert/lease для уже переведённой в failed задачи."""
+        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
         if self._workflow_repository is not None:
             await self._sync_workflow_failure_state(task=task, now=now)
         await self._emit_failed_task_alert(
@@ -895,6 +897,43 @@ class StartupRecoveryUseCase:
             recovery_source=recovery_source,
         )
         await self._release_lease_after_recovery_fail(task=task, now=now)
+
+    async def _maybe_fail_safe_shutdown_before_fail(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> None:
+        from ae3lite.application.handlers.flow_path_guard import (
+            should_fail_safe_shutdown_on_task_fail,
+        )
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_task_fail_safe_shutdown,
+        )
+
+        if not should_fail_safe_shutdown_on_task_fail(task):
+            return
+        try:
+            result = await attempt_task_fail_safe_shutdown(
+                task=task,
+                now=now,
+                command_gateway=self._command_gateway,
+                planner_step_prefix="startup_recovery_fail_safe",
+            )
+        except Exception:
+            logger.warning(
+                "Startup recovery: fail-safe shutdown exception task_id=%s zone_id=%s",
+                task.id,
+                task.zone_id,
+                exc_info=True,
+            )
+            return
+        if result.attempted and not result.success:
+            logger.warning(
+                "Startup recovery: fail-safe shutdown non-success task_id=%s reason=%s",
+                task.id,
+                result.reason,
+            )
 
     async def _release_lease_after_recovery_success(
         self,

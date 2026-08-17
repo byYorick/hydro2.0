@@ -52,7 +52,7 @@ trap "rm -rf ${TEMP_DIR}" EXIT
 log "Начало создания бэкапа Python сервисов..."
 
 # Список сервисов для бэкапа
-SERVICES=("automation-engine" "scheduler" "mqtt-bridge" "history-logger")
+SERVICES=("automation-engine" "mqtt-bridge" "history-logger")
 BACKED_UP_SERVICES=()
 
 # Копирование конфигураций для каждого сервиса

@@ -27,12 +27,17 @@ _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
 }
 
 
-def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
+def default_two_tank_command_plan(
+    plan_name: str,
+    *,
+    irrigation_duration_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    pump_duration_ms = max(1000, min(3_600_000, int(irrigation_duration_ms or 120_000)))
     defaults: dict[str, list[dict[str, Any]]] = {
         "irrigation_start": [
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
             {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
-            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "pump_main", "cmd": "run_pump", "params": {"duration_ms": pump_duration_ms}},
         ],
         "irrigation_pump_stop": [
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
@@ -381,6 +386,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     }
     _validate_prepare_recirculation_timing(runtime)
 
+    irrigation_duration_ms = _irrigation_start_duration_ms(runtime.get("irrigation_execution"))
     for plan_name in (
         "irrigation_start",
         "irrigation_pump_stop",
@@ -398,7 +404,10 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     ):
         runtime["command_specs"][plan_name] = _normalize_command_plan(
             commands_cfg.get(plan_name),
-            default_plan=default_two_tank_command_plan(plan_name),
+            default_plan=default_two_tank_command_plan(
+                plan_name,
+                irrigation_duration_ms=irrigation_duration_ms,
+            ),
             default_node_types=runtime["required_node_types"],
         )
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
@@ -849,6 +858,18 @@ def _resolve_phase_target_bound(*, snapshot: Any, key: str, bound: str, fallback
         return max(0.0, min(upper, float(candidate)))
     except (TypeError, ValueError):
         raise PlannerConfigurationError(f"Значение {key}_{bound} не является числом: {candidate!r}")
+
+
+def _irrigation_start_duration_ms(irrigation_execution: Any) -> int:
+    """Duration for default irrigation_start run_pump; matches planner fallback 120s."""
+    duration_sec = 120
+    if isinstance(irrigation_execution, Mapping):
+        raw = irrigation_execution.get("duration_sec")
+        try:
+            duration_sec = max(1, min(3600, int(raw)))
+        except (TypeError, ValueError):
+            duration_sec = 120
+    return max(1000, min(3_600_000, int(duration_sec) * 1000))
 
 
 def _normalize_command_plan(

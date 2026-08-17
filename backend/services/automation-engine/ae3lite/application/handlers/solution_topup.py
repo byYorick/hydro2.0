@@ -190,6 +190,16 @@ class SolutionTopupCheckHandler(BaseStageHandler):
                     return StageOutcome(kind="transition", next_stage="solution_topup_stop")
             raise
 
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        flow_hold = await self._handle_control_mode_flow_path_interrupt(
+            task=task,
+            plan=plan,
+            now=now,
+            control_mode=control_mode,
+        )
+        if flow_hold is not None:
+            return flow_hold
+
         clean_min_check_delay_ms = int(
             getattr(fail_safe_guards, "solution_topup_clean_min_check_delay_ms", None)
             or fail_safe_guards.solution_fill_clean_min_check_delay_ms

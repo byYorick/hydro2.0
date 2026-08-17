@@ -144,6 +144,22 @@ class SchedulerCycleFinalizer
         return $now >= $start || $now <= $end;
     }
 
+    public function windowBoundaryAt(
+        CarbonImmutable $last,
+        CarbonImmutable $now,
+        string $startTime,
+        string $endTime,
+        bool $enteringWindow,
+    ): CarbonImmutable {
+        $boundaryTime = $enteringWindow ? $startTime : $endTime;
+        $crossings = $this->scheduleCrossings($last, $now, $boundaryTime);
+        if ($crossings !== []) {
+            return $crossings[array_key_last($crossings)];
+        }
+
+        return $now;
+    }
+
     public function onceReadyToDispatch(CarbonImmutable $last, CarbonImmutable $now, string $runAtIso): bool
     {
         $runAt = ScheduleSpecHelper::parseRunAt($runAtIso);

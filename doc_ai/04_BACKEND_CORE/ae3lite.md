@@ -1,8 +1,8 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.10-canonical
-**Дата:** 2026-08-11
-**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — этап A doc-first 2026-07-08; **solution_change semi-auto v1 — этап D.1 doc-first 2026-07-08**; **solution_topup (автодолив бака в фазе ready) — sync с кодом 2026-08-11**)
+**Версия:** 3.11-canonical
+**Дата:** 2026-08-17
+**Статус:** CANONICAL MINIMAL SPEC (sync с runtime кодом 2026-05-28: file tree, task types, FSM `update_stage`, error codes, lighting_tick/greenhouse_climate_tick добавлены в canonical scope; lighting day/night ON/OFF — **implemented** 2026-08-17; **solution_change** — Laravel `task_type=solution_change` → `POST /start-solution-change` (не `cycle_start`); **solution_topup** — sync 2026-08-11; irrigation_start default `pump_main/run_pump {duration_ms}`; 409 `*_zone_busy` не терминалит requested intent)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -236,7 +236,8 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
    replay irrigation после setup без chemistry recovery window.
 10. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает deadline;
    stage deadline сохраняется до terminal transition из stage
-11. runtime обязан передавать stage timeout в `pump_main/set_relay` start-команде как `params.timeout_ms` + `params.stage`;
+11. runtime обязан передавать stage timeout в `pump_main` start-команде как `params.timeout_ms` + `params.stage` для latched fill/recirc (`set_relay`);
+    default `irrigation_start` публикует **`pump_main/run_pump {duration_ms}`** (не latched `set_relay true`): насос гаснет по таймеру, клапаны держит firmware irrigation stage-guard (`irrigation_timeout_ms`). Явный `timeout_ms/stage` на `pump_main` по-прежнему перевзводит guard.
     gateway ждёт только terminal **`DONE`** (`SequentialCommandGateway`); поле `complete_on_ack` в payload — **legacy/no-op**
     (читается, но не влияет на resume batch). Non-terminal: `PENDING|QUEUED|SENT|ACK|RUNNING`.
 
@@ -416,7 +417,7 @@ Terminal:
 9. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
 10. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
 11. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
-12. Fail-safe shutdown команды публикуются как publish-only batch: они не должны повторно переводить уже terminal/closing task в `waiting_command` и не должны искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи.
+12. Fail-safe shutdown команды публикуются как publish-only batch через history-logger **до** `fail_for_recovery` / terminal fail (`startup_recovery`, `stale_task_reconcile`, `set_control_mode`, `ExecuteTaskUseCase`). Skip только если нет gateway или нет irrig fail-safe актуаторов; **не** skip из‑за inactive/already-failed task (`ae_commands.task_id` остаётся валидным FK). Batch не должен повторно переводить уже terminal/closing task в `waiting_command` и не должен искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи. Flow-path fail-safe включает `solution_topup_check` (см. `FlowPathGuard.should_fail_safe_shutdown_on_task_fail`).
 13. Перед fail-closed terminal transition runtime обязан синхронизировать `zone_workflow_state` обратно в `workflow_phase='idle'`, чтобы stale phase не переживала terminal failure task.
 
 ---
@@ -697,7 +698,8 @@ runtime = plan.runtime
 6. неизвестная irrigation strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает business alert через `decision_gate`
 7. active irrigation task фиксирует decision snapshot (`strategy/config/bundle_revision`) при создании canonical task под zone advisory lock; первый runtime pass только эмитит observability event, а последующие изменения `zone.logic_profile` применяются только к следующему irrigation task
 8. при `mode=force` bypass-ит decision-controller, но не bypass-ит canonical task/runtime path
-9. при active task или active lease возвращает controlled error
+9. при active task или active lease возвращает controlled error (`409 start_irrigation_zone_busy` / `start_cycle_zone_busy`) **без** терминации requested intent — Laravel трактует 409 busy как retryable backpressure с тем же `idempotency_key`.
+10. default plan `irrigation_start`: `valve_solution_supply`/`valve_irrigation` latched `set_relay true`, `pump_main/run_pump {duration_ms}` (не latched насос). Duration из `requested_duration_sec` / `irrigation_execution` (fallback 120 с).
 
 ### 7.2.1 `POST /zones/{id}/start-lighting-tick`
 
@@ -711,11 +713,11 @@ runtime = plan.runtime
 5. `CycleStartPlanner._build_lighting_tick_plan` строит команду по типу actuator-канала:
    - `desired_state=on` → `set_pwm {duty}` или `set_relay {state:true}`; duty из `brightness_pct`, затем `targets.lighting.brightness`, fallback `100`
    - `desired_state=off` → `set_pwm {duty:0}` или `set_relay {state:false}`
-6. при active task или active lease возвращает controlled error (`409 start_lighting_tick_zone_busy`)
+6. при active task или active lease возвращает controlled error (`409 start_lighting_tick_zone_busy`) **без** `mark_terminal` requested intent (Laravel ретраит тот же `idempotency_key`).
 
 Контракт Pydantic: `ae3lite/api/contracts.py` → `StartLightingTickRequest`.
 
-**Baseline до этапа A (текущий код):** request содержит только `source` + `idempotency_key`; planner всегда ON с duty из `targets.lighting.brightness`/`pwm_duty` (fallback `100`). Поля `desired_state` / `brightness_pct` — целевое расширение §A.3 `AGRO_AUTONOMY_MASTER_PLAN.md`.
+**Реализовано (2026-08-17):** `desired_state` / `brightness_pct` в HTTP + planner ON/OFF. Laravel: на границе окна фотопериода шлёт `on`/`off` даже если у того же `ScheduleItem` есть `interval_sec`; битый `desired_state` — fail-closed skip (не default ON). См. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7.
 
 ### 7.2.3 `POST /zones/{id}/start-solution-change` (semi-auto v1)
 
@@ -732,7 +734,7 @@ Ingress для **полуавтоматической подмены раств�
 5. первый runtime stage — `await_operator_drain_confirm` (G1); **drain не начинается** до manual step `solution_drain_confirm`;
 6. после успешного refill (`solution_fill_check`, включая прерывание correction по заполненному solution tank) — `await_operator_refill_confirm` (G2) до manual step `solution_refill_confirm`;
 7. reuse handlers: `solution_drain_*`, `clean_fill_*`, `solution_fill_*`, `prepare_recirculation_*`;
-8. при active task или active lease — `409 start_solution_change_zone_busy`;
+8. при active task или active lease — `409 start_solution_change_zone_busy` **без** `mark_terminal` requested intent;
 9. scheduler intent `SOLUTION_CHANGE_TICK` (Laravel `ScheduleDispatcher`) маршрутизируется в этот endpoint, но v1 **не bypass** operator gates.
 
 Manual steps (дополнение к `manual_control_contract.py` / Vue `AutomationManualStep`):
@@ -754,7 +756,7 @@ Ingress для **автодолива бака раствора** в фазе `r
 Требования (целевой контракт):
 
 1. принимает `source` (default `laravel_scheduler`, 1–64 chars), `idempotency_key` (8–160 chars, required), `mode` (`normal|force`, default `normal`), опционально `trigger` (3–32 chars, audit);
-2. ingress только при `workflow_phase='ready'` и отсутствии active task/lease — иначе `409 start_solution_topup_zone_busy`;
+2. ingress только при `workflow_phase='ready'` и отсутствии active task/lease — иначе `409 start_solution_topup_not_ready` или `409 start_solution_topup_zone_busy` **без** `mark_terminal` requested intent;
 3. создаёт canonical task `task_type='solution_topup'`, workflow `solution_topup`;
 4. topology: `solution_topup_guard -> solution_topup_start -> solution_topup_check -> solution_topup_stop -> solution_topup_complete`
    (плюс terminal variants `solution_topup_source_empty_stop`, `solution_topup_leak_stop`, `solution_topup_timeout_stop`);
@@ -970,7 +972,7 @@ Prometheus runtime минимум для lifecycle intents:
 4. reconcile после `EMERGENCY_STOP_ACTIVATED` обязан писать service-log с outcome `restored` или `failed`
 5. wake-up по node runtime event обязан инкрементировать `ae3_node_runtime_event_kick_total` и писать service-log `AE3 worker.kick by node runtime event`
 6. `IRRIGATION_CORRECTION_STARTED`, `CORRECTION_DECISION_MADE`, `EC_DOSING`, `PH_CORRECTED` обязаны нести `current_stage`; при наличии probe-context обязаны также нести `snapshot_event_id` и `caused_by_event_id`
-7. Для irrigation inline correction `snapshot_event_id` обязан ссылаться на `zone_events.id` события `IRR_STATE_SNAPSHOT`, по которому подтверждён активный flow path (`pump_main=true`)
+7. Для irrigation inline correction `snapshot_event_id` обязан ссылаться на `zone_events.id` события `IRR_STATE_SNAPSHOT`, по которому подтверждён активный irrigation path. Firmware `is_irrigation_active` = оба клапана (`valve_solution_supply` ∧ `valve_irrigation`); насос **не** обязателен (после `run_pump` DONE сифон/клапаны остаются OPEN до `irrigation_stop` / stage-guard).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 

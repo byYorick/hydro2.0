@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from ae3lite.api import bind_start_lighting_tick_route
 from ae3lite.api.contracts import StartLightingTickRequest
@@ -56,6 +56,12 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
 
     async def claim_intent(*, zone_id: int, req, now):
         captured["claim_kwargs"] = {"zone_id": zone_id, "key": req.idempotency_key}
+        if decision == "zone_busy":
+            return {
+                "decision": "zone_busy",
+                "intent": {"id": 1, "zone_id": zone_id, "status": "running"},
+                "requested_intent": {"id": 90, "zone_id": zone_id, "status": "pending"},
+            }
         return {"decision": decision, "intent": {"id": 90, "zone_id": zone_id, "status": "running"}}
 
     async def create_task_from_intent(**kwargs):
@@ -120,3 +126,28 @@ async def test_compat_start_lighting_tick_routes_to_canonical_task_creation() ->
     assert ck["source"] == "laravel_scheduler"
     assert ck["lighting_desired_state"] == "off"
     assert ck["lighting_brightness_pct"] == 25
+
+
+@pytest.mark.asyncio
+async def test_compat_start_lighting_tick_zone_busy_keeps_requested_intent_pending() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=778, zone_id=7, status="pending"), created=True),
+        decision="zone_busy",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-lighting-busy"}),
+            req=StartLightingTickRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z7:lighting",
+                desired_state="off",
+                brightness_pct=25,
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_lighting_tick_zone_busy"
+    assert "marked_terminal" not in captured

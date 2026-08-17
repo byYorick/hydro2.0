@@ -104,6 +104,41 @@ async def test_claim_start_cycle_stale_running_same_key_returns_zone_busy_when_o
 
 
 @pytest.mark.asyncio
+async def test_claim_start_cycle_retryable_failed_same_key_returns_zone_busy_not_terminal() -> None:
+    failed_same_key = {
+        "id": 601,
+        "zone_id": 8,
+        "status": "failed",
+        "retry_count": 0,
+        "max_retries": 3,
+    }
+    active_other_key = {
+        "id": 701,
+        "zone_id": 8,
+        "status": "running",
+        "updated_at": NOW,
+    }
+
+    with patch(f"{_MODULE}.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = [
+            [],
+            [failed_same_key],
+            [active_other_key],
+        ]
+        repo = PgZoneIntentRepository()
+        result = await repo.claim_start_cycle(
+            zone_id=8,
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="intent-key-failed-retry"),
+            now=NOW,
+        )
+
+    assert result["decision"] == "zone_busy"
+    assert result["intent"]["id"] == 701
+    assert result["requested_intent"]["id"] == 601
+    assert result["requested_intent"]["status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_claim_start_cycle_stale_running_same_key_falls_back_to_deduplicated_not_missing() -> None:
     stale_same_key = {
         "id": 502,

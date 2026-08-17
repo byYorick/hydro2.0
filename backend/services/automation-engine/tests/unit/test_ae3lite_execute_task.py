@@ -1448,7 +1448,7 @@ async def test_execute_task_missing_recipe_phase_targets_emits_critical_alert_an
 
 
 @pytest.mark.asyncio
-async def test_execute_task_skips_fail_safe_shutdown_when_task_was_cleaned_up() -> None:
+async def test_execute_task_fail_safe_shutdown_when_task_was_cleaned_up() -> None:
     task = _make_task(stage="startup", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
     gateway = _GatewayRecorder()
@@ -1470,7 +1470,11 @@ async def test_execute_task_skips_fail_safe_shutdown_when_task_was_cleaned_up() 
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["error_code"] == "zone_dosing_calibration_missing_critical"
-    assert gateway.calls == []
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["method"] == "publish_only"
+    channels = [cmd.channel for cmd in gateway.calls[0]["commands"]]
+    assert "pump_main" in channels
+    assert "valve_irrigation" in channels
 
 
 @pytest.mark.asyncio
@@ -1729,6 +1733,38 @@ async def test_fail_safe_shutdown_exception_emits_critical_hardware_may_be_activ
     assert alert.await_args.kwargs["severity"] == "critical"
     assert alert.await_args.kwargs["details"]["reason"] == "fail_safe_shutdown_exception"
     assert alert.await_args.kwargs["details"]["error_code"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_fail_safe_shutdown_publishes_when_task_already_failed() -> None:
+    task = _make_task(stage="irrigation_check", topology="two_tank", task_type="irrigation_start")
+    failed = replace(task, status="failed")
+    gateway = _GatewayRecorder()
+
+    class _TaskRepoAlreadyFailed(_TaskRepoRunning):
+        async def get_by_id(self, *, task_id):
+            return failed
+
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoAlreadyFailed(running_task=task),
+        zone_snapshot_read_model=object(),
+        planner=object(),
+        command_gateway=gateway,
+        workflow_router=object(),
+    )
+    plan = _PlannerTwoTankOk().build(task=task, snapshot=_SnapshotWithIrrActuators())
+
+    await use_case._attempt_fail_safe_shutdown(
+        task=task,
+        snapshot=_SnapshotWithIrrActuators(),
+        plan=plan,
+        now=NOW,
+    )
+
+    assert len(gateway.calls) == 1
+    channels = [cmd.channel for cmd in gateway.calls[0]["commands"]]
+    assert channels[0] == "pump_main"
+    assert "valve_irrigation" in channels
 
 
 @pytest.mark.asyncio

@@ -98,6 +98,79 @@ esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, cons
     return ESP_OK;
 }
 
+static bool storage_irrigation_node_irrigation_stage_guard_active_locked(void) {
+    storage_irrigation_node_stage_guard_t *guard = storage_irrigation_node_get_stage_guard("irrigation", false);
+    return guard != NULL && guard->active;
+}
+
+static uint32_t storage_irrigation_node_irrigation_timeout_ms_from_config(void) {
+    uint32_t timeout_ms = g_fail_safe_config.irrigation_timeout_ms;
+    if (timeout_ms < 1U) {
+        timeout_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_TIMEOUT_MS;
+    }
+    if (timeout_ms > STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS) {
+        timeout_ms = STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS;
+    }
+    return timeout_ms;
+}
+
+static uint32_t storage_irrigation_node_irrigation_timeout_ms_from_duration(uint32_t duration_ms) {
+    uint32_t margin_ms = g_fail_safe_config.solution_fill_clean_min_check_delay_ms;
+    if (margin_ms < 1U) {
+        margin_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS;
+    }
+    uint32_t timeout_ms = duration_ms;
+    if (timeout_ms > UINT32_MAX - margin_ms) {
+        timeout_ms = UINT32_MAX;
+    } else {
+        timeout_ms += margin_ms;
+    }
+    if (timeout_ms > STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS) {
+        timeout_ms = STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS;
+    }
+    if (timeout_ms < 1U) {
+        timeout_ms = 1U;
+    }
+    return timeout_ms;
+}
+
+esp_err_t storage_irrigation_node_maybe_arm_irrigation_guard_locked(
+    const char *channel,
+    const char *cmd_id,
+    bool has_duration,
+    uint32_t duration_ms
+) {
+    bool valve_irrigation = false;
+    bool duration_on_pump = has_duration
+        && duration_ms > 0U
+        && storage_irrigation_node_is_main_pump_channel(channel);
+
+    if (storage_irrigation_node_is_solution_fill_active_locked()
+        || storage_irrigation_node_is_prepare_recirculation_active_locked()) {
+        return ESP_OK;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &valve_irrigation)
+        || !valve_irrigation) {
+        return ESP_OK;
+    }
+    /* Do not shorten an already-armed ceiling. run_pump duration+margin is far
+     * too tight for irrigation_check after the pump; MQTT-loss safety is the
+     * config irrigation_timeout_ms from valve-open. Explicit timeout_ms/stage
+     * still re-arms via arm_stage_guard_locked. */
+    if (storage_irrigation_node_irrigation_stage_guard_active_locked()) {
+        return ESP_OK;
+    }
+
+    uint32_t timeout_ms = storage_irrigation_node_irrigation_timeout_ms_from_config();
+    if (duration_on_pump) {
+        uint32_t from_duration = storage_irrigation_node_irrigation_timeout_ms_from_duration(duration_ms);
+        if (from_duration > timeout_ms) {
+            timeout_ms = from_duration;
+        }
+    }
+    return storage_irrigation_node_arm_stage_guard_locked("irrigation", cmd_id, timeout_ms);
+}
+
 bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char *channel, char *cmd_id_out, size_t cmd_id_out_size) {
     if (cmd_id_out && cmd_id_out_size > 0) {
         cmd_id_out[0] = '\0';
@@ -108,6 +181,10 @@ bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char 
     for (size_t i = 0; i < sizeof(g_stage_guards) / sizeof(g_stage_guards[0]); i++) {
         storage_irrigation_node_stage_guard_t *guard = &g_stage_guards[i];
         if (!guard->active) {
+            continue;
+        }
+        /* Irrigation valves can stay open after pump auto-off; do not disarm that guard here. */
+        if (strcmp(guard->stage, "irrigation") == 0) {
             continue;
         }
         guard->active = false;
@@ -164,6 +241,11 @@ bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
         channels[1] = "valve_solution_fill";
         channels[2] = "valve_solution_supply";
         count = 3;
+    } else if (strcmp(stage, "irrigation") == 0) {
+        channels[0] = "pump_main";
+        channels[1] = "valve_irrigation";
+        channels[2] = "valve_solution_supply";
+        count = 3;
     } else {
         return false;
     }
@@ -204,24 +286,7 @@ bool storage_irrigation_node_stop_clean_fill_path_locked(void) {
 }
 
 bool storage_irrigation_node_stop_irrigation_path_locked(void) {
-    const char *channels[] = {"pump_main", "valve_irrigation", "valve_solution_supply"};
-    bool all_ok = true;
-    for (size_t i = 0; i < sizeof(channels) / sizeof(channels[0]); i++) {
-        int idx = storage_irrigation_node_find_actuator_index(channels[i]);
-        if (idx < 0) {
-            all_ok = false;
-            continue;
-        }
-        esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)idx, false);
-        if (stop_err != ESP_OK) {
-            all_ok = false;
-            ESP_LOGE(TAG, "Failed to stop irrigation path %s: %s", channels[i], esp_err_to_name(stop_err));
-        }
-    }
-    if (all_ok) {
-        (void)storage_irrigation_node_complete_stage_guard_for_stage_locked("irrigation", NULL, 0);
-    }
-    return all_ok;
+    return storage_irrigation_node_stop_stage_path_locked("irrigation");
 }
 
 bool storage_irrigation_node_stop_all_paths_locked(void) {
@@ -290,6 +355,9 @@ const char *storage_irrigation_node_timeout_event_code_for_stage(const char *sta
     }
     if (strcmp(stage, "prepare_recirculation") == 0) {
         return "prepare_recirculation_timeout";
+    }
+    if (strcmp(stage, "irrigation") == 0) {
+        return "irrigation_timeout";
     }
     return NULL;
 }

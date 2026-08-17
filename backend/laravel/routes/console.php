@@ -102,7 +102,11 @@ Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
 
 // MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
-// Команда будит зону в automation-engine через /zones/{id}/start-cycle.
+// Команда диспатчит due-окна в automation-engine по типу задачи:
+// irrigation → /start-irrigation, lighting → /start-lighting-tick,
+// solution_topup / solution_change → соответствующие endpoint'ы,
+// diagnostics → /start-cycle; после tick — greenhouse climate.
+// Не только start-cycle.
 // Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
 // Частота tick синхронизирована с AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC (config services.automation_engine).
 $automationDispatchSchedules = Schedule::command('automation:dispatch-schedules');

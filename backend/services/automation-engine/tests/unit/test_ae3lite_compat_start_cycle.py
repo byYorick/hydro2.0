@@ -48,6 +48,12 @@ def _bind_test_route(
 
     async def claim_intent(*, zone_id: int, req, now):
         captured["claim_calls"] = int(captured["claim_calls"]) + 1
+        if decision == "zone_busy":
+            return {
+                "decision": "zone_busy",
+                "intent": {"id": 1, "zone_id": zone_id, "status": "running"},
+                "requested_intent": {"id": 77, "zone_id": zone_id, "status": "pending"},
+            }
         return {"decision": decision, "intent": {"id": 77, "zone_id": zone_id, "status": "running"}}
 
     async def create_task_from_intent(**kwargs):
@@ -151,6 +157,26 @@ async def test_compat_start_cycle_returns_accepted_duplicate_for_deduplicated_in
     assert response["data"]["accepted"] is True
     assert response["data"]["is_duplicate"] is True
     assert response["data"]["task_id"] == "654"
+
+
+@pytest.mark.asyncio
+async def test_compat_start_cycle_zone_busy_keeps_requested_intent_pending() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=654, zone_id=7, status="pending"), created=True),
+        decision="zone_busy",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-busy-decision"}),
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:test"),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_cycle_zone_busy"
+    assert "marked_terminal" not in captured
 
 
 @pytest.mark.asyncio

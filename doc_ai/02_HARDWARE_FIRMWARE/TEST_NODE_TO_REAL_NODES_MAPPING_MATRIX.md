@@ -53,7 +53,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
-| `pump_main` | `storage_irrigation_node` (`set_relay`) | `Direct` | Production IRR-node поддерживает latched `set_relay {state:true|false}`; interlock `pump_main` остаётся обязательным. |
+| `pump_main` | `storage_irrigation_node` (`set_relay` + `run_pump`) | `Direct` | Latched `set_relay` для fill/recirc; timed `run_pump {duration_ms}` — канон AE3 `irrigation_start`. Interlock `pump_main` обязателен. |
 | `main_pump` (alias) | `storage_irrigation_node` (`pump_main`) | `Alias/Adapter` | Alias есть только в test-node; в real-node нужно канонизировать имя в одном месте. |
 | `valve_clean_fill` | `storage_irrigation_node/valve_clean_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
 | `valve_clean_supply` | `storage_irrigation_node/valve_clean_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |

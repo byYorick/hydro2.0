@@ -66,6 +66,14 @@ _FLOW_PATH_STAGES: dict[str, FlowPathStageConfig] = {
         stop_plan_names=("solution_drain_stop",),
         off_expected={"valve_drain": False},
     ),
+    "solution_topup_check": FlowPathStageConfig(
+        stop_plan_names=("solution_topup_stop",),
+        off_expected={
+            "valve_clean_supply": False,
+            "valve_solution_fill": False,
+            "pump_main": False,
+        },
+    ),
 }
 
 
@@ -81,6 +89,34 @@ class FlowStopOutcome:
 def is_flow_path_check_stage(stage: object) -> bool:
     normalized = str(stage or "").strip().lower()
     return normalized in _FLOW_PATH_STAGES
+
+
+_FLOW_PATH_FAIL_SAFE_PREFIXES = (
+    "irrigation_",
+    "clean_fill_",
+    "solution_fill_",
+    "prepare_recirculation_",
+    "recirc_",
+    "solution_topup_",
+    "solution_drain_",
+)
+
+
+def should_fail_safe_shutdown_on_task_fail(task: Any) -> bool:
+    """True for irrigation/fill/recirc/topup flow-path; False for mid-dose correction."""
+    topology = str(getattr(task, "topology", "") or "").strip().lower()
+    if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        return False
+    corr_step = ""
+    correction = getattr(task, "correction", None)
+    if correction is not None:
+        corr_step = str(getattr(correction, "corr_step", "") or "").strip().lower()
+    if corr_step in CORRECTION_DOSE_STEPS:
+        return False
+    stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+    if is_flow_path_check_stage(stage):
+        return True
+    return stage.startswith(_FLOW_PATH_FAIL_SAFE_PREFIXES)
 
 
 def flow_path_stage_config(stage: object) -> FlowPathStageConfig | None:
@@ -405,5 +441,6 @@ __all__ = [
     "handle_control_mode_flow_path_interrupt",
     "is_flow_path_check_stage",
     "is_manual_hold_pending_marker",
+    "should_fail_safe_shutdown_on_task_fail",
     "should_interrupt_flow_for_control_mode",
 ]

@@ -227,6 +227,9 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
             completed_stage_cmd_id,
             sizeof(completed_stage_cmd_id)
         );
+        if (storage_irrigation_node_is_irrigation_valve_channel(channel)) {
+            (void)storage_irrigation_node_complete_stage_guard_for_stage_locked("irrigation", NULL, 0);
+        }
     } else if (has_timeout) {
         esp_err_t guard_err = storage_irrigation_node_arm_stage_guard_locked(stage_name, cmd_id, timeout_ms);
         if (guard_err != ESP_OK) {
@@ -249,15 +252,42 @@ esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **res
             );
             return guard_err;
         }
-    } else if (has_duration) {
-        storage_irrigation_node_schedule_done(
+    } else {
+        esp_err_t irrig_guard_err = storage_irrigation_node_maybe_arm_irrigation_guard_locked(
             channel,
             cmd_id,
-            duration_ms,
-            0.0f,
-            false,
-            true
+            has_duration,
+            duration_ms
         );
+        if (irrig_guard_err != ESP_OK) {
+            bool rollback_ok = storage_irrigation_node_stop_irrigation_path_locked();
+            if (!rollback_ok) {
+                ESP_LOGE(
+                    TAG,
+                    "Failed to fail-close irrigation path after guard arm error: channel=%s",
+                    channel
+                );
+            }
+            xSemaphoreGive(g_actuator_mutex);
+            *response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "stage_guard_arm_failed",
+                "Failed to arm irrigation timeout guard",
+                NULL
+            );
+            return irrig_guard_err;
+        }
+        if (has_duration) {
+            storage_irrigation_node_schedule_done(
+                channel,
+                cmd_id,
+                duration_ms,
+                0.0f,
+                false,
+                true
+            );
+        }
     }
 
     xSemaphoreGive(g_actuator_mutex);

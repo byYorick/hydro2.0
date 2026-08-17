@@ -153,7 +153,7 @@ bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t *timeo
         return false;
     }
     double raw_value = cJSON_GetNumberValue(item);
-    if (raw_value < 1.0 || raw_value > 7200000.0) {
+    if (raw_value < 1.0 || raw_value > (double)STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS) {
         return false;
     }
     *timeout_ms_out = (uint32_t)raw_value;
@@ -185,7 +185,9 @@ bool storage_irrigation_node_parse_stage_name(const cJSON *item, char *stage_out
         return false;
     }
     const char *raw = item->valuestring;
-    if (strcmp(raw, "solution_fill") != 0 && strcmp(raw, "prepare_recirculation") != 0) {
+    if (strcmp(raw, "solution_fill") != 0
+        && strcmp(raw, "prepare_recirculation") != 0
+        && strcmp(raw, "irrigation") != 0) {
         return false;
     }
     strncpy(stage_out, raw, stage_out_size - 1);
@@ -280,20 +282,22 @@ bool storage_irrigation_node_is_prepare_recirculation_active_locked(void) {
     return pump_main && valve_solution_supply && valve_solution_fill;
 }
 
+bool storage_irrigation_node_is_irrigation_valve_channel(const char *channel) {
+    const char *c = storage_irrigation_node_canonical_actuator_channel(channel);
+    return c != NULL && strcmp(c, "valve_irrigation") == 0;
+}
+
 bool storage_irrigation_node_is_irrigation_active_locked(void) {
-    bool pump_main = false;
     bool valve_solution_supply = false;
     bool valve_irrigation = false;
-    if (!storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main)) {
-        return false;
-    }
     if (!storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &valve_solution_supply)) {
         return false;
     }
     if (!storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &valve_irrigation)) {
         return false;
     }
-    return pump_main && valve_solution_supply && valve_irrigation;
+    /* Siphon/overflow path stays live after run_pump auto-off; pump is not required. */
+    return valve_solution_supply && valve_irrigation;
 }
 
 uint32_t storage_irrigation_node_clean_fill_elapsed_ms(void) {

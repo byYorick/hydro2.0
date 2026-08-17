@@ -212,6 +212,7 @@ class StaleTaskReconcileUseCase:
                     if stale_waiting_command
                     else f"Задача {task.id} застряла в {from_status} и переведена в failed janitor'ом"
                 )
+                await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
                 failed = await self._task_repository.fail_for_recovery(
                     task_id=int(task.id),
                     error_code=error_code,
@@ -427,6 +428,43 @@ class StaleTaskReconcileUseCase:
                 task_id,
                 action,
                 exc_info=True,
+            )
+
+    async def _maybe_fail_safe_shutdown_before_fail(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> None:
+        from ae3lite.application.handlers.flow_path_guard import (
+            should_fail_safe_shutdown_on_task_fail,
+        )
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_task_fail_safe_shutdown,
+        )
+
+        if not should_fail_safe_shutdown_on_task_fail(task):
+            return
+        try:
+            result = await attempt_task_fail_safe_shutdown(
+                task=task,
+                now=now,
+                command_gateway=self._command_gateway,
+                planner_step_prefix="stale_task_fail_safe",
+            )
+        except Exception:
+            logger.warning(
+                "Stale task reconcile: fail-safe shutdown exception task_id=%s zone_id=%s",
+                task.id,
+                task.zone_id,
+                exc_info=True,
+            )
+            return
+        if result.attempted and not result.success:
+            logger.warning(
+                "Stale task reconcile: fail-safe shutdown non-success task_id=%s reason=%s",
+                task.id,
+                result.reason,
             )
 
     @staticmethod

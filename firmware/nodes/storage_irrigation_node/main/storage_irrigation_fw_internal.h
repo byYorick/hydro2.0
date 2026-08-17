@@ -77,6 +77,7 @@ typedef struct {
     uint32_t clean_fill_min_check_delay_ms;
     uint32_t solution_fill_clean_min_check_delay_ms;
     uint32_t solution_fill_solution_min_check_delay_ms;
+    uint32_t irrigation_timeout_ms;
     bool recirculation_solution_min_guard_enabled;
     bool irrigation_solution_min_guard_enabled;
     uint32_t estop_debounce_ms;
@@ -177,6 +178,7 @@ bool storage_irrigation_node_is_clean_fill_active_locked(void);
 bool storage_irrigation_node_is_solution_fill_active_locked(void);
 bool storage_irrigation_node_is_prepare_recirculation_active_locked(void);
 bool storage_irrigation_node_is_irrigation_active_locked(void);
+bool storage_irrigation_node_is_irrigation_valve_channel(const char *channel);
 uint32_t storage_irrigation_node_clean_fill_elapsed_ms(void);
 uint32_t storage_irrigation_node_solution_fill_elapsed_ms(void);
 bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void);
@@ -190,6 +192,12 @@ bool storage_irrigation_node_is_main_pump_channel(const char *channel);
 
 storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_guard(const char *stage, bool create);
 esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, const char *cmd_id, uint32_t timeout_ms);
+esp_err_t storage_irrigation_node_maybe_arm_irrigation_guard_locked(
+    const char *channel,
+    const char *cmd_id,
+    bool has_duration,
+    uint32_t duration_ms
+);
 bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char *channel, char *cmd_id_out, size_t cmd_id_out_size);
 bool storage_irrigation_node_complete_stage_guard_for_stage_locked(const char *stage, char *cmd_id_out, size_t cmd_id_out_size);
 bool storage_irrigation_node_stop_stage_path_locked(const char *stage);

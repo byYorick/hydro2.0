@@ -433,19 +433,23 @@ interface LightingTarget {
 
 #### 4.4.2. `lighting_tick`: desired_state ON/OFF
 
-Задача AE3 `lighting_tick` (ingress `POST /zones/{id}/start-lighting-tick`) исполняет **один** переход состояния освещения, инициированный Laravel scheduler на **границе** окна фотопериода (`SchedulerCycleOrchestrator`: сравнение «внутри окна» между текущим и предыдущим cursor-tick).
+Задача AE3 `lighting_tick` (ingress `POST /zones/{id}/start-lighting-tick`) исполняет **один** переход состояния освещения. Laravel `SchedulerCycleOrchestrator`:
 
-| `desired_state` | Когда dispatch | Команда AE3 (целевое поведение, этап A) |
-|-----------------|----------------|----------------------------------------|
-| `"on"` | Вход в окно `[on_time, off_time)` (включая переход `off → on` в `on_time`) | `set_pwm {duty: brightness_pct}` или `set_relay {state: true}` |
-| `"off"` | Выход из окна (переход `on → off` в `off_time`) | `set_pwm {duty: 0}` или `set_relay {state: false}` |
+- **только окно** — dispatch на границе фотопериода (`desiredNow !== desiredLast`);
+- **только interval** — каждый due-тик с `desired_state=on`;
+- **гибрид окно+interval** — граница ON/OFF **и** interval ON внутри окна (иначе `off_time` не гасит свет).
+
+| `desired_state` | Когда dispatch | Команда AE3 |
+|-----------------|----------------|-------------|
+| `"on"` | Вход в окно `[on_time, off_time)` и/или interval-тик внутри окна | `set_pwm {duty: brightness_pct}` или `set_relay {state: true}` |
+| `"off"` | Выход из окна (переход `on → off` в `off_time`), в т.ч. в гибридном item | `set_pwm {duty: 0}` или `set_relay {state: false}` |
 
 Поля dispatch-payload (см. `StartLightingTickRequest`, `ScheduleDispatcher.php`):
 
 - `desired_state`: `"on"` \| `"off"`, default `"on"` (backward-compat для interval/time-spec без окна).
 - `brightness_pct`: опционально `0..100`; при `desired_state="on"` — явная яркость тика; если не передано, AE3 резолвит из effective targets / day-night config; fallback `100`.
 
-**Идемпотентность:** повторный tick с тем же `desired_state` и той же фактической яркостью на узле — no-op (`NO_EFFECT` допустим); граница окна dispatch'ится один раз на переход состояния.
+**Идемпотентность:** повторный tick с тем же `desired_state` и той же фактической яркостью на узле — no-op (`NO_EFFECT` допустим); граница окна dispatch'ится один раз на переход. Retryable 409 на OFF-tick не двигает cursor. Битый `desired_state` — fail-closed skip.
 
 **Пример (SCHEDULE + day/night):**
 ```json

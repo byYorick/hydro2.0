@@ -53,7 +53,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Two-tank startup (clean fill → solution fill → recirc → ready) | **Готово** | `ae3lite/application/services/workflow_topology.py`, `handlers/clean_fill.py` … |
 | Полив (irrigation, guards, E-STOP, recovery) | **Готово** | `handlers/decision_gate.py`, `handlers/irrigation_check.py` |
 | Климат теплицы (крышные форточки, rule-based V1) | **Готово** | `ae3lite/greenhouse_climate/decision_engine.py`, `GreenhouseClimateDispatchService.php` |
-| Освещение — базовый dispatch `lighting_tick` | **Частично** | `ScheduleDispatcher.php`, `cycle_start_planner.py:_build_lighting_tick_plan` |
+| Освещение — dispatch `lighting_tick` ON/OFF (в т.ч. гибрид окно+interval) | **Готово** (2026-08-17) | `SchedulerCycleOrchestrator.php`, `ScheduleDispatcher.php`, `cycle_start_planner.py:_build_lighting_tick_plan` |
 | Level switches (two-tank) | **Готово** | `ae3lite/application/level_monitor.py` |
 | day/night конфиг для pH/EC/lighting в runtime | **Готово (инфраструктура)** | `ae3lite/config/runtime_plan_builder.py:_build_day_night_config` |
 
@@ -61,7 +61,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Пробел | Влияние на плодовые | Приоритет |
 |--------|---------------------|-----------|
-| Освещение шлёт статичный duty, нет гарантированного OFF | Нарушение фотопериода, ожог, перерасход энергии | **A (высший)** |
+| Освещение шлёт статичный duty, нет гарантированного OFF | **Закрыто 2026-08-17** (гибрид окно+interval шлёт OFF на границе) | **A** |
 | Нет автодолива бака в фазе роста | Пустой бак между визитами, стоп полива | **B** |
 | Нет контура/алертов t° раствора | Корневые гнили, дрейф pH/EC | **C** |
 | Нет подмены раствора / CIP | Деградация раствора за 1–2 недели | **D** |
@@ -98,9 +98,11 @@ A (освещение day/night + OFF) ──► B (автодолив) ──�
 
 ---
 
-## Этап A — Освещение: day/night duty + гарантированный OFF (ВЫСШИЙ ПРИОРИТЕТ)
+## Этап A — Освещение: day/night duty + гарантированный OFF
 
-### A.0 Проблема
+**Статус (2026-08-17):** реализовано в Laravel + AE3. Канон — `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md` §7, `ae3lite.md` §7.2.1. Ниже — исторический doc-first план; не трактовать A.0 как текущий баг.
+
+### A.0 Проблема (историческая)
 
 Сейчас `lighting_tick` всегда шлёт одну команду включения с фиксированным `pwm_duty`
 (default 100%, см. `cycle_start_planner.py:_resolve_lighting_pwm_duty` → fallback 100).

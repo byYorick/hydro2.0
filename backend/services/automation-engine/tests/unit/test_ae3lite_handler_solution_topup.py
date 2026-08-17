@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from _test_support_runtime_plan import make_runtime_plan
+from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.solution_topup import SolutionTopupCheckHandler, SolutionTopupGuardHandler
 from ae3lite.config.schema import RuntimePlan
 
@@ -126,3 +127,29 @@ async def test_check_timeout_transitions_to_timeout_stop() -> None:
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_topup_timeout_stop"
+
+
+@pytest.mark.asyncio
+async def test_check_interrupts_on_manual_control_mode() -> None:
+    handler = SolutionTopupCheckHandler(
+        runtime_monitor=AsyncMock(),
+        command_gateway=AsyncMock(),
+    )
+    handler._read_recent_storage_event = AsyncMock(return_value=None)
+    handler._probe_irr_state = AsyncMock()
+    handler._handle_control_mode_flow_path_interrupt = AsyncMock(
+        return_value=StageOutcome(kind="transition", next_stage="manual_hold")
+    )
+    task = _task()
+    task.workflow.control_mode = "manual"
+
+    outcome = await handler.run(
+        task=task,
+        plan=_plan(),
+        stage_def=SimpleNamespace(),
+        now=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+
+    handler._handle_control_mode_flow_path_interrupt.assert_awaited_once()
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "manual_hold"

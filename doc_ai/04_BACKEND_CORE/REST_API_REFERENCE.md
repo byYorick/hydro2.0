@@ -261,12 +261,12 @@ Breaking-change: обратная совместимость со старыми
 - deprecated internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` больше не используется и должен возвращать `410 Gone`.
 
 Контракт manual device-test для `POST /api/nodes/{id}/commands`:
-- production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) должны тестироваться через `cmd=set_relay`, а не `run_pump`;
+- production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) в **ручном** device-test UI публикуются как `cmd=set_relay` (dry-run `duration_ms=3000`);
 - сервисный канал `storage_state` у `irrig`-ноды должен тестироваться через `cmd=state`;
 - `level_*` switch-каналы `irrig`-ноды тоже используют `cmd=state` на канале `storage_state`;
 - manual pump test должен передавать `params.duration_ms=3000`; это единственный разрешённый dry-run bypass для `pump_main` без flow path, и нода завершает его через `ACK -> DONE`;
 - manual valve test должен передавать `params.duration_ms=3000`; нода отвечает `ACK`, сама закрывает клапан через 3 секунды и завершает исходный `cmd_id` статусом `DONE`;
-- `run_pump` остаётся корректным для time-based pump channels, но не для actuator path production `storage_irrigation_node`.
+- `run_pump` на `pump_main` **поддерживается** прошивкой (обёртка над timed `set_relay`) и является каноном AE3 `irrigation_start`; не использовать `run_pump` для `valve_*`.
 
 ---
 

@@ -286,6 +286,25 @@ def test_default_recirc_dilute_plans_use_valve_clean_supply() -> None:
     ]
 
 
+def test_default_irrigation_start_uses_timed_run_pump() -> None:
+    start = default_two_tank_command_plan("irrigation_start", irrigation_duration_ms=180_000)
+    pump = next(item for item in start if item["channel"] == "pump_main")
+    assert pump["cmd"] == "run_pump"
+    assert pump["params"] == {"duration_ms": 180_000}
+    valves = [item for item in start if item["channel"] != "pump_main"]
+    assert all(item["cmd"] == "set_relay" and item["params"] == {"state": True} for item in valves)
+
+
+def test_resolve_two_tank_runtime_default_irrigation_start_uses_runtime_duration() -> None:
+    snap = _snapshot(correction={})
+    snap.targets = {"irrigation": {"duration_sec": 90, "interval_sec": 3600}}
+    runtime = resolve_two_tank_runtime(snap)
+    start = runtime["command_specs"]["irrigation_start"]
+    pump = next(item for item in start if item["channel"] == "pump_main")
+    assert pump["cmd"] == "run_pump"
+    assert pump["params"]["duration_ms"] == 90_000
+
+
 def test_resolve_two_tank_runtime_preserves_unknown_irrigation_strategy_for_fail_closed_runtime() -> None:
     snap = _snapshot(correction={})
     snap.targets = {

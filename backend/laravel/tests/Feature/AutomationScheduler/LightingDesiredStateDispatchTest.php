@@ -69,6 +69,110 @@ class LightingDesiredStateDispatchTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_photoperiod_plus_interval_dispatches_off_on_window_exit(): void
+    {
+        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 22:00:30', 'UTC'));
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $this->seedZoneCursor($zone->id, CarbonImmutable::parse('2026-07-07 21:30:00', 'UTC'));
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
+            'lighting' => [
+                'start_time' => '06:00:00',
+                'photoperiod_hours' => 16,
+                'interval_sec' => 1800,
+                'brightness' => 80,
+                'brightness_night' => 0,
+            ],
+        ]);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'task_id' => '5104',
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['successful_dispatches'] ?? 0));
+        Http::assertSent(function (Request $request) use ($zone): bool {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return false;
+            }
+            $payload = $request->data();
+
+            return ($payload['desired_state'] ?? null) === 'off'
+                && ($payload['brightness_pct'] ?? null) === 0;
+        });
+        Carbon::setTestNow();
+    }
+
+    public function test_window_off_retryable_failure_does_not_advance_zone_cursor(): void
+    {
+        $cursorAt = CarbonImmutable::parse('2026-07-07 21:30:00', 'UTC');
+        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 22:00:30', 'UTC'));
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $this->seedZoneCursor($zone->id, $cursorAt);
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
+            'lighting' => [
+                'start_time' => '06:00:00',
+                'photoperiod_hours' => 16,
+                'interval_sec' => 1800,
+                'brightness' => 80,
+                'brightness_night' => 0,
+            ],
+        ]);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_lighting_tick_zone_busy',
+                        'zone_id' => $zone->id,
+                        'active_task_id' => 99,
+                        'active_task_status' => 'pending',
+                    ],
+                ], 409);
+            }
+
+            return Http::response(['status' => 'error'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertSame(1, (int) ($stats['zones_pending_time_retry'] ?? 0));
+        Http::assertSent(function (Request $request) use ($zone): bool {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return false;
+            }
+            $payload = $request->data();
+
+            return ($payload['desired_state'] ?? null) === 'off';
+        });
+
+        $cursor = DB::table('laravel_scheduler_zone_cursors')
+            ->where('zone_id', $zone->id)
+            ->first();
+        $this->assertNotNull($cursor);
+        $this->assertSame(
+            $cursorAt->format('Y-m-d H:i:s'),
+            CarbonImmutable::parse($cursor->cursor_at)->utc()->format('Y-m-d H:i:s'),
+        );
+        Carbon::setTestNow();
+    }
+
     public function test_dispatcher_forwards_desired_state_and_brightness_in_start_lighting_tick_payload(): void
     {
         $zone = Zone::factory()->create([

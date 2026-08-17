@@ -322,8 +322,10 @@ async def load_irrig_fail_safe_actuators(*, zone_id: int) -> tuple[Mapping[str, 
 def build_fail_safe_shutdown_commands(
     *,
     actuators: Sequence[Mapping[str, Any]],
+    planner_step_prefix: str = "corr_interrupt_fail_safe",
 ) -> tuple[PlannedCommand, ...]:
     """Строит OFF set_relay batch: pump_main строго первым, только irrig-каналы."""
+    prefix = str(planner_step_prefix or "fail_safe_shutdown").strip() or "fail_safe_shutdown"
     pump: list[PlannedCommand] = []
     other: list[PlannedCommand] = []
     seen: set[tuple[str, str]] = set()
@@ -360,10 +362,138 @@ def build_fail_safe_shutdown_commands(
             step_no=idx + 1,
             node_uid=item.node_uid,
             channel=item.channel,
-            planner_step=f"corr_interrupt_fail_safe:{idx + 1}:{item.channel}"[:160],
+            planner_step=f"{prefix}:{idx + 1}:{item.channel}"[:160],
             payload=item.payload,
         )
         for idx, item in enumerate(ordered)
+    )
+
+
+def _normalize_fail_safe_actuators(actuators: Sequence[Any]) -> tuple[Mapping[str, Any], ...]:
+    out: list[Mapping[str, Any]] = []
+    for actuator in actuators:
+        if isinstance(actuator, Mapping):
+            out.append(
+                {
+                    "node_uid": str(actuator.get("node_uid") or "").strip(),
+                    "node_type": str(actuator.get("node_type") or "").strip().lower(),
+                    "channel": str(actuator.get("channel") or "").strip().lower(),
+                }
+            )
+            continue
+        out.append(
+            {
+                "node_uid": str(getattr(actuator, "node_uid", "") or "").strip(),
+                "node_type": str(getattr(actuator, "node_type", "") or "").strip().lower(),
+                "channel": str(getattr(actuator, "channel", "") or "").strip().lower(),
+            }
+        )
+    return tuple(out)
+
+
+async def attempt_task_fail_safe_shutdown(
+    *,
+    task: Any,
+    now: datetime,
+    command_gateway: Any | None,
+    snapshot_actuators: Sequence[Any] | None = None,
+    planner_step_prefix: str = "fail_safe_shutdown",
+) -> CorrectionInterruptFailSafeStopResult:
+    """Publish-only OFF irrig actuators through history-logger gateway.
+
+    Does not skip inactive/failed tasks: ae_commands still need a valid task_id FK.
+    Skip only when there is no gateway or no irrig fail-safe actuators.
+    """
+    if command_gateway is None or not callable(
+        getattr(command_gateway, "run_publish_only_batch", None)
+    ):
+        return CorrectionInterruptFailSafeStopResult(
+            attempted=False,
+            success=False,
+            reason="no_command_gateway",
+        )
+
+    topology = str(getattr(task, "topology", "") or "").strip().lower()
+    if topology and topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+        return CorrectionInterruptFailSafeStopResult(
+            attempted=False,
+            success=False,
+            reason=f"unsupported_topology:{topology}",
+        )
+
+    actuators: tuple[Mapping[str, Any], ...]
+    if snapshot_actuators is not None:
+        actuators = _normalize_fail_safe_actuators(snapshot_actuators)
+    else:
+        try:
+            actuators = await load_irrig_fail_safe_actuators(zone_id=int(task.zone_id))
+        except Exception:
+            _logger.warning(
+                "AE3 fail-safe shutdown: не удалось загрузить irrig actuators zone_id=%s task_id=%s",
+                getattr(task, "zone_id", None),
+                getattr(task, "id", None),
+                exc_info=True,
+            )
+            return CorrectionInterruptFailSafeStopResult(
+                attempted=False,
+                success=False,
+                reason="actuators_load_failed",
+            )
+    commands = build_fail_safe_shutdown_commands(
+        actuators=actuators,
+        planner_step_prefix=planner_step_prefix,
+    )
+    if not commands:
+        return CorrectionInterruptFailSafeStopResult(
+            attempted=False,
+            success=False,
+            reason="no_irrig_actuators",
+        )
+
+    try:
+        result = await command_gateway.run_publish_only_batch(
+            task=task,
+            commands=commands,
+            now=now,
+        )
+    except Exception as exc:
+        _logger.warning(
+            "AE3 fail-safe shutdown: publish failed zone_id=%s task_id=%s",
+            getattr(task, "zone_id", None),
+            getattr(task, "id", None),
+            exc_info=True,
+        )
+        return CorrectionInterruptFailSafeStopResult(
+            attempted=True,
+            success=False,
+            reason=f"publish_exception:{type(exc).__name__}",
+            commands_total=len(commands),
+        )
+
+    success = bool(isinstance(result, Mapping) and result.get("success"))
+    if success:
+        return CorrectionInterruptFailSafeStopResult(
+            attempted=True,
+            success=True,
+            reason="ok",
+            commands_total=len(commands),
+        )
+    error_code = (
+        str(result.get("error_code") or "publish_failed")
+        if isinstance(result, Mapping)
+        else "publish_failed"
+    )
+    _logger.error(
+        "AE3 fail-safe shutdown non-success zone_id=%s task_id=%s error_code=%s",
+        getattr(task, "zone_id", None),
+        getattr(task, "id", None),
+        error_code,
+    )
+    return CorrectionInterruptFailSafeStopResult(
+        attempted=True,
+        success=False,
+        reason=error_code,
+        commands_total=len(commands),
     )
 
 
@@ -944,6 +1074,7 @@ __all__ = [
     "PENDING_VERIFY_EVENT",
     "assess_dose_path_risk",
     "attempt_correction_interrupt_fail_safe_stop",
+    "attempt_task_fail_safe_shutdown",
     "build_fail_safe_shutdown_commands",
     "build_pending_check_from_task",
     "emit_correction_interrupt_hardware_safe",

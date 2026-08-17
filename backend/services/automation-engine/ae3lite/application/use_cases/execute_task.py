@@ -1435,11 +1435,12 @@ class ExecuteTaskUseCase:
                     exc_info=True,
                 )
                 current_task = None
-            if current_task is None or not bool(getattr(current_task, "is_active", False)):
-                self._log_skip_fail_safe_shutdown(task=task, reason="task_missing_or_inactive")
-                return
+            # Inactive/missing task still needs hardware stop; keep original task as FK.
+            if current_task is not None:
+                task = current_task
         actuators = getattr(snapshot, "actuators", ()) if snapshot is not None else ()
         if not actuators:
+            self._log_skip_fail_safe_shutdown(task=task, reason="no_snapshot_actuators")
             return
 
         planned_commands: list[PlannedCommand] = []
