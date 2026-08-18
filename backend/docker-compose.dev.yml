@@ -612,6 +612,8 @@ services:
     build:
       context: ./services
       dockerfile: feature-builder/Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     environment:
       - APP_ENV=local
       - LOG_LEVEL=DEBUG
