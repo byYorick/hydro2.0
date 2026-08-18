@@ -90,37 +90,38 @@ class StartupRecoveryUseCase:
                 released_expired_leases=released_expired_leases,
             )
         async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
-            if not acquired:
-                STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
-                logger.info(
-                    "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
-                    "(release_expired уже выполнен)",
-                )
-                # Даже без lock восстанавливаем очередь pending-verify из zone_events:
-                # иначе рестарт AE в grace-window теряет in-memory checks.
-                restored: list[CorrectionInterruptPendingCheck] = []
-                try:
-                    restored = list(await load_open_pending_correction_interrupt_checks(now=now))
-                except Exception:
-                    logger.warning(
-                        "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
-                        "(lock skipped)",
-                        exc_info=True,
-                    )
-                return StartupRecoveryResult(
+            if acquired:
+                return await self._run_scan_and_heal(
+                    now=now,
                     released_expired_leases=released_expired_leases,
-                    scanned_tasks=0,
-                    completed_tasks=0,
-                    failed_tasks=0,
-                    waiting_command_tasks=0,
-                    recovered_waiting_command_tasks=0,
-                    skipped_due_to_lock=True,
-                    pending_correction_safety_checks=tuple(restored),
                 )
-            return await self._run_scan_and_heal(
-                now=now,
-                released_expired_leases=released_expired_leases,
+
+        STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
+        logger.info(
+            "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
+            "(release_expired уже выполнен)",
+        )
+        # Fetch после выхода из advisory-lock context: соединение пула уже
+        # отпущено. Иначе pytest pool max_size=1 deadlocks на acquire.
+        restored: list[CorrectionInterruptPendingCheck] = []
+        try:
+            restored = list(await load_open_pending_correction_interrupt_checks(now=now))
+        except Exception:
+            logger.warning(
+                "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
+                "(lock skipped)",
+                exc_info=True,
             )
+        return StartupRecoveryResult(
+            released_expired_leases=released_expired_leases,
+            scanned_tasks=0,
+            completed_tasks=0,
+            failed_tasks=0,
+            waiting_command_tasks=0,
+            recovered_waiting_command_tasks=0,
+            skipped_due_to_lock=True,
+            pending_correction_safety_checks=tuple(restored),
+        )
 
     async def _run_scan_and_heal(
         self,
