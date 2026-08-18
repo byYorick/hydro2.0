@@ -196,6 +196,14 @@ esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_ui
 /**
  * @brief Обновить mqtt.host/mqtt.port в NVS, сохранив Wi-Fi и остальные поля.
  *
+ * TEST_NODE / E2E ONLY. Production nodes must not call this from live config path
+ * (`config_callback` / `node_config_handler`).
+ *
+ * Production-прошивки (pump_node, ph_node, ec_node, climate_node, light_node,
+ * relay_node, storage_irrigation_node) этот API не вызывают. Lightweight MQTT
+ * retarget `{mqtt:{host,port}}` без `channels[]` обрабатывается только в
+ * `firmware/test_node` config_callback, затем reboot.
+ *
  * Нужно для realhw e2e, когда test_node должен переключиться с dev MQTT (1883)
  * на e2e-брокер (1884) без setup-портала и без полного NodeConfig save.
  *

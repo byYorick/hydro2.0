@@ -1,8 +1,8 @@
 # TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md
 # Спецификация test_node для доведения реальных нод до боевого режима
 
-**Версия:** 1.2  
-**Дата обновления:** 2026-07-20
+**Версия:** 1.3  
+**Дата обновления:** 2026-08-18
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -527,6 +527,16 @@ Fail-safe семантика `nd-test-irrig-1` выровнена с real `stora
 - Полный `NodeConfig` из runtime MQTT intentionally не сохраняется в NVS.
 - Persist namespace fallback разрешен только для `nd-test-irrig-1`.
 - Для остальных виртуальных нод namespace runtime-only.
+
+### 7.2.1. MQTT broker retarget (только test_node)
+
+Контракт `config_callback` в `firmware/test_node/main/test_node_app.c`:
+
+- Payload `{mqtt:{host,port}}` **без** `channels[]` → запись NVS через `config_storage_set_mqtt_broker` и аппаратный reboot. Нужен для realhw e2e (dev `:1883` ↔ e2e `:1884`) без setup-портала.
+- Полный NodeConfig **с** `channels[]` (в том числе `mqtt.host=mosquitto` или `localhost` из docker DNS backend) → retarget **игнорируется**. Иначе backend NodeConfig увёл бы устройство на недостижимый брокер.
+- Production firmware этот путь **не реализует**. Live config боевых нод (`pump_node`, `ph_node`, `ec_node`, `climate_node`, `light_node`, `relay_node`, `storage_irrigation_node`) идёт через `node_config_handler`: требуется полный NodeConfig (`node_id` / `version` / `type` / `channels`), `config_storage_set_mqtt_broker` не вызывается. API остаётся в общем `config_storage` только потому, что его линкует `test_node`; production nodes must not call this from live config path.
+
+Канон для миграции test→real: `TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md` §6.1.
 
 ## 7.3. Ограничения security
 

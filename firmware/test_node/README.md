@@ -285,6 +285,28 @@ python3 firmware/tests/test_node_compatibility.py \
 - Heartbeat: `{uptime, free_heap, rssi?}`
 - Статус: `{status, ts}`
 
+## MQTT broker retarget (только test_node / e2e)
+
+Этот путь живёт **только** в `firmware/test_node`. Production firmware его не реализует.
+
+- Payload `{mqtt:{host,port}}` **без** `channels[]` на `hydro/{gh}/{zone}/nd-test-irrig-1/config` → `config_storage_set_mqtt_broker` пишет NVS mqtt.host/port и `esp_restart()`.
+- Полный NodeConfig **с** `channels[]` (в том числе `mqtt.host=mosquitto` или `localhost` из docker DNS backend) → retarget **игнорируется**.
+- Production-прошивки (`pump_node`, `ph_node`, `ec_node`, `climate_node`, `light_node`, `relay_node`, `storage_irrigation_node`) mqtt-only patch не применяют: live config идёт через `node_config_handler` (нужен полный NodeConfig). API `config_storage_set_mqtt_broker` — test_node/e2e-only; production nodes must not call this from live config path.
+
+Host — LAN IP хоста (`MQTT_EXTERNAL_HOST` / `--host`), не docker DNS `mosquitto`/`localhost`.
+
+- **1883** — dev compose (`backend/docker-compose.dev.yml`)
+- **1884** — e2e compose (`tests/e2e/docker-compose.e2e.yml`)
+
+```bash
+tests/e2e/scripts/retarget_test_node_mqtt.sh --e2e   # → :1884
+tests/e2e/scripts/retarget_test_node_mqtt.sh --dev   # → :1883
+```
+
+Namespace по умолчанию `gh-test-1/zn-test-1` (`TEST_NODE_GH_UID` / `TEST_NODE_ZONE_UID`). Не публиковать в `hydro/system/`.
+
+Канон: [`doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md`](../../doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md) §7.2.1, [`TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md`](../../doc_ai/02_HARDWARE_FIRMWARE/TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md) §6.1.
+
 ## Setup/preconfig режим
 
 Если в NVS нет валидных WiFi/MQTT настроек, прошивка автоматически запускает setup-портал:

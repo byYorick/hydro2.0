@@ -4817,7 +4817,9 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         cJSON *mqtt_host_item = mqtt_item ? cJSON_GetObjectItem(mqtt_item, "host") : NULL;
         cJSON *mqtt_port_item = mqtt_item ? cJSON_GetObjectItem(mqtt_item, "port") : NULL;
         cJSON *channels_item = cJSON_GetObjectItem(config_json, "channels");
-        // Full NodeConfig from backend may contain docker DNS mqtt.host (mosquitto/localhost).
+        // test_node / e2e only. Production nodes must not call set_mqtt_broker
+        // from the live config path. Full NodeConfig from backend may contain
+        // docker DNS mqtt.host (mosquitto/localhost) — ignore those (need channels[]).
         // Accept broker retarget only from lightweight payloads without channels[].
         if (
             !cJSON_IsArray(channels_item) &&

@@ -1161,6 +1161,11 @@ esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_ui
     return err;
 }
 
+/* test_node / e2e only. Production nodes must not call this from live config path.
+ * Lightweight `{mqtt:{host,port}}` without channels[] is handled in test_node
+ * config_callback (+ reboot). Full NodeConfig save (with channels[]) is a
+ * separate path and must not go through this helper.
+ */
 esp_err_t config_storage_set_mqtt_broker(const char *host, uint16_t port) {
     char *config_json = NULL;
     cJSON *config = NULL;
