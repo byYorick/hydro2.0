@@ -65,7 +65,7 @@ class SchedulerReliabilityR6Test extends TestCase
 
     public function test_window_boundary_schedule_without_interval_dispatches_only_on_crossing(): void
     {
-        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 08:00:30', 'UTC'));
+        Carbon::setTestNow(CarbonImmutable::parse('2026-07-07 05:00:30', 'UTC'));
         [$zone, $cycle] = $this->createZoneAndCycle();
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
             'lighting' => [
@@ -226,6 +226,45 @@ class SchedulerReliabilityR6Test extends TestCase
             'code' => 'biz_irrigation_window_missed',
             'status' => 'ACTIVE',
         ]);
+    }
+
+    public function test_solution_change_zone_busy_is_recorded_as_backpressure(): void
+    {
+        Carbon::setTestNow(CarbonImmutable::parse('2026-08-17 12:00:00', 'UTC'));
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, [
+            'solution_change' => [
+                'interval_sec' => 180,
+                'enabled' => true,
+            ],
+        ]);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-solution-change')) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_solution_change_zone_busy',
+                        'zone_id' => $zone->id,
+                        'active_task_id' => 12,
+                        'active_task_status' => 'pending',
+                    ],
+                ], 409);
+            }
+
+            return Http::response(['status' => 'error'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertDatabaseHas('laravel_scheduler_dispatch_metric_totals', [
+            'zone_id' => $zone->id,
+            'task_type' => 'solution_change',
+            'result' => 'backpressure',
+            'total' => 1,
+        ]);
+        Carbon::setTestNow();
     }
 
     public function test_scheduler_metrics_endpoint_requires_token_when_configured(): void

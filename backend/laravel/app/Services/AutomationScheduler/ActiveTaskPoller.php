@@ -166,6 +166,20 @@ class ActiveTaskPoller
             return true;
         }
 
+        if ($this->relatedAeTaskIsLive($task)) {
+            if ($status !== null && $this->isTerminalStatus($status)) {
+                Log::warning('AE3 scheduler poll saw terminal intent while ae_task is still live; keeping busy', [
+                    'task_id' => $taskId,
+                    'zone_id' => (int) $task->zone_id,
+                    'intent_status' => $status,
+                    'ae_task_status' => $this->fetchRelatedAeTaskStatus($task),
+                ]);
+            }
+            $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
+
+            return true;
+        }
+
         if ($status !== null && $this->isTerminalStatus($status)) {
             $this->activeTaskStore->markTerminal(
                 taskId: $taskId,
@@ -216,12 +230,21 @@ class ActiveTaskPoller
                 ],
                 lastPolledAt: $now,
             );
-            $this->syncIntentTerminalStatus(
-                task: $task,
-                terminalStatus: $terminalStatus,
-                terminalSource: $terminalSource,
-                now: $now,
-            );
+            if ($this->relatedAeTaskAllowsIntentTerminalWrite($task)) {
+                $this->syncIntentTerminalStatus(
+                    task: $task,
+                    terminalStatus: $terminalStatus,
+                    terminalSource: $terminalSource,
+                    now: $now,
+                );
+            } else {
+                Log::warning('Skipping intent terminal sync on hard-stale: related ae_task is not terminal', [
+                    'task_id' => $taskId,
+                    'zone_id' => (int) $task->zone_id,
+                    'ae_task_status' => $this->fetchRelatedAeTaskStatus($task),
+                    'terminal_source' => $terminalSource,
+                ]);
+            }
             $writeLog(SchedulerRuntimeHelper::scheduleTaskLogName((int) $task->zone_id, (string) $task->task_type), 'failed', [
                 'zone_id' => (int) $task->zone_id,
                 'task_type' => (string) $task->task_type,
@@ -522,6 +545,18 @@ class ActiveTaskPoller
             'cancelled' => 'cancelled',
             default => 'failed',
         };
+        if ($intentStatus !== 'completed' && ! $this->relatedAeTaskAllowsIntentTerminalWrite($task)) {
+            Log::warning('Refusing to mark zone_automation_intents terminal while related ae_task is not terminal', [
+                'task_id' => trim((string) $task->task_id),
+                'zone_id' => (int) $task->zone_id,
+                'intent_id' => $intentId,
+                'terminal_status' => $terminalStatus,
+                'terminal_source' => $terminalSource,
+                'ae_task_status' => $this->fetchRelatedAeTaskStatus($task),
+            ]);
+
+            return;
+        }
         $errorCode = $intentStatus === 'failed' ? 'scheduler_task_'.$terminalStatus : null;
         $errorMessage = $intentStatus === 'failed'
             ? sprintf(
@@ -590,5 +625,75 @@ class ActiveTaskPoller
     private function isTerminalStatus(string $status): bool
     {
         return in_array($status, SchedulerConstants::TERMINAL_STATUSES, true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function aeTaskTerminalStatuses(): array
+    {
+        return ['completed', 'failed', 'cancelled'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function aeTaskLiveStatuses(): array
+    {
+        return ['pending', 'claimed', 'running', 'waiting_command'];
+    }
+
+    private function relatedAeTaskIsLive(LaravelSchedulerActiveTask $task): bool
+    {
+        if ($this->resolveAutomationRuntime((int) $task->zone_id, 'laravel scheduler task') !== 'ae3') {
+            return false;
+        }
+
+        $status = $this->fetchRelatedAeTaskStatus($task);
+
+        return $status !== null && in_array($status, $this->aeTaskLiveStatuses(), true);
+    }
+
+    private function relatedAeTaskAllowsIntentTerminalWrite(LaravelSchedulerActiveTask $task): bool
+    {
+        if ($this->resolveAutomationRuntime((int) $task->zone_id, 'laravel scheduler task') !== 'ae3') {
+            return true;
+        }
+
+        $status = $this->fetchRelatedAeTaskStatus($task);
+
+        return $status !== null && in_array($status, $this->aeTaskTerminalStatuses(), true);
+    }
+
+    private function fetchRelatedAeTaskStatus(LaravelSchedulerActiveTask $task): ?string
+    {
+        $taskId = trim((string) $task->task_id);
+        if (preg_match('/^\d+$/', $taskId) !== 1) {
+            return null;
+        }
+
+        try {
+            $row = DB::table('ae_tasks')
+                ->where('id', (int) $taskId)
+                ->where('zone_id', (int) $task->zone_id)
+                ->first(['status']);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to read ae_tasks status for scheduler poller', [
+                'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+
+            return null;
+        }
+
+        if ($row === null) {
+            return null;
+        }
+
+        $status = strtolower(trim((string) ($row->status ?? '')));
+
+        return $status === '' ? null : $status;
     }
 }

@@ -131,9 +131,11 @@ typedef void (*mqtt_connection_callback_t)(bool connected, void *user_ctx);
 
 /**
  * @brief Регистрация MQTT callbacks для config_apply_mqtt
- * 
+ *
  * Эта функция позволяет node_config_handler автоматически переподключать MQTT
- * при изменении MQTT настроек в NodeConfig.
+ * при изменении MQTT настроек в полном NodeConfig (есть `channels[]`).
+ * Это не lightweight retarget: production nodes must not call
+ * `config_storage_set_mqtt_broker` from the live config path.
  * 
  * @param config_cb Callback для обработки config сообщений
  * @param command_cb Callback для обработки command сообщений

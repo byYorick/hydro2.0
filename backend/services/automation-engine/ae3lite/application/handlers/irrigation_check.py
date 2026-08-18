@@ -223,10 +223,34 @@ class IrrigationCheckHandler(BaseStageHandler):
                     correction_cfg=correction_cfg,
                     key="max_ph_correction_attempts",
                 )
+                ec_component = str(
+                    getattr(execution, "irrigation_ec_component", None) or "none"
+                ).strip().lower()
+                if ec_component not in {"calcium", "npk"}:
+                    ec_component = "none"
+
+                if ec_component == "none":
+                    pipeline_phase = "irrigation_ph"
+                    active_component = "ph"
+                    allow_ec_attempts = 0
+                    ec_pid_frozen = True
+                else:
+                    pipeline_phase = f"irrigation_{ec_component}"
+                    active_component = ec_component
+                    allow_ec_attempts = ec_max_attempts
+                    ec_pid_frozen = False
+                (
+                    component_targets_json,
+                    baseline_id,
+                    water_ec,
+                    water_ph,
+                    nutrient_budget,
+                ) = await self._load_irrigation_nutrient_baseline(task=task)
+
                 corr = CorrectionState.build_default(
                     corr_step="corr_check",
-                    max_attempts=max(ec_max_attempts, ph_max_attempts),
-                    ec_max_attempts=0,  # irrigation: pH only
+                    max_attempts=max(allow_ec_attempts, ph_max_attempts) or ph_max_attempts,
+                    ec_max_attempts=allow_ec_attempts,
                     ph_max_attempts=ph_max_attempts,
                     activated_here=False,  # irrigation_start already ran sensor_mode_activate
                     stabilization_sec=self._required_correction_int(
@@ -239,9 +263,14 @@ class IrrigationCheckHandler(BaseStageHandler):
                 corr = replace(
                     corr,
                     **self._probe_snapshot_correction_fields(task=task),
-                    pipeline_phase="irrigation_ph",
-                    active_component=None,
-                    ec_pid_frozen=True,
+                    pipeline_phase=pipeline_phase,
+                    active_component=active_component,
+                    ec_pid_frozen=ec_pid_frozen,
+                    component_targets_json=component_targets_json,
+                    baseline_id=baseline_id,
+                    water_ec=water_ec,
+                    water_ph=water_ph,
+                    nutrient_budget=nutrient_budget,
                 )
                 IRRIGATION_CORRECTION_ENTERED.labels(topology=topology).inc()
                 try:
@@ -251,6 +280,8 @@ class IrrigationCheckHandler(BaseStageHandler):
                         "current_stage": "irrigation_check",
                         "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
                         "topology": topology,
+                        "irrigation_ec_component": ec_component,
+                        "pipeline_phase": pipeline_phase,
                     }
                     snapshot_ctx = self._probe_snapshot_context(task=task)
                     if isinstance(snapshot_ctx, Mapping):
@@ -273,6 +304,51 @@ class IrrigationCheckHandler(BaseStageHandler):
                 return StageOutcome(kind="enter_correction", correction=corr, task_override=task)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.level_poll_interval_sec))
+
+    async def _load_irrigation_nutrient_baseline(
+        self,
+        *,
+        task: Any,
+    ) -> tuple[str | None, int | None, float | None, float | None, float | None]:
+        """Load latest zone prepare baseline for irrigation Ca/NPK T_step.
+
+        Irrigation top-up may reuse zone-wide latest baseline (unlike prepare_recirc,
+        which is fail-closed per task). Missing baseline → targets_json=None and
+        planner falls back to runtime target_ec.
+        """
+        try:
+            from ae3lite.infrastructure.repositories.prepare_baseline_repository import (
+                PgPrepareBaselineRepository,
+            )
+
+            row = await PgPrepareBaselineRepository().fetch_latest_baseline(
+                zone_id=int(task.zone_id),
+            )
+            if row is None:
+                return None, None, None, None, None
+            baseline_id = int(row["id"]) if row.get("id") is not None else None
+            raw_targets = row.get("component_targets_json")
+            if isinstance(raw_targets, str) and raw_targets.strip():
+                targets_json = raw_targets
+            elif isinstance(raw_targets, Mapping):
+                import json
+
+                targets_json = json.dumps(raw_targets, separators=(",", ":"), sort_keys=True)
+            else:
+                targets_json = None
+            water_ec = float(row["water_ec"]) if row.get("water_ec") is not None else None
+            water_ph = float(row["water_ph"]) if row.get("water_ph") is not None else None
+            nutrient_budget = None
+            if water_ec is not None and row.get("target_ec") is not None:
+                nutrient_budget = round(float(row["target_ec"]) - float(water_ec), 6)
+            return targets_json, baseline_id, water_ec, water_ph, nutrient_budget
+        except Exception:
+            _logger.warning(
+                "irrigation_check: не удалось загрузить baseline zone_id=%s",
+                getattr(task, "zone_id", None),
+                exc_info=True,
+            )
+            return None, None, None, None, None
 
     def _recent_solution_low_event_confirms_active_low(
         self,

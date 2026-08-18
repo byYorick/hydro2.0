@@ -36,6 +36,7 @@ try:
     from .steps.database import DatabaseStepExecutor
     from .steps.mqtt import MQTTStepExecutor
     from .steps.waiting import WaitingStepExecutor
+    from .scenario_loader import expand_include_sequences
 except ImportError:
     # When run directly - use absolute imports
     from api_client import APIClient, AuthenticationError
@@ -54,6 +55,7 @@ except ImportError:
     from steps.database import DatabaseStepExecutor
     from steps.mqtt import MQTTStepExecutor
     from steps.waiting import WaitingStepExecutor
+    from scenario_loader import expand_include_sequences
 
 logging.basicConfig(
     level=logging.INFO,
@@ -222,7 +224,7 @@ class E2ERunner:
 
         scenario_ref = scenario.get("scenario_ref")
         if not scenario_ref:
-            return scenario
+            return expand_include_sequences(scenario, normalized_path.parent)
 
         ref_path = Path(str(scenario_ref))
         if not ref_path.is_absolute():
@@ -234,7 +236,7 @@ class E2ERunner:
             if key == "scenario_ref":
                 continue
             merged[key] = value
-        return merged
+        return expand_include_sequences(merged, normalized_path.parent)
 
     def _apply_scenario_auth_context(self, scenario: Dict[str, Any]) -> None:
         """Apply auth_email/auth_role from scenario YAML before setup/token fetch."""

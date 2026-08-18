@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from ae3lite.api.contracts import StartSolutionTopupRequest
 from ae3lite.application.level_monitor import (
     DEFAULT_SOLUTION_MAX_LABELS,
     level_snapshot_aliases,
@@ -204,12 +203,6 @@ class TriggerSolutionTopupFromLevelEventUseCase:
         if intent_id is None:
             return {"triggered": False, "reason": "intent_upsert_failed"}
 
-        req = StartSolutionTopupRequest(
-            source="level_event",
-            idempotency_key=idempotency_key,
-            mode="normal",
-            trigger="level_switch",
-        )
         claim: dict[str, Any] = {}
         decision = ""
         for attempt in range(3):
@@ -224,7 +217,7 @@ class TriggerSolutionTopupFromLevelEventUseCase:
             await asyncio.sleep(0.05 * (attempt + 1))
         intent_row = dict(claim.get("intent") or {})
         if decision == "zone_busy":
-            await self._mark_requested_intent_terminal_zone_busy(claim=claim, zone_id=zone_id, now=now_utc)
+            # Keep requested intent pending: 409/busy is retryable with the same key.
             return {"triggered": False, "reason": "intent_claim_zone_busy", "intent_id": intent_id}
         if decision == "missing":
             return {"triggered": False, "reason": "intent_claim_missing", "intent_id": intent_id}
@@ -371,37 +364,5 @@ class TriggerSolutionTopupFromLevelEventUseCase:
                 intent_id,
                 exc_info=True,
             )
-
-    async def _mark_requested_intent_terminal_zone_busy(
-        self,
-        *,
-        claim: Mapping[str, Any],
-        zone_id: int,
-        now: datetime,
-    ) -> None:
-        requested = claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await self._zone_intent_repository.mark_terminal(
-                intent_id=requested_intent_id,
-                now=now,
-                success=False,
-                error_code="start_solution_topup_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _logger.warning(
-                "Level-event solution_topup не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
 
 __all__ = ["TriggerSolutionTopupFromLevelEventUseCase"]

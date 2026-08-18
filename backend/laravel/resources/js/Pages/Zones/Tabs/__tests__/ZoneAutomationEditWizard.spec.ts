@@ -82,6 +82,7 @@ function createProps(overrides: Record<string, unknown> = {}) {
       ecPct: 10,
       valveSwitching: true,
       correctionDuringIrrigation: true,
+      irrigationEcComponent: 'none',
       enableDrainControl: true,
       drainTargetPercent: 20,
       diagnosticsEnabled: true,

@@ -10,6 +10,8 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 # ── Значения по умолчанию для лимитов retry/attempt ─────────────────────────
 
 _MAX_CORRECTION_ATTEMPTS: int = 500
+# Mirror history-logger command_service._MAX_DURATION_MS_SANITY. Do not raise that ceiling here.
+HL_RUN_PUMP_MAX_DURATION_MS: int = 300_000
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
     "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
     "irrigation_pump_stop": ("pump_main",),
@@ -27,12 +29,24 @@ _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
 }
 
 
-def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
+def default_two_tank_command_plan(
+    plan_name: str,
+    *,
+    irrigation_duration_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    requested_ms = int(irrigation_duration_ms or 120_000)
+    if plan_name == "irrigation_start" and requested_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+        raise PlannerConfigurationError(
+            "irrigation_start run_pump duration_ms="
+            f"{requested_ms} exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+            "refusing to open valves before an INVALID pump command"
+        )
+    pump_duration_ms = max(1000, min(HL_RUN_PUMP_MAX_DURATION_MS, requested_ms))
     defaults: dict[str, list[dict[str, Any]]] = {
         "irrigation_start": [
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
             {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
-            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "pump_main", "cmd": "run_pump", "params": {"duration_ms": pump_duration_ms}},
         ],
         "irrigation_pump_stop": [
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
@@ -115,7 +129,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
     _require_pid_configs(snapshot=snapshot, zone_id=zone_id)
-    resolved_meta_cfg = _to_mapping(resolved_cfg.get("meta"))
     resolved_pump_calibration_cfg = _to_mapping(resolved_cfg.get("pump_calibration"))
     solution_fill_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("solution_fill")))
     tank_recirc_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("tank_recirc")))
@@ -140,9 +153,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
 
-    base_runtime_cfg = _to_mapping(resolved_base_cfg.get("runtime"))
-    base_timing_cfg = _to_mapping(resolved_base_cfg.get("timing"))
-    base_retry_cfg = _to_mapping(resolved_base_cfg.get("retry"))
     fill_runtime_cfg = _to_mapping(solution_fill_cfg.get("runtime"))
     fill_timing_cfg = _to_mapping(solution_fill_cfg.get("timing"))
     fill_retry_cfg = _to_mapping(solution_fill_cfg.get("retry"))
@@ -385,6 +395,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     }
     _validate_prepare_recirculation_timing(runtime)
 
+    irrigation_duration_ms = _irrigation_start_duration_ms(runtime.get("irrigation_execution"))
     for plan_name in (
         "irrigation_start",
         "irrigation_pump_stop",
@@ -402,10 +413,17 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     ):
         runtime["command_specs"][plan_name] = _normalize_command_plan(
             commands_cfg.get(plan_name),
-            default_plan=default_two_tank_command_plan(plan_name),
+            default_plan=default_two_tank_command_plan(
+                plan_name,
+                irrigation_duration_ms=irrigation_duration_ms,
+            ),
             default_node_types=runtime["required_node_types"],
         )
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
+        _assert_run_pump_duration_within_hl_ceiling(
+            plan_name=plan_name,
+            normalized_plan=runtime["command_specs"][plan_name],
+        )
         _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
 
@@ -855,6 +873,25 @@ def _resolve_phase_target_bound(*, snapshot: Any, key: str, bound: str, fallback
         raise PlannerConfigurationError(f"Значение {key}_{bound} не является числом: {candidate!r}")
 
 
+def _irrigation_start_duration_ms(irrigation_execution: Any) -> int:
+    """Duration for default irrigation_start run_pump; matches planner fallback 120s."""
+    duration_sec = 120
+    if isinstance(irrigation_execution, Mapping):
+        raw = irrigation_execution.get("duration_sec")
+        try:
+            duration_sec = max(1, min(3600, int(raw)))
+        except (TypeError, ValueError):
+            duration_sec = 120
+    duration_ms = max(1000, int(duration_sec) * 1000)
+    if duration_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+        raise PlannerConfigurationError(
+            "irrigation_start run_pump duration_ms="
+            f"{duration_ms} exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+            "refusing to open valves before an INVALID pump command"
+        )
+    return duration_ms
+
+
 def _normalize_command_plan(
     raw_value: Any,
     *,
@@ -927,6 +964,31 @@ def _assert_required_command_contract(*, plan_name: str, normalized_plan: Sequen
         )
 
 
+def _assert_run_pump_duration_within_hl_ceiling(
+    *,
+    plan_name: str,
+    normalized_plan: Sequence[Mapping[str, Any]],
+) -> None:
+    """Fail-closed before valve commands if run_pump exceeds HL duration sanity ceiling."""
+    for entry in normalized_plan:
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("cmd") or "").strip().lower() != "run_pump":
+            continue
+        params = entry.get("params")
+        params = params if isinstance(params, Mapping) else {}
+        try:
+            duration_ms = int(params.get("duration_ms") or 0)
+        except (TypeError, ValueError):
+            continue
+        if duration_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+            raise PlannerConfigurationError(
+                f"two_tank command plan {plan_name} run_pump duration_ms={duration_ms} "
+                f"exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+                "refusing to open valves before an INVALID pump command"
+            )
+
+
 def _normalize_controllers(raw_value: Any) -> dict[str, Any]:
     if not isinstance(raw_value, Mapping):
         return {}
@@ -979,7 +1041,21 @@ def _optional_float(raw_value: Any) -> float | None:
 
 def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     irrigation = _to_mapping(_to_mapping(getattr(snapshot, "targets", None)).get("irrigation"))
-    corr_during = bool(irrigation.get("correction_during_irrigation", True))
+    # Canonical path after merge_task_execution: targets.irrigation.execution.*.
+    # Top-level irrigation.* kept as fallback for legacy snapshots.
+    execution = _to_mapping(irrigation.get("execution"))
+
+    def _exec_or_top(key: str, default: Any = None) -> Any:
+        if key in execution:
+            return execution.get(key)
+        if key in irrigation:
+            return irrigation.get(key)
+        return default
+
+    corr_during = bool(_exec_or_top("correction_during_irrigation", True))
+    ec_component = str(_exec_or_top("irrigation_ec_component") or "none").strip().lower()
+    if ec_component not in {"none", "calcium", "npk"}:
+        ec_component = "none"
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
         # Для путей планирования `cycle_start` irrigation-target'ы могут отсутствовать.
         # Они обязательны только при реальном выполнении задач `irrigation_start`.
@@ -987,6 +1063,7 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
             "duration_sec": None,
             "interval_sec": None,
             "correction_during_irrigation": corr_during,
+            "irrigation_ec_component": ec_component,
             "correction_slack_sec": _resolve_bounded_int(
                 irrigation.get("correction_slack_sec"),
                 900 if corr_during else 0,
@@ -1028,6 +1105,7 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
             maximum=86400,
         ),
         "correction_during_irrigation": corr_during,
+        "irrigation_ec_component": ec_component,
         "correction_slack_sec": correction_slack_sec,
         "stage_timeout_sec": stage_timeout_sec,
     }
@@ -1067,7 +1145,7 @@ def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
         "enabled": False,
         "max_continue_attempts": _resolve_bounded_int(recovery.get("max_continue_attempts"), 5, 1, 30),
         "timeout_sec": _resolve_bounded_int(recovery.get("timeout_sec"), 600, 30, 86400),
-        "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", True)),
+        "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", False)),
         "max_setup_replays": _resolve_bounded_int(recovery.get("max_setup_replays"), 1, 0, 10),
     }
 

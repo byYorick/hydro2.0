@@ -33,6 +33,7 @@ class StoreZoneAutomationPresetRequest extends FormRequest
             'config.irrigation.duration_sec' => ['required', 'integer', 'min:10', 'max:86400'],
             'config.irrigation.interval_sec' => ['required', 'integer', 'min:60', 'max:86400'],
             'config.irrigation.correction_during_irrigation' => ['required', 'boolean'],
+            'config.irrigation.irrigation_ec_component' => ['sometimes', 'string', 'in:none,calcium,npk'],
             'config.irrigation.correction_slack_sec' => ['required', 'integer', 'min:0', 'max:3600'],
 
             'config.irrigation_decision' => ['required', 'array'],

@@ -125,6 +125,7 @@ async def lifespan(app: FastAPI):
     setup_standard_logging("feature-builder")
     install_exception_handlers("feature-builder", logger)
     await _init_pool()
+    _install_signal_handlers()
     task = asyncio.create_task(_poll_loop(), name="feature-builder-poll")
     try:
         yield

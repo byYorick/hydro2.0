@@ -33,6 +33,7 @@ class UpdateZoneAutomationPresetRequest extends FormRequest
             'config.irrigation.duration_sec' => ['sometimes', 'integer', 'min:10', 'max:86400'],
             'config.irrigation.interval_sec' => ['sometimes', 'integer', 'min:60', 'max:86400'],
             'config.irrigation.correction_during_irrigation' => ['sometimes', 'boolean'],
+            'config.irrigation.irrigation_ec_component' => ['sometimes', 'string', 'in:none,calcium,npk'],
             'config.irrigation.correction_slack_sec' => ['sometimes', 'integer', 'min:0', 'max:3600'],
 
             'config.irrigation_decision' => ['sometimes', 'array'],

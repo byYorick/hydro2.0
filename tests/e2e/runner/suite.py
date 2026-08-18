@@ -140,6 +140,7 @@ class TestSuite:
             str(base_path / "ae3lite" / "E115_ae3_solution_change_operator_gate_realhw.yaml"),
             str(base_path / "ae3lite" / "E116_ae3_estop_failsafe_events_realhw.yaml"),
             str(base_path / "ae3lite" / "E118_ae3_water_baseline_and_ca_fill_realhw.yaml"),
+            str(base_path / "ae3lite" / "E119_ae3_prepare_pipeline_sequence_realhw.yaml"),
             str(base_path / "ae3lite" / "E120_ae3_recirc_dilute_overshoot_realhw.yaml"),
         ]
         ae3lite_testnode_realhw_irrigation = [
@@ -297,6 +298,8 @@ class TestSuite:
                     scenarios.append(path)
                 elif Path(path).is_dir():
                     for yaml_file in Path(path).glob("**/*.yaml"):
+                        if yaml_file.name.startswith("_"):
+                            continue
                         scenarios.append(str(yaml_file))
                 continue
 
@@ -306,6 +309,8 @@ class TestSuite:
                 scenarios.append(str(rel_path))
             elif rel_path.is_dir():
                 for yaml_file in rel_path.glob("**/*.yaml"):
+                    if yaml_file.name.startswith("_"):
+                        continue
                     scenarios.append(str(yaml_file))
             else:
                 # Try with .yaml extension

@@ -221,6 +221,7 @@ def build_ae3_runtime_bundle(
     )
     set_control_mode_use_case = SetControlModeUseCase(
         task_repository=task_repository,
+        command_gateway=command_gateway,
     )
     solution_tank_startup_guard_use_case = GuardSolutionTankStartupResetUseCase(
         runtime_monitor=runtime_monitor,

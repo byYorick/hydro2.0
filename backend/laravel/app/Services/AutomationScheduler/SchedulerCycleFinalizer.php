@@ -34,24 +34,35 @@ class SchedulerCycleFinalizer
     /**
      * @return array<int, CarbonImmutable>
      */
-    public function scheduleCrossings(CarbonImmutable $last, CarbonImmutable $now, string $targetTime): array
-    {
+    public function scheduleCrossings(
+        CarbonImmutable $last,
+        CarbonImmutable $now,
+        string $targetTime,
+        string $timezone = 'UTC',
+    ): array {
         if ($now->lt($last)) {
             [$last, $now] = [$now, $last];
         }
 
-        $startDate = $last->startOfDay();
-        $endDate = $now->startOfDay();
+        $tz = SchedulerRuntimeHelper::normalizeTimezone($timezone) ?? 'UTC';
+        $lastLocal = $last->setTimezone($tz);
+        $nowLocal = $now->setTimezone($tz);
+        $startDate = $lastLocal->startOfDay();
+        $endDate = $nowLocal->startOfDay();
         $crossings = [];
 
         for ($cursor = $startDate; $cursor->lte($endDate); $cursor = $cursor->addDay()) {
             $candidate = CarbonImmutable::createFromFormat(
                 'Y-m-d H:i:s',
                 $cursor->toDateString().' '.$targetTime,
-                'UTC',
+                $tz,
             );
-            if ($candidate->gt($last) && $candidate->lte($now)) {
-                $crossings[] = $candidate;
+            if ($candidate === false) {
+                continue;
+            }
+            $candidateUtc = $candidate->utc();
+            if ($candidateUtc->gt($last) && $candidateUtc->lte($now)) {
+                $crossings[] = $candidateUtc;
             }
         }
 
@@ -138,10 +149,42 @@ class SchedulerCycleFinalizer
             return true;
         }
         if ($start < $end) {
-            return $now >= $start && $now <= $end;
+            return $now >= $start && $now < $end;
         }
 
-        return $now >= $start || $now <= $end;
+        return $now >= $start || $now < $end;
+    }
+
+    public function isUtcMomentInWindow(
+        CarbonImmutable $momentUtc,
+        string $startTime,
+        string $endTime,
+        string $timezone = 'UTC',
+    ): bool {
+        $tz = SchedulerRuntimeHelper::normalizeTimezone($timezone) ?? 'UTC';
+
+        return $this->isTimeInWindow(
+            $momentUtc->setTimezone($tz)->format('H:i:s'),
+            $startTime,
+            $endTime,
+        );
+    }
+
+    public function windowBoundaryAt(
+        CarbonImmutable $last,
+        CarbonImmutable $now,
+        string $startTime,
+        string $endTime,
+        bool $enteringWindow,
+        string $timezone = 'UTC',
+    ): CarbonImmutable {
+        $boundaryTime = $enteringWindow ? $startTime : $endTime;
+        $crossings = $this->scheduleCrossings($last, $now, $boundaryTime, $timezone);
+        if ($crossings !== []) {
+            return $crossings[array_key_last($crossings)];
+        }
+
+        return $now;
     }
 
     public function onceReadyToDispatch(CarbonImmutable $last, CarbonImmutable $now, string $runAtIso): bool

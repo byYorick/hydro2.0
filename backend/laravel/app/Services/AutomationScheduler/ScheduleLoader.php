@@ -79,6 +79,7 @@ class ScheduleLoader
                     'cycle_id' => (int) $cycle->id,
                     'error' => $payload['error'],
                 ]);
+
                 continue;
             }
             if (! is_array($payload['targets'] ?? null)) {
@@ -153,6 +154,38 @@ class ScheduleLoader
                 $result[$taskName] = CarbonImmutable::parse((string) $lastAt, 'UTC')->setMicroseconds(0);
             } catch (\Throwable) {
                 continue;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     * @return array<int, string>
+     */
+    public function loadZoneTimezones(array $zoneIds): array
+    {
+        if ($zoneIds === []) {
+            return [];
+        }
+
+        $rows = DB::table('zones')
+            ->leftJoin('greenhouses', 'zones.greenhouse_id', '=', 'greenhouses.id')
+            ->whereIn('zones.id', $zoneIds)
+            ->get(['zones.id', 'greenhouses.timezone']);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $zoneId = (int) ($row->id ?? 0);
+            if ($zoneId <= 0) {
+                continue;
+            }
+            $tz = SchedulerRuntimeHelper::normalizeTimezone(
+                is_string($row->timezone ?? null) ? (string) $row->timezone : null,
+            );
+            if ($tz !== null) {
+                $result[$zoneId] = $tz;
             }
         }
 

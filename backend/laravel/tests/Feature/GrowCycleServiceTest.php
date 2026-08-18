@@ -623,7 +623,7 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_retries_start_cycle_zone_busy_and_marks_intent_failed_with_structured_code(): void
+    public function it_retries_start_cycle_zone_busy_and_leaves_intent_pending(): void
     {
         $zone = Zone::factory()->create();
         $plant = Plant::factory()->create();
@@ -687,6 +687,10 @@ class GrowCycleServiceTest extends TestCase
         $this->assertSame(5, $dispatcher->dispatchAttempts);
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseMissing('zone_automation_intents', [
             'zone_id' => $zone->id,
             'status' => 'failed',
             'error_code' => 'automation_engine_start_cycle_zone_busy',
@@ -1199,7 +1203,7 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_marks_expired_tasks_as_failed(): void
+    public function ae3_reap_stale_tasks_does_not_fail_stale_ae_tasks(): void
     {
         $zoneA = Zone::factory()->create();
         $zoneB = Zone::factory()->create();
@@ -1231,18 +1235,16 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('ae_tasks', [
             'idempotency_key' => 'reap-test-deadline',
-            'status' => 'failed',
-            'error_code' => 'stage_deadline_exceeded',
+            'status' => 'running',
         ]);
         $this->assertDatabaseHas('ae_tasks', [
             'idempotency_key' => 'reap-test-claim-stale',
-            'status' => 'failed',
-            'error_code' => 'claim_stale',
+            'status' => 'claimed',
         ]);
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_syncs_intent_on_stage_deadline_exceeded(): void
+    public function ae3_reap_stale_tasks_does_not_fail_intent_while_ae_task_is_live(): void
     {
         $zone = Zone::factory()->create();
         $key = 'reap-deadline-intent-sync';
@@ -1278,13 +1280,16 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('zone_automation_intents', [
             'idempotency_key' => $key,
-            'status' => 'failed',
-            'error_code' => 'stage_deadline_exceeded',
+            'status' => 'running',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => $key,
+            'status' => 'running',
         ]);
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_uses_poll_deadline_code_for_waiting_command(): void
+    public function ae3_reap_stale_tasks_does_not_fail_waiting_command_past_deadline(): void
     {
         $zone = Zone::factory()->create();
         $key = 'reap-waiting-command-poll-deadline';
@@ -1305,8 +1310,7 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('ae_tasks', [
             'idempotency_key' => $key,
-            'status' => 'failed',
-            'error_code' => 'ae3_command_poll_deadline_exceeded',
+            'status' => 'waiting_command',
         ]);
     }
 
@@ -1338,7 +1342,7 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_marks_progress_stale_tasks_as_failed(): void
+    public function ae3_reap_stale_tasks_does_not_fail_progress_stale_tasks(): void
     {
         $zone = Zone::factory()->create();
         DB::table('ae_tasks')->insert([
@@ -1357,13 +1361,12 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('ae_tasks', [
             'idempotency_key' => 'reap-test-progress-stale',
-            'status' => 'failed',
-            'error_code' => 'task_progress_stale',
+            'status' => 'waiting_command',
         ]);
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_syncs_intent_when_task_is_reaped(): void
+    public function ae3_reap_stale_tasks_does_not_sync_intent_when_ae_task_is_live(): void
     {
         $zone = Zone::factory()->create();
         $key = 'reap-intent-sync-test';
@@ -1398,16 +1401,49 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('zone_automation_intents', [
             'idempotency_key' => $key,
-            'status' => 'failed',
-            'error_code' => 'task_progress_stale',
+            'status' => 'running',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'idempotency_key' => $key,
+            'status' => 'running',
         ]);
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_marks_orphan_scheduler_intents_as_failed(): void
+    public function ae3_reap_stale_tasks_marks_exhausted_orphan_scheduler_intents_as_failed(): void
     {
         $zone = Zone::factory()->create();
         $key = 'reap-orphan-intent-test';
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'DIAGNOSTICS_TICK',
+            'task_type' => 'cycle_start',
+            'intent_source' => 'laravel_scheduler',
+            'idempotency_key' => $key,
+            'status' => 'pending',
+            'not_before' => now()->subMinutes(20),
+            'retry_count' => 3,
+            'max_retries' => 3,
+            'created_at' => now()->subMinutes(20),
+            'updated_at' => now()->subMinutes(20),
+        ]);
+
+        $this->artisan('ae3:reap-stale-tasks', ['--orphan-intent-after' => 60])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => $key,
+            'status' => 'failed',
+            'error_code' => 'scheduler_intent_orphan_pending',
+        ]);
+    }
+
+    #[Test]
+    public function ae3_reap_stale_tasks_skips_retryable_orphan_scheduler_intents(): void
+    {
+        $zone = Zone::factory()->create();
+        $key = 'reap-orphan-retryable-intent';
 
         DB::table('zone_automation_intents')->insert([
             'zone_id' => $zone->id,
@@ -1428,8 +1464,54 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('zone_automation_intents', [
             'idempotency_key' => $key,
-            'status' => 'failed',
-            'error_code' => 'scheduler_intent_orphan_pending',
+            'status' => 'pending',
+        ]);
+    }
+
+    #[Test]
+    public function ae3_reap_stale_tasks_skips_orphan_lighting_and_irrigation_scheduler_intents(): void
+    {
+        $zone = Zone::factory()->create();
+
+        DB::table('zone_automation_intents')->insert([
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'LIGHTING_TICK',
+                'task_type' => 'lighting',
+                'intent_source' => 'laravel_scheduler',
+                'idempotency_key' => 'reap-orphan-lighting',
+                'status' => 'pending',
+                'not_before' => now()->subMinutes(20),
+                'retry_count' => 3,
+                'max_retries' => 3,
+                'created_at' => now()->subMinutes(20),
+                'updated_at' => now()->subMinutes(20),
+            ],
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'IRRIGATE_ONCE',
+                'task_type' => 'irrigation',
+                'intent_source' => 'laravel_scheduler',
+                'idempotency_key' => 'reap-orphan-irrigation',
+                'status' => 'pending',
+                'not_before' => now()->subMinutes(20),
+                'retry_count' => 3,
+                'max_retries' => 3,
+                'created_at' => now()->subMinutes(20),
+                'updated_at' => now()->subMinutes(20),
+            ],
+        ]);
+
+        $this->artisan('ae3:reap-stale-tasks', ['--orphan-intent-after' => 60])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => 'reap-orphan-lighting',
+            'status' => 'pending',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'idempotency_key' => 'reap-orphan-irrigation',
+            'status' => 'pending',
         ]);
     }
 
@@ -1566,7 +1648,7 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
-    public function ae3_reap_stale_tasks_reconciles_zombie_workflow_without_active_task(): void
+    public function ae3_reap_stale_tasks_does_not_mutate_zombie_workflow_without_cas(): void
     {
         $zone = Zone::factory()->create();
 
@@ -1598,8 +1680,9 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertDatabaseHas('zone_workflow_state', [
             'zone_id' => $zone->id,
-            'workflow_phase' => 'ready',
-            'scheduler_task_id' => null,
+            'workflow_phase' => 'irrigating',
+            'scheduler_task_id' => '999',
+            'version' => 1,
         ]);
     }
 }

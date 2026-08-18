@@ -312,7 +312,7 @@ class AutomationEngineE2ESeeder extends Seeder
                 : null;
 
             if ($channel) {
-                $direction = $channel->type === 'actuator' ? 'actuator' : 'sensor';
+                $direction = strtolower((string) ($channel->type ?? '')) === 'actuator' ? 'actuator' : 'sensor';
 
                 ChannelBinding::updateOrCreate(
                     [

@@ -61,7 +61,7 @@ FastAPI lifespan
 
 ### 2.3 Внешние контуры
 
-- **Laravel watchdog:** `ae3:reap-stale-tasks` — fail зависших `claimed|running|waiting_command` (дефолт 15 мин без прогресса).
+- **Laravel watchdog:** `ae3:reap-stale-tasks` — лог stale `claimed|running|waiting_command` и reap orphan pending intents без `ae_task`; **не** пишет `ae_tasks.status=failed` (это ae3lite janitor).
 - **UI observability:** hint `waiting_command_stuck`, `workflow_snapshot_stale`.
 - **Алерты:** `biz_ae3_task_failed` при fail через `_fail_task` (с `recovery_source: startup_recovery`).
 
@@ -245,7 +245,7 @@ try recover_waiting_command (для claimed|running|waiting_command)
 
 **Статус:** реализовано.
 
-Новый файл: `backend/services/automation-engine/test_ae3lite_startup_recovery_crash_windows.py`
+Новый файл: `backend/services/automation-engine/tests/unit/test_ae3lite_startup_recovery_crash_windows.py`
 
 | # | Crash window | Ожидание | Тест |
 |---|--------------|----------|------|

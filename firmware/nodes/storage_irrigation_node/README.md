@@ -14,7 +14,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   `clean_fill_completed`, `solution_fill_source_empty`,
   `solution_fill_leak_detected`, `solution_fill_completed`, `recirculation_solution_low`,
   `irrigation_solution_low`, `solution_fill_timeout`, `prepare_recirculation_timeout`,
-  `emergency_stop_activated`.
+  `irrigation_timeout`, `emergency_stop_activated`.
 - Публикует `.../{level_*}/event` с `event_code=level_switch_changed`, `channel`, `state`, `initial`, `snapshot` сразу после подтверждённого изменения датчика и один раз после boot/reconnect.
 - Работает через `node_framework` с HMAC-проверкой команд (строгий режим по умолчанию; см. `../../NODE_CONFIG_SPEC.md`).
 
@@ -29,15 +29,16 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Timed irrigation: `pump_main/run_pump {duration_ms}` (alias поверх `set_relay` + `duration_ms`, cap `3600000`).
 - Сервисный канал two-tank: `storage_state/state` (возвращает `details.snapshot` + `details.state` + freshness-поля).
 - `set_relay {state:true}` на production IRR-ноде работает как latched `ON` и держит канал включенным до явного `set_relay {state:false}`.
-- `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation` и сразу отвечает terminal `DONE` (AE3 ждёт DONE; `complete_on_ack` deprecated). Guard остаётся armed: fail-safe stop только снимает guard + публикует event; stage timeout публикует `storage_state/event` (`solution_fill_timeout` / `prepare_recirculation_timeout`) без второго terminal по тому же `cmd_id`.
+- `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill`, `prepare_recirculation` или `irrigation` и сразу отвечает terminal `DONE` (AE3 ждёт DONE; `complete_on_ack` deprecated). Guard остаётся armed: fail-safe stop только снимает guard + публикует event; stage timeout публикует `storage_state/event` (`solution_fill_timeout` / `prepare_recirculation_timeout` / `irrigation_timeout`) без второго terminal по тому же `cmd_id`.
+- Irrigation path без `timeout_ms/stage` тоже arm'ит тот же guard локально: latched `valve_irrigation` ON берёт `fail_safe_guards.irrigation_timeout_ms` (default 600000, зеркало `irrigation_timeout_sec`). Последующий `run_pump` **не укорачивает** уже взведённый потолок (иначе `irrigation_check` после насоса упрётся в окно ~5 с). Если guard ещё не armed, берётся `max(config, duration_ms + solution_fill_clean_min_check_delay_ms)`. По истечении нода останавливает `pump_main + valve_irrigation + valve_solution_supply`. `run_pump` DONE гасит только насос; клапаны держит stage-guard до timeout или явного `irrigation_stop`. Явный `timeout_ms/stage` на `pump_main` по-прежнему перевзводит guard.
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
 - Встроенные fail-safe guards работают локально:
   - `clean_fill`: `valve_clean_fill` держится открытым до `level_clean_max=1` (событие `clean_fill_completed`); проверка `level_clean_min` по таймеру **не применяется** — при пустом баке min активируется только после подъёма уровня; пустой источник — через AE3 timeout/retry.
   - `solution_fill`: после `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min` на каждом fail-safe scan до terminal event; при `0` выключает `pump_main + valve_clean_supply + valve_solution_fill`, снимает stage guard и публикует `solution_fill_source_empty`; после `solution_fill_solution_min_check_delay_ms` так же непрерывно проверяет `level_solution_min`; при `0` выключает тот же path, снимает stage guard и публикует `solution_fill_leak_detected`; при `level_solution_max=1` нода выключает тот же path, снимает stage guard и публикует `solution_fill_completed`.
   - `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_fill + valve_solution_supply` и публикует `recirculation_solution_low`.
-  - `irrigation`: при включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
+  - `irrigation`: path активен, пока открыты `valve_solution_supply` и `valve_irrigation` (насос не обязателен). При включённом `irrigation_solution_min_guard_enabled` нода следит за `level_solution_min`; при `0` выключает `pump_main + valve_solution_supply + valve_irrigation` и публикует `irrigation_solution_low`.
 - Каждый `level_*` канал дополнительно публикует собственный MQTT event на оба перехода (`0 -> 1`, `1 -> 0`) после debounce; первая публикация после boot/reconnect помечается `initial=true`.
-- На `GPIO15` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания нода восстанавливает снимок состояний, который был до нажатия.
+- На `GPIO15` закреплена отдельная физическая кнопка `E-Stop` (`active_low`, `pull-up`): пока кнопка нажата, нода принудительно выключает все актуаторы, отклоняет MQTT `set_relay {state:true}` с `ERROR estop_active` и публикует `emergency_stop_activated`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop. После отпускания актуаторы остаются OFF (snapshot не восстанавливается), stage-timeout guards disarm'ятся.
 - Терминальные статусы: latched `set_relay` / stage-arm → сразу `DONE`; transient `duration_ms` / `run_pump` → `ACK` → `DONE`/`ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
@@ -86,6 +87,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
     "solution_fill_solution_min_check_delay_ms": 60000,
     "recirculation_solution_min_guard_enabled": true,
     "irrigation_solution_min_guard_enabled": true,
+    "irrigation_timeout_ms": 600000,
     "estop_debounce_ms": 80
   }
 }
@@ -94,6 +96,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Эта секция является firmware mirror для frontend/AE3-настроек из
 `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`.
 Поле `clean_fill_min_check_delay_ms` deprecated: оно сохраняется в mirror для совместимости, но clean_fill min-guard в прошивке не применяется.
+`irrigation_timeout_ms` (или `irrigation_timeout_sec`) опционален: если backend ещё не зеркалирует поле, прошивка берёт default `600000` (канон `irrigation_timeout_sec=600`). Это верхняя граница latched irrigation path без `duration_ms`.
 
 ## Публикации MQTT
 

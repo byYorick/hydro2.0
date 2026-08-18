@@ -346,41 +346,61 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         )
         targets: ComponentTargets | None = None
         baseline_id = None
-        try:
-            repo = PgPrepareBaselineRepository()
-            row = await repo.fetch_latest_baseline(
-                zone_id=int(task.zone_id),
-                ae_task_id=int(getattr(task, "id", 0) or 0) or None,
+
+        # Same-task corr already has baseline (re-enter after dose) — reuse it.
+        existing_json = getattr(corr, "component_targets_json", None) or getattr(
+            getattr(task, "correction", None), "component_targets_json", None
+        )
+        if existing_json:
+            targets = ComponentTargets.from_json(existing_json)
+            raw_baseline_id = getattr(corr, "baseline_id", None) or getattr(
+                getattr(task, "correction", None), "baseline_id", None
             )
-            if row is None:
-                row = await repo.fetch_latest_baseline(zone_id=int(task.zone_id))
-            if row is not None:
-                baseline_id = int(row["id"]) if row.get("id") is not None else None
-                raw_targets = row.get("component_targets_json")
-                if isinstance(raw_targets, str):
-                    raw_targets = json.loads(raw_targets)
-                if isinstance(raw_targets, dict) and "T_ca" in raw_targets:
-                    targets = ComponentTargets.from_mapping(raw_targets)
-                else:
-                    ratios = row.get("ratios_json")
-                    if isinstance(ratios, str):
-                        ratios = json.loads(ratios)
-                    targets = compute_component_targets(
-                        water_ec=float(row["water_ec"]),
-                        water_ph=float(row.get("water_ph") or 0.0),
-                        target_ec=float(row["target_ec"]),
-                        ratios=ratios if isinstance(ratios, dict) else {},
+            if raw_baseline_id is not None:
+                baseline_id = int(raw_baseline_id)
+
+        if targets is None:
+            try:
+                repo = PgPrepareBaselineRepository()
+                task_id = int(getattr(task, "id", 0) or 0) or None
+                # Only THIS task's baseline. Zone-wide fallback reuses stale water_ec
+                # from a prior cycle on an already-prepared tank → false Ca overshoot
+                # → dilute → recirc_dilute_blocked_solution_max.
+                row = None
+                if task_id is not None:
+                    row = await repo.fetch_latest_baseline(
+                        zone_id=int(task.zone_id),
+                        ae_task_id=task_id,
                     )
-        except Exception:
-            _logger.warning(
-                "prepare_recirc: не удалось загрузить baseline zone_id=%s",
-                task.zone_id,
-                exc_info=True,
-            )
+                if row is not None:
+                    baseline_id = int(row["id"]) if row.get("id") is not None else None
+                    raw_targets = row.get("component_targets_json")
+                    if isinstance(raw_targets, str):
+                        raw_targets = json.loads(raw_targets)
+                    if isinstance(raw_targets, dict) and "T_ca" in raw_targets:
+                        targets = ComponentTargets.from_mapping(raw_targets)
+                    else:
+                        ratios = row.get("ratios_json")
+                        if isinstance(ratios, str):
+                            ratios = json.loads(ratios)
+                        targets = compute_component_targets(
+                            water_ec=float(row["water_ec"]),
+                            water_ph=float(row.get("water_ph") or 0.0),
+                            target_ec=float(row["target_ec"]),
+                            ratios=ratios if isinstance(ratios, dict) else {},
+                        )
+            except Exception:
+                _logger.warning(
+                    "prepare_recirc: не удалось загрузить baseline zone_id=%s task_id=%s",
+                    getattr(task, "zone_id", None),
+                    getattr(task, "id", None),
+                    exc_info=True,
+                )
         if targets is None:
             raise TaskExecutionError(
                 ErrorCodes.AE3_WATER_BASELINE_INVALID,
-                "Для prepare_recirculation отсутствует water baseline (zone_prepare_baselines)",
+                "Для prepare_recirculation отсутствует water baseline текущего task "
+                "(zone_prepare_baselines / corr_*). Запрещён reuse baseline чужого цикла.",
             )
         phase0 = pipeline_phase_for_index(0)
         return replace(

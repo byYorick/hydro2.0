@@ -7,12 +7,12 @@ import sys
 import unittest
 from pathlib import Path
 
-import yaml
-
 
 E2E_ROOT = Path(__file__).resolve().parents[1]
 if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
+
+from runner.scenario_loader import load_scenario_file
 
 SCENARIO_PATH = E2E_ROOT / "scenarios" / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"
 READY_DURING_FILL_SCENARIO_PATH = (
@@ -96,8 +96,7 @@ REALHW_SEEDED_TOPOLOGY_SCENARIOS = [
 class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -250,8 +249,7 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
 class TestAe3LiteRetryLimitResolveReadyRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -340,8 +338,7 @@ class TestAe3LiteRetryLimitResolveReadyRealHwScenarioContract(unittest.TestCase)
 class TestAe3LiteReadyDuringFillRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with READY_DURING_FILL_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(READY_DURING_FILL_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -403,8 +400,7 @@ class TestAe3LiteReadyDuringFillRealHwScenarioContract(unittest.TestCase):
 class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with SETUP_READY_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(SETUP_READY_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -484,8 +480,8 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
             if item.get("name") == "targets_reached_near_completion"
         )
 
-        # After sequential fill/recirc, force_near brings PH/EC into band; wait is
-        # required (not optional) with a short post-force timeout.
+        # After sequential fill/recirc, force_near nudges pH; wait for live band
+        # (EC may still climb through the Ca→… pipeline — do not seed T_full in Ca).
         force_step = self._find_step("actions", "force_near_target_band_before_ready_assert")
         self.assertEqual(force_step.get("type"), "ae_test_hook")
         self.assertEqual(
@@ -505,7 +501,7 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
         self.assertNotIn("ABS(ph.last_value - 5.0)", query)
         self.assertNotIn("ABS(ec.last_value - 2.4)", query)
         self.assertEqual(step.get("params", {}).get("task_id"), "${task_id}")
-        self.assertEqual(float(step.get("timeout", 0.0)), 60.0)
+        self.assertEqual(float(step.get("timeout", 0.0)), 420.0)
 
         self.assertEqual(snapshot_step.get("type"), "database_query")
         snapshot_query = str(snapshot_step.get("query") or "")
@@ -566,8 +562,7 @@ class TestAe3LiteDoseCommandContract(unittest.TestCase):
 class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with HOT_RELOAD_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(HOT_RELOAD_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -657,8 +652,7 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
 class TestAe3LiteFailClosedRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with FAIL_CLOSED_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(FAIL_CLOSED_SCENARIO_PATH)
 
     def _find_assertion(self, name: str) -> dict:
         for item in self.scenario.get("assertions", []):
@@ -737,8 +731,7 @@ class TestAe3LiteStartIrrigationRuntimeScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.text = START_IRRIGATION_SCENARIO_PATH.read_text(encoding="utf-8")
-        with START_IRRIGATION_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(START_IRRIGATION_SCENARIO_PATH)
 
     def test_documents_ph_only_irrigation_canon(self) -> None:
         self.assertIn("pH-only", self.text)
@@ -780,8 +773,7 @@ class TestAe3LiteStartIrrigationRuntimeScenarioContract(unittest.TestCase):
 class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        with PIGGYBACK_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(PIGGYBACK_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):
@@ -845,8 +837,7 @@ class TestAe3LiteDiluteOvershootRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.text = DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH.read_text(encoding="utf-8")
-        with DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
-            cls.scenario = yaml.safe_load(fh)
+        cls.scenario = load_scenario_file(DILUTE_OVERSHOOT_REALHW_SCENARIO_PATH)
 
     def _find_step(self, section: str, step_name: str) -> dict:
         for item in self.scenario.get(section, []):

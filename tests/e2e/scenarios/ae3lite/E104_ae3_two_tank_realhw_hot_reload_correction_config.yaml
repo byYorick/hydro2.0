@@ -759,6 +759,12 @@ actions:
         ec_target,
         ec_min,
         ec_max,
+        nutrient_mode,
+        nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct,
+        nutrient_solution_volume_l,
         irrigation_mode,
         irrigation_interval_sec,
         irrigation_duration_sec,
@@ -775,6 +781,12 @@ actions:
         2.40,
         2.35,
         2.45,
+        'ratio_ec_pid',
+        44.00,
+        36.00,
+        12.00,
+        8.00,
+        20.0,
         'SUBSTRATE',
         600,
         45,
@@ -1197,34 +1209,9 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
-  - step: force_solution_tank_full
-    type: ae_test_hook
-    zone_id: ${zone_id}
-    action: publish_command
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_clean_min_override: true
-        level_clean_max_override: true
-        level_solution_min_override: true
-        level_solution_max_override: true
-    save: force_solution_tank_full_response
-
-  - step: wait_force_solution_tank_full_done
-    type: db.wait
-    query: |
-      SELECT id, cmd_id, status
-      FROM commands
-      WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      cmd_id: ${force_solution_tank_full_response.data.cmd_id}
-    timeout: 20.0
-    expected_rows: 1
+  # Fill path (канон AE3): см. _two_tank_fill_helper.yaml
+  # solution_max=false → seed ph=7.0 ec=0.45 → WATER_BASELINE + pump_b → max=true.
+  - include_sequence: two_tank_fill_ca
 
   - step: wait_prepare_recirculation_stage
     type: db.wait
@@ -1481,6 +1468,7 @@ actions:
               max_ec_dose_ml: 30.0
               max_ph_dose_ml: 16.0
             recirc:
+              # Product default. Dilute-on-overshoot is E120; do not hide Ca-phase seeds with pct=100.
               ec_overshoot_dilute_pct: 15
               dilute_pulse_sec: 10
               dilute_max_attempts: 3
@@ -1555,8 +1543,9 @@ actions:
     expected_rows: 1
     save: post_reload_correction_row
 
-  # Force near-target BEFORE live-band wait: after hot-reload correction loop
-  # sensor mode may stop and natural PH/EC may leave the assertion band.
+  # After hot-reload the pipeline is still on calcium T_ca. Nudge pH only.
+  # Do NOT seed T_full (2.32–2.45) here: with solution_max ON that trips
+  # recirc_dilute_blocked_solution_max (threshold T_ca*(1+dilute_pct)).
   - step: force_near_target_band_before_hot_reload_targets_wait
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1567,7 +1556,6 @@ actions:
       cmd: set_fault_mode
       params:
         ph_value: 5.00
-        ec_value: 2.45
     save: force_near_target_before_hot_reload_targets_response
 
   - step: wait_force_near_target_before_hot_reload_targets_done

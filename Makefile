@@ -182,7 +182,7 @@ test-db-reset: up
 test-ae-crash-windows: test-db-init
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
 		-e AE3_PYTEST_DB=$(LARAVEL_TEST_DB) \
-		automation-engine pytest -q test_ae3lite_startup_recovery_crash_windows.py
+		automation-engine pytest -q tests/unit/test_ae3lite_startup_recovery_crash_windows.py
 
 .PHONY: test-ae
 test-ae: test-db-init test-ae-crash-windows

@@ -90,37 +90,38 @@ class StartupRecoveryUseCase:
                 released_expired_leases=released_expired_leases,
             )
         async with try_session_advisory_lock(AE3_STARTUP_RECOVERY_ADVISORY_LOCK_KEY) as acquired:
-            if not acquired:
-                STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
-                logger.info(
-                    "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
-                    "(release_expired уже выполнен)",
-                )
-                # Даже без lock восстанавливаем очередь pending-verify из zone_events:
-                # иначе рестарт AE в grace-window теряет in-memory checks.
-                restored: list[CorrectionInterruptPendingCheck] = []
-                try:
-                    restored = list(await load_open_pending_correction_interrupt_checks(now=now))
-                except Exception:
-                    logger.warning(
-                        "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
-                        "(lock skipped)",
-                        exc_info=True,
-                    )
-                return StartupRecoveryResult(
+            if acquired:
+                return await self._run_scan_and_heal(
+                    now=now,
                     released_expired_leases=released_expired_leases,
-                    scanned_tasks=0,
-                    completed_tasks=0,
-                    failed_tasks=0,
-                    waiting_command_tasks=0,
-                    recovered_waiting_command_tasks=0,
-                    skipped_due_to_lock=True,
-                    pending_correction_safety_checks=tuple(restored),
                 )
-            return await self._run_scan_and_heal(
-                now=now,
-                released_expired_leases=released_expired_leases,
+
+        STARTUP_RECOVERY_SKIPPED.labels(reason="lock_not_acquired").inc()
+        logger.info(
+            "Startup recovery: пропуск scan/heal — advisory lock удерживается другим экземпляром AE "
+            "(release_expired уже выполнен)",
+        )
+        # Fetch после выхода из advisory-lock context: соединение пула уже
+        # отпущено. Иначе pytest pool max_size=1 deadlocks на acquire.
+        restored: list[CorrectionInterruptPendingCheck] = []
+        try:
+            restored = list(await load_open_pending_correction_interrupt_checks(now=now))
+        except Exception:
+            logger.warning(
+                "Startup recovery: не удалось загрузить persisted correction-interrupt checks "
+                "(lock skipped)",
+                exc_info=True,
             )
+        return StartupRecoveryResult(
+            released_expired_leases=released_expired_leases,
+            scanned_tasks=0,
+            completed_tasks=0,
+            failed_tasks=0,
+            waiting_command_tasks=0,
+            recovered_waiting_command_tasks=0,
+            skipped_due_to_lock=True,
+            pending_correction_safety_checks=tuple(restored),
+        )
 
     async def _run_scan_and_heal(
         self,
@@ -847,6 +848,7 @@ class StartupRecoveryUseCase:
         now: datetime,
         recovery_source: str = "startup_recovery",
     ) -> AutomationTask:
+        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
         if self._workflow_repository is not None:
             await self._sync_workflow_failure_state(task=task, now=now)
         failed_task = await self._task_repository.fail_for_recovery(
@@ -885,6 +887,7 @@ class StartupRecoveryUseCase:
         recovery_source: str = "startup_recovery",
     ) -> None:
         """Синхронизирует workflow/alert/lease для уже переведённой в failed задачи."""
+        await self._maybe_fail_safe_shutdown_before_fail(task=task, now=now)
         if self._workflow_repository is not None:
             await self._sync_workflow_failure_state(task=task, now=now)
         await self._emit_failed_task_alert(
@@ -895,6 +898,43 @@ class StartupRecoveryUseCase:
             recovery_source=recovery_source,
         )
         await self._release_lease_after_recovery_fail(task=task, now=now)
+
+    async def _maybe_fail_safe_shutdown_before_fail(
+        self,
+        *,
+        task: AutomationTask,
+        now: datetime,
+    ) -> None:
+        from ae3lite.application.handlers.flow_path_guard import (
+            should_fail_safe_shutdown_on_task_fail,
+        )
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_task_fail_safe_shutdown,
+        )
+
+        if not should_fail_safe_shutdown_on_task_fail(task):
+            return
+        try:
+            result = await attempt_task_fail_safe_shutdown(
+                task=task,
+                now=now,
+                command_gateway=self._command_gateway,
+                planner_step_prefix="startup_recovery_fail_safe",
+            )
+        except Exception:
+            logger.warning(
+                "Startup recovery: fail-safe shutdown exception task_id=%s zone_id=%s",
+                task.id,
+                task.zone_id,
+                exc_info=True,
+            )
+            return
+        if result.attempted and not result.success:
+            logger.warning(
+                "Startup recovery: fail-safe shutdown non-success task_id=%s reason=%s",
+                task.id,
+                result.reason,
+            )
 
     async def _release_lease_after_recovery_success(
         self,

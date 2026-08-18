@@ -1,8 +1,8 @@
 # TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md
 # Матрица соответствия `firmware/test_node` и боевых прошивок нод
 
-**Версия:** 1.1  
-**Дата обновления:** 2026-07-13  
+**Версия:** 1.2  
+**Дата обновления:** 2026-08-18  
 **Статус:** Актуально (reference для migration от test-node к real-node)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -53,7 +53,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
-| `pump_main` | `storage_irrigation_node` (`set_relay`) | `Direct` | Production IRR-node поддерживает latched `set_relay {state:true|false}`; interlock `pump_main` остаётся обязательным. |
+| `pump_main` | `storage_irrigation_node` (`set_relay` + `run_pump`) | `Direct` | Latched `set_relay` для fill/recirc; timed `run_pump {duration_ms}` — канон AE3 `irrigation_start`. Interlock `pump_main` обязателен. |
 | `main_pump` (alias) | `storage_irrigation_node` (`pump_main`) | `Alias/Adapter` | Alias есть только в test-node; в real-node нужно канонизировать имя в одном месте. |
 | `valve_clean_fill` | `storage_irrigation_node/valve_clean_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
 | `valve_clean_supply` | `storage_irrigation_node/valve_clean_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
@@ -172,6 +172,15 @@ Real-node (`node_command_handler`):
 Следствие:
 
 - команда, проходящая в test-node, может быть отклонена боевой нодой по `hmac_required`, `invalid_signature`, `time_not_synced`, `timestamp_expired`.
+
+### 6.1. MQTT lightweight retarget (только test_node)
+
+| Payload | test_node | Production firmware | Совместимость |
+|---|---|---|---|
+| `{mqtt:{host,port}}` **без** `channels[]` | Применяет NVS (`config_storage_set_mqtt_broker`) и reboot | Игнорирует mqtt-only patch: `node_config_handler` требует полный NodeConfig (`node_id`/`version`/`type`/`channels`); `set_mqtt_broker` не вызывается | `Missing` / test-only |
+| Полный NodeConfig **с** `channels[]` (в т.ч. `mqtt.host`) | Retarget **не** выполняется (защита от docker DNS `mosquitto`/`localhost`) | Штатный NodeConfig save — отдельный путь, не ломать | `Direct` для конфига; не путать с lightweight retarget |
+
+Следствие: lightweight MQTT retarget — только `firmware/test_node`. Production firmware этот путь не реализует. C API `config_storage_set_mqtt_broker` в общем компоненте `config_storage` помечен как test_node/e2e-only: production nodes must not call this from live config path.
 
 ---
 

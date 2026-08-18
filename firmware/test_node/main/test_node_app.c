@@ -4812,6 +4812,61 @@ static void config_callback(const char *topic, const char *data, int data_len, v
     gh_uid_item = cJSON_GetObjectItem(config_json, "gh_uid");
     zone_uid_item = cJSON_GetObjectItem(config_json, "zone_uid");
 
+    {
+        cJSON *mqtt_item = cJSON_GetObjectItem(config_json, "mqtt");
+        cJSON *mqtt_host_item = mqtt_item ? cJSON_GetObjectItem(mqtt_item, "host") : NULL;
+        cJSON *mqtt_port_item = mqtt_item ? cJSON_GetObjectItem(mqtt_item, "port") : NULL;
+        cJSON *channels_item = cJSON_GetObjectItem(config_json, "channels");
+        // test_node / e2e only. Production nodes must not call set_mqtt_broker
+        // from the live config path. Full NodeConfig from backend may contain
+        // docker DNS mqtt.host (mosquitto/localhost) — ignore those (need channels[]).
+        // Accept broker retarget only from lightweight payloads without channels[].
+        if (
+            !cJSON_IsArray(channels_item) &&
+            cJSON_IsObject(mqtt_item) &&
+            cJSON_IsString(mqtt_host_item) &&
+            mqtt_host_item->valuestring &&
+            mqtt_host_item->valuestring[0] != '\0' &&
+            cJSON_IsNumber(mqtt_port_item)
+        ) {
+            uint16_t next_mqtt_port = (uint16_t)cJSON_GetNumberValue(mqtt_port_item);
+            config_storage_mqtt_t current_mqtt = {0};
+            bool mqtt_changed = true;
+
+            if (next_mqtt_port > 0 && config_storage_get_mqtt(&current_mqtt) == ESP_OK) {
+                mqtt_changed = (
+                    strcmp(current_mqtt.host, mqtt_host_item->valuestring) != 0 ||
+                    current_mqtt.port != next_mqtt_port
+                );
+            }
+
+            if (next_mqtt_port > 0 && mqtt_changed) {
+                esp_err_t mqtt_save_err = config_storage_set_mqtt_broker(
+                    mqtt_host_item->valuestring,
+                    next_mqtt_port
+                );
+                if (mqtt_save_err == ESP_OK) {
+                    ESP_LOGW(
+                        TAG,
+                        "MQTT broker retarget persisted: host=%s port=%u, rebooting",
+                        mqtt_host_item->valuestring,
+                        (unsigned)next_mqtt_port
+                    );
+                    ui_logf(topic_node_uid, "mqtt retarget %s:%u", mqtt_host_item->valuestring, (unsigned)next_mqtt_port);
+                    cJSON_Delete(config_json);
+                    vTaskDelay(pdMS_TO_TICKS(350));
+                    esp_restart();
+                    return;
+                }
+                ESP_LOGW(
+                    TAG,
+                    "MQTT broker retarget failed: %s",
+                    esp_err_to_name(mqtt_save_err)
+                );
+            }
+        }
+    }
+
     if (gh_uid_item && cJSON_IsString(gh_uid_item) && gh_uid_item->valuestring && gh_uid_item->valuestring[0] != '\0') {
         snprintf(next_gh_uid, sizeof(next_gh_uid), "%s", gh_uid_item->valuestring);
     } else {

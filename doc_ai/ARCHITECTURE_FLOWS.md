@@ -47,7 +47,7 @@ Breaking-change: HTTP-транспорт задач планировщика у�
 - Laravel scheduler-dispatch пишет намерение в `zone_automation_intents` и будит соответствующий ingress;
 - workflow шаги: `send -> await terminal (poll commands) -> next`;
 - single-writer на уровне зоны: одна активная execution task / lease;
-- при busy — `409 start_cycle_zone_busy` (или эквивалентный conflict ingress).
+- при busy — `409 *_zone_busy` (например `start_cycle_zone_busy`, `start_irrigation_zone_busy`, `start_solution_change_zone_busy`). Requested intent **остаётся pending**; Laravel ретраит тот же `idempotency_key`. AE3 не вызывает `mark_terminal` на busy.
 
 Single-writer policy:
 - runtime работает fail-closed: при недоступной проверке writer-state

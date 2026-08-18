@@ -273,4 +273,67 @@ class GreenhouseClimateApiTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'http://automation-engine:9405/greenhouses/'.$greenhouse->id.'/start-climate-tick'
             && $request['idempotency_key'] === $firstIntent->idempotency_key);
     }
+
+    public function test_dispatch_due_skips_manual_control_mode(): void
+    {
+        config([
+            'services.automation_engine.api_url' => 'http://automation-engine:9405',
+            'services.automation_engine.scheduler_api_token' => 'test-token',
+            'services.automation_engine.timeout' => 0.5,
+        ]);
+        Http::fake(['*' => Http::response(['status' => 'accepted'], 202)]);
+
+        $greenhouse = Greenhouse::factory()->create();
+        DB::table('greenhouse_automation_state')->insert([
+            'greenhouse_id' => $greenhouse->id,
+            'control_mode' => 'manual',
+            'next_scheduled_tick_at' => now()->subMinute(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app(GreenhouseClimateDispatchService::class)->dispatchDue();
+
+        Http::assertNothingSent();
+        $this->assertSame(0, DB::table('greenhouse_automation_intents')
+            ->where('greenhouse_id', $greenhouse->id)
+            ->count());
+    }
+
+    public function test_dispatch_due_rewakes_stale_claimed_intent(): void
+    {
+        config([
+            'services.automation_engine.api_url' => 'http://automation-engine:9405',
+            'services.automation_engine.scheduler_api_token' => 'test-token',
+            'services.automation_engine.timeout' => 0.5,
+        ]);
+        Http::fake(['*' => Http::response(['status' => 'accepted'], 202)]);
+
+        $greenhouse = Greenhouse::factory()->create();
+        $now = now();
+        DB::table('greenhouse_automation_state')->insert([
+            'greenhouse_id' => $greenhouse->id,
+            'control_mode' => 'auto',
+            'next_scheduled_tick_at' => $now->copy()->subMinute(),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('greenhouse_automation_intents')->insert([
+            'greenhouse_id' => $greenhouse->id,
+            'intent_type' => 'GREENHOUSE_CLIMATE_TICK',
+            'task_type' => 'greenhouse_climate_tick',
+            'intent_source' => 'laravel_scheduler',
+            'idempotency_key' => 'gh-climate-stale-key',
+            'status' => 'claimed',
+            'retry_count' => 0,
+            'max_retries' => 3,
+            'created_at' => $now->copy()->subMinutes(30),
+            'updated_at' => $now->copy()->subMinutes(21),
+        ]);
+
+        app(GreenhouseClimateDispatchService::class)->dispatchDue();
+
+        Http::assertSent(fn ($request) => $request->url() === 'http://automation-engine:9405/greenhouses/'.$greenhouse->id.'/start-climate-tick'
+            && $request['idempotency_key'] === 'gh-climate-stale-key');
+    }
 }

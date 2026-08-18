@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Re-import dict-shim from runtime_plan once it's loaded — avoid circular import
 # by deferring. Since runtime_plan imports from this file, we define a local
@@ -425,3 +425,13 @@ class ZoneCorrection(_DictShim, BaseModel):
     # (recipe override vs catalog default). Both legal in resolved phase config.
     ec_dosing_mode: Literal["single", "multi_parallel", "multi_sequential"] | None = None
     ec_component_policy: dict[str, Any] | None = None
+
+    @field_validator("ec_component_ratios", mode="before")
+    @classmethod
+    def _coerce_empty_list_ratios(cls, value: Any) -> Any:
+        # Laravel json_decode(..., true) turns JSON `{}` into PHP `[]`, which
+        # re-encodes as a JSON array. Irrigation phase intentionally has no
+        # ratios — accept empty list as empty dict so shadow validation stays quiet.
+        if value == []:
+            return {}
+        return value

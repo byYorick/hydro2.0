@@ -43,6 +43,7 @@ export const FALLBACK_AUTOMATION_DEFAULTS: AutomationDefaultsSettings = {
   water_ec_pct: 10,
   water_valve_switching_enabled: true,
   water_correction_during_irrigation: true,
+  water_irrigation_ec_component: 'calcium' as 'none' | 'calcium' | 'npk',
   water_drain_control_enabled: false,
   water_drain_target_pct: 20,
   water_diagnostics_enabled: true,
@@ -197,6 +198,10 @@ export function createDefaultWaterForm(defaults: AutomationDefaultsSettings): Wa
     ecPct: defaults.water_ec_pct,
     valveSwitching: defaults.water_valve_switching_enabled,
     correctionDuringIrrigation: defaults.water_correction_during_irrigation,
+    irrigationEcComponent:
+      defaults.water_irrigation_ec_component === 'calcium' || defaults.water_irrigation_ec_component === 'npk'
+        ? defaults.water_irrigation_ec_component
+        : 'none',
     enableDrainControl: defaults.water_drain_control_enabled,
     drainTargetPercent: defaults.water_drain_target_pct,
     diagnosticsEnabled: defaults.water_diagnostics_enabled,

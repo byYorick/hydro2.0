@@ -98,9 +98,13 @@ class TestSuiteCatalog(unittest.TestCase):
         )
         self.assert_contains_scenario(
             realhw_core,
+            "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            realhw_core,
             "scenarios/ae3lite/E120_ae3_recirc_dilute_overshoot_realhw.yaml",
         )
-        self.assertEqual(len(realhw_core), 14)
+        self.assertEqual(len(realhw_core), 15)
         self.assert_contains_scenario(
             realhw_irrigation,
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
@@ -149,11 +153,15 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/calibration/E117_sensor_calibration_realhw_happy_path.yaml",
         )
-        # ae3lite realhw (+E118/E120) ∪ smart_irrigation ∪ calibration
-        self.assertEqual(len(scenarios), 20)
+        # ae3lite realhw (+E118/E119/E120) ∪ smart_irrigation ∪ calibration
+        self.assertEqual(len(scenarios), 21)
         self.assert_contains_scenario(
             scenarios,
             "scenarios/ae3lite/E118_ae3_water_baseline_and_ca_fill_realhw.yaml",
+        )
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/ae3lite/E119_ae3_prepare_pipeline_sequence_realhw.yaml",
         )
         self.assert_contains_scenario(
             scenarios,

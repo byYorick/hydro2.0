@@ -155,14 +155,7 @@ final class LightingScheduleParser
             ->where('zones.id', $zoneId)
             ->value('greenhouses.timezone');
 
-        $normalized = is_string($tz) && trim($tz) !== '' ? trim($tz) : null;
-        if ($normalized !== null) {
-            try {
-                new \DateTimeZone($normalized);
-            } catch (\Throwable) {
-                $normalized = null;
-            }
-        }
+        $normalized = SchedulerRuntimeHelper::normalizeTimezone(is_string($tz) ? $tz : null);
         $this->timezoneCache[$zoneId] = $normalized;
 
         return $normalized;

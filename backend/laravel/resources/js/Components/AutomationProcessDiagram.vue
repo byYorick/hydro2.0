@@ -424,13 +424,13 @@
             v-for="(pump, idx) in phPumps"
             :key="pump.channel"
             class="dose-pump-hit"
-            :transform="`translate(${phPumpX(idx)}, ${T.dosing.y + 32})`"
+            :transform="`translate(${phPumpX(idx)}, ${T.dosing.y + 36})`"
             @mouseenter="handlePumpHover(pump.channel, pump.title, $event)"
             @mousemove="handlePumpMouseMove(pump.channel, pump.title, $event)"
             @mouseleave="handlePumpLeave($event)"
           >
             <circle
-              r="8"
+              r="9"
               class="dose-pump"
               :class="{
                 'dose-pump--ph': isPhCorrectionActive,
@@ -467,13 +467,13 @@
             v-for="(pump, idx) in ecPumps"
             :key="pump.channel"
             class="dose-pump-hit"
-            :transform="`translate(${ecPumpX(idx)}, ${T.dosing.y + 32})`"
+            :transform="`translate(${ecPumpX(idx)}, ${T.dosing.y + 36})`"
             @mouseenter="handlePumpHover(pump.channel, pump.title, $event)"
             @mousemove="handlePumpMouseMove(pump.channel, pump.title, $event)"
             @mouseleave="handlePumpLeave($event)"
           >
             <circle
-              r="7.5"
+              r="8.5"
               class="dose-pump"
               :class="{
                 'dose-pump--ec': isEcCorrectionActive,
@@ -733,8 +733,8 @@ const uid = Math.random().toString(36).slice(2, 8)
 const hoveredElement = ref<HoveredElement | null>(null)
 
 const phPumps = [
-  { channel: 'pump_acid', label: 'acid', title: 'pump_acid · pH↓' },
-  { channel: 'pump_base', label: 'base', title: 'pump_base · pH↑' },
+  { channel: 'pump_acid', label: '↓', title: 'pump_acid · pH↓' },
+  { channel: 'pump_base', label: '↑', title: 'pump_base · pH↑' },
 ] as const
 
 const ecPumps = [
@@ -946,7 +946,7 @@ function handlePumpLeave(event: MouseEvent): void {
 .process-svg {
   display: block;
   width: 100%;
-  max-width: 560px;
+  max-width: 600px;
   height: auto;
   margin-inline: auto;
   color: var(--text-primary, #0f172a);
@@ -1124,7 +1124,7 @@ function handlePumpLeave(event: MouseEvent): void {
 .dose-text {
   text-anchor: middle;
   fill: var(--text-primary, #0f172a);
-  font-size: 6.5px;
+  font-size: 8px;
   font-weight: 700;
 }
 

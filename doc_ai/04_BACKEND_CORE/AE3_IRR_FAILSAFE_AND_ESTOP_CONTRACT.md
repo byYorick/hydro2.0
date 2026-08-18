@@ -1,7 +1,7 @@
 # AE3 IRR Fail-Safe And E-Stop Contract
 
-**Версия:** 1.0
-**Дата:** 2026-08-02
+**Версия:** 1.1
+**Дата:** 2026-08-17
 **Статус:** Детализирующий контракт для AE3 / Laravel / firmware mirror
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -177,10 +177,12 @@ Backend зеркалирует те же значения в `NodeConfig.fail_sa
 
 ### 4.4. Irrigation
 
-Условие активности:
-- `pump_main == ON`
+Условие активности (`storage_irrigation_node_is_irrigation_active_locked`):
 - `valve_solution_supply == ON`
 - `valve_irrigation == ON`
+- насос **не** обязателен: после `pump_main/run_pump {duration_ms}` DONE насос гаснет, сифон/клапаны остаются OPEN до `irrigation_stop` или irrigation stage-guard.
+
+Default AE3 `irrigation_start`: latched `set_relay true` на клапанах + timed `run_pump` на `pump_main`. Прошивка auto-arm'ит irrigation stage-guard на `fail_safe_guards.irrigation_timeout_ms` (default 600000) при открытии `valve_irrigation` без явного `timeout_ms/stage`. Уже взведённый потолок **не** укорачивается последующим `run_pump` (иначе `irrigation_check` упрётся в окно ~5 с). Явный `timeout_ms/stage` на `pump_main` перевзводит guard.
 
 Если `irrigation_solution_min_guard_enabled == true` и `level_solution_min == 0`,
 прошивка обязана:
@@ -191,10 +193,12 @@ Backend зеркалирует те же значения в `NodeConfig.fail_sa
 ### 4.5. Physical E-Stop
 
 Аппаратный контракт firmware:
-- выделенный вход `GPIO23`;
+- выделенный вход `GPIO15` (`STORAGE_IRRIGATION_NODE_ESTOP_GPIO`);
 - `active_low=true`;
 - `pull-up`;
 - `debounce_ms` берётся из `fail_safe_guards.estop_debounce_ms`.
+- **Hardware caveat:** `GPIO15` — strapping pin ESP32; зажатый E-Stop (`LOW`) при
+  power-on/reset может сорвать boot — не держать кнопку нажатой при старте.
 
 Семантика:
 - пока кнопка нажата, нода обязана удерживать все 6 актуаторов в `OFF`;
@@ -202,8 +206,10 @@ Backend зеркалирует те же значения в `NodeConfig.fail_sa
   immediate terminal response `ERROR` + `error_code=estop_active`;
 - MQTT `set_relay {state:false}` остаётся разрешённым как fail-safe stop-команда;
 - на фронт нажатия нода публикует `emergency_stop_activated`;
-- после отпускания нода восстанавливает snapshot actuator-state, который был до нажатия;
-- release не публикует отдельный domain event по умолчанию.
+- после отпускания актуаторы **остаются OFF**; snapshot до нажатия **не** восстанавливается;
+- stage-timeout guards disarm'ятся (не resume с оставшимся timeout);
+- release не публикует отдельный domain event по умолчанию — AE3 видит
+  `emergency_stop_activated` и обязан fail-closed, даже если probe совпал с expected ON.
 
 ---
 
@@ -269,8 +275,10 @@ Node events запрещено использовать как единстве�
   не публикует), он обязан идти в `clean_fill_retry_stop`, увеличить `clean_fill_cycle` и после
   исчерпания лимита `1 + runtime.clean_fill_retry_cycles` завершить stage через terminal
   `clean_fill_source_empty_stop` (тот же лимит, что и для AE3 timeout-retry);
-- если runtime получает `emergency_stop_activated`, он обязан сначала попытаться
-  перепроверить ожидаемый `storage_state` и может продолжить stage только при восстановленном snapshot.
+- если runtime получает `emergency_stop_activated`, он обязан завершить stage
+  fail-closed (`error_code=emergency_stop_activated`). Probe `irr_state` допустим
+  только как диагностика фактического hardware; совпадение с expected ON **не**
+  продолжает stage (firmware после отпускания E-Stop актуаторы не поднимает).
 
 ### 5.4. Manual mode на активном flow-path (PR7)
 

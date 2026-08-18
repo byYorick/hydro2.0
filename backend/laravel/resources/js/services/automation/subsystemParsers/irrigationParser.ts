@@ -201,6 +201,15 @@ function applyToggles(
   if (correctionDuringIrrigation !== null) {
     waterForm.correctionDuringIrrigation = correctionDuringIrrigation
   }
+  const ecComponentRaw = (
+    readString(
+      irrigationBehavior?.irrigation_ec_component,
+      irrigationTargets?.irrigation_ec_component,
+    ) || ''
+  ).toLowerCase()
+  if (ecComponentRaw === 'none' || ecComponentRaw === 'calcium' || ecComponentRaw === 'npk') {
+    waterForm.irrigationEcComponent = ecComponentRaw
+  }
 }
 
 function applyDecision(

@@ -20,9 +20,9 @@ class SetControlModeUseCase:
 
     Правила (§6 spec):
     - Любой переход пишет `CONTROL_MODE_CHANGED` zone event.
-    - `* → manual`: активная task помечается failed с
-      `error_code=control_mode_switched_to_manual` (graceful stop команд уже
-      должен был отправить UI / scheduler до вызова).
+    - `* → manual`: сначала fail-safe shutdown (pump_main + irrigation/fill клапаны
+      OFF через history-logger), затем активная task помечается failed с
+      `error_code=control_mode_switched_to_manual`.
     - `manual → auto|semi`: ставит флаг `needs_manual_to_auto_reconcile` через
       `zones.automation_runtime_state` (AE3 runtime подхватит и принудительно
       пройдёт `manual_to_auto_cleanup` → `startup` при следующем tick).
@@ -33,9 +33,13 @@ class SetControlModeUseCase:
         *,
         task_repository: Any,
         execute_fn: Any = execute,
+        fetch_fn: Any = None,
+        command_gateway: Any | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._execute_fn = execute_fn
+        self._fetch_fn = fetch_fn
+        self._command_gateway = command_gateway
 
     async def run(
         self,
@@ -78,6 +82,7 @@ class SetControlModeUseCase:
             active_task_id = int(getattr(active_task, "id", 0) or 0) or None
 
             if normalized_control_mode == "manual" and previous_mode in {"auto", "semi"}:
+                await self._fail_safe_shutdown_before_fail(task=active_task, now=now)
                 fail_fn = getattr(self._task_repository, "fail_for_recovery", None)
                 if callable(fail_fn):
                     try:
@@ -122,10 +127,40 @@ class SetControlModeUseCase:
 
         return normalized_control_mode
 
-    async def _fetch_current_mode(self, *, zone_id: int) -> str:
-        from common.db import fetch
+    async def _fail_safe_shutdown_before_fail(self, *, task: Any, now: datetime) -> None:
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_task_fail_safe_shutdown,
+        )
 
-        rows = await fetch(
+        try:
+            result = await attempt_task_fail_safe_shutdown(
+                task=task,
+                now=now,
+                command_gateway=self._command_gateway,
+                planner_step_prefix="control_mode_fail_safe",
+            )
+        except Exception:
+            logger.warning(
+                "AE3 set_control_mode: fail-safe shutdown exception task_id=%s zone_id=%s",
+                getattr(task, "id", None),
+                getattr(task, "zone_id", None),
+                exc_info=True,
+            )
+            return
+        if result.attempted and not result.success:
+            logger.warning(
+                "AE3 set_control_mode: fail-safe shutdown non-success task_id=%s reason=%s",
+                getattr(task, "id", None),
+                result.reason,
+            )
+
+    async def _fetch_current_mode(self, *, zone_id: int) -> str:
+        fetch_fn = self._fetch_fn
+        if fetch_fn is None:
+            from common.db import fetch
+
+            fetch_fn = fetch
+        rows = await fetch_fn(
             "SELECT control_mode FROM zones WHERE id = $1",
             zone_id,
         )

@@ -19,7 +19,6 @@ from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.biz_alerts import send_biz_alert
 from common.service_logs import send_service_log
-from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import (
     ErrorCodes,
     PlannerConfigurationError,
@@ -219,6 +218,19 @@ class ExecuteTaskUseCase:
                 fallback_task=exc.task,
             )
             if terminal_task is not None:
+                status = str(getattr(terminal_task, "status", "") or "").strip().lower()
+                if status in {"failed", "cancelled"}:
+                    from ae3lite.application.handlers.flow_path_guard import (
+                        should_fail_safe_shutdown_on_task_fail,
+                    )
+
+                    if should_fail_safe_shutdown_on_task_fail(terminal_task):
+                        await self._attempt_fail_safe_shutdown(
+                            task=terminal_task,
+                            snapshot=snapshot,
+                            plan=plan,
+                            now=now,
+                        )
                 await self._apply_terminal_task_side_effects(task=terminal_task, now=now)
                 logger.info(
                     "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s",
@@ -1435,64 +1447,26 @@ class ExecuteTaskUseCase:
                     exc_info=True,
                 )
                 current_task = None
-            if current_task is None or not bool(getattr(current_task, "is_active", False)):
-                self._log_skip_fail_safe_shutdown(task=task, reason="task_missing_or_inactive")
-                return
-        actuators = getattr(snapshot, "actuators", ()) if snapshot is not None else ()
-        if not actuators:
-            return
+            # Inactive/missing task still needs hardware stop; keep original task as FK.
+            if current_task is not None:
+                task = current_task
+        from ae3lite.application.services.correction_interrupt_safety import (
+            attempt_task_fail_safe_shutdown,
+        )
 
-        planned_commands: list[PlannedCommand] = []
-        seen_pairs: set[tuple[str, str]] = set()
-        for channel in self.FAIL_SAFE_SHUTDOWN_CHANNELS:
-            for actuator in actuators:
-                node_uid = str(getattr(actuator, "node_uid", "") or "").strip()
-                node_type = str(getattr(actuator, "node_type", "") or "").strip().lower()
-                actuator_channel = str(getattr(actuator, "channel", "") or "").strip().lower()
-                if node_uid == "" or node_type != "irrig" or actuator_channel != channel:
-                    continue
-                pair = (node_uid, actuator_channel)
-                if pair in seen_pairs:
-                    continue
-                seen_pairs.add(pair)
-                planned_commands.append(
-                    PlannedCommand(
-                        step_no=len(planned_commands) + 1,
-                        node_uid=node_uid,
-                        channel=actuator_channel,
-                        payload={
-                            "name": "fail_safe_shutdown",
-                            "cmd": "set_relay",
-                            "params": {"state": False},
-                            "allow_no_effect": True,
-                            "dedupe_bypass": True,
-                            "_ae3_fail_safe": True,
-                        },
-                    )
-                )
+        # Empty snapshot actuators must not skip: pass None so DB fallback loads irrig channels.
+        snapshot_actuators = getattr(snapshot, "actuators", None) if snapshot is not None else None
+        if not snapshot_actuators:
+            snapshot_actuators = None
 
-        if not planned_commands:
-            return
         try:
-            result = await self._command_gateway.run_publish_only_batch(
+            result = await attempt_task_fail_safe_shutdown(
                 task=task,
-                commands=tuple(planned_commands),
                 now=now,
+                command_gateway=self._command_gateway,
+                snapshot_actuators=snapshot_actuators,
+                planner_step_prefix="execute_task_fail_safe",
             )
-            if not bool(result.get("success")):
-                stage = str(getattr(task, "current_stage", "") or "unknown")
-                error_code = str(result.get("error_code") or "unknown")
-                logger.error(
-                    "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s error_code=%s",
-                    getattr(task, "id", None),
-                    getattr(task, "zone_id", None),
-                    error_code,
-                )
-                await self._emit_fail_safe_shutdown_alert(
-                    task=task,
-                    reason="fail_safe_shutdown_non_success",
-                    error_code=error_code,
-                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1506,6 +1480,33 @@ class ExecuteTaskUseCase:
                 reason="fail_safe_shutdown_exception",
                 error_code=str(getattr(exc, "code", "") or type(exc).__name__),
             )
+            return
+
+        if not result.attempted:
+            self._log_skip_fail_safe_shutdown(task=task, reason=str(result.reason or "not_attempted"))
+            return
+        if result.success:
+            return
+        reason = str(result.reason or "unknown")
+        if reason.startswith("publish_exception:"):
+            await self._emit_fail_safe_shutdown_alert(
+                task=task,
+                reason="fail_safe_shutdown_exception",
+                error_code=reason.split(":", 1)[1] or "unknown",
+            )
+            return
+        logger.error(
+            "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s stage=%s error_code=%s",
+            getattr(task, "id", None),
+            getattr(task, "zone_id", None),
+            str(getattr(task, "current_stage", "") or "unknown"),
+            reason,
+        )
+        await self._emit_fail_safe_shutdown_alert(
+            task=task,
+            reason="fail_safe_shutdown_non_success",
+            error_code=reason,
+        )
 
     async def _emit_fail_safe_shutdown_alert(
         self,

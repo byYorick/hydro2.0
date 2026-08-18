@@ -131,6 +131,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         workflow_phase="tank_filling",
         command_plans=("clean_fill_start",),
         next_stage="clean_fill_check",
+        timeout_key="clean_fill_timeout_sec",
     ),
     "clean_fill_check": StageDef(
         "clean_fill_check", "clean_fill",
@@ -174,6 +175,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         workflow_phase="tank_filling",
         command_plans=("sensor_mode_activate", "solution_fill_start"),
         next_stage="solution_fill_check",
+        timeout_key="solution_fill_timeout_sec",
     ),
     "solution_fill_check": StageDef(
         "solution_fill_check", "solution_fill",
@@ -229,6 +231,7 @@ TWO_TANK: Mapping[str, StageDef] = {
         workflow_phase="tank_recirc",
         command_plans=("sensor_mode_activate", "prepare_recirculation_start"),
         next_stage="prepare_recirculation_check",
+        timeout_key="prepare_recirculation_timeout_sec",
     ),
     "prepare_recirculation_check": StageDef(
         "prepare_recirculation_check", "prepare_recirc",

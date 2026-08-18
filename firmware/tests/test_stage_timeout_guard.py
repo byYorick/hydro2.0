@@ -160,6 +160,8 @@ def stage_flow_channels(stage: str) -> Tuple[str, str]:
         return ("valve_clean_supply", "valve_solution_fill")
     if stage == "prepare_recirculation":
         return ("valve_solution_supply", "valve_solution_fill")
+    if stage == "irrigation":
+        return ("valve_solution_supply", "valve_irrigation")
     raise ValueError(f"unsupported stage: {stage}")
 
 
@@ -168,6 +170,8 @@ def stage_timeout_event(stage: str) -> str:
         return "solution_fill_timeout"
     if stage == "prepare_recirculation":
         return "prepare_recirculation_timeout"
+    if stage == "irrigation":
+        return "irrigation_timeout"
     raise ValueError(f"unsupported stage: {stage}")
 
 
@@ -178,7 +182,7 @@ def main() -> int:
     parser.add_argument("--gh-uid", default="gh-test-1")
     parser.add_argument("--zone-uid", default="zn-test-1")
     parser.add_argument("--node-uid", default="nd-irrig-1")
-    parser.add_argument("--stage", choices=["solution_fill", "prepare_recirculation"], default="solution_fill")
+    parser.add_argument("--stage", choices=["solution_fill", "prepare_recirculation", "irrigation"], default="solution_fill")
     parser.add_argument("--timeout-ms", type=int, default=5000)
     parser.add_argument("--command-timeout-sec", type=float, default=4.0)
     parser.add_argument("--terminal-timeout-sec", type=float, default=12.0)
@@ -242,50 +246,130 @@ def main() -> int:
                 return 1
 
         pump_cmd_id = f"hil-stage-timeout-pump-{int(time.time() * 1000)}"
-        ack = expect_response(
-            tester,
-            topic=pump_topic,
-            cmd_id=pump_cmd_id,
-            cmd="set_relay",
-            params={"state": True, "timeout_ms": args.timeout_ms, "stage": args.stage},
-            timeout_sec=args.command_timeout_sec,
-            status="ACK",
-        )
-        if str(ack.get("status", "")).upper() != "ACK":
-            print(f"{RED}❌ timed pump_main start должен вернуть ACK{NC}")
-            print(json.dumps(ack, ensure_ascii=False, indent=2))
-            return 1
+        if args.stage == "irrigation":
+            ack = expect_response(
+                tester,
+                topic=pump_topic,
+                cmd_id=pump_cmd_id,
+                cmd="run_pump",
+                params={"duration_ms": args.timeout_ms},
+                timeout_sec=args.command_timeout_sec,
+                status="ACK",
+            )
+            if str(ack.get("status", "")).upper() != "ACK":
+                print(f"{RED}❌ irrigation run_pump должен вернуть ACK{NC}")
+                print(json.dumps(ack, ensure_ascii=False, indent=2))
+                return 1
 
-        terminal = tester.wait_response(
-            cmd_id=pump_cmd_id,
-            status="ERROR",
-            timeout_sec=max(args.terminal_timeout_sec, (args.timeout_ms / 1000.0) + 5.0),
-        )
-        if terminal is None:
-            print(f"{RED}❌ terminal ERROR по stage timeout не получен{NC}")
-            return 1
+            terminal = tester.wait_response(
+                cmd_id=pump_cmd_id,
+                status="DONE",
+                timeout_sec=max(args.terminal_timeout_sec, (args.timeout_ms / 1000.0) + 5.0),
+            )
+            if terminal is None:
+                print(f"{RED}❌ irrigation run_pump DONE не получен{NC}")
+                return 1
 
-        schema_error = validate_command_response_schema(terminal)
-        if schema_error:
-            print(f"{RED}❌ terminal command_response не прошёл JSON schema: {schema_error}{NC}")
-            print(json.dumps(terminal, ensure_ascii=False, indent=2))
-            return 1
+            schema_error = validate_command_response_schema(terminal)
+            if schema_error:
+                print(f"{RED}❌ terminal command_response не прошёл JSON schema: {schema_error}{NC}")
+                print(json.dumps(terminal, ensure_ascii=False, indent=2))
+                return 1
 
-        if str(terminal.get("error_code", "")) != "stage_timeout":
-            print(f"{RED}❌ ожидался error_code=stage_timeout{NC}")
-            print(json.dumps(terminal, ensure_ascii=False, indent=2))
-            return 1
+            mid_cmd_id = f"hil-stage-timeout-mid-state-{int(time.time() * 1000)}"
+            mid_response = expect_response(
+                tester,
+                topic=storage_state_topic,
+                cmd_id=mid_cmd_id,
+                cmd="state",
+                params={},
+                timeout_sec=args.command_timeout_sec,
+                status="DONE",
+            )
+            mid_details = mid_response.get("details")
+            mid_snapshot = mid_details.get("snapshot") if isinstance(mid_details, dict) else None
+            if not isinstance(mid_snapshot, dict):
+                print(f"{RED}❌ details.snapshot отсутствует сразу после run_pump DONE{NC}")
+                print(json.dumps(mid_response, ensure_ascii=False, indent=2))
+                return 1
+            if mid_snapshot.get("pump_main") is not False:
+                print(f"{RED}❌ pump_main должен быть false после run_pump DONE{NC}")
+                print(json.dumps(mid_response, ensure_ascii=False, indent=2))
+                return 1
+            for key in (supply_channel, target_channel):
+                if mid_snapshot.get(key) is not True:
+                    print(f"{RED}❌ {key} должен остаться open после run_pump DONE (ждём stage-guard){NC}")
+                    print(json.dumps(mid_response, ensure_ascii=False, indent=2))
+                    return 1
 
-        details = terminal.get("details")
-        if not isinstance(details, dict) or details.get("stage") != args.stage or details.get("timeout_ms") != args.timeout_ms:
-            print(f"{RED}❌ details terminal-ответа не содержат stage/timeout_ms{NC}")
-            print(json.dumps(terminal, ensure_ascii=False, indent=2))
-            return 1
+            # run_pump must not shorten the config ceiling. Re-arm explicitly so
+            # this HIL can still observe irrigation_timeout on a short timer.
+            arm_cmd_id = f"hil-stage-timeout-arm-{int(time.time() * 1000)}"
+            arm_response = expect_response(
+                tester,
+                topic=pump_topic,
+                cmd_id=arm_cmd_id,
+                cmd="set_relay",
+                params={"state": True, "timeout_ms": args.timeout_ms, "stage": "irrigation"},
+                timeout_sec=args.command_timeout_sec,
+            )
+            if str(arm_response.get("status", "")).upper() != "DONE":
+                print(f"{RED}❌ explicit irrigation stage-arm должен вернуть DONE{NC}")
+                print(json.dumps(arm_response, ensure_ascii=False, indent=2))
+                return 1
 
-        event = tester.wait_event(event_code=stage_event_code, timeout_sec=4.0)
-        if event is None:
-            print(f"{RED}❌ событие {stage_event_code} не получено{NC}")
-            return 1
+            event = tester.wait_event(
+                event_code=stage_event_code,
+                timeout_sec=max(args.terminal_timeout_sec, (args.timeout_ms / 1000.0) + 10.0),
+            )
+            if event is None:
+                print(f"{RED}❌ событие {stage_event_code} не получено{NC}")
+                return 1
+        else:
+            ack = expect_response(
+                tester,
+                topic=pump_topic,
+                cmd_id=pump_cmd_id,
+                cmd="set_relay",
+                params={"state": True, "timeout_ms": args.timeout_ms, "stage": args.stage},
+                timeout_sec=args.command_timeout_sec,
+                status="ACK",
+            )
+            if str(ack.get("status", "")).upper() != "ACK":
+                print(f"{RED}❌ timed pump_main start должен вернуть ACK{NC}")
+                print(json.dumps(ack, ensure_ascii=False, indent=2))
+                return 1
+
+            terminal = tester.wait_response(
+                cmd_id=pump_cmd_id,
+                status="ERROR",
+                timeout_sec=max(args.terminal_timeout_sec, (args.timeout_ms / 1000.0) + 5.0),
+            )
+            if terminal is None:
+                print(f"{RED}❌ terminal ERROR по stage timeout не получен{NC}")
+                return 1
+
+            schema_error = validate_command_response_schema(terminal)
+            if schema_error:
+                print(f"{RED}❌ terminal command_response не прошёл JSON schema: {schema_error}{NC}")
+                print(json.dumps(terminal, ensure_ascii=False, indent=2))
+                return 1
+
+            if str(terminal.get("error_code", "")) != "stage_timeout":
+                print(f"{RED}❌ ожидался error_code=stage_timeout{NC}")
+                print(json.dumps(terminal, ensure_ascii=False, indent=2))
+                return 1
+
+            details = terminal.get("details")
+            if not isinstance(details, dict) or details.get("stage") != args.stage or details.get("timeout_ms") != args.timeout_ms:
+                print(f"{RED}❌ details terminal-ответа не содержат stage/timeout_ms{NC}")
+                print(json.dumps(terminal, ensure_ascii=False, indent=2))
+                return 1
+
+            event = tester.wait_event(event_code=stage_event_code, timeout_sec=4.0)
+            if event is None:
+                print(f"{RED}❌ событие {stage_event_code} не получено{NC}")
+                return 1
 
         state_cmd_id = f"hil-stage-timeout-state-{int(time.time() * 1000)}"
         state_response = expect_response(

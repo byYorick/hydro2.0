@@ -299,6 +299,10 @@ services:
         condition: service_healthy
     expose:
       - "9000"
+    volumes:
+      # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
+      - ./error_codes.json:/app/error_codes.json:ro
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 30s
@@ -348,6 +352,10 @@ services:
         condition: service_healthy
     expose:
       - "9405"
+    volumes:
+      # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
+      - ./error_codes.json:/app/error_codes.json:ro
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/ready', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s
@@ -395,6 +403,10 @@ services:
     expose:
       - "9300"
       - "9301"  # Prometheus metrics
+    volumes:
+      # error_codes.json + api_error_raw_translations.json для локализации error_code (common/error_catalog.py)
+      - ./error_codes.json:/app/error_codes.json:ro
+      - ./api_error_raw_translations.json:/app/api_error_raw_translations.json:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 30s

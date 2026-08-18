@@ -102,4 +102,50 @@ class ZoneScheduleItemBuilderTest extends TestCase
         $lighting = array_values(array_filter($schedules, fn ($s) => $s->taskType === 'lighting'));
         $this->assertSame([], $lighting);
     }
+
+    public function test_solution_topup_interval_schedule_is_built_from_targets(): void
+    {
+        $builder = new ZoneScheduleItemBuilder(
+            lightingScheduleParser: new LightingScheduleParser,
+        );
+
+        $targets = [
+            'solution_topup' => [
+                'interval_sec' => 1800,
+                'enabled' => true,
+            ],
+            'extensions' => [
+                'subsystems' => [
+                    'solution_topup' => ['enabled' => true],
+                ],
+            ],
+        ];
+
+        $schedules = $builder->buildSchedulesForZone(3, $targets, CarbonImmutable::parse('2026-04-04 00:00:00', 'UTC'));
+        $topup = array_values(array_filter($schedules, fn ($s) => $s->taskType === 'solution_topup'));
+        $this->assertCount(1, $topup);
+        $this->assertSame(1800, $topup[0]->intervalSec);
+    }
+
+    public function test_solution_topup_schedule_skipped_when_subsystem_disabled(): void
+    {
+        $builder = new ZoneScheduleItemBuilder(
+            lightingScheduleParser: new LightingScheduleParser,
+        );
+
+        $targets = [
+            'solution_topup' => [
+                'interval_sec' => 1800,
+            ],
+            'extensions' => [
+                'subsystems' => [
+                    'solution_topup' => ['enabled' => false],
+                ],
+            ],
+        ];
+
+        $schedules = $builder->buildSchedulesForZone(3, $targets, CarbonImmutable::parse('2026-04-04 00:00:00', 'UTC'));
+        $topup = array_values(array_filter($schedules, fn ($s) => $s->taskType === 'solution_topup'));
+        $this->assertSame([], $topup);
+    }
 }

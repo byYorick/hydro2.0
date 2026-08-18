@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Helpers\ZoneAccessHelper;
+use App\Http\Controllers\Concerns\PresentsLocalizedApiErrors;
 use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
+use App\Services\Ae3ZoneLeaseGuard;
 use App\Services\PythonBridgeService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -17,7 +18,7 @@ class NodeCommandController extends Controller
 {
     use PresentsLocalizedApiErrors;
 
-    public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge)
+    public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge, Ae3ZoneLeaseGuard $leaseGuard)
     {
         $user = $request->user();
         if (! $user) {
@@ -48,6 +49,17 @@ class NodeCommandController extends Controller
             $data['params'] = [];
         } elseif (is_array($data['params']) && array_is_list($data['params'])) {
             $data['params'] = [];
+        }
+
+        $zoneId = (int) ($node->zone_id ?? 0);
+        if ($zoneId > 0
+            && $leaseGuard->shouldBlockOperatorNodeCommand((string) $data['cmd'], is_array($data['params'] ?? null) ? $data['params'] : [])
+            && $leaseGuard->isHeld($zoneId)) {
+            return $this->localizedError(
+                'ae3_zone_lease_held',
+                'Зона занята автоматикой AE3. Дождитесь завершения задачи или переведите зону в manual.',
+                409,
+            );
         }
 
         try {

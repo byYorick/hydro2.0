@@ -1409,7 +1409,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `level_*` switch test публикуется как `state` на канале `storage_state`;
   - manual pump test должен передавать `params.duration_ms=3000`; нода допускает такой dry-run без flow-path interlock и завершает его через `ACK -> DONE`;
   - manual valve test должен передавать `params.duration_ms=3000` и ждать `ACK -> DONE`, где `DONE` приходит после auto-close нодой;
-  - `run_pump` не должен использоваться для actuator-path `pump_main`/`valve_*`, иначе прошивка возвращает `ERROR` с `error_code=unknown_command`.
+  - `run_pump` на `pump_main` поддерживается (timed irrigation); на `valve_*` не использовать — вернётся `ERROR`/`unknown_command` или `unsupported`. Ручной device-test UI для IRR по-прежнему шлёт `set_relay`.
 
 ### 6.3. Zone correction / calibration API
 

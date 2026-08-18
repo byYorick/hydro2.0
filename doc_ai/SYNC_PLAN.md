@@ -1,6 +1,6 @@
 # План синхронизации документации с кодом
 
-**Дата обновления:** 2026-08-02  
+**Дата обновления:** 2026-08-17  
 **Статус:** `plan` (активный backlog drift-аудитов; не structural plan 2025)
 
 ## Принцип SoT (инверсия относительно версии 2025-01-27)
@@ -51,7 +51,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Полный enumeration всех ~219 Route:: | ❌ out of scope (держать hot-path) |
 | LOGIC_ARCH `channels.key` | ✅ → name/channel |
 | REST IRRIG_RECIRC → legacy | ✅ |
-| `backend/services/scheduler/README` (не MQTT publisher) | ✅ |
+| Python `backend/services/scheduler/` дерево удалено; канон Laravel | ✅ |
+| Scheduler/AE3/IRR sync 2026-08-17: `solution_change` ≠ `cycle_start`; lighting hybrid ON/OFF; 409 busy не terminal; irrigation `run_pump` + valves-active; fail-safe до fail | ✅ |
 | `backend/services/AGENTS.md` solution_* ingress | ✅ |
 | IMPLEMENTATION_STATUS relay_node | ✅ |
 | Docs legacy cleanup 2026-08-02 | ✅ удалены `11_LEGACY_ARCHIVES` zip; superseded/plans → `00_ARCHIVE/{SUPERSEDED,PLANS}` + stubs |

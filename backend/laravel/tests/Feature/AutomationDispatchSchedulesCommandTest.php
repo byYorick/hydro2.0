@@ -188,7 +188,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertDatabaseCount('zone_automation_intents', 1);
         $this->assertDatabaseHas('zone_automation_intents', [
             'zone_id' => $zone->id,
-            'status' => 'failed',
+            'status' => 'pending',
         ]);
     }
 

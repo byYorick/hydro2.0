@@ -213,6 +213,23 @@ python -m node_sim.cli run --config sim.example.yaml
 
 ## E2E Tests
 
+Канон **физической `test_node`** (не node-sim): [`REALHW_TEST_NODE_AGENT_GUIDE.md`](./REALHW_TEST_NODE_AGENT_GUIDE.md).
+
+### Проблема: Realhw не видит ноду / нет heartbeat на 1884
+
+**Симптомы:** launcher timeout на discovery UID `nd-test-*`; `mosquitto_sub -p 1884` тишина.
+
+**Решение:**
+
+1. Нода должна быть на e2e-брокере, не на dev:
+   `tests/e2e/scripts/retarget_test_node_mqtt.sh --e2e`
+2. Host в payload — LAN IP хоста, не `localhost` / `mosquitto`.
+3. Namespace `gh-test-1` / `zn-test-1`. Serial обычно `/dev/ttyACM0`, прошивка `firmware/test_node`.
+4. Не держать `node-sim` с теми же UID. Launcher обязан `stop` `node-sim*`.
+5. После прогона вернуть ноду: `retarget_test_node_mqtt.sh --dev` (иначе пропадёт с `make up` / :1883).
+
+Типичные AE3 ошибки fill/recirc (`ae3_water_baseline_invalid`, `recirc_dilute_blocked_solution_max`) — см. таблицу инвариантов в agent guide, не сидить T_full при `solution_max=true`.
+
 ### Проблема: Тест не может подключиться к Laravel API
 
 **Симптомы:**

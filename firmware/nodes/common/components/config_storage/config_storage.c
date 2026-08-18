@@ -1161,6 +1161,74 @@ esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_ui
     return err;
 }
 
+/* test_node / e2e only. Production nodes must not call this from live config path.
+ * Lightweight `{mqtt:{host,port}}` without channels[] is handled in test_node
+ * config_callback (+ reboot). Full NodeConfig save (with channels[]) is a
+ * separate path and must not go through this helper.
+ */
+esp_err_t config_storage_set_mqtt_broker(const char *host, uint16_t port) {
+    char *config_json = NULL;
+    cJSON *config = NULL;
+    cJSON *mqtt = NULL;
+    char *patched = NULL;
+    esp_err_t err;
+
+    if (!host || host[0] == '\0' || port == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    config_json = (char *)calloc(1, CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (!config_json) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_get_json(config_json, CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "MQTT broker update skipped: config not available (%s)", esp_err_to_name(err));
+        free(config_json);
+        return err;
+    }
+
+    config = cJSON_Parse(config_json);
+    free(config_json);
+    config_json = NULL;
+    if (!config) {
+        ESP_LOGE(TAG, "MQTT broker update failed: invalid JSON in config buffer");
+        return ESP_FAIL;
+    }
+
+    mqtt = cJSON_GetObjectItem(config, "mqtt");
+    if (!cJSON_IsObject(mqtt)) {
+        cJSON_DeleteItemFromObject(config, "mqtt");
+        mqtt = cJSON_CreateObject();
+        if (!mqtt) {
+            cJSON_Delete(config);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(config, "mqtt", mqtt);
+    }
+
+    cJSON_DeleteItemFromObject(mqtt, "host");
+    cJSON_AddStringToObject(mqtt, "host", host);
+    cJSON_DeleteItemFromObject(mqtt, "port");
+    cJSON_AddNumberToObject(mqtt, "port", port);
+
+    patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+    if (!patched) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_save(patched, strlen(patched));
+    free(patched);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "MQTT broker updated in NVS: host=%s port=%u", host, (unsigned)port);
+    } else {
+        ESP_LOGE(TAG, "MQTT broker update failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
 esp_err_t config_storage_factory_reset(void) {
     esp_err_t err;
 

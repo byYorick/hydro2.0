@@ -1545,7 +1545,7 @@ def _dose_ml_to_ms(
     )
     if dual_mismatches:
         mismatch_fail_closed = bool(
-            pump_calibration.get("ml_per_sec_mismatch_fail_closed", False)
+            pump_calibration.get("ml_per_sec_mismatch_fail_closed", True)
         )
         if mismatch_fail_closed:
             raise PlannerConfigurationError(

@@ -2,7 +2,7 @@
 # Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
 
 **Версия:** 1.4
-**Дата обновления:** 2026-08-02 (команды `run_pump` / `test_sensor` / `probe_sensor` в §3.2)
+**Дата обновления:** 2026-08-17 (irrigation-active = клапаны; auto-arm `irrigation` stage-guard; `run_pump` на `pump_main`)
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -101,13 +101,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   канал остаётся включенным до явной команды `set_relay {state:false}`;
 - если для actuator-команды явно передан `duration_ms`, latched-семантика заменяется transient test-mode:
   канал обязан автоматически вернуться в `OFF` и завершить исходный `cmd_id` terminal-ответом;
-- `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживается только для
-  `stage in {"solution_fill", "prepare_recirculation"}` и arm'ит локальный stage-guard;
+- `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживается для
+  `stage in {"solution_fill", "prepare_recirculation", "irrigation"}` и arm'ит локальный stage-guard;
+- irrigation path без явного `timeout_ms/stage`: открытие `valve_irrigation` auto-arm'ит guard на
+  `fail_safe_guards.irrigation_timeout_ms` (default 600000). Последующий `run_pump` **не укорачивает**
+  уже взведённый потолок. `run_pump` DONE гасит только насос; клапаны держит guard до timeout или `irrigation_stop`.
+- `is_irrigation_active` = `valve_solution_supply && valve_irrigation` (насос не обязателен);
 - dry-run `pump_main/set_relay {state:true, duration_ms<=3000}` является единственным разрешённым bypass
   interlock для ручного теста "на сухую"; любой другой `pump_main ON` без flow path остаётся запрещён;
 - по истечении `timeout_ms` нода обязана локально остановить весь соответствующий flow-path,
   снять stage-guard и опубликовать `storage_state/event`
-  (`solution_fill_timeout` или `prepare_recirculation_timeout`) **без** второго terminal
+  (`solution_fill_timeout`, `prepare_recirculation_timeout` или `irrigation_timeout`) **без** второго terminal
   `ERROR`/`DONE` по arm-`cmd_id` (arm уже завершён immediate `DONE`);
 - interlock `pump_main`: включение запрещено без открытых supply-клапанов (`valve_clean_supply|valve_solution_supply`)
   и target-клапанов (`valve_solution_fill|valve_irrigation`);
@@ -133,8 +137,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - отдельная физическая кнопка `E-Stop` на `GPIO15` (active-low, pull-up) пока удерживается в нажатом состоянии
   принудительно выключает все 6 актуаторов и отклоняет MQTT `set_relay {state:true}` с
   `ERROR estop_active`; `set_relay {state:false}` остаётся разрешённым как fail-safe stop.
-  На нажатие нода публикует `emergency_stop_activated`, на отпускание локально восстанавливает
-  предыдущий снимок actuator-состояний.
+  На нажатие нода публикует `emergency_stop_activated`. На отпускание актуаторы **остаются OFF**,
+  snapshot до нажатия **не** восстанавливается, stage-timeout guards disarm'ятся.
+  AE3 обязан fail-closed по `emergency_stop_activated` и не продолжать stage даже если probe совпал с expected ON.
   **Hardware caveat:** `GPIO15` — strapping pin ESP32; если E-Stop зажат (вход в `LOW`) в момент
   power-on/reset, возможен сбой/нестандартный boot — не держать E-Stop нажатым при старте;
 - firmware terminal stop path (`clean_fill_completed`, `solution_fill_*`, `prepare_recirculation`,
@@ -256,14 +261,16 @@ Mirror в NodeConfig:
 ## 7. Ограничения
 
 - Каналы и GPIO ноды остаются firmware-locked; внешние `config.channels` не принимаются.
-- Рабочий two-tank runtime использует `set_relay` + `storage_state/state`.
+- Рабочий two-tank fill/recirc использует latched `set_relay` + `storage_state/state`.
+  Штатный AE3 `irrigation_start` — latched клапаны + `pump_main/run_pump {duration_ms}`.
+- Stage-level timeout для `solution_fill` и `prepare_recirculation` приходит из backend в
+  `pump_main/set_relay` через `params.timeout_ms` и исполняется локальным guard'ом ноды.
+  Для `irrigation` guard также auto-arm'ится локально на `irrigation_timeout_ms` при latched клапанах.
 - Очередь команд ноды: `8`.
 - Global dedup `cmd_id`: кеш `128`, TTL `5 минут`.
 - Для production обязательны `node_secret` и строгая HMAC-проверка команд (без ослабления совместимости в NodeConfig; см. `NODE_CONFIG_SPEC.md`).
 - `safe_limits.max_duration_ms` остаётся частью firmware map и timed-path в `pump_driver`, но не должен
   использоваться как auto-stop для `set_relay` в production `storage_irrigation_node`.
-- Stage-level timeout для `solution_fill` и `prepare_recirculation` приходит из backend в
-  `pump_main/set_relay` через `params.timeout_ms` и исполняется локальным guard'ом ноды.
 - `fail_safe_guards` может обновляться с фронта через `zone.logic_profile`, после чего backend обязан
   пересобрать `NodeConfig` IRR-ноды и репаблишить новый mirror в ноду.
 

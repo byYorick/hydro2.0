@@ -154,13 +154,13 @@ make test-ae
 
 # Внутри контейнера automation-engine (рабочая директория /app)
 pytest -q
-pytest -q test_ae3lite_execute_task.py
+pytest -q tests/unit/test_ae3lite_execute_task.py
 ```
 
 ### Покрытие тестами
 
-- Основной объём — **`test_ae3lite_*.py`** и контрактные тесты read-model.
-- Репозитории и `recipe_utils` покрыты unit-тестами с моками `fetch` / `execute`.
+- Основной объём — **`tests/unit/test_ae3lite_*.py`** и контрактные тесты read-model.
+- Репозитории покрыты unit-тестами с моками `fetch` / `execute`.
 
 ## 📊 Метрики Prometheus
 
@@ -179,10 +179,10 @@ HTTP API и worker поднимаются из `ae3lite.runtime.serve` (см. `a
 ### Программный доступ к read-model
 
 ```python
-from repositories import RecipeRepository
+from ae3lite.infrastructure.read_models.zone_snapshot_read_model import PgZoneSnapshotReadModel
 
-repo = RecipeRepository()
-snapshot = await repo.get_zone_data_batch(zone_id=1)
+read_model = PgZoneSnapshotReadModel()
+snapshot = await read_model.load(zone_id=1)
 # snapshot["recipe_info"], ["telemetry"], ["nodes"], ["capabilities"]
 ```
 

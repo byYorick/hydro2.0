@@ -34,6 +34,7 @@ storage_irrigation_node_fail_safe_config_t g_fail_safe_config = {
     .clean_fill_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
     .solution_fill_clean_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
     .solution_fill_solution_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+    .irrigation_timeout_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_TIMEOUT_MS,
     .recirculation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
     .irrigation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
     .estop_debounce_ms = STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS,

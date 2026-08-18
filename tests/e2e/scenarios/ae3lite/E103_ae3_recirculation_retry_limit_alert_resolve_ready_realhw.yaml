@@ -906,11 +906,14 @@ actions:
 - step: create_phase
   type: database_execute
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
-    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
+    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  nutrient_mode,\n\
+    \  nutrient_npk_ratio_pct,\n  nutrient_calcium_ratio_pct,\n  nutrient_magnesium_ratio_pct,\n\
+    \  nutrient_micro_ratio_pct,\n  nutrient_solution_volume_l,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
     )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
     \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
-    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'ratio_ec_pid',\n\
+    \  44.00,\n  36.00,\n  12.00,\n  8.00,\n  20.0,\n  'SUBSTRATE',\n  600,\n\
     \  45,\n  NOW(),\n  NOW()\n)\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
@@ -1588,6 +1591,12 @@ actions:
             dose_ph_down_channel: pump_acid
             max_ec_dose_ml: 36.0
             max_ph_dose_ml: 16.0
+          recirc:
+            # Second tank_recirc uses product default. Dilute-on-overshoot is E120.
+            ec_overshoot_dilute_pct: 15
+            dilute_pulse_sec: 10
+            dilute_max_attempts: 3
+            dilute_settle_sec: 30
           timing:
             sensor_mode_stabilization_time_sec: 20
             stabilization_sec: 10
@@ -1781,11 +1790,14 @@ actions:
 - step: create_phase_second
   type: database_execute
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
-    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
+    \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  nutrient_mode,\n\
+    \  nutrient_npk_ratio_pct,\n  nutrient_calcium_ratio_pct,\n  nutrient_magnesium_ratio_pct,\n\
+    \  nutrient_micro_ratio_pct,\n  nutrient_solution_volume_l,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
     )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
     \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
-    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'ratio_ec_pid',\n\
+    \  44.00,\n  36.00,\n  12.00,\n  8.00,\n  20.0,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
     )\n"
   params:
     grow_cycle_id_2: ${grow_cycle_id_2}
@@ -1935,6 +1947,35 @@ actions:
     cmd_id: ${force_solution_tank_full_second_response.data.cmd_id}
   timeout: 20.0
   expected_rows: 1
+- step: seed_solution_fill_sensor_baseline_second
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: false
+      ph_value: 7.0
+      ec_value: 0.45
+  save: seed_solution_fill_sensor_baseline_second_response
+- step: wait_seed_solution_fill_sensor_baseline_second_done
+  type: db.wait
+  query: |
+    SELECT id, cmd_id, status
+    FROM commands
+    WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
+    ORDER BY created_at DESC
+    LIMIT 1
+  params:
+    cmd_id: ${seed_solution_fill_sensor_baseline_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_fill_ec_correction_command_second
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
@@ -1995,7 +2036,7 @@ actions:
     channel: storage_state
     cmd: set_fault_mode
     params:
-      ec_value: 1.90
+      ec_value: 0.85
       ph_value: 5.35
   save: force_recirculation_low_targets_second_response
 - step: wait_force_recirculation_low_targets_second_done
@@ -2039,7 +2080,6 @@ actions:
     cmd: set_fault_mode
     params:
       ph_value: 5.10
-      ec_value: 2.32
   save: force_recirculation_near_target_second_response
 - step: wait_force_recirculation_near_target_second_done
   type: db.wait

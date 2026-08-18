@@ -326,7 +326,8 @@ async def aggregate_1m() -> int:
                     last_ts,
                 )
             except Exception:
-                # Если time_bucket не доступен, используем date_trunc
+                # Если time_bucket не доступен (TimescaleDB extension missing), используем date_trunc
+                logger.warning("time_bucket('1 minute') недоступен, fallback на date_trunc", exc_info=True)
                 rows = await fetch(
                     _build_agg_1m_query(bucket_expr="date_trunc('minute', ts.ts)"),
                     last_ts,
@@ -405,6 +406,8 @@ async def aggregate_1h() -> int:
                     last_ts,
                 )
             except Exception:
+                # Если time_bucket не доступен (TimescaleDB extension missing), используем date_trunc
+                logger.warning("time_bucket('1 hour') недоступен, fallback на date_trunc", exc_info=True)
                 rows = await fetch(
                     _build_agg_1h_query(bucket_expr="date_trunc('hour', ts)"),
                     last_ts,

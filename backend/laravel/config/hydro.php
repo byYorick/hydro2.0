@@ -12,10 +12,15 @@ return [
     /**
      * Молчаливый auto-bind transport-ролей (pump_main/drain) из каналов нод
      * при ZoneReadinessService::checkZoneReadiness. В prod — только явный операторский bind.
-     * E2E/тесты могут включить: HYDRO_AUTO_BIND_TRANSPORT_ROLES=true.
+     * local/testing: по умолчанию включено (канал есть → binding создаётся при readiness).
+     * Override: HYDRO_AUTO_BIND_TRANSPORT_ROLES=true|false.
      */
     'auto_bind_transport_roles' => filter_var(
-        env('HYDRO_AUTO_BIND_TRANSPORT_ROLES', false),
+        env(
+            'HYDRO_AUTO_BIND_TRANSPORT_ROLES',
+            in_array((string) env('APP_ENV', 'production'), ['local', 'testing'], true)
+        ),
         FILTER_VALIDATE_BOOLEAN
     ),
 ];
+

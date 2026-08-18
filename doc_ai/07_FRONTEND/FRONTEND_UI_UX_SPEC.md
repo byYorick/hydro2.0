@@ -268,7 +268,7 @@ Water / irrigation / correction rules:
 - в блоке `Водный контур` из advanced остаются только runtime timeout-поля;
 - `timed irrigation` принадлежит recipe phase и отображается как readonly summary;
 - `smart irrigation` принадлежит zone automation и редактируется только для `decision.strategy=smart_soil_v1`;
-- `correction_during_irrigation` рендерится внутри блока `Полив`, а не в chemistry block;
+- `correction_during_irrigation` рендерится внутри блока `Полив`; рядом — `irrigation_ec_component` (`none` / `calcium` / `npk`);
 - inline irrigation correction отображается как fixed domain summary:
   `Ca/Mg/Micro + pH`, `NPK` исключён;
 - `pH/EC target|min|max` и EC strategy принадлежат recipe и не редактируются в зоне;

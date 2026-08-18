@@ -103,6 +103,18 @@ class GrowCycleAutomationDispatcher
                 }
             }
 
+            if ($lastError !== null && $this->isZoneBusy($lastError)) {
+                Log::info('Grow cycle start-cycle deferred: zone busy, intent left pending', [
+                    'zone_id' => $zoneId,
+                    'cycle_id' => $cycleId,
+                    'idempotency_key' => $idempotencyKey,
+                    'attempts' => $attempt,
+                    'error' => $lastError->getMessage(),
+                ]);
+
+                return;
+            }
+
             $this->markIntentFailed($zoneId, $idempotencyKey, $lastError);
 
             Log::warning('Grow cycle start-cycle dispatch failed after cycle commit', [
@@ -230,10 +242,15 @@ class GrowCycleAutomationDispatcher
             return true;
         }
 
-        $isZoneBusy = str_contains($message, 'automation_engine_start_cycle_http_error_v2:409:')
-            && str_contains($message, '"start_cycle_zone_busy"');
+        return $this->isZoneBusy($error);
+    }
 
-        return $isZoneBusy;
+    private function isZoneBusy(\Throwable $error): bool
+    {
+        $message = $error->getMessage();
+
+        return str_contains($message, 'automation_engine_start_cycle_http_error_v2:409:')
+            && str_contains($message, '"start_cycle_zone_busy"');
     }
 
     private function maxAttempts(): int

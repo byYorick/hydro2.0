@@ -100,31 +100,6 @@ def bind_start_cycle_route(
                 exc_info=True,
             )
 
-    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
-        requested = intent_claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await mark_intent_terminal_fn(
-                intent_id=requested_intent_id,
-                now=_utcnow(),
-                success=False,
-                error_code="start_cycle_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "AE3 compat start-cycle не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
     @app.post("/zones/{zone_id}/start-cycle")
     async def zone_start_cycle(
         zone_id: Annotated[int, Path(..., gt=0)],
@@ -171,8 +146,10 @@ def bind_start_cycle_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
-            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+        if decision in {"zone_busy", "claim_race"}:
+            # Laravel treats 409 busy as retryable; keep requested intent pending
+            # so the same idempotency_key can be reclaimed after the zone frees.
+            # claim_race is concurrent SKIP LOCKED — same retryable busy, not 503.
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_cycle_zone_busy",
@@ -208,11 +185,7 @@ def bind_start_cycle_route(
             code = str(getattr(exc, "code", "ae3_task_create_failed")).strip() or "ae3_task_create_failed"
             details = getattr(exc, "details", {})
             if code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -308,31 +281,6 @@ def bind_start_irrigation_route(
                 exc_info=True,
             )
 
-    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
-        requested = intent_claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await mark_intent_terminal_fn(
-                intent_id=requested_intent_id,
-                now=_utcnow(),
-                success=False,
-                error_code="start_irrigation_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "AE3 compat start-irrigation не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
     @app.post("/zones/{zone_id}/start-irrigation")
     async def zone_start_irrigation(
         zone_id: Annotated[int, Path(..., gt=0)],
@@ -388,8 +336,7 @@ def bind_start_irrigation_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
-            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_irrigation_zone_busy",
@@ -431,11 +378,7 @@ def bind_start_irrigation_route(
                 code = "start_irrigation_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -528,31 +471,6 @@ def bind_start_lighting_tick_route(
                 exc_info=True,
             )
 
-    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
-        requested = intent_claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await mark_intent_terminal_fn(
-                intent_id=requested_intent_id,
-                now=_utcnow(),
-                success=False,
-                error_code="start_lighting_tick_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "AE3 compat start-lighting-tick не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
     @app.post("/zones/{zone_id}/start-lighting-tick")
     async def zone_start_lighting_tick(
         zone_id: Annotated[int, Path(..., gt=0)],
@@ -576,8 +494,7 @@ def bind_start_lighting_tick_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
-            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_lighting_tick_zone_busy",
@@ -621,11 +538,7 @@ def bind_start_lighting_tick_route(
                 code = "start_lighting_tick_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -719,31 +632,6 @@ def bind_start_solution_topup_route(
                 exc_info=True,
             )
 
-    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
-        requested = intent_claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await mark_intent_terminal_fn(
-                intent_id=requested_intent_id,
-                now=_utcnow(),
-                success=False,
-                error_code="start_solution_topup_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "AE3 compat start-solution-topup не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
     @app.post("/zones/{zone_id}/start-solution-topup")
     async def zone_start_solution_topup(
         zone_id: Annotated[int, Path(..., gt=0)],
@@ -775,8 +663,7 @@ def bind_start_solution_topup_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
-            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_solution_topup_zone_busy",
@@ -820,11 +707,7 @@ def bind_start_solution_topup_route(
                 code = "start_solution_topup_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,
@@ -919,31 +802,6 @@ def bind_start_solution_change_route(
                 exc_info=True,
             )
 
-    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
-        requested = intent_claim.get("requested_intent")
-        requested_intent = requested if isinstance(requested, Mapping) else {}
-        requested_intent_id = int(requested_intent.get("id") or 0)
-        requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
-            return
-        try:
-            await mark_intent_terminal_fn(
-                intent_id=requested_intent_id,
-                now=_utcnow(),
-                success=False,
-                error_code="start_solution_change_zone_busy",
-                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "AE3 compat start-solution-change не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
-                zone_id,
-                requested_intent_id,
-                exc_info=True,
-            )
-
     @app.post("/zones/{zone_id}/start-solution-change")
     async def zone_start_solution_change(
         zone_id: Annotated[int, Path(..., gt=0)],
@@ -975,8 +833,7 @@ def bind_start_solution_change_route(
         intent = intent_claim.get("intent")
         intent_row = dict(intent) if isinstance(intent, Mapping) else {}
 
-        if decision == "zone_busy":
-            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+        if decision in {"zone_busy", "claim_race"}:
             active_status = _normalized_status(intent_row.get("status"))
             raise api_error_detail(
                 "start_solution_change_zone_busy",
@@ -1018,11 +875,7 @@ def bind_start_solution_change_route(
                 code = "start_solution_change_intent_terminal"
 
             if raw_code == "start_cycle_zone_busy":
-                await _mark_current_intent_terminal(
-                    intent_row=intent_row,
-                    error_code=code,
-                    error_message=str(exc),
-                )
+                # Keep requested intent pending/claimed so Laravel retries the same key.
                 raise api_error_detail(
                     code,
                     status_code=409,

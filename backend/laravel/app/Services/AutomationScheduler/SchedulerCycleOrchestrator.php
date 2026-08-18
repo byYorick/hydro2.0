@@ -18,6 +18,18 @@ class SchedulerCycleOrchestrator
         'start_cycle_zone_busy',
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
+        'start_solution_topup_zone_busy',
+        'start_solution_change_zone_busy',
+        'start_irrigation_setup_pending',
+        'start_solution_topup_not_ready',
+        'solution_change_zone_not_ready',
+        'rate_limited',
+        'start_cycle_rate_limited',
+        'start_irrigation_rate_limited',
+        'start_lighting_tick_rate_limited',
+        'start_solution_topup_rate_limited',
+        'start_solution_change_rate_limited',
+        'intent_upsert_failed',
     ];
 
     /**
@@ -125,6 +137,7 @@ class SchedulerCycleOrchestrator
                 }
             }
 
+            $zoneTimezones = $this->scheduleLoader->loadZoneTimezones($zoneIds);
             $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
             $manualSchedulesByZone = $this->manualScheduleService->buildScheduleItemsForZones($zoneIds);
             $schedules = [];
@@ -216,7 +229,7 @@ class SchedulerCycleOrchestrator
             );
             /** @var array<int, CarbonImmutable> $zoneCursorCache */
             $zoneCursorCache = [];
-            /** @var array<int, array{zoneId:int,schedule:ScheduleItem,triggerTime:CarbonImmutable,scheduleKey:string,taskType:string}> $batchDispatchJobs */
+            /** @var array<int, array{zoneId:int,schedule:ScheduleItem,triggerTime:CarbonImmutable,scheduleKey:string,taskType:string,holdCursorOnRetryable?:bool}> $batchDispatchJobs */
             $batchDispatchJobs = [];
             $dispatchParallelism = max(1, (int) ($cfg['dispatch_parallelism'] ?? 8));
 
@@ -226,7 +239,9 @@ class SchedulerCycleOrchestrator
                 $context,
                 &$attemptedDispatches,
                 &$successfulDispatches,
-                &$dispatchMetrics
+                &$dispatchMetrics,
+                &$zonesWithPendingTimeDispatch,
+                &$zonesWithSuccessfulTimeDispatch,
             ): void {
                 if ($batchDispatchJobs === []) {
                     return;
@@ -266,6 +281,14 @@ class SchedulerCycleOrchestrator
                         );
                         if ((bool) ($dispatchResult['dispatched'] ?? false)) {
                             $successfulDispatches++;
+                            if ((bool) ($chunkJob['holdCursorOnRetryable'] ?? false)) {
+                                $zonesWithSuccessfulTimeDispatch[$chunkJob['zoneId']] = true;
+                            }
+                        } elseif (
+                            (bool) ($dispatchResult['retryable'] ?? false)
+                            && (bool) ($chunkJob['holdCursorOnRetryable'] ?? false)
+                        ) {
+                            $zonesWithPendingTimeDispatch[$chunkJob['zoneId']] = true;
                         }
                     }
                 }
@@ -305,27 +328,57 @@ class SchedulerCycleOrchestrator
 
                 $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
                 $taskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
+                $clockTimezone = $this->clockTimezoneForSchedule($schedule, $zoneTimezones);
 
                 if ($intervalSec > 0) {
                     $hasWindow = is_string($schedule->startTime)
                         && is_string($schedule->endTime)
                         && $schedule->startTime !== ''
                         && $schedule->endTime !== '';
-                    if (
-                        $hasWindow
-                        && ! $this->finalizer->isTimeInWindow(
-                            $now->format('H:i:s'),
+                    $windowTransitionQueued = false;
+                    if ($hasWindow) {
+                        $desiredNow = $this->finalizer->isUtcMomentInWindow(
+                            $now,
                             $schedule->startTime,
                             $schedule->endTime,
-                        )
-                    ) {
-                        $executedKeys[$scheduleKey] = true;
+                            $clockTimezone,
+                        );
+                        $desiredLast = $this->finalizer->isUtcMomentInWindow(
+                            $last,
+                            $schedule->startTime,
+                            $schedule->endTime,
+                            $clockTimezone,
+                        );
+                        if (
+                            $desiredNow !== $desiredLast
+                            && ScheduleSpecHelper::matchesDayOfWeek(
+                                $now->setTimezone($clockTimezone),
+                                $schedule->daysOfWeek,
+                            )
+                        ) {
+                            $batchDispatchJobs[] = $this->makeWindowTransitionDispatchJob(
+                                schedule: $schedule,
+                                last: $last,
+                                now: $now,
+                                desiredNow: $desiredNow,
+                                timezone: $clockTimezone,
+                            );
+                            $windowTransitionQueued = true;
+                            if (count($batchDispatchJobs) >= $dispatchParallelism) {
+                                $flushBatchDispatchJobs();
+                            }
+                        }
 
-                        continue;
+                        if (! $desiredNow) {
+                            $executedKeys[$scheduleKey] = true;
+
+                            continue;
+                        }
                     }
 
                     if (
-                        $this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)
+                        ! $windowTransitionQueued
+                        && $this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)
                         && ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)
                     ) {
                         $lastCompletedAt = $context->lastRunByTaskName[$taskName] ?? null;
@@ -359,9 +412,15 @@ class SchedulerCycleOrchestrator
                         }
 
                         $executedKeys[$scheduleKey] = true;
+                        $intervalSchedule = $schedule;
+                        if ($hasWindow && $taskType === 'lighting') {
+                            $intervalSchedule = $schedule->withPayload(array_merge($schedule->payload, [
+                                'desired_state' => 'on',
+                            ]));
+                        }
                         $batchDispatchJobs[] = [
                             'zoneId' => $zoneId,
-                            'schedule' => $schedule,
+                            'schedule' => $intervalSchedule,
                             'triggerTime' => $now,
                             'scheduleKey' => $scheduleKey,
                             'taskType' => $taskType,
@@ -553,21 +612,20 @@ class SchedulerCycleOrchestrator
                 $startTime = $schedule->startTime;
                 $endTime = $schedule->endTime;
                 if (is_string($startTime) && is_string($endTime) && $startTime !== '' && $endTime !== '') {
-                    $desiredNow = $this->finalizer->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
-                    $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
+                    $desiredNow = $this->finalizer->isUtcMomentInWindow($now, $startTime, $endTime, $clockTimezone);
+                    $desiredLast = $this->finalizer->isUtcMomentInWindow($last, $startTime, $endTime, $clockTimezone);
                     if ($desiredNow !== $desiredLast) {
-                        if (ScheduleSpecHelper::matchesDayOfWeek($now, $schedule->daysOfWeek)) {
-                            $desiredState = $desiredNow ? 'on' : 'off';
-                            $transitionPayload = array_merge($schedule->payload, [
-                                'desired_state' => $desiredState,
-                            ]);
-                            $batchDispatchJobs[] = [
-                                'zoneId' => $zoneId,
-                                'schedule' => $schedule->withPayload($transitionPayload),
-                                'triggerTime' => $now,
-                                'scheduleKey' => $scheduleKey,
-                                'taskType' => $taskType,
-                            ];
+                        if (ScheduleSpecHelper::matchesDayOfWeek(
+                            $now->setTimezone($clockTimezone),
+                            $schedule->daysOfWeek,
+                        )) {
+                            $batchDispatchJobs[] = $this->makeWindowTransitionDispatchJob(
+                                schedule: $schedule,
+                                last: $last,
+                                now: $now,
+                                desiredNow: $desiredNow,
+                                timezone: $clockTimezone,
+                            );
                             if (count($batchDispatchJobs) >= $dispatchParallelism) {
                                 $flushBatchDispatchJobs();
                             }
@@ -763,6 +821,61 @@ class SchedulerCycleOrchestrator
         }
 
         $this->schedulerLogsBuffer = [];
+    }
+
+    /**
+     * @param  array<int, string>  $zoneTimezones
+     */
+    private function clockTimezoneForSchedule(ScheduleItem $schedule, array $zoneTimezones): string
+    {
+        if ($schedule->taskType !== 'lighting' || $schedule->manualScheduleId !== null) {
+            return 'UTC';
+        }
+
+        $tz = $zoneTimezones[$schedule->zoneId] ?? null;
+
+        return SchedulerRuntimeHelper::normalizeTimezone(is_string($tz) ? $tz : null) ?? 'UTC';
+    }
+
+    /**
+     * @return array{
+     *     zoneId: int,
+     *     schedule: ScheduleItem,
+     *     triggerTime: CarbonImmutable,
+     *     scheduleKey: string,
+     *     taskType: string,
+     *     holdCursorOnRetryable: bool
+     * }
+     */
+    private function makeWindowTransitionDispatchJob(
+        ScheduleItem $schedule,
+        CarbonImmutable $last,
+        CarbonImmutable $now,
+        bool $desiredNow,
+        string $timezone = 'UTC',
+    ): array {
+        $desiredState = $desiredNow ? 'on' : 'off';
+        $boundaryAt = $this->finalizer->windowBoundaryAt(
+            last: $last,
+            now: $now,
+            startTime: (string) $schedule->startTime,
+            endTime: (string) $schedule->endTime,
+            enteringWindow: $desiredNow,
+            timezone: $timezone,
+        );
+        $payload = array_merge($schedule->payload, [
+            'desired_state' => $desiredState,
+            'catchup_original_trigger_time' => SchedulerRuntimeHelper::toIso($boundaryAt),
+        ]);
+
+        return [
+            'zoneId' => $schedule->zoneId,
+            'schedule' => $schedule->withPayload($payload),
+            'triggerTime' => $boundaryAt,
+            'scheduleKey' => $schedule->scheduleKey,
+            'taskType' => $schedule->taskType,
+            'holdCursorOnRetryable' => true,
+        ];
     }
 
     /**

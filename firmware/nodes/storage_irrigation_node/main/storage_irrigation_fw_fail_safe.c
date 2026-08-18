@@ -276,12 +276,14 @@ void storage_irrigation_node_log_fail_safe_config(void) {
         "fail-safe config: clean_fill_min_check_delay_ms(deprecated)=%lu "
         "solution_fill_clean_min_check_delay_ms=%lu "
         "solution_fill_solution_min_check_delay_ms=%lu "
+        "irrigation_timeout_ms=%lu "
         "recirculation_solution_min_guard_enabled=%d "
         "irrigation_solution_min_guard_enabled=%d estop_debounce_ms=%lu "
         "level_switch_active_low=%d level_switch_pullup=%d debounce_ms=%lu",
         (unsigned long)g_fail_safe_config.clean_fill_min_check_delay_ms,
         (unsigned long)g_fail_safe_config.solution_fill_clean_min_check_delay_ms,
         (unsigned long)g_fail_safe_config.solution_fill_solution_min_check_delay_ms,
+        (unsigned long)g_fail_safe_config.irrigation_timeout_ms,
         g_fail_safe_config.recirculation_solution_min_guard_enabled ? 1 : 0,
         g_fail_safe_config.irrigation_solution_min_guard_enabled ? 1 : 0,
         (unsigned long)g_fail_safe_config.estop_debounce_ms,
@@ -296,6 +298,7 @@ void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
         .clean_fill_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
         .solution_fill_clean_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
         .solution_fill_solution_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+        .irrigation_timeout_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_TIMEOUT_MS,
         .recirculation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
         .irrigation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
         .estop_debounce_ms = STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS,
@@ -335,6 +338,24 @@ void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
             double value = cJSON_GetNumberValue(item);
             if (value >= 0.0 && value <= 3600000.0) {
                 next.solution_fill_solution_min_check_delay_ms = (uint32_t)value;
+            }
+        }
+        bool have_irrigation_timeout_ms = false;
+        item = cJSON_GetObjectItem(guards, "irrigation_timeout_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 1.0 && value <= (double)STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS) {
+                next.irrigation_timeout_ms = (uint32_t)value;
+                have_irrigation_timeout_ms = true;
+            }
+        }
+        if (!have_irrigation_timeout_ms) {
+            item = cJSON_GetObjectItem(guards, "irrigation_timeout_sec");
+            if (item && cJSON_IsNumber(item)) {
+                double value = cJSON_GetNumberValue(item);
+                if (value >= 1.0 && value <= ((double)STORAGE_IRRIGATION_NODE_STAGE_TIMEOUT_MAX_MS / 1000.0)) {
+                    next.irrigation_timeout_ms = (uint32_t)(value * 1000.0);
+                }
             }
         }
         item = cJSON_GetObjectItem(guards, "recirculation_solution_min_guard_enabled");
@@ -427,6 +448,8 @@ bool storage_irrigation_node_is_estop_active(void) {
 }
 
 bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
+    /* Kept for debug/HIL only. Production E-Stop release must NOT call this:
+     * actuators stay OFF after the operator clears the button. */
     if (!g_estop_restore_valid) {
         return true;
     }
@@ -496,23 +519,22 @@ void storage_irrigation_node_handle_estop_transition(bool pressed) {
         return;
     }
 
+    /* Release: keep actuators OFF. Restoring the pre-press snapshot would
+     * re-energize pumps/valves under an operator who just cleared E-Stop. */
     g_estop_active = false;
-    bool restored = storage_irrigation_node_restore_estop_snapshot_locked();
-    storage_irrigation_node_resume_stage_guards_locked();
-    bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
-    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
-    bool recirculation_active = storage_irrigation_node_is_prepare_recirculation_active_locked();
-    bool irrigation_active = storage_irrigation_node_is_irrigation_active_locked();
-    storage_irrigation_node_update_clean_fill_guard_state(clean_fill_active, false);
-    storage_irrigation_node_update_solution_fill_guard_state(solution_fill_active, false);
-    storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, recirculation_active, false);
-    storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, irrigation_active, false);
+    (void)storage_irrigation_node_stop_all_paths_locked();
+    storage_irrigation_node_disarm_all_stage_guards_locked();
+    g_clean_fill_guard.paused_by_estop = false;
+    g_solution_fill_guard.paused_by_estop = false;
+    g_recirculation_guard.paused_by_estop = false;
+    g_irrigation_guard.paused_by_estop = false;
+    storage_irrigation_node_update_clean_fill_guard_state(false, false);
+    storage_irrigation_node_update_solution_fill_guard_state(false, false);
+    storage_irrigation_node_update_binary_guard_state(&g_recirculation_guard, false, false);
+    storage_irrigation_node_update_binary_guard_state(&g_irrigation_guard, false, false);
     g_estop_restore_valid = false;
+    memset(g_estop_restore_states, 0, sizeof(g_estop_restore_states));
     xSemaphoreGive(g_actuator_mutex);
-
-    if (!restored) {
-        node_state_manager_report_error(ERROR_LEVEL_WARNING, "emergency_stop", ESP_FAIL, "Failed to restore one or more actuators after e-stop release");
-    }
     storage_irrigation_node_update_oled_runtime();
 }
 

@@ -59,7 +59,9 @@ class RecipeNutritionRuntimeConfigResolverTest extends TestCase
             data_get($resolved, 'phases.tank_recirc.ec_component_policy.pipeline')
         );
 
-        $this->assertSame([], data_get($resolved, 'phases.irrigation.ec_component_ratios'));
+        $irrigationRatios = data_get($resolved, 'phases.irrigation.ec_component_ratios');
+        $this->assertInstanceOf(\stdClass::class, $irrigationRatios);
+        $this->assertSame([], (array) $irrigationRatios);
         $this->assertFalse(data_get($resolved, 'phases.irrigation.ec_component_policy.needs_ec'));
         $excluded = data_get($resolved, 'phases.irrigation.ec_excluded_components');
         $this->assertContains('npk', $excluded);

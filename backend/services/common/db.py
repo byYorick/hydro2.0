@@ -594,14 +594,3 @@ async def create_ai_log(zone_id: Optional[int], action: str, details: Optional[D
         """,
         zone_id, action, details
     )
-
-
-async def create_scheduler_log(task_name: str, status: str, details: Optional[Dict[str, Any]] = None):
-    """Create a scheduler log entry."""
-    await execute(
-        """
-        INSERT INTO scheduler_logs (task_name, status, details, created_at)
-        VALUES ($1, $2, $3, NOW())
-        """,
-        task_name, status, details
-    )

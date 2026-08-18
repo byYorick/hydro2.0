@@ -10,7 +10,11 @@ from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.config.errors import ConfigValidationError
 from ae3lite.config.loader import load_zone_correction
-from ae3lite.config.runtime_plan_builder import _build_day_night_config, resolve_two_tank_runtime
+from ae3lite.config.runtime_plan_builder import (
+    HL_RUN_PUMP_MAX_DURATION_MS,
+    _build_day_night_config,
+    resolve_two_tank_runtime,
+)
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.infrastructure.metrics import SHADOW_CONFIG_VALIDATION
@@ -378,9 +382,12 @@ class CycleStartPlanner:
         targets = snapshot.targets if isinstance(snapshot.targets, Mapping) else {}
         lighting_targets = targets.get("lighting") if isinstance(targets.get("lighting"), Mapping) else {}
         payload = self._lighting_tick_intent_payload(task)
-        desired_state = str(payload.get("desired_state") or "on").strip().lower()
+        raw_desired = payload.get("desired_state")
+        desired_state = str(raw_desired or "").strip().lower()
         if desired_state not in {"on", "off"}:
-            desired_state = "on"
+            raise PlannerConfigurationError(
+                f"lighting_tick desired_state must be 'on' or 'off', got {raw_desired!r}",
+            )
         channel = str(ref.channel or "").strip().lower()
         if desired_state == "off":
             cmd, params = self._lighting_cmd_for_channel(channel=channel, duty=0, desired_on=False)
@@ -640,6 +647,12 @@ class CycleStartPlanner:
 
         duration_sec = self._resolve_irrigation_duration_sec(task=task, runtime=runtime)
         duration_ms = max(1000, min(3_600_000, int(duration_sec) * 1000))
+        if duration_ms > HL_RUN_PUMP_MAX_DURATION_MS:
+            raise PlannerConfigurationError(
+                "irrigation_start run_pump duration_ms="
+                f"{duration_ms} exceeds history-logger ceiling {HL_RUN_PUMP_MAX_DURATION_MS}; "
+                "refusing to open valves before an INVALID pump command"
+            )
         steps: list[tuple[str, str, dict[str, Any]]] = [
             ("valve_solution_supply", "set_relay", {"state": True}),
             ("valve_irrigation", "set_relay", {"state": True}),

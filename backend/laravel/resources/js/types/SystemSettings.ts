@@ -99,6 +99,7 @@ export interface AutomationDefaultsSettings {
   water_ec_pct: number
   water_valve_switching_enabled: boolean
   water_correction_during_irrigation: boolean
+  water_irrigation_ec_component: 'none' | 'calcium' | 'npk'
   water_drain_control_enabled: boolean
   water_drain_target_pct: number
   water_diagnostics_enabled: boolean

@@ -588,6 +588,7 @@ const waterForm = reactive<WaterFormState>({
   ecPct: 10,
   valveSwitching: true,
   correctionDuringIrrigation: true,
+  irrigationEcComponent: 'none',
   correctionMaxEcCorrectionAttempts: 8,
   correctionMaxPhCorrectionAttempts: 8,
   correctionPrepareRecirculationMaxAttempts: 6,

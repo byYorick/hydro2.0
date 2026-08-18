@@ -23,6 +23,13 @@ class ScheduleDispatcher
         'start_irrigation_zone_busy',
         'start_lighting_tick_zone_busy',
         'start_solution_topup_zone_busy',
+        'start_solution_change_zone_busy',
+    ];
+
+    private const SETUP_NOT_READY_ERRORS = [
+        'start_irrigation_setup_pending',
+        'start_solution_topup_not_ready',
+        'solution_change_zone_not_ready',
     ];
 
     private const ZONE_SETUP_PENDING_REASON = 'zone_setup_pending';
@@ -183,7 +190,7 @@ class ScheduleDispatcher
             ];
         }
 
-        if (! $this->isSchedulerTaskTypeDispatchableForAe3($zoneId, $taskType)) {
+        if (! $this->isSchedulerTaskTypeDispatchableForAe3($taskType)) {
             $writeLog(
                 SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
                 'skipped',
@@ -247,7 +254,7 @@ class ScheduleDispatcher
             context: $context,
             zoneId: $zoneId,
         );
-        if ($this->shouldSkipIrrigationDispatchForSetupPending($zoneId, $taskType, $zoneWorkflowPhase)) {
+        if ($this->shouldSkipIrrigationDispatchForSetupPending($taskType, $zoneWorkflowPhase)) {
             $writeLog(
                 SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
                 'skipped',
@@ -272,6 +279,28 @@ class ScheduleDispatcher
 
         $taskName = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
         $payload = $schedule->payload;
+        $lightingDesiredState = null;
+        if ($taskType === 'lighting') {
+            $resolvedDesired = $this->resolveLightingDesiredState($payload);
+            if (! $resolvedDesired['ok']) {
+                $writeLog($taskName, 'skipped', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'reason' => $resolvedDesired['reason'],
+                    'desired_state' => $payload['desired_state'] ?? null,
+                ]);
+
+                return [
+                    'ready' => false,
+                    'result' => [
+                        'dispatched' => false,
+                        'retryable' => false,
+                        'reason' => $resolvedDesired['reason'],
+                    ],
+                ];
+            }
+            $lightingDesiredState = $resolvedDesired['state'];
+        }
         $scheduledForIso = SchedulerRuntimeHelper::toIso($triggerTime);
         $correlationAnchor = $scheduledForIso;
         if (is_string($payload['catchup_original_trigger_time'] ?? null)) {
@@ -279,6 +308,18 @@ class ScheduleDispatcher
             $parsedCatchupTrigger = $this->parseIsoDateTime($rawCatchupTrigger);
             if ($parsedCatchupTrigger !== null) {
                 $correlationAnchor = SchedulerRuntimeHelper::toIso($parsedCatchupTrigger);
+            }
+        } else {
+            $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
+            if ($intervalSec > 0) {
+                $intervalTaskName = SchedulerRuntimeHelper::intervalTaskLogNameForSchedule($schedule);
+                $lastCompleted = $context->lastRunByTaskName[$intervalTaskName] ?? null;
+                $slot = SchedulerRuntimeHelper::intervalSlotAt(
+                    now: $triggerTime,
+                    intervalSec: $intervalSec,
+                    lastCompletedAt: $lastCompleted instanceof CarbonImmutable ? $lastCompleted : null,
+                );
+                $correlationAnchor = SchedulerRuntimeHelper::toIso($slot);
             }
         }
 
@@ -336,10 +377,7 @@ class ScheduleDispatcher
                 : null;
         } elseif ($taskType === 'lighting') {
             $endpoint = '/start-lighting-tick';
-            $desiredState = strtolower(trim((string) ($payload['desired_state'] ?? 'on')));
-            if (! in_array($desiredState, ['on', 'off'], true)) {
-                $desiredState = 'on';
-            }
+            $desiredState = $lightingDesiredState ?? 'on';
             $requestPayload['desired_state'] = $desiredState;
 
             $brightness = $this->resolveLightingBrightnessPct($payload, $desiredState);
@@ -352,7 +390,7 @@ class ScheduleDispatcher
             $requestPayload['trigger'] = 'periodic_tick';
         } elseif ($taskType === 'solution_change') {
             $endpoint = '/start-solution-change';
-            $requestPayload['trigger'] = 'scheduler';
+            $requestPayload['trigger'] = $this->resolveSolutionChangeTrigger($payload);
         }
 
         return [
@@ -437,6 +475,8 @@ class ScheduleDispatcher
                 'start_cycle_intent_terminal',
                 'start_irrigation_intent_terminal',
                 'start_lighting_tick_intent_terminal',
+                'start_solution_topup_intent_terminal',
+                'start_solution_change_intent_terminal',
             ];
             if (
                 $response->status() === 409
@@ -471,9 +511,34 @@ class ScheduleDispatcher
             if (
                 $response->status() === 409
                 && is_array($detail)
-                && in_array($detail['error'] ?? null, self::ZONE_BUSY_ERRORS, true)
+                && in_array(
+                    $detail['error'] ?? null,
+                    array_merge(self::ZONE_BUSY_ERRORS, self::SETUP_NOT_READY_ERRORS),
+                    true,
+                )
             ) {
                 $err = (string) ($detail['error'] ?? 'start_cycle_zone_busy');
+                $writeLog($taskName, 'failed', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'error' => $err,
+                    'status_code' => $response->status(),
+                    'response' => $responseBody,
+                    'schedule_key' => $scheduleKey,
+                    'correlation_id' => $correlationId,
+                ]);
+
+                return [
+                    'dispatched' => false,
+                    'retryable' => true,
+                    'reason' => $err,
+                ];
+            }
+            if ($response->status() === 429) {
+                $extracted = $this->extractDetailError($detail);
+                $err = (is_string($extracted) && str_ends_with($extracted, '_rate_limited'))
+                    ? $extracted
+                    : 'rate_limited';
                 $writeLog($taskName, 'failed', [
                     'zone_id' => $zoneId,
                     'task_type' => $taskType,
@@ -518,7 +583,6 @@ class ScheduleDispatcher
         $taskIdentity = $this->resolveSubmittedTaskIdentity(
             zoneId: (int) $prepared['zone_id'],
             responseTaskId: is_array($data) ? trim((string) ($data['task_id'] ?? '')) : '',
-            intentId: isset($prepared['intent_snapshot']['intent_id']) ? (int) $prepared['intent_snapshot']['intent_id'] : null,
         );
         $taskId = $taskIdentity['task_id'];
         $apiTaskStatus = is_array($data)
@@ -664,6 +728,7 @@ class ScheduleDispatcher
                 'irrigation' => 'irrigation_start',
                 'lighting' => 'lighting_tick',
                 'solution_topup' => 'solution_topup',
+                'solution_change' => 'solution_change',
                 default => 'cycle_start',
             };
             $aeTopology = match ($taskType) {
@@ -674,6 +739,15 @@ class ScheduleDispatcher
             $irrigationDurationSec = null;
             if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
                 $irrigationDurationSec = max(1, (int) $payload['duration_sec']);
+            }
+
+            $intentPayloadJson = null;
+            if ($taskType === 'solution_change') {
+                $intentPayloadJson = json_encode([
+                    'task_type' => 'solution_change',
+                    'workflow' => 'solution_change',
+                    'trigger' => $this->resolveSolutionChangeTrigger($payload),
+                ], JSON_THROW_ON_ERROR);
             }
 
             $intentType = $this->mapTaskTypeToIntentType($taskType);
@@ -690,6 +764,7 @@ class ScheduleDispatcher
                     irrigation_requested_duration_sec,
                     intent_source,
                     idempotency_key,
+                    payload,
                     status,
                     not_before,
                     retry_count,
@@ -697,7 +772,7 @@ class ScheduleDispatcher
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 'laravel_scheduler', ?, 'pending', ?, 0, 3, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, 'laravel_scheduler', ?, ?::jsonb, 'pending', ?, 0, 3, ?, ?)
                 ON CONFLICT (zone_id, idempotency_key)
                 DO UPDATE SET
                     task_type = EXCLUDED.task_type,
@@ -705,6 +780,7 @@ class ScheduleDispatcher
                     irrigation_mode = EXCLUDED.irrigation_mode,
                     irrigation_requested_duration_sec = EXCLUDED.irrigation_requested_duration_sec,
                     intent_source = EXCLUDED.intent_source,
+                    payload = EXCLUDED.payload,
                     not_before = EXCLUDED.not_before,
                     updated_at = EXCLUDED.updated_at
                 WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
@@ -718,12 +794,16 @@ class ScheduleDispatcher
                     $irrigationMode,
                     $irrigationDurationSec,
                     $correlationId,
+                    $intentPayloadJson,
                     $triggerTime,
                     $now,
                     $now,
                 ],
             );
             $intentId = isset($row->id) ? (int) $row->id : null;
+            if ($intentId === null || $intentId <= 0) {
+                return ['ok' => false, 'intent_id' => null];
+            }
 
             return ['ok' => true, 'intent_id' => $intentId];
         } catch (\Throwable $e) {
@@ -788,55 +868,31 @@ class ScheduleDispatcher
     /**
      * @return array{task_id: string, automation_runtime: string, error: string|null}
      */
-    public function resolveSubmittedTaskIdentity(int $zoneId, string $responseTaskId, ?int $intentId): array
+    public function resolveSubmittedTaskIdentity(int $zoneId, string $responseTaskId): array
     {
         $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
         $taskId = trim($responseTaskId);
 
-        if ($automationRuntime === 'ae3') {
-            if ($taskId === '') {
-                return [
-                    'task_id' => '',
-                    'automation_runtime' => $automationRuntime,
-                    'error' => 'ae3_task_id_missing',
-                ];
-            }
-
-            if (preg_match('/^\d+$/', $taskId) !== 1) {
-                return [
-                    'task_id' => '',
-                    'automation_runtime' => $automationRuntime,
-                    'error' => 'ae3_task_id_invalid',
-                ];
-            }
-
+        if ($taskId === '') {
             return [
-                'task_id' => $taskId,
+                'task_id' => '',
                 'automation_runtime' => $automationRuntime,
-                'error' => null,
+                'error' => 'ae3_task_id_missing',
             ];
         }
 
-        if ($taskId !== '') {
+        if (preg_match('/^\d+$/', $taskId) !== 1) {
             return [
-                'task_id' => $taskId,
+                'task_id' => '',
                 'automation_runtime' => $automationRuntime,
-                'error' => null,
-            ];
-        }
-
-        if ($intentId !== null && $intentId > 0) {
-            return [
-                'task_id' => 'intent-'.$intentId,
-                'automation_runtime' => $automationRuntime,
-                'error' => null,
+                'error' => 'ae3_task_id_invalid',
             ];
         }
 
         return [
-            'task_id' => '',
+            'task_id' => $taskId,
             'automation_runtime' => $automationRuntime,
-            'error' => 'task_id_missing',
+            'error' => null,
         ];
     }
 
@@ -887,16 +943,11 @@ class ScheduleDispatcher
     }
 
     /**
-     * AE3: Laravel scheduler диспатчит только поддержанные compat-path типы.
-     * Сейчас: irrigation, lighting, solution_topup, solution_change, diagnostics.
+     * Laravel scheduler диспатчит только поддержанные AE3 compat-path типы.
+     * Runtime в БД — только ae3 (CHECK); отдельной матрицы non-ae3 нет.
      */
-    private function isSchedulerTaskTypeDispatchableForAe3(int $zoneId, string $taskType): bool
+    private function isSchedulerTaskTypeDispatchableForAe3(string $taskType): bool
     {
-        $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
-        if ($automationRuntime !== 'ae3') {
-            return true;
-        }
-
         return in_array($taskType, ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics'], true);
     }
 
@@ -935,12 +986,12 @@ class ScheduleDispatcher
         return $normalized === '' ? null : $normalized;
     }
 
-    private function shouldSkipIrrigationDispatchForSetupPending(int $zoneId, string $taskType, ?string $workflowPhase): bool
+    /**
+     * irrigation / solution_topup / solution_change не диспатчатся, пока workflow_phase !== ready.
+     */
+    private function shouldSkipIrrigationDispatchForSetupPending(string $taskType, ?string $workflowPhase): bool
     {
-        if ($taskType !== 'irrigation') {
-            return false;
-        }
-        if ($this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch') !== 'ae3') {
+        if (! in_array($taskType, ['irrigation', 'solution_topup', 'solution_change'], true)) {
             return false;
         }
 
@@ -981,6 +1032,46 @@ class ScheduleDispatcher
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return array{ok: true, state: string}|array{ok: false, reason: string}
+     */
+    private function resolveLightingDesiredState(array $payload): array
+    {
+        if (! array_key_exists('desired_state', $payload) || $payload['desired_state'] === null) {
+            return ['ok' => true, 'state' => 'on'];
+        }
+
+        if (! is_string($payload['desired_state']) && ! is_numeric($payload['desired_state'])) {
+            return ['ok' => false, 'reason' => 'invalid_lighting_desired_state'];
+        }
+
+        $normalized = strtolower(trim((string) $payload['desired_state']));
+        if ($normalized === '') {
+            return ['ok' => true, 'state' => 'on'];
+        }
+
+        if (! in_array($normalized, ['on', 'off'], true)) {
+            return ['ok' => false, 'reason' => 'invalid_lighting_desired_state'];
+        }
+
+        return ['ok' => true, 'state' => $normalized];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function resolveSolutionChangeTrigger(array $payload): string
+    {
+        $raw = $payload['trigger'] ?? null;
+        if (! is_string($raw)) {
+            return 'scheduler';
+        }
+        $normalized = trim($raw);
+
+        return $normalized !== '' ? $normalized : 'scheduler';
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
      */
     private function resolveLightingBrightnessPct(array $payload, string $desiredState): ?int
     {
@@ -991,6 +1082,23 @@ class ScheduleDispatcher
         }
 
         return max(0, min(100, (int) $candidate));
+    }
+
+    private function extractDetailError(mixed $detail): ?string
+    {
+        if (is_array($detail) && is_string($detail['error'] ?? null)) {
+            $error = trim((string) $detail['error']);
+
+            return $error !== '' ? $error : null;
+        }
+
+        if (is_string($detail)) {
+            $error = trim($detail);
+
+            return $error !== '' ? $error : null;
+        }
+
+        return null;
     }
 
     private function recordRetryableDispatchFailure(

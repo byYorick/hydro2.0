@@ -114,7 +114,7 @@ make test-laravel LARAVEL_TEST_ARGS="tests/Feature/FooTest.php"
 
 # AE3 (integration → только make test-ae, иначе мусор в hydro_dev)
 make test-ae
-make test-ae PYTEST_ARGS="-q test_ae3lite_probe_backoff.py"
+make test-ae PYTEST_ARGS="-q tests/unit/test_ae3lite_probe_backoff.py"
 make test-ae PYTEST_ARGS="-x -k test_name"
 
 # history-logger / mqtt-bridge

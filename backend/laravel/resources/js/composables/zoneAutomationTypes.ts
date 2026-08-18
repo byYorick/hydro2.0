@@ -78,6 +78,8 @@ export interface WaterFormState {
   ecPct: number
   valveSwitching: boolean
   correctionDuringIrrigation: boolean
+  /** Inline EC during irrigation: none | calcium | npk */
+  irrigationEcComponent: 'none' | 'calcium' | 'npk'
   enableDrainControl: boolean
   drainTargetPercent: number
   diagnosticsEnabled: boolean

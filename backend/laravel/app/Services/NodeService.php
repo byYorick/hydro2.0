@@ -17,6 +17,7 @@ class NodeService
         private NodeRegistryService $registryService,
         private NodeFirmwareUnbindService $firmwareUnbindService,
         private NodeSecretService $nodeSecretService,
+        private ZoneChannelAutoBinder $zoneChannelAutoBinder,
     ) {}
 
     /**
@@ -263,6 +264,12 @@ class NodeService
                 });
             }
 
+            // UI-привязка / idempotent same-zone: биндим канонические роли из каналов ноды
+            // (irrig → pump_main/drain, ph/ec → dosing pumps), если роль в зоне ещё свободна.
+            if ($isAssignmentFromUI && $newZoneId) {
+                $this->autoBindZoneChannels((int) $newZoneId, $node, 'ui_zone_assignment');
+            }
+
             // БАГ #2 FIX: Убрана дублирующая публикация конфига
             // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
             // Это предотвращает двойную публикацию конфига
@@ -283,6 +290,9 @@ class NodeService
                     'lifecycle_state' => $node->lifecycle_state?->value,
                     'reason' => 'Laravel completed node binding after observed config_report',
                 ]);
+
+                // Каналы могли появиться/обновиться к моменту config_report — добиндить роли.
+                $this->autoBindZoneChannels((int) $node->zone_id, $node, 'binding_completion');
 
                 // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.
                 try {
@@ -484,6 +494,30 @@ class NodeService
         } catch (\Throwable $e) {
             Log::error('NodeService: Failed to clear node channel bindings', [
                 'node_id' => $nodeId,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function autoBindZoneChannels(int $zoneId, DeviceNode $node, string $reason): void
+    {
+        try {
+            $roles = $this->zoneChannelAutoBinder->bindFromNode($zoneId, $node->fresh(['channels']) ?? $node);
+            if ($roles !== []) {
+                Log::info('NodeService: Auto-bound zone channel roles from node', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'zone_id' => $zoneId,
+                    'roles' => $roles,
+                    'reason' => $reason,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::error('NodeService: Failed to auto-bind zone channel roles', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'zone_id' => $zoneId,
                 'reason' => $reason,
                 'error' => $e->getMessage(),
             ]);

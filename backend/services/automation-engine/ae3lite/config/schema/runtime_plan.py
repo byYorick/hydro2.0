@@ -97,6 +97,8 @@ class IrrigationExecution(BaseModel):
     duration_sec: int | None = None
     interval_sec: int | None = None
     correction_during_irrigation: bool
+    # Inline nutrient during irrigation: none = pH-only; calcium|npk = pH + that EC pump.
+    irrigation_ec_component: Literal["none", "calcium", "npk"] = "none"
     correction_slack_sec: Annotated[int, Field(ge=0, le=7200)]
     stage_timeout_sec: int | None = None
 

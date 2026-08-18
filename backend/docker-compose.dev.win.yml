@@ -175,6 +175,8 @@ services:
       # ⚠️ ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Сегмент зоны в MQTT (uid vs zn-id) — должен совпадать с Laravel/history-logger
+      - MQTT_ZONE_FORMAT=${MQTT_ZONE_FORMAT:-uid}
     depends_on:
       - mqtt
       - db
@@ -428,7 +430,7 @@ services:
       - ./services:/app
     profiles:
       - tests
-    command: ["python", "-m", "pytest", "automation-engine/test_ae3lite_pid_output_event.py", "automation-engine/test_ae3lite_pid_state_repository.py", "automation-engine/test_ae3lite_correction_planner.py", "-v"]
+    command: ["python", "-m", "pytest", "automation-engine/tests/unit/test_ae3lite_pid_output_event.py", "automation-engine/tests/unit/test_ae3lite_pid_state_repository.py", "automation-engine/tests/unit/test_ae3lite_correction_planner.py", "-v"]
 
 volumes:
   postgres_data:

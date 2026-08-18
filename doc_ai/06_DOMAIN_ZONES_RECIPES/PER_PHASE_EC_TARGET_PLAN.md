@@ -263,9 +263,9 @@ target_ec_irrigation = full_ec               # e.g. 1.5 (кумулятивно)
 8. **`test_workflow_ready_uses_prepare_target`** — `_workflow_ready_values_match()` в prepare_recirculation_check использует `target_ec_prepare`
 
 **Обновить существующие тесты:**
-- `test_ae3lite_correction_planner_multi_component.py` — в multi_sequential тестах target_ec теперь = full EC (без изменений, т.к. тест уже для irrigation)
-- `test_ae3lite_handler_solution_fill.py` — убедиться, что correction entry использует prepare target
-- `test_ae3lite_handler_prepare_recirc_check.py` — workflow_ready с prepare target
+- `tests/unit/test_ae3lite_correction_planner_multi_component.py` — в multi_sequential тестах target_ec теперь = full EC (без изменений, т.к. тест уже для irrigation)
+- `tests/unit/test_ae3lite_handler_solution_fill.py` — убедиться, что correction entry использует prepare target
+- `tests/unit/test_ae3lite_handler_prepare_recirc_check.py` — workflow_ready с prepare target
 
 ---
 

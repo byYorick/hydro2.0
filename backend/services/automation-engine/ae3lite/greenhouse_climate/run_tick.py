@@ -1120,7 +1120,7 @@ async def run_greenhouse_climate_tick(
                         params=params,
                         cmd_id=cmd_id,
                     )
-                except Exception as exc:
+                except Exception:
                     logger.warning(
                         "greenhouse_climate_tick command publish failed gh=%s channel=%s",
                         greenhouse_id,

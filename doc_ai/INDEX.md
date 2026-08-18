@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
 **Версия:** 2.4
-**Дата обновления:** 2026-08-02 (code-first docs sync: P0–P2 hot-path; см. `SYNC_PLAN.md`)
+**Дата обновления:** 2026-08-17 (scheduler/AE3/IRR code-first: lighting hybrid, zone_busy, irrigation `run_pump`; см. `SYNC_PLAN.md`)
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 
@@ -255,11 +255,12 @@ AI-архитектура, оптимизация, симуляция, цифр�
 
 ### [13_TESTING](13_TESTING/) — Тестирование и E2E
 
-E2E-сценарии, симулятор узлов, troubleshooting.
+E2E-сценарии, симулятор узлов, realhw `test_node`, troubleshooting.
 
 **Ключевые документы:**
 - `13_TESTING/TESTING_OVERVIEW.md` — обзор стратегии тестирования
 - `13_TESTING/E2E_GUIDE.md` — подробное руководство по E2E
+- `13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` — канон запуска YAML на физической ESP32 `test_node` (для ИИ-агентов)
 - `13_TESTING/E2E_SCENARIOS.md` — полный список сценариев и DoD
 - `13_TESTING/E2E_SETUP.md` — настройка E2E окружения
 - `13_TESTING/AUTH_IN_E2E.md` — авторизация в E2E
@@ -298,7 +299,8 @@ E2E-сценарии, симулятор узлов, troubleshooting.
 1. `13_TESTING/TESTING_OVERVIEW.md`
 2. `13_TESTING/E2E_GUIDE.md`
 3. `13_TESTING/E2E_SCENARIOS.md` + `13_TESTING/NODE_SIM.md`
-4. `13_TESTING/TROUBLESHOOTING.md`
+4. Физическая `test_node`: `13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md` + `tests/e2e/AGENTS.md`
+5. `13_TESTING/TROUBLESHOOTING.md`
 
 ### Работа с ИИ-агентами
 1. `TASKS_FOR_AI_AGENTS.md`

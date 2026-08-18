@@ -624,6 +624,11 @@ esp_err_t node_config_handler_validate(
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* Production live config path requires a full NodeConfig. Lightweight MQTT
+     * retarget `{mqtt:{host,port}}` without channels[] is test_node-only
+     * (config_storage_set_mqtt_broker + reboot). Do not add that path here —
+     * production nodes must not retarget/reboot from a partial MQTT config.
+     */
     if (!cJSON_IsArray(channels)) {
         snprintf(error_msg, error_msg_size, "Missing or invalid channels");
         return ESP_ERR_INVALID_ARG;

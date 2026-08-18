@@ -29,6 +29,14 @@ venv/
 artifacts/
 test-results/
 output/
+# E2E runner junit/timeline (cwd-relative). Tracked copies may remain.
+tests/e2e/tests/e2e/reports/
+tests/e2e/tests/e2e/reports/junit.xml
+tests/e2e/tests/e2e/reports/timeline.json
+tests/e2e/reports/junit.xml
+tests/e2e/reports/timeline.json
+tests/e2e/reports/*.xml
+tests/e2e/reports/*.json
 
 # CMake / ESP-IDF
 build/

@@ -6,6 +6,7 @@
 
 - [TESTING_OVERVIEW.md](TESTING_OVERVIEW.md) — обзор подхода к тестированию (unit / integration / E2E)
 - [E2E_GUIDE.md](E2E_GUIDE.md) — подробное руководство по E2E
+- [REALHW_TEST_NODE_AGENT_GUIDE.md](REALHW_TEST_NODE_AGENT_GUIDE.md) — **канон для ИИ:** запуск YAML на физической `test_node`
 - [E2E_SCENARIOS.md](E2E_SCENARIOS.md) — полный список сценариев и Definition of Done
 - [E2E_SETUP.md](E2E_SETUP.md) — настройка окружения для E2E
 - [AUTH_IN_E2E.md](AUTH_IN_E2E.md) — авторизация в E2E (AuthClient, токены)
@@ -14,6 +15,7 @@
 
 ## См. также
 
+- [tests/e2e/AGENTS.md](../../tests/e2e/AGENTS.md) — локальные правила ИИ для `tests/e2e/`
 - [tests/e2e/README.md](../../tests/e2e/README.md) — конкретные команды и P0-набор для smoke
 - [tools/testing/README.md](../../tools/testing/README.md) — runner и вспомогательные скрипты
 - [08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md](../08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md) — стратегия CI/CD

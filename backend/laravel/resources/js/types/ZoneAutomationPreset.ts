@@ -14,6 +14,7 @@ export interface IrrigationConfig {
   duration_sec: number
   interval_sec: number
   correction_during_irrigation: boolean
+  irrigation_ec_component?: 'none' | 'calcium' | 'npk'
   correction_slack_sec: number
 }
 

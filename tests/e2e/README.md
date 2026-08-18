@@ -2,6 +2,9 @@
 
 Полностью рабочий, воспроизводимый end-to-end тестовый контур с эмулятором нод и автоисправлением ошибок до состояния GREEN.
 
+**ИИ-агент:** локальные правила — [`AGENTS.md`](./AGENTS.md).  
+Запуск на физической ESP32 `test_node` — [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md). Не смешивать с Playwright и `tools/testing/run_e2e.sh` (node-sim).
+
 ## Быстрый старт
 
 ### 1. Подготовка окружения
@@ -138,13 +141,17 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 
 ## Запуск на реальной ноде
 
+Канон для ИИ: [`AGENTS.md`](./AGENTS.md) и [`doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md`](../../doc_ai/13_TESTING/REALHW_TEST_NODE_AGENT_GUIDE.md).
+
+Перед прогоном нода на MQTT **1884**; после — вернуть **1883**. Node-sim в этом контуре запрещён.
+
 Для прогона на реальной ESP32-ноде используйте:
 
 ```bash
 # Показать, какие сценарии будут запущены
 tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
 
-# Каноничный AE3-Lite two-tank набор на реальной test-node (14 сценариев, вкл. E118/E120)
+# Каноничный AE3-Lite two-tank набор на реальной test-node (15 сценариев, вкл. E118/E119/E120)
 tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
 
 # Только smart-irrigation real-hardware tranche (E107–E109)
@@ -159,7 +166,7 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=calibration
 # Точечный wrapper над real-hardware harness для smart-irrigation
 tests/e2e/run_smart_irrigation_pipeline.sh
 
-# Полный канонический real-hardware набор (20 сценариев: 14+3+3)
+# Полный канонический real-hardware набор (21 сценарий: 15+3+3)
 tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
@@ -169,6 +176,15 @@ sim-сценарии `E64`/`E65`/`E74`/`E96`/`E97` запускаются чер
 
 **Стеки:** realhw harness → `tests/e2e/docker-compose.e2e.yml` (Laravel **8081**, MQTT **1884**, AE **9505**, HL **9302**).  
 ESP32 HIL lab → `infra/hil/docker-compose.hil.yml --profile automation` (порты **8080**/**1883**/AE **9405**).
+
+Переключение физической `test_node` между брокерами без setup-портала (`1884` = e2e, `1883` = dev). Payload только `{mqtt:{host,port}}`, без `channels[]`, не в `hydro/system/`:
+
+```bash
+tests/e2e/scripts/retarget_test_node_mqtt.sh --e2e   # LAN IP хоста → :1884
+tests/e2e/scripts/retarget_test_node_mqtt.sh --dev   # тот же host → :1883
+```
+
+Override namespace: `TEST_NODE_GH_UID` / `TEST_NODE_ZONE_UID` (default `gh-test-1` / `zn-test-1`). Текущий брокер: оба порта или `--from-port`.
 
 Ключевые AE3 real-hardware сценарии:
 
@@ -185,11 +201,12 @@ ESP32 HIL lab → `infra/hil/docker-compose.hil.yml --profile automation` (по�
 - `E115_ae3_solution_change_operator_gate_realhw` — operator gate G1 `solution_change`.
 - `E116_ae3_estop_failsafe_events_realhw` — `estop_pressed` → `EMERGENCY_STOP_ACTIVATED`.
 - `E118_ae3_water_baseline_and_ca_fill_realhw` — live-short: `WATER_BASELINE_CAPTURED` + Ca fill (`pump_b`), zero pH doses in fill-window.
+- `E119_ae3_prepare_pipeline_sequence_realhw` — live-short: Ca→pH→Mg (`pump_b` → pH → `pump_c`) + `PIPELINE_STEP_CHANGED`; не полный NPK+micro / T_full ready.
 - `E120_ae3_recirc_dilute_overshoot_realhw` — live-short: seed EC overshoot → `RECIRC_DILUTE_*` + `valve_clean_supply` pulse.
 - `E107_ae3_irrigation_runtime_test_node` — smart-irrigation runtime path (stop → ready, **pH-only** inline, без EC dose / irrig_recirc / recovery chemistry).
 - `E108_ae3_soil_moisture_telemetry_contract` — soil-moisture ingest contract.
 - `E109_ae3_irrigation_inline_correction_test_node` — inline **pH-only** correction во время полива.
-- `E119`/`E121` (+ stub `E120_*_test_node`) — **contract stubs** (`status: stub`, не в realhw suite): prepare pipeline / irrigation pH-only. Live dilute: E120 realhw.
+- `E121` (+ stubs `E119_*_test_node` / `E120_*_test_node`) — **contract stubs** (`status: stub`, не в realhw suite): irrigation pH-only; E119/E120 stub keys. Live: E119/E120 `*_realhw.yaml`.
 - `calibration/E110` — create/cancel session.
 - `calibration/E111` — `force_invalid` → `INVALID` (negative).
 - `calibration/E117` — happy-path point1→point2→`completed`.

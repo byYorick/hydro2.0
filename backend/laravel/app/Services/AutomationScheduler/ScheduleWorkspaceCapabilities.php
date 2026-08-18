@@ -16,17 +16,16 @@ final class ScheduleWorkspaceCapabilities
      */
     public static function build(Zone $zone, array $plannedTaskTypes): array
     {
-        $isAe3 = $zone->automation_runtime === 'ae3';
-        // Зеркало ScheduleDispatcher::isSchedulerTaskTypeDispatchableForAe3
-        $executable = $isAe3
-            ? ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics']
-            : array_values($plannedTaskTypes);
+        // Единственный runtime в БД — ae3 (CHECK). Отдельной матрицы AE2/legacy нет.
+        $executable = ['irrigation', 'lighting', 'solution_topup', 'solution_change', 'diagnostics'];
         $nonExecutablePlanned = array_values(array_diff($plannedTaskTypes, $executable));
 
         return [
             'executable_task_types' => $executable,
             'planned_task_types' => $plannedTaskTypes,
-            'ae3_irrigation_only_dispatch' => $isAe3,
+            // Историческое имя API-поля: «ограниченный набор типов под автодиспатч на AE3».
+            // Не переименовывать — контракт Vue / schedule-workspace.
+            'ae3_irrigation_only_dispatch' => $zone->automation_runtime === 'ae3',
             'non_executable_planned_task_types' => $nonExecutablePlanned,
             'diagnostics_available' => true,
         ];
